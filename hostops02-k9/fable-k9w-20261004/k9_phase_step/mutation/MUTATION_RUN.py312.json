@@ -1,0 +1,3427 @@
+{
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 242,
+  "redundant_survivors": 0,
+  "single": 242,
+  "survivors": 0
+ },
+ "errors": [],
+ "pins_sha256": {
+  "build/k9_phase_step.py": "7698a9934997571f7ede4f5dbe7d555f0ecab6ac85644de99d0177a814690707",
+  "core/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "core/assemble.py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "core/tests/conformance.py": "0389343929e0d6cf4374a08b45e8eb3661fbf4b93f039920463a2ef7b8a302dd",
+  "core/tests/family.py": "f291fcf0885597bc6222780f9f0c67743db3218f1539d2b41d6db3ba208a4dc4",
+  "core/tests/hostemu.py": "aa4ba46eb0c984708e6d504e65743cefbb42d2128e9573a7a94bea83ec1e34f7",
+  "core/tests/oslevel.py": "1711bcb146a81b8e4cd63ce61f0fb380f7af0ad84a95d74b82edd3d5caab695b",
+  "mutation/mutants.py": "83c995f3a361c8d46df64fdff8b1ae8ad844a3fa104fe3f789ada9f50b9a0930",
+  "op.py": "63f6a5ba4e72ef0ce7bb6f27b78513dca324dc46234090e779eba34ae3a2ad74",
+  "spec.py": "89dc183d12a8672b56eda747ccbedeca75e778db408e45aedacee16567b2beb2",
+  "tests/conftest.py": "c8f5acbd045cdcd082e6f7ef05cd792e888c7be79e83043f145cccfdedf9bceb",
+  "tests/k9w.py": "00e14b43d3ebdbe14a5fa281f6f06b454853d6ab312fbdaab828c9737744bece",
+  "tests/native_child.py": "937d688e0cab1d0b55b496d9631a106ffa691df672781479aa43fd59fb20daca",
+  "tests/native_engine.py": "23e365d2f812ac734762175399847359bc84dc21652be36a4ec6d3329b926493",
+  "tests/test_conformance.py": "baae2321ddd081425c6b8671e6296fe003db5573967f593dbe06d24b67cf4e47",
+  "tests/test_native.py": "7d2410b6ad9f81ea203494e5f7de1d2d58168d6c97260914a5fb8b0712d6c085",
+  "tests/test_plan.py": "a86ac7b3ecc900539634f8d86893fa9f2058e3ff02b03b74b69b39088df69671",
+  "tests/test_step.py": "4263a65a8f9890508b4d2f8e6953e2bb446d92ec0ec1106ae7b188f861df2590"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "results": [
+  {
+   "first_failure": "E   AssertionError: MODE_INVALID",
+   "killed": true,
+   "mutant": "P01_any_mode",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.29s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_day_operation_slot_and_attempt_key",
+   "killed": true,
+   "mutant": "P02_any_epoch",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.28s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P03_note_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.51s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P04_package_not_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.50s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P05_revision_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.46s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P06_placement_not_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.47s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CONSTANTS_INVALID",
+   "killed": true,
+   "mutant": "P07_runner_hash_unbound",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.58s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CONSTANTS_INVALID",
+   "killed": true,
+   "mutant": "P08_image_any_string",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.68s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P09_step_table_not_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.54s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P10_network_classes_not_exact",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.56s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CONSTANTS_INVALID",
+   "killed": true,
+   "mutant": "P11_network_names_any",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.56s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P12_provider_network_any",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.68s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P13_network_none_allowed",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.67s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P14_network_host_allowed",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.74s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P15_risk_limits_not_compared",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.65s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P16_risk_limits_by_value",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.64s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P17_readiness_rule_any",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.75s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P18_readiness_rule_float",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.66s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P19_floor_not_compared",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.79s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P20_floor_any_number",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.79s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P21_constants_extra_keys",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.50s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DAY_INVALID",
+   "killed": true,
+   "mutant": "P22_any_day",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.34s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: OPERATION_NOT_OF_THIS_MODE",
+   "killed": true,
+   "mutant": "P23_mode_of_the_operation_not_compared",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.28s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_day_operation_slot_and_attempt_key",
+   "killed": true,
+   "mutant": "P24_phase_of_the_operation_not_compared",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.36s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_day_operation_slot_and_attempt_key",
+   "killed": true,
+   "mutant": "P25_any_slot",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.40s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_day_operation_slot_and_attempt_key",
+   "killed": true,
+   "mutant": "P26_attempt_key_not_compared",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.37s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert '9f9508b31c24...e9f2051530ade' == '60c98c946bcb...d26e01d17dec1'",
+   "killed": true,
+   "mutant": "P27_attempt_key_of_another_order",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 28 deselected in 0.27s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert '66f6f0cde8fc...c91ce62cf78d5' == '60c98c946bcb...d26e01d17dec1'",
+   "killed": true,
+   "mutant": "P28_attempt_key_not_canonical",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 28 deselected in 0.26s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_day_operation_slot_and_attempt_key",
+   "killed": true,
+   "mutant": "P29_evidence_boot_unbound",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.43s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'claims'",
+   "killed": true,
+   "mutant": "P30_parent_rows_any_keys",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.71s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PARENT_SETGID",
+   "killed": true,
+   "mutant": "P31_no_chain_receives_an_entry",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.96s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P32_chain_path_not_compared",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.78s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P33_chain_open_root_not_compared",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.86s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P36_source_root_other_filesystem",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 1.23s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P60_chains_open_root_of_the_data_volume",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.86s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'k9_root': '...5/tools', ...} == {'k9_root': '...5/tools', ...}",
+   "killed": true,
+   "mutant": "P61_source_root_on_the_data_volume",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 1 skipped, 28 deselected in 0.32s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K67_mount_sources_not_checked",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 29 passed, 6 skipped, 28 deselected in 3.30s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K68_mount_source_device_any",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 29 passed, 6 skipped, 28 deselected in 3.30s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P62_runner_hash_not_compared",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 3 skipped, 28 deselected in 0.62s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P34_chain_gid_any",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.84s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P35_chain_setgid_any",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.80s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P37_chain_leaf_not_private",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.79s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P38_chain_leaf_mode_any",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed, 3 skipped, 28 deselected in 0.90s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: RUN_NOT_AFTER_INVALID",
+   "killed": true,
+   "mutant": "P39_launch_run_not_after_any",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 3 passed, 3 skipped, 28 deselected in 1.17s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_run_not_after - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P40_instant_text_any_spelling",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 3 passed, 3 skipped, 28 deselected in 1.18s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_run_not_after - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P41_capture_run_not_after_any",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 3 passed, 3 skipped, 28 deselected in 1.21s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_run_not_after - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P42_attached_run_not_after_any",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 3 passed, 3 skipped, 28 deselected in 1.16s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P43_bind_member_on_any_step",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.21s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P44_bind_keys_any",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.20s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P45_bind_namespace_any",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.28s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: BIND_INVALID",
+   "killed": true,
+   "mutant": "P46_bind_cutoff_any_spelling",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.23s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'execute'",
+   "killed": true,
+   "mutant": "P47_bind_phase_keys_any",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.22s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P48_bind_edge_keys_any",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.27s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P49_bind_window_empty",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.26s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P50_bind_windows_outside_the_eve",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.28s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P51_bind_order_of_phases",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.26s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P52_bind_cutoff_after_acquire",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.22s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P53_bind_execute_ends_early",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.28s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: BIND_ORDER_NOT_ASCII",
+   "killed": true,
+   "mutant": "P54_bind_order_any_text",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.31s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: BIND_ORDER_NOT_THE_DETERMINED_BYTES",
+   "killed": true,
+   "mutant": "P55_bind_order_not_determined",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.30s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_bind_member - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "P56_bind_order_hash_any",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.21s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: BIND_ORDER_SHA256_MISMATCH",
+   "killed": true,
+   "mutant": "P57_owner_order_namespace",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 4 passed, 3 skipped, 28 deselected in 1.23s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'collect_result'",
+   "killed": true,
+   "mutant": "P58_any_operation",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.34s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', 'REFUSED_PREDECESSOR_NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "W01_before_the_eve",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.19s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', 'WINDOW_NOT_OF_THE_STEP_CLASS')",
+   "killed": true,
+   "mutant": "W02_after_the_morning",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.30s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('components_launch', None)",
+   "killed": true,
+   "mutant": "W03_before_open_class_any",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.29s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('capture_launch', None)",
+   "killed": true,
+   "mutant": "W04_in_session_class_any",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.29s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('capture_cleanup', None)",
+   "killed": true,
+   "mutant": "W05_cleanup_before_capture_end",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.36s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "W06_run_not_after_any",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.35s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "W07_run_not_after_at_most",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.34s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "W08_run_not_after_other_day",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.37s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "W09_step_limit_any",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.36s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('capture_launch', None)",
+   "killed": true,
+   "mutant": "W10_too_close",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.39s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', 'REFUSED_PREDECESSOR_NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "W11_window_not_checked",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.25s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "W12_commit_limit",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 1.34s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A01_no_attempt_label",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.29s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A02_no_request_label",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.30s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: acquire_launch",
+   "killed": true,
+   "mutant": "A03_network_class_ignored",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.32s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('bridge' == 'none'",
+   "killed": true,
+   "mutant": "A04_none_becomes_bridge",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.39s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A05_no_env_files",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.30s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A06_no_fixed_env",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.28s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A07_tools_writable",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.35s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: stage",
+   "killed": true,
+   "mutant": "A08_stage_day_writable",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.36s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('type=bind,source=%s/secrets/emitter,target=/c3po-k9-emitter,readonly' % '/var/lib/c3po/r2d2-v2-k9-20261005') in ['create', '--pull', 'never', '--init', '--user', '0:0', ...]",
+   "killed": true,
+   "mutant": "A09_emitter_writable",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.36s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A10_runner_not_isolated",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.26s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A11_timeout_signal",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.31s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: preflight",
+   "killed": true,
+   "mutant": "A12_preflight_given_a_previous",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.32s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: acquire_launch",
+   "killed": true,
+   "mutant": "A13_previous_never_given",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.28s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: acquire_launch",
+   "killed": true,
+   "mutant": "A14_go_hash_for_manifest",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.34s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A15_container_name_of_the_slot",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.39s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A16_create_read_write_root",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.43s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A17_create_restarts",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.34s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A18_create_pull_missing",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.33s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   NameError: name 'request_sha256' is not defined",
+   "killed": true,
+   "mutant": "A19_plan_sha_not_in_the_command",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 skipped, 28 deselected in 0.40s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A20_runner_of_another_hash",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.35s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_argv_words_are_bounded_and_in_the_core_grammar",
+   "killed": true,
+   "mutant": "A22_timeout_unbounded",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 8 passed, 4 skipped, 28 deselected in 1.41s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_argv_words_are_bounded_and_in_the_core_grammar",
+   "killed": true,
+   "mutant": "A23_placeholder_hash_accepted",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 8 passed, 4 skipped, 28 deselected in 1.39s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: collect_launch",
+   "killed": true,
+   "mutant": "A24_mounts_of_another_day",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.40s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K01_identity_not_checked",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 2.50s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K02_boot_not_compared",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 2.50s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...AINER_ACTIVE') == ('REFUSED', 'CLAIM_EXISTS')",
+   "killed": true,
+   "mutant": "K03_claim_absence_not_proved",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 22 passed, 6 skipped, 28 deselected in 1.81s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K04_day_not_private",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 2.59s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K05_day_layout_any",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 2.51s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: running",
+   "killed": true,
+   "mutant": "K06_previous_running_removable",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.62s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: created",
+   "killed": true,
+   "mutant": "K07_previous_state_only_running",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.57s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('REFUSED', '..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "K08_previous_labels_not_compared",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.61s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "K09_previous_image_not_compared",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.72s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "K10_previous_name_not_compared",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.69s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('REFUSED', '..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "K11_previous_request_label",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.69s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'X'}",
+   "killed": true,
+   "mutant": "K12_previous_record_keys",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.77s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'container_name': 'c3po-k9-20261006-other'}",
+   "killed": true,
+   "mutant": "K13_previous_record_identity",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.72s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '...CORD_INVALID')",
+   "killed": true,
+   "mutant": "K14_previous_record_private",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 23 passed, 6 skipped, 28 deselected in 1.77s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "K15_previous_unlisted_inspected",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 24 passed, 6 skipped, 28 deselected in 1.82s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('exit code', None)",
+   "killed": true,
+   "mutant": "K16_exit_code_not_judged",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 2.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('oom', None)",
+   "killed": true,
+   "mutant": "K17_oom_not_judged",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 1.86s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('failed present', None)",
+   "killed": true,
+   "mutant": "K18_failed_ignored",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 1.85s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt status', None)",
+   "killed": true,
+   "mutant": "K20_receipt_status_any",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 2.13s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt package_sha256', None)",
+   "killed": true,
+   "mutant": "K21_receipt_package_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 2.07s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt completed_at', None)",
+   "killed": true,
+   "mutant": "K22_receipt_times_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 2.07s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt outputs', None)",
+   "killed": true,
+   "mutant": "K23_receipt_outputs_any",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 2.08s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt counts', None)",
+   "killed": true,
+   "mutant": "K24_receipt_counts_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 2.03s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt attempt_key', None)",
+   "killed": true,
+   "mutant": "K25_receipt_identity_any",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 2.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt public', None)",
+   "killed": true,
+   "mutant": "K26_receipt_not_private",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 1.88s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('marker step_plan_sha256', None)",
+   "killed": true,
+   "mutant": "K27_marker_any",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 1.78s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('record of another plan', None)",
+   "killed": true,
+   "mutant": "K28_plan_of_the_launch_not_compared",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 1.77s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...CORD_INVALID') == ('REFUSED', '...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "K29_launch_record_not_required",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 24 passed, 6 skipped, 28 deselected in 1.72s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('acquire_launch', None)",
+   "killed": true,
+   "mutant": "K30_packaged_namespace_any",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.33s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('acquire_launch', None)",
+   "killed": true,
+   "mutant": "K31_packaged_activation_any",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.42s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('acquire_launch', None)",
+   "killed": true,
+   "mutant": "K32_packaged_failed_ignored",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.41s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('acquire_launch', None)",
+   "killed": true,
+   "mutant": "K33_packaged_bound_any",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.52s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('acquire_launch', None)",
+   "killed": true,
+   "mutant": "K34_packaged_status_any",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.32s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K35_destination_absent_any",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.97s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('bind', 'COMMAND_FAILED')",
+   "killed": true,
+   "mutant": "K36_input_present_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.08s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('components_launch', None)",
+   "killed": true,
+   "mutant": "K37_symbols_not_compared",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.92s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('preflight', 'ATTACHED_RECEIPT_NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "K38_risk_plan_not_compared",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('preflight', 'ATTACHED_RECEIPT_NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "K39_risk_window_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.09s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('acquire_launch', None)",
+   "killed": true,
+   "mutant": "K40_packaged_destination_any",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.02s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('preflight', None)",
+   "killed": true,
+   "mutant": "K41_preflight_spool_any",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.93s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('sources_launch', None)",
+   "killed": true,
+   "mutant": "K42_env_files_not_checked",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.92s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('sources_launch', None)",
+   "killed": true,
+   "mutant": "K43_secret_any_mode",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.83s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('sources_launch', 'CREATE_FAILED')",
+   "killed": true,
+   "mutant": "K44_secret_link_accepted",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.89s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K45_emitter_not_checked",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.80s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K46_emitter_directory_any",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.86s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K47_runner_file_any",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.90s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K48_runner_file_mode_any",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.79s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('sources_launch', None)",
+   "killed": true,
+   "mutant": "K49_floor_not_judged",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.73s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('collect_launch', None)",
+   "killed": true,
+   "mutant": "K50_floor_by_one_byte",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.69s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('collect_launch', 'DESTINATION_APPEARED_AFTER_PRECHECK')",
+   "killed": true,
+   "mutant": "K51_day_exists_for_collect",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.77s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('capture_launch', 'REFUSED_PREDECESSOR_NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "K52_day_absent_for_others",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 2.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "K53_predecessor_not_judged",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 24 passed, 6 skipped, 28 deselected in 1.46s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K54_image_not_compared",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 2.10s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K55_image_revision_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 2.14s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K56_other_k9_active_allowed",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 1.88s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', 'CREATE_FAILED')",
+   "killed": true,
+   "mutant": "K57_own_name_in_use_allowed",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 1.69s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K58_budget_not_checked",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 30 passed, 6 skipped, 28 deselected in 1.77s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K59_budget_without_allowance",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 30 passed, 6 skipped, 28 deselected in 1.83s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', None)",
+   "killed": true,
+   "mutant": "K60_budget_without_removal",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 30 passed, 6 skipped, 28 deselected in 1.83s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...T_CONTROLLED') == ('REFUSED', '...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "K61_removal_only_runs_the_step",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 24 passed, 6 skipped, 28 deselected in 1.25s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...BEFORE_START') == ('REFUSED', '...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "K62_unmet_without_removal_still_removes",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 24 passed, 6 skipped, 28 deselected in 1.25s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('commit_launch', 'CREATE_FAILED')",
+   "killed": true,
+   "mutant": "K63_engine_not_checked",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 28 passed, 6 skipped, 28 deselected in 1.68s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "K64_source_chain_not_held",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.03s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', 'PRECHECK_FAILED') == ('REFUSED', '...CTORY_ABSENT')",
+   "killed": true,
+   "mutant": "K65_needs_after_unmet_not_skipped",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 31 passed, 6 skipped, 28 deselected in 2.04s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'day': '2026...: 'risk', ...} == {'epoch': 'R2..._launch', ...}",
+   "killed": true,
+   "mutant": "E01_claim_without_slot",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.08s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "E02_claim_readable",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.01s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (<class 'OSError'>, 232)",
+   "killed": true,
+   "mutant": "E03_claim_failure_refused_anyway",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 147 passed, 6 skipped, 28 deselected in 6.38s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...UNCHED', None) == ('PARTIAL_MET..._UNAVAILABLE')",
+   "killed": true,
+   "mutant": "E04_claim_not_read_back",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 31 passed, 6 skipped, 28 deselected in 1.93s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...', 'READBACK') == ('PARTIAL_MET...ED', 'REMOVE')",
+   "killed": true,
+   "mutant": "E05_failed_removal_goes_on",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.31s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._NOT_REMOVED') == ('PARTIAL_MET..._NOT_REMOVED')",
+   "killed": true,
+   "mutant": "E06_removal_settled_done_blindly",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.26s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._NOT_REMOVED') == ('PARTIAL_MET..._NOT_REMOVED')",
+   "killed": true,
+   "mutant": "E07_removal_failure_settled_fail_when_listed_after_zero",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.32s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipt absent', 'REFUSED_PREDECESSOR_NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "E08_removal_only_reported_complete",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 26 passed, 6 skipped, 28 deselected in 1.33s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "E09_cleanup_outcome",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 11 passed, 5 skipped, 28 deselected in 1.08s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...LE', 'REMOVE') == ('PARTIAL_MET...UT', 'REMOVE')",
+   "killed": true,
+   "mutant": "E11_removal_hang_not_stopped",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.32s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...RO', 'REMOVE') == ('PARTIAL_MET...ED', 'REMOVE')",
+   "killed": true,
+   "mutant": "E12_removal_gone_not_required",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.26s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['/var/lib/c3...-06/launches'] == ['/var/lib/c3...-06/receipts']",
+   "killed": true,
+   "mutant": "E13_day_directories_without_receipts",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.01s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...TATE_UNKNOWN') == ('REFUSED', '...ESYSTEM_FULL')",
+   "killed": true,
+   "mutant": "E14_day_directory_failure_goes_on",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 31 passed, 6 skipped, 28 deselected in 1.89s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...UNCHED', None) == ('PARTIAL_MET..._UNAVAILABLE')",
+   "killed": true,
+   "mutant": "E15_step_plan_not_read_back",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 31 passed, 6 skipped, 28 deselected in 1.98s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...UNCHED', None) == ('PARTIAL_MET..._UNAVAILABLE')",
+   "killed": true,
+   "mutant": "E16_directories_not_read_back",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 31 passed, 6 skipped, 28 deselected in 1.93s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert '2026-10-06T02:34:00+00:00' == '2026-10-06T02:35:00+00:00'",
+   "killed": true,
+   "mutant": "E17_attached_run_not_after_early",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 10 passed, 5 skipped, 28 deselected in 0.99s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'dbname': 'c3po', 'host': 'db', 'port': 5432, 'role': 'c3po_v2_causal_emitter'} == None",
+   "killed": true,
+   "mutant": "E18_plan_database_everywhere",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('543f39be2043...a6316425955da' == '543f39be2043...a6316425955da'",
+   "killed": true,
+   "mutant": "E20_plan_go_hash",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.11s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'act_b_sha25..._sha256', ...} == {'act_b_sha25..._sha256', ...}",
+   "killed": true,
+   "mutant": "E21_plan_constants_of_another_set",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.22s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'dbname': 'c..._risk_reader'} == {'host': 'db'...usal_emitter'}",
+   "killed": true,
+   "mutant": "E22_database_role",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 14 passed, 5 skipped, 28 deselected in 1.21s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_step.py::test_every_operation_completes_on_the_host_the_eve_leaves[acquire_launch]",
+   "killed": true,
+   "mutant": "E23_timeout_margin_zero",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.08s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_step.py::test_every_operation_completes_on_the_host_the_eve_leaves[acquire_launch]",
+   "killed": true,
+   "mutant": "E24_timeout_slack_small",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.05s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...START_FAILED') == ('PARTIAL_MET...REATE_FAILED')",
+   "killed": true,
+   "mutant": "E26_create_output_any",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 2.02s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...REATE_FAILED') == ('PARTIAL_MET...REATE_FAILED')",
+   "killed": true,
+   "mutant": "E27_create_failure_settled_fail",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 1.98s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...START_FAILED') == ('PARTIAL_MET...START_FAILED')",
+   "killed": true,
+   "mutant": "E28_start_failure_settled_fail",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 1.97s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...', 'READBACK') == ('PARTIAL_MET...LED', 'START')",
+   "killed": true,
+   "mutant": "E29_start_failure_writes_the_record",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 1.99s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "E30_record_without_created_at",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 2.01s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'attempt_key...0+00:00', ...} == {'schema': 'K..._launch', ...}",
+   "killed": true,
+   "mutant": "E31_record_timeout_of_the_ceiling",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.09s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'attempt_key...0+00:00', ...} == {'schema': 'K..._launch', ...}",
+   "killed": true,
+   "mutant": "E32_record_request_of_the_plan",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.17s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...UNCHED', None) == ('PARTIAL_MET..._UNAVAILABLE')",
+   "killed": true,
+   "mutant": "E33_record_not_read_back",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 2.13s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_AS_BUILT')",
+   "killed": true,
+   "mutant": "E34_readback_labels_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 2.13s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...NOT_AS_BUILT') == ('PARTIAL_MET...NOT_AS_BUILT')",
+   "killed": true,
+   "mutant": "E35_readback_state_any",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 1.97s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._NOT_SETTLED') == ('PARTIAL_MET...NOT_AS_BUILT')",
+   "killed": true,
+   "mutant": "E36_readback_state_ignored_in_the_outcome",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 2.07s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_AS_BUILT')",
+   "killed": true,
+   "mutant": "E37_readback_identity_any",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 32 passed, 6 skipped, 28 deselected in 2.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...', 'READBACK') == ('PARTIAL_MET...ART', 'START')",
+   "killed": true,
+   "mutant": "E38_mounts_not_proved_before_start",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 34 passed, 6 skipped, 28 deselected in 2.05s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['SOURCE'] == ['SOURCE']",
+   "killed": true,
+   "mutant": "E39_created_container_not_withdrawn",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 34 passed, 6 skipped, 28 deselected in 2.12s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...AROUND_START')",
+   "killed": true,
+   "mutant": "E40_mounts_not_proved_after_start",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 34 passed, 6 skipped, 28 deselected in 2.05s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...OUND_THE_RUN') == ('PARTIAL_MET...BEFORE_START')",
+   "killed": true,
+   "mutant": "E41_mounts_not_proved_before_the_attached_run",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 34 passed, 6 skipped, 28 deselected in 2.07s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...e, 'LAUNCHED') == ('PARTIAL_MET...ART', 'START')",
+   "killed": true,
+   "mutant": "E42_mount_map_source_wrong",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 34 passed, 6 skipped, 28 deselected in 2.07s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: REMOVAL_READBACK_UNAVAILABLE",
+   "killed": true,
+   "mutant": "E43_removal_not_read_back_at_the_end",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 5 skipped, 28 deselected in 1.03s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: commit_launch",
+   "killed": true,
+   "mutant": "E61_unavailable_removal_readback_passes",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.25s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: stage",
+   "killed": true,
+   "mutant": "E62_attached_removal_not_judged",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.36s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._NOT_SETTLED') == ('PARTIAL_MET..._NOT_REMOVED')",
+   "killed": true,
+   "mutant": "E63_launch_removal_not_judged",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.20s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET..._THE_RECEIPT')",
+   "killed": true,
+   "mutant": "E44_attached_complete_without_exit_zero",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.12s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...GINE_REFUSED') == ('PARTIAL_MET...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "E45_engine_refusal_any_status",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.17s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_step.py::test_attached_results - assert (True is True and 0...",
+   "killed": true,
+   "mutant": "E46_attached_settled_done_always",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.12s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'documents': {'OWNER_ORDER.json': b'{\"other\":1}'}}",
+   "killed": true,
+   "mutant": "E47_bind_owner_order_any",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.34s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'claimed': {'day/risk/plan/SOURCE_PINS.json': 'abababababababababababababababababababababababababababababababab'}}",
+   "killed": true,
+   "mutant": "E48_bind_pins_any",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.23s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'claimed': {'day/risk/plan/HOST_PLAN.json': 'abababababababababababababababababababababababababababababababab'}}",
+   "killed": true,
+   "mutant": "E49_bind_documents_not_rehashed",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.22s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "E50_bind_spool_not_required",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.15s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "E51_stage_risk_not_compared",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.16s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "E52_stage_risk_not_rehashed",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.22s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "E53_attached_receipt_identity_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.12s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "E54_attached_packaged_namespace_any",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.17s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...'STEP_FAILED') == ('PARTIAL_MET...ED_SYNTHETIC')",
+   "killed": true,
+   "mutant": "E55_attached_failed_code_any",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ENT_REPLACED') == ('PARTIAL_MET...OUND_THE_RUN')",
+   "killed": true,
+   "mutant": "E56_attached_mount_after_run_ignored",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.04s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ATUS_NONZERO') == ('PARTIAL_MET..._UNAVAILABLE')",
+   "killed": true,
+   "mutant": "E58_listing_failure_is_absence",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.25s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: stage",
+   "killed": true,
+   "mutant": "E59_stage_without_the_receipts_mount",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.97s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_META...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "E60_sources_mounts_the_source_root",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 34 passed, 6 skipped, 28 deselected in 2.17s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_are_the_literal_step_with_independently_written_argv",
+   "killed": true,
+   "mutant": "F01_effects_claims",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.07s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('argv' not in {'row': {'phase': 'capture', 'mode': 'CLEANUP', 'row': None, 'network': None, ...}, 'container_name': None, 'labels': ...'/var/lib/c3po/r2d2-v2-k9-20261005/claims/cabb9990e950ca4d6157dd4c279aa87254edd834fc3e56dd008cda162bbe33ee.claim', ...} and (1, 1, 1) == ",
+   "killed": true,
+   "mutant": "F02_effects_containers_created",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.95s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_are_the_literal_step_with_independently_written_argv",
+   "killed": true,
+   "mutant": "F03_effects_removed",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.92s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "F13_effects_withdrawal",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 1.00s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('sources_launch', 'DISK_FREE_BELOW_FLOOR')",
+   "killed": true,
+   "mutant": "H01_hold_codes_removal_only",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.54s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('sources_launch', 'DISK_FREE_BELOW_FLOOR')",
+   "killed": true,
+   "mutant": "H02_floor_not_a_hold",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 27 passed, 6 skipped, 28 deselected in 1.50s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "H03_capture_capped",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 33 passed, 6 skipped, 28 deselected in 1.91s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...ATUS_NONZERO')",
+   "killed": true,
+   "mutant": "H04_nonzero_removal_goes_on",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 25 passed, 6 skipped, 28 deselected in 1.18s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_COMPLETE')",
+   "killed": true,
+   "mutant": "H05_preflight_marker_any",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.05s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('capture_launch', None)",
+   "killed": true,
+   "mutant": "H06_minimum_life_below_the_runner_margin",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 passed, 3 skipped, 28 deselected in 0.91s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('argv' not in {'row': {'phase': 'capture', 'mode': 'CLEANUP', 'row': None, 'network': None, ...}, 'container_name': None, 'labels': ...'/var/lib/c3po/r2d2-v2-k9-20261005/claims/cabb9990e950ca4d6157dd4c279aa87254edd834fc3e56dd008cda162bbe33ee.claim', ...} and (0, 1, 3) == ",
+   "killed": true,
+   "mutant": "F04_effects_files",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.92s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_are_the_literal_step_with_independently_written_argv",
+   "killed": true,
+   "mutant": "F05_effects_directories",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.94s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_are_the_literal_step_with_independently_written_argv",
+   "killed": true,
+   "mutant": "F06_effects_bind",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.90s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert '/var/lib/c3p...261005/claims' == '/var/lib/c3p...2ce3f77.claim'",
+   "killed": true,
+   "mutant": "F07_effects_claim_file",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.94s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == ('/var/lib/c3po/r2d2-v2-k9-20261005' + '/days/2026-10-06/launches/collect_launch.json')",
+   "killed": true,
+   "mutant": "F08_effects_removal_record",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.95s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_are_the_literal_step_with_independently_written_argv",
+   "killed": true,
+   "mutant": "F09_effects_launch_record",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.94s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [] == ['/var/lib/c3...-06/receipts']",
+   "killed": true,
+   "mutant": "F10_effects_directories_list",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.90s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: preflight",
+   "killed": true,
+   "mutant": "F11_effects_argv_prefix",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.98s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "F12_effects_parent_rows",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 6 passed, 4 skipped, 28 deselected in 0.92s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET..._THE_RECEIPT')",
+   "killed": true,
+   "mutant": "E65_result_line_not_compared",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.06s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET..._THE_RECEIPT')",
+   "killed": true,
+   "mutant": "E66_result_line_without_newline",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 35 passed, 6 skipped, 28 deselected in 2.05s",
+   "tests": [
+    "test_plan.py",
+    "test_step.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

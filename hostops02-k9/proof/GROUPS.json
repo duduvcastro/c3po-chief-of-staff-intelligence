@@ -1,0 +1,267 @@
+{
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "groups": {
+  "k12": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k12-20261004/k12_collect",
+      "../../fable-k12-20261004/k12_preflight",
+      "../../fable-k12-20261004/k12_window"
+     ],
+     "as_given": [
+      "fable-k12-20261004/core",
+      "../k12_collect",
+      "../k12_preflight",
+      "../k12_window"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 150
+  },
+  "k3-secret-env": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "fable-k4k3k13-20261004/core_k3",
+      "../k3_secret_env"
+     ],
+     "as_given": [
+      "fable-k4k3k13-20261004/core_k3",
+      "../k3_secret_env"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  },
+  "k3k9": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "fable-k3k9-20261004/core",
+      "../k3k9_secrets"
+     ],
+     "as_given": [
+      "fable-k3k9-20261004/core",
+      "../k3k9_secrets"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  },
+  "k4-k13": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k4k3k13-20261004/k4_files",
+      "../../fable-k4k3k13-20261004/k13_reader_switch",
+      "../../fable-k4k3k13-20261004/k13r_reader_liveness"
+     ],
+     "as_given": [
+      "fable-k4k3k13-20261004/core",
+      "../k4_files",
+      "../k13_reader_switch",
+      "../k13r_reader_liveness"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 150
+  },
+  "k4e0": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k4e0-20261004/k4_e0"
+     ],
+     "as_given": [
+      "fable-k4e0-20261004/core",
+      "../k4_e0"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  },
+  "k5-dbr": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k5-dbr-20261004/supervisor_activate",
+      "../../fable-k5-dbr-20261004/db_preflight"
+     ],
+     "as_given": [
+      "fable-k5-dbr-20261004/core",
+      "../supervisor_activate",
+      "../db_preflight"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  },
+  "k6b": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "fable-k6b-probe-20261004/core-k6b",
+      "../k6b"
+     ],
+     "as_given": [
+      "fable-k6b-probe-20261004/core-k6b",
+      "../k6b"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  },
+  "k8": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k8-20261004/k8_eve"
+     ],
+     "as_given": [
+      "fable-k8-20261004/core",
+      "../k8_eve"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  },
+  "k9": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k9w-20261004/k9_phase_read",
+      "../../fable-k9w-20261004/k9_phase_step"
+     ],
+     "as_given": [
+      "fable-k9w-20261004/core",
+      "../k9_phase_read",
+      "../k9_phase_step"
+     ],
+     "kind": "core"
+    },
+    {
+     "args": [
+      "fable-k9w-20261004/k9_phase_step"
+     ],
+     "kind": "opsh"
+    }
+   ],
+   "timeout_minutes": 240
+  },
+  "probe": {
+   "app_python": true,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k6b-probe-20261004/probe"
+     ],
+     "as_given": [
+      "fable-k6b-probe-20261004/core",
+      "../probe"
+     ],
+     "kind": "core"
+    },
+    {
+     "args": [
+      "fable-k6b-probe-20261004/probe",
+      "@RELEASE"
+     ],
+     "kind": "opsh"
+    }
+   ],
+   "timeout_minutes": 120
+  },
+  "runner": {
+   "app_python": true,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "fable-k9runner-20261004"
+     ],
+     "kind": "runner-tests"
+    }
+   ],
+   "timeout_minutes": 90
+  },
+  "shapes": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [],
+     "kind": "containerd-store"
+    },
+    {
+     "args": [],
+     "kind": "release-image"
+    },
+    {
+     "args": [],
+     "kind": "docker-shapes"
+    },
+    {
+     "args": [
+      "fable-k9w-20261004/k9_phase_step"
+     ],
+     "kind": "k9w-release-shapes"
+    },
+    {
+     "args": [],
+     "kind": "systemd-shapes"
+    }
+   ],
+   "timeout_minutes": 90
+  }
+ },
+ "order": [
+  "k9",
+  "k4e0",
+  "k3k9",
+  "k5-dbr",
+  "k6b",
+  "probe",
+  "k12",
+  "k8",
+  "k4-k13",
+  "k3-secret-env",
+  "runner",
+  "shapes"
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_GROUPS_V1"
+}

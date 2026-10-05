@@ -1,0 +1,29 @@
+{
+  "Linux_Docker": "PENDING",
+  "compiled_floor_bytes": 214748364800,
+  "compiled_floor_changed": false,
+  "host": "NOT_RUN",
+  "independent_review": "PENDING",
+  "local_suite": {
+    "failed": 0,
+    "log_sha256": "dfbbf9977d0da22683f5d776b0e2d48b07c222e59d4a614ae7158a2ff3973192",
+    "passed": 99,
+    "python": "3.12.14",
+    "skipped": 0
+  },
+  "physical_capacity_proven": false,
+  "py39_release_suite": "NOT_RUN_RELEASE_LIBRARIES_ABSENT",
+  "revision": 3,
+  "runner_sha256": "563a4797ab2a7ef4c02a1c1937061a2644420b69bdcc2dca842cd1efd7fb7690",
+  "runtime_files_changed": false,
+  "schema": "CODEX_OFFLINE_RUNNER_TEST_CANDIDATE_V1",
+  "scope": "Only test-side availability. Required physical TREE capacity remains a separate gate.",
+  "source_sha256": "0efafc8f4a7ba5ce9cf4ba36cc1e11933206fec3de41eca4258f44f630c0774e",
+  "status": "LOCAL_TEST_CANDIDATE_NO_GO",
+  "targeted_capacity_suite": {
+    "cases": "0, floor-1, floor; unchanged signed plan floor",
+    "deselected": 91,
+    "passed": 8
+  },
+  "virtual_available_bytes": 274877906944
+}

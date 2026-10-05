@@ -1,0 +1,62 @@
+{
+ "activation_allowed": false,
+ "core_parts": {
+  "core": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a",
+  "files": "6b96ad64fe8ce5a9a2293b109964e069c2ad32169e7d421449da3f88516b60ba",
+  "parents": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b"
+ },
+ "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "date_class": "WRITE_EPOCH",
+ "dates": [
+  "2026-10-03",
+  "2026-10-04",
+  "2026-10-05",
+  "2026-10-06",
+  "2026-10-07",
+  "2026-10-08",
+  "2026-10-09",
+  "2026-10-10"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  142,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "0b312446f1c2c58cfbb902cd89079a2ad656dbf5ae681ac0a61081356b9001d0",
+ "final_payload_bytes": 299559,
+ "final_payload_sha256": "979173bbbe884a1d210d60a93c1ce2245a96091d7aacc369bac332c91f610913",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "k4_files",
+ "name": "k4_files",
+ "operation": "GO_WRITE_HOSTOPS02_K4_FILES_01",
+ "operation_part_sha256": "1f441075f4b4087bf5de9b22d85551228c2ae96c7f6788bc89e15cf4c5b829fc",
+ "parts": [
+  "core",
+  "parents",
+  "files"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "5cbfb03e2f459948298dcc19fe752c76f98ecd0f0c770291e7b7d07ddd3c7bcd",
+ "source_bytes": 212349,
+ "source_sha256": "099d7582efe3119b83c6dfdde991fcfa46458e3708df1326b3e691aeb427988c",
+ "spec_sha256": "26e60c8d447bf6d72700e66a500baacc8d2b51db4aa380fc844e499540c25d27",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 7891,
+ "writes_allowed": true
+}

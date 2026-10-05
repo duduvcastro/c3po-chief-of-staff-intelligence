@@ -1,0 +1,4557 @@
+{
+ "by_target": {
+  "dispatcher": 15,
+  "launcher": 4,
+  "op": 330
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 349,
+  "redundant_survivors": 0,
+  "single": 349,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "own",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "103996759b8ec39e0ef0510cffe6b88639c8301a8409ced6a60ecb6e13a22d70",
+  "build/AUTHORITY.UNBOUND.json": "54f561833b40ce4feb511ae388736d940d8443688ee0f38237b5a4ea0b954725",
+  "build/DISPATCH.UNBOUND.json": "4ebbb11db7c2dde761441a8ec0bf4376f52794e6eb74c8d917cca3c47c2fb6a8",
+  "build/DISPATCH_SCOPE_DELTA.diff": "0a23dd7091a607aafb4fa0d180fe366ae26ee940d94745f3c9147cacb7ac6ed8",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "11ed71e82028c9319bd5441efc417c3028ed6dcc3b2473f151336d0219dbf7c9",
+  "build/GO.UNBOUND.json": "99bebc29055f1d75f545fba3ff29a4763f19646501d2c2698d0603fd979634f6",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "b1f31790a7c4d0b708d6bf937910c811b409d2dcec48917be963b3249a02ef23",
+  "build/REQUEST.UNBOUND.json": "38454ba724ba987ab004dcb61839465a81e753e8357942333b8d923d420c45f8",
+  "build/dispatch_once.py": "d4d62def5616156b175079b8f8ec29b84d1ba533549e22e29f5114b86385728c",
+  "build/k12_window.py": "9e0e2f2714b6d3ee17b994871fc04ebbe882b621ede57fe30cf6a42f40ad513c",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "1a62ae5eba5137d721cc6ebbf0cfde9eaa2c4fea4e74038d825ea2e2aec0b6e0",
+  "op.py": "f3a586e6db19684f9dcb67697960b0a1880fb295438d35693af826961212a002",
+  "spec.py": "b816bfe337268ada38bb9332233c38176a1f18f1381fa48e5cfe73d9f45392ee",
+  "tests/conftest.py": "27ad8ff26923dfc19d68f6bc6a93cfe3b1b5a0b5b093d79730e585e826bc121d",
+  "tests/k12emu.py": "dd0cc4becf853117452e0389c959f72a20df10f62983f8960490d0148134f130",
+  "tests/k12w.py": "f018def5f146cce8baa8fd451865a9e5016b9aaac753d81160309817f839010b",
+  "tests/native_k12.py": "bf005fb881ec076a5172b7513e19ea9b7ab0e2d6c1095d4e3a055421c16cb907",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/request_document.py": "2342d5655c0da57790ea5701e802c946d11df6fc98c12ea47c394a33778c5616",
+  "tests/test_conformance.py": "14ef46f7f6921abdc0086598c4c1b5f86339900dc589e9d08952a60ed4b111eb",
+  "tests/test_native.py": "b7b0c4fcf3e379e2c63c1117bf0f61d57e4b029bdaf6180012f0ef91b1e00387",
+  "tests/test_window.py": "421fe37514af961e633329803745f36d7d869b3afe5f4bdad297f201357896d5"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_clock_of_the_window[change8] - Failed: ...",
+   "killed": true,
+   "mutant": "G_k12_instant_need_CAPACITY_REQUEST_INSTANT_1",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 100 passed, 20 deselected in 2.51s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:140: AssertionError: assert 'CHAIN_ROW_INVALID' == 'CAPACITY_REQUEST_JOURNAL'",
+   "killed": true,
+   "mutant": "G_k12_journal_need_CAPACITY_REQUEST_JOURNAL_1",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 71 passed, 20 deselected in 2.12s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_four_binds[mounts2-CAPACITY_REQUEST_DATA_BIND]",
+   "killed": true,
+   "mutant": "G_k12_data_need_CAPACITY_REQUEST_DATA_BIND_1",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 64 passed, 20 deselected in 1.84s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "G_k12_data_chain_need_CHAIN_NOT_ROOT_CONTROLLED_1",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.75s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "G_k12_data_chain_need_DATA_VOLUME_NOT_A_MOUNT_POINT_1",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.63s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "G_k12_data_chain_need_RELEASE_DIRECTORY_NOT_ROOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.79s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('RELEASE_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_k12_release_need_RELEASE_ABSENT_1",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 256 passed, 20 deselected in 8.18s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'ce8fea96d423ed8f715bc0fbc103c1e...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_k12_release_need_RELEASE_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 257 passed, 20 deselected in 8.34s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'bd8c191a9684e2a223dfa3d90d92acf...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_k12_release_need_RELEASE_NOT_THE_SIGNED_BYTES_1",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 259 passed, 20 deselected in 8.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:217: AssertionError: ('manifests', {'gid': 1})",
+   "killed": true,
+   "mutant": "G_k12_root_chain_need_CHAIN_NOT_ROOT_CONTROLLED_1",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.94s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/build/k12_window.py:1360: TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 6 passed, 20 deselected in 0.96s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQ...NVALID_MUTANT' == 'CAPACITY_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_Refused_CAPACITY_REQUEST_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 7 passed, 20 deselected in 0.96s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_KEYS' == 'CAPACITY_REQ..._SIGNED_BYTES'",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_NOT_THE_SIGNED_BYTES_1",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 9 passed, 20 deselected in 1.09s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:73: AssertionError: assert 'CAPACITY_REQ...NVALID_MUTANT' == 'CAPACITY_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_Refused_CAPACITY_REQUEST_INVALID_2",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 15 passed, 20 deselected in 1.18s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body1-CAPACITY_REQUEST_IDENTITY]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_IDENTITY_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 17 passed, 20 deselected in 1.11s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:112: AssertionError: assert 'CAPACITY_REQUEST_CONFIG_FILE' == 'CAPACITY_REQUEST_DAY'",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_DAY_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 23 passed, 20 deselected in 1.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:112: AssertionError: assert 'CAPACITY_REQUEST_CONFIG_FILE' == 'CAPACITY_REQUEST_WINDOW'",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_WINDOW_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 26 passed, 20 deselected in 1.16s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body18-CAPACITY_REQUEST_MODE]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_MODE_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 34 passed, 20 deselected in 1.26s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body21-CAPACITY_REQUEST_PINS]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_PINS_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 37 passed, 20 deselected in 1.20s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:112: AssertionError: assert 'CAPACITY_REQUEST_INLINE_ENV' == 'CAPACITY_REQUEST_CONFIG_FILE'",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_CONFIG_FILE_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 45 passed, 20 deselected in 1.33s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body31-CAPACITY_REQUEST_NETWORK]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_NETWORK_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 47 passed, 20 deselected in 1.28s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body36-CAPACITY_REQUEST_ENV_FILES]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_ENV_FILES_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 52 passed, 20 deselected in 1.29s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_inline_environment_must_be_exactly_the_four_values",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_INLINE_ENV_1",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 61 passed, 20 deselected in 1.45s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body40-CAPACITY_REQUEST_DOCKER_CONFIG]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_DOCKER_CONFIG_1",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 56 passed, 20 deselected in 1.42s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:140: AssertionError: assert 'CAPACITY_REQUEST_DATA_BIND' == 'CAPACITY_REQUEST_MOUNTS'",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_MOUNTS_1",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 70 passed, 20 deselected in 1.51s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_four_binds[mounts10-CAPACITY_REQUEST_MOUNTS]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_MOUNTS_2",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 72 passed, 20 deselected in 1.82s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_clock_of_the_window[change0] - Failed: ...",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_CLOCK_1",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 92 passed, 20 deselected in 2.01s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/build/k12_window.py:1404: TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_WRITER_ARGV_1",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 57 passed, 20 deselected in 1.41s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_clock_of_the_window[change5] - Failed: ...",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_CLOCK_2",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 97 passed, 20 deselected in 2.05s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_writer_argv_is_exactly_the_documents_tool_argv[argv2]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_WRITER_ARGV_2",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 108 passed, 20 deselected in 2.48s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body42-CAPACITY_REQUEST_WATCHDOG]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_WATCHDOG_1",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 58 passed, 20 deselected in 1.72s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body44-CAPACITY_REQUEST_DOCUMENTARY]",
+   "killed": true,
+   "mutant": "G_k12_capacity_request_need_CAPACITY_REQUEST_DOCUMENTARY_1",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 60 passed, 20 deselected in 1.70s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '5971609bf521e87d16949fde03f9f05...-w2', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_k12_receipt_line_need_WRITER_RECEIPT_INCONSISTENT_1",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 177 passed, 20 deselected in 4.85s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/build/k12_window.py:1682: KeyError: 'config'",
+   "killed": true,
+   "mutant": "G_w_chains_need_PARENT_ROWS_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.86s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "G_w_chains_need_DIRECTORY_NOT_ROOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.40s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_removals_shape[change0] - Failed: DID NOT R...",
+   "killed": true,
+   "mutant": "G_w_removals_need_REMOVALS_INVALID_1",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 118 passed, 20 deselected in 3.03s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/build/k12_window.py:1694: TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "G_w_removals_need_REMOVALS_INVALID_2",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 119 passed, 20 deselected in 3.09s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_removals_members_and_distinct - Failed: DID...",
+   "killed": true,
+   "mutant": "G_w_removals_need_REMOVALS_INVALID_3",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 122 passed, 20 deselected in 2.97s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'MODE_MEMBERS_INVALID' == 'MODE_INVALID'",
+   "killed": true,
+   "mutant": "G_w_derived_need_MODE_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 20 deselected in 0.84s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_plan_members_are_refused_before_any_claim[change4-EVIDENCE_BOOT_UNBOUND]",
+   "killed": true,
+   "mutant": "G_w_derived_need_EVIDENCE_BOOT_UNBOUND_1",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 4 passed, 20 deselected in 0.74s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_plan_members_of_each_mode - Failed: DID NOT...",
+   "killed": true,
+   "mutant": "G_w_derived_need_MODE_MEMBERS_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 14 passed, 20 deselected in 0.92s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_plan_members_are_refused_before_any_claim[change2-MODE_MEMBERS_INVALID]",
+   "killed": true,
+   "mutant": "G_w_derived_need_MODE_MEMBERS_INVALID_2",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 2 passed, 20 deselected in 0.69s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'ea86998fb11ebff38df9d0...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_clock_need_REMOVE_OUTSIDE_FRIDAY_EVENING_1",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 265 passed, 20 deselected in 7.98s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('TOO_CLOSE_TO_THE_VIEW', {})",
+   "killed": true,
+   "mutant": "G_w_clock_need_RUN_NOT_ON_THE_DAY_OF_THE_WINDOW_1",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 160 passed, 20 deselected in 3.88s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '579094403e7ff9ebd3e48496...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "G_w_clock_need_PERSIST_BEFORE_THE_VIEW_AND_A_MINUTE_1",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 245 passed, 20 deselected in 6.74s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '6dab4ba321ec9dbe3e7be507b97eb5a...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_clock_need_RUN_BEFORE_THE_WINDOW_START_1",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 160 passed, 20 deselected in 3.87s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:394: AssertionError: the clock is judged before anything is observed",
+   "killed": true,
+   "mutant": "G_w_clock_need_TOO_CLOSE_TO_THE_VIEW_1",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 160 passed, 20 deselected in 3.82s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'd02032624b75c52403acf38324e8d2e...-w1', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_CAPACITY_CONTAINER_OF_ANOTHER_DAY_NOT_SETTLED_1",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 191 passed, 20 deselected in 5.30s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('CAPACITY_CONTAINER_OF_THE_DAY_NOT_EARLIER', {'containers_listed': 9, 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_CONTAINER_NAME_TAKEN_1",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 190 passed, 20 deselected in 5.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_RECEIPT_NOT_PERSISTED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'running'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_CAPACITY_CONTAINER_OF_THE_DAY_NOT_SETTLED_1",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 189 passed, 20 deselected in 5.21s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '4a6cbc70f48a68e85e28397ce25d07e...-w1', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_CAPACITY_CONTAINER_OF_THE_DAY_NOT_EARLIER_1",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 190 passed, 20 deselected in 5.54s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_RECEIPT_NOT_PERSISTED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_DAY_STOPPED_BEFORE_A_VIEW_1",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 186 passed, 20 deselected in 4.72s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_RECEIPT_NOT_PRIVATE', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_EARLIER_WINDOW_RECEIPT_NOT_PERSISTED_1",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 186 passed, 20 deselected in 4.78s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_ENDED_WITHOUT_A_VALID_LINE', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_EARLIER_WINDOW_RECEIPT_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 189 passed, 20 deselected in 5.47s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_ENDED_WITHOUT_A_VALID_LINE', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_DAY_STOPPED_BEFORE_A_VIEW_2",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 187 passed, 20 deselected in 5.06s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('PRECHECK_FAILED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_EARLIER_WINDOW_ENDED_WITHOUT_A_VALID_LINE_1",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 177 passed, 20 deselected in 4.40s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'dca1a2d059aed9f4560ec8a87e2a8fd...-w2', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_DAY_ALREADY_PUBLISHED_1",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 167 passed, 20 deselected in 4.12s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '64d6512d89e72c045a525d8b4b94c1b...-w2', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_earlier_need_DAY_TERMINAL_EMPTY_LIST_1",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 169 passed, 20 deselected in 4.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('WRITER_FILE_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_WRITER_FILE_ABSENT_1",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 128 passed, 20 deselected in 3.16s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '52fa86991f41b9a56973fed53df00ca...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_WRITER_FILE_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 129 passed, 20 deselected in 2.91s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'a257a58e0a73880e3cab5aa51a2a2a8...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_WRITER_BYTES_NOT_THE_SIGNED_ONES_1",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 133 passed, 20 deselected in 3.11s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('CAPACITY_CONFIG_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_CAPACITY_CONFIG_ABSENT_1",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 134 passed, 20 deselected in 2.99s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '3469e2e07e19aef5e3a292507200adf...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_CAPACITY_CONFIG_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 135 passed, 20 deselected in 3.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '3de975b2f1812f352ee7f43428b81d4...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_CAPACITY_CONFIG_NOT_THE_SIGNED_BYTES_1",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 136 passed, 20 deselected in 3.00s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('PINS_ENV_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_PINS_ENV_ABSENT_1",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 137 passed, 20 deselected in 3.07s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'f32845c6445ab789333a86b959df8af...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_PINS_ENV_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 138 passed, 20 deselected in 3.37s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '5ecc13a7ef0b9b739354409075cf38e...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_PINS_ENV_NOT_THE_SIGNED_BYTES_1",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 139 passed, 20 deselected in 3.37s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('SECRET_ENV_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_SECRET_ENV_ABSENT_1",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 140 passed, 20 deselected in 3.41s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '395b9c8dacd9e206ff7031bc41ce11c...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_SECRET_ENV_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 141 passed, 20 deselected in 3.39s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'f4cc778fa56fd976d44b4247083453c...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_DOCKER_CLI_DIRECTORY_NOT_EMPTY_1",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 144 passed, 20 deselected in 3.48s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '817e7611be6a2ee77ebeae71acfec1a...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_JOURNAL_CATALOG_NOT_AS_REQUIRED_1",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 145 passed, 20 deselected in 3.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('CREATE_FAILED', {'after_create': None, 'containers_listed': 8, 'create': {'code': None, 'returncode': 125, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_IMAGE_ID_MISMATCH_1",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 154 passed, 20 deselected in 3.31s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'da9f79d341e03a76bb1445813a46b2d...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_IMAGE_REVISION_MISMATCH_1",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 148 passed, 20 deselected in 3.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('CAPACITY_CONTAINER_OF_THE_DAY_NOT_SETTLED', {'containers_listed': 9, 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_PREFLIGHT_CONTAINER_PRESENT_1",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 164 passed, 20 deselected in 3.93s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'ecb9b84e7916013b22f20cb615caf3f...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_MANIFEST_PRESENT_WITHOUT_AN_EARLIER_WINDOW_1",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 159 passed, 20 deselected in 3.37s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '5b0d183b135a0cb4de18208678af4f6...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT_1",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 162 passed, 20 deselected in 3.67s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '977fb6700753061ed7fa161db166694...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_launch_precheck_need_TOO_CLOSE_TO_THE_VIEW_1",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 163 passed, 20 deselected in 3.46s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('PRECHECK_FAILED', {})",
+   "killed": true,
+   "mutant": "G_w_identified_need_CONTAINER_ABSENT_1",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 227 passed, 20 deselected in 6.17s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '84967a42421c42f0cfd78185...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "G_w_identified_need_CONTAINER_NOT_OF_THIS_WINDOW_1",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 228 passed, 20 deselected in 6.00s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DESTINATION_APPEARED_AFTER_PRECHECK', {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z'...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "G_w_persist_precheck_need_PERSISTED_RECEIPT_PRESENT_1",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 226 passed, 20 deselected in 6.04s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('CONTAINER_NOT_EXITED', {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '3b3ece9d888d34f68cbfc83914c78221649510e6b054b446a47a8972bc28c5fe', 'name': '/c3po-k12-20261006-w1', ...}})",
+   "killed": true,
+   "mutant": "G_w_persist_precheck_need_CONTAINER_NEVER_STARTED_1",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 241 passed, 20 deselected in 6.60s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '5670cbd953878f95375d1efb...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "G_w_persist_precheck_need_CONTAINER_NOT_EXITED_1",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 239 passed, 20 deselected in 6.68s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'd3d7f91d9414f6b40b6ed5f2...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "G_w_persist_precheck_need_CONTAINER_EXIT_NOT_KNOWN_1",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 225 passed, 20 deselected in 6.11s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('GO_EXPIRED', {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'e6331f84765020f9...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "G_w_persist_precheck_need_BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT_1",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 245 passed, 20 deselected in 6.49s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_stop': {'exit_code': 3, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '11728d82b44a1450dc2dc83...ifest_present': False, 'temporaries': 0}, 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, ...})",
+   "killed": true,
+   "mutant": "G_w_stop_precheck_need_CONTAINER_NOT_RUNNING_1",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 249 passed, 20 deselected in 6.49s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('GO_EXPIRED', {'after_stop': {'exit_code': 143, 'finished_at': '2026-10-06T10:41:30.000000000Z', 'id': 'b36bbf821acc2..., 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, 'seconds_left_before_first_effect': 24, ...})",
+   "killed": true,
+   "mutant": "G_w_stop_precheck_need_BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT_1",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 249 passed, 20 deselected in 6.44s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_stop': {'exit_code': 143, 'finished_at': '2026-10-06T10:41:30.000000000Z', 'id': '531dda94e8fc5c9da7d29...ifest_present': False, 'temporaries': 0}, 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, ...})",
+   "killed": true,
+   "mutant": "G_w_stop_precheck_need_TOO_CLOSE_TO_THE_VIEW_1",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 249 passed, 20 deselected in 6.56s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('READBACK_UNAVAILABLE_MUTANT', {'after_stop': {'exit_code': 143, 'finished_at': '2026-10-06T10:41:30.000000000Z', 'id..., 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, 'seconds_left_before_first_effect': 60, ...})",
+   "killed": true,
+   "mutant": "G_w_stop_code_of_READBACK_UNAVAILABLE_1",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 251 passed, 20 deselected in 6.45s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('PRECHECK_FAILED', {})",
+   "killed": true,
+   "mutant": "G_w_remove_precheck_need_CONTAINER_ABSENT_1",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 254 passed, 20 deselected in 6.66s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '712f9844353ea92fbad75e...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_remove_precheck_need_CONTAINER_NOT_OF_THIS_FAMILY_1",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 254 passed, 20 deselected in 7.41s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('REMOVE_INCOMPLETE', {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '57b2e3e...ntainers_not_named': [], 'left': 1, 'remove': {'code': None, 'returncode': 1, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_remove_precheck_need_CONTAINER_NOT_STOPPED_1",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 254 passed, 20 deselected in 7.18s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '439b13d9f0e3552a22283c...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_remove_precheck_need_CONTAINER_NOT_STOPPED_2",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 254 passed, 20 deselected in 7.79s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('PERSISTED_RECEIPT_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_w_remove_precheck_need_PERSISTED_RECEIPT_MISSING_1",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 254 passed, 20 deselected in 10.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'eede89c3fbcf017f4fbe1e...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_remove_precheck_need_PERSISTED_RECEIPT_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 254 passed, 20 deselected in 10.27s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '3494d2aa711922b5eb057f...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_w_remove_precheck_need_BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT_1",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 266 passed, 20 deselected in 10.97s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('READBACK_UNAVAILABLE_MUTANT', {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id'... 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, 'seconds_left_before_first_effect': 60})",
+   "killed": true,
+   "mutant": "G_w_remove_code_of_READBACK_UNAVAILABLE_1",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 251 passed, 20 deselected in 8.96s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_effective_uid_and_gid_must_be_root_before_anything_is_looked_at",
+   "killed": true,
+   "mutant": "G_perform_need_EXECUTOR_IDENTITY_1",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 372 passed, 20 deselected in 21.26s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'a77cc7a8d4a4ee53c2b5721715fd927...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_EVIDENCE_FROM_EARLIER_BOOT_1",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 161 passed, 20 deselected in 4.43s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('EFFECT_STEP_FAILED_MUTANT', {'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, 'day_containers': [], 'manifest_before': {'links': None, 'present': False}, ...})",
+   "killed": true,
+   "mutant": "G_perform_code_of_EFFECT_STEP_FAILED_1",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 156 passed, 20 deselected in 6.37s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_IDENTITY' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C01_another_epoch",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 10 passed, 20 deselected in 1.48s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:112: AssertionError: assert 'CAPACITY_REQUEST_CONFIG_FILE' == 'CAPACITY_REQUEST_DAY'",
+   "killed": true,
+   "mutant": "C02_monday_is_a_capacity_day",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 23 passed, 20 deselected in 2.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_friday_is_a_capacity_day_and_saturday_is_not",
+   "killed": true,
+   "mutant": "C03_friday_is_not",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 157 passed, 20 deselected in 4.73s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_CLOCK' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C04_primary_view_at_the_cap_default",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.94s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_plan_members_of_each_mode - k12_window.Refu...",
+   "killed": true,
+   "mutant": "C05_second_view",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 14 passed, 20 deselected in 0.97s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_three_windows_are_the_a2_views_and_the_window_start_may_be_up_to_fifteen_minutes_before",
+   "killed": true,
+   "mutant": "C06_third_view",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 105 passed, 20 deselected in 2.82s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_CLOCK' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C07_cutoff",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 10 passed, 20 deselected in 1.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_CLOCK' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C08_view_life",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 10 passed, 20 deselected in 1.08s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_WRITER_ARGV' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C09_wait",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.87s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_MOUNTS' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C11_capacity_root",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.98s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "C12_config_root",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.32s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_CONFIG_FILE' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C13_capacity_target",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.96s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_CONFIG_FILE' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C14_config_target",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.96s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_DATA_BIND' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C15_data_volume",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.80s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_MOUNTS' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C16_data_target",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 10 passed, 20 deselected in 1.00s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_MOUNTS' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C17_bar_config",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 10 passed, 20 deselected in 1.03s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_MOUNTS' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C18_manifests",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.94s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_ENV_FILES' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C19_reader_config",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 10 passed, 20 deselected in 1.07s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_ENV_FILES' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C20_secret_env",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.96s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_ENV_FILES' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C21_pins_env",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.91s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQ...DOCKER_CONFIG' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C22_docker_cli",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.91s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "C23_receipts",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.59s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:140: AssertionError: assert 'CHAIN_ROW_INVALID' == 'CAPACITY_REQUEST_JOURNAL'",
+   "killed": true,
+   "mutant": "C24_journal_may_be_in_the_data_volume",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 77 passed, 20 deselected in 2.46s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:140: AssertionError: assert 'CHAIN_ROW_INVALID' == 'CAPACITY_REQUEST_JOURNAL'",
+   "killed": true,
+   "mutant": "C25_journal_may_be_in_the_reader_state",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 80 passed, 20 deselected in 2.69s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:140: AssertionError: assert 'CHAIN_ROW_INVALID' == 'CAPACITY_REQUEST_JOURNAL'",
+   "killed": true,
+   "mutant": "C25b_binds_may_be_in_the_source_root",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 71 passed, 20 deselected in 2.56s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:140: AssertionError: assert 'CHAIN_ROW_INVALID' == 'CAPACITY_REQUEST_JOURNAL'",
+   "killed": true,
+   "mutant": "C25c_another_source_root",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 71 passed, 20 deselected in 2.35s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "C26_writer_stem",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 123 passed, 20 deselected in 4.17s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('FILE_TOO_LARGE', {})",
+   "killed": true,
+   "mutant": "C27_writer_limit",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 126 passed, 20 deselected in 3.65s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:75: AssertionError: assert 'CAPACITY_REQUEST_INVALID' == 'CAPACITY_REQ..._SIGNED_BYTES'",
+   "killed": true,
+   "mutant": "C28_request_limit",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 15 passed, 20 deselected in 1.07s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:286: AssertionError: assert {'class': 'QU...': 16385, ...} == {'class': 'QU...': 16384, ...}",
+   "killed": true,
+   "mutant": "C29_stdout_limit",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.16s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_IDENTITY' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C30_request_schema",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.88s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:57: AssertionError: assert 'CAPACITY_REQUEST_IDENTITY' == 'PARENT_ROWS_INVALID'",
+   "killed": true,
+   "mutant": "C31_request_operation",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 10 passed, 20 deselected in 0.92s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_effects_of_launch_are_the_literal_argv_the_signers_read",
+   "killed": true,
+   "mutant": "C32_label_request",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.39s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "C33_label_capacity",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.92s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:284: AssertionError: assert {'expect': 'A...er.json', ...} == {'expect': 'A...er.json', ...}",
+   "killed": true,
+   "mutant": "C34_persisted_schema",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 124 passed, 20 deselected in 4.00s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('CREATED_CONTAINER_NOT_AS_SIGNED', {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '42...s_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "C35_never_started",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 126 passed, 20 deselected in 4.32s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "C36_container_name",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.54s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "C37_compact_keeps_the_dashes",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.24s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:284: AssertionError: assert {'expect': 'A...w1.json', ...} == {'expect': 'A...er.json', ...}",
+   "killed": true,
+   "mutant": "C38_persisted_name",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "C39_writer_name",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.22s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_clock_of_the_window[change8] - Failed: ...",
+   "killed": true,
+   "mutant": "C40_instant_grammar",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 100 passed, 20 deselected in 2.29s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '1e5474614f79258f921631a14cad081...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "C41_launch_lead",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 160 passed, 20 deselected in 4.09s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:289: AssertionError: assert (['stop', '-t'...g container>'] == ['stop', '-t'...g container>']",
+   "killed": true,
+   "mutant": "C42_stop_lead",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.04s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '579094403e7ff9ebd3e48496...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "C43_persist_after_view",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 245 passed, 20 deselected in 7.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('REMOVE_OUTSIDE_FRIDAY_EVENING', {})",
+   "killed": true,
+   "mutant": "C44_remove_day",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 251 passed, 20 deselected in 8.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'ea86998fb11ebff38df9d0...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "C45_remove_hour",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 265 passed, 20 deselected in 8.89s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '3494d2aa711922b5eb057f...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "C46_allowance",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 266 passed, 20 deselected in 9.60s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:289: AssertionError: assert (['stop', '-t'...g container>'] == ['stop', '-t'...g container>']",
+   "killed": true,
+   "mutant": "C48_stop_grace",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.38s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "C49_launch_chains_lose_the_journal",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.17s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "C49b_launch_chains_lose_the_data",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.22s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49p0_config_leaf_not_private",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.88s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49p1_manifests_leaf_not_private",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.90s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49p2_reader_config_leaf_not_private",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.80s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49p3_docker_cli_leaf_not_private",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 116 passed, 20 deselected in 3.06s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49p4_journal_leaf_not_private",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 116 passed, 20 deselected in 3.12s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49p5_receipts_leaf_not_private",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 116 passed, 20 deselected in 3.38s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:217: AssertionError: ('manifests', {'gid': 1})",
+   "killed": true,
+   "mutant": "C49r_root_chain_without_the_gid",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 116 passed, 20 deselected in 3.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49s_root_chain_without_setgid",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 116 passed, 20 deselected in 3.15s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "C49t_root_chain_only_the_leaf",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.95s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:217: AssertionError: ('manifests', {'mode': 504})",
+   "killed": true,
+   "mutant": "C49u_root_chain_open_root",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.95s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:283: KeyError: 'read'",
+   "killed": true,
+   "mutant": "C50_persist_walks_the_manifests",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.49s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:289: KeyError: 'stop'",
+   "killed": true,
+   "mutant": "C51_stop_walks_the_receipts",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.43s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "C52_date_class",
+   "returncode": 1,
+   "seconds": 18.7,
+   "summary": "1 failed, 376 passed, 20 deselected in 17.70s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_evidence_must_name_the_k12_tree_read - ...",
+   "killed": true,
+   "mutant": "C53_evidence_operation",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 13 passed, 20 deselected in 1.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C54_gate_span",
+   "returncode": 1,
+   "seconds": 17.9,
+   "summary": "1 failed, 373 passed, 20 deselected in 17.12s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:60: AssertionError: assert 'MODE_MEMBERS_INVALID' == 'MODE_INVALID'",
+   "killed": true,
+   "mutant": "C55_modes",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 12 passed, 20 deselected in 0.98s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "R01_create_may_pull",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.21s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...ad-only', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "R02_create_without_init",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.48s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "R03_create_writable_root",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.27s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "R04_create_restarts",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 123 passed, 20 deselected in 2.95s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...'--user', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "R05_create_with_rm",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.08s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:313: AssertionError: assert (['start', '42...80e0b5095d0c'] == ['start', '42...80e0b5095d0c']",
+   "killed": true,
+   "mutant": "R06_start_class",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 126 passed, 20 deselected in 3.77s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('GO_EXPIRED', {'after_stop': {'exit_code': 143, 'finished_at': '2026-10-06T10:41:30.000000000Z', 'id': 'b36bbf821acc2..., 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, 'seconds_left_before_first_effect': 24, ...})",
+   "killed": true,
+   "mutant": "R07_stop_class",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 249 passed, 20 deselected in 8.76s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('LOGS_UNCERTAIN', {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '358c93d49da4...e': 'COMMAND_FAILED', 'returncode': None, 'returned': False, 'started': True}, 'seconds_left_before_first_effect': 60})",
+   "killed": true,
+   "mutant": "R08_logs_verb",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 203 passed, 20 deselected in 7.43s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('REMOVE_UNCERTAIN', {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'ea4918da...08-w1'], 'left': 3, 'remove': {'code': 'COMMAND_FAILED', 'returncode': None, 'returned': False, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "R09_remove_forces",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 253 passed, 20 deselected in 9.03s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('REMOVE_UNCERTAIN', {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'ea4918da...08-w1'], 'left': 3, 'remove': {'code': 'COMMAND_FAILED', 'returncode': None, 'returned': False, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "R10_remove_volumes",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 253 passed, 20 deselected in 9.10s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('CREATED_CONTAINER_NOT_AS_SIGNED', {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '42...s_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "R11_inspect_format_reads_a_label_wrong",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 126 passed, 20 deselected in 3.90s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('CREATED_CONTAINER_NOT_AS_SIGNED', {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '42...s_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "R12_inspect_format_reads_the_mounts_of_the_config",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 126 passed, 20 deselected in 3.54s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT', {'containers_listed': 8, 'day_containers': [], 'manifest_before': {'links': None, 'present': False}, 'seconds_left_before_first_effect': 60})",
+   "killed": true,
+   "mutant": "R13_create_class",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 126 passed, 20 deselected in 3.45s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/k12emu.py:176: KeyError: '--name'",
+   "killed": true,
+   "mutant": "A01_no_name",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 14 passed, 20 deselected in 1.02s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A02_labels_dropped",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.62s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A03_env_files_swapped",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.55s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A04_shadow_flag",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.87s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A05_bars_flag",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.35s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A06_config_file_host_path",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.34s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A07_config_sha_dropped",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.21s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:147: AssertionError: assert ['type=bind,s...ity,readonly'] == ['type=bind,s...ity,readonly']",
+   "killed": true,
+   "mutant": "A08_one_mount_dropped",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 91 passed, 20 deselected in 2.23s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A09_python_without_isolation",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.51s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A10_writer_on_the_host_path",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.59s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:184: AssertionError: assert '-I' == '600'",
+   "killed": true,
+   "mutant": "A11_argv_dropped",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.90s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "A12_mount_word_flips_readonly",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.37s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('CREATED_CONTAINER_NOT_AS_SIGNED', {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '42...s_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "A13_expected_mount_rw",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 126 passed, 20 deselected in 3.37s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'c2180fe82b9e7ccacd53023a7535b38...-w9', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "A14_ours_ignores_the_name",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 199 passed, 20 deselected in 6.68s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'b610d3e32e2bd73d81f419ef...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A15_ours_ignores_the_image",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 233 passed, 20 deselected in 7.56s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '84967a42421c42f0cfd78185...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A16_ours_ignores_the_request_label",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 228 passed, 20 deselected in 7.85s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '89deb62f07bcea0706456198...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A17_ours_ignores_the_capacity_label",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 229 passed, 20 deselected in 7.85s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'b0358a844729954910e32f82...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A18_ours_ignores_the_network",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 235 passed, 20 deselected in 8.28s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '672c88e98c9549aaa22e2449...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A19_ours_ignores_the_root",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 236 passed, 20 deselected in 8.15s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'd0d6ddb7e954e4dcc8674577976e24e...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "A20_ours_ignores_auto_remove",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 200 passed, 20 deselected in 6.65s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '27ad8b15cc563829863d5474...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A21_ours_ignores_restart",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 238 passed, 20 deselected in 7.57s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'c393b5c4e8a59009df894d54...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A22_ours_ignores_the_mounts",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 231 passed, 20 deselected in 7.57s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'e46c78fff7a5afc950289076...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "A23_ours_ignores_the_argv",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 230 passed, 20 deselected in 7.75s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_four_binds[mounts23-CAPACITY_REQUEST_JOURNAL]",
+   "killed": true,
+   "mutant": "A24_journal_allows_a_nested_target",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 85 passed, 20 deselected in 2.08s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_four_binds[mounts24-CAPACITY_REQUEST_JOURNAL]",
+   "killed": true,
+   "mutant": "A25_journal_allows_the_app_target",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 86 passed, 20 deselected in 2.18s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:140: AssertionError: assert 'CHAIN_ROW_INVALID' == 'CAPACITY_REQUEST_JOURNAL'",
+   "killed": true,
+   "mutant": "A26_journal_allows_a_root_that_contains_another",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 78 passed, 20 deselected in 2.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "A27_request_argv_wait_from_the_constant",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.64s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_writer_argv_is_exactly_the_documents_tool_argv[argv4]",
+   "killed": true,
+   "mutant": "A28_request_argv_individual_go_mode",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 110 passed, 20 deselected in 2.54s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body17-CAPACITY_REQUEST_CLOCK]",
+   "killed": true,
+   "mutant": "A29_request_view_from_the_request",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 33 passed, 20 deselected in 1.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body14-CAPACITY_REQUEST_WINDOW]",
+   "killed": true,
+   "mutant": "A30_request_window_index_one_more",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 30 passed, 20 deselected in 1.22s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_capacity_request_members[body33-CAPACITY_REQUEST_NETWORK]",
+   "killed": true,
+   "mutant": "A31_request_network_bridge",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 49 passed, 20 deselected in 1.31s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K01_stopped_any_exit",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.97s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_RECEIPT_NOT_PERSISTED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K01b_stopped_exit_137_only",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.93s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K02_stopped_when_oom",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.95s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K03_stopped_after_the_view",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.27s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K03b_stopped_any_instant",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('PRECHECK_FAILED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K03c_finished_not_typed",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 187 passed, 20 deselected in 5.62s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K04_stopped_with_output",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 188 passed, 20 deselected in 6.25s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_ENDED_WITHOUT_A_VALID_LINE', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K04b_stopped_not_a_stop",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 187 passed, 20 deselected in 5.95s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '5971609bf521e87d16949fde03f9f05...-w2', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "K04c_line_without_its_exit",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 177 passed, 20 deselected in 5.51s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_ALREADY_PUBLISHED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K04d_receipt_any_exit",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 183 passed, 20 deselected in 5.28s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_ALREADY_PUBLISHED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "K04e_receipt_any_session",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 182 passed, 20 deselected in 5.04s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '5971609bf521e87d16949fde03f9f05...-w2', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "K04f_receipt_any_mode",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 177 passed, 20 deselected in 5.01s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'dca1a2d059aed9f4560ec8a87e2a8fd...-w2', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "K10_terminal_never_published",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 167 passed, 20 deselected in 5.20s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'aa45bcdd4e9b0245e9ecb929b7011a3...-w2', ...}, 'containers_listed': 9, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "K11_terminal_published_status_set",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 168 passed, 20 deselected in 5.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "K06_wait_from_the_constant",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.62s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "K07_wait_unbounded",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.93s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "K08_start_not_bound_by_the_wait",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.63s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/build/k12_window.py:1396: KeyError: 0",
+   "killed": true,
+   "mutant": "K09_slot_is_the_position",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 10 passed, 20 deselected in 1.05s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:271: AssertionError: assert ('LAUNCH', 'R..._WINDOW_STEP') == ('LAUNCH', 'R...12_WINDOW_01')",
+   "killed": true,
+   "mutant": "E01_operation",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.29s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:298: AssertionError: assert 'LAUNCH' == 'PERSIST'",
+   "killed": true,
+   "mutant": "E02_mode",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.11s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:273: AssertionError: assert (None == 'c812e1edb64417d6090dcfbaf16c21cd8e8665c04396e1edb472fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E03_boot",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.22s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_effects_of_launch_are_the_literal_argv_the_signers_read",
+   "killed": true,
+   "mutant": "E04_writes_into",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.58s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:278: AssertionError: assert 'ROOT' == 'ROOT_CONTROL...ETGID_NO_LINK'",
+   "killed": true,
+   "mutant": "E04b_chain_rule",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.62s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:275: AssertionError: assert {'exception':...f9dacc'}, ...} == {'exception':...f9dacc'}, ...}",
+   "killed": true,
+   "mutant": "E04c_data",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.68s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:275: AssertionError: assert {'exception':...': None}, ...} == {'exception':...f9dacc'}, ...}",
+   "killed": true,
+   "mutant": "E04c2_data_release_hash",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.60s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:217: AssertionError: ('data', {'gid': 1000, 'uid': 1000})",
+   "killed": true,
+   "mutant": "D01_data_open_root_widened",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 116 passed, 20 deselected in 3.10s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "D03_data_rule_on_the_volume_too",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.61s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "D04_data_chain_setgid_allowed",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.95s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_chains_are_root_controlled_private_and_each_mode_names_its_own",
+   "killed": true,
+   "mutant": "D05_data_chain_any_gid",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 116 passed, 20 deselected in 2.95s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_four_binds[mounts2-CAPACITY_REQUEST_DATA_BIND]",
+   "killed": true,
+   "mutant": "D06_data_bind_read_write",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 64 passed, 20 deselected in 1.94s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('RELEASE_NOT_THE_SIGNED_BYTES', {})",
+   "killed": true,
+   "mutant": "D07_release_limit",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 260 passed, 20 deselected in 9.21s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "D08_release_directory",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.53s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:275: AssertionError: assert {'exception':...f9dacc'}, ...} == {'exception':...f9dacc'}, ...}",
+   "killed": true,
+   "mutant": "D09_release_file",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.34s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('RELEASE_CHANGED_DURING_LAUNCH', {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '07ce...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "W1_release_not_checked_before_the_create",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 256 passed, 20 deselected in 9.12s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'be111dc00b659b19e47948079ed09c1...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "W2_release_not_checked_after_the_start",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 262 passed, 20 deselected in 9.73s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_the_wait_is_the_requests_own_and_covers_the_window_start",
+   "killed": true,
+   "mutant": "W3_data_chain_as_root_chain",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 113 passed, 20 deselected in 2.68s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:279: AssertionError: assert 'ALLOWED' == 'REFUSED_DAY_STOPPED'",
+   "killed": true,
+   "mutant": "E04d_earlier_stopped",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.31s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:286: AssertionError: assert {'class': 'QU...': 16384, ...} == {'class': 'QU...': 16384, ...}",
+   "killed": true,
+   "mutant": "E04e_logs_bounds",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.35s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:287: AssertionError: assert 'A_LINE' == 'EXACTLY_ONE_..._CODE_NOT_OOM'",
+   "killed": true,
+   "mutant": "E04f_requires",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.22s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_effects_of_launch_are_the_literal_argv_the_signers_read",
+   "killed": true,
+   "mutant": "E05_environment_printed",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.26s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_effects_of_launch_are_the_literal_argv_the_signers_read",
+   "killed": true,
+   "mutant": "E06_activation",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.23s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:293: AssertionError: assert ['c3po-k12-20...-20261007-w1'] == ['c3po-k12-20...-20261007-w2']",
+   "killed": true,
+   "mutant": "E07_removals_name",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.18s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_effects_of_the_other_modes - assert False",
+   "killed": true,
+   "mutant": "E08_removals_require",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.42s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:837: AssertionError: assert ['rm', '03f78...d846db12c1f8'] == ['rm', '242ec...2eb31ea45455']",
+   "killed": true,
+   "mutant": "E09_command_order",
+   "returncode": 1,
+   "seconds": 9.8,
+   "summary": "1 failed, 264 passed, 20 deselected in 9.15s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:268: AssertionError: assert ('2026-10-06T...+00:00', None) == ('2026-10-06T...8f9d063199bc')",
+   "killed": true,
+   "mutant": "E10_capacity_request_sha",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.34s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:267: AssertionError: assert (None, 'prima...-20261006-w1') == ('2026-10-06'...-20261006-w1')",
+   "killed": true,
+   "mutant": "E11_day",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.24s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:267: AssertionError: assert ('2026-10-06'...-20261006-w1') == ('2026-10-06'...-20261006-w1')",
+   "killed": true,
+   "mutant": "E12_window",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.09s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:267: AssertionError: assert ('2026-10-06'...-20261006-w1') == ('2026-10-06'...-20261006-w1')",
+   "killed": true,
+   "mutant": "E13_window_slot",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.11s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_effects_of_launch_are_the_literal_argv_the_signers_read",
+   "killed": true,
+   "mutant": "E14_label_placeholder",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.07s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:260: AssertionError: assert (['create', '-...', '0:0', ...] == ['create', '-...', '0:0', ...]",
+   "killed": true,
+   "mutant": "E15_start",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.04s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:262: AssertionError: assert {'path': '/c3...583f0a2780ff'} == {'path': '/va...583f0a2780ff'}",
+   "killed": true,
+   "mutant": "E16_writer_path",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.27s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:263: AssertionError: assert {'path': '/va...8f64fabc224d'} == {'path': '/va...d0c0f3132d9e'}",
+   "killed": true,
+   "mutant": "E17_capacity_config",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.31s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:264: AssertionError: assert {'path': '/et...d0c0f3132d9e'} == {'path': '/et...8f64fabc224d'}",
+   "killed": true,
+   "mutant": "E18_pins_env",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.30s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:265: AssertionError: assert {'path': '/et...600_ONE_LINK'} == {'path': '/et...600_ONE_LINK'}",
+   "killed": true,
+   "mutant": "E19_secret_env",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.07s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:266: AssertionError: assert {'path': '/c3...c3po-journal'} == {'path': '/va...c3po-journal'}",
+   "killed": true,
+   "mutant": "E20_journal",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.00s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:261: AssertionError: assert ({'parks_until...estart': 'no'} == {'parks_until...estart': 'no'}",
+   "killed": true,
+   "mutant": "E21_container_removed",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.05s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:269: AssertionError: assert 'ANY' == 'EXITED_WITH_...TED_OR_ABSENT'",
+   "killed": true,
+   "mutant": "E22_earlier_windows",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 123 passed, 20 deselected in 2.88s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:270: AssertionError: assert 'ANY' == 'ABSENT_OR_TW...W_WITH_A_LINE'",
+   "killed": true,
+   "mutant": "E35_manifest_of_the_day",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.07s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:283: AssertionError: assert (['logs', '<th...d container>'] == ['logs', '<th...d container>']",
+   "killed": true,
+   "mutant": "E23_persist_launch_sha",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.00s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:284: AssertionError: assert {'expect': 'A...er.json', ...} == {'expect': 'A...er.json', ...}",
+   "killed": true,
+   "mutant": "E24_creates_mode",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.39s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:290: AssertionError: assert (None == ('5e' * 32))",
+   "killed": true,
+   "mutant": "E25_stop_launch_sha",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.49s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:292: AssertionError: assert (['rm', '648a3...364050db6dbe'] == ['rm', '648a3...364050db6dbe']",
+   "killed": true,
+   "mutant": "E26_force",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.38s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:292: AssertionError: assert (['rm', '648a3...364050db6dbe'] == ['rm', '648a3...364050db6dbe']",
+   "killed": true,
+   "mutant": "E27_volumes",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.04s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:273: AssertionError: assert ('c812e1edb644...2fecfb2797c6a' == 'c812e1edb644...2fecfb2797c6a'",
+   "killed": true,
+   "mutant": "E28_chains_of_another_mode",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.02s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:268: AssertionError: assert ('2026-10-06T...8f9d063199bc') == ('2026-10-06T...8f9d063199bc')",
+   "killed": true,
+   "mutant": "E29_view_opens_at",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 123 passed, 20 deselected in 2.99s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:268: AssertionError: assert ('2026-10-06T...8f9d063199bc') == ('2026-10-06T...8f9d063199bc')",
+   "killed": true,
+   "mutant": "E30_cutoff",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 123 passed, 20 deselected in 2.93s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:261: AssertionError: assert ({'parks_until...estart': 'no'} == {'parks_until...estart': 'no'}",
+   "killed": true,
+   "mutant": "E31_docker_config",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 123 passed, 20 deselected in 3.01s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:283: AssertionError: assert (['logs'] == ['logs', '<th...d container>']",
+   "killed": true,
+   "mutant": "E32_read_target",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.15s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:289: AssertionError: assert (['stop', '<th...g container>'] == ['stop', '-t'...g container>']",
+   "killed": true,
+   "mutant": "E33_stop_target",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 124 passed, 20 deselected in 3.12s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:267: AssertionError: assert ('2026-10-06'...ary', 1, None) == ('2026-10-06'...-20261006-w1')",
+   "killed": true,
+   "mutant": "E34_container_name",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 123 passed, 20 deselected in 2.90s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('CREATE_FAILED', {'after_create': None, 'containers_listed': 8, 'create': {'code': None, 'returncode': 125, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "S01_create_absent_settled_as_unknown",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 195 passed, 20 deselected in 5.87s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('CREATE_FAILED', {'after_create': None, 'containers_listed': 8, 'create': {'code': None, 'returncode': 125, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "S35_create_absent_without_a_listing",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 197 passed, 20 deselected in 6.06s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('CREATE_FAILED', {'after_create': None, 'containers_listed': 8, 'create': {'code': None, 'returncode': 125, 'returned': True, 'started': True}, 'day_containers': [], ...})",
+   "killed": true,
+   "mutant": "S36_listing_that_fails_proves_absence",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 197 passed, 20 deselected in 6.49s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'ecb9b84e7916013b22f20cb615caf3f...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S37_manifest_rule_dropped",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 159 passed, 20 deselected in 4.38s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('MANIFEST_PRESENT_WITHOUT_AN_EARLIER_WINDOW', {'containers_listed': 8, 'day_containers': [], 'manifest_before': {'links': 2, 'present': True}})",
+   "killed": true,
+   "mutant": "S38_manifest_rule_two_links",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 159 passed, 20 deselected in 4.33s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('MANIFEST_PRESENT_WITHOUT_AN_EARLIER_WINDOW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': 1, 'present': True}})",
+   "killed": true,
+   "mutant": "S39_earlier_line_not_recorded",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 159 passed, 20 deselected in 4.32s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_RECEIPT_NOT_PERSISTED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "S45_earlier_stop_not_from_the_container",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.44s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "S46_earlier_stop_with_a_failed_inspect",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.61s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "S47_earlier_stop_judged_at_the_launched_view",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 186 passed, 20 deselected in 5.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:636: AssertionError: (None, {'container': {'exit_code': 1, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '01e34497f417c266271633d2...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "P01_persist_lenient_line",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 216 passed, 20 deselected in 6.86s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:637: KeyError: 'writer_line'",
+   "killed": true,
+   "mutant": "P02_persist_refusal_not_reported",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 205 passed, 20 deselected in 6.49s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'd3d7f91d9414f6b40b6ed5f2...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "P03_persist_oom_accepted",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 225 passed, 20 deselected in 6.88s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('WRITER_RECEIPT_INCONSISTENT', {'container': {'exit_code': 256, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id'...efore_first_effect': 60, 'writer_line': {'code': 'WRITER_RECEIPT_INCONSISTENT', 'stdout_bytes': 1301, 'valid': False}})",
+   "killed": true,
+   "mutant": "P04_persist_any_exit",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 225 passed, 20 deselected in 6.96s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('WRITER_RECEIPT_INCONSISTENT', {'container': {'exit_code': 256, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id'...efore_first_effect': 60, 'writer_line': {'code': 'WRITER_RECEIPT_INCONSISTENT', 'stdout_bytes': 1301, 'valid': False}})",
+   "killed": true,
+   "mutant": "P05_persist_exit_upper_bound",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 225 passed, 20 deselected in 6.85s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'e46dfbd68ba201ccdc8d8411...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "P06_persist_never_started_accepted",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 225 passed, 20 deselected in 7.27s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('PERSISTED_RECEIPT_MISSING', {})",
+   "killed": true,
+   "mutant": "R04_remove_stopped_needs_a_receipt",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 251 passed, 20 deselected in 7.84s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '704a3d9ab2486f1cd78229...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "R05_remove_stopped_skips_a_present_receipt",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 254 passed, 20 deselected in 8.24s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('PERSISTED_RECEIPT_MISSING', {})",
+   "killed": true,
+   "mutant": "R06_remove_stopped_judged_at_the_primary_view",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 255 passed, 20 deselected in 8.09s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_ENDED_WITHOUT_A_VALID_LINE', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "S40_stop_counts_as_a_line",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 187 passed, 20 deselected in 4.93s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('DAY_STOPPED_BEFORE_A_VIEW', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "S41_earlier_view_of_this_window",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 187 passed, 20 deselected in 5.29s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '5b0d183b135a0cb4de18208678af4f6...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S42_launch_allowance",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 162 passed, 20 deselected in 4.33s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('GO_EXPIRED', {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'e6331f84765020f9...d9e', 'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', ...}, 'stdout_bytes': 1301, 'terminal': 'PUBLISHED', ...}})",
+   "killed": true,
+   "mutant": "S43_persist_allowance",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 245 passed, 20 deselected in 7.10s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '3df13ef1b20ac48df221f15996ff94a...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S02_create_settled_before_the_check",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 200 passed, 20 deselected in 5.88s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:570: AssertionError: assert {'failed_noth...uncertain': 0} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "S04_start_failure_settled_as_done",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 201 passed, 20 deselected in 5.61s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': 'a5e99b92c72b9b230a38255ace36d5d...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S05_start_nonzero_complete",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 201 passed, 20 deselected in 6.08s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:602: AssertionError: assert ('INSTALLED_DURABLE' == 'INSTALLED_DURABLE'",
+   "killed": true,
+   "mutant": "S06_logs_settled_as_done",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 203 passed, 20 deselected in 6.21s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('WRITER_LINE_NOT_ONE_LINE', {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '9e...left_before_first_effect': 60, 'writer_line': {'code': 'WRITER_LINE_NOT_ONE_LINE', 'stdout_bytes': 0, 'valid': False}})",
+   "killed": true,
+   "mutant": "S07_logs_nonzero_accepted",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 246 passed, 20 deselected in 7.91s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('WRITER_LINE_NOT_ONE_LINE', {'container': {'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': 'e6..._before_first_effect': 60, 'writer_line': {'code': 'WRITER_LINE_NOT_ONE_LINE', 'stdout_bytes': 16385, 'valid': False}})",
+   "killed": true,
+   "mutant": "S08_stdout_unbounded",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 246 passed, 20 deselected in 7.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:696: AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '...RING_PERSIST')",
+   "killed": true,
+   "mutant": "S09_change_check_without_the_finish",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 247 passed, 20 deselected in 7.45s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_persist_stores_the_line_and_the_exit_state_exactly",
+   "killed": true,
+   "mutant": "S10_no_readback_of_the_persisted_file",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 203 passed, 20 deselected in 5.98s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_persist_keeps_one_complete_receipt_consistent_with_the_exit_code",
+   "killed": true,
+   "mutant": "S11_persisted_without_the_exit_code",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 204 passed, 20 deselected in 5.55s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_window.py::test_persist_stores_the_line_and_the_exit_state_exactly",
+   "killed": true,
+   "mutant": "S12_persisted_with_the_launch_request_as_persist",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 203 passed, 20 deselected in 5.85s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('STOP_FAILED', {'after_stop': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '2e17b083459b52eb4ca16040..., 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, 'seconds_left_before_first_effect': 60, ...})",
+   "killed": true,
+   "mutant": "S13_stop_failure_as_done",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 250 passed, 20 deselected in 6.87s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'after_stop': {'exit_code': 143, 'finished_at': '2026-10-06T10:41:30.000000000Z', 'id': '28584d58028bda73700d1...nifest_present': True, 'temporaries': 0}, 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, ...})",
+   "killed": true,
+   "mutant": "S14_stop_manifest_change_ignored",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 250 passed, 20 deselected in 6.52s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'after_stop': {'exit_code': 143, 'finished_at': '2026-10-06T10:41:30.000000000Z', 'id': '9443857ddec8bad0d8817...ifest_present': False, 'temporaries': 0}, 'manifest_names_before': {'manifest_present': False, 'temporaries': 0}, ...})",
+   "killed": true,
+   "mutant": "S15_stop_nonzero_complete",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 250 passed, 20 deselected in 6.63s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('REMOVE_INCOMPLETE', {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '21909e6...ntainers_not_named': [], 'left': 3, 'remove': {'code': None, 'returncode': 1, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S16_remove_nothing_as_done",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 266 passed, 20 deselected in 7.13s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: ('REMOVE_RETURNED_NONZERO', {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '1...ntainers_not_named': [], 'left': 1, 'remove': {'code': None, 'returncode': 1, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S17_remove_incomplete_ignored",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 266 passed, 20 deselected in 6.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:39: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '629d28297a4514f92403a6...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 1, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S18_remove_nonzero_complete",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 266 passed, 20 deselected in 6.10s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:31: AssertionError: a refusal changed the host",
+   "killed": true,
+   "mutant": "S20_refusal_after_an_effect",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 156 passed, 20 deselected in 2.55s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_launch_reads_only_and_creates_the_container",
+   "killed": true,
+   "mutant": "S22_umask_not_set",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 268 passed, 20 deselected in 5.74s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'after_create': {'exit_code': 0, 'finished_at': '0001-01-01T00:00:00Z', 'id': '6dab4ba321ec9dbe3e7be507b97eb5a...-w1', ...}, 'containers_listed': 8, 'create': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S23_clock_after_the_boot",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 160 passed, 20 deselected in 2.70s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:43: AssertionError: ('TOO_CLOSE_TO_THE_VIEW', {})",
+   "killed": true,
+   "mutant": "S24_stop_lead_uses_the_launch_lead",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 249 passed, 20 deselected in 5.00s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_RECEIPT_NOT_PERSISTED', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'created'}], 'manifest_before': {'links': 1, 'present': True}})",
+   "killed": true,
+   "mutant": "S26_earlier_created_needs_a_receipt",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 159 passed, 20 deselected in 2.60s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: ('EARLIER_WINDOW_ENDED_WITHOUT_A_VALID_LINE', {'containers_listed': 9, 'day_containers': [{'name': 'c3po-k12-20261006-w1', 'state': 'exited'}], 'manifest_before': {'links': None, 'present': False}})",
+   "killed": true,
+   "mutant": "S27_earlier_receipt_of_another_container",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 189 passed, 20 deselected in 4.19s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:318: KeyError: 'launched'",
+   "killed": true,
+   "mutant": "S28_launch_detail_lost",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 126 passed, 20 deselected in 2.37s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:318: AssertionError: assert ([] == []",
+   "killed": true,
+   "mutant": "S29_container_id_not_reported",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 126 passed, 20 deselected in 2.47s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '439b13d9f0e3552a22283c...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S30_remove_checks_only_the_first",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 254 passed, 20 deselected in 5.09s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:35: AssertionError: (None, {'containers': [{'exit_code': 0, 'finished_at': '2026-10-06T10:45:04.000000000Z', 'id': '427634202f89cdc4b1418d...ntainers_not_named': [], 'left': 0, 'remove': {'code': None, 'returncode': 0, 'returned': True, 'started': True}, ...})",
+   "killed": true,
+   "mutant": "S31_remove_persisted_without_identity",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 254 passed, 20 deselected in 5.20s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:758: AssertionError: assert {'manifest_pr...mporaries': 1} == {'manifest_pr...mporaries': 1}",
+   "killed": true,
+   "mutant": "S32_manifest_state_counts_other_days",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 252 passed, 20 deselected in 4.64s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:319: AssertionError: assert ({'failed_noth...uncertain': 1} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "S33_start_unsettled_on_a_failure",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 126 passed, 20 deselected in 1.82s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k12_window/tests/test_window.py:600: TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "S34_line_public_detail_lost",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 203 passed, 20 deselected in 4.18s",
+   "tests": [
+    "test_window.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D71k_dispatcher_date_set_dropped",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 102 passed, 20 deselected in 4.25s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D72k_dispatcher_accepts_the_sunday_before",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 102 passed, 20 deselected in 4.36s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D73k_dispatcher_accepts_the_day_after_the_epoch",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 102 passed, 20 deselected in 4.95s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D02_dispatcher_one_day_rule_dropped",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 109 passed, 20 deselected in 12.39s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D03_dispatcher_signed_date_not_tied_to_the_config_day",
+   "returncode": 1,
+   "seconds": 12.3,
+   "summary": "1 failed, 109 passed, 20 deselected in 11.93s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path",
+   "killed": true,
+   "mutant": "D04_dispatcher_config_schema_dropped",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 20 deselected in 0.14s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_dispatcher_unsigned_go_accepted",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 108 passed, 20 deselected in 11.60s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D06_dispatcher_unsigned_authority_accepted",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 108 passed, 20 deselected in 12.62s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D07_dispatcher_claim_root_binding_dropped",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 108 passed, 20 deselected in 12.51s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D08_dispatcher_transport_binding_dropped",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 108 passed, 20 deselected in 12.36s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D09_dispatcher_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 108 passed, 20 deselected in 10.89s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_names_of_every_earlier_operation_are_refused_at_both_layers[READONLY_POSTDEPLOY01_GO_V1-GO_READONLY_POSTDEPLOY_01-READONLY_POSTDEPLOY]",
+   "killed": true,
+   "mutant": "D10_dispatcher_local_authentication_dropped",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 91 passed, 20 deselected in 3.44s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_receipt_of_another_operation_is_filed_uncertain",
+   "killed": true,
+   "mutant": "D11_dispatcher_receipt_schema_not_checked",
+   "returncode": 1,
+   "seconds": 10.8,
+   "summary": "1 failed, 113 passed, 20 deselected in 10.44s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D12_dispatcher_late_start_accepted",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 109 passed, 20 deselected in 10.30s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_prepare_does_not_spawn_then_resume_once_and_the_go_is_single_use",
+   "killed": true,
+   "mutant": "D13_dispatcher_claim_not_exclusive",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 107 passed, 20 deselected in 9.02s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[raise_value-UNCERTAIN-3]",
+   "killed": true,
+   "mutant": "X01_launcher_enters_the_payload_with_the_refusal_exit_code",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 7 passed, 20 deselected in 1.17s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[refused-KNOWN_REFUSAL-1]",
+   "killed": true,
+   "mutant": "X02_launcher_maps_a_refusal_to_partial",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 4 passed, 20 deselected in 0.93s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[partial-KNOWN_PARTIAL-2]",
+   "killed": true,
+   "mutant": "X03_launcher_maps_everything_to_complete",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 passed, 20 deselected in 0.99s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestLaunch::test_launcher_refuses_wrong_pins_at_build_and_on_stdin",
+   "killed": true,
+   "mutant": "X04_launcher_document_pins_not_checked",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 11 passed, 20 deselected in 2.51s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}
