@@ -1,0 +1,47 @@
+# Draft integration: Fable CI must stage these reviewed inputs before this step.
+# ORD31_CI_IMAGE_ID is a rebuilt validation image by ID, not the production ID.
+# Its app Python bytes must match the pinned archive of dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858.
+# The archive digest is an independently recorded artifact pin, not recomputed here.
+# A revision label alone is insufficient; run_ci.py checks image app bytes too.
+# The harness pins DOCKER_HOST to the local Unix socket and clears inherited
+# DOCKER_CONTEXT/DOCKER_TLS_VERIFY/DOCKER_CERT_PATH; it refuses a missing/non-socket path.
+- name: Exercise exact reader candidate and five-bind unit (ORD31 directed scope)
+  if: >-
+    github.event_name == 'pull_request' ||
+    (github.event_name == 'workflow_dispatch' && inputs.remediation)
+  working-directory: ${{ github.workspace }}
+  timeout-minutes: 6
+  shell: bash
+  env:
+    ORD31_EXPECTED_LAUNCHER_SHA256: 9c0519cd9cdd763c4c47909f014b4d98dd4c516b76f5a7214ffbbbab59f05b07
+    ORD31_SOURCE_ARCHIVE_SHA256: 61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660
+    HOSTOPS_THROWAWAY_RUNNER: 'yes'
+    # Set in the reviewed staging/build step, without fetching or pulling here:
+    # ORD31_HARNESS_DIR, ORD31_LAUNCHER, ORD31_CI_IMAGE_ID,
+    # ORD31_SOURCE_ARCHIVE, ORD31_SOURCE_ARCHIVE_SHA256.
+  run: |
+    set -euo pipefail
+    : "${ORD31_HARNESS_DIR:?reviewed harness directory required}"
+    : "${ORD31_LAUNCHER:?exact launcher candidate required}"
+    : "${ORD31_CI_IMAGE_ID:?validation image ID required}"
+    : "${ORD31_SOURCE_ARCHIVE:?certified source archive required}"
+    : "${ORD31_SOURCE_ARCHIVE_SHA256:?independently pinned archive digest required}"
+    sudo -n --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HOSTOPS_THROWAWAY_RUNNER /usr/bin/python3 -I -B "$ORD31_HARNESS_DIR/run_ci.py" \
+      --launcher "$ORD31_LAUNCHER" \
+      --expected-launcher-sha256 "$ORD31_EXPECTED_LAUNCHER_SHA256" \
+      --image-id "$ORD31_CI_IMAGE_ID" \
+      --source-archive "$ORD31_SOURCE_ARCHIVE" \
+      --source-archive-sha256 "$ORD31_SOURCE_ARCHIVE_SHA256" \
+      --out "$RUNNER_TEMP/ord31-reader-directed" \
+      --execute-ci
+
+- name: Publish ORD31 directed reader evidence
+  if: always()
+  uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+  with:
+    name: ord31-reader-directed
+    path: |
+      ${{ runner.temp }}/ord31-reader-directed/*.json
+      ${{ runner.temp }}/ord31-reader-directed/*.log
+      ${{ runner.temp }}/ord31-reader-directed/reader.service.rendered
+    if-no-files-found: error

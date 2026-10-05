@@ -1,0 +1,51 @@
+{
+  "schema": "CODEX_ORD31_SMOKE_DELIVERY_REVIEW_V1",
+  "status": "READY_FOR_FABLE_CI_INTEGRATION_NOT_ENGINE_VERIFIED",
+  "origin_manifest_sha256": "9197a27197f54ef11cce902470f316c0f78486e7a09c3273236d979cbddbf848",
+  "origin_listed_files": 9,
+  "origin_mismatches": 0,
+  "expected_launcher_sha256": "9c0519cd9cdd763c4c47909f014b4d98dd4c516b76f5a7214ffbbbab59f05b07",
+  "certified_source_archive_sha256": "61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660",
+  "certified_app_python_files": 190,
+  "reviewed_reader_units_sha256": "84c32b46227ddf58fd046ecea8140478b84c3bb2c53829d1325dcda84319a07b",
+  "template_sha256": "3dc976807a0ff443307fa12e357d478980441b26d19761b0d7964b5580327770",
+  "template_equals_reviewed_compiled_source": true,
+  "root_delta": [
+    "CI upload action fixed to ea165f8d65b6e75b540449e92b4886f43607fa02 v4.6.2",
+    "Outer CI /usr/bin/python3 starts -I -B",
+    "Delivery README provenance amendment"
+  ],
+  "tests": {
+    "Python 3.9.6": {
+      "pure_helpers_passed": 10,
+      "failed": 0
+    },
+    "Python 3.12.14": {
+      "pure_helpers_passed": 10,
+      "failed": 0
+    }
+  },
+  "source_compilation": "PASS_ONLY",
+  "guards_reviewed": [
+    "Explicit Linux GitHub-hosted disposable root runner",
+    "Local Docker socket only, inherited remote context/TLS removed",
+    "Existing reader container and production image ID refused",
+    "Exact certified archive and full image Python byte map required",
+    "Exactly five readonly binds, network none, rootfs readonly, docker-init inspected",
+    "Seven cases with declared unmodified-entrypoint or directed-clock/stand-in scope; all must pass"
+  ],
+  "cases": 7,
+  "future_allowed_verdict": "PASS_LAUNCHER_LIFECYCLE_SHAPES",
+  "engine_execution": false,
+  "host_execution": false,
+  "network_execution": false,
+  "project_code_execution_in_local_QA": false,
+  "real_worker_inputs": "NOT_COVERED_BY_STAND_IN",
+  "systemd_host": "NOT_COVERED",
+  "signatures_GO_BOUND": "NOT_INFERRED",
+  "pending": [
+    "Fable integration/staging/build and independent candidate review",
+    "Actual Docker CI artifacts and exact reconciliation",
+    "Exact operational signatures/pins/gates before any host action"
+  ]
+}

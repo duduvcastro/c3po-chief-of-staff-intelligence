@@ -1,0 +1,17 @@
+{
+  "extraction": "AST_LITERAL_ONLY_NO_MODULE_EXECUTION",
+  "source_op_sha256": "be64218ed0c59f29e4c56c6eec6bfd0d15495e7396f433c2148f8511995d2e65",
+  "source_template_revision": "4a6f7675b8e418e0e7ee55a446250815f3bd5562",
+  "source_values": {
+    "CONTAINER_JOURNAL_ROOT": "/c3po-bar-journal",
+    "CONTAINER_SOURCE_ROOT": "/c3po-source",
+    "HOST_CAPACITY_ROOT": "/var/lib/c3po-capacity",
+    "HOST_CONFIG_DIR": "/etc/c3po-reader",
+    "HOST_DATA_ROOT": "/mnt/day-d-data",
+    "HOST_JOURNAL_ROOT": "/var/lib/c3po-bar/journal",
+    "HOST_SOURCE_ROOT": "/var/lib/c3po/r2d2-v2-source-20261005",
+    "IMAGE_ID": "sha256:f86bfb198c186657598c2c410fb39ca3dfed781d0db0522b9a796b80275cb621",
+    "NETWORK": "c3po_c3po_internal"
+  },
+  "template_sha256": "3dc976807a0ff443307fa12e357d478980441b26d19761b0d7964b5580327770"
+}

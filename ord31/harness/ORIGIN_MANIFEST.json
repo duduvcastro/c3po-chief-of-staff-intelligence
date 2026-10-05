@@ -1,0 +1,53 @@
+{
+  "certified_source_archive_sha256": "61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660",
+  "claim_host_proof": false,
+  "claim_real_reader_inputs": false,
+  "docker_executed": false,
+  "docker_host": "unix:///var/run/docker.sock",
+  "expected_fixed_launcher_sha256": "9c0519cd9cdd763c4c47909f014b4d98dd4c516b76f5a7214ffbbbab59f05b07",
+  "files": {
+    "README.md": {
+      "bytes": 6676,
+      "sha256": "377425e0aef94a89151cd0da5d2105b33c865142b85313c24aab2a63438963aa"
+    },
+    "VALIDATION.json": {
+      "bytes": 1132,
+      "sha256": "950afb4f3be056c348656ef72a987aefedfca8be389c6e01f6f898748a693896"
+    },
+    "ci-snippet.yml": {
+      "bytes": 2495,
+      "sha256": "7722ceec71ff9df60f936520274206b260c5e86e8663d1ce18f16c984bd16d69"
+    },
+    "driver.py": {
+      "bytes": 5251,
+      "sha256": "0d42b56df785fb38b11e25451dba1d584d54e4d585d0a13c76dd410b041151ff"
+    },
+    "observe.py": {
+      "bytes": 975,
+      "sha256": "04fcf4bb4a0c170abe1690223816220b5ac08eaa2a53c69524fdd7507cb1d08f"
+    },
+    "reader.service.template": {
+      "bytes": 1952,
+      "sha256": "3dc976807a0ff443307fa12e357d478980441b26d19761b0d7964b5580327770"
+    },
+    "run_ci.py": {
+      "bytes": 21614,
+      "sha256": "aa89f734cdf3ad05f28c9ee0f7d1b07d9630c7c8c8f0e6f15b1e02cfed3a2d25"
+    },
+    "template-provenance.json": {
+      "bytes": 816,
+      "sha256": "1f27eb0537231ba67b66c5a0f1c5b7a64cd1c4194059bb527bceb471ebcca071"
+    },
+    "test_pure_helpers.py": {
+      "bytes": 6862,
+      "sha256": "d32fa6bfaf4d39394416cf4e1e9055d280b37452ef122ffe2124e25b982b6461"
+    }
+  },
+  "five_bind_template_sha256": "3dc976807a0ff443307fa12e357d478980441b26d19761b0d7964b5580327770",
+  "local_engine_only": true,
+  "manifest_self_excluded": true,
+  "preserved_original_launcher_sha256": "20669fa3e06e15b40d27b635d343d61230dddf067aed84429f9480dbbd81600a",
+  "schema": "ORD31_READER_SMOKE_CANDIDATE_MANIFEST_V1",
+  "source_revision": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+  "status": "CANDIDATE_NOT_ENGINE_VERIFIED"
+}

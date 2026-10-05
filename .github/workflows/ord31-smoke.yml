@@ -1,0 +1,66 @@
+name: ord31 reader launcher smoke (proof branch only)
+on:
+  push:
+    branches: [ops/hostops02-ord31-smoke-20261005]
+permissions:
+  contents: read
+jobs:
+  ord31:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      HOSTOPS_THROWAWAY_RUNNER: 'yes'
+      RELEASE: dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858
+      ORD31_EXPECTED_LAUNCHER_SHA256: 9c0519cd9cdd763c4c47909f014b4d98dd4c516b76f5a7214ffbbbab59f05b07
+      ORD31_SOURCE_ARCHIVE_SHA256: 61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Seals of the staged inputs
+        run: |
+          set -euo pipefail
+          (cd ord31/harness && sha256sum -c SHA256SUMS)
+          echo "${ORD31_EXPECTED_LAUNCHER_SHA256}  ord31/launcher/reader_launcher.py" | sha256sum -c
+          sha256sum ord31/harness/SHA256SUMS
+      - name: Certified source archive of the release
+        run: |
+          set -euo pipefail
+          git archive --format=tar "${RELEASE}" > "$RUNNER_TEMP/release.tar"
+          echo "${ORD31_SOURCE_ARCHIVE_SHA256}  $RUNNER_TEMP/release.tar" | sha256sum -c
+      - name: Validation image built from the release (not the production ID)
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/release-tree"; mkdir -p "$D"; tar -xf "$RUNNER_TEMP/release.tar" -C "$D"
+          TOKEN=$(sha256sum "$D/c3po/security/container-rebuild-trigger.json" | cut -d' ' -f1)
+          sudo docker build --file "$D/c3po/backend/Dockerfile" --build-arg "C3PO_SECURITY_REBUILD=${TOKEN}" \
+            --label "org.opencontainers.image.revision=${RELEASE}" --tag c3po-ord31-validation:ci "$D/c3po"
+          ID=$(sudo docker image inspect --format '{{.Id}}' c3po-ord31-validation:ci)
+          echo "ORD31_CI_IMAGE_ID=${ID}" >> "$GITHUB_ENV"
+          echo "validation image ${ID}"
+      - name: Exercise exact reader candidate and five-bind unit (ORD31 directed scope)
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HOSTOPS_THROWAWAY_RUNNER /usr/bin/python3 -I -B ord31/harness/run_ci.py \
+            --launcher ord31/launcher/reader_launcher.py \
+            --expected-launcher-sha256 "$ORD31_EXPECTED_LAUNCHER_SHA256" \
+            --image-id "$ORD31_CI_IMAGE_ID" \
+            --source-archive "$RUNNER_TEMP/release.tar" \
+            --source-archive-sha256 "$ORD31_SOURCE_ARCHIVE_SHA256" \
+            --out "$RUNNER_TEMP/ord31-reader-directed" \
+            --execute-ci
+      - name: Make evidence readable
+        if: always()
+        run: sudo chmod -R a+rX "$RUNNER_TEMP/ord31-reader-directed" || true
+      - name: Publish ORD31 directed reader evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ord31-reader-directed
+          path: |
+            ${{ runner.temp }}/ord31-reader-directed/*.json
+            ${{ runner.temp }}/ord31-reader-directed/*.log
+            ${{ runner.temp }}/ord31-reader-directed/reader.service.rendered
+          if-no-files-found: error

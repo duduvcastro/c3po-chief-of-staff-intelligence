@@ -1,0 +1,45 @@
+[Unit]
+Description=Day-bounded R2D2 V2 shadow reader
+Wants=network-online.target
+Requires=docker.service
+After=network-online.target docker.service
+RequiresMountsFor=@HOST_DATA_ROOT@ @HOST_JOURNAL_ROOT@ @HOST_CAPACITY_ROOT@ @HOST_SOURCE_ROOT@ @HOST_CONFIG_DIR@
+StartLimitIntervalSec=8h
+StartLimitBurst=40
+OnFailure=c3po-reader-alert.service
+
+[Service]
+Type=exec
+Environment=DOCKER_CONFIG=@HOST_CONFIG_DIR@/docker-cli
+ExecCondition=/usr/bin/test -f @HOST_CONFIG_DIR@/secret.env
+ExecCondition=/usr/bin/test -f @HOST_CONFIG_DIR@/pins.env
+ExecCondition=/usr/bin/test -f @HOST_CONFIG_DIR@/activation.env
+ExecStartPre=-/usr/bin/docker rm c3po-reader
+ExecStartPre=/usr/bin/docker image inspect --format {{.Id}} @IMAGE_ID@
+ExecStart=/usr/bin/docker run --rm --init --restart no --name c3po-reader --pull never \
+  --user 0:0 --workdir /app --network @NETWORK@ \
+  --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
+  --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 --stop-timeout 25 \
+  --env-file @HOST_CONFIG_DIR@/secret.env \
+  --env-file @HOST_CONFIG_DIR@/pins.env \
+  --env-file @HOST_CONFIG_DIR@/activation.env \
+  --mount type=bind,source=@HOST_DATA_ROOT@,target=/app/day-d-data,readonly \
+  --mount type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@,readonly \
+  --mount type=bind,source=@HOST_CAPACITY_ROOT@,target=/c3po-capacity,readonly \
+  --mount type=bind,source=@HOST_SOURCE_ROOT@,target=@CONTAINER_SOURCE_ROOT@,readonly \
+  --mount type=bind,source=@HOST_CONFIG_DIR@/launcher,target=/c3po-reader,readonly \
+  @IMAGE_ID@ \
+  python -I -B /c3po-reader/reader_launcher.py
+ExecStop=-/usr/bin/docker stop -t 25 c3po-reader
+ExecStopPost=-/usr/bin/docker stop -t 25 c3po-reader
+Restart=on-failure
+RestartSec=5s
+RestartPreventExitStatus=78
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=c3po-reader

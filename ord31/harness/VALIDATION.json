@@ -1,0 +1,32 @@
+{
+  "allowed_future_engine_status": "PASS_LAUNCHER_LIFECYCLE_SHAPES",
+  "candidate_python_syntax": "PASS",
+  "claim_host_proof": false,
+  "claim_real_reader_inputs": false,
+  "docker_executed": false,
+  "docker_host": "unix:///var/run/docker.sock",
+  "docker_inherited_settings_removed": [
+    "DOCKER_CONTEXT",
+    "DOCKER_TLS_VERIFY",
+    "DOCKER_CERT_PATH"
+  ],
+  "embedded_child_python_syntax": "PASS",
+  "engine_result": "NOT_EXECUTED",
+  "host_contacted": false,
+  "local_engine_environment_mock_checks": "PASS",
+  "local_socket_guard_mock_checks": "PASS",
+  "network_used": false,
+  "originals_edited": false,
+  "project_code_executed": false,
+  "pure_helper_result": "PASS",
+  "pure_helper_tests": 10,
+  "python": "3.9.6",
+  "real_socket_inspected": false,
+  "remaining_concrete_work": [
+    "Fable CI integration and immutable archive/image staging",
+    "Actual directed Docker execution and exact artifact reconciliation",
+    "Real certified worker release/raw/mutable microstructure input proof remains outside stand-in coverage"
+  ],
+  "shell_snippet_syntax": "PASS",
+  "status": "PASS_STATIC_AND_PURE_HELPERS_ONLY"
+}
