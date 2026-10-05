@@ -1,0 +1,6156 @@
+{
+ "by_target": {
+  "core": 157,
+  "files": 146,
+  "parents": 15
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 280,
+  "redundant_survivors": 0,
+  "single": 318,
+  "survivors": 38
+ },
+ "errors": [],
+ "list": "carried",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "binding/linux_proof.py": "f24307db09f1744188e1574c5b4bf05798870f88c9ec2b8f0ed074288a7abdcf",
+  "binding/predispatch.py": "2945e9884e57738aade4e4a35acbde33d25e214bea4a74550684b819516959f5",
+  "binding/release_fields.py": "81c9a119ce127fe7a2e4e39d3968af5a7d0fdad47b5c4009d58c0449b100a95d",
+  "build/ASSEMBLY.json": "da2e3baba931af0b3a8bc9f7570e1f0014cbbd0daefd4846d47daf03d54a90f7",
+  "build/AUTHORITY.UNBOUND.json": "fa4d6ef5d9d6c467f8d62263b4845afaed2d75cfd1b883899dcbf43ab8b27b29",
+  "build/DISPATCH.UNBOUND.json": "0224cc3e9a7f2a83ae0bf6f09f185eb53e5fb8cfc9a6f918e2856963c07a9bd0",
+  "build/DISPATCH_SCOPE_DELTA.diff": "f21cd44db90349a78a858bca44f445d669f0537dbc87453d87d578fde384ec95",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "54450b106bbdc3c9b108304b6ade092164069b266d5705abc68f505e1b26ea8c",
+  "build/GO.UNBOUND.json": "f8046c1c8ca00c3f9457e964fcd2db84ae6b549d464b962cbcc348882d61db5b",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "9f6e558195e35d6bcb68c91b5c7141acd8553f3d4f9eaa37cb976844c70b537b",
+  "build/REQUEST.UNBOUND.json": "3d01270706f42d22962a570385093734ffdefda97a76ee479fc8bc5fcbe976e5",
+  "build/dispatch_once.py": "49233a0dcab1670a9166e525cb06b362bd9c512d624c7911d8c00452f6794be0",
+  "build/install_release.py": "e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "a319f2d3a7be361b7816ba92e6f184f418caadf69d20c745fadefcfcb9ef5b11",
+  "mutation/review.py": "e5be51e441994d6b29e555e711a731dc203790bb53fb08e3c8c728849a0344b8",
+  "mutation/sweep.py": "a99785c57345e49f10e52e2d27a3c8049b3618d6b5dc18dd7e8968b7e8644e2f",
+  "mutation/tools.py": "f5f1eb55a541c7f0067d7db72ea151d6cd80a3b7e3ce44eb199b5c9a74b2dbfc",
+  "op.py": "0317fde20c9083887588ae2bda3d58a8371b5fe5d4451c4addfa62a1422984e1",
+  "spec.py": "f0f2e58f0de24e54aa538c7891a0d6100ffc9533726ec99de52bca829e28fbff",
+  "tests/conftest.py": "38945e6e79e4a68bf0f39f89604f61de35721ef4742d1b82660308c3ec355636",
+  "tests/fixtures/M0_FIXTURE.W1_EMULATION.json": "0d2dd8700667862210e0c54f93f75116d3c94d7ba8333067f7dd388ea7b06d29",
+  "tests/fixtures/M0_RECEIPT.W1_EMULATION.json": "f514aecaff28a2cf5ce81f0c97bd920a6614d658260cb2a5ef693937353142ac",
+  "tests/fixtures/M0_REQUEST.W1_EMULATION.json": "399ed2190c657ca66a82d4f9b3735285ee852d7b5960f2dea1c2be548665bf5d",
+  "tests/fixtures/RELEASE_VERIFY.SYNTHETIC.json": "4e7fce26ae35058c61b8028eb7a8d8a053278332ad48fe3d727ce0f2e1531041",
+  "tests/fixtures/release.SYNTHETIC.json": "b110f364d7d7eeeb884a7038668a4fb7f158dbdd86200c772116eebad14c05f1",
+  "tests/k10.py": "4979395a65ec0d0fe098e6be5fd6fbf3ff43aa0416bd36e398441c4fa738699c",
+  "tests/make_m0_fixture.py": "8dc4abc70252e25247eb6200bd42d91fddc4ddc3929ccfcf9b11d192b856d35d",
+  "tests/make_synthetic_release.py": "1fc2a7ee6ac20e1fb3cbdc4a973fa90ea01d7765f30862d735ecea0834f2f1e8",
+  "tests/native_child.py": "fb5d1fcb67b0571fb7b7e34a2054d13dc55429c7f4d28f126c83961ff6b09d71",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/test_binding.py": "cedcfad5cad513d6ac8c9013a536c331b85f60044bebe2e3b31147e4cafef0d9",
+  "tests/test_conformance.py": "f0de361cd6223610a4850b3a13d17d363880a24dd32388e51235abbc2c385d73",
+  "tests/test_dispatch_guards.py": "1e8cf44ba450e9c457fdf3e4c0ff25635d93e068078760ee1b7114cf411eec30",
+  "tests/test_effects_guards.py": "0ad93414cf7f34fe3534b3169be9120dd731809cb799131ba8b2059da2533dcf",
+  "tests/test_install_release.py": "ebddf60cd6290991e6ed7bae001c6f5b6a9ccfbc161d0cef3f2bc0893015a4bc",
+  "tests/test_linux_proof.py": "c64a28f11d913315cd6c11404b6baa1629cee4dfe340d54f6ae17859ff395031",
+  "tests/test_native.py": "2af0db02103ff06d52bbb424efcbf74d3c36c1c971acc6e39ae3457832c9f1de",
+  "tests/test_predispatch.py": "79df45053d9873c3bcd336c6ad2f1b1c72e1272d7ba354973ba7e44c1f1bf7ab",
+  "tests/test_purity.py": "449eb77d6dafd2b18f64a73c1f4ca9a8e14841c5819518767ed79dbf424a1fdc"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": false,
+ "results": [
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M01_create_without_excl",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.38s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M04_create_without_nofollow",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.40s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M05_create_without_excl_and_nofollow",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.36s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M06_file_fsync_dropped",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.42s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:59: AssertionError: assert ['/mnt/day-d-...ase-20261005'] == ['/mnt/day-d-...ase-20261005']",
+   "killed": true,
+   "mutant": "A_M07a_directory_fsync_after_mkdir_dropped",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M07b_parent_fsync_after_mkdir_dropped",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:59: AssertionError: assert ['/mnt/day-d-...ase-20261005'] == ['/mnt/day-d-...ase-20261005']",
+   "killed": true,
+   "mutant": "A_M07c_directory_fsync_after_link_dropped",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.36s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:59: AssertionError: assert ['/mnt/day-d-...ase-20261005'] == ['/mnt/day-d-...ase-20261005']",
+   "killed": true,
+   "mutant": "A_M07d_directory_fsync_after_removal_dropped",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:46: KeyError: 'readback'",
+   "killed": true,
+   "mutant": "A_M08_chain_walk_without_nofollow",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:402: AssertionError: assert (('PARTIAL_MET...D', 'EFFECTS') == ('REFUSED', '...D', 'EFFECTS')",
+   "killed": true,
+   "mutant": "A_M10a_parent_not_verified_before_mkdir",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 88 passed, 5 deselected in 1.36s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_directory_swapped_after_its_creation_stops_the_run_before_any_byte_is_written",
+   "killed": true,
+   "mutant": "A_M10b_directory_not_verified_before_temporary",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.27s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:521: AssertionError: assert ('INSTALLED_DURABLE' == 'TEMPORARY_ONLY'",
+   "killed": true,
+   "mutant": "A_M10c_directory_not_verified_before_link",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.32s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M11_excl_replaced_by_trunc",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.36s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_device_not_compared",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.42s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_inode_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_uid_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.43s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_gid_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_mode_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:46: AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "A_M17b_fchmod_of_a_created_file",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.45s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:46: KeyError: 'readback'",
+   "killed": true,
+   "mutant": "A_M17c_fchown_of_a_created_file",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.40s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:46: AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "A_M17d_fchmod_of_a_created_directory",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_purity.py::test_other_executors_and_a_changed_payload_byte_are_refused",
+   "killed": true,
+   "mutant": "C01_pin_not_compared_with_bytes",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 177 passed, 2 skipped, 5 deselected in 8.99s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_are_decoded_from_bytes_and_must_be_canonical",
+   "killed": true,
+   "mutant": "C02_non_canonical_document_accepted",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 224 passed, 4 skipped, 5 deselected in 13.97s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[39]",
+   "killed": true,
+   "mutant": "C03_duplicate_key_accepted",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 53 passed, 5 deselected in 1.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/build/install_release.py:379: KeyError: 'activation_allowed'",
+   "killed": true,
+   "mutant": "C04_request_keys_not_exact",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 221 passed, 4 skipped, 5 deselected in 14.46s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/build/install_release.py:383: KeyError: 'activation_allowed'",
+   "killed": true,
+   "mutant": "C05_authority_keys_not_exact",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 222 passed, 4 skipped, 5 deselected in 14.21s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/build/install_release.py:386: KeyError: 'action'",
+   "killed": true,
+   "mutant": "C06_go_keys_not_exact",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 223 passed, 4 skipped, 5 deselected in 13.87s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_each_document_has_exactly_its_keys[0-REQUEST_KEYS]",
+   "killed": true,
+   "mutant": "C07_extra_key_accepted",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 221 passed, 4 skipped, 5 deselected in 14.27s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C08_request_schema_dropped",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 14.88s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-status-UNBOUND-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C09_request_status_dropped",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 225 passed, 4 skipped, 5 deselected in 13.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C10_request_operation_dropped",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 15.63s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C11_request_phase_dropped",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 15.68s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-scope_sha256-3333333333333333333333333333333333333333333333333333333333333333-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C12_request_scope_hash_dropped",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 229 passed, 4 skipped, 5 deselected in 15.24s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_purity.py:168: AssertionError: assert 'AUTHORITY_UNBOUND' == 'REQUEST_OR_EXECUTOR_UNBOUND'",
+   "killed": true,
+   "mutant": "C13_request_payload_hash_dropped",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 177 passed, 2 skipped, 5 deselected in 9.68s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_purity.py:162: AssertionError: 1",
+   "killed": true,
+   "mutant": "C14_effective_uid_not_checked",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 177 passed, 2 skipped, 5 deselected in 9.59s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-executor_uid-1000-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C15_declared_uid_not_checked",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 226 passed, 4 skipped, 5 deselected in 15.26s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-executor_uid-False-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C16_declared_uid_type_not_checked",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 227 passed, 4 skipped, 5 deselected in 15.81s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C20_authority_schema_dropped",
+   "returncode": 1,
+   "seconds": 16.7,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 16.29s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C21_authority_operation_dropped",
+   "returncode": 1,
+   "seconds": 16.6,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 16.23s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C22_authority_phase_dropped",
+   "returncode": 1,
+   "seconds": 16.6,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 16.24s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-status-UNBOUND-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C23_authority_status_dropped",
+   "returncode": 1,
+   "seconds": 16.4,
+   "summary": "1 failed, 239 passed, 4 skipped, 5 deselected in 16.09s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-decision-REJECTED-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C24_authority_decision_dropped",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 240 passed, 4 skipped, 5 deselected in 15.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-execution_authorized-1-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C25_authority_execution_flag_dropped",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 242 passed, 4 skipped, 5 deselected in 15.43s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_hash_chain_between_the_three_documents",
+   "killed": true,
+   "mutant": "C26_authority_request_hash_dropped",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 291 passed, 4 skipped, 5 deselected in 15.75s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-payload_sha256-3333333333333333333333333333333333333333333333333333333333333333-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C27_authority_payload_hash_dropped",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 243 passed, 4 skipped, 5 deselected in 15.36s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner_evidence-None-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C30_owner_evidence_dropped",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 247 passed, 4 skipped, 5 deselected in 15.79s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner_evidence-UNBOUND-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C30b_owner_evidence_may_be_the_word_unbound",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 249 passed, 4 skipped, 5 deselected in 15.20s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner_evidence-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "killed": true,
+   "mutant": "C30c_owner_evidence_length_cap_dropped",
+   "returncode": 1,
+   "seconds": 15.5,
+   "summary": "1 failed, 250 passed, 4 skipped, 5 deselected in 15.07s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C31_go_schema_dropped",
+   "returncode": 1,
+   "seconds": 15.8,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 15.40s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-status-UNBOUND-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C32_go_status_dropped",
+   "returncode": 1,
+   "seconds": 15.3,
+   "summary": "1 failed, 253 passed, 4 skipped, 5 deselected in 15.01s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-action-NO_GO-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C33_go_action_dropped",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 254 passed, 4 skipped, 5 deselected in 14.46s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C34_go_phase_dropped",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 14.94s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C35_go_operation_dropped",
+   "returncode": 1,
+   "seconds": 15.3,
+   "summary": "1 failed, 298 passed, 4 skipped, 5 deselected in 14.84s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-execution_authorized-False-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C36_go_execution_flag_dropped",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 256 passed, 4 skipped, 5 deselected in 14.34s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_hash_chain_between_the_three_documents",
+   "killed": true,
+   "mutant": "C39_go_request_hash_dropped",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 291 passed, 4 skipped, 5 deselected in 14.33s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_hash_chain_between_the_three_documents",
+   "killed": true,
+   "mutant": "C40_go_authority_hash_dropped",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 291 passed, 4 skipped, 5 deselected in 14.66s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-payload_sha256-3333333333333333333333333333333333333333333333333333333333333333-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C41_go_payload_hash_dropped",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 260 passed, 4 skipped, 5 deselected in 14.36s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_owner_is_bound_and_equal_in_authority_and_go",
+   "killed": true,
+   "mutant": "C42_unbound_owner_accepted",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 289 passed, 4 skipped, 5 deselected in 14.44s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner-OTHER-OWNER_UNBOUND]",
+   "killed": true,
+   "mutant": "C43_owner_equality_dropped",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 251 passed, 4 skipped, 5 deselected in 14.38s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C44_null_host_binding_accepted",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 292 passed, 4 skipped, 5 deselected in 14.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C45_host_binding_authority_dropped",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 292 passed, 4 skipped, 5 deselected in 14.35s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C46_host_binding_go_dropped",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 292 passed, 4 skipped, 5 deselected in 14.35s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C46b_host_binding_equalities_dropped",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 292 passed, 4 skipped, 5 deselected in 14.95s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C47_null_transport_target_accepted",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 290 passed, 4 skipped, 5 deselected in 15.01s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C48_null_command_pin_accepted",
+   "returncode": 1,
+   "seconds": 14.9,
+   "summary": "1 failed, 290 passed, 4 skipped, 5 deselected in 14.49s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C49_remote_command_not_pinned",
+   "returncode": 1,
+   "seconds": 15.3,
+   "summary": "1 failed, 290 passed, 4 skipped, 5 deselected in 14.92s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C50_runtime_pin_of_the_source_not_tied_to_the_payload",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 290 passed, 4 skipped, 5 deselected in 14.83s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-claim_root_identity-value44-GO_CLAIM_ROOT_UNBOUND]",
+   "killed": true,
+   "mutant": "C51_null_claim_root_accepted",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 269 passed, 4 skipped, 5 deselected in 15.29s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_purity.py:145: AssertionError: assert 'WINDOW_NOT_O...Y_IN_NEW_YORK' == 'DATE_NOT_IN_SCOPE'",
+   "killed": true,
+   "mutant": "C52_date_set_dropped",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 175 passed, 2 skipped, 5 deselected in 9.20s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_instant_of_the_three_windows_lies_on_the_signed_day",
+   "killed": true,
+   "mutant": "C53_request_date_not_tied_to_the_windows",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 309 passed, 4 skipped, 5 deselected in 15.56s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_purity.py::test_window_edges_of_monday_m1_and_the_spare_and_exact_900_seconds",
+   "killed": true,
+   "mutant": "C54_window_span_cap_dropped",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 175 passed, 2 skipped, 5 deselected in 9.77s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C55_empty_window_accepted",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 307 passed, 4 skipped, 5 deselected in 15.73s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C56_gate_uses_first_window_only",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 307 passed, 4 skipped, 5 deselected in 15.64s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C57_non_utc_offset_accepted",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 307 passed, 4 skipped, 5 deselected in 15.37s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_purity.py:134: AssertionError: assert 'GO_EXPIRED' == 'OUTSIDE_GO_WINDOW'",
+   "killed": true,
+   "mutant": "C58_gate_initial_window_dropped",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 175 passed, 2 skipped, 5 deselected in 9.25s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_gate_monotonic_deadline_and_clock_reversal",
+   "killed": true,
+   "mutant": "C59_gate_wall_window_dropped",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 311 passed, 4 skipped, 5 deselected in 15.58s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:683: AssertionError: (4, 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "C60_gate_monotonic_deadline_dropped",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 101 passed, 5 deselected in 1.87s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_gate_monotonic_deadline_and_clock_reversal",
+   "killed": true,
+   "mutant": "C61_wall_clock_reversal_accepted",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 311 passed, 4 skipped, 5 deselected in 15.26s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:686: AssertionError: assert ('REFUSED', '...'umask', 63)]) == ('REFUSED', '...Y_EFFECT', [])",
+   "killed": true,
+   "mutant": "C62_monotonic_reversal_accepted",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 101 passed, 5 deselected in 1.94s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-host_binding_sha256-2222222222222222222222222222222222222222222222222222222222222222-PLAN_BINDING]",
+   "killed": true,
+   "mutant": "C63_plan_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 275 passed, 4 skipped, 5 deselected in 15.15s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_each_document_has_exactly_its_keys[0-REQUEST_KEYS]",
+   "killed": true,
+   "mutant": "C64_plan_keys_not_exact",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 221 passed, 4 skipped, 5 deselected in 14.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-schema-OTHER_PLAN_V1-PLAN_UNBOUND]",
+   "killed": true,
+   "mutant": "C65_plan_schema_dropped",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 272 passed, 4 skipped, 5 deselected in 15.30s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-status-UNBOUND-PLAN_UNBOUND]",
+   "killed": true,
+   "mutant": "C66_plan_status_dropped",
+   "returncode": 1,
+   "seconds": 15.8,
+   "summary": "1 failed, 271 passed, 4 skipped, 5 deselected in 15.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-phase-READONLY_HOSTFACTS-PHASE_INVALID]",
+   "killed": true,
+   "mutant": "C67_plan_phase_dropped",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 273 passed, 4 skipped, 5 deselected in 15.25s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-max_seconds-61-LIMITS_INVALID]",
+   "killed": true,
+   "mutant": "C68_plan_limits_dropped",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 274 passed, 4 skipped, 5 deselected in 15.55s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_scope_is_fixed_by_the_source_and_signed",
+   "killed": true,
+   "mutant": "C69_scope_not_compared",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 297 passed, 4 skipped, 5 deselected in 15.79s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C70_plan_window_not_tied_to_the_request",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 15.91s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_evidence_names_the_prior_receipts_and_the_operations_the_source_requires",
+   "killed": true,
+   "mutant": "C71_empty_evidence_accepted",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 296 passed, 4 skipped, 5 deselected in 15.86s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_evidence_names_the_prior_receipts_and_the_operations_the_source_requires",
+   "killed": true,
+   "mutant": "C72_evidence_receipt_hash_not_checked",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 296 passed, 4 skipped, 5 deselected in 15.89s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_effects_are_literal_in_authority_and_go_and_recomputed_from_the_plan",
+   "killed": true,
+   "mutant": "C73_effects_in_the_authority_not_compared",
+   "returncode": 1,
+   "seconds": 16.4,
+   "summary": "1 failed, 293 passed, 4 skipped, 5 deselected in 16.05s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_effects_are_literal_in_authority_and_go_and_recomputed_from_the_plan",
+   "killed": true,
+   "mutant": "C74_effects_in_the_go_not_compared",
+   "returncode": 1,
+   "seconds": 16.6,
+   "summary": "1 failed, 293 passed, 4 skipped, 5 deselected in 16.15s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_effects_are_literal_in_authority_and_go_and_recomputed_from_the_plan",
+   "killed": true,
+   "mutant": "C74b_effects_not_compared_at_all",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 293 passed, 4 skipped, 5 deselected in 15.66s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-scope_statement-anything else-GO_CRITERION]",
+   "killed": true,
+   "mutant": "C75_scope_statement_free_text",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 264 passed, 4 skipped, 5 deselected in 15.72s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-success_criterion-SOME_OTHER_OUTCOME-GO_CRITERION]",
+   "killed": true,
+   "mutant": "C76_success_criterion_free_text",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 266 passed, 4 skipped, 5 deselected in 15.83s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:570: AssertionError: no gate call immediately before mkdir",
+   "killed": true,
+   "mutant": "E01_gate_not_called_before_a_mutating_call",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 96 passed, 5 deselected in 1.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:381: AssertionError: assert ('PARTIAL_MET...K', 'EFFECTS') == ('REFUSED', '...K', 'EFFECTS')",
+   "killed": true,
+   "mutant": "E02_failed_call_left_uncertain",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 81 passed, 5 deselected in 1.57s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:48: AssertionError: assert ({'failed_noth...uncertain': 5} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "E03_successful_call_not_counted",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.50s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:651: AssertionError: (32, 'open', 'B_DIRECTORY_ONLY')",
+   "killed": true,
+   "mutant": "E04_escaped_exception_always_a_refusal",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.75s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:651: AssertionError: (32, 'open', 'B_DIRECTORY_ONLY')",
+   "killed": true,
+   "mutant": "E05_escape_after_start_of_a_write_is_a_refusal_when_uncertain",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.74s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:130: AssertionError: assert ('METADATA_ON..._size': True}) == ('PARTIAL_MET..._size': True})",
+   "killed": true,
+   "mutant": "E06_reduced_receipt_stays_complete",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "E07_chain_rows_not_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: PARENT_CHANGED_DURING_WALK",
+   "killed": true,
+   "mutant": "E08_symlink_component_opened",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.60s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_expiry_or_a_reversed_clock_at_every_gate_is_a_refusal_only_while_nothing_exists",
+   "killed": true,
+   "mutant": "E09_verify_skips_the_fresh_walk",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 101 passed, 5 deselected in 1.62s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: READBACK_MISMATCH",
+   "killed": true,
+   "mutant": "E10_verify_skips_the_name_of_a_child",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E11_probe_follows_nothing_but_reports_a_symlink_component_absent",
+   "returncode": 0,
+   "seconds": 18.7,
+   "summary": "324 passed, 4 skipped, 5 deselected in 18.38s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E12_descend_without_nofollow",
+   "returncode": 0,
+   "seconds": 19.4,
+   "summary": "324 passed, 4 skipped, 5 deselected in 18.78s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E13_descend_enters_a_symlink_component",
+   "returncode": 0,
+   "seconds": 18.9,
+   "summary": "324 passed, 4 skipped, 5 deselected in 18.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "E14_file_change_during_read_ignored",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E15_file_size_limit_ignored",
+   "returncode": 0,
+   "seconds": 18.9,
+   "summary": "324 passed, 4 skipped, 5 deselected in 18.57s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: EVIDENCE_FROM_EARLIER_BOOT",
+   "killed": true,
+   "mutant": "E16_boot_id_shape_unchecked",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.65s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_noatime_is_required_and_fails_closed_where_the_platform_lacks_it",
+   "killed": true,
+   "mutant": "E17_noatime_not_required",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 201 passed, 2 skipped, 5 deselected in 12.72s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:325: AssertionError: assert ('REFUSED', '...HING_CHANGED') == ('REFUSED', '...HING_CHANGED')",
+   "killed": true,
+   "mutant": "E18_authentication_refusal_raised_out_of_run",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 14 passed, 5 deselected in 0.73s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[5]",
+   "killed": true,
+   "mutant": "L12_chain_row_shape_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 19 passed, 5 deselected in 0.79s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "P07_umask_not_set",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.49s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_created_directory_that_is_not_what_was_signed_is_left_in_place_labelled_and_no_file_is_written",
+   "killed": true,
+   "mutant": "P17_failure_after_mkdir_reported_not_created",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 89 passed, 5 deselected in 1.50s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "P19_created_name_identity_not_checked",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.51s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: READBACK_MISMATCH",
+   "killed": true,
+   "mutant": "P20_created_emptiness_not_checked",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 89 passed, 5 deselected in 1.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "P22_refused_after_a_creation",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 89 passed, 5 deselected in 1.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[14]",
+   "killed": true,
+   "mutant": "P43_evidence_boot_shape_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.87s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_linux_proof.py:156: AssertionError: ords_where_it_ran_for_the_linux_proof>>",
+   "killed": true,
+   "mutant": "I01_link_replaced_by_rename",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 171 passed, 5 deselected in 9.20s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:46: AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "I02_final_name_removed_instead_of_the_temporary",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "I03_temporary_removed_without_identity_proof",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.57s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:58: AssertionError: assert [('mkdir', '/...f-0.service')] == [('mkdir', '/...f-0.partial')]",
+   "killed": true,
+   "mutant": "I04_temporary_name_loadable_by_systemd",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.58s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "I19_short_write_accepted",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.56s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "I21_failed_file_fsync_ignored",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.58s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "I22_failed_directory_fsync_after_link_ignored",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 92 passed, 5 deselected in 1.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "I23_refused_after_a_creation",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 89 passed, 5 deselected in 1.38s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "I29_boot_of_the_evidence_not_compared",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:23: AssertionError: None",
+   "killed": true,
+   "mutant": "I30_executor_group_not_checked",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_names_that_appear_inside_the_new_directory_are_never_replaced",
+   "killed": true,
+   "mutant": "I40_own_temporary_left_after_a_lost_race",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 93 passed, 5 deselected in 1.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_native.py:68: AssertionError: assert ([{'by_dir_fd': False, 'call': 'open', 'flags': 1048576, 'mode': None, ...}, {'by_dir_fd': True, 'call': 'open', 'flags... 'open', 'flags': 1048576, 'mode': None, ...}, {'by_dir_fd': True, 'call': 'open', 'flags': 4, 'mode': None",
+   "killed": true,
+   "mutant": "W01_native_open_strips_nofollow",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 12.14s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_linux_proof.py:156: AssertionError: ative_run_records_where_it_ran_for_the_linux_proof>>",
+   "killed": true,
+   "mutant": "W01b_native_open_ignores_the_descriptor",
+   "returncode": 1,
+   "seconds": 9.8,
+   "summary": "1 failed, 171 passed, 5 deselected in 9.44s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_native.py:72: AssertionError: assert ([{'by_dir_fd': True, 'call': 'stat', 'follow_symlinks': True, 'path': '/mnt'}, {'by_dir_fd': True, 'call': 'stat', 'fo...': True, 'path': '/mnt'}, {'by_dir_fd': True, 'call': 'stat', 'follow_symlinks': True, 'path': '/mnt/day-d-",
+   "killed": true,
+   "mutant": "W02_native_lstat_follows_links",
+   "returncode": 1,
+   "seconds": 12.3,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 11.99s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_linux_proof.py:156: AssertionError: native_run_records_where_it_ran_for_the_linux_proof>>",
+   "killed": true,
+   "mutant": "W33_native_fstat_of_another_descriptor",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 171 passed, 5 deselected in 9.22s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_native_identity_is_the_effective_uid_and_gid_of_the_process",
+   "killed": true,
+   "mutant": "W32_native_identity_reports_root_unconditionally",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 97 passed, 5 deselected in 1.73s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_install_creates_the_directory_and_the_file_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W06_native_mkdir_ignores_the_signed_mode",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 12.49s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_linux_proof.py:156: AssertionError: _linux_proof>>",
+   "killed": true,
+   "mutant": "W20_native_mkdir_not_relative_to_the_held_descriptor",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 171 passed, 5 deselected in 9.19s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_native.py:82: AssertionError: assert [] == ['/mnt/day-d-...ase-20261005']",
+   "killed": true,
+   "mutant": "W04_native_fsync_is_a_noop_in_install",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 12.24s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_install_creates_the_directory_and_the_file_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W05_native_link_follows_a_symlinked_temporary",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 12.14s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_linux_proof.py:156: AssertionError: linux_proof>>",
+   "killed": true,
+   "mutant": "W21_native_unlink_not_relative_to_the_held_descriptor",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 171 passed, 5 deselected in 9.18s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_install_creates_the_directory_and_the_file_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W22_native_create_strips_excl",
+   "returncode": 1,
+   "seconds": 11.9,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 11.50s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_install_creates_the_directory_and_the_file_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W23_native_create_strips_nofollow",
+   "returncode": 1,
+   "seconds": 11.9,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 11.54s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_install_creates_the_directory_and_the_file_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W31_native_umask_is_a_noop_in_install",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 195 passed, 2 skipped, 5 deselected in 11.68s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "W15_created_file_device_not_compared_with_the_directory",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.35s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_names_that_appear_inside_the_new_directory_are_never_replaced",
+   "killed": true,
+   "mutant": "I47_temporary_not_looked_at_again_before_the_link",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 93 passed, 5 deselected in 1.98s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "I48_temporary_with_a_second_link_accepted_before_the_link",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_failures_while_the_file_is_written_withdraw_only_the_temporary_of_this_run",
+   "killed": true,
+   "mutant": "I49_incomplete_temporary_left_behind",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.45s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "I51_removal_errno_overwrites_the_errno_of_the_failure",
+   "returncode": 0,
+   "seconds": 17.0,
+   "summary": "324 passed, 4 skipped, 5 deselected in 16.62s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_effects_equal_in_authority_and_go_but_not_those_of_the_plan_are_refused",
+   "killed": true,
+   "mutant": "C77_effects_compared_between_the_two_documents_only",
+   "returncode": 1,
+   "seconds": 14.4,
+   "summary": "1 failed, 294 passed, 4 skipped, 5 deselected in 14.11s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_gate_is_bounded_by_the_latest_start_and_the_earliest_end_whichever_document_holds_them",
+   "killed": true,
+   "mutant": "C78_gate_ends_with_the_go_window_only",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 308 passed, 4 skipped, 5 deselected in 14.29s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78b_gate_ends_with_the_request_window_only",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 307 passed, 4 skipped, 5 deselected in 14.26s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78c_gate_ends_with_the_authority_window_only",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 307 passed, 4 skipped, 5 deselected in 14.33s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_purity.py::test_authority_or_go_window_reaching_before_the_new_york_day_cannot_open_the_gate_earlier",
+   "killed": true,
+   "mutant": "C78d_gate_starts_with_the_go_window_only",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 176 passed, 2 skipped, 5 deselected in 8.59s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78e_gate_starts_with_the_request_window_only",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 307 passed, 4 skipped, 5 deselected in 14.64s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_purity.py::test_authority_or_go_window_reaching_before_the_new_york_day_cannot_open_the_gate_earlier",
+   "killed": true,
+   "mutant": "C78f_gate_starts_with_the_authority_window_only",
+   "returncode": 1,
+   "seconds": 9.0,
+   "summary": "1 failed, 176 passed, 2 skipped, 5 deselected in 8.73s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_purity.py::test_authority_or_go_window_reaching_before_the_new_york_day_cannot_open_the_gate_earlier",
+   "killed": true,
+   "mutant": "C78g_gate_takes_the_widest_window",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 176 passed, 2 skipped, 5 deselected in 8.85s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_instant_of_the_three_windows_lies_on_the_signed_day",
+   "killed": true,
+   "mutant": "C79_only_the_ends_must_lie_on_the_signed_day",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 309 passed, 4 skipped, 5 deselected in 14.61s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_instant_of_the_three_windows_lies_on_the_signed_day",
+   "killed": true,
+   "mutant": "C79b_only_the_starts_must_lie_on_the_signed_day",
+   "returncode": 1,
+   "seconds": 14.9,
+   "summary": "1 failed, 309 passed, 4 skipped, 5 deselected in 14.51s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C80_plan_window_start_not_tied_to_the_request",
+   "returncode": 1,
+   "seconds": 14.4,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 14.03s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C80b_plan_window_end_not_tied_to_the_request",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 13.85s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C81_transport_binding_keys_not_exact",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 13.93s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C82_claim_root_keys_not_exact",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 13.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C83_claim_root_path_unchecked",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 13.84s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C83b_claim_root_path_may_be_relative",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 13.97s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C84_claim_root_device_and_inode_unchecked",
+   "returncode": 1,
+   "seconds": 14.9,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 14.40s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C84b_claim_root_device_unchecked",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 13.72s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C84c_claim_root_inode_unchecked",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 295 passed, 4 skipped, 5 deselected in 14.09s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E19_mount_point_always_the_root",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.50s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E19b_mount_point_one_component_too_high",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: TEMPORARY_REPLACED",
+   "killed": true,
+   "mutant": "T03_created_file_link_count_not_checked",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "T06_link_count_after_the_removal_of_the_temporary_not_checked",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:559: AssertionError: assert (('REFUSED', '...', 'PRECHECK') == ('REFUSED', '...', 'PRECHECK')",
+   "killed": true,
+   "mutant": "T07_walk_does_not_compare_the_lstat_with_the_descriptor",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 95 passed, 5 deselected in 1.43s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_effects_guards.py:88: AssertionError: {'activation_performed': False, 'authority_sha256': 'c0e4c8853dfb919ce5500369ced77c0222a19b5a83a871d46301dd3f7bebec88'...d_ms': 0, 'utc_end': '2026-10-05T17:00:00+00:00', 'utc_start': '2026-10-05T17:00:00+00:00'}, 'code': 'GO_EX",
+   "killed": true,
+   "mutant": "T08_clean_ignores_uncertain_calls",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 123 passed, 5 deselected in 2.04s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "T09_escape_with_a_pending_call_not_looked_at",
+   "returncode": 0,
+   "seconds": 19.5,
+   "summary": "324 passed, 4 skipped, 5 deselected in 19.15s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+   "returncode": 0,
+   "seconds": 19.2,
+   "summary": "324 passed, 4 skipped, 5 deselected in 18.88s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__operation",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.45s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__groups",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.43s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_path",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.44s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal_leaf",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__existing_journal_leaves",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.42s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.44s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__directories_to_create",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.45s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.44s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__chains_sha256",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_root",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.43s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...0', ...}, ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__evidence_boot_id_sha256",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.52s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__files_created",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.38s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__pre_existing_objects_modified",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__daemon_reload",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'container_r...0', ...}, ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__activation",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.43s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__key",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__path",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__mode_octal",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.39s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__expect",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.40s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag__reference",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag__image_id",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.46s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag__expect",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__placement",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.57s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__path",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.94s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__filesystem_named_by_chain",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 deselected in 1.03s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__filesystem_device",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.11s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__mount_point_by_device_change",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.94s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__data_volume_touched_for_the_journal",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.08s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity__root_path",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 1.17s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity__receipt_directory_path",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 deselected in 1.09s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity__receipts_inside_capacity_root",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 1.12s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_root__world_writable_without_sticky",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 1.06s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_root__device_differs_from_parent",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.01s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents__DATA_VOLUME",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 1.06s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents__ETC",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 0.91s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents__VAR_LIB",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.91s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__operation",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.07s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...0', ...}, ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.03s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.02s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__chain_sha256",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.05s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 0.89s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__files_to_create",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__network_allowlist",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.90s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__data_volume_path",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__template_revision",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.83s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__acknowledged_leftovers",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.93s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...0', ...}, ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__evidence_boot_id_sha256",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.87s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__daemon_reload",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__external_processes",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.76s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__pre_existing_objects_modified",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'container_r...0', ...}, ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__activation",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.81s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__journal_placement",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 deselected in 0.73s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__deploy_tree_path",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 deselected in 0.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__destination_name",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.93s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__mode_octal",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.87s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__profile",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 0.88s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__template_sha256",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.84s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__rendered_sha256",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 deselected in 0.77s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__rendered_bytes",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.99s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__substitutions",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 1.13s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__expect",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 deselected in 1.13s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__daemon_reload__performed_by_this_operation",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 1.00s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__daemon_reload__owner",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 1.03s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__path",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 0.96s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__device",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 0.98s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__inode",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.03s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__uid",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.06s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__gid",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.92s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__mode",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 0.99s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-activation_allowed-FLIP-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K01_request_activation_flag_dropped",
+   "returncode": 1,
+   "seconds": 22.3,
+   "summary": "1 failed, 234 passed, 4 skipped, 5 deselected in 21.91s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-activation_allowed-FLIP-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K02_request_activation_flag_any_boolean",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 234 passed, 4 skipped, 5 deselected in 21.80s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K03_request_activation_flag_must_be_false_as_in_hostops01",
+   "returncode": 0,
+   "seconds": 27.4,
+   "summary": "324 passed, 4 skipped, 5 deselected in 26.96s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-writes_allowed-FLIP-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K04_request_writes_flag_dropped",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 236 passed, 4 skipped, 5 deselected in 21.91s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-max_seconds-61-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K05_request_max_seconds_dropped",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 231 passed, 4 skipped, 5 deselected in 21.80s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-max_seconds-60.0-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K06_request_max_seconds_type_unchecked",
+   "returncode": 1,
+   "seconds": 22.5,
+   "summary": "1 failed, 233 passed, 4 skipped, 5 deselected in 22.08s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-activation_allowed-FLIP-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "K07_authority_activation_flag_dropped",
+   "returncode": 1,
+   "seconds": 22.8,
+   "summary": "1 failed, 244 passed, 4 skipped, 5 deselected in 22.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-writes_allowed-FLIP-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "K08_authority_writes_flag_dropped",
+   "returncode": 1,
+   "seconds": 22.4,
+   "summary": "1 failed, 246 passed, 4 skipped, 5 deselected in 22.13s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K09_authority_activation_flag_must_be_false",
+   "returncode": 0,
+   "seconds": 26.6,
+   "summary": "324 passed, 4 skipped, 5 deselected in 26.16s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-activation_allowed-FLIP-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "K10_go_activation_flag_dropped",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 257 passed, 4 skipped, 5 deselected in 21.14s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-writes_allowed-FLIP-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "K11_go_writes_flag_dropped",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 259 passed, 4 skipped, 5 deselected in 21.08s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K12_go_activation_flag_must_be_false",
+   "returncode": 0,
+   "seconds": 27.0,
+   "summary": "324 passed, 4 skipped, 5 deselected in 26.64s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_evidence_must_name_the_precheck_receipt_the_rows_were_copied_from",
+   "killed": true,
+   "mutant": "K13_required_evidence_operation_not_required",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 80 passed, 5 deselected in 2.67s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K14_one_required_evidence_operation_is_enough",
+   "returncode": 0,
+   "seconds": 26.3,
+   "summary": "324 passed, 4 skipped, 5 deselected in 26.04s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K15_epoch_ends_one_day_earlier",
+   "returncode": 0,
+   "seconds": 25.9,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.76s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K16_epoch_goes_on_one_more_day",
+   "returncode": 0,
+   "seconds": 27.1,
+   "summary": "324 passed, 4 skipped, 5 deselected in 26.85s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:46: KeyError: 'readback'",
+   "killed": true,
+   "mutant": "K17_epoch_starts_one_day_earlier",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 5 deselected in 1.24s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K18_weekend_writes_reach_the_first_session_day",
+   "returncode": 0,
+   "seconds": 26.2,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.69s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:86: AssertionError: assert (True, False,...RECHECK_01',)) == (True, False,...RECHECK_01',))",
+   "killed": true,
+   "mutant": "K19_first_session_class_holds_two_days",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.93s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:46: KeyError: 'readback'",
+   "killed": true,
+   "mutant": "K20_first_session_class_is_the_weekend",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 5 deselected in 0.88s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K21_session_writes_start_on_sunday",
+   "returncode": 0,
+   "seconds": 25.3,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.05s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K22_epoch_writes_include_friday_the_second",
+   "returncode": 0,
+   "seconds": 25.1,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.87s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K23_read_class_stops_before_the_last_day",
+   "returncode": 0,
+   "seconds": 24.5,
+   "summary": "324 passed, 4 skipped, 5 deselected in 23.98s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_documents_are_decoded_from_bytes_and_must_be_canonical",
+   "killed": true,
+   "mutant": "K24_document_size_limit_removed",
+   "returncode": 1,
+   "seconds": 19.5,
+   "summary": "1 failed, 224 passed, 4 skipped, 5 deselected in 19.12s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K25_document_limit_argument_ignored",
+   "returncode": 0,
+   "seconds": 23.9,
+   "summary": "324 passed, 4 skipped, 5 deselected in 23.66s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/../../core/tests/conformance.py:254: KeyError: 'core_sha256'",
+   "killed": true,
+   "mutant": "K26_receipt_does_not_name_the_core",
+   "returncode": 1,
+   "seconds": 18.4,
+   "summary": "1 failed, 211 passed, 4 skipped, 5 deselected in 18.07s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K27_escape_of_a_switching_source_says_false",
+   "returncode": 0,
+   "seconds": 25.4,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.12s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K28_minimum_receipt_loses_the_core_hash",
+   "returncode": 0,
+   "seconds": 24.7,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.35s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K29_timing_raises_when_a_clock_fails",
+   "returncode": 0,
+   "seconds": 24.8,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[8]",
+   "killed": true,
+   "mutant": "P01_any_owner_accepted_outside_an_open_root",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 22 passed, 5 deselected in 1.50s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[11]",
+   "killed": true,
+   "mutant": "P02_world_writable_directory_accepted_inside_an_open_root",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.44s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:352: AssertionError: assert 'REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "P03_sticky_bit_does_not_excuse",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 79 passed, 5 deselected in 2.75s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:353: AssertionError: group-writable, as signed",
+   "killed": true,
+   "mutant": "P04_group_writable_counted_as_world_writable",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 79 passed, 5 deselected in 2.90s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[12]",
+   "killed": true,
+   "mutant": "P05_setgid_parent_accepted",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 26 passed, 5 deselected in 1.81s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P06_setgid_refused_even_when_nothing_is_created_there",
+   "returncode": 0,
+   "seconds": 25.0,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.55s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P07_open_root_unchecked",
+   "returncode": 0,
+   "seconds": 24.6,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.12s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P08_open_root_may_be_the_whole_tree",
+   "returncode": 0,
+   "seconds": 24.5,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.21s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/build/install_release.py:540: TypeError: 'NoneType' object is not iterable",
+   "killed": true,
+   "mutant": "P09_rows_of_the_chain_not_validated",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 14 passed, 5 deselected in 1.18s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "P10_chain_effects_name_the_first_row",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 5 deselected in 0.93s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:31: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "P11_chain_hash_of_the_last_row_only",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.03s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:73: AssertionError: assert ([{'device': 8...e': 493, ...}] == [{'device': 8...e': 493, ...}]",
+   "killed": true,
+   "mutant": "P12_free_bytes_counts_blocks_reserved_for_root",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 deselected in 1.05s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P13_signature_without_the_content_change_instants",
+   "returncode": 0,
+   "seconds": 24.8,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.59s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P14_signature_without_identity",
+   "returncode": 0,
+   "seconds": 25.1,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.85s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P15_signature_without_owner_and_mode",
+   "returncode": 0,
+   "seconds": 24.5,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.20s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F01_directory_mode_unchecked_before_the_mkdir",
+   "returncode": 0,
+   "seconds": 24.9,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.51s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F02_directory_path_not_tied_to_the_pinned_parent",
+   "returncode": 0,
+   "seconds": 24.3,
+   "summary": "324 passed, 4 skipped, 5 deselected in 23.93s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F03_file_mode_unchecked_before_the_creation",
+   "returncode": 0,
+   "seconds": 24.7,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.42s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F04_file_size_unbounded",
+   "returncode": 0,
+   "seconds": 24.7,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.22s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F05_empty_file_accepted",
+   "returncode": 0,
+   "seconds": 24.7,
+   "summary": "324 passed, 4 skipped, 5 deselected in 24.30s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F06_file_name_unchecked",
+   "returncode": 0,
+   "seconds": 25.9,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.66s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F07_go_prefix_unchecked",
+   "returncode": 0,
+   "seconds": 25.9,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F08_name_grammar_unchecked",
+   "returncode": 0,
+   "seconds": 26.0,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.74s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F09_path_need_not_lie_in_the_pinned_parent",
+   "returncode": 0,
+   "seconds": 26.2,
+   "summary": "324 passed, 4 skipped, 5 deselected in 25.82s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F10_same_temporary_name_for_every_file",
+   "returncode": 0,
+   "seconds": 23.8,
+   "summary": "324 passed, 4 skipped, 5 deselected in 23.50s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:58: AssertionError: assert [('mkdir', '/...0-0.partial')] == [('mkdir', '/...7-0.partial')]",
+   "killed": true,
+   "mutant": "F11_temporary_name_not_keyed_by_the_go",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 1.00s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "F12_mkdir_with_a_fixed_mode",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 5 deselected in 1.02s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_effects_guards.py:66: AssertionError: 488",
+   "killed": true,
+   "mutant": "F13_created_directory_mode_compared_with_a_constant",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 121 passed, 5 deselected in 4.74s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "F14_created_file_mode_not_compared",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 94 passed, 5 deselected in 3.05s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F15_readback_does_not_compare_the_bytes",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 98 passed, 5 deselected in 3.18s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F16_readback_does_not_compare_the_identity",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 98 passed, 5 deselected in 3.28s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F17_readback_does_not_compare_the_owner",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 98 passed, 5 deselected in 3.33s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F18_readback_does_not_compare_the_mode",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 98 passed, 5 deselected in 3.08s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F19_readback_does_not_compare_the_link_count",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 98 passed, 5 deselected in 3.20s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F20_readback_without_proving_the_directory_again",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 98 passed, 5 deselected in 3.26s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F21_directory_readback_ignores_the_entries",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 98 passed, 5 deselected in 3.27s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F22_directory_readback_ignores_the_resolved_path",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 98 passed, 5 deselected in 2.94s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:406: AssertionError: None",
+   "killed": true,
+   "mutant": "F23_directory_readback_ignores_owner_and_mode",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 98 passed, 5 deselected in 2.97s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_names_that_appear_inside_the_new_directory_are_never_replaced",
+   "killed": true,
+   "mutant": "F24_objects_left_forgets_a_temporary",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 93 passed, 5 deselected in 2.88s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_failures_after_the_link_leave_the_complete_file_and_the_receipt_says_exactly_what_is_left",
+   "killed": true,
+   "mutant": "F25_objects_left_counts_a_linked_pair_once",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 92 passed, 5 deselected in 2.84s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F26_file_request_accepts_any_mode",
+   "returncode": 0,
+   "seconds": 17.3,
+   "summary": "324 passed, 4 skipped, 5 deselected in 16.91s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/install_release/tests/test_install_release.py:324: AssertionError: RELEASE_PLAN_INVALID",
+   "killed": true,
+   "mutant": "F27_file_request_accepts_the_null_hash",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 36 passed, 5 deselected in 1.63s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": [
+  "E11_probe_follows_nothing_but_reports_a_symlink_component_absent",
+  "E12_descend_without_nofollow",
+  "E13_descend_enters_a_symlink_component",
+  "E15_file_size_limit_ignored",
+  "I51_removal_errno_overwrites_the_errno_of_the_failure",
+  "T09_escape_with_a_pending_call_not_looked_at",
+  "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+  "K03_request_activation_flag_must_be_false_as_in_hostops01",
+  "K09_authority_activation_flag_must_be_false",
+  "K12_go_activation_flag_must_be_false",
+  "K14_one_required_evidence_operation_is_enough",
+  "K15_epoch_ends_one_day_earlier",
+  "K16_epoch_goes_on_one_more_day",
+  "K18_weekend_writes_reach_the_first_session_day",
+  "K21_session_writes_start_on_sunday",
+  "K22_epoch_writes_include_friday_the_second",
+  "K23_read_class_stops_before_the_last_day",
+  "K25_document_limit_argument_ignored",
+  "K27_escape_of_a_switching_source_says_false",
+  "K28_minimum_receipt_loses_the_core_hash",
+  "K29_timing_raises_when_a_clock_fails",
+  "P06_setgid_refused_even_when_nothing_is_created_there",
+  "P07_open_root_unchecked",
+  "P08_open_root_may_be_the_whole_tree",
+  "P13_signature_without_the_content_change_instants",
+  "P14_signature_without_identity",
+  "P15_signature_without_owner_and_mode",
+  "F01_directory_mode_unchecked_before_the_mkdir",
+  "F02_directory_path_not_tied_to_the_pinned_parent",
+  "F03_file_mode_unchecked_before_the_creation",
+  "F04_file_size_unbounded",
+  "F05_empty_file_accepted",
+  "F06_file_name_unchecked",
+  "F07_go_prefix_unchecked",
+  "F08_name_grammar_unchecked",
+  "F09_path_need_not_lie_in_the_pinned_parent",
+  "F10_same_temporary_name_for_every_file",
+  "F26_file_request_accepts_any_mode"
+ ]
+}

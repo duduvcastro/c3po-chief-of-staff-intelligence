@@ -1,0 +1,17 @@
+{
+ "every_value_is_synthetic": true,
+ "observed_at": "2026-10-05T08:00:00+00:00",
+ "produced_by": "w1_preflight_readonly.observe and collect, unmodified, on the emulated host of W1's own test file",
+ "python": "3.12.14",
+ "receipt_bytes": 35340,
+ "receipt_sha256": "f514aecaff28a2cf5ce81f0c97bd920a6614d658260cb2a5ef693937353142ac",
+ "release_directory_candidates": [
+  "r2d2-v2-release-20261005"
+ ],
+ "request_sha256": "399ed2190c657ca66a82d4f9b3735285ee852d7b5960f2dea1c2be548665bf5d",
+ "schema": "HOSTOPS02_INSTALL_RELEASE_M0_FIXTURE_V1",
+ "w1_operation": "GO_READONLY_W1PREFLIGHT_01",
+ "w1_receipt_schema": "READONLY_W1PREFLIGHT01_RECEIPT_V1",
+ "w1_source_sha256": "7d1df28da31d3f3bd6c9dab7d9de3a98bef8291730a2bed7c28e8b1f1fa979f8",
+ "w1_test_file_sha256": "9614f1d2abd1b97ed1c7fac5a5949b500afda1972880d13445e89bdc51b15e70"
+}

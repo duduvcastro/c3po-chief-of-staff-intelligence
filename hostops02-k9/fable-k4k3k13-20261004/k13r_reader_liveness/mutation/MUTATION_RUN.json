@@ -1,0 +1,2042 @@
+{
+ "by_target": {
+  "dispatcher": 12,
+  "launcher": 4,
+  "op": 151
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 167,
+  "redundant_survivors": 0,
+  "single": 167,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "own",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "ecd83e22a6ecf8feec7ecaed5399f69f8f9cddce0ed9bd52da82b346bc6cb425",
+  "build/AUTHORITY.UNBOUND.json": "fcf14ffe67245a59a7b6ba1fe1c7065b037da6bcddde64cb6e86f6cf281a6e5f",
+  "build/DISPATCH.UNBOUND.json": "8a8bf9b1a4901f35ee9cb152d8d6ab3d05433bd9b16222da938f46ad619e3316",
+  "build/DISPATCH_SCOPE_DELTA.diff": "70fef24225f4a6192aefbf1ccc5c2140c4b16a679968d8ea92920dd61fecc570",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "ace7e683ac553830ad055e5b5c267499ca6f4725b78dd0d6116be9da162973a8",
+  "build/GO.UNBOUND.json": "3aa9c4a661856abfdb35dc81201f610b11baeace733a550dedc760ab0fc6d212",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "7e4808b752562ca30a791b4ab7648ab66c8dd216e78cdb8aa3259ea01cc0770a",
+  "build/REQUEST.UNBOUND.json": "654aae995763b4159fca34a6f09c43d2fd610399180bc15c4c08f09bc2633b1c",
+  "build/dispatch_once.py": "fa6d3160b8d4f25772b580b5ee5c5bf2997d4056f6759174f1d7cd0aa5cf6116",
+  "build/k13r_reader_liveness.py": "0fd5be1792a91c630998e38611600472cba4bb5fc2442a406013cdaee87ae5f3",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "0887651f520358c7956496e6b7fa7f89b10ed2d7254a7cc4ea09b049c3ea3528",
+  "op.py": "fca737a76fb0bb906f228d283ca9c027672bb6ab433af2294fed6e09b23b5022",
+  "spec.py": "6c8a9e943bb18afb77615d2349caea07e7c962840a8e4947f58528dd331c232d",
+  "tests/conftest.py": "279b8a89b124a2d705b0b14e15ba4bc285ce585e3f698dd9dfc209e4d9278fb9",
+  "tests/k13r.py": "b0a49d408390ad1a5d11faf8238f0c41881fc918ab07c1444bbce8822d29904f",
+  "tests/test_conformance.py": "54b7b01cf759479c4868e090f435e66fbc8bd96cfb1f0c4cea16498e84fde7ba",
+  "tests/test_k13r.py": "c7aae1b6cf3ecf8c30989592b7d0f0e96d3e22100fb142795af7799da893880d"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:75: AssertionError: assert 'R2D2-V2-SHADOW-2026-09-28' == 'R2D2-V2-SHADOW-2026-10-05'",
+   "killed": true,
+   "mutant": "C01_another_epoch",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.16s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C02_service_unit",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 deselected in 1.11s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C03_timer_unit",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 5 deselected in 1.09s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...STALLED_FILE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C04_unit_directory",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 5 deselected in 1.05s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET..._NOT_RUNNING') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C05_reader_container",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.00s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C06_data_bind",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 5 deselected in 1.21s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C07_journal_bind",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 deselected in 0.92s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C08_capacity_bind",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 deselected in 1.07s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C09_launcher_bind",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 5 deselected in 0.80s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...THE_LAUNCHER') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C10_reader_path",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.00s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...THE_LAUNCHER') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C11_reader_args_without_isolation",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.23s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...ER_NOT_UID_0') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C12_reader_user",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 deselected in 0.89s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "C13_worker_marker",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 44 passed, 5 deselected in 2.73s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "C14_launcher_marker",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 43 passed, 5 deselected in 2.85s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:197: AssertionError: assert ('READER_NOT_AS_EXPECTED' == 'READER_LIVE_...ECTATIONS_MET'",
+   "killed": true,
+   "mutant": "C15_capacity_day_marker",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 60 passed, 5 deselected in 3.72s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "C16_paused_not_scanned",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 61 passed, 5 deselected in 3.71s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:54: AssertionError: assert ('READER_NOT_AS_EXPECTED' == 'READER_STOPP...ECTATIONS_MET'",
+   "killed": true,
+   "mutant": "C17_failed_is_not_stopped",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 2 passed, 5 deselected in 1.37s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "C17b_deactivating_is_stopped",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 48 passed, 5 deselected in 3.19s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C26_timer_asked_for_nrestarts",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 5 deselected in 1.02s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:61: AssertionError: assert ('NRestarts' not in ['/usr/bin/systemctl', 'show', 'c3po-reader.timer', '-p', 'Id', '-p', ...] and ['Id', 'LoadS...entPath', ...] == ['Id', 'LoadS...entPath', ...]",
+   "killed": true,
+   "mutant": "C27_timer_without_result",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 3 passed, 5 deselected in 1.07s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:61: AssertionError: assert ('NRestarts' not in ['/usr/bin/systemctl', 'show', 'c3po-reader.timer', '-p', 'Id', '-p', ...])",
+   "killed": true,
+   "mutant": "C28_timer_row_with_the_service_list",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 3 passed, 5 deselected in 1.07s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C29_timer_parsed_with_the_service_list",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 5 deselected in 0.86s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C30_service_parsed_with_the_timer_list",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 5 deselected in 0.92s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "C18_command_words",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 75 passed, 5 deselected in 4.10s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "C19_mounts_limit",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 72 passed, 5 deselected in 3.63s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C20_property_dropped",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.02s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:84: AssertionError: assert (() == ('GO_WRITE_HO...R_SWITCH_01',)",
+   "killed": true,
+   "mutant": "C21_evidence_not_the_switch",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.91s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:84: AssertionError: assert (('GO_WRITE_HO...R_SWITCH_02',) == ('GO_WRITE_HO...R_SWITCH_01',)",
+   "killed": true,
+   "mutant": "C22_switch_operation",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 passed, 5 deselected in 1.00s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:19: KeyError: 'writes'",
+   "killed": true,
+   "mutant": "C23_mode_list",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.97s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:49: AssertionError: assert ('METADATA_ON...NS_MET', None) == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C24_stopped_outcome_is_live",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.00s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_a_window_of_fifteen_minutes_is_the_longest - ...",
+   "killed": true,
+   "mutant": "C25_gate_span",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 59 passed, 5 deselected in 3.51s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R01_mounts_template_prints_the_config",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 deselected in 0.92s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...THE_LAUNCHER') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R02_command_template_without_args",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 5 deselected in 1.05s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "R03_command_template_init_constant",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 38 passed, 5 deselected in 3.26s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "R04_command_template_read_only_constant",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 40 passed, 5 deselected in 3.27s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "R05_command_template_user_constant",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 41 passed, 5 deselected in 3.25s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "R06_scan_template_without_args",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 43 passed, 5 deselected in 3.56s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "R07_scan_template_without_path",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 45 passed, 5 deselected in 3.11s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R08_container_row_with_the_scan_template",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 deselected in 1.13s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R09_listing_without_all",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 5 deselected in 1.28s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R10_mounts_row_with_the_command_template",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 5 deselected in 1.43s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R11_command_row_with_the_scan_template",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 deselected in 1.62s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R12_service_show_of_the_timer",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 5 deselected in 1.54s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R13_timer_show_of_the_service",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 5 deselected in 1.44s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R14_is_enabled_of_the_service",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 5 deselected in 1.45s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "R15_show_without_properties",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 5 deselected in 1.27s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/build/k13r_reader_liveness.py:1021: KeyError: 'RUNNING'",
+   "killed": true,
+   "mutant": "P01_mode_not_checked",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 11 passed, 5 deselected in 1.62s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_plan_refusals[<lambda>-IMAGE_ID_INVALID0] - F...",
+   "killed": true,
+   "mutant": "P02_image_not_checked",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 13 passed, 5 deselected in 1.79s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_plan_refusals[<lambda>-EVIDENCE_BOOT_UNBOUND0]",
+   "killed": true,
+   "mutant": "P03_boot_not_checked",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 15 passed, 5 deselected in 2.02s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:74: AssertionError: assert ('c812e1edb644...2fecfb2797c6a' == 'c812e1edb644...2fecfb2797c6a'",
+   "killed": true,
+   "mutant": "E01_operation",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.70s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:73: AssertionError: assert (0 == 0 and [] == []",
+   "killed": true,
+   "mutant": "E02_mode",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.53s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:72: AssertionError: assert 'READER_STOPP...ECTATIONS_MET' == 'READER_LIVE_...ECTATIONS_MET'",
+   "killed": true,
+   "mutant": "E03_success",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.81s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:73: AssertionError: assert (0 == 0 and [] == []",
+   "killed": true,
+   "mutant": "E04_image",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.84s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:74: AssertionError: assert (None == 'c812e1edb64417d6090dcfbaf16c21cd8e8665c04396e1edb472fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E05_boot",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.94s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:79: AssertionError: assert {'other_reade...and inactive'} == {'other_reade...and inactive'}",
+   "killed": true,
+   "mutant": "E06_expect_service",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.00s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:79: AssertionError: assert {'other_reade...d and active'} == {'other_reade...and inactive'}",
+   "killed": true,
+   "mutant": "E07_expect_timer",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.52s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:79: AssertionError: assert {'other_reade...and inactive'} == {'other_reade...and inactive'}",
+   "killed": true,
+   "mutant": "E08_expect_container",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.63s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:78: AssertionError: assert {'other_reade...d and active'} == {'other_reade...d and active'}",
+   "killed": true,
+   "mutant": "E09_expect_others",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.56s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_success_criterion_follows_the_mode_and_effects_say_nothing_changes",
+   "killed": true,
+   "mutant": "E10_writes",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.66s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_success_criterion_follows_the_mode_and_effects_say_nothing_changes",
+   "killed": true,
+   "mutant": "E11_side_effects",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.55s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:49: AssertionError: assert ('METADATA_ON...NS_MET', None) == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "E12_success_of_constant",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.61s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:78: AssertionError: assert {'other_reade...and inactive'} == {'other_reade...d and active'}",
+   "killed": true,
+   "mutant": "E13_mode_flag_inverted",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.88s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:232: AssertionError: assert ('UNAVAILABLE' == 'UNAVAILABLE'",
+   "killed": true,
+   "mutant": "O01_properties_any_bytes",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 66 passed, 5 deselected in 5.69s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O02_property_value_any",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 64 passed, 5 deselected in 4.95s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:66: KeyError: 'code'",
+   "killed": true,
+   "mutant": "O03_properties_incomplete",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 3 passed, 5 deselected in 2.04s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O04_property_id_any",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.77s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O05_property_line_without_equals",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 67 passed, 5 deselected in 5.08s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O06_not_loaded_unseen",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 18 passed, 5 deselected in 2.14s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O07_fragment_unseen",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 19 passed, 5 deselected in 2.60s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O08_drop_in_unseen",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 20 passed, 5 deselected in 2.32s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O09_boot_unseen",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 17 passed, 5 deselected in 2.11s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:38: AssertionError: assert ('0' == '0'",
+   "killed": true,
+   "mutant": "O10_boot_digest_not_reported",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 5 deselected in 1.52s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O11_service_not_active_unseen",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 21 passed, 5 deselected in 2.56s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O12_service_activating_is_active",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 21 passed, 5 deselected in 2.71s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O13_service_not_stopped_unseen",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 46 passed, 5 deselected in 4.08s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:38: KeyError: 'NRestarts'",
+   "killed": true,
+   "mutant": "O14_service_facts_dropped",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 5 deselected in 1.38s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O15_enabled_word_any",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 68 passed, 5 deselected in 5.27s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O16_timer_live_unseen",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 23 passed, 5 deselected in 2.08s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O17_timer_live_word_only",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 24 passed, 5 deselected in 2.53s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O18_timer_live_state_only",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 23 passed, 5 deselected in 2.49s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O19_timer_stopped_unseen",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 50 passed, 5 deselected in 3.74s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O20_timer_stopped_word_only",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 51 passed, 5 deselected in 3.99s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O21_timer_stopped_state_only",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 50 passed, 5 deselected in 4.25s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O22_unit_findings_dropped",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 19 passed, 5 deselected in 2.12s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:26: AssertionError: assert ('READER_CONTAINER_NOT_RUNNING' in [])",
+   "killed": true,
+   "mutant": "O23_reader_not_running_unseen",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 25 passed, 5 deselected in 3.03s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:237: AssertionError: assert ('READER_OBSER...ON_INCOMPLETE' == 'READER_OBSER...ON_INCOMPLETE'",
+   "killed": true,
+   "mutant": "O24_reader_absent_accepted",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 78 passed, 5 deselected in 6.04s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O25_reader_left_unseen",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 52 passed, 5 deselected in 4.47s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:238: AssertionError: assert ['COMMAND_FAI...AINER_ABSENT'] == ['READER_CONT...AINER_ABSENT']",
+   "killed": true,
+   "mutant": "O26_inspect_without_a_listed_reader",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 78 passed, 5 deselected in 5.62s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:253: KeyError: 'code'",
+   "killed": true,
+   "mutant": "O27_reader_changed_accepted",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 80 passed, 5 deselected in 5.91s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O28_container_not_running_unseen",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 56 passed, 5 deselected in 4.43s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O29_image_unseen",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.52s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_facts_of_the_findings_are_reported_as_read - ...",
+   "killed": true,
+   "mutant": "O30_image_reported_equal",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 55 passed, 5 deselected in 4.42s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:35: AssertionError: assert (None == '2026-10-02T15:00:09.000000000Z')",
+   "killed": true,
+   "mutant": "O31_started_at_dropped",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 1.34s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:34: AssertionError: assert ('0200e482bd0c...bb568ceab996b' == '0200e482bd0c...bb568ceab996b'",
+   "killed": true,
+   "mutant": "O32_restarts_dropped",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 1.59s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:238: AssertionError: assert ['READER_CONT...AINER_ABSENT'] == ['READER_CONT...AINER_ABSENT']",
+   "killed": true,
+   "mutant": "O33_mounts_without_a_reader",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 78 passed, 5 deselected in 5.28s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O34_mounts_unseen",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 28 passed, 5 deselected in 2.98s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: ['READER_MOUNTS_NOT_THE_FIVE_READ_ONLY_BINDS']",
+   "killed": true,
+   "mutant": "O35_writable_unseen",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 27 passed, 5 deselected in 2.92s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "O36_expected_mounts_writable",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 5 deselected in 1.28s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "O37_expected_mounts_any_type",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 5 deselected in 1.55s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O38_mounts_shape_any",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 72 passed, 5 deselected in 5.46s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O39_mount_entry_any",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 70 passed, 5 deselected in 5.37s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O40_mount_source_any",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 73 passed, 5 deselected in 4.79s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_facts_of_the_findings_are_reported_as_read - ...",
+   "killed": true,
+   "mutant": "O41_mount_count_dropped",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 55 passed, 5 deselected in 4.40s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:238: AssertionError: assert ['READER_CONT...ATION_FAILED'] == ['READER_CONT...AINER_ABSENT']",
+   "killed": true,
+   "mutant": "O42_command_without_a_reader",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 78 passed, 5 deselected in 6.03s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:179: KeyError: 'code'",
+   "killed": true,
+   "mutant": "O43_command_shape_any",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 57 passed, 5 deselected in 4.53s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O44_command_unseen",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 35 passed, 5 deselected in 3.18s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O45_init_unseen",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 38 passed, 5 deselected in 3.40s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O46_init_truthy",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 39 passed, 5 deselected in 3.15s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O47_read_only_unseen",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 40 passed, 5 deselected in 3.66s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O48_user_unseen",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 41 passed, 5 deselected in 3.42s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_facts_of_the_findings_are_reported_as_read - ...",
+   "killed": true,
+   "mutant": "O49_launcher_flag_true",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 55 passed, 5 deselected in 4.94s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O50_command_words_any",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 76 passed, 5 deselected in 5.60s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:231: AssertionError: assert ('PARTIAL_MET..._AS_EXPECTED') == ('PARTIAL_MET...N_INCOMPLETE')",
+   "killed": true,
+   "mutant": "O51_command_words_unbounded",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 75 passed, 5 deselected in 5.65s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:232: AssertionError: assert ('UNAVAILABLE' == 'UNAVAILABLE'",
+   "killed": true,
+   "mutant": "O52_command_word_types_any",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 77 passed, 5 deselected in 5.55s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:242: AssertionError: assert ('READER_OBSER...ON_INCOMPLETE' == 'READER_OBSER...ON_INCOMPLETE'",
+   "killed": true,
+   "mutant": "O53_scan_without_listing",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 79 passed, 5 deselected in 5.36s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:197: AssertionError: assert ('READER_NOT_AS_EXPECTED' == 'READER_LIVE_...ECTATIONS_MET'",
+   "killed": true,
+   "mutant": "O54_scan_exited_too",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 60 passed, 5 deselected in 4.82s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...SS_ELSEWHERE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "O55_scan_includes_the_reader",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 5 deselected in 1.11s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:181: KeyError: 'code'",
+   "killed": true,
+   "mutant": "O56_scan_shape_any",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 57 passed, 5 deselected in 4.59s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O57_others_unseen",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 43 passed, 5 deselected in 3.23s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:197: AssertionError: assert ('READER_NOT_AS_EXPECTED' == 'READER_LIVE_...ECTATIONS_MET'",
+   "killed": true,
+   "mutant": "O58_capacity_day_is_a_reader",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 60 passed, 5 deselected in 4.37s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: []",
+   "killed": true,
+   "mutant": "O59_marker_exact_word",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 43 passed, 5 deselected in 3.70s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:202: AssertionError: assert [] == ['paused']",
+   "killed": true,
+   "mutant": "O60_others_names_dropped",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 61 passed, 5 deselected in 4.61s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:264: AssertionError: assert (('METADATA_ON...'OBSERVATION') == ('REFUSED', '..._OBSERVATION')",
+   "killed": true,
+   "mutant": "X01_executor_not_checked",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 82 passed, 5 deselected in 5.78s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:32: AssertionError: assert ['command', '...service', ...] == ['boot', 'com...readers', ...]",
+   "killed": true,
+   "mutant": "X02_boot_not_observed",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 5 deselected in 1.21s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:32: AssertionError: assert ['boot', 'com...readers', ...] == ['boot', 'com...readers', ...]",
+   "killed": true,
+   "mutant": "X03_service_not_observed",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 5 deselected in 1.30s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:32: AssertionError: assert ['boot', 'com...readers', ...] == ['boot', 'com...readers', ...]",
+   "killed": true,
+   "mutant": "X04_timer_not_observed",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 5 deselected in 0.98s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:32: AssertionError: assert ['boot', 'com...service', ...] == ['boot', 'com...readers', ...]",
+   "killed": true,
+   "mutant": "X05_container_not_observed",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 5 deselected in 1.44s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:32: AssertionError: assert ['boot', 'com...service', ...] == ['boot', 'com...readers', ...]",
+   "killed": true,
+   "mutant": "X06_mounts_not_observed",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 5 deselected in 1.41s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:32: AssertionError: assert ['boot', 'con...service', ...] == ['boot', 'com...readers', ...]",
+   "killed": true,
+   "mutant": "X07_command_not_observed",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 5 deselected in 1.32s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:32: AssertionError: assert ['boot', 'com...service', ...] == ['boot', 'com...readers', ...]",
+   "killed": true,
+   "mutant": "X08_others_not_observed",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 deselected in 1.31s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:49: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "X09_live_items_in_stopped",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.20s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:260: AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('PARTIAL_MET... 'GO_EXPIRED')",
+   "killed": true,
+   "mutant": "X10_expiry_not_a_stop",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 81 passed, 5 deselected in 6.13s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:179: AssertionError: assert ('CONTAINER_COMMAND_INVALID' == 'CONTAINER_COMMAND_INVALID'",
+   "killed": true,
+   "mutant": "X11_incomplete_is_complete",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 57 passed, 5 deselected in 5.46s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:25: AssertionError: ['BOOT_NOT_THE_EVIDENCE']",
+   "killed": true,
+   "mutant": "X12_findings_are_complete",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 17 passed, 5 deselected in 2.22s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:260: AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('PARTIAL_MET... 'GO_EXPIRED')",
+   "killed": true,
+   "mutant": "X13_stop_ignored",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 81 passed, 5 deselected in 5.77s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:49: AssertionError: assert ('METADATA_ON...NS_MET', None) == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "X14_success_is_live_always",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.31s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:260: AssertionError: assert (('REFUSED', 'GO_EXPIRED') == ('PARTIAL_MET... 'GO_EXPIRED')",
+   "killed": true,
+   "mutant": "X15_refusal_after_an_observation",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 81 passed, 5 deselected in 6.18s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:26: AssertionError: assert ('BOOT_NOT_THE_EVIDENCE' in ['BOOT_NOT_THE_EVIDENCE'] and [] == []",
+   "killed": true,
+   "mutant": "X17_expectations_met_always",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 17 passed, 5 deselected in 1.97s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:288: AssertionError: assert ('RECEIPT_REDUCED_TO_MINIMUM' == 'ITEMS_REDUCED_TO_STATUS'",
+   "killed": true,
+   "mutant": "X18_reduction_dropped",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 89 passed, 5 deselected in 13.75s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:286: AssertionError: assert {'status': 'COMPLETE'} == {'code': None...': 'COMPLETE'}",
+   "killed": true,
+   "mutant": "X19_reduction_keeps_nothing",
+   "returncode": 1,
+   "seconds": 16.4,
+   "summary": "1 failed, 89 passed, 5 deselected in 14.11s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_live_reads_every_item_with_exactly_these_commands",
+   "killed": true,
+   "mutant": "X20_listing_count_dropped",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 deselected in 1.11s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "D01_source_root_elsewhere",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 5 deselected in 1.27s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_plan_refusals[<lambda>-SOURCE_TARGET_INVALID0]",
+   "killed": true,
+   "mutant": "D02_source_target_any",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 6 passed, 5 deselected in 1.52s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_plan_refusals[<lambda>-SOURCE_TARGET_INVALID1]",
+   "killed": true,
+   "mutant": "D03_source_target_may_be_taken",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 7 passed, 5 deselected in 1.48s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13r.py::test_plan_refusals[<lambda>-SOURCE_TARGET_INVALID0]",
+   "killed": true,
+   "mutant": "D04_source_target_not_checked",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 6 passed, 5 deselected in 1.46s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:31: AssertionError: assert ('PARTIAL_MET...D_ONLY_BINDS') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "D05_source_bind_not_expected",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 deselected in 1.24s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:185: AssertionError: ['READER_MOUNTS_NOT_THE_FIVE_READ_ONLY_BINDS']",
+   "killed": true,
+   "mutant": "D06_source_bind_at_any_target",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 58 passed, 5 deselected in 3.65s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:36: AssertionError: decision 6: the data volume bind is reported",
+   "killed": true,
+   "mutant": "D07_data_volume_not_reported",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 5 deselected in 1.20s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:159: AssertionError: assert ['/mnt/day-d-data'] == []",
+   "killed": true,
+   "mutant": "D08_not_root_controlled_any_mount",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 55 passed, 5 deselected in 3.78s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:76: AssertionError: assert ({'source': '/...target': None} == {'source': '/.../c3po-source'}",
+   "killed": true,
+   "mutant": "E14_source_bind_target",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k13r_reader_liveness/tests/test_k13r.py:76: AssertionError: assert ({'source': '/.../c3po-source'} == {'source': '/.../c3po-source'}",
+   "killed": true,
+   "mutant": "E15_binds_not_root_controlled",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.90s",
+   "tests": [
+    "test_k13r.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D02_dispatcher_one_day_rule_dropped",
+   "returncode": 1,
+   "seconds": 24.7,
+   "summary": "1 failed, 109 passed, 5 deselected in 22.41s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D03_dispatcher_signed_date_not_tied_to_the_config_day",
+   "returncode": 1,
+   "seconds": 25.4,
+   "summary": "1 failed, 109 passed, 5 deselected in 23.42s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path",
+   "killed": true,
+   "mutant": "D04_dispatcher_config_schema_dropped",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 0.52s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_dispatcher_unsigned_go_accepted",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 108 passed, 5 deselected in 20.07s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D06_dispatcher_unsigned_authority_accepted",
+   "returncode": 1,
+   "seconds": 23.2,
+   "summary": "1 failed, 108 passed, 5 deselected in 21.28s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D07_dispatcher_claim_root_binding_dropped",
+   "returncode": 1,
+   "seconds": 22.3,
+   "summary": "1 failed, 108 passed, 5 deselected in 20.29s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D08_dispatcher_transport_binding_dropped",
+   "returncode": 1,
+   "seconds": 21.8,
+   "summary": "1 failed, 108 passed, 5 deselected in 19.62s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D09_dispatcher_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 20.6,
+   "summary": "1 failed, 108 passed, 5 deselected in 18.95s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_names_of_every_earlier_operation_are_refused_at_both_layers[READONLY_POSTDEPLOY01_GO_V1-GO_READONLY_POSTDEPLOY_01-READONLY_POSTDEPLOY]",
+   "killed": true,
+   "mutant": "D10_dispatcher_local_authentication_dropped",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 91 passed, 5 deselected in 9.97s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_receipt_of_another_operation_is_filed_uncertain",
+   "killed": true,
+   "mutant": "D11_dispatcher_receipt_schema_not_checked",
+   "returncode": 1,
+   "seconds": 22.6,
+   "summary": "1 failed, 113 passed, 5 deselected in 20.59s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D12_dispatcher_late_start_accepted",
+   "returncode": 1,
+   "seconds": 21.4,
+   "summary": "1 failed, 109 passed, 5 deselected in 19.63s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_prepare_does_not_spawn_then_resume_once_and_the_go_is_single_use",
+   "killed": true,
+   "mutant": "D13_dispatcher_claim_not_exclusive",
+   "returncode": 1,
+   "seconds": 21.5,
+   "summary": "1 failed, 107 passed, 5 deselected in 19.26s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[raise_value-UNCERTAIN-3]",
+   "killed": true,
+   "mutant": "X01_launcher_enters_the_payload_with_the_refusal_exit_code",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 7 passed, 5 deselected in 6.08s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[refused-KNOWN_REFUSAL-1]",
+   "killed": true,
+   "mutant": "X02_launcher_maps_a_refusal_to_partial",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 4 passed, 5 deselected in 3.31s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[partial-KNOWN_PARTIAL-2]",
+   "killed": true,
+   "mutant": "X03_launcher_maps_everything_to_complete",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 5 passed, 5 deselected in 4.75s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13r::test_launcher_refuses_wrong_pins_at_build_and_on_stdin",
+   "killed": true,
+   "mutant": "X04_launcher_document_pins_not_checked",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 11 passed, 5 deselected in 10.20s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "results_from_the_resume_cache": 0,
+ "survivors": []
+}

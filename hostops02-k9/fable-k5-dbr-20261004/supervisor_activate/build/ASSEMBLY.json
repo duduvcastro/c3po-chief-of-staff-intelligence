@@ -1,0 +1,62 @@
+{
+ "activation_allowed": true,
+ "core_parts": {
+  "core": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a",
+  "docker": "4602f6f07a4502a3decec99cd415737efb429e3b1a188b368939a090bc3b3aa5",
+  "parents": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b",
+  "runner": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7"
+ },
+ "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "date_class": "WRITE_SESSIONS",
+ "dates": [
+  "2026-10-05",
+  "2026-10-06",
+  "2026-10-07",
+  "2026-10-08",
+  "2026-10-09",
+  "2026-10-10"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  142,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "0e2f389826d7d6e4a6e4b9d9f375cc3641adc6d4a936c39d58bf1688609374e6",
+ "final_payload_bytes": 137695,
+ "final_payload_sha256": "9d1ee1512a29f67dbca040f5b710773d6700c9f676043bc701c9862dfbd2b5f3",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "supervisor_activate",
+ "name": "supervisor_activate",
+ "operation": "GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01",
+ "operation_part_sha256": "dc94b5191239a9c332944b42a136e049e614ad861ceb4c512fb00d1779520cc7",
+ "parts": [
+  "core",
+  "runner",
+  "docker",
+  "parents"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "6e7abaaa99c2e3350fbadbeddcf805dff903bfe3e5af44b482e02639e03dd43a",
+ "source_bytes": 91209,
+ "source_sha256": "5363bde1473d482e309c18e99c8da7986a10e6b3903164a89e8b270455a87259",
+ "spec_sha256": "0fa4ab27157ba793857799412f3afb26a0c1f48e1fd0a56edb13d0779fc52829",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 8114,
+ "writes_allowed": true
+}

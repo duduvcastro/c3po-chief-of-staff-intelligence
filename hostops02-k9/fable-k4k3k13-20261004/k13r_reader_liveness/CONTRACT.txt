@@ -1,0 +1,37 @@
+HOSTOPS02 / K13r - k13r_reader_liveness - GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01 - REVISION 2
+Epoch R2D2-V2-SHADOW-2026-10-05. Plan row M7 / A2 rows V-1, V-2, V-s (mode LIVE); after X1 (mode STOPPED).
+
+Revision 2 answers an independent read-only review of revision 1 (DESIGN.md, the review section); revision 1 is
+kept unchanged under ../work/k13/rev1/.
+
+Offline work only. Nothing in this directory was run on the host, pushed, bound or reviewed by anyone but its author.
+Every hash and count is in VALIDATION.json and SHA256SUMS, written by seal.py. DESIGN.md is the design.
+
+1. STATUS
+
+  Built and tested by its author (Fable). NOT REVIEWED. NOT BOUND.
+  Core: generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6, read, never edited.
+  Parts carried: core, runner, docker. Read-only: no files part, no EFFECT or CONTAINER row.
+  THE LINUX-ROOT CI JOB HAS NOT RUN. systemctl show/is-enabled output and the docker inspect templates (.Mounts,
+  .Args, .HostConfig.Init/ReadonlyRootfs, .Config.User) are EMULATED ONLY. docker top and docker logs are NOT used
+  (not reading verbs of the core): M7/V-1/V-2 cannot see the worker child or the STARTING notice - a SIGNED GAP that
+  needs the owner's or Codex's explicit acceptance (DESIGN.md section 2, Q-1).
+  Before any GO: the Linux-root job; Codex's written review and answers to DESIGN.md section 5.
+
+2. SPECIFICATION
+
+  LIVE     reader service active; timer enabled and active; one container c3po-reader, running, image = the signed
+           ID; its mounts exactly five read-only binds (Codex decision 6 adds /var/lib/c3po/r2d2-v2-source-20261005 at the
+           signed source_target; the uid-1000 data volume bind is REPORTED as not meeting the decision) - the four (/mnt/day-d-data -> /app/day-d-data, /var/lib/c3po-bar/journal
+           -> /c3po-bar-journal, /var/lib/c3po-capacity -> /c3po-capacity, /etc/c3po-reader/launcher -> /c3po-reader);
+           main command python -I -B /c3po-reader/reader_launcher.py, init, read-only root, user 0:0; no reader-like
+           main command elsewhere. Success: METADATA_ONLY_REQUIRES_REVIEW / READER_LIVE_ALL_EXPECTATIONS_MET.
+  STOPPED  timer disabled and inactive; service inactive or failed; no c3po-reader container; no reader elsewhere.
+           Success: READER_STOPPED_ALL_EXPECTATIONS_MET.
+  Each item on its own: UNAVAILABLE with a constant code, never an absence; mismatch = finding (READER_NOT_AS_EXPECTED).
+  Never: an unformatted docker inspect, an environment value, a command line, a log line, any change to the host.
+  Date class READ (2026-10-02 ... 2026-10-10 UTC); window at most 900 s on one UTC day.
+
+3. TESTS, MUTATION, REPRODUCE: VALIDATION.json, mutation/MUTATION_RUN.json and MUTATION_RUN.py312.json.
+   shasum -a 256 -c SHA256SUMS ; python3 -B seal.py check ; python3 -B ../core/assemble.py --check .
+   python3 -B -m pytest -p no:cacheprovider -q tests   (with /usr/bin/python3 3.9 and the 3.12 environment)
