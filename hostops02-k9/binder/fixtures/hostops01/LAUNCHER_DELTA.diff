@@ -1,0 +1,23 @@
+--- reviewed_supervisor_hostfacts/launcher_stdin.py
++++ hostops01/launcher_stdin.py
+@@ -27,15 +27,15 @@
+     for key in ('request','authority','go'):
+         if hashlib.sha256(raw[key]).hexdigest()!=PINS[key]:
+             raise ValueError('STDIN_DOCUMENT_PIN')
+-    module=types.ModuleType('_pinned_supervisor_hostfacts')
++    module=types.ModuleType('_pinned_hostops')
+     sys.modules[module.__name__]=module
+-    exec(compile(raw['source'],'<pinned-supervisor-hostfacts>','exec'),module.__dict__)
+-    result=module.observe(raw['request'],raw['authority'],raw['go'],pins=module.Pins(**PINS),
++    exec(compile(raw['source'],'<pinned-hostops>','exec'),module.__dict__)
++    exit_code=3;result=module.run(raw['request'],raw['authority'],raw['go'],pins=module.Pins(**PINS),
+                           payload_bytes=raw['source'])
+-    exit_code=0 if result.get('status')=='METADATA_ONLY_REQUIRES_REVIEW' else 2
++    exit_code={'METADATA_ONLY_REQUIRES_REVIEW':0,'REFUSED':1}.get(result.get('status'),2)
+ except Exception as error:
+     code=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z][A-Z0-9_]{0,79}',str(error)) else 'STDIN_EXECUTION_REFUSED'
+-    result={'schema':'READONLY_SUPERVISOR_HOSTFACTS_STDIN_RESULT_V1','status':'REFUSED','code':code,'source_mutation':False}
++    result={'schema':'HOSTOPS_STDIN_RESULT_V1','status':'REFUSED' if exit_code==1 else 'RUN_RAISED_STATE_UNKNOWN','code':code}
+ encoded=json.dumps(result,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+ if len(encoded)>4*1024*1024:
+     encoded=b'{"status":"REFUSED","code":"STDIN_RESULT_LIMIT"}';exit_code=1

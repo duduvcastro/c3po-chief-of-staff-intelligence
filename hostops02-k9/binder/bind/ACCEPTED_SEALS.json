@@ -1,0 +1,58 @@
+{
+  "schema": "BIND_ONCE_ACCEPTED_SEALS_V1",
+  "note": "Seals (sha256 of the SHA256SUMS at the family root) this binder binds. A new or changed family is added here by a deliberate edit; the hash of this file is on every sheet the owner signs over. Being listed here says nothing about review: the review status of each seal is in its own contract and in the channel. A seal of the HOSTOPS02 kind names, in \"core\", the CORE_SHA256SUMS hash and the generation (sha256 of assemble.py) of the frozen core that must lie beside the operation directory as ../core. Revision 3 of this binder (2026-10-03): the HOSTOPS02 seals are the ones sent to Codex for review on 2026-10-02 21:12 BRT (NOTE_FOR_CODEX_TIER0.md), with a green Linux run; the superseded seals of K2a (8b2bced3...), K6a (3f0eea45...) and of the core (c13ce685...) are no longer accepted.",
+  "seals": [
+    {
+      "family": "W1PREFLIGHT01",
+      "revision": "3",
+      "sha256sums_sha256": "108b74ca92c0ad32c37d462c7d4cea77074f874022e8e18b89d116f696783347",
+      "sealed": "2026-10-02, nine UTC dates 2026-10-02..2026-10-10"
+    },
+    {
+      "family": "HOSTOPS01",
+      "revision": "3",
+      "sha256sums_sha256": "5609b334ea1b35932626ef7048a5958be16f4b3c769eafe73eb9d0d676e171c1",
+      "sealed": "2026-10-02, precheck, provision, install_units, readback"
+    },
+    {
+      "family": "HOSTOPS02_CATALOG_INIT",
+      "revision": "2",
+      "sha256sums_sha256": "1ccaf83dbc3e901d476efe92d877cbee678caf29d2103008a694c155ea09b0f5",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K2a GO_WRITE_HOSTOPS02_CATALOG_INIT_01 (modes REAL and REHEARSAL), second build, resealed after a test-only change (Linux run 37073034731; source d584aa93..., unchanged); green Linux run 37080926250; the frozen core 73fb546b... beside it as ../core. Replaces 8b2bced3... (removed)"
+    },
+    {
+      "family": "HOSTOPS02_INSTALL_RELEASE",
+      "revision": "2",
+      "sha256sums_sha256": "2705134655d7e580f389a7b32178e18b22d8ca75f2d5b206de3c90483fb84b82",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K10 GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01, revision 2 (payload of revision 1), unchanged; paired with the resealed core 73fb546b... (generation unchanged); green Linux run 37080926250"
+    },
+    {
+      "family": "HOSTOPS02_EPOCH_READBACK",
+      "revision": "2",
+      "sha256sums_sha256": "b1a810fea1e695ba3ef25f7dc839136bbb0c9995f89eef777bc2f93215703c1f",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K11 GO_READONLY_HOSTOPS02_EPOCH_READBACK_01 (modes PRE and POST), revision 2, unchanged; paired with the resealed core 73fb546b... (generation unchanged); green Linux run 37080926250"
+    },
+    {
+      "family": "HOSTOPS02_ACTIVATE",
+      "revision": "2",
+      "sha256sums_sha256": "91366f446d977fac1e0d0fb6d88c2fa8d98c02ef084b0d4098ebb0467a352bad",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K6a GO_WRITE_HOSTOPS02_ACTIVATE_01, repaired candidate, resealed after a test-only change (Linux run 37073034731; source cc054389..., unchanged); green Linux run 37080926250; the frozen core 73fb546b... beside it as ../core. Replaces 3f0eea45... (removed)"
+    }
+  ]
+}

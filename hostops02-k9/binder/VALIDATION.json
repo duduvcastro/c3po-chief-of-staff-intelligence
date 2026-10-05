@@ -1,0 +1,35 @@
+{
+  "schema": "CODEX_BINDER_READER_UNIT_GUARD_VALIDATION_V1",
+  "ready_for_signing": false,
+  "versions": {
+    "py39": {
+      "passed": 328,
+      "skipped": 13,
+      "failed": 1,
+      "errors": 0,
+      "refusal_coverage": true
+    },
+    "py312": {
+      "passed": 330,
+      "skipped": 11,
+      "failed": 1,
+      "errors": 0,
+      "refusal_coverage": true
+    }
+  },
+  "focused_each_python": 69,
+  "known_failure": "Frozen W1 Mac system-Python unbound payload stderr check; nested507PASS9SKIP1FAIL both versions; no new failures",
+  "source_sha256": "337e70dc1568ba8b279b9eec01603b3a5aa8276f52cba1a35c8dc264d63cd4fd",
+  "operational_acceptance_sha256": "fdab49c6251ce4aa411d2c81b8aa0c2bbd76169ec7705aaf0eae114482ddd6d2",
+  "operational_acceptance_changed": false,
+  "Fable_directories_changed": false,
+  "previous_delivery_changed": false,
+  "Linux_proof": "PENDING",
+  "Fable_independent_review": "PENDING",
+  "host_proof": false,
+  "raw_logs_sha256": {
+    "py39": "3edc7977b9b0f10fd97928463606b93b373261178826f3c791d7c9c21a67f05e",
+    "py312": "e2fda638deb54c367f15dbc3ba95702e9d63e43575a2cb90a96efce8e22761f0"
+  },
+  "packaging_revision": "rev2: JUnit XML redacted at parsed text/attribute level before serialization; counts unchanged, reports parse correctly; no code or test change and no tests repeated"
+}

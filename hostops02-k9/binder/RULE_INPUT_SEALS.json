@@ -1,0 +1,72 @@
+{
+  "schema": "CODEX_BINDER_RULE_FIXTURES_V1",
+  "fixtures_only": true,
+  "host_proof": false,
+  "automatically_accepted": false,
+  "inputs": [
+    {
+      "directory": "capacity_probe",
+      "manifest_sha256": "0ab8a11beec4ca4c5e120600b5994cb22d168e30092ff0b61943292fac95135c"
+    },
+    {
+      "directory": "core-k6b",
+      "manifest_sha256": "979e8c8389396ca0c09b014f9852f340ce0f1d6bdf8e05f8c6e4f1643b7d244c"
+    },
+    {
+      "directory": "core_k3",
+      "manifest_sha256": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd"
+    },
+    {
+      "directory": "db_preflight",
+      "manifest_sha256": "d239ed75952b968e7b88eef255495a4905a2364eee7e823f914612061ec7d234"
+    },
+    {
+      "directory": "db_priv",
+      "manifest_sha256": "c8fe13903612c71986b499c272bed541303935893ce5a129dfdcb3cba6a74091"
+    },
+    {
+      "directory": "k12_collect",
+      "manifest_sha256": "81e177b79210ff5e90c1182b7fa7cfe80fbb406b1207de6e9f55aab04462ac9f"
+    },
+    {
+      "directory": "k12_preflight",
+      "manifest_sha256": "6979213f11a07cc3dd57d6bff43d220f0b9f73bd4df20e0ce5e9dbf406ddf77c"
+    },
+    {
+      "directory": "k12_window",
+      "manifest_sha256": "e5e3bd4c4c1f5cf66bc595f9c55066ddc772fe75b62d0d0e39e43ac88e9a57c3"
+    },
+    {
+      "directory": "k13_reader_switch",
+      "manifest_sha256": "81f5ed128643ca3551a4f7eb55098e4522f2a3e32471b82b1aae18fe1fe340e0"
+    },
+    {
+      "directory": "k13r_reader_liveness",
+      "manifest_sha256": "68ca972cb792a950567c874a70a182bc3f168a475ac3b5f229f5fb396ae7dd9a"
+    },
+    {
+      "directory": "k3_secret_env",
+      "manifest_sha256": "de961bbf1f4969d1e650a097db3b002c8e784c48d24ed2dbee04a9279721f6f9"
+    },
+    {
+      "directory": "k4_files",
+      "manifest_sha256": "765995f64f5318591e89b3b2011702f9c4bfe2092aa492c888ba2d7d904d6ef8"
+    },
+    {
+      "directory": "k6b",
+      "manifest_sha256": "f8c88581137562fd9504b03c29c715b01fc050cdf55beb87e30bc79b8594b93f"
+    },
+    {
+      "directory": "k8_eve",
+      "manifest_sha256": "1140de95d3cff253e541cb80d5b6148a920811254068b0a121d93767d7e52813"
+    },
+    {
+      "directory": "reader_units",
+      "manifest_sha256": "c90c044c24cafdc77d2d1edad330fe9f25e9c19a4a5263e1af92944590e1c264"
+    },
+    {
+      "directory": "supervisor_activate",
+      "manifest_sha256": "e2b6e7bce2cb48109b682e80f8609fbe69a2912c00bcf7fe7e0a6aa3c98ec06e"
+    }
+  ]
+}

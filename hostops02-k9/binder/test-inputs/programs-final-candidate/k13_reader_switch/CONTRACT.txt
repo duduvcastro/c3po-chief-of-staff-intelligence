@@ -1,0 +1,59 @@
+HOSTOPS02 / K13 - k13_reader_switch - GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01 - REVISION 2
+Epoch R2D2-V2-SHADOW-2026-10-05. Plan rows M6 (ACTIVATE, with reconcile), A2 RST (RESTART), X1 (DEACTIVATE).
+
+Revision 2 answers an independent read-only review of revision 1 (DESIGN.md, the review section); revision 1 is
+kept unchanged under ../work/k13/rev1/.
+
+Offline work only. Nothing in this directory was run on the host, pushed, bound or reviewed by anyone but its author.
+Every hash and count is in VALIDATION.json and SHA256SUMS, written by seal.py. DESIGN.md is the design.
+
+1. STATUS
+
+  Built and tested by its author (Fable). NOT REVIEWED. NOT BOUND.
+  Core: generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6, read, never edited.
+  Parts carried: core, runner, docker, parents, files. Tools: systemctl, docker (trusted absolute binaries).
+  THE LINUX-ROOT CI JOB HAS NOT RUN. systemctl (enable --now, start --no-block, reset-failed, disable --now,
+  stop --no-block, show, is-enabled), docker info SecurityOptions, the inspect templates with .Args/.ExecIDs and the
+  behaviour of the reader units are EMULATED ONLY (tests/k13.py, a subclass of the core's emulation). docker top is
+  NOT used (not a reading verb of the core): a reader started by docker exec is NOT detected - a SIGNED GAP that
+  needs the owner's or Codex's explicit acceptance (DESIGN.md section 5, deviation 1; Q-4).
+  CODEX DECISION 6: the reader's bind sources are walked by root-only chains (journal, launcher, capacity tree, the
+  epoch source root /var/lib/c3po/r2d2-v2-source-20261005 as a fifth read-only bind); the data volume bind
+  /mnt/day-d-data -> /app/day-d-data (uid 1000, the release file) does NOT meet it and is reported in every
+  ACTIVATE/RESTART receipt (binds_not_root_controlled) - Q-8, for Codex and the owner.
+  Before any GO: (a) the Linux-root job with this directory; (b) Codex's written review of these bytes and answers to
+  DESIGN.md section 9; (c) receipts of the same boot for every signed row and hash (B2 units, A8 launcher, B6 pins,
+  A9 catalog, M1 release, e3 producer unit); (d) K13r reviewed and bound for the readback that must follow.
+
+2. SPECIFICATION (one payload, the mode signed in the plan)
+
+  ACTIVATE   guards of DESIGN.md section 2 -> create /etc/c3po-reader/activation.env (0:0 0600, the two constant lines,
+             sha256 2053f3f6f528ad7dc56d500666ac2cf48f79c3aadd3c98eb35b53ee92eff611b) unless it already holds exactly
+             those bytes (reconcile) -> systemctl enable --now c3po-reader.timer -> systemctl start --no-block
+             c3po-reader.service -> readback. Window: session day 10-05..10-09, 07:30:00-20:00:00 UTC; LATE marked
+             from 13:28:30 UTC. Success: METADATA_ONLY_REQUIRES_REVIEW / RETURNED_REQUIRES_LIVENESS_READBACK.
+  RESTART    same guards, activation.env required, timer enabled, service inactive or failed -> systemctl reset-failed
+             c3po-reader.service -> systemctl start --no-block c3po-reader.service -> readback.
+             Success: RESTART_RETURNED_REQUIRES_LIVENESS_READBACK.
+  DEACTIVATE (signs mode and boot only; reads no file) -> systemctl disable --now c3po-reader.timer -> systemctl stop
+             --no-block c3po-reader.service -> readback. Nothing deleted. Success: DEACTIVATED_REQUIRES_STOP_READBACK.
+  Never: docker run/exec/stop/rm/logs/top, daemon-reload of its own, a drop-in, any write but activation.env, secret.env
+  opened, an environment value or a container command line in the receipt, a wait, a retry.
+  Date class WRITE_SESSIONS (2026-10-05 ... 2026-10-10 UTC); window at most 900 s on one UTC day.
+
+3. WHAT A RECEIPT MEANS
+
+  KNOWN_COMPLETE (exit 0): the switch of the mode was read back as done; a K13r read must follow (LIVE or STOPPED).
+  KNOWN_REFUSAL (exit 1): nothing changed (no switch done or uncertain, no file left). The same bytes may run again
+    in a later signed window once the cause is gone.
+  KNOWN_PARTIAL (exit 2) / UNCERTAIN (exit 3): something may have changed; receipt.switches says, per switch, DONE,
+    FAILED_NOTHING_CHANGED, UNKNOWN, NOT_STARTED or NOT_ATTEMPTED; activation_performed / daemon_reload_performed are
+    True, False or None (unknown). Next step: a K13r read; then ACTIVATE again in reconcile (same payload, same day,
+    ORD:20, PLAN M6) or RESTART, each under its own GO.
+
+4. WHERE EACH BOUND VALUE COMES FROM: DESIGN.md section 7.
+
+5. TESTS, MUTATION, REPRODUCE: VALIDATION.json (counts per interpreter), mutation/MUTATION_RUN.json and
+   MUTATION_RUN.py312.json (own list, zero survivors required), DESIGN.md section 8.
+   shasum -a 256 -c SHA256SUMS ; python3 -B seal.py check ; python3 -B ../core/assemble.py --check .
+   python3 -B -m pytest -p no:cacheprovider -q tests   (with /usr/bin/python3 3.9 and the 3.12 environment)

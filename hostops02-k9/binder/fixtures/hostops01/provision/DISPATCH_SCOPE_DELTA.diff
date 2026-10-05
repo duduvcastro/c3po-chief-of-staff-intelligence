@@ -1,0 +1,114 @@
+--- reviewed_supervisor_hostfacts/dispatch_once.py
++++ hostops01/provision/dispatch_once.py
+@@ -12,8 +12,8 @@
+ import time
+ import launcher_stdin
+ import transport_once
+-import hostfacts_readonly
+-from hostfacts_readonly import canonical,decode,need,instant,sha
++import provision_dirs
++from provision_dirs import canonical,decode,need,instant,sha
+ 
+ 
+ def parent(path):
+@@ -99,14 +99,14 @@
+ def execute(config_path,config_sha256,*,phase='prepare',publication_path=None,publication_sha256=None,clock=lambda:datetime.now(timezone.utc),monotonic=time.monotonic,transport=transport_once.once):
+     need(phase in ('prepare','resume'),'DISPATCH_PHASE')
+     raw=read(config_path,config_sha256,65536);config=decode(raw)
+-    need(config.get('schema')=='SUPERVISOR_HOSTFACTS_DISPATCH_AUTHORIZATION_V1' and config.get('status')=='BOUND'
+-         and config.get('decision')=='GO' and config.get('operation')=='GO_READONLY_SUPERVISOR_HOSTFACTS_01'
++    need(config.get('schema')=='HOSTOPS_PROVISION_DISPATCH_AUTHORIZATION_V1' and config.get('status')=='BOUND'
++         and config.get('decision')=='GO' and config.get('operation')=='GO_WRITE_SUPERVISOR_READER_PROVISION_01'
+          and config.get('single_use') is True and config.get('retry') is False,'DISPATCH_UNBOUND')
+     need(type(config.get('owner')) is str and config['owner'] not in ('','UNBOUND')
+          and type(config.get('authorization_ref')) is str and config['authorization_ref'] not in ('','UNBOUND'),'DISPATCH_AUTHORITY')
+     need(config.get('executor_uid')==0 and type(config['executor_uid']) is int,'REMOTE_UID')
+     start,end=instant(config['not_before']),instant(config['not_after'])
+-    need(start.date().isoformat()=='2026-10-02' and end.date()==start.date(),'DISPATCH_DATE')
++    need(start.date().isoformat() in ('2026-10-02','2026-10-03','2026-10-04') and end.date()==start.date(),'DISPATCH_DATE')
+     seconds=config['watchdog_seconds'];need(type(seconds) is int and 1<=seconds<=90,'WATCHDOG_LIMIT')
+     latest_start=instant(config['latest_start'])
+     need(start<=latest_start==end-timedelta(seconds=seconds),'LATEST_START_BINDING')
+@@ -115,7 +115,7 @@
+         now=clock();need(start<=now<end and monotonic()<deadline,'DISPATCH_WINDOW')
+     gate()
+     need(config.get('finalize_local_receipts_after_window') is True,'LOCAL_FINALIZATION_AUTHORITY')
+-    modules=('dispatch_once.py','transport_once.py','launcher_stdin.py','hostfacts_readonly.py')
++    modules=('dispatch_once.py','transport_once.py','launcher_stdin.py','provision_dirs.py')
+     need(type(config.get('runtime_sha256')) is dict and set(config['runtime_sha256'])==set(modules),'RUNTIME_PINS_UNBOUND')
+     for name in modules:read(str(Path(__file__).resolve().with_name(name)),config['runtime_sha256'][name],private=False);gate()
+     blobs={}
+@@ -124,9 +124,9 @@
+     request,authority,go=map(decode,(blobs['request'],blobs['authority'],blobs['go']))
+     need('status' not in go or go['status']=='SIGNED','GO_UNSIGNED')
+     need('status' not in authority or authority['status']=='SIGNED','AUTHORITY_UNSIGNED')
+-    need(request.get('schema')=='READONLY_SUPERVISOR_HOSTFACTS_REQUEST_V1' and authority.get('schema')=='READONLY_SUPERVISOR_HOSTFACTS_AUTHORITY_V1'
+-         and go.get('schema')=='READONLY_SUPERVISOR_HOSTFACTS_GO_V1' and request.get('operation')==authority.get('operation')=='GO_READONLY_SUPERVISOR_HOSTFACTS_01'
+-         and request.get('status')=='BOUND' and request.get('executor_uid')==0
++    need(request.get('schema')=='WRITE_HOSTOPS_PROVISION_REQUEST_V1' and authority.get('schema')=='WRITE_HOSTOPS_PROVISION_AUTHORITY_V1'
++         and go.get('schema')=='WRITE_HOSTOPS_PROVISION_GO_V1' and request.get('operation')==authority.get('operation')=='GO_WRITE_SUPERVISOR_READER_PROVISION_01'
++         and request.get('status')=='BOUND' and request.get('executor_uid')==0 and request.get('date')==start.date().isoformat()
+          and go.get('action')=='GO' and go.get('owner')==authority.get('owner')==config['owner'],'INNER_AUTHORITY')
+     need(type(go.get('claim_root_identity')) is dict and canonical(go['claim_root_identity'])==canonical(config.get('local_root_identity')),'GO_CLAIM_ROOT_BINDING')
+     need(start>=instant(request['not_before']) and end<=instant(request['not_after'])
+@@ -138,13 +138,13 @@
+     need(request.get('host_binding_sha256')==authority.get('host_binding_sha256')==go.get('host_binding_sha256')==config.get('host_binding_sha256'),'HOST_BINDING')
+     expected_transport={key:config[key] for key in ('target','remote_command','command_sha256','runtime_sha256')}
+     need(go.get('transport_binding')==expected_transport,'GO_TRANSPORT_BINDING')
+-    need(go.get('phase')=='READONLY_HOSTFACTS' and go.get('writes_allowed') is False
+-         and authority.get('writes_allowed') is False and request.get('writes_allowed') is False,'READONLY_SCOPE')
++    need(go.get('phase')=='WRITE_PROVISION_DIRECTORIES_AND_RETENTION_TAG' and go.get('writes_allowed') is True
++         and authority.get('writes_allowed') is True and request.get('writes_allowed') is True,'WRITE_SCOPE')
+     # Validate the complete new inner authority before any claim or SSH launch.
+     # UID0 here checks the requested target actor, not this local process; the
+     # remote caller independently checks its actual effective uid again.
+-    hostfacts_readonly.authenticate(blobs['request'],blobs['authority'],blobs['go'],
+-        pins=hostfacts_readonly.Pins(payload=sha(blobs['source']),request=sha(blobs['request']),
++    provision_dirs.authenticate(blobs['request'],blobs['authority'],blobs['go'],
++        pins=provision_dirs.Pins(payload=sha(blobs['source']),request=sha(blobs['request']),
+             authority=sha(blobs['authority']),go=sha(blobs['go'])),payload_bytes=blobs['source'],
+         clock=clock,monotonic=monotonic,executor_uid=lambda:config['executor_uid'])
+     expected=launcher_stdin.build(blobs['source'],blobs['request'],blobs['authority'],blobs['go'],
+@@ -159,7 +159,7 @@
+     output,name=anchor.fd,attempt_path.name
+     attempt=None;claim=None
+     claim_name='.go-'+sha(blobs['go'])+'.claim'
+-    claim_raw=canonical({'schema':'SUPERVISOR_HOSTFACTS_GO_CLAIM_V1','go_sha256':sha(blobs['go']),'config_sha256':config_sha256})
++    claim_raw=canonical({'schema':'HOSTOPS_PROVISION_GO_CLAIM_V1','go_sha256':sha(blobs['go']),'config_sha256':config_sha256})
+     base_gate=gate
+     def location_gate():
+         anchor.check()
+@@ -202,7 +202,7 @@
+             os.fsync(attempt);location_gate()
+         need(config.get('finalize_local_receipts_after_window') is True,'LOCAL_FINALIZATION_AUTHORITY')
+         if phase=='prepare':
+-            intent=canonical({'schema':'SUPERVISOR_HOSTFACTS_DISPATCH_INTENT_V1','config_sha256':config_sha256,
++            intent=canonical({'schema':'HOSTOPS_PROVISION_DISPATCH_INTENT_V1','config_sha256':config_sha256,
+                 'payload_sha256':sha(blobs['payload']),'request_sha256':sha(blobs['request']),
+                 'go_sha256':sha(blobs['go']),'started_at':clock().isoformat(),'attempts':1,'retry':False})
+             write('intent.json',intent)
+@@ -210,13 +210,13 @@
+                     'go_sha256':sha(blobs['go']),'config_sha256':config_sha256,'retry':False}
+         proof_raw=read(publication_path,publication_sha256,65536);gate()
+         proof=decode(proof_raw)
+-        need(proof.get('schema')=='SUPERVISOR_HOSTFACTS_INTENT_PUBLICATION_V1' and proof.get('status')=='PUBLISHED'
++        need(proof.get('schema')=='HOSTOPS_PROVISION_INTENT_PUBLICATION_V1' and proof.get('status')=='PUBLISHED'
+              and proof.get('owner')==config['owner'] and type(proof.get('publication_ref')) is str
+              and proof['publication_ref'] not in ('','UNBOUND') and proof.get('go_sha256')==sha(blobs['go'])
+              and proof.get('config_sha256')==config_sha256,'PUBLICATION_BINDINGS')
+         intent_raw=read(str(attempt_path/'intent.json'),proof.get('intent_sha256'),65536);gate()
+         intent=decode(intent_raw)
+-        expected_intent={'schema':'SUPERVISOR_HOSTFACTS_DISPATCH_INTENT_V1','config_sha256':config_sha256,
++        expected_intent={'schema':'HOSTOPS_PROVISION_DISPATCH_INTENT_V1','config_sha256':config_sha256,
+             'payload_sha256':sha(blobs['payload']),'request_sha256':sha(blobs['request']),
+             'go_sha256':sha(blobs['go']),'started_at':intent.get('started_at'),'attempts':1,'retry':False}
+         need(intent==expected_intent and start<=instant(intent['started_at'])<=instant(proof['published_at'])<=clock(), 'INTENT_PUBLICATION_ORDER')
+@@ -236,7 +236,7 @@
+                 command_sha256=config['command_sha256'],authorize=authorize,seconds=seconds,monotonic=monotonic)
+             if result['status'] in ('KNOWN_COMPLETE','KNOWN_PARTIAL'):
+                 receipt=decode(out)
+-                need(receipt.get('schema')=='READONLY_SUPERVISOR_HOSTFACTS_RECEIPT_V1' and receipt.get('request_sha256')==sha(blobs['request'])
++                need(receipt.get('schema')=='WRITE_HOSTOPS_PROVISION_RECEIPT_V1' and receipt.get('request_sha256')==sha(blobs['request'])
+                      and receipt.get('go_sha256')==sha(blobs['go']) and receipt.get('payload_sha256')==sha(blobs['source']),'REMOTE_RECEIPT_BINDINGS')
+         except Exception:
+             result={'status':'UNCERTAIN','code':'TRANSPORT_OR_RECEIPT_REFUSED','retry_allowed':False}

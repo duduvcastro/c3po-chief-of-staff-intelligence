@@ -1,0 +1,127 @@
+{
+ "hostops01_pins": {
+  "parts/core.py": "9a053347b0129c0ca4bc5973b8977422fafb014952d4c0f8c789fded46e73641",
+  "parts/layout.py": "ec5dc48aae4e751b206a5f6e400ee21c5d20bcf7aa30c66d979bb89571439eb6",
+  "parts/op_install_units.py": "5158c5cbdc4e6cb5b14690d3199e994e8d18bf05305097ba15674235f413a9c3",
+  "parts/op_provision.py": "28e04b7de035306fdd414ecc366b61488ab3bb8cb4557955ab914ace6a23fe4d",
+  "parts/runner.py": "2afc002d1287de97ac77c1bd3815d839cfd46b64bac5e32ccb1b71c78ac84425",
+  "reviewed_base/dispatch_once.py": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409",
+  "reviewed_base/launcher_stdin.py": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e",
+  "reviewed_base/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918"
+ },
+ "rows": [
+  {
+   "here": "parts/runner.py:trusted_executable",
+   "hostops01": "parts/runner.py:trusted_executable",
+   "identical": true,
+   "sha256_here": "1339380c60dba9a0fcf22eecafa3fc907f8097d13271ecd6750b182e4dff53bf",
+   "sha256_hostops01": "1339380c60dba9a0fcf22eecafa3fc907f8097d13271ecd6750b182e4dff53bf"
+  },
+  {
+   "here": "parts/runner.py:binary",
+   "hostops01": "parts/runner.py:binary",
+   "identical": true,
+   "sha256_here": "e99d2f944a4f9c0574a2f74be1b1d17616143161746761b06bffc1d63a0aea67",
+   "sha256_hostops01": "e99d2f944a4f9c0574a2f74be1b1d17616143161746761b06bffc1d63a0aea67"
+  },
+  {
+   "here": "parts/docker.py:image_facts",
+   "hostops01": "parts/runner.py:image_facts",
+   "identical": true,
+   "sha256_here": "4292ef591f81aa9898fd6e93a4973c942e5ea8e6c2c3bf6a15d5eeee00f9277f",
+   "sha256_hostops01": "4292ef591f81aa9898fd6e93a4973c942e5ea8e6c2c3bf6a15d5eeee00f9277f"
+  },
+  {
+   "here": "parts/docker.py:IMAGE_FORMAT",
+   "hostops01": "parts/runner.py:IMAGE_FORMAT",
+   "identical": true,
+   "sha256_here": "1389f435f6e1072773cf339db503626be461baf0fd124a17675187b5f9c8df45",
+   "sha256_hostops01": "1389f435f6e1072773cf339db503626be461baf0fd124a17675187b5f9c8df45"
+  },
+  {
+   "here": "parts/docker.py:REVISION_LABEL",
+   "hostops01": "parts/runner.py:REVISION_LABEL",
+   "identical": true,
+   "sha256_here": "dcbe5b1b705dbcb2f20757a40c411b14d7954e74ad773885b570f521ffab0079",
+   "sha256_hostops01": "dcbe5b1b705dbcb2f20757a40c411b14d7954e74ad773885b570f521ffab0079"
+  },
+  {
+   "here": "parts/docker.py:REFERENCE",
+   "hostops01": "parts/runner.py:REFERENCE",
+   "identical": true,
+   "sha256_here": "255aa5196e48a7a350434edf3a2cbe04a73011f187435e7f45278a65b69a6632",
+   "sha256_hostops01": "255aa5196e48a7a350434edf3a2cbe04a73011f187435e7f45278a65b69a6632"
+  },
+  {
+   "here": "parts/docker.py:MAX_TAGS",
+   "hostops01": "parts/runner.py:MAX_TAGS",
+   "identical": true,
+   "sha256_here": "1d3f8ac66e97a0a3e0e3a279682ed0c3cfbd5cd93354814653554b0a035db867",
+   "sha256_hostops01": "1d3f8ac66e97a0a3e0e3a279682ed0c3cfbd5cd93354814653554b0a035db867"
+  },
+  {
+   "here": "parts/files.py:remove_own_temporary",
+   "hostops01": "parts/op_install_units.py:remove_own_temporary",
+   "identical": true,
+   "sha256_here": "00b4c57649a74109b47d0420ecc4f2d7bde2e54f1ee70a7e60e68f603fee86b0",
+   "sha256_hostops01": "00b4c57649a74109b47d0420ecc4f2d7bde2e54f1ee70a7e60e68f603fee86b0"
+  },
+  {
+   "here": "parts/files.py:number",
+   "hostops01": "parts/op_install_units.py:number",
+   "identical": true,
+   "sha256_here": "b12167e80941d6a141ab9bc424d915c1fee1971f34abce9a52939f95dc5d104a",
+   "sha256_hostops01": "b12167e80941d6a141ab9bc424d915c1fee1971f34abce9a52939f95dc5d104a"
+  },
+  {
+   "here": "parts/files.py:TEMPORARY",
+   "hostops01": "parts/op_install_units.py:TEMPORARY",
+   "identical": true,
+   "sha256_here": "80244ef8d9b8db9dc4a2c9fd8c90c1c53366637641fe0af861f4443d73e3af06",
+   "sha256_hostops01": "80244ef8d9b8db9dc4a2c9fd8c90c1c53366637641fe0af861f4443d73e3af06"
+  },
+  {
+   "here": "parts/parents.py:world_writable_without_sticky",
+   "hostops01": "parts/layout.py:world_writable_without_sticky",
+   "identical": true,
+   "sha256_here": "e855fe3b087784d0e8eb67ac3e785152a6fa291a899eb77caee7abbb3215abc6",
+   "sha256_hostops01": "e855fe3b087784d0e8eb67ac3e785152a6fa291a899eb77caee7abbb3215abc6"
+  },
+  {
+   "here": "parts/runner.py:COMMAND_ENVIRONMENT",
+   "hostops01": "parts/runner.py:COMMAND_ENVIRONMENT",
+   "identical": true,
+   "sha256_here": "0c252ca9355bc8b9e16d117829b1a9a58071fa5356ca8e9a8f83126b42be6423",
+   "sha256_hostops01": "0c252ca9355bc8b9e16d117829b1a9a58071fa5356ca8e9a8f83126b42be6423"
+  },
+  {
+   "here": "parts/runner.py:MAX_TOOL_TIMEOUTS",
+   "hostops01": "parts/runner.py:MAX_TOOL_TIMEOUTS",
+   "identical": true,
+   "sha256_here": "20fd26104058bad8e1ca5f6c6c4749cc3506f1347a9ecaeaeda3eac579f16e41",
+   "sha256_hostops01": "20fd26104058bad8e1ca5f6c6c4749cc3506f1347a9ecaeaeda3eac579f16e41"
+  },
+  {
+   "here": "reviewed_base/dispatch_once.py",
+   "hostops01": "reviewed_base/dispatch_once.py",
+   "identical": true,
+   "sha256_here": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409",
+   "sha256_hostops01": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409"
+  },
+  {
+   "here": "reviewed_base/launcher_stdin.py",
+   "hostops01": "reviewed_base/launcher_stdin.py",
+   "identical": true,
+   "sha256_here": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e",
+   "sha256_hostops01": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e"
+  },
+  {
+   "here": "reviewed_base/transport_once.py",
+   "hostops01": "reviewed_base/transport_once.py",
+   "identical": true,
+   "sha256_here": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+   "sha256_hostops01": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918"
+  }
+ ],
+ "schema": "HOSTOPS02_CORE_DELTA_V1"
+}

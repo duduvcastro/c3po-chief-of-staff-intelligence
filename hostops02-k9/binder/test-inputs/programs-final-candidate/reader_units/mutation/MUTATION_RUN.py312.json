@@ -1,0 +1,3075 @@
+{
+ "by_target": {
+  "dispatcher": 15,
+  "launcher": 4,
+  "op": 216
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 235,
+  "redundant_survivors": 0,
+  "single": 235,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "own",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "1cf033fbd1c81670a45a5f056a7930aa42616e1d59421b76c180ebc6b1dd6b8b",
+  "build/AUTHORITY.UNBOUND.json": "81255a1a5feeaa9e1ea1ea27649b3d0a868a41632af23bba8ffb5630753ea13b",
+  "build/DISPATCH.UNBOUND.json": "fb3bab7a4fb0ce375a5c04a8270d7d4b71c2c1ace08887bc7d075bf699dffb31",
+  "build/DISPATCH_SCOPE_DELTA.diff": "6decac399cfb9ee2a49aceb9798916990927c4e6a175a86c90c74b041576a695",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "5352cbc9924366ae70e835c2b6d20abaf5c841b56a946b62584f3a979cf48e6a",
+  "build/GO.UNBOUND.json": "e7494c09acb64d256a3f2552a0be4de109a6e792c3b75a0b1d7c286c1ad17955",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "21dad08e931db1da8d21aed3aecd2e58dd094e2c2d8d7af382725e087550af19",
+  "build/REQUEST.UNBOUND.json": "15e3f62d635213e50867f2c0a3a548dd74d860aeb243a269dc493eae992db1d7",
+  "build/dispatch_once.py": "eebd1bdd8dedee5877628222769c91d2f191eca021cc98c51a63fc1d234549d0",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/reader_units.py": "84c32b46227ddf58fd046ecea8140478b84c3bb2c53829d1325dcda84319a07b",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "30c27d19ea53f00850b47259751c9dbb0b2392b813cffb4e8cb2fd2e74823565",
+  "op.py": "be64218ed0c59f29e4c56c6eec6bfd0d15495e7396f433c2148f8511995d2e65",
+  "spec.py": "ca47e057c7b1b16a394b6adc9a8389609fd2898bbfb81fe06d919d81629ab918",
+  "tests/conftest.py": "b03c9cc631e8e5392977698f19b71f28b34cc380f68e78800e9429b7b7fc38a2",
+  "tests/native_child.py": "ff866ce7c66a93f1af145b5ee1342f325f320efe1af05f2bb1e1027c029c5101",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/native_tree.py": "6fbaae1155fdf33022a20452622e54f9c00e751ce742fa0bc528b6a8e02f7f6c",
+  "tests/ru.py": "2eccec184432c35caa0aa974a3069b8d8a374180ef5f2714810efbc9c51cdcf3",
+  "tests/test_conformance.py": "3aedd0af53a28d88e7d6ca627c93ae3c96e9ec833e34535491be002731ed2966",
+  "tests/test_native.py": "3bb1d75f3504ae57fbd3933fefd59e31e81888d85edbb5abbd9fabfaae8a5175",
+  "tests/test_reader_units.py": "0cf40b52e424ddd526c6e0889e7c9600ca19ca60472a0b6dba4f00ab28b71233",
+  "tests/unit_texts.py": "bd243696d879febaf4e73acd4fb7031dd59ba47fb4c24421bbae805136a20bbc"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: assert ('R2D2-V2-SHADOW-2026-09-28' == 'R2D2-V2-SHADOW-2026-10-05'",
+   "killed": true,
+   "mutant": "C01_another_epoch",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 89 passed, 7 deselected in 3.10s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_INVALID' == 'CHAIN_ROW_UNSAFE'",
+   "killed": true,
+   "mutant": "C02_units_in_the_runtime_directory",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 43 passed, 7 deselected in 1.98s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...OT_AS_SIGNED') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "C03_units_0640",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 87 passed, 7 deselected in 3.02s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'UNIT_NAME_INVALID' == 'UNITS_INVALID'",
+   "killed": true,
+   "mutant": "C04_service_of_another_name",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 65 passed, 7 deselected in 2.06s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[another name]",
+   "killed": true,
+   "mutant": "C05_timer_of_another_name",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 67 passed, 7 deselected in 2.43s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'UNIT_NAME_INVALID' == 'RENDERED_HASH_MISMATCH'",
+   "killed": true,
+   "mutant": "C06_alert_of_another_name",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 77 passed, 7 deselected in 2.75s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'UNIT_NAME_INVALID' == 'UNITS_INVALID'",
+   "killed": true,
+   "mutant": "C07_timer_installed_first",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 65 passed, 7 deselected in 2.71s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('ExecStartPre=/usr/bin/docker image inspect --format {{.Id}} ' + 'sha256:f86bfb198c186657598c2c410fb39ca3dfed781d0db0522b9a796b80275cb621') in ['[Unit]', 'Description=Day-bounded R2D2 V2 shadow reader', 'Wants=network-online.target', 'Requires=docker.service', ...y-d-data",
+   "killed": true,
+   "mutant": "C08_image_of_another_build",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 7 deselected in 1.54s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('RequiresMountsFor=/mnt/day-d-data /var/lib/c3po-bar/journal /var/lib/c3po-capacity ' + '/var/lib/c3po/r2d2-v2-source-20261005') + ' /etc/c3po-reader') in ['[Unit]', 'Description=Day-bounded R2D2 V2 shadow reader', 'Wants=network-online.target', 'Requires=docker.service'",
+   "killed": true,
+   "mutant": "C09_data_volume_elsewhere",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.33s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('RequiresMountsFor=/mnt/day-d-data /var/lib/c3po-bar/journal /var/lib/c3po-capacity ' + '/var/lib/c3po/r2d2-v2-source-20261005') + ' /etc/c3po-reader') in ['[Unit]', 'Description=Day-bounded R2D2 V2 shadow reader', 'Wants=network-online.target', 'Requires=docker.service'",
+   "killed": true,
+   "mutant": "C10_journal_inside_the_data_volume",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 7 deselected in 1.43s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['  --mount t...,readonly \\\\'] == ['  --mount t...,readonly \\\\']",
+   "killed": true,
+   "mutant": "C11_container_journal_elsewhere",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 7 deselected in 1.40s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('RequiresMountsFor=/mnt/day-d-data /var/lib/c3po-bar/journal /var/lib/c3po-capacity ' + '/var/lib/c3po/r2d2-v2-source-20261005') + ' /etc/c3po-reader') in ['[Unit]', 'Description=Day-bounded R2D2 V2 shadow reader', 'Wants=network-online.target', 'Requires=docker.service'",
+   "killed": true,
+   "mutant": "C12_capacity_elsewhere",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 7 deselected in 1.56s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('RequiresMountsFor=/mnt/day-d-data /var/lib/c3po-bar/journal /var/lib/c3po-capacity ' + '/var/lib/c3po/r2d2-v2-source-20261005') + ' /etc/c3po-reader') in ['[Unit]', 'Description=Day-bounded R2D2 V2 shadow reader', 'Wants=network-online.target', 'Requires=docker.service'",
+   "killed": true,
+   "mutant": "C13_source_root_on_the_data_volume",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 7 deselected in 1.71s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['  --mount t...,readonly \\\\'] == ['  --mount t...,readonly \\\\']",
+   "killed": true,
+   "mutant": "C14_source_target_of_k4_tests_renamed",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 7 deselected in 1.59s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('RequiresMountsFor=/mnt/day-d-data /var/lib/c3po-bar/journal /var/lib/c3po-capacity ' + '/var/lib/c3po/r2d2-v2-source-20261005') + ' /etc/c3po-reader') in ['[Unit]', 'Description=Day-bounded R2D2 V2 shadow reader', 'Wants=network-online.target', 'Requires=docker.service'",
+   "killed": true,
+   "mutant": "C15_config_of_the_producer",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.50s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert '  --user 0:0 --workdir /app --network c3po_c3po_internal \\\\' in ['[Unit]', 'Description=Day-bounded R2D2 V2 shadow reader', 'Wants=network-online.target', 'Requires=docker.service', ...y-d-data /var/lib/c3po-bar/journal /var/lib/c3po-capacity /var/lib/c3po/r2d2-v2-source-",
+   "killed": true,
+   "mutant": "C16_network_of_the_database_loopback",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 7 deselected in 1.37s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '..._UNIT_ABSENT') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "C17_producer_of_another_name",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.41s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...OT_AS_SIGNED') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "C18_producer_of_other_bytes",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.50s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...OT_AS_SIGNED') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "C19_producer_one_byte_longer",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.52s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_HOS...5_ACTIVATE_01' == 'GO_WRITE_HOS...DER_SWITCH_01'",
+   "killed": true,
+   "mutant": "C20_reload_owner_is_the_supervisor_activation",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.36s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch.json'... '0600', ...}} == {'epoch.json'... '0600', ...}}",
+   "killed": true,
+   "mutant": "C21_catalogue_without_its_lock",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.66s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '..._NOT_PRIVATE') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "C22_catalogue_files_0644",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.51s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('R2D2-V2-SHADOW-2026-10-05' == 'R2D2-V2-SHADOW-2026-10-05'",
+   "killed": true,
+   "mutant": "C23_template_revision_of_the_release",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.57s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_rendered_service_holds_the_values_of_this_epoch",
+   "killed": true,
+   "mutant": "C24_service_template_one_restart_more",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 7 deselected in 1.28s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_rendered_service_holds_the_values_of_this_epoch",
+   "killed": true,
+   "mutant": "C25_service_template_hash_follows_the_change",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.52s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_rendered_service_holds_the_values_of_this_epoch",
+   "killed": true,
+   "mutant": "C26_timer_template_without_the_boot_trigger",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 7 deselected in 1.19s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_rendered_service_holds_the_values_of_this_epoch",
+   "killed": true,
+   "mutant": "C27_alert_template_writes_elsewhere",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 7 deselected in 1.50s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_rendered_service_holds_the_values_of_this_epoch",
+   "killed": true,
+   "mutant": "C28_config_counted_eight_times",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.78s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes5-PATH_INVALID]",
+   "killed": true,
+   "mutant": "C29_host_path_grammar_allows_an_equal_sign",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 8 passed, 7 deselected in 2.05s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes7-CONTAINER_TARGET_INVALID]",
+   "killed": true,
+   "mutant": "C30_container_target_grammar_any_depth",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 10 passed, 7 deselected in 1.75s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes11-CONTAINER_TARGETS_NOT_DISTINCT]",
+   "killed": true,
+   "mutant": "C31_capacity_target_not_taken",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 14 passed, 7 deselected in 2.23s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes12-CONTAINER_TARGETS_NOT_DISTINCT]",
+   "killed": true,
+   "mutant": "C32_launcher_target_not_taken",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 15 passed, 7 deselected in 1.86s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes20-NETWORK_FORBIDDEN]",
+   "killed": true,
+   "mutant": "C33_network_grammar_any_first_character",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 23 passed, 7 deselected in 2.40s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes19-NETWORK_FORBIDDEN]",
+   "killed": true,
+   "mutant": "R10b_container_network_by_grammar",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 22 passed, 7 deselected in 2.89s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes18-NETWORK_FORBIDDEN]",
+   "killed": true,
+   "mutant": "C34_bridge_allowed",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 21 passed, 7 deselected in 1.69s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes16-NETWORK_FORBIDDEN]",
+   "killed": true,
+   "mutant": "C35_host_allowed",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 19 passed, 7 deselected in 2.18s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "C36_percent_allowed",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.88s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "C37_semicolon_allowed",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.88s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "C38_unit_limit_of_a_document",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.72s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_scope_names_the_evidence_the_dates_and_the_flags",
+   "killed": true,
+   "mutant": "C39_allowance_one_second_less",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.71s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_scope_names_the_evidence_the_dates_and_the_flags",
+   "killed": true,
+   "mutant": "C40_allowance_one_second_more",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 90 passed, 7 deselected in 3.17s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-05',) == ('2026-10-05'... '2026-10-10')",
+   "killed": true,
+   "mutant": "C41_date_class_of_the_first_session_only",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.89s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-03'...6-10-08', ...) == ('2026-10-05'... '2026-10-10')",
+   "killed": true,
+   "mutant": "C42_date_class_of_the_whole_epoch",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 90 passed, 7 deselected in 3.00s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_UN...ALOG_INIT_01') == ('GO_READONLY...ALOG_INIT_01')",
+   "killed": true,
+   "mutant": "C43_precheck_not_cited",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 90 passed, 7 deselected in 3.05s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_READONLY..._READBACK_01') == ('GO_READONLY...ALOG_INIT_01')",
+   "killed": true,
+   "mutant": "C44_catalogue_not_cited",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.77s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_READONLY...ALOG_INIT_01') == ('GO_READONLY...ALOG_INIT_01')",
+   "killed": true,
+   "mutant": "C45_producer_readback_not_cited",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.92s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_READONLY...ALOG_INIT_02') == ('GO_READONLY...ALOG_INIT_01')",
+   "killed": true,
+   "mutant": "C46_catalogue_of_another_operation",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 90 passed, 7 deselected in 3.10s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_scope_names_the_evidence_the_dates_and_the_flags",
+   "killed": true,
+   "mutant": "C47_evidence_not_required",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 90 passed, 7 deselected in 3.33s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_scope_names_the_evidence_the_dates_and_the_flags",
+   "killed": true,
+   "mutant": "C48_gate_span_of_a_read",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.47s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_scope_names_the_evidence_the_dates_and_the_flags",
+   "killed": true,
+   "mutant": "C49_activation_allowed",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.59s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['epoch.json'...tenance.lock'] == ['epoch.json'...tenance.lock']",
+   "killed": true,
+   "mutant": "C50_scope_says_a_process_is_started",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.64s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('daemon-reload' in ['a process', 'systemctl', 'enablement link', 'start', 'drop-in', 'overwrite', ...])",
+   "killed": true,
+   "mutant": "C51_scope_never_list_loses_daemon_reload",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.72s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'catalog'",
+   "killed": true,
+   "mutant": "C52_scope_loses_the_catalogue",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.62s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'write_allowance_seconds'",
+   "killed": true,
+   "mutant": "C53_scope_loses_the_allowance",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 90 passed, 7 deselected in 2.77s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C54_lookup_without_the_control_directory",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 161 passed, 7 deselected in 5.83s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C55_lookup_without_the_runtime_control",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 162 passed, 7 deselected in 5.64s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C56_lookup_without_transient",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 138 passed, 7 deselected in 4.12s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C57_lookup_without_generator_early",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 164 passed, 7 deselected in 6.51s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C58_lookup_without_the_install_directory",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 127 passed, 7 deselected in 3.99s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C59_lookup_without_attached",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 165 passed, 7 deselected in 5.76s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C60_lookup_without_runtime",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 128 passed, 7 deselected in 3.72s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C61_lookup_without_runtime_attached",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 167 passed, 7 deselected in 5.85s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C62_lookup_without_generator",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 132 passed, 7 deselected in 3.55s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C63_lookup_without_usr_local",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 137 passed, 7 deselected in 3.63s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C64_lookup_without_usr_lib",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 129 passed, 7 deselected in 3.71s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C65_lookup_without_generator_late",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 171 passed, 7 deselected in 6.31s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C66_wants_not_a_dependency_directory",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 131 passed, 7 deselected in 3.91s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C67_requires_not_a_dependency_directory",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 132 passed, 7 deselected in 3.84s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C68_upholds_not_a_dependency_directory",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 133 passed, 7 deselected in 3.72s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C69_scan_limit_one_more",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 149 passed, 7 deselected in 5.00s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (65 == 64)",
+   "killed": true,
+   "mutant": "C70_findings_one_more",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 149 passed, 7 deselected in 4.92s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_sixteen_acknowledged_leftovers_and_units_signed_present_are_valid_plans",
+   "killed": true,
+   "mutant": "C71_sixteen_leftovers_refused",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 86 passed, 7 deselected in 2.17s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[seventeen leftovers]",
+   "killed": true,
+   "mutant": "C72_seventeen_leftovers_accepted",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 84 passed, 7 deselected in 2.12s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C73_no_type_level_drop_in",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 128 passed, 7 deselected in 3.91s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "C74_no_dash_truncated_drop_in",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 129 passed, 7 deselected in 4.13s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_effects_are_literal_in_authority_and_go_and_recomputed_from_the_plan",
+   "killed": true,
+   "mutant": "E01_operation",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 285 passed, 7 deselected in 12.14s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('/var/lib/c3po-bar/journal' == '/etc/systemd/system'",
+   "killed": true,
+   "mutant": "E02_directory_of_the_journal",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.55s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['ABSENT', 'ABSENT', 'ABSENT'] == ['ABSENT', 'P...NT', 'ABSENT']",
+   "killed": true,
+   "mutant": "E03_every_unit_said_absent",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.62s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [{'destinatio...gid': 0, ...}] == [{'destinatio...gid': 0, ...}]",
+   "killed": true,
+   "mutant": "E04_every_unit_with_the_service_hash",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.66s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['ABSENT', 'P...NT', 'ABSENT'] == ['ABSENT', 'P...NT', 'ABSENT']",
+   "killed": true,
+   "mutant": "E05_files_to_create_counts_every_unit",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.36s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'values'",
+   "killed": true,
+   "mutant": "E06_values_member_dropped",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.80s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('/etc/systemd/system' == '/etc/systemd/system'",
+   "killed": true,
+   "mutant": "E07_journal_of_the_data_volume",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.54s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('/etc/systemd/system' == '/etc/systemd/system'",
+   "killed": true,
+   "mutant": "E08_data_volume_of_the_journal",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.33s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/et...d_only': True} == {'path': '/et...d_only': True}",
+   "killed": true,
+   "mutant": "E09_producer_path",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.24s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/et...d_only': True} == {'path': '/et...d_only': True}",
+   "killed": true,
+   "mutant": "E10_producer_sha",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.46s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/et...d_only': True} == {'path': '/et...d_only': True}",
+   "killed": true,
+   "mutant": "E11_producer_bytes",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.09s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/et..._only': False} == {'path': '/et...d_only': True}",
+   "killed": true,
+   "mutant": "E12_producer_written",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.31s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [] == ['.hostops-bb...bb-1.partial']",
+   "killed": true,
+   "mutant": "E13_leftovers_not_shown",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.22s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('000000000000...0000000000000' == 'c812e1edb644...2fecfb2797c6a'",
+   "killed": true,
+   "mutant": "E14_boot_not_the_signed_one",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 187 passed, 7 deselected in 5.78s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'performed_b...ER_SWITCH_01'} == {'performed_b...ER_SWITCH_01'}",
+   "killed": true,
+   "mutant": "E15_reload_said_performed",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.37s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_effects_show_what_is_installed_with_which_values_and_who_reloads",
+   "killed": true,
+   "mutant": "E16_effects_say_a_process",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.32s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_effects_show_what_is_installed_with_which_values_and_who_reloads",
+   "killed": true,
+   "mutant": "E17_effects_say_existing_objects_modified",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.70s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_effects_show_what_is_installed_with_which_values_and_who_reloads",
+   "killed": true,
+   "mutant": "E18_effects_say_activation",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 89 passed, 7 deselected in 2.35s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "R01_forbidden_characters_unchecked",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.34s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "R02_template_bytes_any",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.33s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "R03_placeholder_counts_unchecked",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.37s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "R04_extra_values_accepted",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.18s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'NETWORK_FORBIDDEN' == 'SUBSTITUTION_KEYS'",
+   "killed": true,
+   "mutant": "R05_values_of_any_type",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 36 passed, 7 deselected in 0.97s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes1-PATH_INVALID]",
+   "killed": true,
+   "mutant": "R06_host_paths_not_clean",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 4 passed, 7 deselected in 1.18s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes7-CONTAINER_TARGET_INVALID]",
+   "killed": true,
+   "mutant": "R08_container_targets_unchecked",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 10 passed, 7 deselected in 1.13s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes14-IMAGE_ID_INVALID]",
+   "killed": true,
+   "mutant": "R09_image_unchecked",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 17 passed, 7 deselected in 1.22s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes11-CONTAINER_TARGETS_NOT_DISTINCT]",
+   "killed": true,
+   "mutant": "R11_placement_not_judged_at_render",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 14 passed, 7 deselected in 1.10s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "R12_surviving_sign_allowed",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.29s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_a_template_that_is_not_the_counted_one",
+   "killed": true,
+   "mutant": "R13_any_size",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 36 passed, 7 deselected in 1.44s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_rendered_service_holds_the_values_of_this_epoch",
+   "killed": true,
+   "mutant": "R14_substitution_of_one_value_only",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 7 deselected in 1.53s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_verbatim_units_carry_no_placeholder_sign",
+   "killed": true,
+   "mutant": "R15_verbatim_with_a_sign",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 37 passed, 7 deselected in 1.63s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_verbatim_units_carry_no_placeholder_sign",
+   "killed": true,
+   "mutant": "R16_verbatim_any_size",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 37 passed, 7 deselected in 1.68s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_rendered_units_refuses_a_template_whose_hash_is_not_the_pinned_one",
+   "killed": true,
+   "mutant": "R17_template_hashes_unchecked",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 38 passed, 7 deselected in 1.15s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (b'[Unit]\\nDes...rs.target\\n\\n' == b'[Unit]\\nDes...mers.target\\n'",
+   "killed": true,
+   "mutant": "R18_timer_rendered_like_the_service",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 2 passed, 7 deselected in 1.16s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes21-CONFIG_DIRECTORY_OVERLAPS_A_BIND_SOURCE]",
+   "killed": true,
+   "mutant": "P01_config_overlap_unchecked",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 24 passed, 7 deselected in 1.29s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes24-CONFIG_DIRECTORY_OVERLAPS_A_BIND_SOURCE]",
+   "killed": true,
+   "mutant": "P02_config_against_the_source_unchecked",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 27 passed, 7 deselected in 1.28s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes26-HOST_JOURNAL_OVERLAPS_A_BIND_SOURCE]",
+   "killed": true,
+   "mutant": "P03_journal_overlap_unchecked",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 29 passed, 7 deselected in 1.23s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes29-SOURCE_ROOT_OVERLAPS_A_BIND_SOURCE]",
+   "killed": true,
+   "mutant": "P04_source_overlap_unchecked",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 32 passed, 7 deselected in 1.02s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes31-CAPACITY_ROOT_OVERLAPS_THE_DATA_VOLUME]",
+   "killed": true,
+   "mutant": "P05_capacity_overlap_unchecked",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 34 passed, 7 deselected in 1.20s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [] == ['HOST_JOURNA...PRIVATE_ROOT']",
+   "killed": true,
+   "mutant": "P06_producer_roots_unchecked",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 39 passed, 7 deselected in 1.58s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes25-CONFIG_DIRECTORY_OVERLAPS_A_BIND_SOURCE]",
+   "killed": true,
+   "mutant": "P07_overlap_one_way_only",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 28 passed, 7 deselected in 1.61s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes13-CONTAINER_TARGETS_NOT_DISTINCT]",
+   "killed": true,
+   "mutant": "P08_targets_may_be_equal",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 16 passed, 7 deselected in 1.36s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_render_refuses_every_value_outside_the_readme_grammar_and_rules[changes11-CONTAINER_TARGETS_NOT_DISTINCT]",
+   "killed": true,
+   "mutant": "P09_taken_targets_allowed",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 14 passed, 7 deselected in 1.24s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_producer_facts_read_the_journal_bind_and_the_image_from_the_installed_bytes",
+   "killed": true,
+   "mutant": "F01_producer_facts_any_shape",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 40 passed, 7 deselected in 1.71s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_producer_facts_read_the_journal_bind_and_the_image_from_the_installed_bytes",
+   "killed": true,
+   "mutant": "F02_journal_root_argument_twice",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 40 passed, 7 deselected in 1.61s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_producer_facts_read_the_journal_bind_and_the_image_from_the_installed_bytes",
+   "killed": true,
+   "mutant": "F03_readonly_journal_bind_of_the_producer",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 40 passed, 7 deselected in 1.34s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: UnicodeDecodeError('ascii', b'[Unit]\\nDescription=Bounded daily Massive minute producer\\nWants=network-online.target\\nRequires=docker.service\\nAfter=network-online.target docker.service\\nRequiresMountsFor=/var/lib/c3po-bar/journal /var/lib/c3po-bar/supervisor /etc/c3po-bar\\nStart",
+   "killed": true,
+   "mutant": "F04_producer_text_any_bytes",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 40 passed, 7 deselected in 1.40s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "F05_producer_absence_not_a_refusal",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 91 passed, 7 deselected in 2.58s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "F06_producer_metadata_unchecked",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 94 passed, 7 deselected in 2.48s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "F07_producer_bytes_unchecked",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 188 passed, 7 deselected in 5.75s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "F08_producer_values_unchecked",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 185 passed, 7 deselected in 5.93s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "F09_producer_roots_not_judged",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 186 passed, 7 deselected in 5.68s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "F10_producer_read_without_its_identity",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 189 passed, 7 deselected in 5.70s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[unit directory group 1000]",
+   "killed": true,
+   "mutant": "V01_unit_chain_not_root_only",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 45 passed, 7 deselected in 1.36s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'UNIT_CHAIN_N...OT_CONTROLLED' == 'PARENT_SETGID'",
+   "killed": true,
+   "mutant": "V02_unit_directory_may_be_setgid",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 47 passed, 7 deselected in 1.58s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[/var/lib group 1000]",
+   "killed": true,
+   "mutant": "V03_journal_chain_not_root_only",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 50 passed, 7 deselected in 1.21s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[/etc setgid]",
+   "killed": true,
+   "mutant": "V04_setgid_components_accepted",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 46 passed, 7 deselected in 1.21s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[journal root 0750]",
+   "killed": true,
+   "mutant": "V05_journal_root_any_mode",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 51 passed, 7 deselected in 1.43s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[/mnt owned by 1000]",
+   "killed": true,
+   "mutant": "V06_data_volume_without_open_root",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 56 passed, 7 deselected in 1.47s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'JOURNAL_ON_THE_DATA_VOLUME' == 'DATA_VOLUME_...A_MOUNT_POINT'",
+   "killed": true,
+   "mutant": "V07_data_volume_need_not_be_a_mount",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 57 passed, 7 deselected in 1.56s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[journal on the data volume device]",
+   "killed": true,
+   "mutant": "V08_journal_may_share_the_data_device",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 58 passed, 7 deselected in 1.90s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[boot unbound]",
+   "killed": true,
+   "mutant": "V09_boot_unchecked",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 59 passed, 7 deselected in 1.93s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[two units]",
+   "killed": true,
+   "mutant": "V10_fewer_units_accepted",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 62 passed, 7 deselected in 1.99s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[four units]",
+   "killed": true,
+   "mutant": "V11_more_units_accepted",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 63 passed, 7 deselected in 2.02s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[unit with a mode]",
+   "killed": true,
+   "mutant": "V12_unit_members_not_exact",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 64 passed, 7 deselected in 2.18s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[another name]",
+   "killed": true,
+   "mutant": "V13_unit_names_unchecked",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 67 passed, 7 deselected in 2.34s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'READER_ALARM'",
+   "killed": true,
+   "mutant": "V14_unit_keys_unchecked",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 68 passed, 7 deselected in 1.94s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[expect three links]",
+   "killed": true,
+   "mutant": "V15_expect_three_links",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 73 passed, 7 deselected in 2.14s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'links'",
+   "killed": true,
+   "mutant": "V16_expect_any_object",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 71 passed, 7 deselected in 2.01s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[expect inode zero]",
+   "killed": true,
+   "mutant": "V17_expect_inode_zero",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 72 passed, 7 deselected in 2.17s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[rendered size one less]",
+   "killed": true,
+   "mutant": "V18_rendered_size_unchecked",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 77 passed, 7 deselected in 2.24s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[rendered hash of another unit]",
+   "killed": true,
+   "mutant": "V19_rendered_hash_unchecked",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 76 passed, 7 deselected in 2.42s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[nothing to create]",
+   "killed": true,
+   "mutant": "V20_nothing_to_create_accepted",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 78 passed, 7 deselected in 2.55s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[seventeen leftovers]",
+   "killed": true,
+   "mutant": "V21_leftovers_any_list",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 84 passed, 7 deselected in 2.69s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[leftover of another pattern]",
+   "killed": true,
+   "mutant": "V22_leftover_name_any",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 80 passed, 7 deselected in 2.65s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[leftover twice]",
+   "killed": true,
+   "mutant": "V23_leftover_twice",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 83 passed, 7 deselected in 2.52s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_reader_units.py::test_every_plan_refusal_comes_from_the_bytes[leftover inode zero]",
+   "killed": true,
+   "mutant": "V24_leftover_inode_zero",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 82 passed, 7 deselected in 2.24s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not iterable",
+   "killed": true,
+   "mutant": "V25_leftovers_not_validated",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 79 passed, 7 deselected in 2.08s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K01_executor_unchecked",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 143 passed, 7 deselected in 3.49s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...ATA_MISMATCH') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "K02_umask_private",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.32s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'/etc/system...reader.timer'} == {'/etc/system...ndom/boot_id'}",
+   "killed": true,
+   "mutant": "K03_boot_unchecked",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 88 passed, 7 deselected in 2.24s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "K04_producer_not_read",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.32s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '..._INITIALISED') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "K05_journal_not_walked",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 87 passed, 7 deselected in 1.88s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K06_data_volume_not_walked",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 106 passed, 7 deselected in 2.33s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'epoch.json': {'type': 'file', 'uid': 0, 'gid': 0, 'mode_octal': '0600', ...}, 'maintenance.lock': {'type': 'file', 'uid': 0, 'gid': 0, 'mode_octal': '0600', ...}}",
+   "killed": true,
+   "mutant": "K07_catalogue_not_looked_at",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 87 passed, 7 deselected in 1.98s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K08_catalogue_absence_accepted",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 107 passed, 7 deselected in 2.71s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K09_catalogue_metadata_unchecked",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 110 passed, 7 deselected in 3.02s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('DESTINATION_APPEARED_AFTER_PRECHECK', 'PARTIAL_REQUIRES_RECONCILIATION')",
+   "killed": true,
+   "mutant": "K10_occupied_names_accepted",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 117 passed, 7 deselected in 2.77s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('DESTINATION_APPEARED_AFTER_PRECHECK', 'PARTIAL_REQUIRES_RECONCILIATION')",
+   "killed": true,
+   "mutant": "K11_foreign_units_accepted",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 120 passed, 7 deselected in 2.79s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READBACK_UNAVAILABLE', 'PARTIAL_REQUIRES_RECONCILIATION')",
+   "killed": true,
+   "mutant": "K12_expectations_unchecked",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 146 passed, 7 deselected in 3.60s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K13_missing_acknowledged_leftover_accepted",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 146 passed, 7 deselected in 3.43s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRIOR_PARTIAL_REQUIRES_RECONCILIATION', 'REFUSED_NOTHING_CREATED')",
+   "killed": true,
+   "mutant": "K14_all_present_is_a_partial",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 145 passed, 7 deselected in 3.31s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('ALL_UNITS_PRESENT', 'REFUSED_NOTHING_CREATED')",
+   "killed": true,
+   "mutant": "K15_all_present_with_two_links",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 145 passed, 7 deselected in 3.04s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('DESTINATION_APPEARED_AFTER_PRECHECK', 'PARTIAL_REQUIRES_RECONCILIATION')",
+   "killed": true,
+   "mutant": "K16_present_equal_units_ignored",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 126 passed, 7 deselected in 2.98s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K17_unacknowledged_leftovers_ignored",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 142 passed, 7 deselected in 3.25s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRIOR_PARTIAL_REQUIRES_RECONCILIATION', 'REFUSED_NOTHING_CREATED')",
+   "killed": true,
+   "mutant": "K18_own_temporary_unacknowledged_is_a_partial",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 147 passed, 7 deselected in 3.09s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K20_drop_ins_accepted",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 127 passed, 7 deselected in 2.78s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K21_own_dependency_accepted",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 131 passed, 7 deselected in 2.58s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K22_enablement_accepted",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 134 passed, 7 deselected in 2.86s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K23_shadow_accepted",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 136 passed, 7 deselected in 2.93s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K24_scan_unavailable_accepted",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 139 passed, 7 deselected in 3.02s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'UNITS_INSTAL..._NOT_RELOADED' == 'REFUSED_NOTHING_CREATED'",
+   "killed": true,
+   "mutant": "K25_budget_unchecked",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 150 passed, 7 deselected in 4.08s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('BUDGET_INSUF..._FIRST_EFFECT' == 'DROP_IN_PRESENT'",
+   "killed": true,
+   "mutant": "K26_budget_skipped_when_refused",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 190 passed, 7 deselected in 5.16s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED_NOTHING_CREATED' == 'UNITS_INSTAL..._NOT_RELOADED'",
+   "killed": true,
+   "mutant": "K27_shadow_in_the_install_directory_too",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 151 passed, 7 deselected in 4.16s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K28_scan_limit_dropped",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 149 passed, 7 deselected in 3.90s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K29_dependency_file_ignored",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 141 passed, 7 deselected in 3.13s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K30_leftovers_anywhere",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 142 passed, 7 deselected in 3.35s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K31_enablement_not_looked_for",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 134 passed, 7 deselected in 3.06s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (70 == 64)",
+   "killed": true,
+   "mutant": "K32_findings_not_capped",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 149 passed, 7 deselected in 4.11s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', 'REFUSED_NOTHING_CREATED')",
+   "killed": true,
+   "mutant": "K33_foreign_unit_digest_reported",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 125 passed, 7 deselected in 2.68s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRIOR_PARTIAL_REQUIRES_RECONCILIATION', 'REFUSED_NOTHING_CREATED')",
+   "killed": true,
+   "mutant": "K34_equal_bytes_without_owner",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 121 passed, 7 deselected in 2.57s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READBACK_HASH_MISMATCH', 'PARTIAL_REQUIRES_RECONCILIATION')",
+   "killed": true,
+   "mutant": "K35_present_identity_unchecked",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 146 passed, 7 deselected in 3.40s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRIOR_PARTIAL_REQUIRES_RECONCILIATION', 'REFUSED_NOTHING_CREATED')",
+   "killed": true,
+   "mutant": "K36_own_temporaries_of_present_units",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 147 passed, 7 deselected in 3.83s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, 'UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED')",
+   "killed": true,
+   "mutant": "K37_acknowledgement_by_name_only",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 191 passed, 7 deselected in 5.29s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['.hostops-22...c7-0.partial'] == ['.hostops-22...c7-2.partial']",
+   "killed": true,
+   "mutant": "W01_every_unit_with_the_same_temporary",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 87 passed, 7 deselected in 1.93s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...ASH_MISMATCH') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "W02_units_written_private",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.20s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...ASH_MISMATCH') == ('METADATA_ON...LOADED', None)",
+   "killed": true,
+   "mutant": "W03_unit_written_without_its_last_byte",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.01s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['.hostops-b9...b0-2.partial'] == ['.hostops-0b...c4-2.partial']",
+   "killed": true,
+   "mutant": "W04_temporary_keyed_by_the_request",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.06s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '..._UNAVAILABLE') == ('REFUSED', '...EM_READ_ONLY')",
+   "killed": true,
+   "mutant": "W05_a_failed_unit_does_not_stop_the_next",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 155 passed, 7 deselected in 4.78s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_REQ..._UNAVAILABLE') == ('PARTIAL_REQ...MOVAL_FAILED')",
+   "killed": true,
+   "mutant": "W06_a_linked_temporary_counts_as_installed",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 192 passed, 7 deselected in 5.89s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_REQU...ECONCILIATION' == 'UNITS_INSTAL..._NOT_RELOADED'",
+   "killed": true,
+   "mutant": "W07_present_units_written_again",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 151 passed, 7 deselected in 4.44s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['NOT_CREATED..._NOT_TOUCHED'] == ['NOT_CREATED...OT_ATTEMPTED']",
+   "killed": true,
+   "mutant": "W08_skipped_rows_say_present",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 155 passed, 7 deselected in 4.56s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [None, None, None] == ['1a01a7d7eb6...32ae015cce2f']",
+   "killed": true,
+   "mutant": "W09_installed_bytes_not_read_back",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 87 passed, 7 deselected in 1.97s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == '1a01a7d7eb6cede1ca4d406278fa03e4beabd86231a7dfacc5556ab92139aace'",
+   "killed": true,
+   "mutant": "W10_present_units_not_read_back",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 151 passed, 7 deselected in 4.19s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...LOADED', None) == ('PARTIAL_MET...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W11_present_bytes_not_compared",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 153 passed, 7 deselected in 4.04s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNITS_INSTA...LOADED', None) == ('PARTIAL_REQ...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W12_present_identity_not_compared",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 154 passed, 7 deselected in 4.36s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNITS_INSTA...LOADED', None) == ('PARTIAL_REQ...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W13_present_metadata_not_compared",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 154 passed, 7 deselected in 4.71s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNITS_INSTA...LOADED', None) == ('PARTIAL_REQ...ENT_REPLACED')",
+   "killed": true,
+   "mutant": "W14_directory_not_verified_at_the_end",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 159 passed, 7 deselected in 4.88s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...LOADED', None) == ('PARTIAL_MET...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W15_complete_whatever_the_readback_says",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 153 passed, 7 deselected in 4.54s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...ASH_MISMATCH') == ('PARTIAL_MET...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W16_a_run_that_changed_the_host_is_a_refusal",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 153 passed, 7 deselected in 4.62s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...EM_READ_ONLY') == ('REFUSED', '...EM_READ_ONLY')",
+   "killed": true,
+   "mutant": "W17_a_run_that_changed_nothing_is_a_partial",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 155 passed, 7 deselected in 4.64s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['INSTALLED_D...LLED_DURABLE'] == ['INSTALLED_D...LLED_DURABLE']",
+   "killed": true,
+   "mutant": "W18_objects_left_not_counted",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.06s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_HOS...DER_SWITCH_01' == 'GO_WRITE_HOS...DER_SWITCH_01'",
+   "killed": true,
+   "mutant": "W19_receipt_says_existing_objects_modified",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 87 passed, 7 deselected in 1.85s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'COMPLETE' is None",
+   "killed": true,
+   "mutant": "W20_readback_complete_when_it_stopped",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 153 passed, 7 deselected in 4.32s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['NOT_CREATED...OT_ATTEMPTED'] == ['NOT_CREATED...OT_ATTEMPTED']",
+   "killed": true,
+   "mutant": "W21_effects_phase_reported_as_the_precheck",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 155 passed, 7 deselected in 4.56s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...ASH_MISMATCH') == ('PARTIAL_MET...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W22_partial_with_the_complete_status",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 153 passed, 7 deselected in 5.14s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_REQU...ECONCILIATION' == 'UNITS_INSTAL..._NOT_RELOADED'",
+   "killed": true,
+   "mutant": "W23_success_criterion_is_the_partial",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 193 passed, 7 deselected in 6.30s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (not [] and {110: [<hoste...temd/system']} == {}",
+   "killed": true,
+   "mutant": "W24_held_directories_left_open",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.45s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'epoch.json': {'type': 'file', 'uid': 0, 'gid': 0, 'mode_octal': '0600', ...}, 'maintenance.lock': {'type': 'file', 'uid': 0, 'gid': 0, 'mode_octal': '0600', ...}}",
+   "killed": true,
+   "mutant": "W25_receipt_without_the_catalogue",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 87 passed, 7 deselected in 1.97s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['PRECHECK_REDUCED_TO_STATES'] == ['SCAN_DIRECT...ED_TO_STATES']",
+   "killed": true,
+   "mutant": "W26_reductions_lose_the_first_step",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 193 passed, 7 deselected in 6.26s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01')",
+   "killed": true,
+   "mutant": "W27_reload_owner_not_in_the_receipt",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 87 passed, 7 deselected in 2.16s",
+   "tests": [
+    "test_reader_units.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D71k_dispatcher_date_set_dropped",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 102 passed, 5 deselected in 6.39s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D72k_dispatcher_accepts_the_sunday_before",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 102 passed, 5 deselected in 6.87s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D73k_dispatcher_accepts_the_day_after_the_epoch",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 102 passed, 5 deselected in 6.84s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D02_dispatcher_one_day_rule_dropped",
+   "returncode": 1,
+   "seconds": 31.6,
+   "summary": "1 failed, 109 passed, 5 deselected in 30.27s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D03_dispatcher_signed_date_not_tied_to_the_config_day",
+   "returncode": 1,
+   "seconds": 31.6,
+   "summary": "1 failed, 109 passed, 5 deselected in 30.18s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path",
+   "killed": true,
+   "mutant": "D04_dispatcher_config_schema_dropped",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 deselected in 0.32s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_dispatcher_unsigned_go_accepted",
+   "returncode": 1,
+   "seconds": 31.2,
+   "summary": "1 failed, 108 passed, 5 deselected in 29.69s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D06_dispatcher_unsigned_authority_accepted",
+   "returncode": 1,
+   "seconds": 31.0,
+   "summary": "1 failed, 108 passed, 5 deselected in 29.56s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D07_dispatcher_claim_root_binding_dropped",
+   "returncode": 1,
+   "seconds": 31.0,
+   "summary": "1 failed, 108 passed, 5 deselected in 29.41s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D08_dispatcher_transport_binding_dropped",
+   "returncode": 1,
+   "seconds": 31.4,
+   "summary": "1 failed, 108 passed, 5 deselected in 29.97s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D09_dispatcher_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 30.6,
+   "summary": "1 failed, 108 passed, 5 deselected in 29.07s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_names_of_every_earlier_operation_are_refused_at_both_layers[READONLY_POSTDEPLOY01_GO_V1-GO_READONLY_POSTDEPLOY_01-READONLY_POSTDEPLOY]",
+   "killed": true,
+   "mutant": "D10_dispatcher_local_authentication_dropped",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 91 passed, 5 deselected in 4.52s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_receipt_of_another_operation_is_filed_uncertain",
+   "killed": true,
+   "mutant": "D11_dispatcher_receipt_schema_not_checked",
+   "returncode": 1,
+   "seconds": 29.9,
+   "summary": "1 failed, 113 passed, 5 deselected in 28.55s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D12_dispatcher_late_start_accepted",
+   "returncode": 1,
+   "seconds": 28.6,
+   "summary": "1 failed, 109 passed, 5 deselected in 27.19s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_prepare_does_not_spawn_then_resume_once_and_the_go_is_single_use",
+   "killed": true,
+   "mutant": "D13_dispatcher_claim_not_exclusive",
+   "returncode": 1,
+   "seconds": 27.4,
+   "summary": "1 failed, 107 passed, 5 deselected in 26.39s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[raise_value-UNCERTAIN-3]",
+   "killed": true,
+   "mutant": "X01_launcher_enters_the_payload_with_the_refusal_exit_code",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.96s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[refused-KNOWN_REFUSAL-1]",
+   "killed": true,
+   "mutant": "X02_launcher_maps_a_refusal_to_partial",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[partial-KNOWN_PARTIAL-2]",
+   "killed": true,
+   "mutant": "X03_launcher_maps_everything_to_complete",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.97s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReaderUnits::test_launcher_refuses_wrong_pins_at_build_and_on_stdin",
+   "killed": true,
+   "mutant": "X04_launcher_document_pins_not_checked",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 11 passed, 5 deselected in 1.04s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

@@ -1,0 +1,1 @@
+{"activation_allowed":false,"decision":null,"execution_authorized":false,"host_binding_sha256":null,"not_after":null,"not_before":null,"operation":"GO_READONLY_W1PREFLIGHT_01","owner":null,"request_sha256":"9d6405c1e7a2a10d1073e08f52756edc26a2af1a37b14f6ebbf5d15462c134a6","schema":"READONLY_W1PREFLIGHT01_AUTHORITY_V1","status":"UNBOUND","writes_allowed":false}
