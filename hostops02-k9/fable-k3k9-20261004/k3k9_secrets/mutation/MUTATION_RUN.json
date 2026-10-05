@@ -1,0 +1,2570 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "2db09adfefb4e19c4c4f860735283d6078e91017b24025b1f4a072b52d84d8e8",
+ "core_seal_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 180,
+  "redundant_survivors": 0,
+  "single": 180,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "58f9c15c5c7fe53dbe9ce36fcf5076e1538d5e6154de46a1e155f4fc21aa43ae",
+  "build/AUTHORITY.UNBOUND.json": "fb859756dbdc43ef028518dccfb76ad7ccaa65991a514433344f06098fa8376b",
+  "build/DISPATCH.UNBOUND.json": "9655b16fad0221ebc36eb25468e3f4b85e79a9b6d6be2c354f2c0f7ec16f371a",
+  "build/DISPATCH_SCOPE_DELTA.diff": "f9e21d596f4dc9bb95c98e040ea915b7e70d2f89a6bed9d762feb2dd411db878",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "dc021aff4c48571b1c16147df851bfe6c9811c2b0aefb06b8191520dac07dbbc",
+  "build/GO.UNBOUND.json": "48c10df92d99302bbc1aaaf731f6a25731585879373367d81966fb165d5a7d62",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "0dd484411b66a1306ec6a19a30dd669cfcd3992bebad0fd6b4191d3c05bc3b28",
+  "build/REQUEST.UNBOUND.json": "f86dc29393395f5ecff54a39adadefa3395ed3ec31355a2ded64130e0b81ac87",
+  "build/dispatch_once.py": "afb1f2c7150dd8b0f1687b087df10137ad18ec202cc8fd5c9827333719d411a2",
+  "build/k3k9_secrets.py": "58e3ae218469f675764dc44c1a8cd70ef646806eed0e6e1a950447ec86a3a359",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "9cc6a1e8c78b6fc57f87908317cc408bc3fa2d3dc648e0b41095e2d93300ef19",
+  "mutation/mutate.py": "7799cbd8184d8891fec780ffd2b93037a8efa812c54e7a01529ccf63b87c008a",
+  "op.py": "5923e94f9ea0a4ee367010bd943fbbcde062bd5e07c99c259ee1cb2cd43e41bc",
+  "spec.py": "b884b0a09a9c3a46f75d10cee81ccbeb9db44098b5e22753c43e50bfae496eae",
+  "tests/conftest.py": "a5805b980cb08ba57c4e9f85e5299c4063a867f000d81cc0a44d436339c0718e",
+  "tests/k3.py": "fa65fb1e4d14e0d27b9116f8d2d69aecd3643860738109d9b6cf31076ad80ab4",
+  "tests/native_child.py": "ac97d98ba4d6dadeb24c242e73b562a76aa054d0b825b82bfc60b7ae956d458d",
+  "tests/nativehost.py": "3b495e22d804b237806ad49ed6a093c4a02d7aa9d4ac599862271a68872135ee",
+  "tests/test_conformance.py": "10d68bb91b30af7196a94022ed019bf3a2a37212c1e3db0b01f467b4832917d5",
+  "tests/test_k3k9_secrets.py": "26899860d0de070cb3a6be1e11eb112aa438eb3539ee467f6779386641d19935",
+  "tests/test_native.py": "f052fdcd3136c7122db13077267e3cdc32a8cf8fd20cdbd8cbfaff4928173786",
+  "tests/test_static_pins.py": "94c0fd4ebdd532bc0e4020699862c5b117bded33cfe79a7926ae2f9ebdfdf400",
+  "tests/test_worker_config.py": "e08f8f6aff7db49619dee116dc6c23352a8a8e138a780c9a360420182872bc91"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": false,
+ "results": [
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('CHAIN_ROW_UNSAFE', 'WORKER_CONFIG_METADATA_UNSAFE')",
+   "killed": true,
+   "mutant": "C01_the_k9_root_on_the_data_volume",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.24s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('DATA_VOLUME_NOT_A_MOUNT_POINT', 'WORKER_CONFIG_METADATA_UNSAFE')",
+   "killed": true,
+   "mutant": "C02_the_source_open_root_one_level_up",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.25s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('K9_ROOT_NOT_ROOT_0700', 'WORKER_CONFIG_METADATA_UNSAFE')",
+   "killed": true,
+   "mutant": "C03_secrets_directory_0750",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.24s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_worker_config.py:50: AssertionError: assert 'SECRET_FILE_METADATA_MISMATCH' is None",
+   "killed": true,
+   "mutant": "C04_files_0640",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 16 passed, 5 deselected in 0.66s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:94: AssertionError: assert ['emitter-pas...'risk-db.env'] == ['emitter', '...'risk-db.env']",
+   "killed": true,
+   "mutant": "C05_emitter_named_otherwise",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.85s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:94: AssertionError: assert ['emitter', '...'risk-db.env'] == ['emitter', '...'risk-db.env']",
+   "killed": true,
+   "mutant": "C06_provider_file_named_otherwise",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.84s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:94: AssertionError: assert ['emitter', '...', 'risk.env'] == ['emitter', '...'risk-db.env']",
+   "killed": true,
+   "mutant": "C07_risk_file_named_otherwise",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.16s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:93: AssertionError: assert ('dir', 0, 0,...assword.txt']) == ('dir', 0, 0,... ['password'])",
+   "killed": true,
+   "mutant": "C08_password_named_otherwise",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.21s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:142: AssertionError: assert [('/var/lib/c...6777985, 384)] == [('/var/lib/c...6780033, 384)]",
+   "killed": true,
+   "mutant": "C09_create_without_o_excl",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.54s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:142: AssertionError: assert [('/var/lib/c...6779777, 384)] == [('/var/lib/c...6780033, 384)]",
+   "killed": true,
+   "mutant": "C10_create_following_a_link",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.96s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:142: AssertionError: assert [('/var/lib/c...', 2817, 384)] == [('/var/lib/c...6780033, 384)]",
+   "killed": true,
+   "mutant": "C11_create_without_o_cloexec",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 25 passed, 5 deselected in 2.16s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:142: AssertionError: assert [('/var/lib/c...6781057, 384)] == [('/var/lib/c...6780033, 384)]",
+   "killed": true,
+   "mutant": "C12_create_truncating",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 25 passed, 5 deselected in 2.10s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_worker_config.py:50: AssertionError: assert 'SECRET_FILE_PLACEMENT_FAILED' is None",
+   "killed": true,
+   "mutant": "C13_readback_following_a_link",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 16 passed, 5 deselected in 1.59s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:147: AssertionError: assert [('/var/lib/c..., 1073742080)] == [('/var/lib/c..., 1073742084)]",
+   "killed": true,
+   "mutant": "C14_readback_blocking",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 25 passed, 5 deselected in 2.24s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('WORKER_CONTAINER_MISMATCH', 'WORKER_CONFIG_METADATA_UNSAFE')",
+   "killed": true,
+   "mutant": "C15_another_worker",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.54s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/k3.py:80: ValueError: not enough values to unpack (expected 2, got 1)",
+   "killed": true,
+   "mutant": "C16_only_the_prefixed_names",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 5 deselected in 0.61s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   IndexError: list index out of range",
+   "killed": true,
+   "mutant": "C17_only_the_plain_names",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 error in 0.44s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/k3.py:81: KeyError: 'EODHD_API_TOKEN'",
+   "killed": true,
+   "mutant": "C18_the_plain_name_written",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 5 deselected in 0.64s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   IndexError: list index out of range",
+   "killed": true,
+   "mutant": "C19_two_tokens_only",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 error in 0.42s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:186: AssertionError: assert None == 'PROVIDER_TOKEN_GRAMMAR'",
+   "killed": true,
+   "mutant": "C20_token_of_one_character",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.77s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "C21_token_of_fifteen",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.70s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "C22_token_of_513",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.97s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:186: AssertionError: assert None == 'PROVIDER_TOKEN_GRAMMAR'",
+   "killed": true,
+   "mutant": "C23_token_with_a_space_and_a_dollar",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.79s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_DATABASE_URL_NOT_THE_RESTRICTED_READER')",
+   "killed": true,
+   "mutant": "C28_risk_url_of_another_role",
+   "returncode": 1,
+   "seconds": 12.3,
+   "summary": "1 failed, 94 passed, 5 deselected in 11.89s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:92: AssertionError: /var/lib/c3po/r2d2-v2-k9-20261005/secrets/risk-db.env",
+   "killed": true,
+   "mutant": "C29_risk_url_key_otherwise",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 23 passed, 5 deselected in 2.09s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "C30_password_of_63",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 27 passed, 5 deselected in 4.51s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "C31_password_with_a_dot",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 27 passed, 5 deselected in 4.89s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "C33_less_than_the_allowance_left",
+   "returncode": 1,
+   "seconds": 24.3,
+   "summary": "1 failed, 138 passed, 5 deselected in 23.94s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "C34_another_source_of_the_url",
+   "returncode": 1,
+   "seconds": 27.8,
+   "summary": "1 failed, 154 passed, 5 deselected in 27.32s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_worker_config.py:50: AssertionError: assert 'EMITTER_PASSWORD_COMPONENT_ABSENT' is None",
+   "killed": true,
+   "mutant": "C35_another_source_of_the_password",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 16 passed, 5 deselected in 1.47s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "C25_risk_url_with_a_space",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 27 passed, 5 deselected in 4.07s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "C26_risk_url_of_any_scheme",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 27 passed, 5 deselected in 4.18s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_FORMAT')",
+   "killed": true,
+   "mutant": "C27_risk_url_value_one_longer",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 84 passed, 5 deselected in 11.23s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "C41_data_volume_not_in_the_effects",
+   "returncode": 1,
+   "seconds": 27.1,
+   "summary": "1 failed, 154 passed, 5 deselected in 26.61s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:612: AssertionError: assert ('GO_WRITE_HO...HASE_READ_01') == ('GO_WRITE_HO...HASE_READ_01')",
+   "killed": true,
+   "mutant": "C36_evidence_without_the_epoch_readback",
+   "returncode": 1,
+   "seconds": 27.4,
+   "summary": "1 failed, 155 passed, 5 deselected in 26.96s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:612: AssertionError: assert ('GO_READONLY...HASE_READ_01') == ('GO_WRITE_HO...HASE_READ_01')",
+   "killed": true,
+   "mutant": "C37_evidence_without_k4_e0",
+   "returncode": 1,
+   "seconds": 27.6,
+   "summary": "1 failed, 155 passed, 5 deselected in 27.21s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:612: AssertionError: assert ('GO_WRITE_HO..._READBACK_01') == ('GO_WRITE_HO...HASE_READ_01')",
+   "killed": true,
+   "mutant": "C38_evidence_without_the_tree_read",
+   "returncode": 1,
+   "seconds": 27.3,
+   "summary": "1 failed, 155 passed, 5 deselected in 26.83s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "C40_data_volume_chain_not_judged",
+   "returncode": 1,
+   "seconds": 25.8,
+   "summary": "1 failed, 153 passed, 5 deselected in 25.43s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:576: AssertionError: assert 'SOURCE_ROWS_...E_DATA_VOLUME' == 'DATA_VOLUME_...A_MOUNT_POINT'",
+   "killed": true,
+   "mutant": "C42_data_volume_need_not_be_a_mount_point",
+   "returncode": 1,
+   "seconds": 25.8,
+   "summary": "1 failed, 153 passed, 5 deselected in 25.34s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "C43_source_rows_not_checked",
+   "returncode": 1,
+   "seconds": 25.2,
+   "summary": "1 failed, 153 passed, 5 deselected in 24.89s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "C44_source_rows_of_any_path",
+   "returncode": 1,
+   "seconds": 24.7,
+   "summary": "1 failed, 153 passed, 5 deselected in 24.34s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "C45_source_rows_off_the_volume",
+   "returncode": 1,
+   "seconds": 25.0,
+   "summary": "1 failed, 153 passed, 5 deselected in 24.59s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "C46_source_rows_group_writable",
+   "returncode": 1,
+   "seconds": 23.5,
+   "summary": "1 failed, 153 passed, 5 deselected in 23.19s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "C47_source_rows_of_any_owner",
+   "returncode": 1,
+   "seconds": 22.9,
+   "summary": "1 failed, 153 passed, 5 deselected in 22.49s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:548: AssertionError: assert 'SECRETS_DIRE...NOT_ROOT_0700' == 'CHAIN_ROW_NOT_ROOT_GROUP'",
+   "killed": true,
+   "mutant": "C48_k9_chain_of_any_group",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 153 passed, 5 deselected in 21.81s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "C49_k9_chain_setgid_accepted",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 153 passed, 5 deselected in 20.92s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "C50_effects_without_the_source_rows",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.11s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:553: AssertionError: assert ('SECRETS_DIRE...NOT_ROOT_0700' == 'CHAIN_ROW_UNSAFE'",
+   "killed": true,
+   "mutant": "V01_an_open_root_for_the_k9_tree",
+   "returncode": 1,
+   "seconds": 21.4,
+   "summary": "1 failed, 153 passed, 5 deselected in 21.03s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:552: AssertionError: assert 'CHAIN_ROW_NOT_ROOT_GROUP' == 'PARENT_SETGID'",
+   "killed": true,
+   "mutant": "V02_a_setgid_secrets_directory",
+   "returncode": 1,
+   "seconds": 21.1,
+   "summary": "1 failed, 153 passed, 5 deselected in 20.74s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V03_k9_root_of_any_mode",
+   "returncode": 1,
+   "seconds": 21.0,
+   "summary": "1 failed, 153 passed, 5 deselected in 20.71s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V04_secrets_directory_of_any_owner_and_mode",
+   "returncode": 1,
+   "seconds": 20.9,
+   "summary": "1 failed, 153 passed, 5 deselected in 20.51s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V06_worker_id_not_checked",
+   "returncode": 1,
+   "seconds": 21.2,
+   "summary": "1 failed, 153 passed, 5 deselected in 20.79s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V07_boot_not_checked",
+   "returncode": 1,
+   "seconds": 21.2,
+   "summary": "1 failed, 153 passed, 5 deselected in 20.82s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...RETS_01', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E01_effects_without_the_k9_root",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 154 passed, 5 deselected in 20.96s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E02_effects_placement_proposed",
+   "returncode": 1,
+   "seconds": 21.2,
+   "summary": "1 failed, 154 passed, 5 deselected in 20.87s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E13_effects_say_an_open_root",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 154 passed, 5 deselected in 20.88s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E03_effects_secrets_directory_without_required",
+   "returncode": 1,
+   "seconds": 21.4,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.00s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E04_effects_directory_0755",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 154 passed, 5 deselected in 20.88s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E05_effects_files_without_links",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.17s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E06_effects_without_the_container_id",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 154 passed, 5 deselected in 20.98s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E07_effects_without_the_names",
+   "returncode": 1,
+   "seconds": 21.4,
+   "summary": "1 failed, 154 passed, 5 deselected in 20.99s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E08_effects_url_from_elsewhere",
+   "returncode": 1,
+   "seconds": 21.8,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.45s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E09_effects_password_from_elsewhere",
+   "returncode": 1,
+   "seconds": 21.8,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.46s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E10_effects_without_the_process",
+   "returncode": 1,
+   "seconds": 21.7,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.27s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E11_effects_another_boot",
+   "returncode": 1,
+   "seconds": 21.9,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.47s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:594: AssertionError: assert {'activation'...0261005', ...} == {'activation'...0261005', ...}",
+   "killed": true,
+   "mutant": "E12_effects_say_a_value_may_be_in_the_receipt",
+   "returncode": 1,
+   "seconds": 22.0,
+   "summary": "1 failed, 154 passed, 5 deselected in 21.73s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:53: AssertionError: ['umask', 'open', 'open']",
+   "killed": true,
+   "mutant": "P01_process_left_dumpable",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.48s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:403: AssertionError: assert ([('not_dumpab...1048832), ...] == [('not_dumpable',)]",
+   "killed": true,
+   "mutant": "P02_any_answer_taken",
+   "returncode": 1,
+   "seconds": 14.0,
+   "summary": "1 failed, 136 passed, 5 deselected in 13.63s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:52: AssertionError: assert ('PRECHECK' in ('AUTHENTICATION', 'BEFORE_ANY_EFFECT'))",
+   "killed": true,
+   "mutant": "P03_not_dumpable_after_the_executor",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 115 passed, 5 deselected in 11.38s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'EXECUTOR_IDENTITY')",
+   "killed": true,
+   "mutant": "P04_executor_not_checked",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 115 passed, 5 deselected in 12.30s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:135: AssertionError: assert (['not_dumpable', 'open'] == ['not_dumpable', 'umask']",
+   "killed": true,
+   "mutant": "P05_umask_not_set",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.86s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:135: AssertionError: assert (['not_dumpable', 'umask'] == ['not_dumpable', 'umask']",
+   "killed": true,
+   "mutant": "P06_umask_0022",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.97s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'EVIDENCE_FROM_EARLIER_BOOT')",
+   "killed": true,
+   "mutant": "P07_boot_not_compared",
+   "returncode": 1,
+   "seconds": 13.6,
+   "summary": "1 failed, 117 passed, 5 deselected in 13.23s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:182: AssertionError: assert 'SECRET_FILE_...FTER_PRECHECK' == 'SECRETS_DIRECTORY_NOT_EMPTY'",
+   "killed": true,
+   "mutant": "P08_secrets_directory_need_not_be_empty",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 27 passed, 5 deselected in 2.99s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:182: AssertionError: assert 'SECRET_FILE_...FTER_PRECHECK' == 'SECRETS_DIRECTORY_NOT_EMPTY'",
+   "killed": true,
+   "mutant": "P09_one_entry_is_empty",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 27 passed, 5 deselected in 2.91s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:168: AssertionError: assert (None == 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "P11_budget_not_checked",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.34s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:422: AssertionError: assert ('REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "P12_budget_strictly_more",
+   "returncode": 1,
+   "seconds": 21.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 21.13s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:427: AssertionError: assert ('EFFECTS' == 'PRECHECK'",
+   "killed": true,
+   "mutant": "P13_directory_not_proved_again",
+   "returncode": 1,
+   "seconds": 21.2,
+   "summary": "1 failed, 138 passed, 5 deselected in 20.73s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:107: AssertionError: assert ({'CONTAINER':... 0, 'READ': 2} == {'CONTAINER':... 0, 'READ': 2}",
+   "killed": true,
+   "mutant": "P14_seconds_left_not_said",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 23 passed, 5 deselected in 2.09s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:161: AssertionError: assert (['EODHD_API_T...MP_API_TOKEN'] == ['EODHD_API_T...MP_API_TOKEN']",
+   "killed": true,
+   "mutant": "P15_buffers_not_zeroed",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.28s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:161: AssertionError: assert (['EODHD_API_T...MP_API_TOKEN'] == ['EODHD_API_T...MP_API_TOKEN']",
+   "killed": true,
+   "mutant": "P16_zero_does_nothing",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.42s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('PRECHECK_FAILED', 'WORKER_CONTAINER_MISMATCH')",
+   "killed": true,
+   "mutant": "W01_worker_not_in_the_list_accepted",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 35 passed, 5 deselected in 7.22s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('WORKER_CONFIG_IDENTITY', 'WORKER_CONTAINER_MISMATCH')",
+   "killed": true,
+   "mutant": "W02_another_id_accepted",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 36 passed, 5 deselected in 7.19s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_worker_config.py::test_stopped_worker_refuses_before_config_acquisition",
+   "killed": true,
+   "mutant": "W03_stopped_worker_accepted",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 20 passed, 5 deselected in 1.77s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:127: AssertionError: assert 1 == 2",
+   "killed": true,
+   "mutant": "W06_one_read_only",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 24 passed, 5 deselected in 1.98s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'WORKER_ENVIRONMENT_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W07_presence_not_compared",
+   "returncode": 1,
+   "seconds": 22.8,
+   "summary": "1 failed, 161 passed, 5 deselected in 22.45s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'WORKER_ENVIRONMENT_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W08_change_not_refused",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 121 passed, 5 deselected in 12.11s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:194: AssertionError: assert None == 'PROVIDER_TOKEN_DEFINITIONS_DISAGREE'",
+   "killed": true,
+   "mutant": "W12_disagreement_accepted",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 27 passed, 5 deselected in 4.37s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:161: AssertionError: assert (['EODHD_API_T...MP_API_TOKEN'] == ['EODHD_API_T...MP_API_TOKEN']",
+   "killed": true,
+   "mutant": "W14_first_values_not_zeroed",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.02s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:161: AssertionError: assert (['EODHD_API_T...MP_API_TOKEN'] == ['EODHD_API_T...MP_API_TOKEN']",
+   "killed": true,
+   "mutant": "W15_second_values_not_zeroed",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 26 passed, 5 deselected in 1.83s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_every_buffer_that_held_a_value_is_zeroed_and_the_writes_came_from_them",
+   "killed": true,
+   "mutant": "W16_content_not_zeroed",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 26 passed, 5 deselected in 1.94s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:92: AssertionError: /var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env",
+   "killed": true,
+   "mutant": "W17_line_without_its_newline",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.64s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:108: AssertionError: assert {'grammar_met...e': True, ...} == {'grammar_met...e': True, ...}",
+   "killed": true,
+   "mutant": "W18_names_present_said_of_the_second_read",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.58s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('PRECHECK_FAILED', 'PROVIDER_TOKEN_ABSENT')",
+   "killed": true,
+   "mutant": "W09_absent_token_accepted",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 44 passed, 5 deselected in 6.50s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:186: AssertionError: assert None == 'PROVIDER_TOKEN_GRAMMAR'",
+   "killed": true,
+   "mutant": "W10_grammar_not_checked",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 27 passed, 5 deselected in 2.93s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:197: AssertionError: ('a\"bFm', '",
+   "killed": true,
+   "mutant": "W11_a_value_the_core_did_not_copy_accepted",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 27 passed, 5 deselected in 4.82s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:726: AssertionError: xxxx",
+   "killed": true,
+   "mutant": "W19_grammar_before_presence",
+   "returncode": 1,
+   "seconds": 23.7,
+   "summary": "1 failed, 168 passed, 5 deselected in 23.39s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_FILE_LINKED')",
+   "killed": true,
+   "mutant": "S07_second_link_accepted",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 76 passed, 5 deselected in 8.57s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('RISK_URL_FILE_DIVERGES', 'RISK_URL_FILE_NOT_REGULAR')",
+   "killed": true,
+   "mutant": "S08_not_regular_accepted",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 73 passed, 5 deselected in 8.42s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'EMITTER_PASSWORD_FILE_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "S09_change_while_read_accepted",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 122 passed, 5 deselected in 12.13s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "S10_too_large_has_its_own_code",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.49s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:341: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S11_readable_fact_inverted",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 119 passed, 5 deselected in 11.81s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "S12_url_two_newlines_accepted",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.20s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:92: AssertionError: /var/lib/c3po/r2d2-v2-k9-20261005/secrets/risk-db.env",
+   "killed": true,
+   "mutant": "S14_url_line_without_its_newline",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.52s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:92: AssertionError: /var/lib/c3po/r2d2-v2-k9-20261005/secrets/emitter/password",
+   "killed": true,
+   "mutant": "S15_password_with_a_newline_added",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.60s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "S16_facts_of_the_url_said_before_its_grammar",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.83s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_the_receipt_does_not_depend_on_the_values_or_their_lengths",
+   "killed": true,
+   "mutant": "S17_facts_of_the_password_said_before_its_grammar",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 27 passed, 5 deselected in 4.10s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_every_buffer_that_held_a_value_is_zeroed_and_the_writes_came_from_them",
+   "killed": true,
+   "mutant": "S18_url_content_not_zeroed",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.22s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_every_buffer_that_held_a_value_is_zeroed_and_the_writes_came_from_them",
+   "killed": true,
+   "mutant": "S19_password_content_not_zeroed",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.01s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('UNLISTED_CODE', 'RISK_URL_FILE_ABSENT')",
+   "killed": true,
+   "mutant": "S23_absent_file_with_another_code",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 72 passed, 5 deselected in 7.97s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:56: AssertionError: a docker command after a file of September was opened",
+   "killed": true,
+   "mutant": "P10_sources_read_before_the_docker_commands",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.52s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:358: AssertionError: a component that diverges is never opened",
+   "killed": true,
+   "mutant": "S01_component_opened_before_it_is_compared",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 120 passed, 5 deselected in 11.50s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('RISK_URL_FILE_ABSENT', 'RISK_URL_COMPONENT_DIVERGES')",
+   "killed": true,
+   "mutant": "S02_component_not_compared_at_all",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 62 passed, 5 deselected in 7.49s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_COMPONENT_DIVERGES')",
+   "killed": true,
+   "mutant": "S03_root_not_compared",
+   "returncode": 1,
+   "seconds": 25.2,
+   "summary": "1 failed, 169 passed, 5 deselected in 24.82s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('RISK_URL_FILE_ABSENT', 'RISK_URL_COMPONENT_DIVERGES')",
+   "killed": true,
+   "mutant": "S04_held_descriptor_not_compared",
+   "returncode": 1,
+   "seconds": 25.5,
+   "summary": "1 failed, 169 passed, 5 deselected in 25.19s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_FILE_DIVERGES')",
+   "killed": true,
+   "mutant": "S05_file_not_compared",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 77 passed, 5 deselected in 8.42s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_COMPONENT_DIVERGES')",
+   "killed": true,
+   "mutant": "S06_instants_not_compared",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 64 passed, 5 deselected in 7.41s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:188: AssertionError: assert None == 'RISK_DATABASE_URL_NOT_THE_RESTRICTED_READER'",
+   "killed": true,
+   "mutant": "S13_url_role_not_checked",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 27 passed, 5 deselected in 3.25s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_COMPONENT_DIVERGES')",
+   "killed": true,
+   "mutant": "S20_device_not_compared",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 66 passed, 5 deselected in 7.54s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_COMPONENT_DIVERGES')",
+   "killed": true,
+   "mutant": "S21_mode_not_compared",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 63 passed, 5 deselected in 7.25s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('RISK_URL_FILE_ABSENT', 'RISK_URL_COMPONENT_ABSENT')",
+   "killed": true,
+   "mutant": "S22_absent_component_with_another_code",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 59 passed, 5 deselected in 7.05s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_DATABASE_URL_WITH_PARAMETERS')",
+   "killed": true,
+   "mutant": "S24_query_parameters_accepted",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 95 passed, 5 deselected in 9.57s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_DATABASE_URL_WITH_PARAMETERS')",
+   "killed": true,
+   "mutant": "S25_fragment_accepted",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 98 passed, 5 deselected in 9.96s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'RISK_URL_COMPONENT_DIVERGES')",
+   "killed": true,
+   "mutant": "S26_owner_not_compared",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 68 passed, 5 deselected in 7.81s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:111: AssertionError: risk_url_source",
+   "killed": true,
+   "mutant": "S27_components_fact_said_before_the_walk",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.63s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'SECRET_FILE_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F01_metadata_gid_not_checked",
+   "returncode": 1,
+   "seconds": 20.1,
+   "summary": "1 failed, 145 passed, 5 deselected in 19.81s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'SECRET_FILE_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F02_metadata_mode_not_checked",
+   "returncode": 1,
+   "seconds": 20.2,
+   "summary": "1 failed, 145 passed, 5 deselected in 19.79s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'SECRET_FILE_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F03_metadata_uid_not_checked",
+   "returncode": 1,
+   "seconds": 20.1,
+   "summary": "1 failed, 145 passed, 5 deselected in 19.76s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'SECRET_FILE_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F04_metadata_links_not_checked",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 145 passed, 5 deselected in 19.91s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'SECRET_FILE_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F05_metadata_device_not_checked",
+   "returncode": 1,
+   "seconds": 20.5,
+   "summary": "1 failed, 145 passed, 5 deselected in 20.12s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:474: AssertionError: assert (False is False and 'WITHDRAWN' == 'LEFT_UNVERIFIED'",
+   "killed": true,
+   "mutant": "F06_withdrawal_of_another_inode",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 146 passed, 5 deselected in 20.02s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:464: AssertionError: nlink",
+   "killed": true,
+   "mutant": "F07_withdrawal_of_a_linked_file",
+   "returncode": 1,
+   "seconds": 20.5,
+   "summary": "1 failed, 145 passed, 5 deselected in 20.03s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:448: AssertionError: assert {'failed_noth...uncertain': 0} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "F08_withdrawal_not_counted",
+   "returncode": 1,
+   "seconds": 19.3,
+   "summary": "1 failed, 140 passed, 5 deselected in 19.00s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:450: IndexError: list index out of range",
+   "killed": true,
+   "mutant": "F09_no_fsync_after_withdrawal",
+   "returncode": 1,
+   "seconds": 19.4,
+   "summary": "1 failed, 140 passed, 5 deselected in 18.96s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:518: AssertionError: assert ('WITHDRAWN' == 'LEFT_UNVERIFIED'",
+   "killed": true,
+   "mutant": "F10_failed_unlink_said_withdrawn",
+   "returncode": 1,
+   "seconds": 20.9,
+   "summary": "1 failed, 150 passed, 5 deselected in 20.61s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F11_readback_inode_not_compared",
+   "returncode": 1,
+   "seconds": 20.1,
+   "summary": "1 failed, 146 passed, 5 deselected in 19.81s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F12_readback_metadata_not_compared",
+   "returncode": 1,
+   "seconds": 22.4,
+   "summary": "1 failed, 163 passed, 5 deselected in 22.03s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:147: AssertionError: assert [('/var/lib/c...ssword', 260)] == [('/var/lib/c..., 1073742084)]",
+   "killed": true,
+   "mutant": "F13_readback_without_noatime",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.86s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: ('DIRECTORY_READBACK_MISMATCH', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "F14_readback_without_the_directory_proved",
+   "returncode": 1,
+   "seconds": 21.5,
+   "summary": "1 failed, 163 passed, 5 deselected in 21.14s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: ('FILESYSTEM_ERROR', 'SECRET_FILE_APPEARED_AFTER_PRECHECK')",
+   "killed": true,
+   "mutant": "F15_existing_name_said_filesystem_error",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 147 passed, 5 deselected in 19.92s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": true,
+   "mutant": "F16_write_of_nothing_accepted",
+   "returncode": null,
+   "seconds": 240.4,
+   "summary": "TIME_LIMIT_240_SECONDS",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:683: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "F17_one_write_only",
+   "returncode": 1,
+   "seconds": 23.0,
+   "summary": "1 failed, 164 passed, 5 deselected in 22.62s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:92: AssertionError: /var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env",
+   "killed": true,
+   "mutant": "F18_file_not_fsynced",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.57s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:149: AssertionError: assert ['/var/lib/c3...ter/password'] == ['/var/lib/c3...secrets', ...]",
+   "killed": true,
+   "mutant": "F19_directory_not_fsynced",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.76s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: ('READBACK_MISMATCH', 'SECRET_FILE_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F20_metadata_mismatch_kept",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 145 passed, 5 deselected in 19.94s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F21_readback_mismatch_kept",
+   "returncode": 1,
+   "seconds": 20.9,
+   "summary": "1 failed, 146 passed, 5 deselected in 20.61s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: ('READBACK_MISMATCH', 'GO_EXPIRED')",
+   "killed": true,
+   "mutant": "F22_withdrawn_after_an_expiry",
+   "returncode": 1,
+   "seconds": 23.0,
+   "summary": "1 failed, 165 passed, 5 deselected in 22.69s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:495: AssertionError: assert ('LEFT_UNVERIFIED' == 'LEFT_UNVERIFIED'",
+   "killed": true,
+   "mutant": "F23_expiry_during_a_write_withdraws",
+   "returncode": 1,
+   "seconds": 21.0,
+   "summary": "1 failed, 148 passed, 5 deselected in 20.58s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:504: AssertionError: the write it interrupted is uncertain",
+   "killed": true,
+   "mutant": "F24_other_failure_not_withdrawn",
+   "returncode": 1,
+   "seconds": 19.9,
+   "summary": "1 failed, 149 passed, 5 deselected in 19.47s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:444: AssertionError: assert ('PLACED_VERIFIED' == 'NOT_ATTEMPTED'",
+   "killed": true,
+   "mutant": "F25_placement_continues_after_a_failure",
+   "returncode": 1,
+   "seconds": 18.8,
+   "summary": "1 failed, 140 passed, 5 deselected in 18.39s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_worker_config.py:50: AssertionError: assert 'DIRECTORY_READBACK_MISMATCH' is None",
+   "killed": true,
+   "mutant": "F26_secrets_readback_expects_four",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 16 passed, 5 deselected in 1.19s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_worker_config.py:50: AssertionError: assert 'DIRECTORY_READBACK_MISMATCH' is None",
+   "killed": true,
+   "mutant": "F27_emitter_readback_expects_none",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 16 passed, 5 deselected in 1.17s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: (None, 'DIRECTORY_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F28_directory_readback_not_judged",
+   "returncode": 1,
+   "seconds": 19.7,
+   "summary": "1 failed, 151 passed, 5 deselected in 19.36s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_worker_config.py:50: AssertionError: assert 'DIRECTORY_READBACK_MISMATCH' is None",
+   "killed": true,
+   "mutant": "F29_password_in_the_secrets_directory",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 16 passed, 5 deselected in 1.06s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_worker_config.py:50: AssertionError: assert 'DIRECTORY_REQUEST_INVALID' is None",
+   "killed": true,
+   "mutant": "F30_emitter_directory_0750",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 16 passed, 5 deselected in 1.12s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('RUN_FAILED_BEFORE_ANY_EFFECT', 'FILESYSTEM_FULL')",
+   "killed": true,
+   "mutant": "F31_files_placed_without_the_directory",
+   "returncode": 1,
+   "seconds": 17.9,
+   "summary": "1 failed, 139 passed, 5 deselected in 17.54s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:65: AssertionError: ('FILESYSTEM_FULL', 'FILESYSTEM_FULL')",
+   "killed": true,
+   "mutant": "F32_refused_after_a_creation",
+   "returncode": 1,
+   "seconds": 18.1,
+   "summary": "1 failed, 140 passed, 5 deselected in 17.77s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:536: AssertionError: lstat",
+   "killed": true,
+   "mutant": "R01_any_code_through",
+   "returncode": 1,
+   "seconds": 19.8,
+   "summary": "1 failed, 152 passed, 5 deselected in 19.40s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:536: AssertionError: write",
+   "killed": true,
+   "mutant": "R02_row_codes_not_listed",
+   "returncode": 1,
+   "seconds": 19.8,
+   "summary": "1 failed, 152 passed, 5 deselected in 19.37s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:106: AssertionError: assert ({'failed_noth...uncertain': 0} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "R03_objects_left_without_the_directory",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.42s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3k9_secrets.py::test_a_name_replaced_before_the_readback_is_left_and_another_object_is_never_removed",
+   "killed": true,
+   "mutant": "R04_objects_left_without_left_files",
+   "returncode": 1,
+   "seconds": 20.2,
+   "summary": "1 failed, 146 passed, 5 deselected in 19.83s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:705: AssertionError: assert ('CREATE_UNCERTAIN' == 'CREATE_UNCERTAIN'",
+   "killed": true,
+   "mutant": "R05_uncertain_creation_said_zero",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 166 passed, 5 deselected in 21.89s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:403: AssertionError: assert ([('not_dumpable',)] == [('not_dumpable',)]",
+   "killed": true,
+   "mutant": "R06_dumpable_fact_true_before_the_call",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 136 passed, 5 deselected in 13.45s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:112: AssertionError: assert {'empty': Non...': 448, ...}]} == {'empty': Tru...': 448, ...}]}",
+   "killed": true,
+   "mutant": "R07_secrets_empty_fact_not_said",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 5 deselected in 1.60s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:527: AssertionError: assert (True and 'COMPLETE' is None)",
+   "killed": true,
+   "mutant": "R08_readback_complete_after_a_stop",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 151 passed, 5 deselected in 19.97s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:55: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "Y01_prctl_set_not_made",
+   "returncode": 1,
+   "seconds": 24.2,
+   "summary": "1 failed, 170 passed, 5 deselected in 23.86s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:50: AssertionError: [('dlopen', {'use_errno': True}, None, [], None), ('prctl', None, 4, [0, 0, 0, 0], 0), ('umask', None, None, None, None)]",
+   "killed": true,
+   "mutant": "Y02_read_back_skipped",
+   "returncode": 1,
+   "seconds": 23.6,
+   "summary": "1 failed, 170 passed, 5 deselected in 23.20s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:55: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "Y03_attribute_set_to_1",
+   "returncode": 1,
+   "seconds": 23.7,
+   "summary": "1 failed, 170 passed, 5 deselected in 23.32s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:148: AssertionError: assert ('METADATA_ON...abled': True}) == ('REFUSED', '...bled': False})",
+   "killed": true,
+   "mutant": "Y04_failure_not_refused",
+   "returncode": 1,
+   "seconds": 22.9,
+   "summary": "1 failed, 175 passed, 5 deselected in 22.62s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:50: AssertionError: [('umask', None, None, None, None), ('open', None, None, None, None), ('open', None, None, None, None)]",
+   "killed": true,
+   "mutant": "Y05_native_says_disabled_without_a_call",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 170 passed, 5 deselected in 21.31s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_worker_config.py::test_duplicate_parse_zeroes_every_buffer_already_created",
+   "killed": true,
+   "mutant": "D03_repeated_entry_accepted",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 19 passed, 5 deselected in 1.11s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_worker_config.py::test_duplicate_parse_zeroes_every_buffer_already_created",
+   "killed": true,
+   "mutant": "D05_refused_parse_not_zeroed",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 19 passed, 5 deselected in 1.17s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'WORKER_CONFIG_CHAIN_UNSAFE')",
+   "killed": true,
+   "mutant": "CFG01_root_chain_not_enforced",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.75s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'WORKER_CONFIG_CHAIN_UNSAFE')",
+   "killed": true,
+   "mutant": "CFG02_private_directory_not_enforced",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.88s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'WORKER_CONFIG_METADATA_UNSAFE')",
+   "killed": true,
+   "mutant": "CFG03_config_metadata_not_enforced",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.54s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('WORKER_CONFIG_FORMAT', 'WORKER_CONFIG_IDENTITY')",
+   "killed": true,
+   "mutant": "CFG04_config_identity_not_enforced",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 11 passed, 5 deselected in 0.89s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('JSON_INVALID', 'WORKER_CONFIG_UNREADABLE')",
+   "killed": true,
+   "mutant": "CFG05_read_bound_doubled",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 14 passed, 5 deselected in 1.14s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'WORKER_CONTAINER_MISMATCH')",
+   "killed": true,
+   "mutant": "CFG06_second_presence_not_checked",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 17 passed, 5 deselected in 1.19s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: (None, 'WORKER_NOT_RUNNING')",
+   "killed": true,
+   "mutant": "CFG07_second_running_not_checked",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 18 passed, 5 deselected in 1.31s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3k9_secrets.py:62: AssertionError: ('WORKER_CONFIG_METADATA_UNSAFE', 'WORKER_CONFIG_CHANGED')",
+   "killed": true,
+   "mutant": "CFG08_name_descriptor_metadata_not_compared",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 21 passed, 5 deselected in 1.14s",
+   "tests": [
+    "test_worker_config.py",
+    "test_k3k9_secrets.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}
