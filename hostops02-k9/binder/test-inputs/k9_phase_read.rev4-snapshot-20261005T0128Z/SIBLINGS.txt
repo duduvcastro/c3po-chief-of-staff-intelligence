@@ -1,0 +1,6 @@
+The sibling operations as they stood beside this directory (links ../<name> -> ../hostops02-sealed/<name>, read only) when its
+suite was last run and it was sealed (2026-10-04T21:15:50Z), by command. tests/test_conformance.py (OTHERS) ran against these bytes.
+epoch_readback  op.py cee4564cc7750f29f19b0c1b154e4d175ac6aade912adade577f0c3b82a75365  build/epoch_readback.py cabc95a04bed751de1824fa8151c58b81e736bc7ea037df3baca01759aa556d4  BUILD_EQUAL  SHA256SUMS b1a810fea1e695ba3ef25f7dc839136bbb0c9995f89eef777bc2f93215703c1f
+install_release  op.py 0317fde20c9083887588ae2bda3d58a8371b5fe5d4451c4addfa62a1422984e1  build/install_release.py e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae  BUILD_EQUAL  SHA256SUMS 2705134655d7e580f389a7b32178e18b22d8ca75f2d5b206de3c90483fb84b82
+catalog_init  op.py 1028141555c45175ed63ea703d1503f59642752d0376c9dfbd3ba09325a21985  build/catalog_init.py d584aa93380513a4eca37a877eca93d78a899dd56a86d9075f977bd56fff5d15  BUILD_EQUAL  SHA256SUMS 1ccaf83dbc3e901d476efe92d877cbee678caf29d2103008a694c155ea09b0f5
+activate  op.py f55eb984466310050bd73a56997a4c03d2e45548fefc7a4ecaef8d590abf2d71  build/activate.py cc05438954f2ba49d5f3bd1b8ef515b3b4601f2cc53436a36460fb3406f85c44  BUILD_EQUAL  SHA256SUMS 91366f446d977fac1e0d0fb6d88c2fa8d98c02ef084b0d4098ebb0467a352bad

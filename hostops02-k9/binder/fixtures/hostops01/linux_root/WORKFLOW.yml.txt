@@ -1,0 +1,51 @@
+# HOSTOPS01, the once family (precheck, provision, unit installation, readback): the suite on Linux as real root and
+# as an ordinary user, and the command shapes under the containerd image store. CONTRACT section 16, items L1 to L6.
+#
+# For a THROWAWAY branch that never merges and carries no other workflow. The job runs on a GitHub-hosted runner
+# that is discarded afterwards; nothing here contacts the production host. No secret is used; the token is read-only
+# and is not kept in the checkout. The candidate lies in hostops01/ with its seal (SHA256SUMS), which run.sh checks
+# before and after. This file is hostops01/linux_root/WORKFLOW.yml.txt, byte for byte.
+#
+# The two actions are pinned by commit. The repository's own pipeline names them by tag (checkout@v6,
+# upload-artifact@v4); on 2026-10-02 `git ls-remote` gave refs/tags/v6 = refs/tags/v6.1.0 = d23441a4...f803 for
+# actions/checkout and refs/tags/v4 = refs/tags/v4.6.2 = ea165f8d...fa02 for actions/upload-artifact.
+name: hostops01-linux-root-proof
+on:
+  push:
+    branches: [ops/hostops01-linux-root-proof]
+permissions:
+  contents: read
+concurrency:
+  group: hostops01-linux-root-proof
+  cancel-in-progress: false
+jobs:
+  linux-root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      HOSTOPS_THROWAWAY_RUNNER: "yes"
+    defaults:
+      run:
+        working-directory: hostops01
+    steps:
+      - name: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: suite as root, suite as user, the command shapes (exit 0 only when everything holds)
+        run: sh linux_root/run.sh
+      - name: sha256 and content of the four output files
+        if: always()
+        run: /usr/bin/python3 -I -B linux_root/report.py
+      - name: the four output files as one artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hostops01-linux-root
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            hostops01/linux_root/TESTS.linux-root.xml
+            hostops01/linux_root/TESTS.linux-user.xml
+            hostops01/linux_root/SHAPES.linux-root.json
+            hostops01/linux_root/VERIFY.linux-root.txt

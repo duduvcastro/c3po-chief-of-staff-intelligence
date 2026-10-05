@@ -1,0 +1,1 @@
+Separate QUERIES program: frozen core conformance retained. Tests for the removed mode are removed from this family, not reported as passing/skipped. Separate-program mode refusal and cross-family evidence are tested explicitly. Historical mixed-mode mutation records are not proof for these bytes.

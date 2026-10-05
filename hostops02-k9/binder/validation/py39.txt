@@ -1,0 +1,43 @@
+..............s..............................F.......................... [ 23%]
+...........s.........................s.................................. [ 46%]
+........................................................................ [ 69%]
+........................................................................ [ 92%]
+...........ssssssssss.                                                   [100%]
+=================================== FAILURES ===================================
+___ test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder ___
+/offline/private-test in test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder
+    assert done.returncode == 0, tail
+E   AssertionError: ........................................................................ [ 13%]
+E     ......................................sssssss........................... [ 27%]
+E     ........................................................F............... [ 41%]
+E     ........................................................................ [ 55%]
+E     ........................................................................ [ 69%]
+E     ........................................................................ [ 83%]
+E     ........................................................................ [ 97%]
+E     ...........ss                                                            [100%]
+E     =================================== FAILURES ===================================
+E     _ test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr _
+E     
+E         @pytest.mark.skipif(os.geteuid()==0,reason='as root the payload would start observing this machine')
+E         def test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr():
+E             """The file that would be sent, byte for byte, run as python3 -I -B - by a non-root user: it compiles, imports and refuses."""
+E             payload=(ROOT/'FINAL_PAYLOAD.UNBOUND.py').read_bytes();command=['/usr/bin/python3','-I','-B','-']
+E             result,out,err=t.once(payload,payload_sha256=p.sha(payload),command=command,command_sha256=t.command_pin(command),
+E                                   authorize=lambda a,b:True,seconds=30)
+E     >       assert result['status']=='KNOWN_REFUSAL' and err==b'' and json.loads(out)['code']=='REQUEST_OR_EXECUTOR_UNBOUND'
+E     E       AssertionError: assert ('UNCERTAIN' == 'KNOWN_REFUSAL'
+E     E         
+E     E         - KNOWN_REFUSAL
+E     E         + UNCERTAIN)
+E     
+E     test_w1_preflight_once.py:1284: AssertionError
+E     - generated xml file: /offline/private-test -
+E     =========================== short test summary info ============================
+E     FAILED test_w1_preflight_once.py::test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr
+E     1 failed, 507 passed, 9 skipped in 62.73s (0:01:02)
+E     
+E   assert 1 == 0
+E    +  where 1 = CompletedProcess(args=['/Library/Developer/CommandLineTools/usr/bin/python3', '-B', '-m', 'pytest', '-q', '-p', 'no:ca...l_payload_refuses_under_the_system_python_with_an_empty_stderr\n1 failed, 507 passed, 9 skipped in 62.73s (0:01:02)\n').returncode
+=========================== short test summary info ============================
+FAILED ../../../../../../offline/private-test
+1 failed, 296 passed, 13 skipped in 251.06s (0:04:11)

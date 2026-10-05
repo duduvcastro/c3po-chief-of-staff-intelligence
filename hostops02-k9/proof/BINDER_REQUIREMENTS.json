@@ -1,0 +1,30 @@
+{
+ "candidate_manifest_sha256": "505c18f215b58b5208250be95b5c0ec5cdcf90c97140f2220a35e8af8236ddc1",
+ "schema": "HOSTOPS02_BINDER_REQUIREMENTS_V1",
+ "versions": {
+  "3.12": {
+   "dependencies": {
+    "exchange_calendars": "4.13.2",
+    "pytest": "9.1.1"
+   },
+   "requirements": [
+    "pytest==9.1.1",
+    "exchange_calendars==4.13.2",
+    "numpy==2.3.5",
+    "pandas==2.2.3"
+   ]
+  },
+  "3.9": {
+   "dependencies": {
+    "exchange_calendars": "4.2.8",
+    "pytest": "8.4.2"
+   },
+   "requirements": [
+    "pytest==8.4.2",
+    "exchange_calendars==4.2.8",
+    "numpy==1.26.4",
+    "pandas==2.2.3"
+   ]
+  }
+ }
+}

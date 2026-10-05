@@ -1,0 +1,160 @@
+{
+ "assembly": {
+  "activation_allowed": true,
+  "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "date_class": "WRITE_SESSIONS",
+  "dates": [
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07",
+   "2026-10-08",
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "dispatcher_sha256": "20c0989f7530aeab5d086da5d0ef8c73d2d30be1188c061805bd0facbbe43c56",
+  "final_payload_bytes": 188595,
+  "final_payload_sha256": "ac3acf17ae54e0d2feb7a0f3f4ca8fffcd102892cd60549f6b7b79d3e61e9ad9",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "e47f493497a75766c32c8c233b8674d7ee8a1e2b2452829847bfa8242cc1fede",
+  "parts": [
+   "core",
+   "runner",
+   "docker",
+   "parents",
+   "files"
+  ],
+  "scope_sha256": "934a83608f092f8d562fcd27249a29b7274c2e080ea78e2e424b320b85c5370d",
+  "source_bytes": 126169,
+  "source_sha256": "47b6815ccede646c18520da0be094be27d7b35dec2968dd07ba5aa55d794db84",
+  "spec_sha256": "f9d73f97c348b9cd9ca25685c28258aab45b431d2164440e6fa32fa7c7636212",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 10955,
+  "writes_allowed": true
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "core": {
+  "core_sha256sums": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "generation_sha256_of_assemble_py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "emulated_only": [
+  "systemctl switches (enable --now, start --no-block, reset-failed, disable --now, stop --no-block) and systemctl show/is-enabled output",
+  "the docker CLI: inspect templates with .Args, .ExecIDs, .Mounts, .HostConfig.Init/ReadonlyRootfs; docker info SecurityOptions",
+  "docker top and docker logs are not used: not reading verbs of the frozen core"
+ ],
+ "fixture": {
+  "module_sha256": "631d15bda29f1edc1e2f2fdbbfcf2cbcc078594b9755975cf219943996409b70",
+  "note": "SYNTHETIC host, launcher, release and pins bytes; the unit templates copied by command from the reader candidate and the producer request (tests/unit_texts.py)"
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "gate": "set 3: the core linux_root job run with this directory as its argument, suite passing as real root",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_CARRIED.json": {
+   "present": false
+  },
+  "MUTATION_RUN.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 372
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 391,
+    "redundant_survivors": 0,
+    "single": 391,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "08aa3ef7eb09ff5fdfa934a4d140e43f03b16172ae6af622290e6c96ed9e2f73",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 372
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 391,
+    "redundant_survivors": 0,
+    "single": 391,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "e7ef1b0edfd765a5c0fa55eded21a86ab09179febe713477bb37e9380bdbcd29",
+   "stale_pins": [],
+   "survivors": []
+  }
+ },
+ "operation": "GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01",
+ "review": {
+  "note": "built and tested by its author only",
+  "status": "NOT_REVIEWED"
+ },
+ "schema": "HOSTOPS02_K13_READER_SWITCH_VALIDATION_V1",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 432,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k13": 294,
+    "test_native": 17
+   },
+   "python": "Python 3.9.6",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 432
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 432,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k13": 294,
+    "test_native": 17
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 432
+  }
+ ],
+ "suites_with_other_operations": null,
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "6c23ab73896ee0804e7b26eb086c13c2b915e631e34042e9f6433134f6abbcbb",
+  "DISPATCH.UNBOUND.json": "0be0061e1b6d0d74513f794afa19fe5bbe01842c084a6fd6c218131b554dc520",
+  "FINAL_PAYLOAD.UNBOUND.py": "ac3acf17ae54e0d2feb7a0f3f4ca8fffcd102892cd60549f6b7b79d3e61e9ad9",
+  "GO.UNBOUND.json": "3840a8d9d25d7a67a9e1a0666e88bb00919f7ce93a876d55a2901793780dac9f",
+  "PUBLICATION_PROOF.UNBOUND.json": "ebbde18e8fbe6b4466317979746b14fa3be09241ca109cc690cbc81039c86131",
+  "REQUEST.UNBOUND.json": "ebba043481269f852378fc60bfd0c210c1c8f582882a736afd0dd60b546da1c2"
+ }
+}

@@ -1,0 +1,1 @@
+Candidata separada para revisão da Fable e prova Linux. POLICY_IDENTITY_REVISION.md registra as regras e resultados. A regressão tem uma falha conhecida do W1 no macOS, portanto não há PASS integral. Nenhuma aceitação operacional é integrada. Prova do host, recibos reais, autoridade e gates continuam necessários. EXTERNAL_TEST_INPUTS.json fixa dependência de teste externa.

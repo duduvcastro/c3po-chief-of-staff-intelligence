@@ -1,0 +1,61 @@
+{
+ "activation_allowed": false,
+ "core_parts": {
+  "core": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a",
+  "docker": "4602f6f07a4502a3decec99cd415737efb429e3b1a188b368939a090bc3b3aa5",
+  "files": "6b96ad64fe8ce5a9a2293b109964e069c2ad32169e7d421449da3f88516b60ba",
+  "parents": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b",
+  "runner": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7"
+ },
+ "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "date_class": "WRITE_WEEKEND",
+ "dates": [
+  "2026-10-02",
+  "2026-10-03",
+  "2026-10-04"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  142,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "9b6f3eacbe5a07eafcf720483a52f04f157e908ac7aa22b944cb0db02221cc57",
+ "final_payload_bytes": 176219,
+ "final_payload_sha256": "669454bd6ce3d72287f7dfc5cf136121471ba19fbf05cf21ba3825eaf82b438c",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "catalog_init",
+ "name": "catalog_init",
+ "operation": "GO_WRITE_HOSTOPS02_CATALOG_INIT_01",
+ "operation_part_sha256": "1028141555c45175ed63ea703d1503f59642752d0376c9dfbd3ba09325a21985",
+ "parts": [
+  "core",
+  "runner",
+  "docker",
+  "parents",
+  "files"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "c06a705f5ccdf9360e301ec45a6920ece3b175a691afa52a9881022127048c21",
+ "source_bytes": 119374,
+ "source_sha256": "d584aa93380513a4eca37a877eca93d78a899dd56a86d9075f977bd56fff5d15",
+ "spec_sha256": "8ffbb20eef70866b83d1350ad123fa9353b3a8a7af340cfcca48dbe48002b7be",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 8075,
+ "writes_allowed": true
+}

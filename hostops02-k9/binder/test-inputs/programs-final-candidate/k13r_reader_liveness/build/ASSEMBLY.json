@@ -1,0 +1,62 @@
+{
+ "activation_allowed": false,
+ "core_parts": {
+  "core": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a",
+  "docker": "4602f6f07a4502a3decec99cd415737efb429e3b1a188b368939a090bc3b3aa5",
+  "runner": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7"
+ },
+ "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "date_class": "READ",
+ "dates": [
+  "2026-10-02",
+  "2026-10-03",
+  "2026-10-04",
+  "2026-10-05",
+  "2026-10-06",
+  "2026-10-07",
+  "2026-10-08",
+  "2026-10-09",
+  "2026-10-10"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "fa6d3160b8d4f25772b580b5ee5c5bf2997d4056f6759174f1d7cd0aa5cf6116",
+ "final_payload_bytes": 122451,
+ "final_payload_sha256": "ace7e683ac553830ad055e5b5c267499ca6f4725b78dd0d6116be9da162973a8",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "k13r_reader_liveness",
+ "name": "k13r_reader_liveness",
+ "operation": "GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01",
+ "operation_part_sha256": "fca737a76fb0bb906f228d283ca9c027672bb6ab433af2294fed6e09b23b5022",
+ "parts": [
+  "core",
+  "runner",
+  "docker"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "dd3051185ea0414ab4ac3683f604c8518c45dc87f83c1a9f616bd3e59fdf3a2c",
+ "source_bytes": 81345,
+ "source_sha256": "0fd5be1792a91c630998e38611600472cba4bb5fc2442a406013cdaee87ae5f3",
+ "spec_sha256": "6c8a9e943bb18afb77615d2349caea07e7c962840a8e4947f58528dd331c232d",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 6596,
+ "writes_allowed": false
+}

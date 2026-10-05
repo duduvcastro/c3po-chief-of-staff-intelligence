@@ -1,0 +1,12 @@
+c8bbc96465cc5d0568366bba4d3970107b0f2d08303855b98e8ab7d171eefc0c  SUMMARY.json
+2d46f784f2cf3afffd11eaa7a3461143484cbae0c5849ff6d6debf4395b31d6f  config/session=2026-10-08.primary.capacity.json
+66fd10d5a7606790da5a3e43b45770802f02de962d03a4efb28b9143d180c005  contract/session=2026-10-08.contract.json
+296e35d099fdccd38010be3e8975317bd71410a7ed586c7330b9a54ea9fbc1ef  documents/session=2026-10-08.go-admission.md
+919a6150bdd25af4c8f1e88536c710cd638cfd6551d428940a1360521c4201bd  documents/session=2026-10-08.go-bar_manifest.md
+fa01a6f94e20185db662f7892731a8273db0467c2f8bb2d5cfeb47fda14c6baf  documents/session=2026-10-08.publication-bar_manifest.md
+18d1fbe0255b5837e661df8bc137ae8d20fcf457075640a71a77338028309f4b  documents/session=2026-10-08.template.md
+951f3a1bdaa71e8d7ed59729cefe97c92a915c22ad621f4ab6d85cc3e654658a  documents/session=2026-10-08.view-primary.md
+a676b8e104ba38a48f6b5a8fce036f87351a89d1e4e94d9995232e124dbbdbf7  envelope/session=2026-10-08.primary.go.json
+4f838d5fe6632da32862464a88a261cc561c6a6ab7f4cdea64211bdac089696d  envelope/session=2026-10-08.primary.request.json
+6b4337215ab50963e7e3224e5b6de6c02f8f1601ec320093b1c62b425aefb4e6  go/session=2026-10-08.admission.json
+97b006365da4661055f2219ae757ed0787c5289a5fd13ba07139126f8f82e943  go/session=2026-10-08.bar_manifest.json

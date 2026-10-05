@@ -1,0 +1,98 @@
+HOSTOPS02 / PROBE - THE CAPACITY PROBE OF EPOCH R2D2-V2-SHADOW-2026-10-05 (STEPS CALENDAR, IDENT, LOAD) - STDIN / ONCE CANDIDATE, REVISION 2
+
+Operation built
+  GO_READONLY_HOSTOPS02_CAPACITY_PROBE_01   build/capacity_probe.py   reads; attached containers with read-only binds only
+
+1. STATUS
+
+Executable code candidate, unsigned and UNBOUND. Built offline from local files only. No host was contacted, no key or
+credential file was read, no docker was run, no prepare/resume was performed outside private synthetic tests, and no
+test reaches the network. No operational GO exists, was created, carried forward or inferred. In every template the
+windows, the date, the host binding, owner, decision, effects, success criterion (null: it follows the signed step),
+target, key and known-hosts references, command pin, claim root and every observed identity are null; status is
+UNBOUND; execution_authorized is false. build/FINAL_PAYLOAD.UNBOUND.py, run under "python3 -I -B -", prints one refusal
+and exits 1 before touching anything. The Linux job has not run. Nobody but its author has read these bytes: they need
+the co-auditor's review by hash before any signature is asked for (A2 rev 3, section 6-A: "programa selado e revisto").
+
+  frozen core (not modified by this operation)   generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
+                                                 seal (CORE_SHA256SUMS) 73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1
+  source, final payload, scope, op.py, spec.py   see build/ASSEMBLY.json and SHA256SUMS (taken by command at sealing)
+  calendar-pin.py (CALENDAR_SCRIPT)              5a6066ae2925453a0def335d8f8ac7e802e149b56cf9e61ea3fe8843fe582b5f (876 bytes, verbatim)
+  IDENT script                                   0b8b12216903b698b29a970f9e257e6e5f16e417102a637fda539dfde10545d1 (1330 bytes)
+  LOAD script (before its appended line)         c3019efaf1d51fea5188af9860f093faba4eb830f19220e222bc80b8aeaba99c (2050 bytes)
+  frozen against                                 the release dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858 (files pinned in
+                                                 tests/test_static_pins.py and linux_root/run.sh) and the deployment
+                                                 documents capacity-day/README.documents.md (d1628d08...) and
+                                                 capacity-mount/README.md (1acd72b1...)
+  authority it serves                            A2 rev 3 (A2_AUTORIDADE_CINCO_SESSOES.md), section 6-A, rows A5 and B4c
+
+2. WHAT IS IN THIS DIRECTORY
+
+  DESIGN.md          the design: name and class, what the owner signs, bands, the three steps, order and budget, every
+                     refusal and verdict, the receipt, tests, proven and UNPROVEN, deviations, open questions
+  CONTRACT.txt       this file
+  spec.py  op.py     the two files the author wrote; everything in build/ is a function of them and of the frozen core
+  build/             written by ../core/assemble.py, never edited: capacity_probe.py (the ONE payload source),
+                     dispatch_once.py, launcher_stdin.py, transport_once.py, the five UNBOUND templates,
+                     FINAL_PAYLOAD.UNBOUND.py, the two delta files, ASSEMBLY.json
+  tests/             conftest.py, kprobe.py (fixtures and the model containers), test_conformance.py, test_probe.py,
+                     test_scripts.py, test_native.py, test_static_pins.py, test_linux_root.py
+  mutation/          mutate.py (the core's, three tables changed), mutants.py, MUTATION_RUN.json, MUTATION_RUN.py312.json
+  linux_root/        run.sh, probe_shape.py: the job for a throwaway Linux runner (NOT RUN)
+  seal.py  SHA256SUMS
+  work/              NOT part of the candidate and not sealed: links to the read-only exports of the release and of the
+                     deployment documents, the mutation copies
+
+3. SPECIFICATION (DESIGN.md sections 1 to 6 are the detail; this is the binding summary)
+
+3.1 One request names ONE step. Every container: docker run --rm -i --pull never --init --user 0:0 --network none
+--read-only --cap-drop ALL --security-opt no-new-privileges --name hostops02-probe-<step>-<16 hex of the GO>[-1|-2]
+[--mount type=bind,source=<signed root path>,target=/c3po-capacity,readonly] <signed image ID> python -I -B -, the
+fixed environment of the core, working directory "/", standard error discarded, the pinned bytes on standard input.
+  CALENDAR  one container, no bind, calendar-pin.py verbatim, class RUN (40 s). Success: the line names epoch
+            R2D2-V2-SHADOW-2026-10-05, package b5ce527a...bdb84, document order 1a5253bf...a118.
+  IDENT     the tree walked from "/" by its signed parent rows and held, root and children root:root 0700; two
+            containers (RUN_SHORT, 20 s each) with the read-only bind; success: both lines agree and the identities of
+            documents, payload and go equal those computed from the numbers read on the host.
+  LOAD      the tree as IDENT; the static config read on the host (owner 0, one link, closed to group and other, the
+            signed SHA-256); the worker c3po-r2d2-worker-1 running on the signed image with exactly one mount at
+            /c3po-capacity, a read-only bind of the signed root, no other mount under that target or reaching the
+            tree (source the root, below it or an ancestor), the release pin and the mount source in its environment
+            equal to the signed values and each capacity setting absent or equal; one container (RUN, 40 s) with the same bind loads
+            Settings and CapacityConfig with the signed config path, config hash and release hash. Success:
+            CAPACITY_STARTUP_OK, roots documents go payload, veto DISPATCH_AND_DERIVATION_ONLY, config sha equal, the
+            three identities equal to the host's.
+3.2 Bands (validate_plan, both layers): CALENDAR and IDENT Sun 2026-10-04 16:26-23:30Z and Mon 10-05 to Thu 10-08
+20:38-23:30Z; LOAD Mon 10-05 to Thu 10-08 20:38-23:30Z. Gate at most 3600 s.
+3.3 Authentication: the family's, unchanged; evidence: at least one prior receipt (no operation name is required:
+DESIGN.md Q1); the success criterion is the step's outcome.
+3.4 Exit 0 for the step's success outcome only; exit 1 (REFUSED_NO_CONTAINER_STARTED) when nothing was started; exit 2
+otherwise (PARTIAL_STEP_RESULT_UNKNOWN, STEP_RAN_ANSWER_NOT_AS_EXPECTED, STEP_RAN_EXPECTED_ANSWER_WITH_FINDINGS,
+PARTIAL_STATE_UNKNOWN_CONTAINER_MAY_REMAIN). Every code: DESIGN.md section 5.
+3.5 What never happens: a writable bind, a bind of anything but the signed root, a network, a token or environment
+file, a variable given to a container, docker exec, a shell, systemctl, a pull, an image by tag, a privilege, device or
+capability, the removal of any container, any write on the filesystem of the host, a value of any environment in the
+receipt. A timeout stops the docker CLI, not the container; the receipt says whether one of this GO's names is listed.
+
+4. WHAT A RECEIPT MEANS FOR THE GATES
+
+  A5 is closed by two receipts, each exit 0: CALENDAR (CALENDAR_LINE_READ_IN_THE_IMAGE_AS_PINNED) and IDENT
+     (ROOT_IDENTITIES_READ_TWICE_EQUAL_TO_THE_HOST). The calendar line of the CALENDAR receipt is the input
+     calendar_pin_receipt of capacity-day's static-config; the three identities of the IDENT receipt (lines[*].line.
+     identities: documents, payload, go) are the capacity_roots identities. Never replaced by a local computation.
+  B4c is closed by one LOAD receipt with exit 0 (STATIC_CONFIG_LOADED_WITH_THE_WORKER_BIND), after B4 and again after
+     any recreate of the worker. STEP_RAN_ANSWER_NOT_AS_EXPECTED is a STOP: no enable (MNT step 2).
+  Any other receipt closes nothing: a later request under its own signature, never a retry of the same GO.
+
+5. BINDING (a later, human-signed step; not part of this candidate)
+
+  The binder copies into the plan: the step; the image ID read on the host after the deploy; the revision dd4ec4bb...;
+  the boot of the evidence; for IDENT and LOAD the root path /var/lib/c3po-capacity and the rows of /, /var, /var/lib
+  from a read-only receipt of the same boot; for LOAD the container path of B5's file, its SHA-256 by command, the
+  release sha, and the receipt hash of K6b's mount. It fixes the window inside the step's band. The request, authority
+  and GO are signed by the owner individually, by hash, after Codex's review of these bytes.
+
+6. CHECK BEFORE BINDING
+
+  shasum -a 256 -c SHA256SUMS ; python3 -B seal.py check ; python3 -B ../core/assemble.py --check . ;
+  python3 -B ../core/assemble.py --core (generation above) ; the suites and the mutation records (seal.py check reads them)

@@ -1,0 +1,665 @@
+W1 COMBINED PREFLIGHT (READ-ONLY) - COMPLETE STDIN / ONCE CANDIDATE - REVISION 3 (NINE DATES, SYSTEM-TOOLS BUDGET)
+Operation GO_READONLY_W1PREFLIGHT_01
+
+Status
+Executable code candidate, unsigned and UNBOUND. Built offline from local files only. No host was contacted, no
+key or credential file was read, no docker was run, no prepare/resume was performed outside private synthetic
+tests. No operational GO exists, was created, carried forward or inferred. Windows, target, key and known-hosts
+references, claim root, owner, decision and signatures are null/UNBOUND in every template. The shipped UNBOUND
+payload refuses before any collection. Revision 1 was reviewed under three lenses (read-only and leaks, real-host
+semantics, family and contract); revision 2 carried the repairs listed under "Changes after review" and went
+through the author's own final verification, which is not an independent review. This revision 3 extends the date
+set, gives systemctl and pgrep a shared time budget and corrects two sentences of this contract ("Changes in
+revision 3"). It has not been reviewed by anyone but its author. Binding is a later human-signed step and is not
+part of this candidate.
+
+Purpose
+One single-use, read-only observation of the production host, run once as root through the fixed reviewed command
+"sudo -n /usr/bin/python3 -I -B -" with the whole payload on stdin, AFTER the deploy of the merged release pull
+request. It answers, with observations only, the host facts that the plan of gates 1 and 5 still needs (its
+section 7, "W1 unless noted"), and what the decision to keep the bar journal on the root filesystem needs. The
+receipt is evidence for review. It is not readiness, not installation authority and not activation authority.
+The same bytes may be bound to later reads inside the signed date set (decision 1). Each such read is one
+single-use observation with a request, an authority, a GO and a window of its own.
+
+Why the earlier read ended KNOWN_PARTIAL, and what is changed here
+The read of 2026-10-02 reported three problems (containers:CONTAINER_CHANGED, containers:FAMILY_ROW_INCOMPLETE,
+data_volume:FAMILY_MOUNT_FACTS_INCOMPLETE). All three have one cause. The payload compared two raw inspect
+answers of each container; the Docker daemon builds the Mounts list by ranging over a map, so two answers for an
+unchanged container list the same mounts in different orders. The second and third problems are roll-ups of the
+first. No container had changed. Here both lists that the template ranges over (mounts, networks) are put in
+canonical order before the two answers are compared, and a row that still differs names the keys that changed
+(changed_keys). A real restart between the two reads is still CONTAINER_CHANGED. The receipt of that run keeps
+only the first answer of each row, so this cause is an inference, not a recorded diff; the emulated daemon of the
+test file now returns Mounts in another order on every call and reproduces it. The families that needed fixes in
+the earlier revision are not repeated here: no entry name is listed (lost+found), docker-init is not probed again
+and docker info is not run.
+Three more causes of a PARTIAL that this host would have produced with the new families are removed by design:
+no entry name is emitted at all (so no name can be "withheld"); the pending-reboot flag is read at /run, not
+through the link at /var/run; something that is legitimately absent before provisioning is a fact.
+
+Two lists: problems and findings
+  problems  an observation could NOT be made: a command failed, timed out or answered something of unexpected
+            shape, an operating-system error other than a proved absence, a link in the middle of a path, a cap
+            that hides the answer where the whole answer is needed. Any problem makes the receipt PARTIAL.
+  findings  something was observed and is not what the plan expects (a second worker, a private input not owned
+            by uid 0, free space below the need, a pending reboot, a name outside an allow-list). Findings are
+            listed as section:CODE and do NOT change the status.
+  absent    a path, unit, tag or container that does not exist yet is a fact, in neither list.
+METADATA_ONLY_REQUIRES_REVIEW (remote exit 0, transport KNOWN_COMPLETE, dispatcher exit 0) therefore means: every
+observation of every section was made; docker.service was seen active; the container list was stable and every
+listed container was classified, counted and read; no listing whose whole content an answer needs was cut; no
+size reduction was applied. It does NOT mean that the host is as the plan wants it: the gates read the findings
+and the facts. A section is never COMPLETE while any part below it is not (enforced once, centrally).
+What may be cut WITHOUT changing the status, each with its own flag in the receipt, and nothing else:
+  - a histogram beyond 12 rows (histogram_other_entries carries the rest as one count);
+  - the list of findings beyond 96 (findings_truncated);
+  - a listing beyond 20000 entries in a configuration directory or in a capacity root (capped: true). Its count,
+    histogram, counters and class counts then cover the first 20000 entries only. No finding and no derived
+    member needs more than that there: "not empty" is proved by one entry, and the four children of a capacity
+    root are read by lstat of their fixed names, not taken from the listing.
+A listing beyond 20000 entries IS a problem (CENSUS_CAPPED) at the volume root, at the journal root and in every
+reader-input tree, where an answer needs the whole listing; under such a cap a clause that was seen is still
+reported as seen, and one that was not seen is UNDETERMINED or null, never "absent". Lists with a limit of their
+own (stack rows 16, mounts 16, networks 8, images by id 4, workers 4) raise a problem when the limit is passed.
+A negative answer about the containers (a service is missing, no worker runs, the db is not running, an image or
+a revision is not the running one, no container mounts the data) is given only when every listed container was
+classified, counted and read. Otherwise the derived member is null and the section is PARTIAL with the reason.
+
+What KNOWN_PARTIAL means for the gates
+KNOWN_PARTIAL (remote exit 2, dispatcher exit 2) is a valid outcome and still carries every fact that was
+observed; exit 2 must not be read as a failure. Each problem is "section:CODE". The plan items that depend on a
+section with a problem stay OPEN and need another authorised read (the GO is single-use; nothing is retried):
+  runtime, docker_daemon                      item 9 (host python3 version, Docker server version)
+  containers, images, deploy_version          item 1 (image ID to render, revision label, .deploy-version)
+  network                                     item 2 (name and ID of the compose network, db attached)
+  data_volume                                 item 3 (source, device, filesystem type, free bytes, st_dev before the
+                                              weekend reboot) and item 10 (pin and name classes of the volume root)
+  raw_spool, source_directory,                item 4 (owner and mode of every input the reader touches; a private
+  release_directories, journal_filesystem     object not owned by uid 0 is the finding PRIVATE_INPUT_NOT_UID0)
+  release_directories, capacity_candidates,   item 5 (paths chosen; /etc/c3po-bar/manifests root 0700 and empty)
+  host_layout
+  worker, worker_environment                  item 8 (exactly one r2d2-worker, C3PO_DATABASE_URL present, capacity)
+  security_controller                         item 10 (automatic_merge, automatic_reboot, reboot pending, held by what)
+  systemd, alert_channels                     item 13 (which alert channels exist), unit states
+  journal_filesystem                          the journal decision: device, owner and mode of /var/lib and of the
+                                              journal directories, free bytes against 53,687,091,200 and
+                                              56,706,990,080, another device than the data volume
+  processes                                   no plan item; a stray V2 process is a finding for the operator
+Dependencies between sections (these are all of them; no other problem of one section removes a fact of another):
+  1. The window. Sections are read in this order, and what was read before the signed window or the 60 s deadline
+     ends is kept: first what needs no external tool (runtime, journal_filesystem, host_layout,
+     security_controller, alert_channels); then systemctl and pgrep (systemd, processes), which together may use
+     at most 15 s (after that every further systemctl or pgrep command is SYSTEM_TOOLS_BUDGET_EXHAUSTED, a
+     problem, not an expiry: slow answers of systemctl can therefore cost unit states and the process counts, and
+     nothing else; docker.service is the first unit asked); then the docker families (docker_daemon, containers,
+     worker, worker_environment, network, images, deploy_version), which together may use at most 25 s (after
+     that every further docker command is DOCKER_BUDGET_EXHAUSTED, a problem, not an expiry); then the data
+     volume and the trees below it. A section not reached says GO_EXPIRED or DEADLINE.
+  2. docker.service. No docker command is started unless systemd saw the unit active in this run. Otherwise
+     docker_daemon, containers and images say DOCKER_SKIPPED_UNIT_NOT_ACTIVE or DOCKER_SKIPPED_UNIT_UNOBSERVED,
+     and worker, worker_environment and network say CONTAINERS_UNOBSERVED.
+  3. The container list. Sections that count or compare containers carry UNCLASSIFIED_CONTAINERS, FAMILY_LIMIT,
+     FAMILY_EMPTY, LIST_UNSTABLE or CONTAINER_ROW_UNAVAILABLE when a container could not be classified, counted
+     or read, and then give no negative answer. worker_environment and network read by container id and are not
+     affected by a row that could not be read.
+  4. The data source. It is the mount of the RUNNING containers that are not one-off. When two of them disagree,
+     or the source is not one of the two signed paths, or an automount holds it, the volume is not walked:
+     raw_spool, source_directory and release_directories say DATA_SOURCE_UNAVAILABLE, the journal's device
+     comparison stays null and the security controller's trial clauses stay null. When no running container
+     shows the mount (docker down, rows unreadable) the signed default path is still read.
+  5. Two members are joined at the end from values already observed: journal_filesystem.device_differs_from_
+     data_volume and the security_controller members that depend on the trial veto of the volume root.
+
+What is observed (w1_preflight_readonly.py, sections of the receipt)
+runtime             Python version of /usr/bin/python3 (never measured before); the kernel release read from
+                    /proc/sys/kernel/osrelease and reduced to its dotted number and the number that follows it
+                    (uname is not called: the node name never enters the process; any other suffix is reported
+                    as withheld); uptime and boot instant (CLOCK_BOOTTIME; a later read with a later boot
+                    instant, or another kernel number, proves a reboot).
+docker_daemon       docker version .Server.Version, reduced to its dotted number (a suffix is reported as
+                    withheld). docker info is NOT repeated.
+containers          docker ps -a twice; three labels of EVERY listed container, running or not; for each container
+                    of project c3po whose service is one of the eight compose services: name, image id and
+                    reference, revision label, state, start time, restarts, user, read-only root, network mode,
+                    networks, mounts. Each row is read twice and compared in canonical order. Per service: count,
+                    running, one-off. Counts of containers outside the stack. Whether a container named
+                    c3po-reader or c3po-massive exists. The names of the containers outside the stack reach this
+                    process through docker ps, as in every earlier read; they are counted and never emitted.
+worker              from those rows: how many r2d2-worker containers, exactly one running, the mount at
+                    /c3po-capacity (type, read-only, the unprovisioned placeholder volume or a bind of a signed
+                    candidate), the data mount. The host .env is never opened.
+worker_environment  NEW TEMPLATE. For each running r2d2-worker (at most 4): which of 14 fixed keys are present and
+                    which of 8 fixed literal lines are present, as fixed tokens: C3PO_DATABASE_URL present / empty,
+                    capacity required literally "true" or set to something else, veto mode documented, shadow and
+                    bars switches, the source directory equal to the signed candidate, the raw directory as in
+                    compose. See "Environment".
+network             NEW TEMPLATES. The id of each network of the running db and r2d2-worker containers (container
+                    inspect, proven mode); docker network inspect c3po_c3po_internal: driver, scope, internal,
+                    attachable, how many containers are attached and whether db, the worker and the backend are
+                    among them. No address, gateway or subnet is requested.
+images              image inspect of c3po/backend:production (mandatory), c3po/backend:rollback,
+                    c3po/web:production, c3po/database:production, and of the image of any stack container,
+                    running or not, that has none of these tags: local ID, revision label, which of the four
+                    signed tags it carries, how many retention tags (c3po/backend:massive-supervisor-*, counted and
+                    never emitted) and how many others. Derived, over the backend containers that RUN: the
+                    production ID is the ID of every one; revision labels agree; and, apart, which backend
+                    services have no running container. rollback differs from production (null when the
+                    rollback tag does not exist). Exit status 1 of image inspect is read as "the tag does not
+                    exist" only for a tag other than production, only when the daemon resolved the production
+                    tag in the same run, and never for a tag that a running db or web container was created from.
+                    THIS local ID is the only one that may be rendered into a unit; a CI-runner ID is not it.
+deploy_version      content of /opt/chief-of-staff-digital/.deploy-version (40 hex) and whether it equals the
+                    production revision label and the label of every running backend container.
+data_volume         the source of /app/day-d-data, taken from the mounts of the running containers that are not
+                    one-off and accepted only if it is one of the two signed paths (a stopped or one-off container
+                    that mounts something else there is a finding, not a disagreement); every ancestor (type, uid,
+                    gid, mode, device);
+                    statvfs (blocks, free, available, inodes, read-only), device major/minor; the mount that holds
+                    it (mount point, filesystem type, source device, read-write); what uid 0 without capabilities
+                    may do at the root, with the design refusal as a finding. Root entries as aggregates:
+                    count, type/uid/gid/mode histogram, and the
+                    name classes of the security controller's trial test (pin, release files, trial and probe
+                    directories with an unrecognised name, a link, a current or future date). Derived: what the
+                    controller's trial_present() answers clause by clause, and whether a veto remains without the pin.
+journal_filesystem  /, /var and /var/lib (type, uid, gid, mode, device, inode); /var/lib/c3po-bar,
+                    /var/lib/c3po-bar/journal and /var/lib/c3po-bar/supervisor if they exist (same fields, root:root
+                    0700 or not); statvfs of the deepest existing directory among /var/lib, the parent and the
+                    journal root; f_bavail*f_frsize (the figure the producer computes) against the floor
+                    53,687,091,200 and the five-session need 56,706,990,080, with the signed margin; f_bfree and
+                    total; whether the device differs from the data volume's; whether /var/lib/docker is on the
+                    same device; the mount that holds it. If the journal root exists: counts of epoch.json,
+                    maintenance.lock, producer.lock and session directories, and which sessions of this epoch exist.
+raw_spool           provider=eodhd / microstructure / raw below the data source, one row per component (owner, mode,
+                    what uid 0 without capabilities may do; a component it cannot search, or one private to
+                    another uid, is the design refusal, as for the leaf); number of
+                    session directories, oldest and newest date; for the three newest sessions: owner, mode, what
+                    uid 0 without capabilities may do, number of part files, histogram.
+source_directory    r2d2-v2-source below the data source: owner, mode, private or not; snapshot.json (lstat);
+                    events, causal_list and causal_list/R2D2-V2-SHADOW-2026-10-05 as aggregates; which of the five
+                    session dates have a file there.
+release_directories for each name of request.collection.candidates.release_directories below the data source:
+                    exists, owner, mode, private, number of .json files, histogram. Empty list: nothing is read.
+capacity_candidates for each path of request.collection.candidates.capacity_roots: ancestors (no path text), owner,
+                    mode, device, inode, whether the device is the data volume's or the root filesystem's, whether
+                    the path lies under the application directory (removed by rsync --delete at a deploy) or under
+                    the data volume; config, documents, payload, go (lstat); count of other children.
+host_layout         lstat of 19 fixed paths of the supervisor and of the reader (configuration directories, the
+                    token, the reader's three environment files and launcher, the failure-marker directory, the five
+                    unit files), each compared with the documented type, root:root and mode; for the supervisor's
+                    and the reader's directories (not for /etc/systemd/system): number of entries, empty or not.
+                    Token: type, uid, gid, mode, link count and the boolean "size
+                    within 1-4096". Never its size, never its content.
+systemd             systemctl show, one call per unit, of docker.service and ten fixed units (the five c3po units,
+                    the three security timers, apt-daily-upgrade.timer, the unattended-upgrades failure unit):
+                    LoadState, ActiveState, UnitFileState (SubState for docker). Values outside the signed lists
+                    become OTHER. Read BEFORE every docker command: the docker commands are opened only by a
+                    complete answer that says ActiveState=active (docker_commands_allowed).
+security_controller lstat of /run/reboot-required and its package list, of the helper that writes the flag, of the
+                    controller's two reboot markers, of the explicit hold, of the host security environment file and
+                    of the reboot state file (existence, owner, mode, age); type of /var/run and whether it is a
+                    link to /run; CONTENT of the policy file /etc/c3po/security-automation.json (hash,
+                    automatic_merge, automatic_reboot), of the controller's last report and of the host
+                    vulnerability report (fixed status tokens, booleans, counts within 0-1000000, ages, the
+                    report's own seal), and the sha256 of the three installed controller modules. One of these six
+                    paths that exists and is not a regular file is never opened and is a problem
+                    (NOT_A_REGULAR_FILE), not a fact. Derived: reboot pending or not, and the list of host states
+                    that hold an automatic reboot; a policy token is in that list only when the policy content was
+                    read or the file is proved absent.
+processes           pgrep -c -f for four fixed patterns (shadow worker, reader launcher, massive supervisor,
+                    manifest writer): one count each.
+alert_channels      lstat of the healthcheck ping script and drop-in, of the reader's failure-marker directory and
+                    of eight mail or HTTP client paths. Presence only. The repository defines no forwarder for the
+                    reader's failure marker; that is stated as a constant, not observed.
+clock               host UTC at start and end and elapsed monotonic milliseconds.
+
+Environment (rule: no value may enter the payload when a boolean form exists)
+No template prints an environment value or key. ENVFLAGS_FORMAT makes the Docker CLI range over .Config.Env
+itself and print a fixed token when a line begins with one of 14 fixed keys or equals one of 8 fixed lines. A test
+proves by construction that the only action of the template that prints anything is {{json .Id}} and that every
+literal between actions is a token of the signed list; the payload refuses any answer holding anything else
+(ENVFLAGS_INVALID). The values exist in the Docker CLI process, as they do for every inspect on this host; they
+never exist in the payload process. No form exists in which the CLI itself does not see the environment.
+SET_OTHER means "the key is there with some other value"; that value is never received.
+
+What is NOT observed, by construction
+No environment value or key. No docker exec, run, start, stop or any container command, and no docker command
+at all while docker.service was not seen active. No docker endpoint other than unix:///var/run/docker.sock, which
+every docker argv names. No network connection opened by this process; no address, gateway, MAC or subnet. No
+write and no lock. No signal other than SIGKILL to a child of this process that exceeded its time limit. No
+systemctl verb other than show. No shell. No application import. No database content and no database
+connection. No provider token
+content, size or digest. No entry name of any directory: not at the volume root, not in the raw spool, not in the
+source or release directories, not in the journal, not in a configuration directory. Dates are the only text taken
+from a name (session directories and day files), and only when the whole name matches a fixed pattern. No content
+of the reader secret file, the pins file, the hold file, the package list, the host security environment file, the
+reboot state file or any release file. No host name: os.uname() is not called. No docker info, timedatectl or
+getent (measured by the earlier read; a deploy does not change them).
+Every text that reaches the receipt is one of: a constant of the signed scope, a prefix of a signed path, a hash,
+a number, a timestamp of RFC 3339 shape, a date, a version number of two or three dotted parts, or a fixed
+token. A value outside its allow-list is replaced by OTHER or withheld, and flagged where the section has
+findings. Integers taken from file content are emitted only inside a fixed range.
+
+OUT OF SCOPE, with the operation that covers it
+  epoch row count (plan item 11)        needs a database query, which no read-only once payload of this family runs
+                                         (docker exec creates a process in the production database container and
+                                         a session there). Covered by the session's M7 read, by rehearsal C (W10:
+                                         one count(*) beside SELECT 1), or by a separate single-purpose once payload
+                                         with its own scope line. The binding moment is just before install_release.
+  db reachable from outside compose      rehearsal C (W10). W1 gives the network name, id and attributes only.
+  device/inode seen inside containers,   rehearsal B (W7). W1 gives the host side only.
+  AnchoredRoot, shared flock, mode=ro
+  --env-file precedence, nested mount    rehearsals A and the writer option-set (W6).
+  target, exit through docker-init,
+  start and import seconds
+  the image ID inside the supervisor     the units are not installed at W1 (reported absent); their content is not
+  unit                                   read here. The readback of the supervisor operation and M0 cover it.
+  st_dev after the weekend reboot        the W2 receipt and M0; W1 is the "before" value.
+  release file bytes against their pin   the R5 guards and the install_release readback.
+  the controller's probe-lock clause     reported NOT_EVALUATED (it needs a lock attempt or the kernel lock table);
+  and release file content               a release file is reported UNDETERMINED_WITHOUT_CONTENT.
+  GitHub-side controller state           not a host read.
+
+What the fixed tools and this process do besides reading (SCOPE side_effects: part of the signed request, to be
+named in the GO)
+  1. Starting the daemon. With the standard packaging the Docker daemon is started on demand through docker.socket:
+     a client call to the endpoint of a STOPPED daemon makes systemd start docker.service, and the started daemon
+     restarts every container that has a restart policy. Therefore no docker command, and not even the lookup of
+     the docker binary, happens before systemctl show answered ActiveState=active for docker.service in this run.
+     Not covered: a daemon that stops between that answer and a later docker command. Whether docker.socket is
+     enabled on this host was not measured; the rule does not depend on it.
+  2. Every docker command names the endpoint unix:///var/run/docker.sock in its argv (--host), so that a client
+     context in root's configuration cannot send a read to another endpoint. The Docker CLI still loads its
+     client configuration file from root's home directory when one exists; its content never reaches the payload.
+  3. Every inspect: the Docker CLI receives the whole inspect document from the daemon, environment and addresses
+     included, to render the template. The payload receives the template output only. Not new on this host.
+  4. systemctl show of a unit that is not loaded makes the manager look for its unit file. Nothing is started.
+  5. pgrep reads the command line of every process. The payload receives one number per pattern.
+  6. Signals: a child that exceeds its time limit is sent SIGKILL by this process. No other signal is sent.
+  7. Each child gets the null device as stdin and stderr; the Python library opens it read-write. Nothing is
+     written to it.
+  8. Access times: every open of this process outside /proc carries O_NOATIME (a test asserts it on every open).
+     readlink of /var/run and the file reads of the three tools themselves may move access times under the mount
+     options of the host.
+  9. Automounts: nothing is opened at or below a mount point whose last mount table row is autofs, and no tree is
+     descended that has such a point below it (AUTOMOUNT_PATH_REFUSED, a problem). The table is read from /proc
+     before that check exists; without a mount table the check is not applied and automount_guard says so. The
+     receipt reports the number of autofs rows and of armed points.
+  docker info (CLI plugin round as root), timedatectl (may start a service) and getent (name-service lookup) are
+  NOT run by this operation.
+
+DECISIONS THAT NEED THE REVIEWER'S AND THE OWNER'S EXPLICIT ACCEPTANCE
+1. Nine UTC dates, one set of bytes for several reads. These bytes are meant to serve the first preflight and
+   the later reads that the plan gives to the same source, through Saturday 10/10. The source and the dispatcher
+   accept a window that lies entirely on ONE UTC date of 2026-10-02, 2026-10-03, 2026-10-04, 2026-10-05,
+   2026-10-06, 2026-10-07, 2026-10-08, 2026-10-09 or 2026-10-10 (never across midnight UTC; 21:00 BRT is 00:00
+   UTC), and the request must name exactly this set, in this order. Each read is a binding of its own: request,
+   authority, GO, window and signatures, single-use; no GO serves two reads, and a wider date set does not widen
+   any window. The reviewed dispatcher accepted one literal date; this is the one line of it whose logic changes
+   (== becomes "in (nine literals)"). Revision 2 accepted two dates. Alternative: a shorter set, and a rebuilt
+   candidate when a read falls outside it.
+2. Candidates in the signed request. The release directory name for this epoch and the capacity tree path are not
+   decided. They are NOT constants of the source: request.collection.candidates carries at most 4 release
+   directory names (one path component each, [A-Za-z0-9._=-]{1,64}) and at most 3 absolute clean paths, validated
+   before any claim and before any observation. Both lists are empty in the template, and W1 runs with empty
+   lists (the two families then read nothing and say so as a finding). The binding step may fill them; the owner
+   signs the request either way. The names are never copied into the receipt: it refers to candidate_index.
+3. launcher_stdin.py is the reviewed file, byte for byte. Its three family literals still say "hostfacts": the
+   module name under which the source is executed, the file name in tracebacks that are never printed, and the
+   schema field of a REFUSAL document (READONLY_SUPERVISOR_HOSTFACTS_STDIN_RESULT_V1). Nothing validates that
+   field; a refusal is bound to this operation by exit.json (config, request and GO hashes), and the dispatcher
+   rebuilds the final payload from this source and these documents and demands byte equality, so no payload of
+   the earlier operation can be sent. Consequence to accept: the stdout of a refused W1 run is byte for byte the
+   stdout of a refused run of the earlier operation; it is told apart by exit.json ONLY, and the scope sentence
+   of the GO must say so. Alternative: a 3-line delta that renames the label, and a new launcher hash.
+4. Three templates never run on any engine (ENVFLAGS_FORMAT, ATTACH_FORMAT, NETWORK_FORMAT). Each is in its own
+   call and its failure costs one problem in one section (worker_environment or network), with every other fact
+   intact. The five templates of the earlier read are reused byte for byte.
+5. A third binary, pgrep. It is the only way to learn of a stray V2 process without command lines entering the
+   payload. If it is unwanted, drop the section: one table entry and one function.
+6. File contents. This operation reads the content of nine files (SCOPE file_contents_read): this process's
+   mountinfo, /proc/sys/kernel/osrelease, .deploy-version, the controller policy, two controller reports and
+   three controller modules (hashed only). The earlier read opened only two /proc map files. The reports hold
+   package and container names; none is emitted. The package list, the reboot state file and the release files
+   are deliberately NOT opened.
+7. The data source is not walked unless it is one of two signed paths (/mnt/day-d-data, or the docker volume path
+   of c3po_c3po_day_d_data). The earlier read walked whatever path the mount named.
+8. When no running container shows the data mount (docker down, or rows unreadable) the signed default
+   /mnt/day-d-data is still read and the receipt says source_basis SIGNED_DEFAULT_NO_CARRIER; the section is
+   PARTIAL in that case, unless every container was read and none mounts it (then it is the finding
+   DATA_MOUNT_NOT_FOUND).
+9. Access time. Directories are opened O_NOATIME and the access time is compared before and after. A change is a
+   problem on quiet directories (volume root, configuration directories, capacity tree) and a fact on directories
+   that running services write and poll (raw spool, source directory, release directory, journal root).
+10. All listed containers are classified, running or not (the earlier read classified the running ones), so that
+   a stopped second worker or a leftover one-off container is counted. The data source, however, is taken from
+   the running containers that are not one-off only.
+11. docker.service must be seen active before any docker command (side effect 1). If systemctl cannot answer, or
+   answers anything but active, every docker family is a problem and the run is PARTIAL: the price of never
+   starting a stopped daemon.
+12. A new argv form: every docker command begins with --host unix:///var/run/docker.sock, the Docker CLI's own
+   default endpoint written out. The earlier reads relied on the default; this exact form was never run on this
+   host. Alternative: drop the two arguments and accept that a client context could redirect the reads.
+13. Two shared budgets. The docker families share 25 s (limit docker_seconds); a daemon that answers slowly
+   without timing out loses the rest of its own families, never the others. systemctl and pgrep share 15 s in
+   the same way (limit system_tools_seconds, new in revision 3): slow answers there cost the unit states and the
+   process counts not yet read, never the answer about docker.service (the first command of the group always
+   starts), never a docker family and never the data volume.
+
+Limits
+Budget as in the reviewed dispatcher: watchdog 80 s, remote collection 60 s, latest_start = not_after - 80 s.
+Each command: fixed argv from the signed table, absolute binary chosen after an lstat safety walk, no shell, env
+exactly PATH=/usr/bin:/bin LANG=C LC_ALL=C, stdin and stderr /dev/null, output capped at 64 KiB, 5 s timeout (the
+earlier read used 8 s), a tool is skipped after its second timeout. Two budgets bound what the tools can use
+whether they hang or only answer slowly: systemctl and pgrep share 15 s, the docker commands share 25 s. Each
+budget runs from the first command of its group, and a command of a group is started only while the group has
+used less than its budget; a group therefore ends at most one command after its budget, and one command lasts
+at most 5 s (up to 1 s more when the child has to be killed and waited for). Worst case, by timeouts, by slow
+answers or by both: 15 s + 5 s for systemctl and pgrep, then 25 s + 5 s for the docker families: 50 s (52 s
+with the two kill waits), and the data volume is read in what is left of the 60 s. When every command hangs:
+systemctl is skipped after two timeouts and the next timeout, of pgrep, ends the shared budget: 15 s; docker
+two timeouts: 10 s. The one optional argument of a command is a 64-hex container id, a sha256 image id or a
+signed tag, checked before the call. Expected: 53 commands on the emulated post-deploy stack (38 docker, 11
+systemctl, 4 pgrep).
+KNOWN LIMIT, family-wide: the deadlines are cooperative. A subprocess is bounded and killed, but open, scandir,
+lstat or fstatvfs on a hung filesystem would block past the budget; the local watchdog would then kill only the
+SSH client. All paths are expected on local block devices, tmpfs or procfs; a path that an armed automount point
+of the mount table holds is refused before it is opened (side effect 9).
+Directories: at most 20000 entries are counted per directory (one lstat each); beyond that the count is capped and
+flagged. It is a problem (CENSUS_CAPPED) at the volume root, at the journal root and in the reader-input trees,
+and a flag only in the configuration directories and capacity roots, whose aggregates then describe the first
+20000 entries. The reader's own limit is 4096 files.
+Receipt: JSON, sorted keys, compact. The dispatcher decodes at most 65536 bytes. The payload seals at most 60000
+bytes by four explicit reductions applied in order and listed in observation.size_reductions (histograms dropped,
+mounts dropped, container rows reduced, sections reduced), each forcing PARTIAL; the final assembly cannot
+raise. Measured on the emulated host (VALIDATION.json): about 35 kB before provisioning and about 41 kB after
+provisioning with both candidates signed, no reduction.
+
+Problem codes (section:CODE; a section that raised carries one code)
+Commands        BINARY_UNAVAILABLE_OR_UNSAFE COMMAND_FAILED COMMAND_TIMEOUT COMMAND_SKIPPED_AFTER_TIMEOUT
+                COMMAND_OUTPUT_LIMIT ARGUMENT_INVALID JSON_INVALID DOCUMENT_SIZE DOCUMENT_TYPE DUPLICATE_KEY
+                NONFINITE_JSON
+Docker commands DOCKER_SKIPPED_UNIT_NOT_ACTIVE DOCKER_SKIPPED_UNIT_UNOBSERVED (no docker command was started)
+                DOCKER_BUDGET_EXHAUSTED (the docker families used their 25 s)
+System tools    SYSTEM_TOOLS_BUDGET_EXHAUSTED (systemctl and pgrep used their 15 s; in systemd and in processes)
+Filesystem      OS_ERROR (with errno) SYMLINK_COMPONENT COMPONENT_NOT_DIRECTORY PATH_CHANGED NOATIME_UNAVAILABLE
+                STATVFS_INVALID STATVFS_UNAVAILABLE CONTENT_SIZE_LIMIT CENSUS_CAPPED ATIME_CHANGED_DURING_LISTING
+                MOUNTINFO_INVALID MOUNTINFO_UNAVAILABLE MOUNT_HOLDER_NOT_FOUND AUTOMOUNT_PATH_REFUSED
+                NOT_A_REGULAR_FILE (a file whose content is read exists as a link, a directory or a special file)
+Window          GO_EXPIRED CLOCK_REVERSED DEADLINE (status PARTIAL_OR_WINDOW_EXPIRED)
+Container list  UNCLASSIFIED_CONTAINERS FAMILY_LIMIT FAMILY_EMPTY LIST_UNSTABLE CONTAINER_ROW_UNAVAILABLE, in
+                containers and in every section that counts or compares containers (worker, worker_environment,
+                network, images, deploy_version): the negative answers of that section are withheld
+runtime         RUNTIME_FIELD_INVALID BOOTTIME_UNAVAILABLE
+docker_daemon   DAEMON_VERSION_EMPTY DAEMON_FIELD_INVALID
+containers      CONTAINER_LIST_INVALID CONTAINER_LIST_DUPLICATE CONTAINER_COUNT_LIMIT LIST_UNSTABLE
+                UNCLASSIFIED_CONTAINERS FAMILY_EMPTY FAMILY_LIMIT FAMILY_ROW_INCOMPLETE FAMILY_METADATA_INVALID
+                CONTAINER_CHANGED MOUNT_INVALID MOUNT_LIMIT NETWORK_LIMIT DATA_MOUNT_INVALID DATA_MOUNT_DUPLICATED
+                CAPACITY_MOUNT_DUPLICATED REVISION_LABEL_INVALID READONLY_ROOTFS_INVALID
+worker          CONTAINERS_UNOBSERVED WORKER_ROW_UNAVAILABLE WORKER_LIMIT
+worker_environment  CONTAINERS_UNOBSERVED ENVFLAGS_COMMAND_FAILED ENVFLAGS_INVALID WORKER_LIMIT
+network         CONTAINERS_UNOBSERVED ATTACH_COMMAND_FAILED ATTACH_INVALID NETWORK_COMMAND_FAILED NETWORK_INVALID
+images          IMAGE_UNRESOLVED (the production tag, an image id of a stack container, or any tag while the
+                production tag did not resolve) IMAGE_REFERENCED_TAG_UNRESOLVED (the tag of a running db or web
+                container does not resolve) IMAGE_METADATA_INVALID IMAGE_LIMIT REVISION_LABEL_INVALID
+deploy_version  DEPLOY_VERSION_INVALID
+data_volume     FAMILY_MOUNT_FACTS_INCOMPLETE DATA_MOUNT_UNOBSERVED DATA_SOURCE_DISAGREE DATA_SOURCE_NOT_IN_SCOPE
+raw_spool, source_directory, release_directories   DATA_SOURCE_UNAVAILABLE
+systemd         PROPERTY_OUTPUT_INVALID PROPERTY_LINE_INVALID PROPERTY_VALUE_INVALID PROPERTY_MISSING UNIT_ID_MISMATCH
+security_controller  POLICY_INVALID REPORT_INVALID
+processes       PGREP_FAILED PGREP_OUTPUT_INVALID
+Any section     OBSERVATION_FAILED (an unforeseen error of the collector itself), INCOMPLETE, DERIVATION_FAILED (one
+                of the two joins made at the end failed; the facts of the section are kept)
+Receipt         COLLECTOR_FAILED RECEIPT_REDUCED_TO_MINIMUM
+Refusals before any observation (remote exit 1, transport KNOWN_REFUSAL; the GO is spent):
+                PIN_MISMATCH REQUEST_OR_EXECUTOR_UNBOUND REQUEST_SCOPE AUTHORITY_UNBOUND GO_UNBOUND OWNER_UNBOUND
+                HOST_BINDING WINDOW_UNBOUND WINDOW_NOT_UTC DATE_WINDOW_MISMATCH OUTSIDE_GO_WINDOW
+                COLLECTION_BINDING COLLECTION_KEYS COLLECTION_UNBOUND PHASE_INVALID LIMITS_INVALID HOST_UNBOUND
+                SCOPE_MISMATCH COLLECTION_WINDOW CANDIDATES_INVALID
+                GO_EXPIRED CLOCK_REVERSED DEADLINE when raised by the collector's first gate call, before anything
+                is observed; STDIN_EXECUTION_REFUSED for anything the launcher cannot name (a timestamp that does
+                not parse, for one); STDIN_SOURCE_PIN STDIN_DOCUMENT_PIN from the launcher itself.
+
+Finding codes (section:CODE; they never change the status)
+containers      SERVICE_MISSING SERVICE_DUPLICATED SERVICE_CONTAINER_NOT_RUNNING ONEOFF_CONTAINER_PRESENT
+                FIXED_NAME_CONTAINER_PRESENT CONTAINER_NOT_RUNNING RESTARTS_NONZERO MOUNT_OUTSIDE_ALLOW_LIST
+                IMAGE_REFERENCE_OUTSIDE_ALLOW_LIST NETWORK_MODE_OUTSIDE_ALLOW_LIST USERNS_MODE_OUTSIDE_ALLOW_LIST
+                USER_NOT_NUMERIC
+worker          WORKER_COUNT_NOT_ONE CAPACITY_MOUNT_ABSENT CAPACITY_MOUNT_DUPLICATED CAPACITY_MOUNT_WRITABLE
+                CAPACITY_MOUNT_IS_BIND CAPACITY_MOUNT_BIND_SOURCE_NOT_A_CANDIDATE
+                CAPACITY_MOUNT_VOLUME_NOT_THE_PLACEHOLDER WORKER_DATA_MOUNT_ABSENT
+worker_environment  DATABASE_URL_KEY_ABSENT DATABASE_URL_EMPTY NO_RUNNING_WORKER_TO_EVALUATE
+network         DB_CONTAINER_NOT_RUNNING DB_NOT_ON_NETWORK WORKER_NOT_ON_NETWORK NETWORK_ID_DISAGREE
+images          PRODUCTION_TAG_NOT_RUNNING_IMAGE REVISION_LABEL_MISMATCH SERVICE_TAG_NOT_RUNNING_IMAGE
+                BACKEND_SERVICE_WITHOUT_RUNNING_CONTAINER
+deploy_version  DEPLOY_VERSION_ABSENT DEPLOY_VERSION_NOT_A_REGULAR_FILE DEPLOY_VERSION_NOT_THE_RUNNING_REVISION
+data_volume     DATA_MOUNT_NOT_FOUND DATA_FILESYSTEM_READ_ONLY TRIAL_VETO_PRESENT TRIAL_VETO_INDEPENDENT_OF_PIN
+                STOPPED_CONTAINER_DATA_SOURCE_DIFFERS PRIVATE_INPUT_NOT_UID0 INPUT_UNREADABLE_UID0_NOCAP
+journal_filesystem  BELOW_FLOOR BELOW_FIVE_SESSION_NEED JOURNAL_DEVICE_EQUALS_DATA_DEVICE
+                JOURNAL_FILESYSTEM_READ_ONLY JOURNAL_PARENT_NOT_ROOT_0700 JOURNAL_ROOT_NOT_ROOT_0700
+                STATE_ROOT_NOT_ROOT_0700
+raw_spool       RAW_COMPONENT_MISSING RAW_WRITABLE_BY_OTHERS RAW_ENTRY_LIMIT PRIVATE_INPUT_NOT_UID0
+                INPUT_UNREADABLE_UID0_NOCAP
+source_directory  SOURCE_DIRECTORY_ABSENT SOURCE_NOT_A_DIRECTORY SOURCE_NOT_PRIVATE SOURCE_FILE_NOT_PRIVATE
+                EVENT_FILE_LIMIT PRIVATE_INPUT_NOT_UID0 INPUT_UNREADABLE_UID0_NOCAP
+release_directories  NO_RELEASE_DIRECTORY_CANDIDATE_SIGNED RELEASE_CANDIDATE_NOT_A_DIRECTORY RELEASE_FILE_NOT_PRIVATE
+                PRIVATE_INPUT_NOT_UID0 INPUT_UNREADABLE_UID0_NOCAP
+capacity_candidates  NO_CAPACITY_ROOT_CANDIDATE_SIGNED CAPACITY_ROOT_NOT_ROOT_0700 CAPACITY_ROOT_UNDER_APP_DIR
+                CAPACITY_ROOT_UNDER_DATA_VOLUME
+host_layout     LAYOUT_NOT_AS_DOCUMENTED MANIFESTS_NOT_EMPTY UNDOCUMENTED_PATH_PRESENT
+systemd         UNIT_STATE_OUTSIDE_ALLOW_LIST DOCKER_UNIT_NOT_ACTIVE
+security_controller  REBOOT_PENDING REBOOT_PENDING_AND_HELD REBOOT_REPORTED_WITHOUT_FLAG
+                REBOOT_REQUEST_MARKER_PRESENT HOLD_PRESENT VAR_RUN_IS_NOT_A_LINK_TO_RUN REPORT_SEAL_MISMATCH
+                REPORT_COUNT_OUT_OF_RANGE
+processes       V2_PROCESS_RUNNING
+PRIVATE_INPUT_NOT_UID0 is the refusal for the design named in the plan: a container run with --cap-drop ALL
+cannot read a private object that uid 0 does not own. It and INPUT_UNREADABLE_UID0_NOCAP are raised for the volume
+root, for every component of the raw spool path and for every tree the reader lists, not only for the leaves.
+Tokens of security_controller.automatic_reboot_held_by (facts, not codes): EXPLICIT_HOLD
+POLICY_AUTOMATIC_REBOOT_NOT_TRUE POLICY_ABSENT TRIAL_PIN TRIAL_NAME_UNRECOGNISED TRIAL_SYMLINK TRIAL_DATE
+TRIAL_GUARD_WOULD_RAISE TRIAL_RELEASE_FILE_SYMLINK TRIAL_RELEASE_FILE_UNDETERMINED_WITHOUT_CONTENT. The list says which
+host states would hold an automatic reboot; the controller's clock window, its 24-hour cool-down and its
+GitHub-side checks are not host files and are not in it.
+
+What a run before provisioning looks like (no host fact is stated here)
+With empty candidate lists and nothing provisioned, every supervisor and reader path is reported absent and the
+two candidate findings are raised. Whether the maintenance pin is present (TRIAL_VETO_PRESENT), whether a veto
+would remain without it (TRIAL_VETO_INDEPENDENT_OF_PIN) and whether a reboot is pending (REBOOT_PENDING) are
+among the things this read reports. None of these is a problem.
+
+Reused versus new code
+transport_once.py is EXACTLY the reviewed bytes 5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918.
+launcher_stdin.py is EXACTLY the reviewed bytes 2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e (decision 3).
+dispatch_once.py (8ebcc00e1edf5c478ce191d2c1e2dd4b722a8263464848ef2a356671932c761f) is derived from the file executed on 2026-10-02
+(8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409); DISPATCH_SCOPE_DELTA.diff is the complete delta: 16 lines replaced by
+16, and mapping the new literals back reproduces the reviewed file byte for byte (a test does it):
+  - source module hostfacts_readonly -> w1_preflight_readonly (import, runtime pin name, authenticate call);
+  - operation GO_READONLY_SUPERVISOR_HOSTFACTS_01 -> GO_READONLY_W1PREFLIGHT_01 (config and inner);
+  - schemas W1PREFLIGHT01_DISPATCH_AUTHORIZATION_V1, READONLY_W1PREFLIGHT01_{REQUEST,AUTHORITY,GO,RECEIPT}_V1,
+    W1PREFLIGHT01_GO_CLAIM_V1, W1PREFLIGHT01_DISPATCH_INTENT_V1 (two sites), W1PREFLIGHT01_INTENT_PUBLICATION_V1;
+    GO phase READONLY_W1PREFLIGHT;
+  - date scope: == '2026-10-02' -> in (the nine literals '2026-10-02' to '2026-10-10') (decision 1). The rest of
+    that line, "and end.date()==start.date()", is unchanged. This is the only byte difference between the
+    dispatcher of revision 2 and this one.
+  The refusal label PREFLIGHT_BUDGET is the reviewed, unchanged line.
+w1_preflight_readonly.py (7d1df28da31d3f3bd6c9dab7d9de3a98bef8291730a2bed7c28e8b1f1fa979f8) is new and needs independent review.
+Textually identical to the reviewed source (a test compares each one with the reviewed file): Refused,
+CommandFailed, need, canonical, sha, instant, text, clean_path, data_path, kind, shape, safe, attempt, combined,
+Native.run and the nine metadata methods of Native, trusted_executable, binary, Context.__init__, Context.check,
+descend, properties, reason_codes, Pins, Gate, seal, and the five proven templates (the repair round changed none
+of them: the docker precondition and budget are class members and code of Context.call; revision 3 likewise:
+the budget of systemctl and pgrep is one class member and four lines of Context.call).
+507 of the 897 reviewed lines
+are unchanged. Changed, each for a stated reason: authenticate (the dates check, two statements); observe (the
+name of one constant member of the receipt); strict and decode (a size limit argument, default unchanged, and a
+recursion error mapped to JSON_INVALID); probe (split into locate and probe, takes the context and applies the
+automount guard; a link in the path is reported unavailable by probe itself; absence_proved_at_read is no longer
+emitted, absent_at is the proof); filesystem
+(inode figures, the read-only flag, major and minor); Context.call (checks its one argument, the docker
+precondition, the docker budget, the budget of systemctl and pgrep and the automount guard on the binaries) and
+Context.output
+(takes the failure code); validate_collection (requires the candidates member); family_facts (sorts the two
+ranged lists; pid upper bound dropped with the /proc reads); family_row (emits allow-listed text only);
+containers, images, data_volume, systemd, docker_daemon and collect (rewritten for the new scope). Removed:
+docker_init, supervisor_trees, entries, process_maps, reference, definite and the old size reductions.
+New: everything else.
+No GO of an earlier operation is accepted: the operation and every schema name are new. Tests refuse synthetic
+documents carrying the POSTDEPLOY01, PREFLIGHT, PREFLIGHT_STANDALONE and HOSTFACTS names at the source level and at
+the dispatcher level, the real signed request, authority, GO and config bytes of the three earlier operations
+that are on this machine, and the final payload bytes of 2026-10-02 inside a W1 config.
+
+Docker --format rules applied
+Every container template names .Id, which is not a typed field, so the CLI executes it against the raw JSON with
+missingkey=error: the only inspect mode proven on this host. Dotted references are limited to the keys the earlier
+reads proved; everything else is reached through index, lists end with a null sentinel. NETWORK_FORMAT names no id
+on purpose: each of its six keys is a field of the CLI's typed structure and a key of the raw JSON under the same
+spelling, so it executes in either mode (a test runs both). The network id comes from the container template.
+No template begins with or contains "{{{". The session's Go-delimiter lexer reports no error on all 8 templates;
+that lexer is necessary, not sufficient. ENVFLAGS_FORMAT uses split, a function of the Docker CLI template set, and
+the Go built-ins eq, index, range and a variable; a variable of interface type holding a string is accepted by
+both in Go's text/template.
+
+NOT VERIFIED OFFLINE (honest list)
+- No real Docker CLI and no real Go text/template engine was available. The fake docker of the tests is an
+  emulation; the three new templates were never run on any engine. Running them once on the CI runner's engine
+  before signing would remove most of that doubt (it would not prove the host's CLI version).
+- That docker image inspect of an absent tag exits 1, and that docker network inspect passes both a typed value
+  and raw JSON to the template in this CLI version, are read from the upstream source, not observed.
+- The argv form "docker --host unix:///var/run/docker.sock <command>" was never run on this host. It is the
+  documented global option with the CLI's default value; running one such command on the CI runner before
+  signing would show the form (not the host).
+- That the daemon of this host is started on demand through docker.socket is upstream packaging knowledge, not a
+  measurement. The precondition on docker.service holds either way.
+- /proc/sys/kernel/osrelease and the autofs rows of the mount table were never read on this host.
+- The native collector (O_NOATIME opens, /proc/<pid>/mountinfo, scandir on a descriptor, fstatvfs members,
+  CLOCK_BOOTTIME, readlink with dir_fd) cannot run on macOS. The command runner, descend, census, the bounded read
+  and statvfs were exercised natively on a local temporary directory with the access-time flag replaced by zero.
+- Never observed on this host: the layout below /opt/chief-of-staff-digital/runtime/security, /etc/c3po,
+  /usr/local/lib/c3po-security and /run (any link in the middle of one of these paths, and a policy, report or
+  module that is not a regular file, makes that observation unavailable and the run PARTIAL; the repository's
+  installer writes regular files); the shape of the two controller reports (taken from the repository's code);
+  the raw spool and source directory below the volume root; pgrep being a regular root-owned file at
+  /usr/bin/pgrep; the mount table.
+- The mount-order cause of the earlier PARTIAL is an inference from the receipt and from the upstream source.
+- The host's Python version is not known (it is one of the facts W1 reads). The source uses nothing newer than
+  Python 3.7 grammar and the standard library, and was tested on 3.9.6 and 3.12.14 with SyntaxWarning as error
+  (a warning on stderr would turn a good run into UNCERTAIN).
+- The checkout used for unit names, paths, policy schema and guard expressions is the local one; the deployed
+  revision is whatever is merged. A renamed unit or path would be reported absent, not wrong.
+
+Binding (all still pending; none of it is performed by this candidate)
+The binding scripts of the earlier operation cannot be reused as they are. They must change: candidate directory,
+a new base directory that must not exist, the attempt name, signature file names, manifest, contract and scope
+hashes, runtime and template pins, the source file name in the bound set, the scope sentence of the GO (it must
+name decisions 1 to 6 and 11 to 13, the nine side effects, and that a refusal is identified by exit.json only),
+the window constants and their date check (the source exposes DATES,
+a list, not DATE), and the last successful use (the earlier operation's exit.json, KNOWN_PARTIAL). The request has
+one more member to bind or to leave empty on purpose: collection.candidates. The window lives in six places that
+must agree (request, request.collection.window, authority, GO, config, config.latest_start); all are null here.
+Choose a window with no deploy, no scheduled workflow and no security timer inside it: a container that starts
+or ends during the read makes the run PARTIAL (LIST_UNSTABLE, CONTAINER_CHANGED), and so does a daemon that is
+being restarted (docker.service not active: no docker command is started). Prefer a long window.
+A changed byte anywhere means new hashes and a new signature. Nothing here authorises provisioning,
+installation, catalog initialisation, activation, a reboot or a pin change.
+
+CLI shapes (templates, not issued commands)
+LOCAL_PYTHON_ABSOLUTE -B ABSOLUTE_BOUND_DIR/dispatch_once.py --config ABSOLUTE_BOUND_CONFIG --config-sha256 INDEPENDENT_CONFIG_SHA --phase prepare
+LOCAL_PYTHON_ABSOLUTE -B ABSOLUTE_BOUND_DIR/dispatch_once.py --config ABSOLUTE_BOUND_CONFIG --config-sha256 INDEPENDENT_CONFIG_SHA --phase resume --publication-proof ABSOLUTE_PROOF --publication-proof-sha256 INDEPENDENT_PROOF_SHA
+
+Validation
+test_w1_preflight_once.py, run with /usr/bin/python3 3.9.6 and with Python 3.12.14: all tests pass (counts and
+JUnit file in VALIDATION.json and TESTS.xml). Covered: the family tests of the earlier operation, re-based (exact
+unbound payload and its refusal; hash chain and null bindings; documents of every earlier operation, synthetic
+and real; effective uid; every date of the set and every window boundary; scope fixed by the source; malformed
+candidates;
+dry gate; expiry; deadline and clock reversal; prepare without spawn, resume once, replay; single use per GO;
+claim-root relocation; target transplant; publication order; runtime pins; final payload bytes; receipts over
+64 KiB or of another GO filed as UNCERTAIN; CLI exit mapping; launcher pins; the reviewed transport and launcher
+bytes around a sealed receipt; the final payload under python3 -I -B - as a non-root user). The emulated daemon's
+template semantics, with eq and split; every template lexer-clean; the five proven templates pinned by hash; the
+environment template printing nothing but fixed tokens; the network template in both modes. The host before
+provisioning (every section COMPLETE, no problem, the expected findings, what was executed and what was opened);
+mounts in another order on every inspect (40 seeds) and a real restart; the host after provisioning with both
+candidates; objects not as documented; a pending reboot, markers, hold and policy variants, /var/run as a
+directory or as a link elsewhere; unreadable policy and reports; a second worker, a stopped one, a one-off, none;
+the database variable missing, empty or absent; capacity and shadow settings; directories with thousands of
+symbol-like names (the same host under other names gives the same receipt byte for byte); a directory beyond the
+cap; private inputs not owned by uid 0; missing reader inputs and links; free space at and around the two
+numbers; the journal on the data volume's device; mount table shapes; names outside every allow-list; hostile
+mount sources; two sources; no source; the controller's trial clauses; each of the 23 commands failing, hanging,
+answering garbage or nothing (92 cases); an unexpected extra field in each answer; unexpected tokens and lines;
+unresolved tags; deploy-version shapes; all three tools hanging inside the budget; runtime of a whole observation;
+a real local directory of 4000 entries; arguments; window expiry; O_NOATIME unavailable; access time moved; an
+entry vanishing; receipt size at the caps and every reduction; collector failures; static properties of the
+source (Python 3.7 grammar, exact imports, exact os attributes, forbidden words, one Popen).
+Added by the repair round: zero docker argv while docker.service is not active or not observed (seven states and
+every malformed answer), enforced also as an invariant of the emulated host on every docker command of every
+test; the pinned endpoint in every docker argv; a slow daemon that never times out; the reading order; one
+container that cannot be classified or read, for each service and each of the two reads, never producing a
+negative finding; an unstable container list; stopped and one-off containers with another data mount; path
+components and a volume root that uid 0 without capabilities cannot traverse; each of the six content files as a
+link, a FIFO and a directory; host-shaped and address-shaped kernel releases, daemon versions and start times;
+report counts out of range; armed and already-mounted automount points on nine paths; a listing beyond the cap
+at the volume root and at the journal root, with veto clauses hidden beyond it; every one of the 19 sections
+failing alone; runtime facts that cannot be read; a release candidate whose listing fails; the clock failing at
+the end; candidates that do not exist yet; a partially provisioned journal; /var/run absent; foreign names in the
+journal root, both causal lists and every configuration directory, and a vanished entry; O_NOATIME asserted on
+every open outside /proc; the dispatcher's receipt bindings one by one, its claim and intent names and its inner
+operation check; the runner's output cap, its discarded standard error, the kill of a child that outlives its
+limit and the context deadline, each by behaviour; more workers than the limit.
+Added by revision 3: each of the nine dates accepted by the source and, at the first and at the last admissible
+start of a whole-day window, by the dispatcher; the day before the set, the day after it, the same day of
+another month and of another year, and a window across the midnight that ends each date of the set, refused by
+both; a request that names one date, the two dates of revision 2, or a shorter, a longer or a reordered set,
+refused; systemctl and pgrep slow without timing out (they stop at their 15 s, docker.service was answered, the
+docker families and the volume lose nothing); slow systemctl alone, just inside and just beyond the budget; slow
+pgrep alone; every command of every tool slow (49 s on the emulated host, the volume still read, no expiry);
+every tool hung (15 s).
+A mutation check on private copies (VALIDATION.json) changes one behaviour of the source at a time; every mutant
+is killed, with the two documentation tests deselected so that a kill is behavioural.
+Transport to a host is mocked or replaced by a local echo in every test. Synthetic SIGNED objects exist only
+inside private test fixtures with owner SYNTHETIC_NEVER_AUTHORITATIVE. Every identifier, name, count and size in
+the fixtures is synthetic: a test holds every name at the fixture's volume root to the signed constants or to a
+visibly synthetic pattern, and, where the private receipt of the earlier read is on the machine, a second test
+compares the fixtures and the test file with its entry names (nothing of it is printed). The comparisons with
+the reviewed files of the earlier operation are mandatory: they fail, they do not skip, when those files are
+missing. Files of earlier operations are read only to be refused.
+
+Changes after review (revision 1 -> revision 2)
+Source: systemd is read before any docker command and opens them only on ActiveState=active; --host in every
+docker argv; a 25 s limit shared by the docker families; sections reordered so that what needs no docker is read
+first, with two joins at the end; the class read's "running" kept in every row, three-valued comparisons
+(agreement) and withheld negatives when a container was not classified, counted or read; data source from
+running containers that are not one-off; findings for every traversed component and for the volume root; a
+content file that is not regular is NOT_A_REGULAR_FILE and the policy token needs the policy content; kernel
+release from procfs and reduced to numbers, daemon version reduced to its number, start time held to RFC 3339;
+report counts bounded; automount guard from the mount table; a capped listing is a problem at the volume root
+and at the journal root; exit 1 of image inspect accepted as absence only with the production tag resolved;
+rollback_differs null when the tag is absent; BACKEND_SERVICE_WITHOUT_RUNNING_CONTAINER reported apart; a worker
+limit that is a problem; the date set no longer cut before the listing.
+Renamed receipt members: runtime.kernel (version, abi, suffix_withheld instead of release),
+docker_daemon.server_version_suffix_withheld and docker_endpoint, images.stack_images_without_a_listed_tag,
+containers.services_missing (null when a container was not classified), and the new members named above.
+Transport family: unchanged. launcher_stdin.py and transport_once.py are the reviewed bytes; dispatch_once.py is
+byte for byte the derived file of revision 1 (same hash).
+Fixtures: three directory names that equalled entries of the private receipt were replaced by made-up names, and
+one more name that the repository defines was replaced as well.
+
+Changes in revision 3 (revision 2 -> revision 3)
+Source, three changes and no other: (1) DATES names the nine UTC dates 2026-10-02 to 2026-10-10 instead of two,
+and with it the signed scope and its hash change; the rule "one date, never across midnight" is the same code.
+(2) systemctl and pgrep share a budget of 15 s: constant SYSTEM_TOOLS_SECONDS, class member system_floor, four
+lines of Context.call that mirror the docker budget, the limit system_tools_seconds in the signed scope, the
+problem code SYSTEM_TOOLS_BUDGET_EXHAUSTED. (3) Two comments.
+Dispatcher: the date literal of the one line whose logic differs from the reviewed dispatcher now names the nine
+dates. Every other byte is revision 2's. launcher_stdin.py and transport_once.py are the reviewed bytes.
+Contract, two corrections asked by the final verification of revision 2: the worst case of slowness without a
+timeout was wrong (only docker had a budget; systemctl and pgrep were bounded by their timeouts, which a slow
+answer never reaches). It is now a property of the code, stated under Limits and tested. The sentence on capped
+listings in configuration directories and capacity roots said that no answer is derived from the names; the
+class counts are derived from them. It now says what such a listing covers and that no finding depends on more.
+Tests: the date tests cover the nine dates and their edges; four tests on the new budget, one of them the
+adapted test of hung tools (it ends at 15 s where it ended at 20 s); seven more mutants (VALIDATION.json).
+Everything derived (request, authority, GO, final payload, config, publication proof, delta, TESTS.xml,
+VALIDATION.json, SHA256SUMS) was regenerated by the build steps; every hash of revision 2 except those of
+launcher_stdin.py and transport_once.py is replaced.

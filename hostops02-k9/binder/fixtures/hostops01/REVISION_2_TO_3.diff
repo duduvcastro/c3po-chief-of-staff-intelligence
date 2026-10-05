@@ -1,0 +1,1168 @@
+--- revision2/assemble.py
++++ revision3/assemble.py
+@@ -6,7 +6,8 @@
+   <op>/launcher_stdin.py= reviewed_base/launcher_stdin.py with five literal substitutions (same bytes in every <op>)
+   <op>/transport_once.py= reviewed_base/transport_once.py, byte-identical
+   <op>/*.UNBOUND.json, FINAL_PAYLOAD.UNBOUND.py = the unbound templates and the exact stdin bytes built from them
+-Run without arguments to (re)write everything; the test suite calls the pure functions and compares bytes.
++Run without arguments to (re)write everything; the test suite calls the pure functions and compares bytes. No output
++depends on where this directory lies: a copy assembled at any other path yields the same bytes (tested).
+ """
+ import base64
+ import difflib
+@@ -226,8 +227,11 @@
+ def unbound_documents(op,module,source,runtime):
+     """REQUEST, AUTHORITY, GO, DISPATCH and PUBLICATION_PROOF templates and the exact stdin payload built from them.
+     Windows, date, host binding, owner, decisions, effects, target, key and known-hosts references, command pin,
+-    claim root and every observed identity are null; status is UNBOUND; execution_authorized is false."""
+-    p=OPS[op];directory=HERE/op
++    claim root and every observed identity are null; status is UNBOUND; execution_authorized is false. The five blob
++    references of the dispatch template carry the hash of the unbound bytes and a null path: where a blob lies is a
++    binding (the bind step writes the bound files and names them), so nothing generated here depends on, or shows,
++    the directory this is run in."""
++    p=OPS[op]
+     plan={'schema':module.PLAN_SCHEMA,'status':'UNBOUND','phase':module.PHASE,'scope':module.SCOPE,
+           'window':{'not_before':None,'expires_at':None},'host_binding_sha256':None,'max_seconds':module.MAX_SECONDS}
+     plan.update(unbound_plan(op,module))
+@@ -251,7 +255,7 @@
+     go_raw=canonical(go)
+     payload=launcher_module().build(source,request_raw,authority_raw,go_raw,expected_payload_sha256=sha(source),
+         expected_request_sha256=sha(request_raw),expected_authority_sha256=sha(authority_raw),expected_go_sha256=sha(go_raw))
+-    def item(name,raw):return {'path':str(directory/name),'sha256':sha(raw)}
++    def item(name,raw):return {'path':None,'sha256':sha(raw)}
+     config={'schema':p['stem']+'_DISPATCH_AUTHORIZATION_V1','status':'UNBOUND','decision':'UNBOUND','operation':module.OPERATION,
+             'single_use':True,'retry':False,'owner':None,'authorization_ref':None,'executor_uid':0,'not_before':None,'not_after':None,
+             'latest_start':None,'watchdog_seconds':80,'finalize_local_receipts_after_window':True,'runtime_sha256':runtime,
+--- revision2/linux_root/WORKFLOW.yml.txt
++++ revision3/linux_root/WORKFLOW.yml.txt
+@@ -1,26 +1,51 @@
+-# Template of the CI job the second review asked for. NOT RUN: it has to be placed in a repository that carries this
+-# candidate directory, with CANDIDATE set to its path. Manual trigger only; nothing here touches the production host.
+-name: hostops01-linux-root
+-on: workflow_dispatch
++# HOSTOPS01, the once family (precheck, provision, unit installation, readback): the suite on Linux as real root and
++# as an ordinary user, and the command shapes under the containerd image store. CONTRACT section 16, items L1 to L6.
++#
++# For a THROWAWAY branch that never merges and carries no other workflow. The job runs on a GitHub-hosted runner
++# that is discarded afterwards; nothing here contacts the production host. No secret is used; the token is read-only
++# and is not kept in the checkout. The candidate lies in hostops01/ with its seal (SHA256SUMS), which run.sh checks
++# before and after. This file is hostops01/linux_root/WORKFLOW.yml.txt, byte for byte.
++#
++# The two actions are pinned by commit. The repository's own pipeline names them by tag (checkout@v6,
++# upload-artifact@v4); on 2026-10-02 `git ls-remote` gave refs/tags/v6 = refs/tags/v6.1.0 = d23441a4...f803 for
++# actions/checkout and refs/tags/v4 = refs/tags/v4.6.2 = ea165f8d...fa02 for actions/upload-artifact.
++name: hostops01-linux-root-proof
++on:
++  push:
++    branches: [ops/hostops01-linux-root-proof]
+ permissions:
+   contents: read
++concurrency:
++  group: hostops01-linux-root-proof
++  cancel-in-progress: false
+ jobs:
+   linux-root:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 20
+     env:
+       HOSTOPS_THROWAWAY_RUNNER: "yes"
+-      CANDIDATE: path/to/hostops01/candidate
++    defaults:
++      run:
++        working-directory: hostops01
+     steps:
+-      - uses: actions/checkout@v4
+-      - name: suite as root, suite as user, the four command shapes
+-        run: sh "$CANDIDATE/linux_root/run.sh"
+-      - uses: actions/upload-artifact@v4
++      - name: checkout
++        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
++        with:
++          persist-credentials: false
++      - name: suite as root, suite as user, the command shapes (exit 0 only when everything holds)
++        run: sh linux_root/run.sh
++      - name: sha256 and content of the four output files
+         if: always()
++        run: /usr/bin/python3 -I -B linux_root/report.py
++      - name: the four output files as one artifact
++        if: always()
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+         with:
+           name: hostops01-linux-root
++          if-no-files-found: warn
++          retention-days: 30
+           path: |
+-            ${{ env.CANDIDATE }}/linux_root/TESTS.linux-root.xml
+-            ${{ env.CANDIDATE }}/linux_root/TESTS.linux-user.xml
+-            ${{ env.CANDIDATE }}/linux_root/SHAPES.linux-root.json
+-            ${{ env.CANDIDATE }}/linux_root/VERIFY.linux-root.txt
++            hostops01/linux_root/TESTS.linux-root.xml
++            hostops01/linux_root/TESTS.linux-user.xml
++            hostops01/linux_root/SHAPES.linux-root.json
++            hostops01/linux_root/VERIFY.linux-root.txt
+--- revision2/linux_root/report.py
++++ revision3/linux_root/report.py
+@@ -0,0 +1,59 @@
++"""What the Linux job produced, printed for the job log. Reads only; changes nothing; exit 0 always (the status of
++the job is run.sh's).
++
++For each of the four output files of run.sh: its SHA-256 and size. Of the two junit files only the counts of the
++test suite and the name and message of every failure, error and skip, never the whole XML. The two small files
++(SHAPES.linux-root.json, VERIFY.linux-root.txt) in full when they are under 64 KiB.
++
++usage: /usr/bin/python3 -I -B linux_root/report.py [file ...]      (default: the four files next to this script)
++"""
++import hashlib
++import os
++import sys
++import xml.etree.ElementTree as ET
++
++HERE=os.path.dirname(os.path.abspath(__file__))
++JUNIT=('TESTS.linux-root.xml','TESTS.linux-user.xml')
++FULL=('SHAPES.linux-root.json','VERIFY.linux-root.txt')
++LIMIT=64*1024
++MAX_ROWS=200
++COUNTS=('tests','failures','errors','skipped','time','timestamp')
++
++def clip(text,limit=300):
++    text=' '.join(str(text or '').split());return text if len(text)<=limit else text[:limit]+' ...'
++
++def junit(raw):
++    """Counts of each test suite, then one line per test that failed, errored or was skipped."""
++    lines=[]
++    try:root=ET.fromstring(raw)
++    except ET.ParseError as error:return ['not a junit file: '+clip(error)+' | first bytes: '+clip(raw[:200].decode('utf-8','replace'))]
++    suites=[root] if root.tag=='testsuite' else root.findall('testsuite')
++    for suite in suites:
++        lines.append('testsuite '+' '.join('%s=%s'%(key,suite.get(key)) for key in COUNTS if suite.get(key) is not None))
++        rows=0
++        for case in suite.iter('testcase'):
++            for kind in ('failure','error','skipped'):
++                for item in case.findall(kind):
++                    rows+=1
++                    if rows<=MAX_ROWS:lines.append('%s %s::%s | %s'%(kind,case.get('classname'),case.get('name'),clip(item.get('message'))))
++        if rows>MAX_ROWS:lines.append('... %d more rows not printed'%(rows-MAX_ROWS))
++        if not rows:lines.append('no failure, no error, no skip')
++    return lines or ['no testsuite element']
++
++def report(path):
++    name=os.path.basename(path);lines=['==== '+name]
++    try:
++        with open(path,'rb') as handle:raw=handle.read()
++    except OSError as error:return lines+['MISSING: '+clip(error.strerror)]
++    lines.append('sha256 %s  bytes %d'%(hashlib.sha256(raw).hexdigest(),len(raw)))
++    if name in JUNIT or name.endswith('.xml'):lines+=junit(raw)
++    elif len(raw)<LIMIT:lines+=['---- content']+raw.decode('utf-8','replace').splitlines()+['---- end of '+name]
++    else:lines.append('content not printed: %d bytes is not under %d'%(len(raw),LIMIT))
++    return lines
++
++def main():
++    paths=sys.argv[1:] or [os.path.join(HERE,name) for name in JUNIT+FULL]
++    for path in paths:print('\n'.join(report(path)))
++    return 0
++
++if __name__=='__main__':raise SystemExit(main())
+--- revision2/linux_root/run.sh
++++ revision3/linux_root/run.sh
+@@ -1,28 +1,144 @@
+ #!/bin/sh
+-# HOSTOPS01 on Linux as real root. For a THROWAWAY ubuntu-24.04 CI runner only (ext4, Python 3.12, systemd 255, Docker).
+-# NEVER the production host: this runs the whole suite as uid 0, installs two throwaway unit files named
+-# c3po-massive.* on the runner, reloads the runner's manager and adds an image tag on the runner.
++# HOSTOPS01 on Linux as real root. For a THROWAWAY GitHub-hosted ubuntu-24.04 runner only (ext4, Python 3.12,
++# systemd 255, Docker). NEVER the production host and never a self-hosted runner: this runs the whole suite as uid 0,
++# rewrites /etc/docker/daemon.json and restarts the Docker daemon, pulls an image, adds two image tags, installs two
++# throwaway unit files named c3po-massive.* and reloads the manager. It refuses unless GitHub says the runner is
++# GitHub-hosted, and unless nothing of the supervisor exists on the machine.
+ # NOT RUN by the author of this candidate: no Linux, no docker and no systemd were available offline.
+-# What it closes when it is run: CONTRACT section 16 "still unproven", items L1 to L6. Attach the four output files.
+-set -eu
+-cd "$(dirname "$0")/.."
+-test "$(uname -s)" = Linux
+-test "${HOSTOPS_THROWAWAY_RUNNER:-}" = yes
+-sha256sum -c SHA256SUMS
+-sudo -n apt-get install -y python3-pytest >/dev/null
++#
++# What it closes when it has run and exited 0: CONTRACT section 16 "still unproven", items L1 to L6.
++# Output, always written, in linux_root/: TESTS.linux-root.xml TESTS.linux-user.xml SHAPES.linux-root.json
++# VERIFY.linux-root.txt (a stage that did not run leaves a file that says NOT_RUN and why).
++# Exit 0 only when: the seal holds before and after; the suite passes as root and as the runner's user; the image
++# store is the containerd snapshotter before anything is pulled; every shape ran; every expectation of shapes.py is
++# met. Every stage runs whatever the earlier ones did, so one run shows everything; the status is kept and returned.
++# Nothing here relies on "set -e": every status is tested where it is produced.
++set -u
++umask 022
++cd "$(dirname "$0")/.." || exit 1
++OUT=linux_root
++UNITS=/etc/systemd/system
++STATUS=0
++INSTALLED=no
++WORK=
++say() { printf '\n== %s\n' "$*"; }
++failed() { printf 'FAILED: %s\n' "$*" >&2; STATUS=1; }
++refuse() { printf 'REFUSED: %s\n' "$*" >&2; exit 1; }
++not_run() { [ -s "$1" ] || printf 'NOT_RUN: %s\n' "$2" > "$1"; }
+ 
+-# L1 the suite as real root: uid 0 without any mapping, the kernel's O_NOATIME, ext4, Linux errno values.
+-sudo -n /usr/bin/python3 -B -W error::SyntaxWarning -m pytest -p no:cacheprovider -q tests \
+-     --junitxml linux_root/TESTS.linux-root.xml -o junit_family=xunit2
+-# L2 the same suite as the runner's ordinary user (O_NOATIME as the owner of the tree, EACCES of Linux).
+-/usr/bin/python3 -B -W error::SyntaxWarning -m pytest -p no:cacheprovider -q tests \
+-     --junitxml linux_root/TESTS.linux-user.xml -o junit_family=xunit2
++cleanup() {
++    if [ "$INSTALLED" = yes ]; then
++        sudo -n rm -f "$UNITS/c3po-massive.service" "$UNITS/c3po-massive.timer"   # the two files this script installed
++        sudo -n systemctl daemon-reload
++        INSTALLED=no
++    fi
++    if [ -n "$WORK" ]; then rm -rf "$WORK"; WORK=; fi
++    # what the root stages wrote inside the checkout belongs to the runner's user again
++    sudo -n chown "$(id -u):$(id -g)" "$OUT"/TESTS.linux-root.xml 2>/dev/null
++    return 0
++}
+ 
+-# L3 to L6 the command shapes, with a throwaway image and the two units rendered from the frozen templates.
+-docker pull -q busybox:latest
+-docker image tag busybox:latest c3po/backend:production
+-IMAGE_ID=$(docker image inspect --format '{{.Id}}' c3po/backend:production)
+-/usr/bin/python3 -B - "$IMAGE_ID" > linux_root/c3po-massive.service.rendered <<'RENDER'
++# ---- 0. where this is allowed to run. Until every line below has passed, nothing is done and sudo is not called.
++[ "$(uname -s)" = Linux ] || refuse "Linux only"
++[ "${HOSTOPS_THROWAWAY_RUNNER:-}" = yes ] || refuse "HOSTOPS_THROWAWAY_RUNNER=yes is required"
++[ "${GITHUB_ACTIONS:-}" = true ] || refuse "a GitHub Actions job is required"
++[ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] || refuse "a GitHub-hosted runner is required (RUNNER_ENVIRONMENT=${RUNNER_ENVIRONMENT:-unset})"
++[ "$(id -u)" != 0 ] || refuse "start as the runner's ordinary user; root is taken with sudo -n where it is needed"
++for path in "$UNITS/c3po-massive.service" "$UNITS/c3po-massive.timer" /etc/c3po-bar /var/lib/c3po-bar /etc/c3po-reader /var/lib/c3po-reader; do
++    if [ -e "$path" ] || [ -L "$path" ]; then refuse "$path exists: this is not a throwaway runner"; fi
++done
++sha256sum -c --quiet SHA256SUMS || refuse "the candidate is not the sealed one"
++sudo -n true || refuse "sudo -n is not available"
++trap cleanup EXIT
++trap 'exit 130' INT TERM HUP
++say "seal verified: $(sha256sum SHA256SUMS | cut -d' ' -f1) ($(wc -l < SHA256SUMS) files)"
++# The dispatcher refuses a runtime file that group or other can write; a checkout made under umask 002 has such files.
++# Modes only: no byte of the sealed candidate changes (the seal is verified again at the end).
++chmod -R go-w . || refuse "the modes of the checkout cannot be set"
++rm -f "$OUT"/TESTS.linux-root.xml "$OUT"/TESTS.linux-user.xml "$OUT"/SHAPES.linux-root.json "$OUT"/VERIFY.linux-root.txt
++WORK=$(mktemp -d) || refuse "no temporary directory"
++
++# ---- pytest of the distribution for /usr/bin/python3, the interpreter the remote command names (no pip: PEP 668)
++say "python3-pytest"
++sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends python3-pytest > "$WORK/apt.log" 2>&1 \
++    || { sudo -n apt-get update -q >> "$WORK/apt.log" 2>&1
++         sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends python3-pytest >> "$WORK/apt.log" 2>&1; } \
++    || { tail -n 40 "$WORK/apt.log"; refuse "python3-pytest cannot be installed"; }
++/usr/bin/python3 -B -m pytest --version || refuse "pytest is not importable by /usr/bin/python3"
++sudo -n /usr/bin/python3 -B -m pytest --version || refuse "pytest is not importable by /usr/bin/python3 as root"
++/usr/bin/python3 -V; uname -sr; findmnt -n -o FSTYPE,TARGET -T /tmp; findmnt -n -o FSTYPE,TARGET -T .
++
++# ---- L1 the suite as real root: uid 0 without any mapping, the kernel's O_NOATIME, Linux errno values.
++# No bytecode and no cache are written, so the only thing root leaves in the checkout is its junit file.
++say "L1: the suite as real root"
++sudo -n env PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -W error::SyntaxWarning -m pytest -p no:cacheprovider -q -rfEs tests \
++     --junitxml "$OUT/TESTS.linux-root.xml" -o junit_family=xunit2 || failed "L1: the suite as real root"
++sudo -n chown "$(id -u):$(id -g)" "$OUT"/TESTS.linux-root.xml 2>/dev/null
++not_run "$OUT/TESTS.linux-root.xml" "pytest wrote no junit file as root"
++
++# ---- L2 the same suite as the runner's ordinary user (O_NOATIME as the owner of the tree, EACCES of Linux).
++say "L2: the suite as the runner's user (uid $(id -u))"
++env PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -W error::SyntaxWarning -m pytest -p no:cacheprovider -q -rfEs tests \
++     --junitxml "$OUT/TESTS.linux-user.xml" -o junit_family=xunit2 || failed "L2: the suite as the runner's user"
++not_run "$OUT/TESTS.linux-user.xml" "pytest wrote no junit file as the user"
++
++# ---- the image store of the production host: the containerd snapshotter, BEFORE any image is pulled.
++say "L3: the containerd image store"
++STORE=
++if sudo -n /usr/bin/python3 -I -B - <<'DAEMON'
++import json,os
++path='/etc/docker/daemon.json'
++try:
++    with open(path,encoding='utf-8') as handle:config=json.load(handle)
++except FileNotFoundError:config={}
++if type(config) is not dict or type(config.setdefault('features',{})) is not dict:raise SystemExit('daemon.json is not what this script can extend')
++config['features']['containerd-snapshotter']=True
++os.makedirs('/etc/docker',mode=0o755,exist_ok=True)
++with open(path,'w',encoding='utf-8') as handle:handle.write(json.dumps(config,indent=1,sort_keys=True)+'\n')
++print('daemon.json keys:',sorted(config),'features:',config['features'])
++DAEMON
++then
++    sudo -n systemctl restart docker || failed "docker did not restart"
++    tries=0
++    until sudo -n docker info > /dev/null 2>&1; do
++        tries=$((tries+1)); [ "$tries" -le 30 ] || break; sleep 2
++    done
++    STORE=$(sudo -n docker info --format '{{.Driver}} {{json .DriverStatus}}' 2>/dev/null) || STORE=
++    sudo -n docker version --format 'docker client {{.Client.Version}} server {{.Server.Version}}'
++    printf 'image store: %s\n' "$STORE"
++else
++    failed "daemon.json could not be written"
++fi
++case "$STORE" in
++    *io.containerd.snapshotter.v1*) STORE_OK=yes ;;
++    *) STORE_OK=no; failed "the image store is not the containerd snapshotter; nothing is pulled and no shape is run" ;;
++esac
++
++# ---- L3 to L6 the command shapes, with a throwaway image and the two units rendered from the frozen templates.
++IMAGE_ID=
++if [ "$STORE_OK" = yes ]; then
++    say "L3 to L6: a throwaway image under the production reference"
++    if sudo -n docker image inspect c3po/backend:production > /dev/null 2>&1; then
++        refuse "an image named c3po/backend:production exists: this is not a throwaway runner"
++    fi
++    BASE=
++    for candidate in busybox:latest public.ecr.aws/docker/library/busybox:latest; do
++        if sudo -n docker pull -q "$candidate" > /dev/null; then BASE=$candidate; break; fi
++    done
++    if [ -n "$BASE" ] && sudo -n docker image tag "$BASE" c3po/backend:production; then
++        IMAGE_ID=$(sudo -n docker image inspect --format '{{.Id}}' c3po/backend:production) || IMAGE_ID=
++    fi
++    case "$IMAGE_ID" in
++        sha256:*) printf 'image: %s as c3po/backend:production, ID %s\n' "$BASE" "$IMAGE_ID" ;;
++        *) IMAGE_ID=; failed "no throwaway image could be pulled and tagged" ;;
++    esac
++fi
++
++if [ -n "$IMAGE_ID" ]; then
++    ROOT_PYTHON="sudo -n env HOSTOPS_THROWAWAY_RUNNER=yes RUNNER_ENVIRONMENT=github-hosted /usr/bin/python3 -I -B"
++    say "L5: the manager before the installation, after it without a reload, and after a reload"
++    $ROOT_PYTHON linux_root/shapes.py --manager before_installation > "$WORK/manager.jsonl" || failed "the manager's view before the installation"
++    if /usr/bin/python3 -I -B - "$IMAGE_ID" > "$WORK/c3po-massive.service" <<'RENDER'
+ import sys
+ values={'IMAGE_ID':sys.argv[1],'HOST_JOURNAL_ROOT':'/var/lib/c3po-bar/journal','CONTAINER_JOURNAL_ROOT':'/c3po-bar-journal',
+         'HOST_STATE_ROOT':'/var/lib/c3po-bar/supervisor','HOST_CONFIG_DIR':'/etc/c3po-bar','NETWORK':'bridge'}
+@@ -30,12 +146,32 @@
+ for name,value in values.items():unit=unit.replace('@'+name+'@',value)
+ assert '@' not in unit;sys.stdout.write(unit)
+ RENDER
+-sudo -n install -o root -g root -m 0644 linux_root/c3po-massive.service.rendered /etc/systemd/system/c3po-massive.service
+-sudo -n install -o root -g root -m 0644 templates/c3po-massive.timer /etc/systemd/system/c3po-massive.timer
+-sudo -n systemctl daemon-reload
+-sudo -n systemd-analyze verify /etc/systemd/system/c3po-massive.service /etc/systemd/system/c3po-massive.timer > linux_root/VERIFY.linux-root.txt 2>&1 || true
+-STATUS=0
+-sudo -n env HOSTOPS_THROWAWAY_RUNNER=yes /usr/bin/python3 -I -B linux_root/shapes.py "$IMAGE_ID" > linux_root/SHAPES.linux-root.json || STATUS=$?
+-sudo -n rm -f /etc/systemd/system/c3po-massive.service /etc/systemd/system/c3po-massive.timer
+-sudo -n systemctl daemon-reload
++    then
++        INSTALLED=yes
++        if sudo -n install -o root -g root -m 0644 "$WORK/c3po-massive.service" "$UNITS/c3po-massive.service" \
++           && sudo -n install -o root -g root -m 0644 templates/c3po-massive.timer "$UNITS/c3po-massive.timer"; then
++            $ROOT_PYTHON linux_root/shapes.py --manager installed_no_daemon_reload >> "$WORK/manager.jsonl" || failed "the manager's view before the reload"
++            sudo -n systemctl daemon-reload || failed "daemon-reload"
++            sudo -n systemd-analyze verify "$UNITS/c3po-massive.service" "$UNITS/c3po-massive.timer" > "$OUT/VERIFY.linux-root.txt" 2>&1
++            printf 'exit status of systemd-analyze verify: %s\n' "$?" >> "$OUT/VERIFY.linux-root.txt"
++            say "L3 to L6: the shapes"
++            $ROOT_PYTHON linux_root/shapes.py "$IMAGE_ID" "$WORK/manager.jsonl" > "$OUT/SHAPES.linux-root.json"
++            SHAPES=$?
++            [ "$SHAPES" = 0 ] || failed "shapes.py exit $SHAPES (2: a shape did not run; 3: an expectation is not met)"
++        else
++            failed "the two unit files could not be installed"
++        fi
++    else
++        failed "the service unit could not be rendered"
++    fi
++fi
++not_run "$OUT/SHAPES.linux-root.json" "no throwaway image under the containerd image store, or the units could not be installed"
++not_run "$OUT/VERIFY.linux-root.txt" "the units were not installed"
++
++cleanup
++sudo -n rm -rf /tmp/hostops-empty-docker-config-* 2>/dev/null
++say "seal after the run"
++sha256sum -c --quiet SHA256SUMS || failed "a file of the sealed candidate changed during the run"
++ls -ln "$OUT"
++say "exit status $STATUS"
+ exit "$STATUS"
+--- revision2/linux_root/shapes.py
++++ revision3/linux_root/shapes.py
+@@ -1,14 +1,21 @@
+-"""The four command shapes this family has never run on any Linux host, executed with the sources' own command
+-tables, runner and parsers, plus what the manager says of the two units after a reload.
+-
+-For a THROWAWAY ubuntu-24.04 CI runner, as root (run.sh prepares it). NEVER the production host: one shape adds an
+-image tag. NOT RUN by the author of this candidate: no Linux, no docker and no systemd were available offline.
+---self-test runs the same collection against the emulated CLI of tests/hostemu.py; it proves that this script is
+-coherent with the sources, and nothing about a real engine.
+-
+-usage: sudo -n /usr/bin/python3 -I -B linux_root/shapes.py <image ID of c3po/backend:production on the runner>
++"""The command shapes this family has never run on any Linux host, executed with the sources' own command tables,
++runner and parsers, and what the manager says of the two units before they are installed, once they are installed
++without a reload, and after a reload.
++
++For a THROWAWAY GitHub-hosted ubuntu-24.04 runner, as root (run.sh prepares it). NEVER the production host: one
++shape adds an image tag. It refuses to run anywhere else: Linux, effective uid 0, HOSTOPS_THROWAWAY_RUNNER=yes and
++RUNNER_ENVIRONMENT=github-hosted are all required. NOT RUN by the author of this candidate: no Linux, no docker and
++no systemd were available offline. --self-test runs the same collection against the emulated CLI of
++tests/hostemu.py; it proves that this script is coherent with the sources, and nothing about a real engine.
++
++usage: sudo -n env ... /usr/bin/python3 -I -B linux_root/shapes.py --manager <label>
++           one JSON line: what the manager says of the two units now (run.sh calls it before the installation and
++           again before the reload, and hands the lines to the run below)
++       sudo -n env ... /usr/bin/python3 -I -B linux_root/shapes.py <image ID> [<file of --manager lines>]
++           one JSON object: every shape, and the expectations the sources rely on, each as a boolean
+        /usr/bin/python3 -B linux_root/shapes.py --self-test
+-Prints one JSON object; exit 0 only when every shape ran and parsed.
++exit 0 only when every shape ran and parsed AND every expectation is met; 2 when a shape did not run; 3 when all ran
++and an expectation is not met; 1 for a refusal.
+ """
+ import json
+ import os
+@@ -20,7 +27,20 @@
+ import family as f
+ import hostemu
+ 
++SCHEMA='HOSTOPS01_LINUX_ROOT_SHAPES_V2'
+ REFERENCE='c3po/backend:massive-supervisor-ci-probe'
++SNAPSHOT_LABELS=('before_installation','installed_no_daemon_reload')
++CONTAINERD=['driver-type','io.containerd.snapshotter.v1']
++
++def manager(readback,r):
++    """systemctl --version, show with the ten properties for each unit, is-enabled of the timer: the readback's own
++    argv table and parser."""
++    result={'version_line':r.output('systemd_version').split(b'\n',1)[0].decode('ascii','replace')}
++    for name in readback.UNITS:
++        values,missing=readback.properties(r.output('unit:'+name),readback.UNIT_PROPERTIES)
++        result[name]={'properties':values,'missing':missing,'argv_properties':len(readback.UNIT_PROPERTIES)}
++    code,raw=r.call('timer_enabled');result['is_enabled']={'returncode':code,'word':raw.decode('ascii','replace').strip()}
++    return result
+ 
+ def collect(provision,readback,provision_host,readback_host,image_id,config_directory,count):
+     """Each shape with the source's own argv and parser. Returns {shape: result}; a failure is a row, never an exception."""
+@@ -38,52 +58,143 @@
+     def image_tag():
+         code,_=p.call('image_tag',image_id,REFERENCE,capture=False);after=provision.image_facts(p,REFERENCE)
+         return {'returncode':code,'readback_id_equal':after['id']==image_id,'reference_among_repo_tags':after['reference_among_repo_tags']}
+-    def manager():
+-        result={'version_line':r.output('systemd_version').split(b'\n',1)[0].decode('ascii','replace')}
+-        for name in readback.UNITS:
+-            values,missing=readback.properties(r.output('unit:'+name),readback.UNIT_PROPERTIES)
+-            result[name]={'properties':values,'missing':missing,'argv_properties':len(readback.UNIT_PROPERTIES)}
+-        code,raw=r.call('timer_enabled');result['is_enabled']={'returncode':code,'word':raw.decode('ascii','replace').strip()}
+-        return result
+     def empty_config():
+         before=count(config_directory);info=readback.decode(r.output('info',docker_config=config_directory))
+         version=readback.strict(r.output('version',docker_config=config_directory));after=count(config_directory)
+-        return {'entries_before':before,'entries_after':after,'info_keys':sorted(info),'init_binary':info.get('init_binary'),'server_version':version}
++        return {'entries_before':before,'entries_after':after,'info_keys':sorted(info),'init_binary':info.get('init_binary'),'server_version':version,
++                'driver':info.get('driver'),'driver_status':info.get('driver_status')}
+     shape('image_ls_no_trunc_format',image_ls);shape('image_tag_on_an_id',image_tag)
+-    shape('is_enabled_and_show_with_ten_properties',manager);shape('docker_info_under_an_empty_docker_config',empty_config)
++    shape('is_enabled_and_show_with_ten_properties',lambda:manager(readback,r));shape('docker_info_under_an_empty_docker_config',empty_config)
+     return out
+ 
+-def self_test():
++def expectations(out,units):
++    """What the sources rely on, read from the shapes: one boolean per statement, False when its shape did not run.
++    L3 OP_PROVISION refuses (TAG_LISTING_INCONSISTENT) unless the listing shows the ID that inspect prints.
++    L4 OP_PROVISION calls the tag verified only when inspect by reference prints the ID and lists the reference.
++    L5 OP_READBACK needs every one of the ten properties, a unit systemd itself parses (LoadState loaded after a
++       reload, at its installed path) and the word "disabled" for the timer.
++    L6 OP_READBACK hands docker an empty configuration directory and gates on it staying empty."""
++    ls=out.get('image_ls_no_trunc_format',{});tag=out.get('image_tag_on_an_id',{})
++    seen=out.get('is_enabled_and_show_with_ten_properties',{});config=out.get('docker_info_under_an_empty_docker_config',{})
++    rows=[seen.get(name) or {} for name in units]
++    def loaded(name,row):
++        values=row.get('properties') or {}
++        return values.get('LoadState')=='loaded' and values.get('FragmentPath')=='/etc/systemd/system/'+name
++    return {
++        'L3_the_image_store_is_the_containerd_snapshotter':CONTAINERD in (config.get('driver_status') or []),
++        'L3_the_listing_shows_the_id_that_inspect_prints':bool(ls.get('ok') and ls.get('inspect_id_equals_the_given_id') and ls.get('listing_shows_the_inspect_id')),
++        'L4_a_tag_on_an_image_id_reads_back_with_the_id_and_the_reference':bool(tag.get('ok') and tag.get('returncode')==0 and tag.get('readback_id_equal')
++                                                                                   and tag.get('reference_among_repo_tags')),
++        'L5_show_answers_every_one_of_the_ten_properties':bool(seen.get('ok') and all(row.get('missing')==[] and row.get('argv_properties')==10 for row in rows)),
++        'L5_after_a_reload_both_units_are_loaded_from_their_installed_path':bool(seen.get('ok') and all(loaded(name,row) for name,row in zip(units,rows))),
++        'L5_is_enabled_says_disabled_for_the_timer':bool(seen.get('ok') and (seen.get('is_enabled') or {}).get('word')=='disabled'),
++        'L6_the_empty_docker_config_stays_empty':bool(config.get('ok') and config.get('entries_before')==0 and config.get('entries_after')==0),
++        'L6_info_and_version_parse_under_the_empty_docker_config':bool(config.get('ok') and type(config.get('init_binary')) is str and config.get('init_binary')
++                                                                       and config.get('server_version')),
++    }
++
++def emulated():
+     provision=f.load('provision').m;readback=f.load('readback').m;host=hostemu.world();host.refused=readback.Refused
+     host.tree.add('/etc/c3po-bar/docker-cli',mode=0o700);host.is_enabled['c3po-massive.timer']='disabled'
+     for name in readback.UNITS:host.units[name]={'Id':name,'LoadState':'loaded','ActiveState':'inactive','SubState':'dead','UnitFileState':'disabled',
+                                                'FragmentPath':'/etc/systemd/system/'+name}
++    return provision,readback,host
++
++def self_test():
++    provision,readback,host=emulated()
+     out=collect(provision,readback,host,host,hostemu.BACKEND,'/etc/c3po-bar/docker-cli',lambda path:len(host.tree.get(path).children))
+     assert all(row['ok'] for row in out.values()),out
+     assert out['image_ls_no_trunc_format']=={'argv':['image','ls','--no-trunc','--format',provision.LS_FORMAT,'c3po/backend'],'rows':2,'tags':['production','rollback'],
+         'inspect_id_equals_the_given_id':True,'listing_shows_the_inspect_id':True,'ok':True}
+     assert out['image_tag_on_an_id']=={'returncode':0,'readback_id_equal':True,'reference_among_repo_tags':True,'ok':True}
+-    manager=out['is_enabled_and_show_with_ten_properties']
+-    assert manager['is_enabled']=={'returncode':1,'word':'disabled'} and manager['c3po-massive.timer']['missing']==[] and manager['c3po-massive.timer']['argv_properties']==10
+-    assert manager['c3po-massive.service']['properties']['LoadState']=='loaded' and manager['version_line'].startswith('systemd 255')
++    seen=out['is_enabled_and_show_with_ten_properties']
++    assert seen['is_enabled']=={'returncode':1,'word':'disabled'} and seen['c3po-massive.timer']['missing']==[] and seen['c3po-massive.timer']['argv_properties']==10
++    assert seen['c3po-massive.service']['properties']['LoadState']=='loaded' and seen['version_line'].startswith('systemd 255')
+     config=out['docker_info_under_an_empty_docker_config'];assert (config['entries_before'],config['entries_after'],config['init_binary'])==(0,0,'docker-init')
++    assert config['driver_status']==[CONTAINERD] and config['driver']=='overlayfs'
+     assert [command['docker_config'] for command in host.commands if command['argv'][1] in ('info','version')]==['/etc/c3po-bar/docker-cli']*2
+     assert [command['argv'][1:3] for command in host.commands if command['argv'][1:3]==['image','tag']]==[['image','tag']]
++    met=expectations(out,readback.UNITS);assert len(met)==8 and all(value is True for value in met.values()),met
++    assert status_of(out,met)==0
++    # every expectation is decided by what was seen: one fact changed at a time turns exactly its own statement false
++    def changed(shape,**change):
++        other=json.loads(json.dumps(out));other[shape].update(change);return sorted(name for name,value in expectations(other,readback.UNITS).items() if not value)
++    assert changed('image_ls_no_trunc_format',listing_shows_the_inspect_id=False)==['L3_the_listing_shows_the_id_that_inspect_prints']
++    assert changed('image_tag_on_an_id',reference_among_repo_tags=False)==['L4_a_tag_on_an_image_id_reads_back_with_the_id_and_the_reference']
++    assert changed('image_tag_on_an_id',returncode=1)==['L4_a_tag_on_an_image_id_reads_back_with_the_id_and_the_reference']
++    assert changed('is_enabled_and_show_with_ten_properties',is_enabled={'returncode':0,'word':'enabled'})==['L5_is_enabled_says_disabled_for_the_timer']
++    assert changed('docker_info_under_an_empty_docker_config',entries_after=1)==['L6_the_empty_docker_config_stays_empty']
++    assert changed('docker_info_under_an_empty_docker_config',driver_status=[['Backing Filesystem','extfs']])==['L3_the_image_store_is_the_containerd_snapshotter']
++    other=json.loads(json.dumps(out));other['is_enabled_and_show_with_ten_properties']['c3po-massive.service']['properties']['LoadState']='bad-setting'
++    unmet=expectations(other,readback.UNITS);assert [name for name,value in unmet.items() if not value]==['L5_after_a_reload_both_units_are_loaded_from_their_installed_path']
++    assert status_of(other,unmet)==3
++    assert status_of(out,met,[{'ok':True},{'ok':True}])==0 and status_of(out,met,[{'ok':True},{'ok':False}])==2 and status_of(out,met,[{'ok':False,'error':'MANAGER_SNAPSHOTS_INVALID'}])==2
++    # the manager line run.sh takes before the installation: both units not-found, no answer from is-enabled
++    provision,readback,bare=emulated();bare.units.pop('c3po-massive.service');bare.units.pop('c3po-massive.timer');bare.is_enabled.clear()
++    line=manager_line(readback,bare,'before_installation');row=json.loads(line)
++    assert line.count('\n')==0 and row['label']=='before_installation' and row['ok'] is True and row['manager']['c3po-massive.timer']['properties']['LoadState']=='not-found'
++    assert row['manager']['is_enabled']=={'returncode':1,'word':''} and snapshots_of([line,line.replace('before_installation','installed_no_daemon_reload')])[1]['label']=='installed_no_daemon_reload'
++    for bad in ([line,line],['{}'],['not json'],[line]*3):
++        try:snapshots_of(bad);raise AssertionError('accepted')
++        except ValueError:pass
+     # a shape that cannot run is a row with ok false, and the exit code says so
+     broken=hostemu.world();broken.refused=readback.Refused;broken.tree.remove('/usr/bin/docker')
+     out=collect(provision,readback,broken,broken,hostemu.BACKEND,'/etc',lambda path:0)
+     assert [row['ok'] for row in out.values()]==[False,False,True,False] and out['image_tag_on_an_id']['code']=='BINARY_UNAVAILABLE_OR_UNSAFE'
++    met=expectations(out,readback.UNITS);assert status_of(out,met)==2 and not any(value for name,value in met.items() if not name.startswith('L5'))
++    assert allowed({'HOSTOPS_THROWAWAY_RUNNER':'yes','RUNNER_ENVIRONMENT':'github-hosted'},'linux',0) is True
++    for environment,platform,uid in (({'HOSTOPS_THROWAWAY_RUNNER':'yes','RUNNER_ENVIRONMENT':'self-hosted'},'linux',0),({'RUNNER_ENVIRONMENT':'github-hosted'},'linux',0),
++                                     ({'HOSTOPS_THROWAWAY_RUNNER':'yes'},'linux',0),({'HOSTOPS_THROWAWAY_RUNNER':'yes','RUNNER_ENVIRONMENT':'github-hosted'},'darwin',0),
++                                     ({'HOSTOPS_THROWAWAY_RUNNER':'yes','RUNNER_ENVIRONMENT':'github-hosted'},'linux',1001)):
++        assert allowed(environment,platform,uid) is False
+     return 'SELF_TEST_OK emulated CLI only; nothing here was run against a real engine'
+ 
++def status_of(out,met,snapshots=None):
++    """2 when a shape, or one of the manager lines taken before the reload, did not run; 3 when all ran and an expectation is not met."""
++    if not all(row['ok'] for row in out.values()) or (snapshots is not None and not all(row.get('ok') is True for row in snapshots)):return 2
++    return 0 if all(met.values()) else 3
++
++def allowed(environment,platform,uid):
++    """A throwaway GitHub-hosted Linux runner, as root, and said so twice. Never a self-hosted runner, never a host."""
++    return bool(platform=='linux' and uid==0 and environment.get('HOSTOPS_THROWAWAY_RUNNER')=='yes' and environment.get('RUNNER_ENVIRONMENT')=='github-hosted')
++
++def manager_line(readback,host,label):
++    """One JSON line for run.sh: the manager's view now. A failure is a row with ok false."""
++    try:row={'label':label,'ok':True,'manager':manager(readback,readback.Commands(host,lambda:30.0))}
++    except Exception as error:row={'label':label,'ok':False,'error':type(error).__name__,'code':str(error)[:80] if isinstance(error,ValueError) else None}
++    return json.dumps(row,sort_keys=True)
++
++def snapshots_of(lines):
++    """The --manager lines taken earlier by run.sh, in order: exactly the two labels, each once."""
++    rows=[json.loads(line) for line in lines if line.strip()]
++    if [row.get('label') if type(row) is dict else None for row in rows]!=list(SNAPSHOT_LABELS):raise ValueError('MANAGER_SNAPSHOTS_INVALID')
++    return rows
++
+ def main():
+-    if sys.argv[1:]==['--self-test']:
++    arguments=sys.argv[1:]
++    if arguments==['--self-test']:
+         print(self_test());return 0
+-    if len(sys.argv)!=2 or not sys.argv[1].startswith('sha256:') or sys.platform!='linux' or os.geteuid()!=0 or os.environ.get('HOSTOPS_THROWAWAY_RUNNER')!='yes':
+-        print('REFUSED: a throwaway Linux runner, root, HOSTOPS_THROWAWAY_RUNNER=yes and one image ID are required');return 1
+-    provision=f.load('provision').m;readback=f.load('readback').m
+-    directory=tempfile.mkdtemp(prefix='hostops-empty-docker-config-')           # 0700, empty, removed by run.sh with the runner
+-    out=collect(provision,readback,provision.Native(),readback.Native(),sys.argv[1],directory,lambda path:len(os.listdir(path)))
+-    print(json.dumps({'schema':'HOSTOPS01_LINUX_ROOT_SHAPES_V1','shapes':out,'python':sys.version.split()[0],'empty_docker_config':directory},indent=1,sort_keys=True))
+-    return 0 if all(row['ok'] for row in out.values()) else 2
++    if not allowed(os.environ,sys.platform,os.geteuid()):
++        print('REFUSED: a throwaway GitHub-hosted Linux runner (RUNNER_ENVIRONMENT=github-hosted), root and HOSTOPS_THROWAWAY_RUNNER=yes are required');return 1
++    readback=f.load('readback').m
++    if len(arguments)==2 and arguments[0]=='--manager' and arguments[1] in SNAPSHOT_LABELS:
++        print(manager_line(readback,readback.Native(),arguments[1]));return 0
++    if len(arguments) not in (1,2) or not arguments[0].startswith('sha256:'):
++        print('REFUSED: one image ID, and optionally the file of --manager lines, are required');return 1
++    snapshots=None
++    if len(arguments)==2:
++        try:
++            with open(arguments[1],encoding='ascii') as handle:snapshots=snapshots_of(handle.read(262144).splitlines())
++        except (OSError,ValueError):snapshots=[{'ok':False,'error':'MANAGER_SNAPSHOTS_INVALID'}]       # the shapes below still run
++    provision=f.load('provision').m
++    directory=tempfile.mkdtemp(prefix='hostops-empty-docker-config-')           # 0700, empty, root's
++    out=collect(provision,readback,provision.Native(),readback.Native(),arguments[0],directory,lambda path:len(os.listdir(path)))
++    try:os.rmdir(directory);removed=True                                         # only when it is still empty
++    except OSError:removed=False
++    met=expectations(out,readback.UNITS);status=status_of(out,met,snapshots)
++    print(json.dumps({'schema':SCHEMA,'image_id':arguments[0],'shapes':out,'expectations':met,'every_shape_ran':status!=2,'every_expectation_met':status==0,
++                      'manager_before_the_reload':snapshots,'python':sys.version.split()[0],'empty_docker_config_removed_empty':removed,
++                      'exit_status':status},indent=1,sort_keys=True))
++    return status
+ 
+ if __name__=='__main__':raise SystemExit(main())
+--- revision2/mutation/mutants.py
++++ revision3/mutation/mutants.py
+@@ -627,10 +627,32 @@
+ add('B82_mount_point_not_above_the_journal_root','op_readback',"    need(inside(plan['substitutions']['HOST_JOURNAL_ROOT'],point) and point!=plan['substitutions']['HOST_JOURNAL_ROOT'],'JOURNAL_MOUNT_POINT_UNBOUND')\n","")
+ add('B82b_mount_point_may_be_the_journal_root_itself','op_readback'," and point!=plan['substitutions']['HOST_JOURNAL_ROOT'],'JOURNAL_MOUNT_POINT_UNBOUND')",",'JOURNAL_MOUNT_POINT_UNBOUND')")
+ 
++# ---------------------------------------------------------------- third review: guards no test pinned, and redundant guards
++# The third review ran 117 mutants of its own; nine survived. Two were guards nothing pinned (T01, T02). Five are guards
++# a second check would also have caught, later and with another result (T03 to T07): each now has a test of the case
++# in which it decides. Two cannot change any result while the other check of their pair stands (T09 with T08, T10
++# with E07): they are listed in REDUNDANT, run alone for the record, and die in the combined mutant of their pair.
++add('T01_tag_readback_does_not_need_the_reference','op_provision',"        need(facts['readback_id_equal'] and image['reference_among_repo_tags'],'TAG_READBACK_MISMATCH')\n","        need(facts['readback_id_equal'],'TAG_READBACK_MISMATCH')\n")
++CONFORMS="            conforms=bool(equal and named.st_uid==0 and named.st_gid==0 and stat.S_IMODE(named.st_mode)==UNIT_MODE)\n"
++add('T02_unit_file_group_not_checked_in_the_precheck','op_install_units',CONFORMS,CONFORMS.replace(" and named.st_gid==0",""))
++add('T02b_unit_file_owner_not_checked_in_the_precheck','op_install_units',CONFORMS,CONFORMS.replace(" and named.st_uid==0",""))
++add('T03_created_file_link_count_not_checked','op_install_units',"            if not (stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_uid==0 and info.st_gid==0\n","            if not (stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_gid==0\n")
++add('T04_created_file_size_not_checked','op_install_units',"                    and stat.S_IMODE(info.st_mode)==UNIT_MODE and info.st_size==len(content)\n","                    and stat.S_IMODE(info.st_mode)==UNIT_MODE\n")
++IN_RUN="            need(raw==content and same and info.st_uid==0 and info.st_gid==0 and stat.S_IMODE(info.st_mode)==UNIT_MODE\n"
++add('T05_in_run_readback_mode_not_checked','op_install_units',IN_RUN,IN_RUN.replace(" and stat.S_IMODE(info.st_mode)==UNIT_MODE",""))
++add('T05b_in_run_readback_owner_not_checked','op_install_units',IN_RUN,IN_RUN.replace(" and info.st_uid==0",""))
++add('T05c_in_run_readback_group_not_checked','op_install_units',IN_RUN,IN_RUN.replace(" and info.st_gid==0",""))
++add('T05d_in_run_readback_link_count_not_checked','op_install_units',"                 and (info.st_nlink==1 or entry['state']!='INSTALLED_DURABLE'),'READBACK_HASH_MISMATCH')\n","                 ,'READBACK_HASH_MISMATCH')\n")
++add('T06_link_count_after_the_removal_of_the_temporary_not_checked','op_install_units',"        if entry['links']!=1:return failed('CREATED_METADATA_MISMATCH')\n","")
++add('T07_walk_does_not_compare_the_lstat_with_the_descriptor','core',"                host.close(fd);fd=child;info=host.fstat(fd)\n                need((info.st_dev,info.st_ino)==(named.st_dev,named.st_ino),'PARENT_CHANGED_DURING_WALK')\n","                host.close(fd);fd=child;info=host.fstat(fd)\n")
++add('T08_clean_ignores_uncertain_calls','core',"    def clean(self):return self.succeeded==0 and self.uncertain()==0\n","    def clean(self):return self.succeeded==0\n")
++add('T09_escape_with_a_pending_call_not_looked_at','core',"        nothing=(not state.started) or (WRITES_ALLOWED and state.clean() and not state.pending)\n","        nothing=(not state.started) or (WRITES_ALLOWED and state.clean())\n")
++add('T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held','core',"                try:need(self.stamp(self.host.fstat(other))==self.identity,'PARENT_REPLACED')\n","                try:pass\n")
++
+ # One mutant per member of what the signed GO shows: effects_of() without that member. EFFECTS is also read by
+ # mutate.py check, which fails when a source's effects have a member that is not listed here.
+ EFFECTS={
+- 'provision':{'top':['operation','groups','data_volume_path','journal_leaf','capacity','creates','directories_to_create','direct_parents','chains_sha256',
++ 'provision':{'top':['operation','groups','data_volume_path','journal_leaf','existing_journal_leaves','capacity','creates','directories_to_create','direct_parents','chains_sha256',
+                      'data_volume_root','retention_tag','evidence_boot_id_sha256','files_created','pre_existing_objects_modified','daemon_reload','activation','journal'],
+               'nested':{'creates':['key','path','mode_octal','expect'],'retention_tag':['reference','image_id','expect'],
+                         'journal':['placement','path','filesystem_named_by_chain','filesystem_device','mount_point_by_device_change','data_volume_touched_for_the_journal'],
+@@ -649,7 +671,7 @@
+                        'substitutions':['IMAGE_ID','HOST_JOURNAL_ROOT','CONTAINER_JOURNAL_ROOT','HOST_STATE_ROOT','HOST_CONFIG_DIR','NETWORK'],
+                        'layout_paths':['SUP_CONFIG','SUP_MANIFESTS','SUP_DOCKER_CLI','SUP_STATE_PARENT','SUP_STATE','SUP_JOURNAL'],
+                        'unit_directory_row':['path','device','inode','uid','gid','mode'],'data_volume_root_row':['path','device','inode','uid','gid','mode']}},
+- 'precheck':{'top':['operation','journal_placement','chains','destinations','unit_names','secret_bearing_names','presence_only','image_reference','writes','activation'],
++ 'precheck':{'top':['operation','journal_placement','existing_journal_leaves','chains','destinations','unit_names','secret_bearing_names','presence_only','image_reference','writes','activation'],
+              'nested':{'chains':['ETC','VAR_LIB','DATA_VOLUME','UNIT_DIRECTORY']}},
+ }
+ HEADER="def effects_of(plan):\n"
+@@ -663,6 +685,14 @@
+                  "        if type(item) is dict:item.pop(%r,None)\n    return value\ndef _effects_complete(plan):\n")%(_key,_member))
+ 
+ MUTANTS=M
++
++# Single mutants that cannot change any result while another check stands: the other check implies them. Each is run
++# alone and recorded (it is expected to survive alone; that is what "redundant" means and it is never counted as a
++# kill), and each must be a member of a combined mutant that removes the other check too, which must die.
++REDUNDANT={
++ 'T09_escape_with_a_pending_call_not_looked_at':'a pending call is issued and not settled: Effects.uncertain() is then at least 1 and clean() is already false (T08)',
++ 'T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held':'the fresh walk already requires every component to equal its signed row on device, inode, owner, group and mode (E07), and the identity held was read from a descriptor that passed the same walk',
++}
+ 
+ # One guarantee removed at every layer that carries it.
+ COMBOS={
+@@ -683,4 +713,12 @@
+  'combo_own_dependency_directory_scan_and_precedence':['S11_own_dependency_directories_not_looked_at','I43_own_dependency_directory_ignored'],
+  'combo_alias_scan_and_precedence':['S13_alias_links_not_looked_at','I44_alias_link_ignored'],
+  'combo_temporary_swap_both_looks':['I47_temporary_not_looked_at_again_before_the_link','I03_temporary_removed_without_identity_proof'],
++ # third review: one combined mutant per pair of checks of which one would also have caught what the other catches
++ 'combo_r3_escape_with_a_pending_call_both_checks':['T09_escape_with_a_pending_call_not_looked_at','T08_clean_ignores_uncertain_calls'],
++ 'combo_r3_verify_fresh_walk_and_signed_rows':['T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held','E07_chain_rows_not_compared'],
++ 'combo_r3_walk_lstat_and_signed_rows':['T07_walk_does_not_compare_the_lstat_with_the_descriptor','E07_chain_rows_not_compared'],
++ 'combo_r3_link_count_of_the_temporary_both_looks':['T03_created_file_link_count_not_checked','I48_temporary_with_a_second_link_accepted_before_the_link'],
++ 'combo_r3_size_at_creation_and_bytes_in_the_readback':['T04_created_file_size_not_checked','I26_readback_does_not_compare_bytes'],
++ 'combo_r3_mode_at_creation_and_in_the_readback':['T05_in_run_readback_mode_not_checked','I20_created_file_metadata_not_checked'],
++ 'combo_r3_link_count_after_the_removal_and_in_the_readback':['T06_link_count_after_the_removal_of_the_temporary_not_checked','T05d_in_run_readback_link_count_not_checked'],
+ }
+--- revision2/mutation/mutate.py
++++ revision3/mutation/mutate.py
+@@ -7,14 +7,24 @@
+ deselected, so a mutant cannot be killed merely because a hash changed. Zero survivors and zero anchor errors are
+ required. check also requires one mutant per member of every operation's effects (what the signed GO shows).
+ 
++A mutant listed in REDUNDANT (mutants.py) removes a check that another check implies: alone it cannot change any
++result. It is run alone and recorded under redundant_survivors, never counted as killed and never as a survivor of
++the list; check requires it to be a member of a combined mutant, and that combined mutant must die like any other.
++A redundant mutant that does die alone is recorded under redundant_killed_alone (the entry in REDUNDANT is then stale).
++
++No path of the machine a run is made on enters a record or a log: the location of the private copy is written as
++<copy>, any other absolute path of the workstation as <path>.
++
+ usage: mutate.py check | run [name-prefix ...]   (python and worker count from HOSTOPS_MUTATION_PYTHON / _WORKERS;
+-       the record of a complete run goes to mutation/<HOSTOPS_MUTATION_RECORD>, default MUTATION_RUN.json)
++       the record of a complete run goes to mutation/<HOSTOPS_MUTATION_RECORD>, default MUTATION_RUN.json;
++       variables named HOSTOPS_TEST_* are handed to the tests, see tests/test_family.py)
+ """
+ import concurrent.futures
+ import hashlib
+ import json
+ import os
+ from pathlib import Path
++import re
+ import shutil
+ import subprocess
+ import sys
+@@ -26,6 +36,7 @@
+ WORKERS=int(os.environ.get('HOSTOPS_MUTATION_WORKERS','6'))
+ RECORD=os.path.basename(os.environ.get('HOSTOPS_MUTATION_RECORD','MUTATION_RUN.json'))
+ ENV={'PATH':'/usr/bin:/bin','PYTHONDONTWRITEBYTECODE':'1','HOME':os.environ.get('HOME','')}
++ENV.update({name:value for name,value in os.environ.items() if name.startswith('HOSTOPS_TEST_')})
+ SOURCE={'provision':'provision/provision_dirs.py','install_units':'install_units/install_units.py',
+         'readback':'readback/readback_readonly.py','precheck':'precheck/precheck_readonly.py'}
+ CARRIES={'core':['provision','install_units','readback','precheck'],'runner':['provision','readback','precheck'],
+@@ -51,9 +62,16 @@
+     if target=='launcher':return [op+'/launcher_stdin.py' for op in SOURCE]
+     return [SOURCE[op] for op in CARRIES[target]]
+ 
+-from mutants import MUTANTS,COMBOS,EFFECTS
++from mutants import MUTANTS,COMBOS,EFFECTS,REDUNDANT
+ 
+ def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
++
++ELSEWHERE=re.compile(r'(?:/private)?/(?:Users|home|tmp|var/folders|var/tmp|root)/[^\s\'"]*')
++def public(text,work):
++    """A line of pytest output without any path of this machine."""
++    if text is None:return None
++    for prefix in sorted({str(work),os.path.realpath(str(work))},key=len,reverse=True):text=text.replace(prefix,'<copy>')
++    return ELSEWHERE.sub('<path>',text)
+ 
+ def changes_of(name):
+     if name in COMBOS:
+@@ -73,6 +91,9 @@
+     for name,members in COMBOS.items():
+         for member in members:
+             if member not in names:errors.append('%s: unknown member %s'%(name,member))
++    for name in REDUNDANT:
++        if name not in names:errors.append('%s: redundant mutant is not in the list'%name)
++        if not any(name in members and len(members)>1 for members in COMBOS.values()):errors.append('%s: redundant mutant without a combined mutant'%name)
+     return errors+effects_coverage()
+ 
+ def effects_coverage():
+@@ -117,8 +138,9 @@
+         done=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=ENV,cwd=str(work),timeout=900)
+         lines=done.stdout.decode(errors='replace').strip().splitlines()
+         failed=[line for line in lines if line.startswith('FAILED ') or ' Error' in line or 'Error:' in line][:1]
+-        result={'mutant':name,'returncode':done.returncode,'killed':done.returncode==1,'summary':lines[-1] if lines else '',
+-                'first_failure':failed[0][:300] if failed else None,'tests':tests,'seconds':round(time.time()-started,1)}
++        result={'mutant':name,'returncode':done.returncode,'killed':done.returncode==1,'summary':public(lines[-1],work) if lines else '',
++                'first_failure':public(failed[0],work)[:300] if failed else None,'tests':tests,'seconds':round(time.time()-started,1)}
++        if name in REDUNDANT:result['redundant']=True
+         if done.returncode not in (0,1):result['error']='PYTEST_RETURNCODE_%d'%done.returncode
+         return result
+     finally:shutil.rmtree(work,ignore_errors=True)
+@@ -136,17 +158,24 @@
+     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
+         for result in pool.map(run,names):
+             results.append(result);print(json.dumps(result),flush=True)
+-    survivors=[row['mutant'] for row in results if not row.get('error') and not row['killed']]
++    alive=[row['mutant'] for row in results if not row.get('error') and not row['killed']]
++    survivors=[name for name in alive if name not in REDUNDANT]
++    redundant_survivors=[name for name in alive if name in REDUNDANT]
++    redundant_killed=[row['mutant'] for row in results if row.get('killed') and row['mutant'] in REDUNDANT]
+     failures=[row['mutant'] for row in results if row.get('error')]
+     pins={relative:sha(CAND/relative) for relative in sorted(set(SOURCE.values())|{op+'/dispatch_once.py' for op in SOURCE}|{op+'/launcher_stdin.py' for op in SOURCE})}
+     pins.update({'tests/'+item:sha(CAND/'tests'/item) for item in ALL+['family.py','hostemu.py','native_child.py','oslevel.py']})
+     pins['mutation/mutants.py']=sha(CAND/'mutation'/'mutants.py')
+     record={'python':subprocess.run([PYTHON,'-V'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT).stdout.decode().strip(),
+             'candidate_sha256':pins,'counts':{'single':len([name for name in names if name not in COMBOS]),'combined':len([name for name in names if name in COMBOS]),
+-            'killed':len([row for row in results if row.get('killed')]),'survivors':len(survivors),'errors':len(failures)},
+-            'survivors':survivors,'errors':failures,'results':results,'complete_run':len(sys.argv)<=2}
++            'killed':len([row for row in results if row.get('killed')]),'survivors':len(survivors),'errors':len(failures),
++            'redundant_survivors':len(redundant_survivors)},
++            'survivors':survivors,'errors':failures,'results':results,'complete_run':len(sys.argv)<=2,
++            'redundant':{name:{'why':REDUNDANT[name],'combined_mutants':sorted(combo for combo,members in COMBOS.items() if name in members)}
++                         for name in sorted(REDUNDANT) if name in names},
++            'redundant_survivors':redundant_survivors,'redundant_killed_alone':redundant_killed}
+     if len(sys.argv)<=2:(CAND/'mutation'/RECORD).write_text(json.dumps(record,indent=1,sort_keys=True)+'\n')
+-    print('MUTANTS',len(results));print('SURVIVORS',survivors);print('ERRORS',failures)
++    print('MUTANTS',len(results));print('SURVIVORS',survivors);print('REDUNDANT_SURVIVORS',redundant_survivors);print('ERRORS',failures)
+     return 1 if survivors or failures else 0
+ 
+ if __name__=='__main__':
+--- revision2/parts/op_precheck.py
++++ revision3/parts/op_precheck.py
+@@ -78,7 +78,8 @@
+ 
+ def effects_of(plan):
+     table,chains=planned(plan)
+-    return {'operation':OPERATION,'journal_placement':plan['journal_placement'],'chains':chains,'destinations':[row['path'] for row in table],
++    return {'operation':OPERATION,'journal_placement':plan['journal_placement'],'existing_journal_leaves':plan['existing_journal_leaves'],
++            'chains':chains,'destinations':[row['path'] for row in table],
+             'unit_names':plan['unit_names'],'secret_bearing_names':SECRET_BEARING,'presence_only':PRESENCE_ONLY,
+             'image_reference':plan['image_reference'],'writes':0,'activation':False}
+ def success_of(plan):return COMPLETE_OUTCOME
+--- revision2/parts/op_provision.py
++++ revision3/parts/op_provision.py
+@@ -120,7 +120,7 @@
+     """What the signers see in the authority and in the GO without opening the request; recomputed and compared."""
+     tag,capacity=plan['retention_tag'],plan['capacity']
+     return {'operation':OPERATION,'groups':plan['groups'],'data_volume_path':plan['data_volume_path'],
+-            'journal_leaf':plan['journal_leaf'],'journal':journal_of(plan),
++            'journal_leaf':plan['journal_leaf'],'existing_journal_leaves':plan['existing_journal_leaves'],'journal':journal_of(plan),
+             'capacity':None if capacity is None else dict(capacity,receipts_inside_capacity_root=
+                 str(PurePosixPath(capacity['receipt_directory_path']).parent)==capacity['root_path']),
+             'creates':[{'key':item['key'],'path':item['path'],'mode_octal':'%04o'%item['mode'],
+--- revision2/parts/op_readback.py
++++ revision3/parts/op_readback.py
+@@ -156,7 +156,8 @@
+     validate_allowlist(plan['network_allowlist'])
+     validate_substitutions(plan['substitutions'],plan['network_allowlist'],volume['path'],placement,plan['deploy_tree_path'])
+     # The filesystem the authorisation names for the journal root: its mount point ("/" when /var/lib is on the root
+-    # filesystem, which no receipt has read yet; the data volume root under placement B).
++    # filesystem, as the receipt of 2026-10-02 read it in an earlier boot and OP_PRECHECK reads it again in the boot of
++    # the write; the data volume root under placement B).
+     point=plan['journal_mount_point']
+     need(type(point) is str and (point=='/' or clean_path(point)),'JOURNAL_MOUNT_POINT_UNBOUND')
+     need(inside(plan['substitutions']['HOST_JOURNAL_ROOT'],point) and point!=plan['substitutions']['HOST_JOURNAL_ROOT'],'JOURNAL_MOUNT_POINT_UNBOUND')
+--- revision2/tests/family.py
++++ revision3/tests/family.py
+@@ -167,11 +167,11 @@
+             'template_revision':'d7600b4d14f8a67694ffb37cde06b622f9a3bac3',
+             'acknowledged_leftovers':[],'daemon_reload_owner':'OPERATION_5_ACTIVATION_GO','evidence_boot_id_sha256':BOOT_SHA}
+ 
+-def precheck_fields(k,host,*,groups=('SUPERVISOR','JOURNAL_LEAF','READER','CAPACITY'),leaf=None,capacity=CAPACITY,placement='B'):
++def precheck_fields(k,host,*,groups=('SUPERVISOR','JOURNAL_LEAF','READER','CAPACITY'),leaf=None,capacity=CAPACITY,placement='B',existing=()):
+     groups=list(groups);placement=placement if 'JOURNAL_LEAF' in groups else None
+     volume=hostemu.DATA if (placement=='B' or 'CAPACITY' in groups) else None;leaf=leaf or (A_LEAF if placement=='A' else LEAF)
+     return {'groups':groups,'journal_placement':placement,'data_volume_path':volume,'journal_leaf':leaf if 'JOURNAL_LEAF' in groups else None,
+-            'existing_journal_leaves':[],'capacity':dict(capacity) if 'CAPACITY' in groups else None,
++            'existing_journal_leaves':list(existing),'capacity':dict(capacity) if 'CAPACITY' in groups else None,
+             'unit_names':['c3po-massive.service','c3po-massive.timer'],'image_reference':'c3po/backend:production'}
+ 
+ def provisioned(host,placement='B'):
+--- revision2/tests/hostemu.py
++++ revision3/tests/hostemu.py
+@@ -9,8 +9,11 @@
+ 
+ world() is calibrated to the HOSTFACTS_01 receipt of 2026-10-02T01:51:44Z (stdout sha256 47abfa0a...e528b): Docker
+ 29.5.3, systemd 255 (255.4-1ubuntu8.17), docker-init only at /usr/libexec/docker/docker-init, the data volume root
+-1000:1000 0755 on device 811 inode 4005, /etc/systemd/system inode 4001, and the free space of both filesystems as
+-that receipt read it. The image ID, the names and the canaries stay synthetic.
++1000:1000 0755 on a device of its own, "/" and /var/lib on one device, and the free space of both filesystems as
++that receipt read it. Every device and inode number here is a neutral synthetic value (ROOT_DEVICE, DATA_DEVICE and
++the 40xx inodes below): no device or inode number of the host is carried by these files, and no test needs one, only
++that "/" and /var/lib share a device and the data volume has another. The image ID, the names and the canaries stay
++synthetic.
+ """
+ import errno
+ import json
+@@ -316,10 +319,11 @@
+ 
+ # ---------------------------------------------------------------- in-memory host
+ NOATIME=1<<30
++ROOT_DEVICE,DATA_DEVICE=801,811      # neutral: "/" (with /etc, /var/lib, /mnt on it) and the data volume, two filesystems
+ class Death(BaseException):
+     """The process dies here: nothing after this call happens, and no receipt exists."""
+ class Node:
+-    def __init__(self,kind,uid=0,gid=0,mode=0o755,dev=801,ino=0,content=b''):
++    def __init__(self,kind,uid=0,gid=0,mode=0o755,dev=ROOT_DEVICE,ino=0,content=b''):
+         self.kind,self.uid,self.gid,self.mode,self.dev,self.ino=kind,uid,gid,mode,dev,ino
+         self.content=bytearray(content);self.children={};self.atime=1;self.mtime=1;self.ctime=1;self.nlink=1;self.synced=False
+         self.target=''                                              # text of a symbolic link
+@@ -509,7 +513,7 @@
+ def free_space(host,bytes_freed):
+     """Model space freed on the data volume under some other authorisation (nothing in this family frees space)."""
+     blocks,rest=divmod(bytes_freed,4096);assert rest==0 and blocks>0
+-    old=host.vfs[811];host.vfs[811]=types.SimpleNamespace(f_frsize=old.f_frsize,f_blocks=old.f_blocks,f_bfree=old.f_bfree+blocks,f_bavail=old.f_bavail+blocks)
++    old=host.vfs[DATA_DEVICE];host.vfs[DATA_DEVICE]=types.SimpleNamespace(f_frsize=old.f_frsize,f_blocks=old.f_blocks,f_bfree=old.f_bfree+blocks,f_bavail=old.f_bavail+blocks)
+ 
+ def world(*,init=(INIT,)):
+     """The baseline before any operation of this family: no supervisor or reader path, no unit, the production image.
+@@ -526,8 +530,8 @@
+     for path in init:tree.add(path,kind='file',content=b'ELF')
+     if tree.get(INIT) is not None:tree.get(INIT).ino=4004
+     tree.add('/mnt').ino=4002;tree.get('/etc/systemd/system').ino=4001;tree.get('/var/lib').ino=4003
+-    tree.add(DATA,uid=1000,gid=1000,dev=811,ino=4005)
+-    tree.add(DATA+'/lost+found',mode=0o700,dev=811);tree.add(DATA+'/provider=synthetic',dev=811)
++    tree.add(DATA,uid=1000,gid=1000,dev=DATA_DEVICE,ino=4005)
++    tree.add(DATA+'/lost+found',mode=0o700,dev=DATA_DEVICE);tree.add(DATA+'/provider=synthetic',dev=DATA_DEVICE)
+     info={'SecurityOptions':['name=apparmor','name=seccomp,profile=builtin','name=cgroupns'],'Driver':'overlayfs',
+           'DriverStatus':[['driver-type','io.containerd.snapshotter.v1']],'DockerRootDir':'/var/lib/docker','InitBinary':'docker-init',
+           'ServerVersion':'29.5.3','HTTPProxy':'http://never-emit-proxy-canary:3128','Name':'never-emit-hostname-canary'}
+@@ -536,7 +540,7 @@
+             {'Id':OTHER,'RepoTags':['c3po/backend:rollback'],'Created':'x','Architecture':'arm64','Os':'linux','Size':1,
+              'Config':{'Labels':{'org.opencontainers.image.revision':REVISION},'Env':[]}}]
+     docker=FakeDocker(images,info,{'Client':{'Version':'29.5.3'},'Server':{'Version':'29.5.3'}})
+-    vfs={811:types.SimpleNamespace(**DATA_VFS),801:types.SimpleNamespace(**ROOT_VFS)}
++    vfs={DATA_DEVICE:types.SimpleNamespace(**DATA_VFS),ROOT_DEVICE:types.SimpleNamespace(**ROOT_VFS)}
+     host=FakeHost(tree,docker,vfs)
+     host.units['docker.service']={'Id':'docker.service','LoadState':'loaded','ActiveState':'active','SubState':'running','UnitFileState':'enabled'}
+     return host
+--- revision2/tests/test_family.py
++++ revision3/tests/test_family.py
+@@ -9,6 +9,7 @@
+ import os
+ from pathlib import Path
+ import re
++import shutil
+ import subprocess
+ import sys
+ 
+@@ -68,6 +69,44 @@
+         'reviewed_supervisor_hostfacts/launcher_stdin.py','hostops01/launcher_stdin.py')
+     assert f.sha(f.SERVICE)=='9e7de1c6eaf937e5b1fc9540986fdbdf2a2f821a9c57b944f9534a605d07f04a'
+     assert f.sha(f.TIMER)=='ec61b1d6cbd1d604e5c2177d186f9045e67bf21ecc092498691591dfd9164ee6'
++
++GENERATED=('dispatch_once.py','launcher_stdin.py','transport_once.py','DISPATCH_SCOPE_DELTA.diff','REQUEST.UNBOUND.json','AUTHORITY.UNBOUND.json',
++           'GO.UNBOUND.json','DISPATCH.UNBOUND.json','PUBLICATION_PROOF.UNBOUND.json','FINAL_PAYLOAD.UNBOUND.py')
++def test_static_assembly_yields_the_same_bytes_at_any_other_path_and_no_generated_file_names_a_path(tmp_path):
++    """assemble.py, run in a copy of its inputs somewhere else, writes exactly the bytes of this directory: nothing
++    generated depends on where the candidate lies, and nothing generated shows it."""
++    copy=Path(str(tmp_path)).resolve()/'elsewhere'/'a copy';copy.mkdir(parents=True)
++    for name in ('parts','reviewed_base','templates'):shutil.copytree(str(ROOT/name),str(copy/name))
++    shutil.copy(str(ROOT/'assemble.py'),str(copy/'assemble.py'))
++    done=subprocess.run([sys.executable,'-B','-W','error::SyntaxWarning',str(copy/'assemble.py')],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
++                        env=ENV,cwd=str(copy),timeout=120)
++    assert done.returncode==0 and done.stderr==b'',done.stderr.decode()[-2000:]
++    names=['LAUNCHER_DELTA.diff']+[op+'/'+name for op in OPS for name in GENERATED+(f.MODULES[op]+'.py',)]
++    written=sorted(path.relative_to(copy).as_posix() for path in copy.rglob('*') if path.is_file() and path.relative_to(copy).parts[0] not in ('parts','reviewed_base','templates'))
++    assert written==sorted(names+['assemble.py']),'every file the assembly writes is compared below'
++    for name in names:
++        raw=(ROOT/name).read_bytes();assert (copy/name).read_bytes()==raw,name
++        # where this candidate lies, where the copy lies, and the top-level directories a workstation or a runner keeps its users in
++        for word in (str(ROOT).encode(),str(copy).encode())+tuple(b'/'+top+b'/' for top in (b'Users',b'home',b'private')):assert word not in raw,(name,word)
++    for op in OPS:
++        config=json.loads((ROOT/op/'DISPATCH.UNBOUND.json').read_bytes())
++        for key in ('source','request','authority','go','payload'):
++            assert set(config[key])=={'path','sha256'} and config[key]['path'] is None and re.fullmatch('[0-9a-f]{64}',config[key]['sha256'])
++
++@pytest.mark.parametrize('op',OPS)
++def test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path(op,tmp_path):
++    """The template names no file. The dispatcher refuses it as it is, before any claim; and a config that is bound
++    in every other respect but still carries a null blob path is refused too."""
++    k=f.load(op);root=Path(str(tmp_path)).resolve()/'template';root.mkdir(mode=0o700)
++    raw=(ROOT/op/'DISPATCH.UNBOUND.json').read_bytes();path=root/'config';path.write_bytes(raw);path.chmod(0o600)
++    for phase in ('prepare','resume'):
++        assert refusal(lambda:k.d.execute(str(path),f.sha(raw),phase=phase,transport=f.never,clock=lambda:f.NOW,monotonic=lambda:0))=='DISPATCH_UNBOUND'
++    assert sorted(item.name for item in root.iterdir())==['config'],'no claim and no attempt directory'
++    docs,_=f.default_docs(op);directory=Path(str(tmp_path))/'bound';directory.mkdir()
++    for key in ('source','request','authority','go','payload'):
++        dispatch=f.Dispatch(docs,directory);dispatch.config[key]={'path':None,'sha256':dispatch.config[key]['sha256']}
++        dispatch.pin=dispatch.put('config',f.canonical(dispatch.config))
++        assert refusal(dispatch.prepare)=='LOCAL_PATH' and not dispatch.claims(),key
+ 
+ def blocks(source):
+     return {name:body for name,body in re.findall(r'# ==== BEGIN ([A-Z_]+) \([^)]*\) ====\n(.*?)\n# ==== END \1 ====\n',source.decode(),re.S)}
+@@ -459,8 +498,13 @@
+         dispatch=f.Dispatch(docs,tmp_path);assert refusal(dispatch.prepare)=='INNER_AUTHORITY' and not dispatch.claims()
+         target.clear();target.update(saved)
+ 
+-REAL=Path('<a path of the build machine>')
+-DRAFTS=Path('<a path of the build machine>')
++# Bytes of earlier operations that exist only on the build workstation: signed documents, installer drafts, reviewed
++# sources. Where they are is given by the environment; no path of that machine is carried by this file. Where a variable
++# is not set (a CI runner, a reviewer's copy) the test that needs it is skipped and says so.
++def elsewhere(variable,default=None):
++    value=os.environ.get(variable);return Path(value) if value else (default or Path('/nonexistent/hostops01-optional-input'))
++REAL=elsewhere('HOSTOPS_TEST_SIGNED_2026_10_01_DIR')
++DRAFTS=elsewhere('HOSTOPS_TEST_INSTALLER_DRAFTS_DIR')
+ @pytest.mark.skipif(not (REAL/'GO.SIGNED.json').is_file(),reason='the signed documents of 2026-10-01 are not on this machine')
+ def test_real_signed_documents_of_2026_10_01_are_refused(case):
+     """Bytes are read only to be refused; nothing from the files is copied into the candidate."""
+@@ -481,8 +525,8 @@
+         blobs=list(raws);blobs[index]=(DRAFTS/name).read_bytes()
+         assert refusal(lambda:auth_raw(k,blobs)) in codes
+ 
+-HOSTFACTS=ROOT.parent.parent/'hostfacts01'/'candidate'/'hostfacts_readonly.py'
+-PREFLIGHT=Path('<a path of the build machine>')
++HOSTFACTS=elsewhere('HOSTOPS_TEST_HOSTFACTS_SOURCE',ROOT.parent.parent/'hostfacts01'/'candidate'/'hostfacts_readonly.py')
++PREFLIGHT=elsewhere('HOSTOPS_TEST_PREFLIGHT_SOURCE')
+ @pytest.mark.parametrize('path',[HOSTFACTS,PREFLIGHT])
+ def test_reviewed_earlier_sources_refuse_the_documents_of_this_family(case,path):
+     """The reverse direction: bytes of the reviewed read-only sources, loaded read-only, offered a GO of this family."""
+--- revision2/tests/test_install_units.py
++++ revision3/tests/test_install_units.py
+@@ -259,6 +259,22 @@
+     host.tree.get(UNITS).children['.hostops-0123456789abcdef-0.partial']=node;node.nlink=2
+     rows=units_table(refused(host,docs,'PRIOR_PARTIAL_REQUIRES_RECONCILIATION'));assert rows['SUPERVISOR_SERVICE']['links']==2
+ 
++@pytest.mark.parametrize('attribute',['gid','uid'])
++def test_a_unit_file_of_another_group_or_owner_is_not_what_this_code_installs_whether_signed_absent_or_present(attribute):
++    """Equal bytes, mode 0644, one link, but group 4 (or owner 4): not the file this code creates. Signed as absent it is
++    foreign content; signed as present, with its exact identity, it is still not verified."""
++    host,docs=fresh();host.tree.add(SERVICE,kind='file',mode=0o644,content=RENDERED,**{attribute:4})
++    row=units_table(refused(host,docs,'UNIT_PRESENT_FOREIGN_CONTENT'))['SUPERVISOR_SERVICE']
++    assert (row['state'],row[attribute],row['mode_octal'],row['links'],row['bytes_equal_signed_render'])==('PRESENT_FOREIGN',4,'0644',1,True)
++    host,docs=fresh();node=host.tree.add(SERVICE,kind='file',mode=0o644,content=RENDERED,**{attribute:4})
++    docs.plan['units'][0]['expect']={'device':node.dev,'inode':node.ino,'links':1};docs.chain()
++    row=units_table(refused(host,docs,'EXPECTATION_MISMATCH'))['SUPERVISOR_SERVICE']
++    assert (row['state'],row[attribute],row['bytes_equal_signed_render'],row['device'],row['inode'])==('PRESENT_IDENTITY_MISMATCH',4,True,node.dev,node.ino)
++    # the control: the same file as root:root is verified against the render and the signed identity, and left alone
++    host,docs=fresh();node=host.tree.add(SERVICE,kind='file',mode=0o644,content=RENDERED);before=node.stat()
++    docs.plan['units'][0]['expect']={'device':node.dev,'inode':node.ino,'links':1};docs.chain();receipt=docs.run(host)
++    assert receipt['outcome']=='UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED' and receipt['ledger'][0]['state']=='PRESENT_VERIFIED_NOT_TOUCHED' and node.stat()==before
++
+ def test_all_units_present_is_said_only_of_settled_files():
+     """Both names hold the signed render, but one still shares its inode with a temporary (a death between link and
+     removal), or a temporary lies beside them: that is the state of an interrupted run, not "all present"."""
+@@ -486,6 +502,35 @@
+     row=receipt['ledger'][0];assert (row['state'],row['code'],row['temporary_removed'])==('LINKED_TEMPORARY_PRESENT','TEMPORARY_REPLACED',False)
+     assert bytes(host.tree.get(temp(docs,0)).content)==b'somebody else' and bytes(host.tree.get(SERVICE).content)==RENDERED and receipt['status']==m.PARTIAL_STATUS
+     assert not [entry for entry in host.log if entry[0]=='unlink'],'a name that no longer shows the held inode is never removed'
++
++def test_a_second_link_or_foreign_bytes_on_the_temporary_are_caught_on_the_descriptor_before_any_unit_name_exists():
++    """Between the fsync of the temporary and its fstat somebody gives it a second name, or appends to it. It is no
++    longer the file this run wrote alone: the check on the descriptor withdraws it; no name systemd loads is given."""
++    host,docs=fresh()
++    def second_name(host,detail):
++        directory=host.tree.get(UNITS);own=directory.children[os.path.basename(detail[0])];directory.children['.extra']=own;own.nlink+=1
++    after(host,'create',1,'fstat',1,second_name);receipt=docs.run(host);row=receipt['ledger'][0]
++    assert (row['state'],row['code'],row['links'],row['temporary_removed'],row['temporary_removal_code'])==('NOT_CREATED','CREATED_METADATA_MISMATCH',2,True,None)
++    assert new(host)==[UNITS+'/.extra'] and not [entry for entry in host.log if entry[0]=='link'] and receipt['status']==m.PARTIAL_STATUS
++    assert receipt['ledger'][1]['state']=='NOT_ATTEMPTED' and receipt['objects_left_by_this_run']==0
++    host,docs=fresh()
++    def appended(host,detail):host.tree.get(detail[0]).content.extend(b'ExecStartPre=/usr/bin/true\n')
++    after(host,'create',1,'fstat',1,appended);receipt=docs.run(host);row=receipt['ledger'][0]
++    assert (row['state'],row['code'],row['bytes'],row['temporary_removed'])==('NOT_CREATED','CREATED_METADATA_MISMATCH',len(RENDERED),True)
++    assert new(host)==[] and not [entry for entry in host.log if entry[0]=='link'],'bytes that are not the signed render never stand under a unit name'
++    assert receipt['status']==m.PARTIAL_STATUS and receipt['ledger'][1]['state']=='NOT_ATTEMPTED'
++
++def test_a_file_that_keeps_a_second_name_after_the_removal_of_the_temporary_is_not_called_installed():
++    """Somebody links the file under a third name before the temporary is removed: after the removal it still has two
++    links. The run stops there; the second unit is not attempted."""
++    host,docs=fresh()
++    def third_name(host,detail):
++        directory=host.tree.get(UNITS);own=directory.children[os.path.basename(detail[0])];directory.children['.extra']=own;own.nlink+=1
++    after(host,'link',1,'unlink',1,third_name);receipt=docs.run(host);row=receipt['ledger'][0]
++    assert (row['state'],row['code'],row['links'],row['temporary_removed'])==('INSTALLED_NOT_DURABLE','CREATED_METADATA_MISMATCH',2,True)
++    assert receipt['ledger'][1]['state']=='NOT_ATTEMPTED' and host.tree.get(TIMER) is None and receipt['readback'] is None
++    assert (receipt['status'],receipt['outcome'],receipt['code'])==(m.PARTIAL_STATUS,'PARTIAL_REQUIRES_RECONCILIATION','CREATED_METADATA_MISMATCH')
++    assert new(host)==sorted([UNITS+'/.extra',SERVICE]) and len([entry for entry in host.log if entry[0]=='create'])==1
+ 
+ def test_unit_directory_replaced_between_two_units_stops_the_run():
+     host,docs=fresh()
+@@ -541,6 +586,20 @@
+         host.tree.add(SERVICE,kind='file',mode=0o644,content=RENDERED);assert host.tree.get(SERVICE).ino!=old.ino
+     after(host,'unlink',2,'fsync',1,replace);receipt=docs.run(host)
+     assert (receipt['status'],receipt['code'])==(m.PARTIAL_STATUS,'READBACK_HASH_MISMATCH') and receipt['ledger'][0]['sha256_observed']==receipt['ledger'][0]['sha256_signed']
++
++
++def test_readback_inside_the_run_catches_owner_group_mode_or_a_second_name_changed_after_the_installation():
++    """The checks at creation are made on the temporary; the readback makes them again on the final name, after
++    everything else: a change in between is a partial, never the success outcome."""
++    def mode(node):node.mode=0o664
++    def owner(node):node.uid=1000
++    def group(node):node.gid=4
++    def second_name(node):node.nlink+=1
++    for change in (mode,owner,group,second_name):
++        host,docs=fresh();after(host,'unlink',2,'fsync',1,lambda host,detail,change=change:change(host.tree.get(SERVICE)));receipt=docs.run(host)
++        assert (receipt['status'],receipt['outcome'],receipt['code'])==(m.PARTIAL_STATUS,'PARTIAL_REQUIRES_RECONCILIATION','READBACK_HASH_MISMATCH'),change.__name__
++        assert receipt['readback']=={'status':'UNAVAILABLE','code':'READBACK_HASH_MISMATCH'} and [row['state'] for row in receipt['ledger']]==['INSTALLED_DURABLE']*2
++        assert receipt['ledger'][0]['sha256_observed']==receipt['ledger'][0]['sha256_signed'],'the bytes are the signed ones; it is the metadata that changed'
+ 
+ 
+ # ---------------------------------------------------------------- crash, rerun label, signed continuation
+--- revision2/tests/test_precheck.py
++++ revision3/tests/test_precheck.py
+@@ -30,7 +30,7 @@
+ def test_effects_shown_in_the_go_are_exactly_this_literal():
+     """Written out by hand: a member that disappears from effects_of, or changes meaning, fails here."""
+     host,docs=fresh()
+-    expected={'operation':'GO_READONLY_HOSTOPS_PRECHECK_01','journal_placement':'B',
++    expected={'operation':'GO_READONLY_HOSTOPS_PRECHECK_01','journal_placement':'B','existing_journal_leaves':[],
+               'chains':{'ETC':'/etc','VAR_LIB':'/var/lib','DATA_VOLUME':'/mnt/day-d-data','UNIT_DIRECTORY':'/etc/systemd/system'},
+               'destinations':['/etc/c3po-bar','/etc/c3po-bar/manifests','/etc/c3po-bar/docker-cli','/var/lib/c3po-bar','/var/lib/c3po-bar/supervisor',
+                               '/mnt/day-d-data/r2d2-v2-massive-epoch03','/etc/c3po-reader','/etc/c3po-reader/docker-cli','/var/lib/c3po-reader',
+@@ -43,6 +43,11 @@
+     assert f.canonical(m.effects_of(docs.plan))==f.canonical(expected)==f.canonical(docs.go['effects'])
+     host,docs=fresh(groups=['SUPERVISOR']);assert docs.go['effects']['chains']=={'ETC':'/etc','VAR_LIB':'/var/lib','UNIT_DIRECTORY':'/etc/systemd/system'}
+     assert len(docs.go['effects']['destinations'])==5 and docs.go['effects']['journal_placement'] is None
++    # the signed list of journal leaves that already exist is what the GO shows, literally
++    host,docs=fresh(existing=['r2d2-v2-massive-epoch02','r2d2-v2-massive-epoch01'])
++    assert docs.go['effects']['existing_journal_leaves']==m.effects_of(docs.plan)['existing_journal_leaves']==['r2d2-v2-massive-epoch02','r2d2-v2-massive-epoch01']
++    docs.plan['existing_journal_leaves']=['r2d2-v2-massive-epoch02'];docs.chain(effects=False)
++    assert refusal(docs.authenticate)=='EFFECTS_BINDING','a request whose list of existing leaves changes cannot keep its GO'
+     # placement A: the journal root is a destination next to the state root, and the data volume is read only for the capacity tree
+     host,docs=fresh(placement='A');effects=docs.go['effects']
+     assert effects['journal_placement']=='A' and effects['destinations'][5]=='/var/lib/c3po-bar/journal' and '/mnt/day-d-data/r2d2-v2-massive-epoch03' not in effects['destinations']
+--- revision2/tests/test_provision.py
++++ revision3/tests/test_provision.py
+@@ -48,7 +48,7 @@
+     keys=['SUP_CONFIG','SUP_MANIFESTS','SUP_DOCKER_CLI','SUP_STATE_PARENT','SUP_STATE','SUP_JOURNAL','RDR_CONFIG','RDR_DOCKER_CLI','RDR_STATE',
+           'CAP_ROOT','CAP_CONFIG','CAP_DOCUMENTS','CAP_PAYLOAD','CAP_GO','CAP_RECEIPTS']
+     expected={'operation':'GO_WRITE_SUPERVISOR_READER_PROVISION_01','groups':['SUPERVISOR','JOURNAL_LEAF','READER','CAPACITY','RETENTION_TAG'],
+-              'data_volume_path':'/mnt/day-d-data','journal_leaf':'r2d2-v2-massive-epoch03',
++              'data_volume_path':'/mnt/day-d-data','journal_leaf':'r2d2-v2-massive-epoch03','existing_journal_leaves':[],
+               'journal':{'placement':'B','path':'/mnt/day-d-data/r2d2-v2-massive-epoch03','filesystem_named_by_chain':'DATA_VOLUME','filesystem_device':811,
+                          'mount_point_by_device_change':'/mnt/day-d-data','data_volume_touched_for_the_journal':True},
+               'capacity':{'root_path':'/mnt/day-d-data/c3po-capacity','receipt_directory_path':'/var/lib/c3po-reader/capacity-receipts','receipts_inside_capacity_root':False},
+@@ -67,6 +67,11 @@
+     host,docs=fresh(groups=['SUPERVISOR']);effects=docs.go['effects']
+     assert (effects['retention_tag'],effects['capacity'],effects['journal_leaf'],effects['data_volume_path'],effects['journal'])==(None,None,None,None,None)
+     assert effects['data_volume_root']=={'world_writable_without_sticky':None,'device_differs_from_parent':None} and sorted(effects['direct_parents'])==['ETC','VAR_LIB']
++    # the signed list of journal leaves that already exist (the capacity root is kept away from each) is what the GO shows, literally
++    host,docs=fresh(existing=['r2d2-v2-massive-epoch02','r2d2-v2-massive-epoch01'])
++    assert docs.go['effects']['existing_journal_leaves']==m.effects_of(docs.plan)['existing_journal_leaves']==['r2d2-v2-massive-epoch02','r2d2-v2-massive-epoch01']
++    docs.plan['existing_journal_leaves']=['r2d2-v2-massive-epoch02'];docs.chain(effects=False)
++    assert refusal(docs.authenticate)=='EFFECTS_BINDING','a request whose list of existing leaves changes cannot keep its GO'
+ 
+ def test_data_volume_root_facts_are_literal_in_the_effects_and_a_root_any_user_can_write_is_refused():
+     """The observed owner and mode of the data volume root are accepted as signed, with one floor in code: a directory
+@@ -104,7 +109,8 @@
+         'key':'SUP_JOURNAL','path':'/var/lib/c3po-bar/journal','mode':0o700,'parent':{'entry':'SUP_STATE_PARENT'},'expect':'ABSENT'}
+     assert docs.go['effects']['journal']=={'placement':'A','path':'/var/lib/c3po-bar/journal','filesystem_named_by_chain':'VAR_LIB','filesystem_device':801,
+                                            'mount_point_by_device_change':'/','data_volume_touched_for_the_journal':False}
+-    # the receipt of 2026-10-02 did not read which filesystem /var/lib is on: when it is a mount of its own, the signers see it
++    # the receipt of 2026-10-02 read /var/lib on the device of "/", in an earlier boot; whatever the boot of the write shows, the
++    # signers see it: when /var/lib is a mount of its own, the effects name it
+     other=f.world(k);other.tree.get('/var/lib').dev=899
+     assert f.Docs(k,f.provision_fields(k,other,groups=['SUPERVISOR','JOURNAL_LEAF'],placement='A')).go['effects']['journal']['mount_point_by_device_change']=='/var/lib'
+     assert m.mount_point_of([{'path':'/','device':1},{'path':'/a','device':2},{'path':'/a/b','device':2},{'path':'/a/b/c','device':3},{'path':'/a/b/c/d','device':3}])=='/a/b/c'
+@@ -426,6 +432,31 @@
+     host,docs=fresh();host.tree.remove('/var/lib');host.tree.add('/var/lib',kind='file');refused(host,docs,'PARENT_NOT_DIRECTORY')
+     host,docs=fresh();host.tree.remove('/mnt/day-d-data');refused(host,docs,'PARENT_MISSING')
+ 
++def test_a_component_swapped_between_its_lstat_and_its_open_is_refused_whichever_of_the_two_saw_the_signed_directory():
++    """The walk classifies a component by lstat and then opens it. The descriptor held must be the object the lstat saw:
++    the signed row alone would accept the second case below, where the object that was classified is not the one held."""
++    # the lstat sees the signed directory; another one stands at the name when it is opened
++    host,docs=fresh();real=host.lstat;seen=[0]
++    def swapped_after(name,dir_fd):
++        info=real(name,dir_fd)
++        if host.path_of(dir_fd)=='/var' and name=='lib' and not seen[0]:
++            seen[0]=1;var=host.tree.get('/var');var.children['lib.moved']=var.children.pop('lib');host.tree.add('/var/lib',mode=0o755)
++        return info
++    host.lstat=swapped_after;receipt=docs.run(host)
++    assert seen==[1] and (receipt['status'],receipt['outcome'],receipt['code'])==('REFUSED','REFUSED_NOTHING_CREATED','PARENT_CHANGED_DURING_WALK')
++    assert host.mutating()==[] and receipt['mutating_calls']['issued']==0 and f.sealed(receipt)
++    # the lstat sees some other directory; the signed one is back at the name when it is opened
++    host,docs=fresh();real=host.lstat;seen=[0]
++    def decoy_before(name,dir_fd):
++        if host.path_of(dir_fd)=='/var' and name=='lib' and not seen[0]:
++            seen[0]=1;var=host.tree.get('/var');signed=var.children.pop('lib');host.tree.add('/var/lib',mode=0o755)
++            try:return real(name,dir_fd)
++            finally:var.children['lib']=signed
++        return real(name,dir_fd)
++    host.lstat=decoy_before;receipt=docs.run(host)
++    assert seen==[1] and (receipt['status'],receipt['outcome'],receipt['code'])==('REFUSED','REFUSED_NOTHING_CREATED','PARENT_CHANGED_DURING_WALK')
++    assert host.mutating()==[] and new(host)==[] and receipt['mutating_calls']['issued']==0 and f.sealed(receipt)
++
+ def table(receipt):return {row['key']:row for row in receipt['precheck']}
+ 
+ @pytest.mark.parametrize('path,key',[(ORDER[0],'SUP_CONFIG'),(ORDER[3],'SUP_STATE_PARENT'),(ORDER[5],'SUP_JOURNAL'),(ORDER[6],'RDR_CONFIG'),(ORDER[8],'RDR_STATE'),(ORDER[9],'CAP_ROOT')])
+@@ -727,6 +758,22 @@
+     host.docker.before=elsewhere;receipt=docs.run(host)
+     assert (receipt['retention_tag']['state'],receipt['retention_tag']['code'],receipt['retention_tag']['readback_id_equal'])==('CREATED_UNVERIFIED','TAG_READBACK_MISMATCH',False)
+ 
++def test_tag_readback_needs_the_reference_among_the_tags_of_the_signed_image():
++    """The tag command returned 0 and inspect by reference prints the signed ID, but the tag list of that image does not
++    carry the reference: the reference resolved some other way and the tag is not proved. Never CREATED_VERIFIED."""
++    for groups,created in ((['RETENTION_TAG'],0),(None,15)):
++        host,docs=fresh(groups=groups)
++        def resolves_without_the_tag(docker,args):
++            if args[:2]==['image','tag']:
++                docker.tag_effect=False;find=docker.find
++                docker.find=lambda reference:dict(docker.images[0]) if reference==REFERENCE else find(reference)
++        host.docker.before=resolves_without_the_tag;receipt=docs.run(host);facts=receipt['retention_tag']
++        assert (facts['state'],facts['code'],facts['readback_id_equal'],facts['returncode'])==('CREATED_UNVERIFIED','TAG_READBACK_MISMATCH',True,0)
++        assert (receipt['status'],receipt['outcome'],receipt['code'])==(m.PARTIAL_STATUS,'PARTIAL_REQUIRES_RECONCILIATION','TAG_READBACK_MISMATCH')
++        assert receipt['mutating_calls']=={'issued':created+1,'succeeded':created+1,'failed_nothing_changed':0,'uncertain':0}
++        assert REFERENCE not in tags(host) and receipt['objects_left_by_this_run']==created+1 and receipt['readback'] is None and f.sealed(receipt)
++        assert [command['argv'][1:3] for command in host.commands].count(['image','tag'])==1,'never a second attempt'
++
+ FAILURES=[lambda:OSError(errno.EAGAIN,'injected'),lambda:OSError(errno.ENOMEM,'injected'),lambda:OSError(errno.EMFILE,'injected'),lambda:RuntimeError('injected')]
+ @pytest.mark.parametrize('make',FAILURES)
+ @pytest.mark.parametrize('occurrence,state,code,counts,left',[
+--- revision2/tests/test_readback.py
++++ revision3/tests/test_readback.py
+@@ -319,8 +319,8 @@
+     host,docs=ready();host.tree.remove('/var/lib/c3po-bar');host.tree.add('/var/lib/c3po-bar',kind='symlink',mode=0o777)
+     receipt=partial(host,docs,'catalog','free_space','layout');layout=receipt['items']['layout']
+     assert layout['paths']['SUP_JOURNAL']['code']=='SYMLINK_COMPONENT' and layout['journal_filesystem']=={'placement':'A','signed_mount_point':'/','status':'NOT_OBSERVED'},'not observed is not "no mount point"'
+-    # the filesystem of the journal root must be the one the authorisation names. The receipt of 2026-10-02 did not read which
+-    # filesystem /var/lib belongs to: if it is a mount of its own, the root filesystem's free space says nothing about the journal root
++    # the filesystem of the journal root must be the one the authorisation names. The receipt of 2026-10-02 read /var/lib on the
++    # device of "/", but in an earlier boot: if it is a mount of its own now, the root filesystem's free space says nothing about the journal root
+     def remount(host,path,device):
+         def walk(node):
+             node.dev=device
