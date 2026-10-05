@@ -1,0 +1,96 @@
+{
+ "accepted_findings": [],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-k9r-rev5-proof-20261005",
+ "family": "hostops02-k9",
+ "links": [
+  {
+   "path": "fable-k9r-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k9r-20261004/catalog_init",
+   "target": "../hostops02-sealed/catalog_init"
+  },
+  {
+   "path": "fable-k9r-20261004/install_release",
+   "target": "../hostops02-sealed/install_release"
+  },
+  {
+   "path": "fable-k9r-20261004/epoch_readback",
+   "target": "../hostops02-sealed/epoch_readback"
+  },
+  {
+   "path": "fable-k9r-20261004/activate",
+   "target": "../hostops02-sealed/activate"
+  }
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/core",
+   "files": 75,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+   "source": "hostops02-sealed/core",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/catalog_init",
+   "files": 34,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "1ccaf83dbc3e901d476efe92d877cbee678caf29d2103008a694c155ea09b0f5",
+   "source": "hostops02-sealed/catalog_init",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/install_release",
+   "files": 55,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "2705134655d7e580f389a7b32178e18b22d8ca75f2d5b206de3c90483fb84b82",
+   "source": "hostops02-sealed/install_release",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/epoch_readback",
+   "files": 36,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "b1a810fea1e695ba3ef25f7dc839136bbb0c9995f89eef777bc2f93215703c1f",
+   "source": "hostops02-sealed/epoch_readback",
+   "withheld": {
+    "DESIGN.md": {
+     "reason": "workstation path in the abbreviations; no test reads it",
+     "sha256": "9ac730edaf7357b54f9d4f0ba0e206408b2fde469bfd8d9d5650b81763b1664f"
+    }
+   }
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/activate",
+   "files": 42,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "91366f446d977fac1e0d0fb6d88c2fa8d98c02ef084b0d4098ebb0467a352bad",
+   "source": "hostops02-sealed/activate",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "fable-k9r-20261004/k9_phase_read",
+   "files": 34,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "248c2ae45d096ec3dfa8a845ecff8d1032f8d02bb71ec6cdfc019d70c7710c66",
+   "source": "codex-k9r-rev5-20261005/k9_phase_read",
+   "withheld": {}
+  }
+ ]
+}

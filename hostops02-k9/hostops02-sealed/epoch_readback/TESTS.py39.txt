@@ -1,0 +1,11 @@
+Python 3.9.6
+/usr/bin/python3 -B -m pytest -p no:cacheprovider -q -rs tests
+........................................................................ [ 89%]
+..................................................................ssss.. [ 99%]
+....s                                                                    [100%]
+=========================== short test summary info ============================
+SKIPPED [2] tests/test_snippet.py:97: the calendar library of the application is not installed for this interpreter
+SKIPPED [1] tests/test_snippet.py:107: the calendar library of the application is not installed for this interpreter
+SKIPPED [1] tests/test_snippet.py:126: the calendar library of the application is not installed for this interpreter
+SKIPPED [1] tests/test_snippet.py:221: the calendar library of the application is not installed for this interpreter
+720 passed, 5 skipped in 28.60s

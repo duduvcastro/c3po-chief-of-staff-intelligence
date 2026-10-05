@@ -1,0 +1,27 @@
+{
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "groups": {
+  "k9r": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-k9r-20261004/k9_phase_read"
+     ],
+     "as_given": [
+      "fable-k9r-20261004/core",
+      "../k9_phase_read"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  }
+ },
+ "order": [
+  "k9r"
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_GROUPS_V1"
+}
