@@ -1,0 +1,166 @@
+{
+  "activation_authorized": false,
+  "actual_host_calls": 0,
+  "argv_forms_never_run_on_the_host": [
+    "docker --host unix:///var/run/docker.sock <command>"
+  ],
+  "budgets_seconds": {
+    "call": 5,
+    "docker_commands_together": 25,
+    "run": 60,
+    "systemctl_and_pgrep_together": 15,
+    "worst_case_before_the_data_volume": 50
+  },
+  "created_at": "2026-10-02T15:26:41.331348+00:00",
+  "dispatch_date_rule": "the whole window on ONE UTC date of the set, never across midnight UTC; each read is bound and signed on its own",
+  "dispatch_date_scope": [
+    "2026-10-02",
+    "2026-10-03",
+    "2026-10-04",
+    "2026-10-05",
+    "2026-10-06",
+    "2026-10-07",
+    "2026-10-08",
+    "2026-10-09",
+    "2026-10-10"
+  ],
+  "docker_binary_runs": 0,
+  "docker_precondition": "no docker command unless systemctl show answered ActiveState=active for docker.service in the same run",
+  "execution_authorized": false,
+  "expected_result_on_host": "KNOWN_COMPLETE when every observation is made; findings do not change it. KNOWN_PARTIAL (dispatcher exit 2) is a valid outcome, not a failure. The single cause of the three problems of the earlier read (mount order between two inspect answers) is removed. New conditions of a PARTIAL in revision 2: docker.service not seen active; a listing beyond the cap at the volume root or at the journal root; a content file that is not a regular file; an armed automount point on a walked path. New in revision 3: systemctl and pgrep beyond the 15 s they share (unit states and process counts not read).",
+  "go_template_engine": "emulated in the test file; no real docker CLI or Go engine was available offline",
+  "golex_last_line": "TEMPLATES 8 WITH_ERRORS 0",
+  "golex_returncode": 0,
+  "golex_templates_checked": 8,
+  "mutation_check": {
+    "errors": [],
+    "killed": 141,
+    "mutants": 141,
+    "note": "copies only; one behaviour of the remote source changed per mutant; the two documentation tests are deselected so that a kill is behavioural",
+    "ran_against_these_bytes": true,
+    "survivors": []
+  },
+  "native_collection_tested": false,
+  "native_pieces_tested_locally": "command runner, descend, census, bounded read, statvfs, readlink on a temporary directory (access-time flag replaced by zero)",
+  "operation": "GO_READONLY_W1PREFLIGHT_01",
+  "operational_go_created": false,
+  "operational_prepare_or_resume": 0,
+  "ready": false,
+  "real_credential_reads": 0,
+  "receipt_sizes": {
+    "after_provisioning_14000_entries": {
+      "commands": 53,
+      "findings": 6,
+      "line_bytes": 41704,
+      "problems": 0,
+      "reductions": [],
+      "status": "METADATA_ONLY_REQUIRES_REVIEW"
+    },
+    "after_provisioning_with_candidates": {
+      "commands": 53,
+      "findings": 3,
+      "line_bytes": 41019,
+      "problems": 0,
+      "reductions": [],
+      "status": "METADATA_ONLY_REQUIRES_REVIEW"
+    },
+    "before_provisioning": {
+      "commands": 53,
+      "findings": 4,
+      "line_bytes": 35372,
+      "problems": 0,
+      "reductions": [],
+      "status": "METADATA_ONLY_REQUIRES_REVIEW"
+    },
+    "every_list_at_cap": {
+      "commands": 75,
+      "findings": 18,
+      "line_bytes": 49764,
+      "problems": 4,
+      "reductions": [
+        "HISTOGRAMS_DROPPED",
+        "MOUNTS_DROPPED"
+      ],
+      "status": "PARTIAL_METADATA_REQUIRES_REVIEW"
+    },
+    "final_payload_bytes": 214537,
+    "launcher_document_limit": 65536,
+    "launcher_source_limit": 1048576,
+    "limit": {
+      "dispatcher_decode_limit": 65536,
+      "payload_seal_limit": 60000
+    },
+    "request_bytes": 21731,
+    "source_bytes": 136390
+  },
+  "remote_source_minimum_python": "3.7 grammar; host version not known, it is one of the facts read",
+  "reviewed_source_base_sha256": "00d20785a667e5ea4d034c4c046537844327ff1e227d61a9fa19e4a390d94664",
+  "reviewed_source_lines": 897,
+  "reviewed_source_lines_unchanged": 507,
+  "revision": 3,
+  "revision_1_manifest_sha256": "ea75685cfc39f504fc24cc06a70d7e7ed5bb4e174a7441aceb68caf57c136fe1",
+  "revision_2_manifest_sha256": "49dc6ed44ce86b24da392322f1a3987aaa36aa004d96450b1aa458cce7cc73a5",
+  "revision_3_changes": [
+    "date set of nine UTC dates 2026-10-02..2026-10-10 in the source and in the dispatcher (two before)",
+    "systemctl and pgrep share a budget of 15 s (SYSTEM_TOOLS_BUDGET_EXHAUSTED)",
+    "contract: worst case of slowness and the sentence on capped listings corrected"
+  ],
+  "schema": "W1PREFLIGHT01_STDIN_ONCE_OFFLINE_VALIDATION_V1",
+  "scope_sha256": "d860347b1df900c34438d74b29f4d66e06134d3504c501e886bcf9efdc5c4b9d",
+  "source_lines": 1967,
+  "status": "REQUIRES_INDEPENDENT_REVIEW_AND_REAL_BINDINGS",
+  "synthetic_prepare_resume_tests_only": true,
+  "templates_never_run_on_any_engine": [
+    "ENVFLAGS_FORMAT",
+    "ATTACH_FORMAT",
+    "NETWORK_FORMAT"
+  ],
+  "templates_proven_on_the_host_reused_byte_for_byte": [
+    "CLASS_FORMAT",
+    "FAMILY_FORMAT",
+    "IMAGE_FORMAT",
+    "PS_FORMAT",
+    "VERSION_FORMAT"
+  ],
+  "tests_failed": 0,
+  "tests_passed": 517,
+  "tests_second_interpreter": {
+    "python": "Python 3.12.14",
+    "returncode": 0,
+    "summary": "517 passed"
+  },
+  "tests_skipped": 0,
+  "tests_system_python": {
+    "python": "Python 3.9.6",
+    "returncode": 0,
+    "summary": "517 passed"
+  },
+  "tests_xml_hostname_redacted": true,
+  "transport_family": {
+    "dispatch_once.py": {
+      "lines_replaced": 16,
+      "reviewed_base_sha256": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409",
+      "sha256": "8ebcc00e1edf5c478ce191d2c1e2dd4b722a8263464848ef2a356671932c761f"
+    },
+    "launcher_stdin.py": {
+      "identical_to_reviewed": true,
+      "sha256": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e"
+    },
+    "transport_once.py": {
+      "identical_to_reviewed": true,
+      "sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918"
+    }
+  },
+  "unbound_set": {
+    "authority": "3742c577ad96e0ea238cd20f804b1e8110bef337982e7395e1209999cfa38443",
+    "config": "852c8973b2eeba8cf98e76b12316b42bbc6fbc4e3005b390b8b79df0e8e8ec2e",
+    "go": "5caa5f49b4598545b7f789907a4a868b1f316116442aad679701ba2f38098074",
+    "payload": "ae54b399ff357aeb43a27c1a23a7196ea9dfe9466bc80db034829c75b5dd1bb5",
+    "proof": "5da2367c7955ab914889e6250d2109c59fd267c9b31d6fbfc3f0fc0de33d0401",
+    "request": "9d6405c1e7a2a10d1073e08f52756edc26a2af1a37b14f6ebbf5d15462c134a6"
+  },
+  "unchanged_since_revision_2": [
+    "launcher_stdin.py",
+    "transport_once.py"
+  ]
+}

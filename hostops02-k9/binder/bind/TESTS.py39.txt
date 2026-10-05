@@ -1,0 +1,3 @@
+bind_once tests, revision 4 (K9R, K9W, K4-E0, K3-K9 rules; rev 3 equivalence), Python 3.9.6, pytest 8.4.2, run ended 2026-10-05T01:50:56Z (UTC, by command), cwd tests/, command: run_suite.zsh (python -B [-W error::SyntaxWarning] -m pytest -q -p no:cacheprovider -rs --basetemp <tmp> .)
+113 passed in 902.23s (0:15:02)
+exit=0

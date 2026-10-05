@@ -1,0 +1,68 @@
+--- hostops01/parts/op_provision.py:create_directory
++++ hostops02/core/parts/files.py:create_directory
+@@ -1,48 +1,46 @@
+-def create_directory(item,parent,host,gate,state,handles):
+-    """One mkdir and its proof. Returns the ledger row. Nothing is corrected: a created object that does not match is
+-    left in place and labelled. A failure after the mkdir succeeded is never reported as NOT_CREATED."""
+-    entry={'key':item['key'],'path':item['path'],'state':'NOT_ATTEMPTED','code':None,'errno':None,'observed':None,
++def create_directory(key,path,mode,parent,host,gate,state,handles):
++    """One mkdir and its proof. Returns the ledger row and leaves the held directory in handles[key]. Nothing is
++    corrected: a created object that does not match is left in place and labelled. A failure after the mkdir
++    succeeded is never reported as NOT_CREATED."""
++    entry={'key':key,'path':path,'state':'NOT_ATTEMPTED','code':None,'errno':None,'observed':None,
+            'fsync_directory':False,'fsync_parent':False}
+-    name=PurePosixPath(item['path']).name
++    if not (type(mode) is int and mode in DIRECTORY_MODES and named_in(path,parent)):
++        entry['code']='DIRECTORY_REQUEST_INVALID';return entry
++    name=PurePosixPath(path).name
+     flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|host.noatime()
+     try:parent.verify(gate)
+     except Refused as error:
+         entry['code']=code_of(error,'PARENT_REPLACED');return entry
+-    try:mutate(state,gate,lambda:host.mkdir(name,DIRECTORY_MODE,parent.fd))
++    try:mutate(state,gate,lambda:host.mkdir(name,mode,parent.fd))
+     except Refused as error:
+         entry['code']=code_of(error,'GO_EXPIRED');return entry
+     except OSError as error:
+-        entry.update(state='NOT_CREATED',errno=error.errno if type(error.errno) is int else None,
++        entry.update(state='NOT_CREATED',errno=number(error),
+                      code='DESTINATION_APPEARED_AFTER_PRECHECK' if error.errno==errno.EEXIST else filesystem_code(error))
+         return entry
+     entry['state']='CREATED_UNVERIFIED'
+     try:fd=host.open(name,flags,dir_fd=parent.fd)
+     except Exception as error:
+-        entry.update(code='CREATED_OPEN_FAILED',errno=error.errno if isinstance(error,OSError) and type(error.errno) is int else None)
+-        return entry
++        entry.update(code='CREATED_OPEN_FAILED',errno=number(error));return entry
+     try:
+-        handle=Pinned(host,fd,parent=parent,name=name);handles[item['key']]=handle
++        handle=Pinned(host,fd,parent=parent,name=name);handles[key]=handle
+         info=host.fstat(fd);named=host.lstat(name,parent.fd)
+         entry['observed']=shape(info)
+         if (named.st_dev,named.st_ino)!=(info.st_dev,info.st_ino):
+             entry['code']='CREATED_NAME_REPLACED';return entry
+         if not (stat.S_ISDIR(info.st_mode) and info.st_uid==0 and info.st_gid==0
+-                and stat.S_IMODE(info.st_mode)==DIRECTORY_MODE and info.st_dev==parent.identity[0]):
++                and stat.S_IMODE(info.st_mode)==mode and info.st_dev==parent.identity[0]):
+             entry.update(state='CREATED_METADATA_MISMATCH',code='CREATED_METADATA_MISMATCH');return entry
+     except Exception as error:
+-        entry.update(code='CREATED_STAT_FAILED',errno=error.errno if isinstance(error,OSError) and type(error.errno) is int else None)
+-        return entry
+-    try:entry['observed']['entries']=count_entries(host,fd,gate,MAX_SCAN_ENTRIES)
++        entry.update(code='CREATED_STAT_FAILED',errno=number(error));return entry
++    try:entry['observed']['entries']=count_entries(host,fd,gate,MAX_DIRECTORY_ENTRIES)
+     except Exception as error:
+-        entry.update(code='CREATED_LIST_FAILED',errno=error.errno if isinstance(error,OSError) and type(error.errno) is int else None)
+-        return entry
++        entry.update(code='CREATED_LIST_FAILED',errno=number(error));return entry
+     if entry['observed']['entries']:
+         entry.update(state='CREATED_NOT_EMPTY',code='CREATED_NOT_EMPTY');return entry
+     try:
+         host.fsync(fd);entry['fsync_directory']=True
+         host.fsync(parent.fd);entry['fsync_parent']=True
+     except Exception as error:
+-        entry.update(state='CREATED_NOT_DURABLE',code='FSYNC_FAILED',
+-                     errno=error.errno if isinstance(error,OSError) and type(error.errno) is int else None)
+-        return entry
++        entry.update(state='CREATED_NOT_DURABLE',code='FSYNC_FAILED',errno=number(error));return entry
+     entry['state']='CREATED_DURABLE';return entry

@@ -1,0 +1,14 @@
+{
+ "bar_manifest_published_at": "2026-10-08T01:30:00+00:00",
+ "causal_scope": {
+  "commitment_sha256": "8dbd12ee4677461b591dfe357bbe2f87498bae8768b8bff5d307c0d946cb32be",
+  "list_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+ },
+ "day": "2026-10-08",
+ "schema": "R2D2_CAPACITY_DAY_SESSION_INPUTS_V1",
+ "view_evidence_sha": {
+  "contingency_1": "93ad3013673da4f42dfa56d81a51521be2460f7c5db8389b6ef528abbe96a420",
+  "contingency_2": "c779c9fc801c96884dd7935ac9be28371c63c51d5ca4707a5ed9c51e79d51ab3",
+  "primary": "b041b5975857829d3a4117393f1e9ea43f87b1d402c6ce2edb37f065e8e63210"
+ }
+}

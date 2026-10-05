@@ -1,0 +1,6 @@
+The sibling operations as they stood beside this directory when its suite was last run and it was sealed (2026-10-02T21:19:36Z), by command.
+tests/test_siblings.py and the OTHERS of tests/test_conformance.py ran against these bytes. A sibling whose SHA256SUMS is older than
+its op.py was under repair: the comparison is repeated, by command, when it is sealed (CONTRACT.txt section 8, step 3).
+install_release  op.py 0317fde20c9083887588ae2bda3d58a8371b5fe5d4451c4addfa62a1422984e1  build/install_release.py e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae  BUILD_EQUAL  SHA256SUMS 2705134655d7e580f389a7b32178e18b22d8ca75f2d5b206de3c90483fb84b82
+catalog_init  op.py 1028141555c45175ed63ea703d1503f59642752d0376c9dfbd3ba09325a21985  build/catalog_init.py d584aa93380513a4eca37a877eca93d78a899dd56a86d9075f977bd56fff5d15  BUILD_EQUAL  SHA256SUMS 8b2bced33c01be75605838bf3a31e7f5dd3a65cd9cc34e245bbcd55fea3f38a9
+activate  op.py f55eb984466310050bd73a56997a4c03d2e45548fefc7a4ecaef8d590abf2d71  build/activate.py cc05438954f2ba49d5f3bd1b8ef515b3b4601f2cc53436a36460fb3406f85c44  BUILD_EQUAL  SHA256SUMS 931229ea0618e0b9045efe2e7cadfafcffd694a2dfb3a5cff2e26fe9ba903fb8

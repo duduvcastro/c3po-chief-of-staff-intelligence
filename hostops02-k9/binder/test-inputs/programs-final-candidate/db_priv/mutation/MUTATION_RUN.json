@@ -1,0 +1,411 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "core_seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 26,
+  "redundant_survivors": 0,
+  "single": 26,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "e5831975f872b1e499d52657953753a6175b91b2e082ff08cba75e952efdc388",
+  "build/AUTHORITY.UNBOUND.json": "71186b0628e6b12d660621be2f94201513d670df31ae1debf21a7e6ace78cb5e",
+  "build/DISPATCH.UNBOUND.json": "e48ffe5259cab72e2caf5ae9f837008818b23f5a3de41eef4d8bbb3b07d1d550",
+  "build/DISPATCH_SCOPE_DELTA.diff": "ce30c429a23b18aa11ba7b31fc001773a3a5101456b9efa1d108ca8a71a23385",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "77e93f78ab6e74bc6a5a0b7a8111773dbce8ca4b96f3b86ca1ce7290a685372c",
+  "build/GO.UNBOUND.json": "9ff9573cf43d9b2f4e70646f9fa1bdf9dabcb2b1685e934a4bfb02960aa2b611",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "6cebbdb73128e50544699f392f9ca93d2564bbd734b4ace605f488f427a7668b",
+  "build/REQUEST.UNBOUND.json": "18e9798350942d2b00261eaecd3affed735378fa9452b51bb36d51b971b1811c",
+  "build/db_priv.py": "34c8333c1d356040f9f0e972daac3eb42a6e33497b40587eaf76f412632500f1",
+  "build/dispatch_once.py": "3a9be139310aee611fccb5f52496fe2b1032917aa01f4bbfa9642d19e23a30f7",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "2dc40be17a2cfed69da24c58dcd564576b62826e526592f7159fb9bd7b6e5da0",
+  "mutation/mutate.py": "967fee2c47dccf758dacb943e370ecc6c0c4ff13bd9e2c6cf77fc9569d487f7f",
+  "op.py": "b5b8f6797a8b12b37f1e69412eab6dd01390f99468b2f2897794847948f2250a",
+  "spec.py": "02ef7c112d5288b9cbed3cf33f6f6971cc0e576b9172b1e6536b582c3ff18954",
+  "tests/conftest.py": "2d3385ef70604fb1771c9cd2821c9e01570004718a9de820def50baef2f26846",
+  "tests/dbr.py": "5a39d46c57fe601e15271bb783f5f2b57a8e393271f611cdc13054c93ccab7da",
+  "tests/test_conformance.py": "c22ecb87d8995ce46beb4f129506d39a110586a397d484f8c8929fbfa5d0a280",
+  "tests/test_dbr.py": "1f486a9e1fa3a2ae4ac844372918775f69fe0f6e6e38b73e72aa31bcd3e7e900",
+  "tests/test_native.py": "4e1c369ef65985a0b9cc8517d8f03b04c4396a7dd372730e658601ed6223fc4b",
+  "tests/test_split.py": "887ff66b81d686eb847ea0df6d1e848ded1dc83bc30d9290a44a28a666152349"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": false,
+ "results": [
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:157: AssertionError: assert (None == '7754a9ba8223f3fb8c2a1be228a40830451e7e484df8e963b59b29d0cef9b0cc')",
+   "killed": true,
+   "mutant": "E03_snippet_not_shown",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 2 passed, 6 deselected in 0.09s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:157: AssertionError: assert ('7754a9ba8223...b29d0cef9b0cc' == '7754a9ba8223...b29d0cef9b0cc'",
+   "killed": true,
+   "mutant": "E09_container_not_shown",
+   "returncode": 1,
+   "seconds": 0.3,
+   "summary": "1 failed, 2 passed, 6 deselected in 0.08s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:163: AssertionError: assert (None == 'c812e1edb64417d6090dcfbaf16c21cd8e8665c04396e1edb472fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E12_boot_not_shown",
+   "returncode": 1,
+   "seconds": 0.3,
+   "summary": "1 failed, 2 passed, 6 deselected in 0.09s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1110: FileNotFoundError: [Errno 2] No such file or directory: '<path>'",
+   "killed": true,
+   "mutant": "J04_epoch_rows_not_compared",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 166 passed, 6 deselected in 3.72s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_split.py:7: AssertionError: assert 'SESSION_NOT_OF_THE_EPOCH' == 'MODE_INVALID'",
+   "killed": true,
+   "mutant": "P13_mode_unchecked",
+   "returncode": 1,
+   "seconds": 0.3,
+   "summary": "1 failed, 6 deselected in 0.07s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:294: AssertionError: assert {'code': None...ngs': [], ...} == {'code': 'SNI...'UNAVAILABLE'}",
+   "killed": true,
+   "mutant": "L01_schema_unchecked",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 64 passed, 6 deselected in 0.19s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:294: AssertionError: assert {'code': None...ngs': [], ...} == {'code': 'SNI...'UNAVAILABLE'}",
+   "killed": true,
+   "mutant": "L02_line_mode_unchecked",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 63 passed, 6 deselected in 0.18s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1110: FileNotFoundError: [Errno 2] No such file or directory: '<path>'",
+   "killed": true,
+   "mutant": "L03_status_unchecked",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 166 passed, 6 deselected in 3.64s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:294: AssertionError: assert {'code': None...ngs': [], ...} == {'code': 'SNI...'UNAVAILABLE'}",
+   "killed": true,
+   "mutant": "L04_line_keys_unchecked",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 62 passed, 6 deselected in 0.18s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:294: AssertionError: assert {'code': None...PROVEN'], ...} == {'code': 'SNI...'UNAVAILABLE'}",
+   "killed": true,
+   "mutant": "L10_privilege_values_any_type",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 59 passed, 6 deselected in 0.18s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:294: AssertionError: assert {'code': 'OBS...'UNAVAILABLE'} == {'code': 'SNI...'UNAVAILABLE'}",
+   "killed": true,
+   "mutant": "L20_privilege_keys_any",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 60 passed, 6 deselected in 0.36s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "J02_privilege_not_proven_not_a_finding",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 49 passed, 6 deselected in 0.32s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "J03_privileges_judged_by_presence",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 49 passed, 6 deselected in 0.26s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "J04_priv_parts_not_judged",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 57 passed, 6 deselected in 0.27s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:263: AssertionError: one catalog read, rolled back",
+   "killed": true,
+   "mutant": "S29_priv_not_rolled_back",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 48 passed, 6 deselected in 0.19s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S30_proof_ignores_the_journal",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 50 passed, 6 deselected in 0.22s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S31_proof_ignores_the_epochs",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 49 passed, 6 deselected in 0.24s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S32_proof_ignores_connect",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 51 passed, 6 deselected in 0.24s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S33_proof_ignores_usage",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 52 passed, 6 deselected in 0.27s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S34_proof_ignores_the_role",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 53 passed, 6 deselected in 0.29s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S35_proof_ignores_restriction",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 54 passed, 6 deselected in 0.24s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S36_proof_ignores_read_only",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 56 passed, 6 deselected in 0.25s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:279: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S38_session_user_not_compared",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 55 passed, 6 deselected in 0.29s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:263: AssertionError: one catalog read, rolled back",
+   "killed": true,
+   "mutant": "S39_priv_transaction_not_read_only",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 48 passed, 6 deselected in 0.23s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_dbr.py:255: AssertionError: assert (('PARTIAL_MET...R_PRIVILEGES') == ('METADATA_ON...PROVEN', None)",
+   "killed": true,
+   "mutant": "S43_priv_session_not_read_only",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 48 passed, 6 deselected in 0.22s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_split.py:7: AssertionError: assert 'SESSION_NOT_OF_THE_EPOCH' == 'MODE_INVALID'",
+   "killed": true,
+   "mutant": "SPLIT_modes_recombined",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 6 deselected in 0.12s",
+   "tests": [
+    "test_split.py",
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

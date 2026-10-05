@@ -1,0 +1,5979 @@
+{
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 349,
+  "redundant_survivors": 0,
+  "single": 349,
+  "survivors": 0
+ },
+ "errors": [],
+ "origin": {
+  "GENERATED": 93,
+  "OWN": 256
+ },
+ "pins": {
+  "build/capacity_switch.py": "74fbfbca281f9998128e75f11855809fc406d800c4ba844eb0ac661a1e1ad4e3",
+  "core/CORE_SHA256SUMS": "1a4864039b264d6a58d3839adc0c55ddd4b53d31deae4ae32b797e3aec41a639",
+  "core/assemble.py": "4bb3b3babd292096893fceb335cb4fb8f85fd4c38117e30d779da8669d26c10e",
+  "mutation/mutants.py": "7ea624db32f6a0dd860ec3daf50fc50d39fffc8536978c57aaa0dcd49c7fa862",
+  "mutation/mutate.py": "48e43958c0871cc6eaefddb9a6b39692bd90a51f255d87234bd6853916a88aaf",
+  "op.py": "1b3db86a46ae0396512a71aedd2c2ec3af17351d998dbdecead2c3dd62e628f8",
+  "spec.py": "f65da9dd1f4a9316f268cd9b7f7caba02f642ff90afbe5214074acc09b476bd8",
+  "tests/conftest.py": "3808c3eae6aca567a48e6e3f3b7fce380e49be48136af24f5eadeb7650f85918",
+  "tests/k6b.py": "b95706efef3fc36f6df2f31339b6786071e5f3c65c7ff569c2fe133cd6776f9f",
+  "tests/test_budget.py": "d8c9ed1986935ccee855c526198fe8cbfb0e56ebc4e3a4e009011f638f165789",
+  "tests/test_capacity_switch.py": "7a00d4708b20d85844e93252426963292ef5f92b06f45d4e37f5e4d066b0aadb",
+  "tests/test_conformance.py": "7a02c7b911dd972e8739111bee1476ad6debcac619c03639e2506577e627cbd2",
+  "tests/test_editor_native.py": "6b04af1477c5684ff9b219d52ced328d2b67140d0c9bdbb76080f7fbcf6bb477",
+  "tests/test_effects.py": "2c7e1a9743e8dc88f78cbfedd4a1b3c010f7292e917c15e627e332b702ccb837",
+  "tests/test_plan.py": "0d3af8a597d7fa337f9748da4082f03b39d91d5ade8aedf946ee9e268746854d",
+  "tests/test_precheck.py": "2038187087d7fc46ae69c4f0da2cc234085143f78a58a76d5e4da515fb990fdb"
+ },
+ "prefixes": [],
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "results": [
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1508: TypeError: 'int' object is not subscriptable",
+   "killed": true,
+   "mutant": "G001_CHAIN_ROW_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 67 passed, 10 deselected in 6.31s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1508: IndexError: list index out of range",
+   "killed": true,
+   "mutant": "G002_CHAIN_ROW_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 63 passed, 10 deselected in 6.30s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1508: AttributeError: 'NoneType' object has no attribute 'get'",
+   "killed": true,
+   "mutant": "G003_CHAIN_ROW_INVALID_without_operand_3",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 64 passed, 10 deselected in 6.49s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1546: KeyError: 'ENABLE_AND_MOUNT'",
+   "killed": true,
+   "mutant": "G004_MODE_INVALID_always_true",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 20 passed, 10 deselected in 4.86s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[EVIDENCE_BOOT_UNBOUND-change-MOUNT0]",
+   "killed": true,
+   "mutant": "G005_EVIDENCE_BOOT_UNBOUND_always_true",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 4.78s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1516: TypeError: list indices must be integers or slices, not str",
+   "killed": true,
+   "mutant": "G006_CAPACITY_REQUEST_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 69 passed, 10 deselected in 6.47s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[CAPACITY_REQUEST_INVALID-change-MOUNT1]",
+   "killed": true,
+   "mutant": "G007_CAPACITY_REQUEST_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 30 passed, 10 deselected in 5.09s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[CAPACITY_REQUEST_INVALID-change-MOUNT0]",
+   "killed": true,
+   "mutant": "G008_CAPACITY_REQUEST_INVALID_without_operand_3",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 26 passed, 10 deselected in 5.01s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[CAPACITY_REQUEST_INVALID-change-ENABLE1]",
+   "killed": true,
+   "mutant": "G009_CAPACITY_REQUEST_INVALID_without_operand_4",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 28 passed, 10 deselected in 5.38s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:76: AssertionError: assert 'CAPACITY_TREE_PLACEMENT' == 'CAPACITY_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "G010_CAPACITY_REQUEST_INVALID_always_true",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 50 passed, 10 deselected in 6.30s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1521: TypeError: list indices must be integers or slices, not str",
+   "killed": true,
+   "mutant": "G011_OVERRIDE_REQUEST_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 70 passed, 10 deselected in 6.69s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[OVERRIDE_REQUEST_INVALID-change-MOUNT1]",
+   "killed": true,
+   "mutant": "G012_OVERRIDE_REQUEST_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 32 passed, 10 deselected in 5.24s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[OVERRIDE_REQUEST_INVALID-change-MOUNT0]",
+   "killed": true,
+   "mutant": "G013_OVERRIDE_REQUEST_INVALID_without_operand_3",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 31 passed, 10 deselected in 5.26s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1521: TypeError: 'NoneType' object is not iterable",
+   "killed": true,
+   "mutant": "G014_OVERRIDE_REQUEST_INVALID_without_operand_4",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 35 passed, 10 deselected in 5.79s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[OVERRIDE_REQUEST_INVALID-change-MOUNT2]",
+   "killed": true,
+   "mutant": "G015_OVERRIDE_REQUEST_INVALID_without_operand_5",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 33 passed, 10 deselected in 5.45s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_override_lies_in_the_data_root_and_is_not_the_root",
+   "killed": true,
+   "mutant": "G016_OVERRIDE_OUTSIDE_DATA_ROOT_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 51 passed, 10 deselected in 6.68s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_override_lies_in_the_data_root_and_is_not_the_root",
+   "killed": true,
+   "mutant": "G017_OVERRIDE_OUTSIDE_DATA_ROOT_without_operand_2",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 51 passed, 10 deselected in 6.36s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1526: TypeError: list indices must be integers or slices, not str",
+   "killed": true,
+   "mutant": "G018_WORKER_REQUEST_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 71 passed, 10 deselected in 6.78s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[WORKER_REQUEST_INVALID-change-MOUNT1]",
+   "killed": true,
+   "mutant": "G019_WORKER_REQUEST_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 37 passed, 10 deselected in 5.65s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:61: AssertionError: assert 'IMAGE_ID' == 'WORKER_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "G020_WORKER_REQUEST_INVALID_without_operand_3",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 36 passed, 10 deselected in 5.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1529: TypeError: list indices must be integers or slices, not str",
+   "killed": true,
+   "mutant": "G021_COMPOSE_REQUEST_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 72 passed, 10 deselected in 6.65s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[COMPOSE_REQUEST_INVALID-change-MOUNT]",
+   "killed": true,
+   "mutant": "G022_COMPOSE_REQUEST_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 38 passed, 10 deselected in 5.34s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[COMPOSE_NOT_THE_DEPLOY_LAYOUT-change-MOUNT0]",
+   "killed": true,
+   "mutant": "G023_COMPOSE_NOT_THE_DEPLOY_LAYOUT_without_operand_1",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 39 passed, 10 deselected in 5.37s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[COMPOSE_NOT_THE_DEPLOY_LAYOUT-change-MOUNT1]",
+   "killed": true,
+   "mutant": "G024_COMPOSE_NOT_THE_DEPLOY_LAYOUT_without_operand_2",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 40 passed, 10 deselected in 5.43s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_paths_overlap_a_data_root_inside_a_root_owned_deploy_tree",
+   "killed": true,
+   "mutant": "G025_PATHS_OVERLAP_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 75 passed, 10 deselected in 6.68s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_paths_overlap_and_tree_placement_are_reached",
+   "killed": true,
+   "mutant": "G026_PATHS_OVERLAP_without_operand_2",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 53 passed, 10 deselected in 6.05s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_tree_inside_a_root_owned_data_root_or_deploy_tree_or_holding_the_deploy_tree",
+   "killed": true,
+   "mutant": "G027_CAPACITY_TREE_PLACEMENT_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 76 passed, 10 deselected in 6.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_paths_overlap_and_tree_placement_are_reached",
+   "killed": true,
+   "mutant": "G028_CAPACITY_TREE_PLACEMENT_without_operand_2",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 53 passed, 10 deselected in 6.29s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_tree_inside_a_root_owned_data_root_or_deploy_tree_or_holding_the_deploy_tree",
+   "killed": true,
+   "mutant": "G029_CAPACITY_TREE_PLACEMENT_without_operand_3",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 76 passed, 10 deselected in 6.97s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_tree_inside_a_root_owned_data_root_or_deploy_tree_or_holding_the_deploy_tree",
+   "killed": true,
+   "mutant": "G030_CAPACITY_TREE_PLACEMENT_without_operand_4",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 76 passed, 10 deselected in 7.15s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_switch.py:1536: TypeError: list indices must be integers or slices, not str",
+   "killed": true,
+   "mutant": "G031_LOCK_REQUEST_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 73 passed, 10 deselected in 6.91s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[LOCK_REQUEST_INVALID-change-MOUNT2]",
+   "killed": true,
+   "mutant": "G032_LOCK_REQUEST_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 44 passed, 10 deselected in 5.60s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[LOCK_REQUEST_INVALID-change-MOUNT0]",
+   "killed": true,
+   "mutant": "G033_LOCK_REQUEST_INVALID_without_operand_3",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 42 passed, 10 deselected in 5.39s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_deploy_tree_and_the_lock - Failed: DID NO...",
+   "killed": true,
+   "mutant": "G034_LOCK_NOT_THE_DEPLOYMENT_LOCK_always_true",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 52 passed, 10 deselected in 6.10s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[LOAD_EVIDENCE_INVALID-change-ENABLE0]",
+   "killed": true,
+   "mutant": "G035_LOAD_EVIDENCE_INVALID_always_true",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 45 passed, 10 deselected in 5.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_withdrawal_is_signed_and_may_be_refused",
+   "killed": true,
+   "mutant": "G036_WITHDRAWAL_REQUEST_INVALID_always_true",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 80 passed, 10 deselected in 6.86s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:18: AssertionError: assert ('EFFECTS' == 'PRECHECK'",
+   "killed": true,
+   "mutant": "G037_ENV_FILE_NOT_NEWLINE_TERMINATED_always_true",
+   "returncode": 1,
+   "seconds": 9.0,
+   "summary": "1 failed, 92 passed, 10 deselected in 7.63s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'ENV_CAPACITY...NOT_AS_SIGNED' == 'ENV_CAPACITY..._NOT_TRAILING'",
+   "killed": true,
+   "mutant": "G038_ENV_CAPACITY_LINES_NOT_TRAILING_always_true",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 93 passed, 10 deselected in 7.41s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'WORKER_ENVIR...D_IN_THE_FILE' == 'ENV_CAPACITY...NOT_AS_SIGNED'",
+   "killed": true,
+   "mutant": "G039_ENV_CAPACITY_BLOCK_NOT_AS_SIGNED_always_true",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 95 passed, 10 deselected in 7.56s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:336: AssertionError: assert 'FILE_NOT_REGULAR' == 'DEPLOY_VERSION_NOT_REGULAR'",
+   "killed": true,
+   "mutant": "G040_DEPLOY_VERSION_NOT_REGULAR_always_true",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 205 passed, 10 deselected in 14.09s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G041_DEPLOY_VERSION_MISMATCH_always_true",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 82 passed, 10 deselected in 6.87s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'PRECHECK_OS_ERROR' == 'ENV_FILE_NOT_REGULAR'",
+   "killed": true,
+   "mutant": "G042_ENV_FILE_NOT_REGULAR_always_true",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 86 passed, 10 deselected in 7.19s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'PRECHECK_OS_ERROR' == 'COMPOSE_DIRE...T_A_DIRECTORY'",
+   "killed": true,
+   "mutant": "G043_COMPOSE_DIRECTORY_NOT_A_DIRECTORY_always_true",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 106 passed, 10 deselected in 7.51s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'PRECHECK_OS_ERROR' == 'COMPOSE_FILE_NOT_REGULAR'",
+   "killed": true,
+   "mutant": "G044_COMPOSE_FILE_NOT_REGULAR_always_true",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 105 passed, 10 deselected in 7.89s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'FILE_NOT_REGULAR' == 'OVERRIDE_NOT_AS_DELIVERED'",
+   "killed": true,
+   "mutant": "G045_OVERRIDE_NOT_AS_DELIVERED_always_true",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 111 passed, 10 deselected in 7.75s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G046_OVERRIDE_NOT_AS_DELIVERED_without_operand_1",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 110 passed, 10 deselected in 8.00s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:293: AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "G047_OVERRIDE_NOT_AS_DELIVERED_without_operand_2",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 194 passed, 10 deselected in 12.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'RENDER_ACTIV...MENT_MISMATCH' == 'OVERRIDE_NOT_AS_DELIVERED'",
+   "killed": true,
+   "mutant": "G048_OVERRIDE_NOT_AS_DELIVERED_without_operand_3",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 108 passed, 10 deselected in 7.87s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'PRECHECK_OS_ERROR' == 'CAPACITY_CONFIG_NOT_PRIVATE'",
+   "killed": true,
+   "mutant": "G049_CAPACITY_CONFIG_NOT_PRIVATE_always_true",
+   "returncode": 1,
+   "seconds": 9.8,
+   "summary": "1 failed, 121 passed, 10 deselected in 8.29s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G050_CAPACITY_CONFIG_NOT_PRIVATE_without_operand_1",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 120 passed, 10 deselected in 8.09s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G051_CAPACITY_CONFIG_NOT_PRIVATE_without_operand_2",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 119 passed, 10 deselected in 8.50s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G052_CAPACITY_CONFIG_HASH_MISMATCH_always_true",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 122 passed, 10 deselected in 8.93s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:340: AssertionError: assert 'WORKER_MOUNT...D_IN_THE_FILE' == 'MOUNTS_METADATA_INVALID'",
+   "killed": true,
+   "mutant": "G053_MOUNTS_METADATA_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 16.9,
+   "summary": "1 failed, 205 passed, 10 deselected in 15.13s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:173: AssertionError: assert 'WORKER_MOUNT...D_IN_THE_FILE' == 'MOUNTS_METADATA_INVALID'",
+   "killed": true,
+   "mutant": "G054_MOUNTS_METADATA_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 150 passed, 10 deselected in 10.13s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:171: AssertionError: assert 'WORKER_MOUNT...D_IN_THE_FILE' == 'MOUNTS_METADATA_INVALID'",
+   "killed": true,
+   "mutant": "G055_MOUNTS_METADATA_INVALID_without_operand_3",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 150 passed, 10 deselected in 10.66s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G056_RENDER_CAPACITY_ENVIRONMENT_MISMATCH_without_operand_1",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 155 passed, 10 deselected in 11.02s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G057_RENDER_CAPACITY_ENVIRONMENT_MISMATCH_without_operand_2",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 154 passed, 10 deselected in 10.92s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:355: AssertionError: assert 'RENDER_IMAGE_UNRESOLVED' == 'RENDER_IMAGE_INVALID'",
+   "killed": true,
+   "mutant": "G058_RENDER_IMAGE_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 17.1,
+   "summary": "1 failed, 206 passed, 10 deselected in 15.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:219: AssertionError: assert 'RENDER_IMAGE_UNRESOLVED' == 'RENDER_IMAGE_INVALID'",
+   "killed": true,
+   "mutant": "G059_RENDER_IMAGE_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 157 passed, 10 deselected in 10.99s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:355: AssertionError: assert 'WORKER_DATA_...NOT_AS_SIGNED' == 'RENDER_VOLUMES_INVALID'",
+   "killed": true,
+   "mutant": "G060_RENDER_VOLUMES_INVALID_without_operand_1",
+   "returncode": 1,
+   "seconds": 16.9,
+   "summary": "1 failed, 207 passed, 10 deselected in 15.27s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:355: AssertionError: assert 'RENDER_CAPAC...NOT_AS_SIGNED' == 'RENDER_VOLUMES_INVALID'",
+   "killed": true,
+   "mutant": "G061_RENDER_VOLUMES_INVALID_without_operand_2",
+   "returncode": 1,
+   "seconds": 17.0,
+   "summary": "1 failed, 208 passed, 10 deselected in 15.48s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:219: AssertionError: assert 'RENDER_CAPAC...NOT_AS_SIGNED' == 'RENDER_VOLUMES_INVALID'",
+   "killed": true,
+   "mutant": "G062_RENDER_VOLUMES_INVALID_without_operand_3",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 159 passed, 10 deselected in 11.61s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:355: AssertionError: assert 'RENDER_CAPAC...NOT_AS_SIGNED' == 'WORKER_DATA_...NOT_AS_SIGNED'",
+   "killed": true,
+   "mutant": "G063_WORKER_DATA_MOUNT_NOT_AS_SIGNED_without_operand_1",
+   "returncode": 1,
+   "seconds": 16.7,
+   "summary": "1 failed, 209 passed, 10 deselected in 14.96s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G064_WORKER_DATA_MOUNT_NOT_AS_SIGNED_without_operand_2",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 162 passed, 10 deselected in 11.28s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G065_WORKER_DATA_MOUNT_NOT_AS_SIGNED_without_operand_3",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 160 passed, 10 deselected in 11.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G066_WORKER_DATA_MOUNT_NOT_AS_SIGNED_without_operand_4",
+   "returncode": 1,
+   "seconds": 12.4,
+   "summary": "1 failed, 161 passed, 10 deselected in 10.99s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G067_RENDER_CAPACITY_MOUNT_NOT_AS_SIGNED_always_true",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 163 passed, 10 deselected in 11.39s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G068_CAPACITY_TREE_NOT_PRIVATE_without_operand_1",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 205 passed, 10 deselected in 14.57s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G069_CAPACITY_TREE_NOT_PRIVATE_without_operand_2",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 114 passed, 10 deselected in 8.12s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G070_CAPACITY_TREE_NOT_PRIVATE_without_operand_3",
+   "returncode": 1,
+   "seconds": 9.8,
+   "summary": "1 failed, 116 passed, 10 deselected in 8.28s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:384: AssertionError: assert (('METADATA_ON...REVIEW', None) == ('REFUSED', '...NOT_DISABLED')",
+   "killed": true,
+   "mutant": "G073_PROCESS_DUMPABLE_NOT_DISABLED_always_true",
+   "returncode": 1,
+   "seconds": 17.2,
+   "summary": "1 failed, 213 passed, 10 deselected in 15.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:378: AssertionError: assert (None == 'EXECUTOR_IDENTITY')",
+   "killed": true,
+   "mutant": "G074_EXECUTOR_IDENTITY_always_true",
+   "returncode": 1,
+   "seconds": 17.6,
+   "summary": "1 failed, 212 passed, 10 deselected in 15.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G075_EVIDENCE_FROM_EARLIER_BOOT_always_true",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 81 passed, 10 deselected in 7.23s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:18: AssertionError: assert ('EFFECTS' == 'PRECHECK'",
+   "killed": true,
+   "mutant": "G076_ENV_FILE_NOT_EDITABLE_BY_THE_EDITOR_always_true",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 88 passed, 10 deselected in 7.35s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('REFUSED' == 'REFUSED'",
+   "killed": true,
+   "mutant": "G077_BUDGET_CANNOT_HOLD_BOTH_EFFECTS_always_true",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 193 passed, 10 deselected in 13.04s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:342: AssertionError: assert 'SECURITY_REBOOT_PENDING' == 'REBOOT_STATE_UNAVAILABLE'",
+   "killed": true,
+   "mutant": "G079_REBOOT_STATE_UNAVAILABLE_always_true",
+   "returncode": 1,
+   "seconds": 16.4,
+   "summary": "1 failed, 205 passed, 10 deselected in 15.03s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G080_SECURITY_REBOOT_PENDING_always_true",
+   "returncode": 1,
+   "seconds": 10.9,
+   "summary": "1 failed, 126 passed, 10 deselected in 9.18s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_UNCERTAIN_REQUIRES_READBACK', 'ENV_FILE_NOT_AS_EDITED')",
+   "killed": true,
+   "mutant": "G083_ENV_FILE_CHANGED_BEFORE_THE_LOCK_without_operand_1",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 205 passed, 10 deselected in 14.61s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G084_ENV_FILE_CHANGED_BEFORE_THE_LOCK_without_operand_2",
+   "returncode": 1,
+   "seconds": 13.5,
+   "summary": "1 failed, 179 passed, 10 deselected in 11.99s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_WORKER_RECREATED_NOT_FULLY_VERIFIED', 'COMPOSE_FILE_CHANGED')",
+   "killed": true,
+   "mutant": "G085_COMPOSE_FILE_CHANGED_BEFORE_THE_LOCK_always_true",
+   "returncode": 1,
+   "seconds": 13.6,
+   "summary": "1 failed, 180 passed, 10 deselected in 12.13s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_WORKER_RECREATED_NOT_FULLY_VERIFIED', 'OVERRIDE_CHANGED')",
+   "killed": true,
+   "mutant": "G086_OVERRIDE_CHANGED_BEFORE_THE_LOCK_always_true",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 181 passed, 10 deselected in 12.20s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_WORKER_RECREATED_NOT_FULLY_VERIFIED', 'WORKER_IMAGE_CHANGED')",
+   "killed": true,
+   "mutant": "G087_RENDER_IMAGE_CHANGED_BEFORE_THE_LOCK_always_true",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 201 passed, 10 deselected in 14.13s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G088_WORKER_CHANGED_BEFORE_THE_LOCK_without_operand_1",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 183 passed, 10 deselected in 12.62s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G089_WORKER_CHANGED_BEFORE_THE_LOCK_without_operand_2",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 184 passed, 10 deselected in 12.40s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_WORKER_RECREATED_NOT_FULLY_VERIFIED', 'WORKER_NOT_FOUND_AFTER_RECREATE')",
+   "killed": true,
+   "mutant": "G090_CONTAINER_LIST_INCONSISTENT_always_true",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 187 passed, 10 deselected in 12.96s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G091_WORKER_SERVICE_LEFTOVER_CONTAINER_always_true",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 186 passed, 10 deselected in 12.08s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:324: AssertionError: assert (('PARTIAL_MET...LE_UNCHANGED') == ('REFUSED', '...R_NAME_TAKEN')",
+   "killed": true,
+   "mutant": "G092_EDITOR_NAME_TAKEN_always_true",
+   "returncode": 1,
+   "seconds": 15.3,
+   "summary": "1 failed, 203 passed, 10 deselected in 13.60s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:57: AssertionError: assert (None == 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "G094_BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT_always_true",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 220 passed, 10 deselected in 14.98s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:159: AssertionError: assert 'WORKER_CHANG...FORE_THE_LOCK' == 'WORKER_NOT_RUNNING'",
+   "killed": true,
+   "mutant": "G095_WORKER_NOT_RUNNING_always_true",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 133 passed, 10 deselected in 8.69s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G096_WORKER_ENVIRONMENT_NOT_AS_FOUND_IN_THE_FILE_always_true",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 135 passed, 10 deselected in 8.38s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G097_WORKER_MOUNTS_NOT_AS_FOUND_IN_THE_FILE_always_true",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 140 passed, 10 deselected in 8.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "G098_CAPACITY_ROOT_REPLACED_always_true",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 192 passed, 10 deselected in 12.24s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:60: AssertionError: assert [['/usr/bin/d...l/.env', ...]] == [['/usr/bin/d...l/.env', ...]]",
+   "killed": true,
+   "mutant": "G100_RENDER_IMAGE_CHANGED_always_true",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 4 passed, 10 deselected in 2.38s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:206: AssertionError: assert ('GO_WRITE_HO..., True, False) == ('GO_WRITE_HO..., True, False)",
+   "killed": true,
+   "mutant": "A01_date_class_is_the_first_session_only",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.34s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:206: AssertionError: assert ('GO_WRITE_HO..., True, False) == ('GO_WRITE_HO..., True, False)",
+   "killed": true,
+   "mutant": "A02_date_class_is_the_epoch",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.46s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:220: AssertionError: assert (900, False, ...HING_CHANGED') == (900, True, '...HING_CHANGED')",
+   "killed": true,
+   "mutant": "A03_evidence_not_required",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.42s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:213: AssertionError: assert ([] == ['GO_WRITE_HO..._ACTIVATE_01']",
+   "killed": true,
+   "mutant": "A04_no_evidence_operation",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.49s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:220: AssertionError: assert (3600, True, ...HING_CHANGED') == (900, True, '...HING_CHANGED')",
+   "killed": true,
+   "mutant": "A05_gate_may_span_an_hour",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 61 passed, 10 deselected in 4.98s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:220: AssertionError: assert (900, True, '...HING_CHANGED') == (900, True, '...HING_CHANGED')",
+   "killed": true,
+   "mutant": "A06_success_outcome_renamed",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.33s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:214: AssertionError: assert ['PARTIAL_ENV...CONCILIATION'] == ['PARTIAL_ENV...CONCILIATION']",
+   "killed": true,
+   "mutant": "A09_not_verified_is_the_generic_partial",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.40s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:214: AssertionError: assert ['PARTIAL_ENV...CONCILIATION'] == ['PARTIAL_ENV...CONCILIATION']",
+   "killed": true,
+   "mutant": "A10_uncertain_is_the_generic_partial",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.27s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:220: AssertionError: assert (900, True, '...D', 'REFUSED') == (900, True, '...HING_CHANGED')",
+   "killed": true,
+   "mutant": "A11_refused_outcome_renamed",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.65s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: DEPLOY_VERSION_MISMATCH",
+   "killed": true,
+   "mutant": "B01_another_revision",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.68s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: OVERRIDE_NOT_AS_DELIVERED",
+   "killed": true,
+   "mutant": "B02_another_service",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 10 deselected in 1.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_ENVIRONMENT_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "B03_build_name_renamed",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 10 deselected in 1.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: OVERRIDE_REQUEST_INVALID",
+   "killed": true,
+   "mutant": "B04_three_activation_names",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.69s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMPOSE_NOT_THE_DEPLOY_LAYOUT",
+   "killed": true,
+   "mutant": "B05_env_file_renamed",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.90s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMPOSE_NOT_THE_DEPLOY_LAYOUT",
+   "killed": true,
+   "mutant": "B06_compose_file_renamed",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.83s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: DEPLOY_VERSION_ABSENT",
+   "killed": true,
+   "mutant": "B07_deploy_version_renamed",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.74s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: LOCK_NOT_THE_DEPLOYMENT_LOCK",
+   "killed": true,
+   "mutant": "B08_lock_directory_elsewhere",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 10 deselected in 1.80s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "B09_reboot_marker_elsewhere",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.35s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: FILE_TOO_LARGE",
+   "killed": true,
+   "mutant": "B10_env_limit_tiny",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 10 deselected in 1.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: FILE_TOO_LARGE",
+   "killed": true,
+   "mutant": "B11_override_limit_tiny",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.72s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: FILE_TOO_LARGE",
+   "killed": true,
+   "mutant": "B12_config_limit_tiny",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 10 deselected in 1.56s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: FILE_TOO_LARGE",
+   "killed": true,
+   "mutant": "B13_compose_limit_tiny",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 10 deselected in 1.77s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_CAPACITY_MOUNT_NOT_AS_SIGNED",
+   "killed": true,
+   "mutant": "B14_mount_name_renamed",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 10 deselected in 1.90s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...QUIRED=true\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "B15_config_file_name_renamed",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.06s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_CAPACITY_ENVIRONMENT_MISMATCH",
+   "killed": true,
+   "mutant": "B16_config_sha_name_renamed",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.11s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...QUIRED=true\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "B17_veto_name_renamed",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.26s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...NABLED=true\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "B18_required_name_renamed",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.11s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...VATION_ONLY\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "B19_required_not_last",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.09s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...QUIRED=true\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "B20_veto_mode_continuous",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.00s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...QUIRED=True\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "B21_required_capitalised",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.11s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_MOUNTS_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "B22_capacity_target_elsewhere",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.95s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:209: AssertionError: assert ('/c3po-capacity' == '/c3po-capacity'",
+   "killed": true,
+   "mutant": "B23_go_not_among_the_subdirectories",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.29s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_MOUNTS_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "B24_placeholder_renamed",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.86s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_MOUNTS_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "B25_data_target_elsewhere",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 10 deselected in 1.78s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_CAPACITY_MOUNT_NOT_AS_SIGNED",
+   "killed": true,
+   "mutant": "B26_two_worker_targets",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 10 deselected in 1.87s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'RENDER_CAPAC...MENT_MISMATCH' == 'ENV_CAPACITY...NOT_AS_SIGNED'",
+   "killed": true,
+   "mutant": "B27_capacity_line_without_export",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 97 passed, 10 deselected in 6.67s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENV_CAPACITY_LINES_NOT_TRAILING",
+   "killed": true,
+   "mutant": "B28_capacity_line_any_prefix",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 2 passed, 10 deselected in 1.97s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:76: AssertionError: assert {'after': [],... [1000, 1000]} == {'after': [],... [1000, 1000]}",
+   "killed": true,
+   "mutant": "B29_full_disable_not_from_the_mount_alone",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 11 passed, 10 deselected in 2.75s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...10a9895b3c0\\n' == b'C3PO_DB_PAS...VATION_ONLY\\n'",
+   "killed": true,
+   "mutant": "B30_fast_disable_cuts_two_lines",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 2 passed, 10 deselected in 1.84s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...VATION_ONLY\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "B31_enable_without_the_flag",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 1 passed, 10 deselected in 1.87s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:76: AssertionError: assert {'after': ['C... [1000, 1000]} == {'after': ['C... [1000, 1000]}",
+   "killed": true,
+   "mutant": "B32_mount_from_any_state",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 8 passed, 10 deselected in 2.59s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENV_FILE_NOT_EDITABLE_BY_THE_EDITOR",
+   "killed": true,
+   "mutant": "B33_editor_owner_root",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.78s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENV_FILE_NOT_EDITABLE_BY_THE_EDITOR",
+   "killed": true,
+   "mutant": "B34_editor_mode_0640",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.75s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "B35_editor_target_elsewhere",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.68s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "B36_editor_on_the_bridge",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 10 deselected in 1.62s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "B37_editor_root_writable",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 10 deselected in 1.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "B38_editor_without_init",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 10 deselected in 1.65s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "B39_editor_command_without_isolation",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.70s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_MOUNTS_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "B40_mounts_format_names_the_binds",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.67s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: MOUNTS_METADATA_INVALID",
+   "killed": true,
+   "mutant": "B41_no_mount_may_be_listed",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.77s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: BUDGET_CANNOT_HOLD_BOTH_EFFECTS",
+   "killed": true,
+   "mutant": "B42_edit_row_class_run",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 10 deselected in 1.63s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENV_EDIT_STATUS_NOT_DONE",
+   "killed": true,
+   "mutant": "B43_editor_statuses_without_done",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 10 deselected in 1.70s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:71: AssertionError: assert ((0, {'code': ...V_EDIT_DONE'}) == (0, {'code': ...V_EDIT_DONE'})",
+   "killed": true,
+   "mutant": "S01_script_never_truncates",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 228 passed, 10 deselected in 13.85s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:87: AssertionError: assert (0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S02_script_ignores_the_links",
+   "returncode": 1,
+   "seconds": 18.0,
+   "summary": "1 failed, 249 passed, 10 deselected in 16.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:89: AssertionError: assert (0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S03_script_ignores_the_owner",
+   "returncode": 1,
+   "seconds": 18.2,
+   "summary": "1 failed, 249 passed, 10 deselected in 17.41s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:85: AssertionError: assert ((0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S04_script_ignores_the_mode",
+   "returncode": 1,
+   "seconds": 18.1,
+   "summary": "1 failed, 249 passed, 10 deselected in 17.07s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:91: AssertionError: assert ((0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S05_script_follows_links",
+   "returncode": 1,
+   "seconds": 18.3,
+   "summary": "1 failed, 249 passed, 10 deselected in 17.08s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:68: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S06_script_accepts_a_middle_block",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 236 passed, 10 deselected in 15.34s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:68: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S07_script_accepts_any_block",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 231 passed, 10 deselected in 14.01s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:68: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S08_script_accepts_a_last_line_without_newline",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 232 passed, 10 deselected in 14.35s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:68: AssertionError: assert ((0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S09_script_capacity_without_export",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 233 passed, 10 deselected in 14.92s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:71: AssertionError: assert ((0, {'code': ...V_EDIT_DONE'}) == (0, {'code': ...V_EDIT_DONE'})",
+   "killed": true,
+   "mutant": "S11_script_writes_at_the_start",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 225 passed, 10 deselected in 13.39s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:97: AssertionError: assert (0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "S13_script_no_size_limit",
+   "returncode": 1,
+   "seconds": 19.8,
+   "summary": "1 failed, 249 passed, 10 deselected in 18.80s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:71: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (0, {'code': ...V_EDIT_DONE'})",
+   "killed": true,
+   "mutant": "S16_script_read_misses_the_end",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 227 passed, 10 deselected in 13.87s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...QUIRED=true\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "D01_config_elsewhere_in_the_tree",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 1 passed, 10 deselected in 2.06s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:23: AssertionError: assert b'C3PO_DB_PAS...VATION_ONLY\\n' == b'C3PO_DB_PAS...QUIRED=true\\n'",
+   "killed": true,
+   "mutant": "D02_block_values_in_another_order",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 1 passed, 10 deselected in 1.95s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_CAPACITY_ENVIRONMENT_MISMATCH",
+   "killed": true,
+   "mutant": "D03_block_with_spaces",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 10 deselected in 1.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENV_FILE_NOT_AS_EXPECTED",
+   "killed": true,
+   "mutant": "D04_spec_owner_root",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 10 deselected in 1.77s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENV_CAPACITY_BLOCK_NOT_AS_SIGNED",
+   "killed": true,
+   "mutant": "D05_spec_before_is_the_after",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 10 deselected in 1.62s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "D06_editor_mount_read_only",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.86s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "D07_editor_mounts_the_deploy_tree",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 10 deselected in 1.82s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: OVERRIDE_NOT_AS_DELIVERED",
+   "killed": true,
+   "mutant": "D08_override_with_compact_separators",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_ACTIVATION_ENVIRONMENT_MISMATCH",
+   "killed": true,
+   "mutant": "D09_file_list_without_the_override",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 10 deselected in 1.60s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "D10_worker_container_two",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.81s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENVIRONMENT_NOT_AS_SIGNED",
+   "killed": true,
+   "mutant": "D11_present_names_without_the_block",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 2.05s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_ENVIRONMENT_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "D12_present_names_without_the_activation",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 10 deselected in 2.00s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_MOUNTS_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "D13_placeholder_without_the_project",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 10 deselected in 1.72s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_capacity_tree_must_be_root_owned_from_the_root_and_placed_away_from_both_trees",
+   "killed": true,
+   "mutant": "D14_capacity_tree_may_be_group_writable",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 50 passed, 10 deselected in 4.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[PATH_INVALID-change-MOUNT0]",
+   "killed": true,
+   "mutant": "D15_override_chain_not_checked",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 24 passed, 10 deselected in 4.02s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_unsafe_rows_of_each_signed_chain - Failed: DI...",
+   "killed": true,
+   "mutant": "D16_lock_chain_not_checked",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 77 passed, 10 deselected in 6.06s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_unsafe_rows_of_each_signed_chain - Failed: DI...",
+   "killed": true,
+   "mutant": "D17_deploy_chain_not_checked",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 77 passed, 10 deselected in 6.01s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_a_deploy_tree_whose_path_the_editor_cannot_bind",
+   "killed": true,
+   "mutant": "D18_editor_arguments_not_checked",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 78 passed, 10 deselected in 5.87s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_refused_from_the_bytes[ENVIRONMENT_EXPECTATION-change-MOUNT]",
+   "killed": true,
+   "mutant": "D19_environment_grammar_not_checked",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 49 passed, 10 deselected in 5.21s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:61: AssertionError: assert 'COMPOSE_NOT_...DEPLOY_LAYOUT' == 'COMPOSE_PROJECT'",
+   "killed": true,
+   "mutant": "D20_compose_arguments_not_checked",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 41 passed, 10 deselected in 4.53s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F01_operation",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.12s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F02_mode",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 58 passed, 10 deselected in 4.99s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F03_epoch",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.05s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F04_revision",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.07s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F05_env_path",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.47s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F06_env_owner",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.10s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F07_env_mode",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 57 passed, 10 deselected in 4.89s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:130: AssertionError: assert [] == [['C3PO_R2D2_...QUIRED=true']]",
+   "killed": true,
+   "mutant": "F08_block_before",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 55 passed, 10 deselected in 4.91s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:136: AssertionError: assert ([['C3PO_R2D2_...po-capacity']] == [['C3PO_R2D2_...po-capacity']]",
+   "killed": true,
+   "mutant": "F09_block_after",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.10s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F10_editor_row",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.01s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F11_editor_prefix",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.28s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:140: AssertionError: assert ([{'read_only'...po-env/.env'}] == [{'read_only'...po-env/.env'}]",
+   "killed": true,
+   "mutant": "F12_editor_image",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.14s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:140: AssertionError: assert ([] == [{'read_only'...po-env/.env'}]",
+   "killed": true,
+   "mutant": "F13_editor_mounts",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.39s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F14_editor_command",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.48s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F15_editor_script",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.60s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_capacity_switch.py::test_the_exact_commands_in_their_order[MOUNT]",
+   "killed": true,
+   "mutant": "F16_editor_stdin_hash",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 4 passed, 10 deselected in 2.16s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F17_editor_stdin_size",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.23s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F56_editor_name",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.13s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F18_override_path",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.16s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_say_the_edit_literally - assert (['/o...",
+   "killed": true,
+   "mutant": "F19_override_hash",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.14s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F20_override_size",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.13s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_every_member_of_the_plan_is_bound_into_the_effects",
+   "killed": true,
+   "mutant": "F21_override_directory",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 54 passed, 10 deselected in 5.24s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F22_override_environment",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.21s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F23_override_expect",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.22s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F24_tree_path",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.24s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F25_tree_root",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.11s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F26_tree_target",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.67s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F27_tree_config",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.31s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F28_tree_config_hash",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.65s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_say_the_edit_literally - assert (True...",
+   "killed": true,
+   "mutant": "F29_tree_read",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.22s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F30_tree_expect",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.35s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F31_recreate_project",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.61s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F32_recreate_env_file",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.09s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:133: AssertionError: assert (['/opt/chief-.../compose.yml'] == ['/opt/chief-...verride.json']",
+   "killed": true,
+   "mutant": "F33_recreate_files",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.32s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F34_recreate_service",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.62s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F35_recreate_container",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F36_recreate_image",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 6.02s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F37_recreate_build",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.84s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F38_recreate_lock",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 6.05s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:120: AssertionError: lock",
+   "killed": true,
+   "mutant": "F39_recreate_wait",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 54 passed, 10 deselected in 6.35s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_every_member_of_the_plan_is_bound_into_the_effects",
+   "killed": true,
+   "mutant": "F40_recreate_lock_chain",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 54 passed, 10 deselected in 6.82s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_every_member_of_the_plan_is_bound_into_the_effects",
+   "killed": true,
+   "mutant": "F41_recreate_deploy",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 54 passed, 10 deselected in 6.20s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:137: AssertionError: assert {} == {'C3PO_R2D2_V...: 'true', ...}",
+   "killed": true,
+   "mutant": "F42_after_present",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.70s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:131: AssertionError: assert ([] == []",
+   "killed": true,
+   "mutant": "F43_after_absent",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.69s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F44_after_activation",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.49s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:138: AssertionError: assert {'read_only':...type': 'bind'} == {'read_only':...type': 'bind'}",
+   "killed": true,
+   "mutant": "F45_after_bind",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.80s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:132: AssertionError: assert {'name': None...pe': 'volume'} == {'name': 'c3p...pe': 'volume'}",
+   "killed": true,
+   "mutant": "F46_after_placeholder",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.75s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F47_after_data",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.95s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F48_required_marker",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.95s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "F49_required_version",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 6.14s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:120: AssertionError: probe_load_receipt_sha256",
+   "killed": true,
+   "mutant": "F50_required_load",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 54 passed, 10 deselected in 6.03s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_say_the_edit_literally - assert (Fals...",
+   "killed": true,
+   "mutant": "F51_required_running",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.87s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:120: AssertionError: evidence_boot_id_sha256",
+   "killed": true,
+   "mutant": "F52_boot",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 54 passed, 10 deselected in 5.91s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:141: AssertionError: assert (None == 'THE_ENVIRONMENT_FILE_IS_EDITED_IN_PLACE_AND_THE_WORKER_CONTAINER_IS_REPLACED')",
+   "killed": true,
+   "mutant": "F53_modified",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.46s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:141: AssertionError: assert ('THE_ENVIRONM...R_IS_REPLACED' == 'THE_ENVIRONM...R_IS_REPLACED'",
+   "killed": true,
+   "mutant": "F54_activation",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:292: AssertionError: assert 'PARTIAL_REQU...ECONCILIATION' == 'CAPACITY_SWI..._AND_VERIFIED'",
+   "killed": true,
+   "mutant": "F55_success_criterion",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 79 passed, 10 deselected in 6.22s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:18: AssertionError: assert ('EFFECTS' == 'PRECHECK'",
+   "killed": true,
+   "mutant": "E01_no_newline_rule",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 92 passed, 10 deselected in 6.66s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: ENV_FILE_NOT_AS_EDITED",
+   "killed": true,
+   "mutant": "E02_lines_without_the_last",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 10 deselected in 1.95s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:18: AssertionError: assert ('EFFECTS' == 'PRECHECK'",
+   "killed": true,
+   "mutant": "E04_identity_without_the_links",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 91 passed, 10 deselected in 7.17s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:70: AssertionError: assert ('CAPACITY_SW...RIFIED', None) == ('PARTIAL_UNC...OT_AS_EDITED')",
+   "killed": true,
+   "mutant": "E05_identity_without_the_inode",
+   "returncode": 1,
+   "seconds": 26.5,
+   "summary": "1 failed, 262 passed, 10 deselected in 25.09s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:18: AssertionError: assert ('EFFECTS' == 'PRECHECK'",
+   "killed": true,
+   "mutant": "E06_identity_without_the_owner",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 88 passed, 10 deselected in 6.81s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:65: AssertionError: assert (('PARTIAL_ENV...TS_ALLOWANCE') == ('PARTIAL_ENV...TS_ALLOWANCE')",
+   "killed": true,
+   "mutant": "E07_withdrawal_restores_nothing",
+   "returncode": 1,
+   "seconds": 17.1,
+   "summary": "1 failed, 221 passed, 10 deselected in 15.60s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H03_tree_not_read_for_mount",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 82 passed, 10 deselected in 6.60s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:111: AssertionError: WORKER_NOT_RUNNING",
+   "killed": true,
+   "mutant": "H04_tree_read_for_every_mode",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 18 passed, 10 deselected in 3.99s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H05_mounts_any_source",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 142 passed, 10 deselected in 9.62s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H06_mounts_bind_may_be_writable",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 141 passed, 10 deselected in 9.38s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H07_mounts_placeholder_any_name",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 143 passed, 10 deselected in 8.84s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H08_mounts_data_not_judged",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 144 passed, 10 deselected in 8.06s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H09_mounts_two_capacity_mounts_accepted",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 146 passed, 10 deselected in 8.17s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H10_environment_absent_not_judged",
+   "returncode": 1,
+   "seconds": 9.0,
+   "summary": "1 failed, 135 passed, 10 deselected in 7.91s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H11_environment_presence_only",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 210 passed, 10 deselected in 12.51s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H12_render_errors_ignore_other_services",
+   "returncode": 1,
+   "seconds": 13.5,
+   "summary": "1 failed, 210 passed, 10 deselected in 12.31s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H13_render_capacity_may_be_writable",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 163 passed, 10 deselected in 9.17s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H14_render_targets_not_judged",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.83s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H15_render_project_not_judged",
+   "returncode": 1,
+   "seconds": 11.9,
+   "summary": "1 failed, 170 passed, 10 deselected in 10.52s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H16_render_bind_any_source",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 165 passed, 10 deselected in 10.73s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H17_render_placeholder_any_source",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 210 passed, 10 deselected in 14.75s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H18_render_placeholder_name_not_judged",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 166 passed, 10 deselected in 11.19s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H19_render_capacity_check_skipped",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 163 passed, 10 deselected in 11.18s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "H20_render_long_form_not_judged",
+   "returncode": 1,
+   "seconds": 13.3,
+   "summary": "1 failed, 172 passed, 10 deselected in 11.72s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:59: AssertionError: b'{\"code\": \"lower case\", \"status\": \"ENV_EDIT_DONE\"}",
+   "killed": true,
+   "mutant": "H21_editor_line_any_status",
+   "returncode": 1,
+   "seconds": 28.4,
+   "summary": "1 failed, 261 passed, 10 deselected in 26.78s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:59: AssertionError: b'{\"code\": \"lower case\", \"status\": \"ENV_EDIT_DONE\"}",
+   "killed": true,
+   "mutant": "H22_editor_line_code_not_filtered",
+   "returncode": 1,
+   "seconds": 30.1,
+   "summary": "1 failed, 261 passed, 10 deselected in 28.48s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:173: AssertionError: assert 'WORKER_MOUNT...D_IN_THE_FILE' == 'MOUNTS_METADATA_INVALID'",
+   "killed": true,
+   "mutant": "H23_mounts_any_document",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 150 passed, 10 deselected in 10.44s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_effects.py::test_editor_that_edits_and_says_something_else",
+   "killed": true,
+   "mutant": "K01_edited_without_a_done_line_is_done",
+   "returncode": 1,
+   "seconds": 28.6,
+   "summary": "1 failed, 261 passed, 10 deselected in 26.92s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:70: AssertionError: assert ('PARTIAL_WOR...OT_AS_EDITED') == ('PARTIAL_UNC...OT_AS_EDITED')",
+   "killed": true,
+   "mutant": "K04_identity_not_compared_after_the_edit",
+   "returncode": 1,
+   "seconds": 30.3,
+   "summary": "1 failed, 262 passed, 10 deselected in 28.50s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:85: AssertionError: assert (('PARTIAL_ENV...ED', 'EDITED') == ('PARTIAL_UNC...K', 'UNKNOWN')",
+   "killed": true,
+   "mutant": "K06_env_after_ignores_a_hanging_editor",
+   "returncode": 1,
+   "seconds": 28.5,
+   "summary": "1 failed, 263 passed, 10 deselected in 26.88s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:140: AssertionError: assert ('PARTIAL_ENV...ED', 'EDITED') == ('PARTIAL_UNC...K', 'UNKNOWN')",
+   "killed": true,
+   "mutant": "K07_env_after_ignores_a_hanging_withdrawal",
+   "returncode": 1,
+   "seconds": 28.7,
+   "summary": "1 failed, 269 passed, 10 deselected in 27.08s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:113: AssertionError: assert (b'C3PO_DB_PAS...anary-token\\n' == b'C3PO_DB_PAS...anary-token\\n'",
+   "killed": true,
+   "mutant": "K08_env_after_restored_is_edited",
+   "returncode": 1,
+   "seconds": 25.7,
+   "summary": "1 failed, 264 passed, 10 deselected in 24.08s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:59: AssertionError: b'garbage",
+   "killed": true,
+   "mutant": "K09_stop_when_edited_without_done",
+   "returncode": 1,
+   "seconds": 24.0,
+   "summary": "1 failed, 261 passed, 10 deselected in 22.59s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:65: AssertionError: assert (('PARTIAL_ENV...TS_ALLOWANCE') == ('PARTIAL_ENV...TS_ALLOWANCE')",
+   "killed": true,
+   "mutant": "K11_withdrawn_outcome_is_env_only",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 221 passed, 10 deselected in 14.69s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:36: AssertionError: assert ('PARTIAL_MET...OT_AS_EDITED') == ('PARTIAL_MET...OT_AS_EDITED')",
+   "killed": true,
+   "mutant": "K12_uncertain_file_is_env_only",
+   "returncode": 1,
+   "seconds": 22.1,
+   "summary": "1 failed, 258 passed, 10 deselected in 20.86s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:154: AssertionError: assert (('PARTIAL_WOR...ED', 'EDITED') == ('PARTIAL_ENV...ED', 'EDITED')",
+   "killed": true,
+   "mutant": "K15_lock_not_proved_after_the_edit",
+   "returncode": 1,
+   "seconds": 22.9,
+   "summary": "1 failed, 270 passed, 10 deselected in 21.58s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:161: AssertionError: assert (('PARTIAL_WOR...RIDE_CHANGED') == ('PARTIAL_ENV...ORY_REPLACED')",
+   "killed": true,
+   "mutant": "K16_names_not_proved_before_the_recreate",
+   "returncode": 1,
+   "seconds": 22.8,
+   "summary": "1 failed, 271 passed, 10 deselected in 21.58s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:378: AssertionError: assert ('EXECUTOR_IDENTITY' == 'EXECUTOR_IDENTITY'",
+   "killed": true,
+   "mutant": "P01_identity_after_the_umask",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 212 passed, 10 deselected in 12.71s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:159: AssertionError: assert 'WORKER_CHANG...FORE_THE_LOCK' == 'WORKER_NOT_RUNNING'",
+   "killed": true,
+   "mutant": "P02_worker_running_not_required",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 133 passed, 10 deselected in 7.65s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_ENVIRONMENT_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "P03_worker_env_judged_against_the_block_after",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 10 deselected in 1.91s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: WORKER_MOUNTS_NOT_AS_FOUND_IN_THE_FILE",
+   "killed": true,
+   "mutant": "P04_worker_mounts_judged_against_the_block_after",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 10 deselected in 1.84s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:372: AssertionError: WORKER_CHANGED_BEFORE_THE_LOCK",
+   "killed": true,
+   "mutant": "P06_disable_judges_the_whole_worker_under_the_lock",
+   "returncode": 1,
+   "seconds": 14.0,
+   "summary": "1 failed, 211 passed, 10 deselected in 12.63s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "P07_mount_judges_only_the_id_under_the_lock",
+   "returncode": 1,
+   "seconds": 11.9,
+   "summary": "1 failed, 183 passed, 10 deselected in 10.48s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_ACTIVATION_ENVIRONMENT_MISMATCH",
+   "killed": true,
+   "mutant": "P08_render_from_the_deploy_file_only",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 10 deselected in 1.81s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "P09_env_compared_by_bytes_only_under_the_lock",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 179 passed, 10 deselected in 10.17s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_ENV_FILE_EDITED_RECREATE_NOT_STARTED', 'LOCK_FILE_REPLACED')",
+   "killed": true,
+   "mutant": "P10_lock_not_proved_once_taken",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 210 passed, 10 deselected in 13.36s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_ENV_EDIT_WITHDRAWN_RECREATE_NOT_STARTED', 'OVERRIDE_DIRECTORY_REPLACED')",
+   "killed": true,
+   "mutant": "P12_override_directory_not_proved_under_the_lock",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 190 passed, 10 deselected in 11.11s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_ENV_EDIT_WITHDRAWN_RECREATE_NOT_STARTED', 'LOCK_DIRECTORY_REPLACED')",
+   "killed": true,
+   "mutant": "P13_lock_directory_not_proved_under_the_lock",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 191 passed, 10 deselected in 11.29s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:161: AssertionError: assert (('PARTIAL_WOR...FILE_CHANGED') == ('PARTIAL_ENV...REE_REPLACED')",
+   "killed": true,
+   "mutant": "P14_project_not_proved_before_the_recreate",
+   "returncode": 1,
+   "seconds": 26.8,
+   "summary": "1 failed, 271 passed, 10 deselected in 25.42s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:161: AssertionError: assert (('PARTIAL_WOR...RIDE_CHANGED') == ('PARTIAL_ENV...ORY_REPLACED')",
+   "killed": true,
+   "mutant": "P15_override_directory_not_proved_before_the_recreate",
+   "returncode": 1,
+   "seconds": 28.6,
+   "summary": "1 failed, 271 passed, 10 deselected in 27.14s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:161: AssertionError: assert (('PARTIAL_WOR...ILE_REPLACED') == ('PARTIAL_ENV...ORY_REPLACED')",
+   "killed": true,
+   "mutant": "P16_lock_directory_not_proved_before_the_recreate",
+   "returncode": 1,
+   "seconds": 30.4,
+   "summary": "1 failed, 271 passed, 10 deselected in 29.39s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:149: AssertionError: assert (0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "R01_script_no_recheck_before_the_write",
+   "returncode": 1,
+   "seconds": 27.1,
+   "summary": "1 failed, 253 passed, 10 deselected in 25.80s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:151: AssertionError: assert (0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "R02_script_recheck_by_size_only",
+   "returncode": 1,
+   "seconds": 26.7,
+   "summary": "1 failed, 253 passed, 10 deselected in 25.20s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "R03_override_metadata_not_judged",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 110 passed, 10 deselected in 7.81s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:100: AssertionError: assert 'RENDER_ACTIV...MENT_MISMATCH' == 'OVERRIDE_NOT_AS_DELIVERED'",
+   "killed": true,
+   "mutant": "R04_override_compared_by_size",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 108 passed, 10 deselected in 8.02s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "R05_config_hash_not_compared",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 122 passed, 10 deselected in 8.21s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "R06_config_not_read_again_under_the_lock",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 202 passed, 10 deselected in 14.11s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_WORKER_RECREATED_NOT_FULLY_VERIFIED', 'WORKER_IMAGE_CHANGED')",
+   "killed": true,
+   "mutant": "R07_image_not_resolved_again_under_the_lock",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 201 passed, 10 deselected in 13.60s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:324: AssertionError: assert (('PARTIAL_MET...LE_UNCHANGED') == ('REFUSED', '...R_NAME_TAKEN')",
+   "killed": true,
+   "mutant": "R08_editor_name_not_free_checked",
+   "returncode": 1,
+   "seconds": 15.1,
+   "summary": "1 failed, 203 passed, 10 deselected in 13.71s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('PARTIAL_ENV_EDIT_WITHDRAWN_RECREATE_NOT_STARTED', 'DEPLOY_TREE_REPLACED')",
+   "killed": true,
+   "mutant": "R09_tree_not_proved_before_the_editor",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 189 passed, 10 deselected in 12.00s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:271: AssertionError: assert ('PARTIAL_METADATA_REQUIRES_REVIEW' != 'REFUSED' and 'EDITED' == 'UNREADABLE'",
+   "killed": true,
+   "mutant": "R10_settle_without_the_path",
+   "returncode": 1,
+   "seconds": 88.3,
+   "summary": "1 failed, 297 passed, 10 deselected in 86.83s (0:01:26)",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:50: AssertionError: assert ('REFUSED_NOT...D', 'UNKNOWN') == ('PARTIAL_UNC...D', 'UNKNOWN')",
+   "killed": true,
+   "mutant": "R11_unchanged_is_a_failure_whatever_the_editor_said",
+   "returncode": 1,
+   "seconds": 24.8,
+   "summary": "1 failed, 260 passed, 10 deselected in 23.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:50: AssertionError: assert ('PARTIAL_ENV..., 'UNCHANGED') == ('PARTIAL_UNC...D', 'UNKNOWN')",
+   "killed": true,
+   "mutant": "R12_env_after_unchanged_whatever_the_editor_said",
+   "returncode": 1,
+   "seconds": 25.0,
+   "summary": "1 failed, 260 passed, 10 deselected in 23.90s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:65: AssertionError: assert (('PARTIAL_ENV...TS_ALLOWANCE') == ('PARTIAL_ENV...TS_ALLOWANCE')",
+   "killed": true,
+   "mutant": "R13_no_withdrawal_at_all",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 221 passed, 10 deselected in 14.40s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:154: AssertionError: assert (('PARTIAL_ENV...', 'RESTORED') == ('PARTIAL_ENV...ED', 'EDITED')",
+   "killed": true,
+   "mutant": "R18_withdrawal_without_the_lock",
+   "returncode": 1,
+   "seconds": 26.0,
+   "summary": "1 failed, 270 passed, 10 deselected in 24.49s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:65: AssertionError: assert (('PARTIAL_ENV...ARTED_BUDGET') == ('PARTIAL_ENV...TS_ALLOWANCE')",
+   "killed": true,
+   "mutant": "R19_over_its_allowance_not_judged",
+   "returncode": 1,
+   "seconds": 15.8,
+   "summary": "1 failed, 221 passed, 10 deselected in 14.37s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:72: AssertionError: assert ('CAPACITY_SW...RIFIED', None) == ('PARTIAL_ENV...TS_ALLOWANCE')",
+   "killed": true,
+   "mutant": "R20_over_twice_its_allowance",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 221 passed, 10 deselected in 14.78s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:293: AssertionError: ('WORKER_IMAGE_NOT_THE_SIGNED_ONE', [])",
+   "killed": true,
+   "mutant": "R21_disables_refuse_like_the_others",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 196 passed, 10 deselected in 11.28s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:293: AssertionError: ('OVERRIDE_NOT_AS_DELIVERED', [])",
+   "killed": true,
+   "mutant": "R22_disables_refuse_on_what_they_look_at",
+   "returncode": 1,
+   "seconds": 12.3,
+   "summary": "1 failed, 194 passed, 10 deselected in 11.17s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:17: AssertionError: ('CAPACITY_SWITCH_APPLIED_WORKER_RECREATED_AND_VERIFIED', None)",
+   "killed": true,
+   "mutant": "R23_mounts_refuse_nothing",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 131 passed, 10 deselected in 7.38s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_CAPACITY_ENVIRONMENT_MISMATCH",
+   "killed": true,
+   "mutant": "R24_render_before_judged_against_the_block_after",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 10 deselected in 1.48s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:16: AssertionError: RENDER_CAPACITY_ENVIRONMENT_MISMATCH",
+   "killed": true,
+   "mutant": "R25_render_after_judged_as_before",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 10 deselected in 1.39s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:300: AssertionError: assert ('CAPACITY_SW...RIFIED', None) == ('PARTIAL_ENV...ENT_MISMATCH')",
+   "killed": true,
+   "mutant": "R26_render_after_not_judged",
+   "returncode": 1,
+   "seconds": 87.1,
+   "summary": "1 failed, 301 passed, 10 deselected in 85.96s (0:01:25)",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:83: KeyError: 'container_left'",
+   "killed": true,
+   "mutant": "R27_editor_left_not_said",
+   "returncode": 1,
+   "seconds": 22.6,
+   "summary": "1 failed, 263 passed, 10 deselected in 21.37s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_effects.py::test_editor_that_hangs_before_or_after_its_effect_is_uncertain",
+   "killed": true,
+   "mutant": "R28_still_listed_always_false",
+   "returncode": 1,
+   "seconds": 23.3,
+   "summary": "1 failed, 263 passed, 10 deselected in 22.05s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_capacity_switch.py:54: AssertionError: assert [['/usr/bin/d...'never', ...]] == [['/usr/bin/d...'never', ...]]",
+   "killed": true,
+   "mutant": "R29_editor_unnamed",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 4 passed, 10 deselected in 2.07s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:214: AssertionError: assert ['PARTIAL_REQ...CONCILIATION'] == ['PARTIAL_ENV...CONCILIATION']",
+   "killed": true,
+   "mutant": "V01_env_only_is_the_generic_partial",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.25s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:214: AssertionError: assert ['PARTIAL_ENV...CONCILIATION'] == ['PARTIAL_ENV...CONCILIATION']",
+   "killed": true,
+   "mutant": "V02_withdrawn_is_the_generic_partial",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 61 passed, 10 deselected in 4.97s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:214: AssertionError: assert ['PARTIAL_ENV...CONCILIATION'] == ['PARTIAL_ENV...CONCILIATION']",
+   "killed": true,
+   "mutant": "V03_recreate_failed_is_the_env_only_state",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 61 passed, 10 deselected in 4.92s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:171: AssertionError: assert ('PARTIAL_ENV...OT_RECREATED') == ('PARTIAL_ENV...OT_RECREATED')",
+   "killed": true,
+   "mutant": "V04_recreate_failed_outcome_never_chosen",
+   "returncode": 1,
+   "seconds": 22.3,
+   "summary": "1 failed, 272 passed, 10 deselected in 21.06s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:290: AssertionError: assert ('PARTIAL_ENV...ED', 'EDITED') == ('PARTIAL_ENV...'NOT_STARTED')",
+   "killed": true,
+   "mutant": "V05_withdrawal_whatever_was_authorized",
+   "returncode": 1,
+   "seconds": 86.1,
+   "summary": "1 failed, 299 passed, 10 deselected in 84.66s (0:01:24)",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:59: AssertionError: b'{\"code\": null, \"status\": \"ENV_EDIT_DONE\"}",
+   "killed": true,
+   "mutant": "V07_withdrawal_after_a_non_zero_editor",
+   "returncode": 1,
+   "seconds": 21.5,
+   "summary": "1 failed, 261 passed, 10 deselected in 20.32s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:59: AssertionError: b'garbage",
+   "killed": true,
+   "mutant": "V08_withdrawal_after_an_unconfirmed_edit",
+   "returncode": 1,
+   "seconds": 22.6,
+   "summary": "1 failed, 261 passed, 10 deselected in 21.44s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:172: AssertionError: assert (False is False and 'f0bf63ca2cfb...93fa1de1a6043' == 'f0bf63ca2cfb...93fa1de1a6043'",
+   "killed": true,
+   "mutant": "V09_withdrawal_after_a_recreate_that_ran",
+   "returncode": 1,
+   "seconds": 23.7,
+   "summary": "1 failed, 272 passed, 10 deselected in 22.25s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_withdrawal_is_signed_and_may_be_refused",
+   "killed": true,
+   "mutant": "V10_withdrawal_request_unchecked",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 80 passed, 10 deselected in 5.64s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_the_withdrawal_is_signed_and_may_be_refused",
+   "killed": true,
+   "mutant": "V11_effects_withdrawal_always_authorized",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 80 passed, 10 deselected in 5.49s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:297: AssertionError: assert (False is False and {'1': '838abf...a3a0f26c214d'} == {}",
+   "killed": true,
+   "mutant": "V12_effects_withdrawal_hashes_even_unauthorized",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 80 passed, 10 deselected in 5.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "V13_effects_withdrawal_hashes_dropped",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 57 passed, 10 deselected in 4.98s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...': True}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "V14_effects_rule_4_claimed",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.03s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "V15_effects_chain_said_root_controlled",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.31s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:202: AssertionError: assert {'activation'...: False}, ...} == {'activation'...: False}, ...}",
+   "killed": true,
+   "mutant": "V16_effects_chain_without_the_file",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 5.31s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_effects.py::test_the_bind_source_chain_is_reported_not_judged",
+   "killed": true,
+   "mutant": "V17_receipt_chain_said_root_controlled",
+   "returncode": 1,
+   "seconds": 84.1,
+   "summary": "1 failed, 300 passed, 10 deselected in 82.89s (0:01:22)",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_effects.py:173: AssertionError: assert ('NOT_STARTED' == 'NOT_STARTED'",
+   "killed": true,
+   "mutant": "V18_failure_phase_always_before_the_recreate",
+   "returncode": 1,
+   "seconds": 24.4,
+   "summary": "1 failed, 272 passed, 10 deselected in 23.47s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:18: AssertionError: assert ('PRECHECK' == 'PRECHECK'",
+   "killed": true,
+   "mutant": "V19_failure_phase_before_the_edit_unknown",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 81 passed, 10 deselected in 5.70s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:71: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (0, {'code': ...V_EDIT_DONE'})",
+   "killed": true,
+   "mutant": "W01_editor_never_made_non_dumpable",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 225 passed, 10 deselected in 14.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:71: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (0, {'code': ...V_EDIT_DONE'})",
+   "killed": true,
+   "mutant": "W02_editor_dumpable_after_the_open",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 225 passed, 10 deselected in 13.36s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:71: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (0, {'code': ...V_EDIT_DONE'})",
+   "killed": true,
+   "mutant": "W03_editor_set_not_read_back",
+   "returncode": 1,
+   "seconds": 14.9,
+   "summary": "1 failed, 225 passed, 10 deselected in 13.70s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:71: AssertionError: assert ((1, {'code': ...DIT_REFUSED'}) == (0, {'code': ...V_EDIT_DONE'})",
+   "killed": true,
+   "mutant": "W04_editor_any_prctl_answer",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 225 passed, 10 deselected in 13.25s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_editor_native.py:175: AssertionError: assert ((0, {'code': ...V_EDIT_DONE'}) == (1, {'code': ...DIT_REFUSED'})",
+   "killed": true,
+   "mutant": "W05_editor_prctl_failure_tolerated",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 256 passed, 10 deselected in 19.53s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:384: AssertionError: assert (('METADATA_ON...REVIEW', None) == ('REFUSED', '...NOT_DISABLED')",
+   "killed": true,
+   "mutant": "W06_source_never_made_non_dumpable",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 213 passed, 10 deselected in 11.94s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:385: AssertionError: assert ({'dumpable_disabled': False} == {'dumpable_disabled': False}",
+   "killed": true,
+   "mutant": "W07_source_dumpable_after_the_identity",
+   "returncode": 1,
+   "seconds": 13.3,
+   "summary": "1 failed, 213 passed, 10 deselected in 12.05s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:385: AssertionError: assert ({'dumpable_disabled': True} == {'dumpable_disabled': False}",
+   "killed": true,
+   "mutant": "W08_receipt_says_disabled_whatever",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 213 passed, 10 deselected in 12.07s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('REFUSED' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C01_no_pause",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 193 passed, 10 deselected in 10.38s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_budget.py::test_constants_of_the_budget - assert (3, 0, 1, ...",
+   "killed": true,
+   "mutant": "C02_no_reserve_for_the_second_reading",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 222 passed, 10 deselected in 12.63s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:21: AssertionError: assert {'first_rende...': 56500, ...} == {'first_rende...': 56500, ...}",
+   "killed": true,
+   "mutant": "C03_no_files_allowance",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 214 passed, 10 deselected in 11.97s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('REFUSED' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C04_no_under_lock_allowance",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 193 passed, 10 deselected in 10.32s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:277: AssertionError: assert ('REFUSED' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C05_no_render_floor",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 193 passed, 10 deselected in 10.55s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('REFUSED' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C06_allowance_once_the_render",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 193 passed, 10 deselected in 10.12s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('PARTIAL_META...QUIRES_REVIEW' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C08_allowance_is_the_floor",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 193 passed, 10 deselected in 10.05s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C09_needed_without_the_editor",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 193 passed, 10 deselected in 9.88s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C10_needed_without_the_render",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 193 passed, 10 deselected in 10.02s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('REFUSED' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C11_needed_without_the_pause",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 193 passed, 10 deselected in 9.69s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:277: AssertionError: assert ('REFUSED' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C12_lock_keeps_only_what_is_needed",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 193 passed, 10 deselected in 10.01s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:96: AssertionError: assert ('DEPLOY_LOCK_BUSY' == 'DEPLOY_LOCK_BUSY'",
+   "killed": true,
+   "mutant": "C13_lock_waits_twenty_seconds",
+   "returncode": 1,
+   "seconds": 13.5,
+   "summary": "1 failed, 223 passed, 10 deselected in 12.41s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_budget.py:104: AssertionError: assert ('CAPACITY_SW...TED_VERIFIED') == ('PARTIAL_WOR...ERIFIED_ONCE')",
+   "killed": true,
+   "mutant": "C14_pause_without_its_reserve",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 224 passed, 10 deselected in 11.72s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_precheck.py:273: AssertionError: assert ('PARTIAL_META...QUIRES_REVIEW' == 'REFUSED'",
+   "killed": true,
+   "mutant": "C15_render_not_timed",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 193 passed, 10 deselected in 8.96s",
+   "tests": [
+    "test_capacity_switch.py",
+    "test_plan.py",
+    "test_precheck.py",
+    "test_budget.py",
+    "test_editor_native.py",
+    "test_effects.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": [],
+ "survivors_by_origin": {
+  "GENERATED": [],
+  "OWN": []
+ }
+}

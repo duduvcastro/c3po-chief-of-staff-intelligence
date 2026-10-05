@@ -1,0 +1,5 @@
+Candidata portátil derivada para prova offline. Não altera o binder vigente nem a lista operacional ACCEPTED_SEALS. Os fixtures W1 e readback adaptados têm novos hashes somente para testes, aceitos somente numa cópia temporária isolada pelo harness. Fontes históricas públicas obrigatórias são incluídas e conferidas pelos testes. Nove testes W1 dependentes de recibos privados ou checkout histórico podem ficar explicitamente skipped; nenhuma omissão diferente é aceita.
+
+O verificador K8 mantém o selo original e exige config.py como entrada externa local, com hash exato descrito em EXTERNAL_TEST_INPUTS.json. Esse arquivo integra o hash do pacote certificado e contém nomes pessoais; os bytes não são publicados nesta entrega. Não há substituição ou reinterpretação desse hash. Executar run_candidate_tests.py exige BIND_TEST_K8_CONFIG apontando para os bytes locais exatos.
+
+As falhas locais de tentativas intermediárias foram corrigidas mecanicamente; os resultados finais e a prova Linux devem ser lidos em VALIDATION.json. Nada desta entrega autoriza host ou incorpora novos selos operacionais.

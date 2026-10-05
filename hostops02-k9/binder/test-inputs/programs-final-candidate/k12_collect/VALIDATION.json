@@ -1,0 +1,165 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "date_class": "READ",
+  "dates": [
+   "2026-10-02",
+   "2026-10-03",
+   "2026-10-04",
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07",
+   "2026-10-08",
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "dispatcher_sha256": "df85fc2f7b8c3df0f2a79f540bba2eba23585adbeac995a92d2115f91d1672e1",
+  "final_payload_bytes": 170303,
+  "final_payload_sha256": "7fef7369d8d2b2f79d64831d59ed887ce208e12c5c0dc00e3bada858bdae5690",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "5a14b5ebf27d2e29262a58a2ae1a72c53c98a61227af0044fae65a2911f6e68a",
+  "parts": [
+   "core",
+   "runner",
+   "docker",
+   "parents"
+  ],
+  "scope_sha256": "6ae9fc32ef480961eb69442cc083711a7c5b73f59199c1e87f18d5718a282f13",
+  "source_bytes": 117659,
+  "source_sha256": "362041cdda3b1d96c639bc9a8c087a67d4f2d2a04e2245b8cb47835594a3bc38",
+  "spec_sha256": "83a06db141d74b4898bb16a23326b117115b69f3a22b91ce204934bbe9ebe052",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 6165,
+  "writes_allowed": false
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "common_block_sha256": "2f69a0ffab71460adbdfd21d22cd2a7fcfc2471a24a9e895cfeb0eb08eea3554",
+ "core": {
+  "core_sha256sums": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "generation_sha256_of_assemble_py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "fixture": {
+  "emulation_sha256": "dd0cc4becf853117452e0389c959f72a20df10f62983f8960490d0148134f130",
+  "module_sha256": "7c2578cc73c02ae6d0f68966741fae591518d697d2c115edb77036465589fce4",
+  "writer_bytes": "SYNTHETIC test bytes only (tests/k12emu.py WRITER); manifest_writer.py is pinned by hash in each REQUEST"
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "gate": "the core linux_root job run with this directory as its argument, suite passing as real root; real-Docker shapes of the create/start/stop/logs/rm argv (NOT WRITTEN)",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_CARRIED.json": {
+   "present": false
+  },
+  "MUTATION_RUN.json": {
+   "by_target": {
+    "dispatcher": 12,
+    "dispatcher_read": 2,
+    "launcher": 4,
+    "op": 158
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 176,
+    "redundant_survivors": 0,
+    "single": 176,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "1690cc65cda9cdc87fa3687d26fb761d079b89508f2162229c28e257c015865f",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "by_target": {
+    "dispatcher": 12,
+    "dispatcher_read": 2,
+    "launcher": 4,
+    "op": 158
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 176,
+    "redundant_survivors": 0,
+    "single": 176,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "223bcfb21f85fe06f9ab1df8db73b7c3fd2127bdd66a8832b34fc97d85c0123f",
+   "stale_pins": [],
+   "survivors": []
+  }
+ },
+ "open": [
+  "D6 views and cutoff (A2 rev3 section 7, pending Codex item 11a)",
+  "the writer file in the capacity config root (C#29, pending Codex)",
+  "docker logs as the PERSIST read (no stdout collect by a read source)",
+  "the order D2 then D3 (A2) and the PENDING_PERSIST verdict"
+ ],
+ "operation": "GO_READONLY_HOSTOPS02_K12_COLLECT_01",
+ "schema": "HOSTOPS02_K12_COLLECT_VALIDATION_V1",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 345,
+   "per_file": {
+    "test_collect": 98,
+    "test_conformance": 242,
+    "test_native": 3,
+    "test_static_k12": 2
+   },
+   "python": "Python 3.9.6",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 345
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 345,
+   "per_file": {
+    "test_collect": 98,
+    "test_conformance": 242,
+    "test_native": 3,
+    "test_static_k12": 2
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 345
+  }
+ ],
+ "suites_with_other_operations": null,
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "b762eb24fc1bdbe5e961870066f7afb3be83dbeef8196969e73bd91805019357",
+  "DISPATCH.UNBOUND.json": "ca7773925be441382ab9408ff560c79e277be97e8fed638787a6c94cf1a378a7",
+  "FINAL_PAYLOAD.UNBOUND.py": "7fef7369d8d2b2f79d64831d59ed887ce208e12c5c0dc00e3bada858bdae5690",
+  "GO.UNBOUND.json": "0ca21d6968880088772e099129852a6d2ed08bfe4d3a548b44adb086a069a310",
+  "PUBLICATION_PROOF.UNBOUND.json": "fd77ca8e3c78b82854f4bd35576eb0f482ac1cee12b692b6d60d4bc53fd59036",
+  "REQUEST.UNBOUND.json": "a389d94946a07015772e167098d60191923de61dea99dcb8bd382b96ce370e8b"
+ }
+}

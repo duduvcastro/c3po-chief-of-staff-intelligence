@@ -1,0 +1,49 @@
+{
+ "accepted_findings": [
+  {
+   "classes": [
+    "MAIL_OR_USER_AT_HOST"
+   ],
+   "file": "binder/READER_UNIT_LINK_GUARD.diff",
+   "reason": "139ee102 candidate only: false-positive Python pytest decorators in the reviewed diff; no mail address"
+  },
+  {
+   "classes": [
+    "MAIL_OR_USER_AT_HOST"
+   ],
+   "file": "binder/fixtures/hostops01/REVISION_2_TO_3.diff",
+   "reason": "139ee102 candidate only: false-positive Python pytest decorators in the reviewed historical diff; no mail address"
+  },
+  {
+   "classes": [
+    "IPV4_ADDRESS"
+   ],
+   "file": "binder/fixtures/w1/TESTS.xml",
+   "reason": "139ee102 candidate only: test IDs containing the same reviewed synthetic frozen W1 IP markers; no host data"
+  },
+  {
+   "classes": [
+    "IPV4_ADDRESS"
+   ],
+   "file": "binder/fixtures/w1/test_w1_preflight_once.py",
+   "reason": "139ee102 candidate only: synthetic frozen MockWorld network and LEAKS/never-emit IP markers; no host data or network use"
+  }
+ ],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-binder-proof-20261005b",
+ "family": "hostops02-k9",
+ "links": [],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "binder",
+   "files": 1318,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "139ee102ea9da6e238a2bf8188785493630d2c2c408b78d85c81673b904d9654",
+   "source": "binder",
+   "withheld": {}
+  }
+ ]
+}

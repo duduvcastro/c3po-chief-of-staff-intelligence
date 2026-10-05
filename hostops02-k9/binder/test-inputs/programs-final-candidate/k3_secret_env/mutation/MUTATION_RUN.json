@@ -1,0 +1,2375 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+ "core_seal_sha256": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 179,
+  "redundant_survivors": 0,
+  "single": 179,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "c39f7de7974e78cf089c49a671bb833cabd8a8118de240c9eeb71449c40c38e4",
+  "build/AUTHORITY.UNBOUND.json": "cbe55595dace281a38eed764803e8144fc5c99338b31ffb353771f121f7c63f2",
+  "build/DISPATCH.UNBOUND.json": "a81cf89b90dc88add783bae7a18d2c46beaca10e699b266694ca0b221c9525f3",
+  "build/DISPATCH_SCOPE_DELTA.diff": "9651e9ca72e429b445372dd453267e247820e4915c00d6993a778aa0a5927416",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "d1ac0157620e65bfa3156b979a8cc3c76de8ee277c2def90dc6db7295d7aae48",
+  "build/GO.UNBOUND.json": "68847cbe6b50dfea037bb243da054a1da2e4da01f688e2f604fcd316f012c809",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "c348a593793b127b4e21989e7bb6e25b7da84d43efdca469ee219f958143f59a",
+  "build/REQUEST.UNBOUND.json": "cefddf8278ca33d9d6e9958b850523331a146ac2eaa23f43885381d3f3660e3e",
+  "build/dispatch_once.py": "af2e304b9cb61b6560fe182fd9e1a9a3eee2fd0832924659b4165f03fc5b2063",
+  "build/k3_secret_env.py": "f5385766ccd688949ae4fb0d9095610877eec64e9125dfdbe69f7fc918b378c0",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "8b1010935b337c4d1032c2064ad59178346bef810bc7e3339d11b92c515ecad1",
+  "mutation/mutate.py": "e34f73fec40b808b6d5842c27d7bef538d935ed36cc1c934bd7bc55bc6add5f3",
+  "op.py": "0410b0601c670c68bbaf0cb0c30575ea2d6a4decd00e3cc7c3da4e552b33da00",
+  "spec.py": "ee5381bdbb83640144fa142968ee3f9de57f1ce02f12b86d099eff7b548af6a9",
+  "tests/conftest.py": "728a4e472dcbfeb9fc3163e71dadcff945c645ff103bf9d97cf6ff6cd320d9fd",
+  "tests/k3env.py": "51a4c9948c26824fe18e48857f8789feed823782db9b7fb744a6339aeeb3a263",
+  "tests/native_child.py": "f1a1fd1b4c3491308f775bfbb6cf88959ac3c96053dd9a8671422fdb4b19504e",
+  "tests/nativehost.py": "e73e51f7654f5e7197f3f245b7e2ded9a60be7cc77361e3e0be60daa966e95e7",
+  "tests/test_conformance.py": "143f78ec52902ae8c9808ab4ee3d7268efda41e42b30f28ef5fb0caada339a43",
+  "tests/test_k3_secret_env.py": "35c7dbea341bf335c0ce332f0523aca87dbf50af0eb7e02ef2568b7783c5f01c",
+  "tests/test_native.py": "4524c9c500410b165aecad00292cf208bc7fe3e8752df4731f5d3457b22ae8b5",
+  "tests/test_static_pins.py": "c8497c19d8a29a685486fecde367491d8ef423e54e8f34225a5c8581c117ef95"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "results": [
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '..._ROW_INVALID') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C01_another_directory",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.18s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...OT_ROOT_0700') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C02_directory_0750",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.19s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:82: AttributeError: 'NoneType' object has no attribute 'kind'",
+   "killed": true,
+   "mutant": "C03_another_name",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.19s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('PARTIAL_MET...ATA_MISMATCH') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C04_file_0640",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.18s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_ENV_LEFTOVER_PRESENT')",
+   "killed": true,
+   "mutant": "C05_temporary_prefix_otherwise",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 20 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'ENTRY_LIMIT')",
+   "killed": true,
+   "mutant": "C06_one_more_entry",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('ENTRY_LIMIT', 'SECRET_ENV_LEFTOVER_PRESENT')",
+   "killed": true,
+   "mutant": "C06b_one_entry_less",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 27 passed, 5 deselected in 0.60s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...ENTRY_ABSENT') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C07_another_key",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.22s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:82: AssertionError: assert (('file', 0, 0...:5432/c3po\\n') == ('file', 0, 0...:5432/c3po\\n')",
+   "killed": true,
+   "mutant": "C08_line_of_another_name",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.25s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "C09_value_with_a_space",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:360: AssertionError: SECRET_VALUE_SHAPE",
+   "killed": true,
+   "mutant": "C10_value_of_4095",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 70 passed, 5 deselected in 0.78s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:360: AssertionError: SECRET_VALUE_SHAPE",
+   "killed": true,
+   "mutant": "C11_value_of_two_at_least",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 71 passed, 5 deselected in 0.82s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:360: AssertionError: SECRET_VALUE_SHAPE",
+   "killed": true,
+   "mutant": "C12_value_without_a_hash",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 72 passed, 5 deselected in 0.83s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:140: AssertionError: assert [('/etc/c3po-...6777985, 384)] == [('/etc/c3po-...6780033, 384)]",
+   "killed": true,
+   "mutant": "C13_create_without_o_excl",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.25s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:140: AssertionError: assert [('/etc/c3po-...6779777, 384)] == [('/etc/c3po-...6780033, 384)]",
+   "killed": true,
+   "mutant": "C14_create_following_a_link",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:140: AssertionError: assert [('/etc/c3po-...', 2817, 384)] == [('/etc/c3po-...6780033, 384)]",
+   "killed": true,
+   "mutant": "C15_create_without_o_cloexec",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:140: AssertionError: assert [('/etc/c3po-...6781057, 384)] == [('/etc/c3po-...6780033, 384)]",
+   "killed": true,
+   "mutant": "C16_create_truncating",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.27s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('PARTIAL_MET...EMENT_FAILED') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C17_readback_following_a_link",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.25s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:143: AssertionError: assert [('/etc/c3po-..., 1073742080)] == [('/etc/c3po-..., 1073742084)]",
+   "killed": true,
+   "mutant": "C18_readback_blocking",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:146: AssertionError: assert ([4115, 4115] == [4115, 4115]",
+   "killed": true,
+   "mutant": "C19_readback_request_one_less",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:392: AssertionError: (11.5, None)",
+   "killed": true,
+   "mutant": "C20_less_than_the_allowance_left",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 81 passed, 5 deselected in 1.08s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...NER_MISMATCH') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C21_another_worker",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_NOT_THE_ONLY_ONE')",
+   "killed": true,
+   "mutant": "C22_replicas_of_one_number_only",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 41 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...POSE_SERVICE') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C23_another_project",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.28s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...POSE_SERVICE') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C24_another_service",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...POSE_SERVICE') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C25_labels_project_read_from_the_service",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.23s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:639: AssertionError: assert ('GO_WRITE_SU...ROVISION_01',) == ('GO_WRITE_SU..._READBACK_01')",
+   "killed": true,
+   "mutant": "C26_evidence_without_the_epoch_readback",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 116 passed, 5 deselected in 1.27s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:639: AssertionError: assert ('GO_READONLY...READBACK_01',) == ('GO_WRITE_SU..._READBACK_01')",
+   "killed": true,
+   "mutant": "C27_evidence_without_the_provisioning",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 116 passed, 5 deselected in 1.33s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...NOT_IN_SCOPE') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "C28_sessions_only",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V01_an_open_root",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 114 passed, 5 deselected in 1.32s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:610: AssertionError: assert ('CONFIG_DIREC...NOT_ROOT_0700' == 'CONFIG_DIREC...NOT_ROOT_0700'",
+   "killed": true,
+   "mutant": "V02_a_setgid_directory",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 114 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V03_directory_of_any_owner_and_mode",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 114 passed, 5 deselected in 1.23s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V04_directory_of_any_group",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 114 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V05_worker_id_not_checked",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 114 passed, 5 deselected in 1.34s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_plan_is_refused_from_its_bytes_before_any_claim",
+   "killed": true,
+   "mutant": "V06_boot_not_checked",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 114 passed, 5 deselected in 1.28s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E01_effects_without_required",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.35s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E02_effects_secret_env_may_exist",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.25s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E03_effects_another_path",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.36s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E04_effects_file_0644",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.34s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E05_effects_a_temporary",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.34s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E06_effects_without_the_container_id",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.36s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E07_effects_one_read",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.35s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E08_effects_without_the_process",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.30s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...6': None, ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E09_effects_another_boot",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.30s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:625: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E10_effects_say_a_size_may_be_in_the_receipt",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 115 passed, 5 deselected in 1.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:49: AssertionError: ['umask', 'open', 'open']",
+   "killed": true,
+   "mutant": "P01_process_left_dumpable",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'PROCESS_DUMPABLE_NOT_DISABLED')",
+   "killed": true,
+   "mutant": "P02_any_answer_taken",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 79 passed, 5 deselected in 0.90s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:48: AssertionError: assert ('PRECHECK' in ('AUTHENTICATION', 'BEFORE_ANY_EFFECT'))",
+   "killed": true,
+   "mutant": "P03_not_dumpable_after_the_executor",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 64 passed, 5 deselected in 0.85s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'EXECUTOR_IDENTITY')",
+   "killed": true,
+   "mutant": "P04_executor_not_checked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 64 passed, 5 deselected in 0.84s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:136: AssertionError: assert (['not_dumpable', 'open'] == ['not_dumpable', 'umask']",
+   "killed": true,
+   "mutant": "P05_umask_not_set",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.30s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:136: AssertionError: assert (['not_dumpable', 'umask'] == ['not_dumpable', 'umask']",
+   "killed": true,
+   "mutant": "P06_umask_0022",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.31s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'EVIDENCE_FROM_EARLIER_BOOT')",
+   "killed": true,
+   "mutant": "P07_boot_not_compared",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 66 passed, 5 deselected in 0.88s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('SECRET_ENV_APPEARED_AFTER_PRECHECK', 'SECRET_ENV_PRESENT')",
+   "killed": true,
+   "mutant": "P08_secret_env_present_not_refused",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_ENV_LEFTOVER_PRESENT')",
+   "killed": true,
+   "mutant": "P09_leftover_not_refused",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 20 passed, 5 deselected in 0.60s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_ENV_LEFTOVER_PRESENT')",
+   "killed": true,
+   "mutant": "P10_temporaries_not_looked_for",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 20 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_ENV_LEFTOVER_PRESENT')",
+   "killed": true,
+   "mutant": "P11_other_secret_env_names_not_looked_for",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 22 passed, 5 deselected in 0.59s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:203: AssertionError: assert None == {'gid': 0, 'links': 1, 'mode_octal': '0600', 'type': 'file', ...}",
+   "killed": true,
+   "mutant": "P12_existing_file_not_described",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('DIRECTORY_READBACK_MISMATCH', 'ENTRY_LIMIT')",
+   "killed": true,
+   "mutant": "P13_entries_not_bounded",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.62s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('SECRET_ENV_LEFTOVER_PRESENT', 'SECRET_ENV_PRESENT')",
+   "killed": true,
+   "mutant": "P14_leftover_before_present",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:170: AssertionError: assert (None == 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "P15_budget_not_checked",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.31s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:392: AssertionError: (11.25, 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "P16_budget_strictly_more",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 81 passed, 5 deselected in 1.10s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('PARENT_REPLACED', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "P17_directory_not_proved_again",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 81 passed, 5 deselected in 1.03s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:93: AssertionError: assert ({'CONTAINER':... 0, 'READ': 6} == {'CONTAINER':... 0, 'READ': 6}",
+   "killed": true,
+   "mutant": "P18_seconds_left_not_said",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:161: AssertionError: assert (['C3PO_DATABASE_URL'] == ['C3PO_DATABASE_URL']",
+   "killed": true,
+   "mutant": "P19_buffers_not_zeroed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.30s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:161: AssertionError: assert (['C3PO_DATABASE_URL'] == ['C3PO_DATABASE_URL']",
+   "killed": true,
+   "mutant": "P20_zero_does_nothing",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.31s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_a_secret_env_found_present_says_type_owner_mode_and_links_and_never_its_size[]",
+   "killed": true,
+   "mutant": "P21_present_fact_inverted",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_a_refusal_says_what_was_found_up_to_it_and_nothing_after",
+   "killed": true,
+   "mutant": "P22_leftover_fact_inverted",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 68 passed, 5 deselected in 0.83s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('PARTIAL_MET...ACK_MISMATCH') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "P23_entries_said_zero",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:98: AssertionError: assert {'entries_bef...': False, ...} == {'entries_bef...d': True, ...}",
+   "killed": true,
+   "mutant": "P24_pinned_fact_not_said",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('COMMAND_FAILED', 'WORKER_CONTAINER_MISMATCH')",
+   "killed": true,
+   "mutant": "W01_worker_not_in_the_list_accepted",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 34 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('WORKER_NOT_THE_ONLY_ONE', 'WORKER_CONTAINER_MISMATCH')",
+   "killed": true,
+   "mutant": "W02_another_id_accepted",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 35 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_NOT_THE_ONLY_ONE')",
+   "killed": true,
+   "mutant": "W03_replicas_not_refused",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 40 passed, 5 deselected in 0.65s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:360: AssertionError: WORKER_NOT_THE_ONLY_ONE",
+   "killed": true,
+   "mutant": "W04_stopped_replicas_refused",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 73 passed, 5 deselected in 0.87s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '...THE_ONLY_ONE') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "W05_the_worker_counted_as_its_own_replica",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('WORKER_CHANGED_DURING_READ', 'WORKER_NOT_RUNNING')",
+   "killed": true,
+   "mutant": "W06_stopped_worker_accepted",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 36 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('WORKER_CHANGED_DURING_READ', 'WORKER_NOT_RUNNING')",
+   "killed": true,
+   "mutant": "W07_running_said_by_the_inspect_only",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 37 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_docker_commands_are_the_list_two_inspects_of_metadata_and_two_of_the_fixed_secret_template",
+   "killed": true,
+   "mutant": "W08_inspect_by_name",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_NOT_THE_COMPOSE_SERVICE')",
+   "killed": true,
+   "mutant": "W09_labels_not_judged",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 42 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_NOT_THE_COMPOSE_SERVICE')",
+   "killed": true,
+   "mutant": "W10_project_not_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 42 passed, 5 deselected in 0.70s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_NOT_THE_COMPOSE_SERVICE')",
+   "killed": true,
+   "mutant": "W11_service_not_compared",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 43 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:671: AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "W12_labels_shape_not_checked",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 118 passed, 5 deselected in 1.60s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "W14_shape_not_checked",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "W15_a_value_the_core_did_not_copy_accepted",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_ENVIRONMENT_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W17_change_not_refused",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 69 passed, 5 deselected in 0.79s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_ENVIRONMENT_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W18_presence_not_compared",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 69 passed, 5 deselected in 0.85s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_ENVIRONMENT_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W19_bytes_not_compared",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 69 passed, 5 deselected in 0.92s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_order_of_the_run_on_the_host - a...",
+   "killed": true,
+   "mutant": "W27_worker_read_before_the_directory",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.31s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:193: AssertionError: assert 'PRECHECK_FAILED' == 'SECRET_ENTRY_ABSENT'",
+   "killed": true,
+   "mutant": "W13_absent_entry_not_refused",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:93: AssertionError: assert ({'CONTAINER':... 0, 'READ': 5} == {'CONTAINER':... 0, 'READ': 6}",
+   "killed": true,
+   "mutant": "W16_one_read_only",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:161: AssertionError: assert (['C3PO_DATABASE_URL'] == ['C3PO_DATABASE_URL']",
+   "killed": true,
+   "mutant": "W20_first_values_not_zeroed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:161: AssertionError: assert (['C3PO_DATABASE_URL'] == ['C3PO_DATABASE_URL']",
+   "killed": true,
+   "mutant": "W21_second_values_not_zeroed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.34s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_every_buffer_that_held_the_value_is_zeroed_and_the_write_came_from_one",
+   "killed": true,
+   "mutant": "W22_line_not_zeroed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('PARTIAL_MET...ACK_MISMATCH') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "W23_line_without_its_newline",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('PARTIAL_MET...ACK_MISMATCH') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "W24_value_one_byte_early",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.25s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "W26_facts_said_before_the_shape_check",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "W28_entry_present_said_before_the_shape_check",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('SECRET_VALUE_SHAPE', 'WORKER_ENVIRONMENT_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W29_second_overflow_said_a_shape_fault",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 145 passed, 5 deselected in 1.74s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_an_output_over_the_limit_at_the_second_read_is_a_change_and_says_nothing_of_its_size",
+   "killed": true,
+   "mutant": "W30_second_overflow_without_the_fact",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 145 passed, 5 deselected in 1.76s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "W31_first_overflow_said_a_change",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:426: IndexError: list index out of range",
+   "killed": true,
+   "mutant": "F09_no_fsync_after_withdrawal",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 84 passed, 5 deselected in 1.10s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: ('SECRET_ENV_PLACEMENT_FAILED', 'FILESYSTEM_FULL')",
+   "killed": true,
+   "mutant": "F38_withdrawal_fsync_failure_of_another_kind_escapes",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 147 passed, 5 deselected in 1.83s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_KEY_IN_ANOTHER_ENV_FILE')",
+   "killed": true,
+   "mutant": "O01_key_in_another_file_not_refused",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 122 passed, 5 deselected in 1.68s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_KEY_IN_ANOTHER_ENV_FILE')",
+   "killed": true,
+   "mutant": "O04_name_with_trailing_space_not_seen",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 124 passed, 5 deselected in 1.70s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_KEY_IN_ANOTHER_ENV_FILE')",
+   "killed": true,
+   "mutant": "O05_a_name_alone_not_a_definition",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 126 passed, 5 deselected in 1.64s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_KEY_IN_ANOTHER_ENV_FILE')",
+   "killed": true,
+   "mutant": "O06_activation_env_not_looked_at",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 123 passed, 5 deselected in 1.65s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_KEY_IN_ANOTHER_ENV_FILE')",
+   "killed": true,
+   "mutant": "O07_pins_env_not_looked_at",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 122 passed, 5 deselected in 1.59s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:723: AssertionError: assert ('REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "O08_limit_one_byte_less",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 140 passed, 5 deselected in 1.72s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('UNLISTED_CODE', 'OTHER_ENV_FILE_UNREADABLE')",
+   "killed": true,
+   "mutant": "O09_core_codes_not_mapped",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 141 passed, 5 deselected in 1.82s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('PRECHECK_OS_ERROR', 'OTHER_ENV_FILE_UNREADABLE')",
+   "killed": true,
+   "mutant": "O10_os_errors_not_mapped",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 143 passed, 5 deselected in 1.74s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'SECRET_KEY_IN_ANOTHER_ENV_FILE')",
+   "killed": true,
+   "mutant": "O11_fact_said_true_always",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 122 passed, 5 deselected in 1.64s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_a_leftover_is_refused_before_another_env_file_is_read",
+   "killed": true,
+   "mutant": "O12_checked_before_the_leftovers",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 150 passed, 5 deselected in 2.22s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'SECRET_ENV_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F01_metadata_gid_not_checked",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'SECRET_ENV_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F02_metadata_mode_not_checked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.10s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'SECRET_ENV_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F03_metadata_uid_not_checked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.16s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'SECRET_ENV_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F04_metadata_links_not_checked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.10s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'SECRET_ENV_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F05_metadata_device_not_checked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.16s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:449: AssertionError: assert (False is False and None is None and 'WITHDRAWN' == 'LEFT_UNVERIFIED'",
+   "killed": true,
+   "mutant": "F06_withdrawal_of_another_inode",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.18s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:440: AssertionError: nlink",
+   "killed": true,
+   "mutant": "F07_withdrawal_of_a_linked_file",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.13s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:527: AssertionError: assert ('WITHDRAWN' == 'LEFT_UNVERIFIED'",
+   "killed": true,
+   "mutant": "F10_failed_unlink_said_withdrawn",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 108 passed, 5 deselected in 1.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F15_readback_equality_not_judged",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 94 passed, 5 deselected in 1.14s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:143: AssertionError: assert [('/etc/c3po-...et.env', 260)] == [('/etc/c3po-..., 1073742084)]",
+   "killed": true,
+   "mutant": "F16_readback_without_noatime",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.28s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: ('DIRECTORY_READBACK_MISMATCH', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "F17_readback_without_the_directory_proved",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.15s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_a_name_replaced_before_the_readback_is_left_and_another_object_is_never_removed_or_read",
+   "killed": true,
+   "mutant": "F18_content_read_before_the_identity_is_proved",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.12s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:164: AssertionError: assert (3 == 4)",
+   "killed": true,
+   "mutant": "F19_readback_buffer_not_zeroed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.28s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('FILESYSTEM_ERROR', 'SECRET_ENV_APPEARED_AFTER_PRECHECK')",
+   "killed": true,
+   "mutant": "F25_existing_name_said_filesystem_error",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 83 passed, 5 deselected in 1.04s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: ('SECRET_ENV_PLACEMENT_FAILED', 'SECRET_ENV_WRITE_INCOMPLETE')",
+   "killed": true,
+   "mutant": "F26_write_of_nothing_accepted",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 112 passed, 5 deselected in 1.20s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:582: AssertionError: assert ('PARTIAL_META...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "F27_one_write_only",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 112 passed, 5 deselected in 1.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: ('FILESYSTEM_FULL', 'FILESYSTEM_FULL')",
+   "killed": true,
+   "mutant": "F32_refused_after_a_creation",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 84 passed, 5 deselected in 1.13s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_a_write_that_fails_withdraws_the_file[error0-FILESYSTEM_FULL]",
+   "killed": true,
+   "mutant": "F33_all_bytes_said_written_before_the_writes",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 84 passed, 5 deselected in 1.07s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "F34_readback_compares_a_prefix",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.35s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:468: AssertionError: readback_exactly_one_line",
+   "killed": true,
+   "mutant": "F35_readback_one_line_without_the_last_byte",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 97 passed, 5 deselected in 1.11s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'DIRECTORY_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F37_directory_readback_failure_said_none",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 109 passed, 5 deselected in 1.28s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_receipt_does_not_depend_on_the_value_or_its_length",
+   "killed": true,
+   "mutant": "W25_output_limit_code_leaks",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('UNLISTED_CODE', 'SECRET_VALUE_SHAPE')",
+   "killed": true,
+   "mutant": "W32_entry_without_an_equals_sign_has_its_own_code",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 118 passed, 5 deselected in 1.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W33_not_listed_again",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 152 passed, 5 deselected in 1.79s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W34_listed_again_without_the_id",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 152 passed, 5 deselected in 1.77s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: (None, 'WORKER_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "W35_listed_again_without_the_state",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 153 passed, 5 deselected in 1.77s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:424: AssertionError: assert {'failed_noth...uncertain': 0} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "F08_withdrawal_not_counted",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 84 passed, 5 deselected in 1.06s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: ('READBACK_MISMATCH', 'SECRET_ENV_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F20_metadata_mismatch_kept",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 90 passed, 5 deselected in 1.07s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F21_readback_mismatch_kept",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.11s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:484: AssertionError: assert (('LEFT_UNVERI..., False, None) == ('WITHDRAWN', True, False)",
+   "killed": true,
+   "mutant": "F22_left_after_a_refusal_at_the_readback",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.15s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:505: AssertionError: assert ('LEFT_UNVERI..., False, None) == ('WITHDRAWN',...e, True, True)",
+   "killed": true,
+   "mutant": "F23_left_after_an_expiry_during_a_write",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 101 passed, 5 deselected in 1.14s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:514: AssertionError: the write it interrupted is uncertain",
+   "killed": true,
+   "mutant": "F24_other_failure_not_withdrawn",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 107 passed, 5 deselected in 1.17s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:82: AssertionError: assert (('file', 0, 0...:5432/c3po\\n') == ('file', 0, 0...:5432/c3po\\n')",
+   "killed": true,
+   "mutant": "F28_file_not_fsynced",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.23s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:144: AssertionError: assert ['/etc/c3po-r...r/secret.env'] == ['/etc/c3po-r.../c3po-reader']",
+   "killed": true,
+   "mutant": "F29_directory_not_fsynced",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('PARTIAL_MET...ACK_MISMATCH') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "F30_directory_readback_expects_no_new_entry",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 5 deselected in 0.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'DIRECTORY_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F31_directory_readback_not_judged",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 109 passed, 5 deselected in 1.21s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: (None, 'DIRECTORY_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "F36_directory_readback_not_proved_from_root",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 110 passed, 5 deselected in 1.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:484: AssertionError: assert (('LEFT_UNVERI... False, False) == ('WITHDRAWN', True, False)",
+   "killed": true,
+   "mutant": "F39_withdrawal_stopped_by_the_gate",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.16s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: ('READBACK_MISMATCH', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "F40_parent_replaced_off_the_readback_list",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.16s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:58: AssertionError: ('READBACK_MISMATCH', 'CLOCK_REVERSED')",
+   "killed": true,
+   "mutant": "F41_clock_reversal_off_the_readback_list",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 104 passed, 5 deselected in 1.19s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:484: AssertionError: assert (('WITHDRAWN', True, True) == ('WITHDRAWN', True, False)",
+   "killed": true,
+   "mutant": "F42_directory_said_at_its_path_always",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.13s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:484: AssertionError: assert (('WITHDRAWN', True, True) == ('WITHDRAWN', True, False)",
+   "killed": true,
+   "mutant": "F43_directory_not_looked_for",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 99 passed, 5 deselected in 1.13s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:572: AssertionError: lstat",
+   "killed": true,
+   "mutant": "R01_any_code_through",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 111 passed, 5 deselected in 1.22s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:572: AssertionError: write",
+   "killed": true,
+   "mutant": "R02_row_codes_not_listed",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 111 passed, 5 deselected in 1.20s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_a_name_replaced_before_the_readback_is_left_and_another_object_is_never_removed_or_read",
+   "killed": true,
+   "mutant": "R03_left_file_said_absent",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.02s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:597: AssertionError: assert ('CREATE_UNCERTAIN' == 'CREATE_UNCERTAIN'",
+   "killed": true,
+   "mutant": "R04_uncertain_creation_said_absent",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 113 passed, 5 deselected in 0.98s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:375: AssertionError: assert ([('not_dumpable',)] == [('not_dumpable',)]",
+   "killed": true,
+   "mutant": "R05_dumpable_fact_true_before_the_call",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 79 passed, 5 deselected in 0.68s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:546: AssertionError: assert ('READBACK_MISMATCH' == 'READBACK_MISMATCH'",
+   "killed": true,
+   "mutant": "R06_readback_complete_after_a_stop",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 109 passed, 5 deselected in 0.95s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:91: AssertionError: assert (None is None and 'COMPLETE' == 'COMPLETE'",
+   "killed": true,
+   "mutant": "R07_existing_said_empty",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.19s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:203: AssertionError: assert {'gid': 0, 'l...size': 0, ...} == {'gid': 0, 'l...: 'file', ...}",
+   "killed": true,
+   "mutant": "H01_size_emitted_in_the_refusal_table",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.33s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:203: AssertionError: assert {'gid': 0, 'l...o': True, ...} == {'gid': 0, 'l...: 'file', ...}",
+   "killed": true,
+   "mutant": "H02_size_is_zero_emitted_in_the_refusal_table",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.33s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_docker_commands_are_the_list_two_inspects_of_metadata_and_two_of_the_fixed_secret_template",
+   "killed": true,
+   "mutant": "H03_template_widened_to_a_second_name",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.21s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_docker_commands_are_the_list_two_inspects_of_metadata_and_two_of_the_fixed_secret_template",
+   "killed": true,
+   "mutant": "H04_template_widened_to_any_name_that_begins_with_it",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.21s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:88: AssertionError: all_bytes_written",
+   "killed": true,
+   "mutant": "H05_length_emitted",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.20s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:35: AssertionError: assert (['a4dd58d7705...e4d4fbeab158'] == []",
+   "killed": true,
+   "mutant": "H06_digest_emitted",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.19s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_order_of_the_run_on_the_host - a...",
+   "killed": true,
+   "mutant": "H07_read_size_depends_on_the_value",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.20s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:98: AssertionError: assert {'entries_bef...d': True, ...} == {'entries_bef...d': True, ...}",
+   "killed": true,
+   "mutant": "H08_length_in_the_directory_facts",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.18s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:60: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "Y01_prctl_set_not_made",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 157 passed, 5 deselected in 1.24s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:54: AssertionError: [('dlopen', {'use_errno': True}, None, [], None), ('prctl', None, 4, [0, 0, 0, 0], 0), ('umask', None, None, None, None)]",
+   "killed": true,
+   "mutant": "Y02_read_back_skipped",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 157 passed, 5 deselected in 1.22s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:60: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "Y03_attribute_set_to_1",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 157 passed, 5 deselected in 1.26s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:157: AssertionError: assert ('METADATA_ON...abled': True}) == ('REFUSED', '...bled': False})",
+   "killed": true,
+   "mutant": "Y04_failure_not_refused",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 169 passed, 5 deselected in 1.57s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:54: AssertionError: [('umask', None, None, None, None), ('open', None, None, None, None), ('open', None, None, None, None)]",
+   "killed": true,
+   "mutant": "Y05_native_says_disabled_without_a_call",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 157 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '..._VALUE_SHAPE') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "D01_template_prints_the_other_entries",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.18s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:81: AssertionError: assert ('REFUSED', '..._VALUE_SHAPE') == ('METADATA_ON...D_BACK', None)",
+   "killed": true,
+   "mutant": "D02_template_prints_unquoted",
+   "returncode": 1,
+   "seconds": 0.4,
+   "summary": "1 failed, 5 deselected in 0.18s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:195: AssertionError: assert None == 'SECRET_ENVIRONMENT_REPEATED'",
+   "killed": true,
+   "mutant": "D03_repeated_entry_accepted",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.30s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_a_refused_parse_of_the_entry_zeroes_what_it_made",
+   "killed": true,
+   "mutant": "D05_refused_parse_not_zeroed",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 119 passed, 5 deselected in 0.94s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_k3_secret_env.py:55: AssertionError: ('PRECHECK_FAILED', 'SECRET_VALUE_SHAPE')",
+   "killed": true,
+   "mutant": "D08_line_of_another_name_skipped",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 118 passed, 5 deselected in 1.06s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k3_secret_env.py::test_the_secret_row_is_started_only_through_its_helper_and_its_answer_only_in_its_shape",
+   "killed": true,
+   "mutant": "N01_secret_row_started_directly",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 118 passed, 5 deselected in 0.88s",
+   "tests": [
+    "test_k3_secret_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}
