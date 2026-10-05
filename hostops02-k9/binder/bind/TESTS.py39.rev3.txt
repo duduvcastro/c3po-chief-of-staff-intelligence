@@ -1,0 +1,4 @@
+bind_once tests, revision 3 (the review findings of 2026-10-02/03: accepted seals, review and waiver, K11 review, HOSTOPS01 citing K2a, gates, minutes, spares, owner texts), Python 3.9.6, pytest 8.4.2, run ended 2026-10-03T01:27:40Z (UTC, by command), cwd tests/, command: python3 -B -m pytest -q -p no:cacheprovider -rs --basetemp <scratch> .
+........................................................................ [ 91%]
+.......                                                                  [100%]
+79 passed in 214.15s (0:03:34)

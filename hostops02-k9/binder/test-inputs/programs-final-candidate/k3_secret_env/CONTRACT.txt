@@ -1,0 +1,87 @@
+HOSTOPS02 / K3 secret.env - k3_secret_env - GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01 - REVISION 1
+Epoch R2D2-V2-SHADOW-2026-10-05, row A7 of the epoch plan. ONCE per epoch. Built 2026-10-04 (UTC evening).
+
+Offline work only. Nothing in this directory was run on the host, pushed, bound or reviewed by anyone but its author.
+Every hash and count is in VALIDATION.json and SHA256SUMS, written by seal.py. DESIGN.md is the design; this file is
+what a reviewer signs against and what a binder does.
+
+1. STATUS
+
+  Built and tested by its author (Fable). NOT REVIEWED by Codex or any co-auditor (one independent adversarial read
+  by a separate agent found no blocker, a second one no blocker and no major; their points and their disposition:
+  DESIGN.md section 15). NOT BOUND.
+  THE LINUX-ROOT CI JOB HAS NOT RUN for this directory (real uid 0, O_NOATIME, the kernel's prctl, the docker CLI).
+  Core: ../core_k3, generation 232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6 (sha256 of
+  assemble.py; assemble.py --core verifies every pinned part). A byte copy of the secrets family's revision made
+  21:15Z, read only. Its own seal.py check answers SEAL_BROKEN on the copy: CORE.md and mutation/MUTATION_RUN.json
+  differ from CORE_SHA256SUMS (upstream was mid-run); every other listed file holds its hash (DESIGN.md Q-10).
+  Parts carried: core, runner, docker, parents, files. Processes started: docker ps, docker container inspect (x4).
+  The owner's sentence (HOC 8: a second copy of the database URL at rest) is PROPOSED in DESIGN.md section 11 and
+  NOT signed.
+  Before any GO: (a) the Linux-root job with this directory; (b) Codex's written review of these bytes; (c) the
+  owner's sentence signed; (d) a same-boot read-only receipt that prints the rows of /, /etc, /etc/c3po-reader and
+  the running worker's 64-hex ID on the same side of M3 as the dispatch (Q-1, Q-2); (e) a binder rule for this
+  operation (none exists).
+
+2. SPECIFICATION (HOC section 8; reader README "Environment files" 1 and "Operations" 1)
+
+  Creates /etc/c3po-reader/secret.env: regular file, root:root 0600, one link, exactly the bytes
+      C3PO_DATABASE_URL=<value>\n
+  <value> = the entry C3PO_DATABASE_URL of the environment of the running container c3po-r2d2-worker-1 (compose
+  project c3po, service r2d2-worker) whose ID the request signs, read twice through ONE fixed template
+      {{range .Config.Env}}{{$p := split . "="}}{{if eq (index $p 0) "C3PO_DATABASE_URL"}}{{json .}}<LF>{{end}}{{end}}
+  and compared (that entry only); 1 to 4096 bytes of printable ASCII without space, quote or backslash.
+  First of all: the process made non-dumpable (prctl PR_SET_DUMPABLE 0, read back 0), else refused.
+  Refuses before any effect, nothing changed, if: the executor is not 0:0; the boot is not the evidence's; a signed
+  row of /, /etc, /etc/c3po-reader differs (walk by descriptor, no link followed); secret.env exists (any type: the
+  receipt gives type, uid, gid, mode, links, never a size); another name in the directory holds "secret.env" or
+  begins ".hostops-"; the directory has more than 64 entries; pins.env or activation.env, when present, is not a
+  regular file of at most 65536 bytes or has a line that defines C3PO_DATABASE_URL (README: a name in one file only);
+  the worker is not exactly one container of that name
+  with the signed ID, running, labelled c3po / r2d2-worker, alone among running c3po-r2d2-worker-* containers; the
+  entry is absent, repeated, out of shape, or differs between the two reads; less than 15 s is left.
+  Effects: ONE exclusive create (O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600, umask 0077) of the final name
+  relative to the held directory - no temporary (deviation D-1) - writes, fsync, fstat,
+  fsync of the directory; readback: the name opened again O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_NOATIME, same inode,
+  regular, 0:0, 0600, one link, then its bytes compared in memory with the line (exactly one line, the key, equal:
+  booleans only; every read asks for the constant 4116 bytes); the directory proved again from / with exactly one
+  entry more. The file stays only when the run is complete: ANY failure after the create (an expiry, a clock
+  reversal and a replaced directory included) withdraws the file this run created, through the held descriptor of
+  its directory, only while the name there shows the inode held with one link; that removal is not stopped by the
+  gate (deviation D-11 from K3-K9 / the token placement's D3). The worker is listed again after the two reads.
+  Never: overwrite, chmod, chown, rename, truncate, a temporary, any other removal, docker exec/run, compose,
+  systemctl, a shell, a network connection of this process, activation, a second attempt; a value, digest, length or
+  size of the value, the line or the file in a receipt, argv, command environment, log or exception.
+  Date class WRITE_EPOCH (2026-10-03 ... 2026-10-10 UTC): row A7 may run on the Sunday (10-04 UTC before 21:00 BRT)
+  or on the evening of any session day; window at most 900 s on one UTC day.
+  Success: METADATA_ONLY_REQUIRES_REVIEW / READER_SECRET_ENV_PLACED_AND_READ_BACK, exit 0.
+
+3. WHAT A RECEIPT MEANS
+
+  KNOWN_COMPLETE (exit 0): secret.env exists as specified and was read back equal to the worker's entry.
+  KNOWN_REFUSAL (exit 1): nothing was created. The same bytes may be signed again once the cause is gone - but a
+    request bound before M3 (Monday 05:50 BRT, the worker recreated) refuses after it: WORKER_CONTAINER_MISMATCH.
+  KNOWN_PARTIAL (exit 2) or UNCERTAIN (exit 3): secret.env may exist (secret_env.state, objects_left_by_this_run);
+    the dispatcher's single-use claim stops a second run of the same GO; secret.env is left only when its withdrawal
+    was impossible (another inode at the name, a failed or uncertain unlink: the receipt says which), and then a new
+    GO refuses SECRET_ENV_PRESENT; there is no removal in the family.
+
+4. WHERE EACH BOUND VALUE COMES FROM
+
+  config_chain             rows of /, /etc, /etc/c3po-reader from a read-only receipt of the same boot (PROPOSED:
+                           GO_READONLY_HOSTOPS02_EPOCH_READBACK_01; Q-1)
+  worker_container_id      the running worker's 64-hex ID from that receipt, same side of M3 as the dispatch (Q-2)
+  evidence_boot_id_sha256  that receipt's boot hash
+  evidence                 must cite GO_WRITE_SUPERVISOR_READER_PROVISION_01 (created /etc/c3po-reader, 2026-10-03,
+                           KNOWN_COMPLETE) and GO_READONLY_HOSTOPS02_EPOCH_READBACK_01
+
+5. DEVIATIONS (DESIGN.md section 12): D-1 no temporary; D-2 {{json .}}+LF for {{println .}}; D-3 stricter value
+   shape; D-4 PR_SET_DUMPABLE for RLIMIT_CORE/coredump_filter; D-5 HOSTOPS02 names and core; D-6 content read back
+   in memory (README) where K3-K9 reads metadata only; D-7 worker selection by ID, name, labels and name prefix;
+   D-8 chain rows from a same-boot receipt; D-9 receipt booleans renamed; D-10 the key refused in pins.env and
+   activation.env; D-11 the withdrawal after any failure, not stopped by the gate. Two size classes remain (DESIGN.md
+   section 8): a template output over 65,536 bytes, and ENOSPC at the write.
+6. TESTS, MUTATION: VALIDATION.json (per interpreter: /usr/bin/python3 3.9 and the 3.12 environment) and
+   mutation/MUTATION_RUN.json, mutation/MUTATION_RUN.py312.json (zero survivors required; equivalents named with
+   the reason in mutation/mutants.py).
+7. REPRODUCE: DESIGN.md section 14.

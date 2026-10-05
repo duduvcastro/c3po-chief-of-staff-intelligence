@@ -1,0 +1,46 @@
+{
+  "schema": "BIND_ONCE_ACCEPTED_SEALS_K9_TEMPLATE_V1",
+  "note": "Binder revision 4. NOT read by the binder. The entries to add, by a deliberate edit, to the \"seals\" list of ACCEPTED_SEALS.json before any K9 request is bound: K4-E0 (its own requests, and its receipt is the evidence of the weekly TREE read, which checks the runner E0 delivered), K9R (GO_READONLY_HOSTOPS02_K9_PHASE_READ_01) and K9W (GO_WRITE_HOSTOPS02_K9_PHASE_STEP_01), and K3-K9 (own core, see its entry). Each is assembled from the frozen core of the tier (CORE_SHA256SUMS 73fb546b..., generation 4c24c5cf...): the one core sealed-copy accepts. Replace every PLACEHOLDER by the sha256 of that directory's SHA256SUMS, taken by command from the sealed directory that was reviewed; K4-E0's and K9W's are filled in (revision 2, SHA256SUMS 394f1b27..., read by command on 2026-10-04; not reviewed by Codex when this was written). Being listed says nothing about review. After the edit: ACCEPTED_SEALS.json's hash changes (it is on every sheet), so every set prepared before the edit refuses at sign with BINDER_CHANGED_SINCE_PREPARE; edit before binding, never between a prepare and its sign. sealed-copy (RUNBOOK 10.1) then also needs the three directories under one of its --source roots.",
+  "seals_to_add": [
+    {
+      "family": "HOSTOPS02_K4_E0",
+      "revision": "4",
+      "sha256sums_sha256": "63c75348fae02e3f0aa17278b62f0ea67e67f847828e9e25fb026ad40750ad4b",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-05, K4 mode E0 GO_WRITE_HOSTOPS02_K4_E0_01 revision 4 (decision 6: source root and K9 root under /var/lib/c3po, plan keys parent/runner/evidence_boot_id_sha256), read by command, every file OK; bound end to end by the binder tests. Revision 2 (394f1b27..., N-8) is refused by the binder (K9_PROGRAM_NOT_OF_THIS_PLACEMENT)."
+    },
+    {
+      "family": "HOSTOPS02_K9_PHASE_READ",
+      "revision": "PLACEHOLDER_K9R_REVISION",
+      "sha256sums_sha256": "PLACEHOLDER_SHA256_OF_k9_phase_read_SHA256SUMS",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "PLACEHOLDER. Tested: revision 4 work (decision 6, unsealed snapshot 2026-10-05T01:28Z, BUILD_EQUAL) and revision 3 (32e3ebf3..., N-8, superseded). Put the reviewed sealed revision 4 here."
+    },
+    {
+      "family": "HOSTOPS02_K9_PHASE_STEP",
+      "revision": "2",
+      "sha256sums_sha256": "922034314242dce519a716babe4ca03e5bba38463f09eb1f3f568c88e8d02344",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-05, K9W GO_WRITE_HOSTOPS02_K9_PHASE_STEP_01 revision 2 (Codex decision 6 placement; step_table e9c96ce9... unchanged; runner 563a4797... compiled), read by command 2026-10-05T01:2xZ, every file OK; bound end to end by the binder tests. Revision 1 (165330a6..., N-8) is superseded and must not be accepted."
+    },
+    {
+      "family": "HOSTOPS02_K3K9_SECRETS",
+      "revision": "PLACEHOLDER_K3K9_REVISION",
+      "sha256sums_sha256": "PLACEHOLDER_SHA256_OF_k3k9_secrets_SHA256SUMS",
+      "core": {
+        "sha256sums_sha256": "PLACEHOLDER_SHA256_OF_K3K9_OWN_CORE_SHA256SUMS",
+        "generation_sha256": "PLACEHOLDER_SHA256_OF_K3K9_OWN_CORE_assemble.py"
+      },
+      "sealed": "PLACEHOLDER. WARNING: K3-K9 is assembled from ITS OWN core revision (W/fable-k3k9-20261004/core: CORE_SHA256SUMS 4b9736d8..., assemble.py 232f4180... when read on 2026-10-04), not the tier's frozen core. prepare/check work (they read ../core beside its directory), but sealed-copy refuses a list of accepted seals with two cores (SEALED_COPY_SOURCE_NOT_FOUND): accept K3-K9 only after deciding how its copy is made (DESIGN_REV4.md, gaps). Binding rules: k3k9_rules (K3-K9 PLUG)."
+    }
+  ]
+}

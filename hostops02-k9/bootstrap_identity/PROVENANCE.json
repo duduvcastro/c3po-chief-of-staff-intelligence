@@ -1,0 +1,33 @@
+{
+  "assembly_sha256": "8c9118ad5d07adf2352c81458985a1fb97b6f8ab0191784543a3758128d4ef99",
+  "base_integrity_file": "../BASE_INTEGRITY.json",
+  "base_integrity_sha256": "2f19eda93617d47f44528a56d3e8fd4c327999e711659450eeece7d5fa1c7301",
+  "core_generation": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+  "core_manifest_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+  "design_sha256": "ee014ee54bd131de4ff09e4971e40b2539cf1207b51cf16df0e9fa7ef8be5e1e",
+  "emenda2_rev2_sha256": "bac09de11e5f2bc290793755763b5c85b316ef641d54693ce9b524dffc730633",
+  "family": "HOSTOPS02_BOOTSTRAP_IDENTITY",
+  "go_literal_required": {
+    "driver_sha256": "a3c2a153189d0abd85f1c3a8d24d1472a42b80c2461289d583c4f211724ecbb6",
+    "expected_comparisons": 46,
+    "helper_sha256": "0850dfaad2c86bd1cebf2b017556554d84338bef7273b59805d8089690cab46f",
+    "local_result": "NOT_RUN_GO_UNAVAILABLE"
+  },
+  "mutations_of_original_controls": 0,
+  "negative_duplicate_LIVE_raw_proof_sha256": "68e10bfa2d616cae4f109351025d143673dd332dfd4751cce0b5125c0f8d8438",
+  "operation_part": "c2fec443cca9a1c617fd1adbed89fa97613b11ceea64fcea274c10d9913f131a",
+  "original_k9r_manifest_sha256": "248c2ae45d096ec3dfa8a845ecff8d1032f8d02bb71ec6cdfc019d70c7710c66",
+  "original_k9r_operation_part_sha256": "09528cdb7bc2b15cb6f0a83be7fff9a9bedb610319b6949882f0de97d2f9cd5c",
+  "revision": 1,
+  "runtime_effects_in_construction": "SOMENTE_EMULADOS_OU_PRIMITIVAS_EM_TMP_PRIVADO",
+  "runtimes": {
+    "bootstrap_identity.py": "b2dd3bd63dcbc25bcca8f32bd11a151b07e1451f03cc895ad3eb12d07601e9af",
+    "dispatch_once.py": "b11eb94c76770c4feefd33d8c7450dcccd0f89135ad4c2ace250d2dcb4503197",
+    "launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+    "transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918"
+  },
+  "schema": "BOOTSTRAP_FAMILY_PROVENANCE_V1",
+  "scope": "CONSTRUCAO_OFFLINE_NOVA_FAMILIA_NUCLEO_PROPRIO",
+  "source": "b2dd3bd63dcbc25bcca8f32bd11a151b07e1451f03cc895ad3eb12d07601e9af",
+  "spec": "afef384bb7295e2158bc61b3129099ce1f9b26c083de19cd9b4731dbb9cf973b"
+}

@@ -1,0 +1,115 @@
+{
+  "construction_history_preserved": [
+    {
+      "evidence_token": "INITIAL_ASSERTION_FAILURE",
+      "junit_sha256": "5161dcb04e1adb4d6da72af60a7bb531b057a785e5eca8a07d481f5a4e481b5c",
+      "status": "31_PASS_1_FAIL_NEW_TEST_ASSERTION_SCOPE_FIXED",
+      "stdout_sha256": "b9816ea8155ce39f14683c11b8426a66432618d50164ae34c08bbcfcac449e9d"
+    },
+    {
+      "evidence_token": "SECOND_LOCAL",
+      "junit_sha256": "52d061ef05745a8f86ee36954c314f320323729426b386c2b803e92e02c06be4",
+      "status": "SUPERSEDED_LOCAL_PASS_NOT_FINAL_SOURCE",
+      "stdout_sha256": "b01a08b86c2f7cadba64e56f86f8eddb9da616e3ac0197de198fa55aae571755"
+    },
+    {
+      "evidence_token": "THIRD_LOCAL",
+      "junit_sha256": "85f138bf52fb653431bda82fa4932eab976c8a4087ceaa8905de55c58a87338b",
+      "status": "SUPERSEDED_LOCAL_PASS_NOT_FINAL_SOURCE",
+      "stdout_sha256": "7a6f9e5b30db0d614a0bf4fe6d23ed121aaf7215f878d39c9dba2f18c38e03d3"
+    }
+  ],
+  "core_manifest_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+  "core_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+  "family": "HOSTOPS02_BOOTSTRAP_IDENTITY",
+  "literal_go_template": "NOT_RUN_LOCAL_GO_UNAVAILABLE_REQUIRES_LINUX_PROOF_46_COMPARISONS_PER_INTERPRETER",
+  "not_proven": [
+    "ROOT_LINUX_HOST",
+    "DOCKER_ACTUAL_ENGINE",
+    "PHYSICAL_PRODUCTION_FSYNC_DURABILITY",
+    "L1",
+    "L2",
+    "OPERATIONAL_GO",
+    "FULL_EXISTING_FAMILY_REGRESSION"
+  ],
+  "revision": 1,
+  "runs": [
+    {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 151
+      },
+      "exit_code": 0,
+      "interpreter": {
+        "implementation": "CPython",
+        "slot": "py39",
+        "version": "3.9.6"
+      },
+      "junit": "TESTS.local.py39.xml",
+      "junit_sha256": "0fc23f4b6ba9ddaa2d3a721b52eed262461886b297a0c7042a991113cc84dd34",
+      "raw_evidence_token": "PRIVATE_FINAL_PY39",
+      "raw_junit_sha256": "2bf6f20a83bb6fb53195f9b0e3b5457aebafe8b6d74b635ade399c947392024e",
+      "raw_stdout_sha256": "ebe84f06a0ffbf9e831db39cf1dc2a7b30955f0ba3a4da2f24e7800b08b6050b",
+      "redactions": [
+        "hostname_to_LOCAL_SYNTHETIC",
+        "private_tmp_report_path_to_published_name"
+      ],
+      "scope": "LOCAL_SYNTHETIC_NOT_LINUX_HOST_L1_L2",
+      "seconds": 3.192,
+      "stdout": "TESTS.local.py39.txt",
+      "stdout_sha256": "9664d4f7fd4636ae34e82fc288a1c45a182d0671bb60625b440db178e6c32211"
+    },
+    {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 151
+      },
+      "exit_code": 0,
+      "interpreter": {
+        "implementation": "CPython",
+        "slot": "py312",
+        "version": "3.12.14"
+      },
+      "junit": "TESTS.local.py312.xml",
+      "junit_sha256": "2062b815f755386064757e8b061ec1ac9ca9bca031f99e6ed54841df5180362e",
+      "raw_evidence_token": "PRIVATE_FINAL_PY312",
+      "raw_junit_sha256": "e8f0443a3278e9b8f1056b0eebf93a164a044a08bab09065e763be4a1a116b57",
+      "raw_stdout_sha256": "483526c4be8d338024a5691a711ef039aad5d4c2e1a4ce91394a6cfb2a216442",
+      "redactions": [
+        "hostname_to_LOCAL_SYNTHETIC",
+        "private_tmp_report_path_to_published_name"
+      ],
+      "scope": "LOCAL_SYNTHETIC_NOT_LINUX_HOST_L1_L2",
+      "seconds": 1.7,
+      "stdout": "TESTS.local.py312.txt",
+      "stdout_sha256": "483526c4be8d338024a5691a711ef039aad5d4c2e1a4ce91394a6cfb2a216442"
+    }
+  ],
+  "schema": "BOOTSTRAP_LOCAL_VALIDATION_V1",
+  "security_cases": [
+    "exclusive_epoch_claim_across_distinct_GOs",
+    "native_concurrent_create",
+    "native_process_death_after_fsync",
+    "uncertain_create_write_fsync_no_unlink",
+    "held_empty_SECRETS_and_exact_absence_vs_errno",
+    "boot_worker_files_parents_changes_before_and_after_claim",
+    "duplicate_five_approved_environment_names",
+    "fixed_date_window_slot_no_spare",
+    "raw_final_clock_no_regression_including_subms",
+    "native_command_timeout_kill_and_reap",
+    "receipt_reduction_retains_consumed_claim"
+  ],
+  "source_sha256": "b2dd3bd63dcbc25bcca8f32bd11a151b07e1451f03cc895ad3eb12d07601e9af",
+  "status": "PASS_LOCAL_SYNTHETIC_ONLY",
+  "test_files": {
+    "tests/fixtures.py": "a9ed5c52791d76763a65acb21583950ef0fdc93b8d0f700ae5519bd2554e71ff",
+    "tests/test_authentication.py": "d82cab6449cc8f4ea908e4db19ca427e4104d1dd99c41378b782654c0a8b8813",
+    "tests/test_bootstrap.py": "b5b9d6b77ff999259ecb3d17be75cc989db04ec8e012af199c11e2c7f861c46e"
+  },
+  "test_inventory": "validation/TEST_INVENTORY.json",
+  "test_inventory_sha256": "c2e5694a15fb345479d51aa247b1c44577175c447b51792fed4881fd688ad013"
+}

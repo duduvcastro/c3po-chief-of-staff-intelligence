@@ -1,0 +1,21 @@
+# K9W (k9_phase_step) in the Linux job of the core. This is NOT a workflow of its own: it is what the workflow of the core
+# (hostops02/core/linux_root/WORKFLOW.yml.txt, byte for byte, on a throwaway branch) needs for this operation.
+# NOT RUN by its author.
+#
+# 1. In the job's env, name the operation (its build is checked and its suite runs as real root and as the user):
+#       OPERATIONS: "../k9_phase_step"       # with the others: "../catalog_init ../install_release ../epoch_readback ../activate ../k9_phase_read ../k9_phase_step"
+#
+# 2. After the step "suites as root and as user, the command shapes", add:
+      - name: K9W k9_phase_step on the real engine (exit 0 only when every shape ran and every expectation is met)
+        if: always()
+        working-directory: hostops02/k9_phase_step
+        run: sh linux_root/run.sh
+#
+# 3. In the artifact step, add the output of this operation to `path`:
+#           hostops02/k9_phase_step/linux_root/SHAPES.k9_phase_step.linux-root.json
+#    and to the report step, so that the job log carries its hash and content:
+#           run: /usr/bin/python3 -I -B linux_root/report.py ../k9_phase_step/linux_root/SHAPES.k9_phase_step.linux-root.json
+#
+# What a run that exits 0 closes for K9W: DESIGN.md section 9, K9W-U1 to K9W-U7 on a GitHub runner's engine and
+# filesystem, with a python:3.12-alpine image standing for the backend image (busybox timeout, python). Nothing here
+# closes them for the production host (another engine version, the real image, the real networks): the first eve does.

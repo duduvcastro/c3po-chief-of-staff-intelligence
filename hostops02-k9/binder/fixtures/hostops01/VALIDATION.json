@@ -1,0 +1,554 @@
+{
+  "activation_authorized": false,
+  "actual_host_calls": 0,
+  "assembly": {
+    "install_units": {
+      "dispatcher_changed_lines": [
+        15,
+        16,
+        102,
+        103,
+        109,
+        118,
+        127,
+        128,
+        129,
+        141,
+        142,
+        146,
+        147,
+        162,
+        205,
+        213,
+        219,
+        239
+      ],
+      "dispatcher_line_count_equal": true,
+      "dispatcher_sha256": "a8b37c3428db626ac84ad75de93ce725ea20e36d2e5e58cc01bf48b70dd22bcb",
+      "final_payload_bytes": 119991,
+      "final_payload_sha256": "26d8b9fc79b04cc7e55403241425a3dfa43175a8b3d85100e8d7743a38bb7f21",
+      "scope_sha256": "64dcaf595e840813f4d01bfc28292d20b8e2920489598cef03e72702f93064ca",
+      "source_bytes": 76387,
+      "source_sha256": "c1894df7e50d79dbcbea3b350893d20cca770d34431041fab99384e8b60b8110"
+    },
+    "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+    "precheck": {
+      "dispatcher_changed_lines": [
+        15,
+        16,
+        102,
+        103,
+        109,
+        118,
+        127,
+        128,
+        129,
+        141,
+        146,
+        147,
+        162,
+        205,
+        213,
+        219,
+        239
+      ],
+      "dispatcher_line_count_equal": true,
+      "dispatcher_sha256": "31e748269e6478f8be297de24f651ed4e781950b474aa4363849d414fb855d8f",
+      "final_payload_bytes": 105319,
+      "final_payload_sha256": "8b81970b3ca4ca49360811b373a401f22bdc3e1cbf9824b41a722a7f3121ec37",
+      "scope_sha256": "010228fb8340e3e9a25f0abbdbcb0b90c838a1ed1ae3b14864b03082da8053b2",
+      "source_bytes": 68569,
+      "source_sha256": "c3a6513a811e39de4fb67d931f8e468b3fa0724ae7d69591c0ebe146f6a2c5b1"
+    },
+    "provision": {
+      "dispatcher_changed_lines": [
+        15,
+        16,
+        102,
+        103,
+        109,
+        118,
+        127,
+        128,
+        129,
+        141,
+        142,
+        146,
+        147,
+        162,
+        205,
+        213,
+        219,
+        239
+      ],
+      "dispatcher_line_count_equal": true,
+      "dispatcher_sha256": "b4906d3c5270727232645635adf31a24a93a880af4568729496dd7ccab70c418",
+      "final_payload_bytes": 115643,
+      "final_payload_sha256": "2c21724a1699ff6415c64434789dfd206177bfe97f4bf83232e13b6cdd9e5715",
+      "scope_sha256": "292776f568dba1a539e477593d1a6987d27c263cadbf49a74ca177006f43e4ec",
+      "source_bytes": 73808,
+      "source_sha256": "00ae7d15da12eff785c1a80bcb6db883f5dab9886ffe48cc2438a034c5f5261d"
+    },
+    "readback": {
+      "dispatcher_changed_lines": [
+        15,
+        16,
+        102,
+        103,
+        109,
+        118,
+        127,
+        128,
+        129,
+        141,
+        146,
+        147,
+        162,
+        205,
+        213,
+        219,
+        239
+      ],
+      "dispatcher_line_count_equal": true,
+      "dispatcher_sha256": "3e517e862a20351d8e184ba3916e3f63ca2b926ad38ffa177677bf563208e467",
+      "final_payload_bytes": 153915,
+      "final_payload_sha256": "2394c3f8583ff8b5f8ce1d51fc33e0772e0ebae8d8d1bd582a2c4c7c2a780744",
+      "scope_sha256": "650c50314a6fe896832b177f1ffd2df537b764e2650a2c60b2b381a83fea7341",
+      "source_bytes": 99334,
+      "source_sha256": "c803c2566b591f7bf537709414aedef848dbf52793cb893f0bd8987424344670"
+    },
+    "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918"
+  },
+  "assembly_at_another_path": {
+    "files_that_differ": [],
+    "generated_files_compared": 45,
+    "same_bytes": true
+  },
+  "assembly_is_a_fixed_point": true,
+  "created_at": "2026-10-02T13:07:18.045668+00:00",
+  "dispatch_date_scope": {
+    "read_only_operations": [
+      "2026-10-02",
+      "2026-10-03",
+      "2026-10-04",
+      "2026-10-05"
+    ],
+    "write_operations": [
+      "2026-10-02",
+      "2026-10-03",
+      "2026-10-04"
+    ]
+  },
+  "docker_binary_runs": 0,
+  "execution_authorized": false,
+  "files_changed_by_reassembly": [],
+  "go_template_engine": "emulated in tests/hostemu.py (the emulation of the reviewed read-only family); no real docker CLI or Go engine was run",
+  "host_calibration": {
+    "data_volume_bytes_available": 54070542336,
+    "device_and_inode_numbers_of_the_host_carried_by_this_candidate": false,
+    "observed_at": "2026-10-02T01:51:44.553396+00:00",
+    "read_from_a_local_file_only": true,
+    "receipt": "GO_READONLY_SUPERVISOR_HOSTFACTS_01 stdout",
+    "root_filesystem_bytes_available": 595212316672,
+    "sha256": "47abfa0a93d1ffbd7b90fd72a3e414a9c54ce3debda8e70ae679d45be36e528b",
+    "var_lib_bytes_available": 595212316672,
+    "var_lib_on_the_device_and_with_the_figures_of_the_root_filesystem": true
+  },
+  "journal_placement": {
+    "corrected_in_revision_3": "revision 2 listed \"which filesystem /var/lib belongs to\" under not_read_by_any_receipt; the HOSTFACTS_01 receipt read it",
+    "implemented": [
+      "A",
+      "B"
+    ],
+    "not_read_by_any_receipt": "a container journal root directly below \"/\" on a real engine",
+    "re_read_in_the_boot_of_the_write": "OP_PRECHECK reads the VAR_LIB chain (the rows a request signs); OP_READBACK gates JOURNAL_FILESYSTEM_MISMATCH",
+    "read_by_the_hostfacts_01_receipt": "which filesystem /var/lib belongs to: reference_filesystems has a row for \"/var/lib\" with the device number and the statvfs figures of \"/\" (595212316672 bytes available), in the boot of 2026-10-02; the receipt has no row for /var",
+    "readme_moved_during_the_build_of_revision_2": [
+      "3506d52 (revision 1 bytes)",
+      "uncommitted draft",
+      "16a7cc5",
+      "a6dd2b1 (amended commit)"
+    ],
+    "readme_revision_followed": "a6dd2b1bd81f2652100084e64b5504dd4678bd34",
+    "readme_sha256_followed": "27bf0e5aa3fc1e152dcc386b35063ac0060a2d700e227e9c14a8828c3c56dc2b",
+    "reference_reading_copied_into_tests_sha256": "aae5f117d86cbd0a652696150b7eac8d943e58f42eb7f444a545b170b4d23dc5",
+    "reference_reading_still_in_the_repository_at_head": true,
+    "repository_moved_since_the_revision_followed": {
+      "commits": [
+        "51289ce76ae1afa41d94856f229725fad4d83cd9 docs(r2d2-v2): the receipt of 2026-10-02 did read /var/lib; say so"
+      ],
+      "head": "51289ce76ae1afa41d94856f229725fad4d83cd9",
+      "readme_differs_from_the_revision_followed": true,
+      "readme_sha256_at_head": "644c6211c7351de1dfd17d880842deaf4d5e5b34ea63d23a274c5f4e463461c5",
+      "templates_equal_the_revision_followed": true,
+      "what_changed": "51289ce: fifteen lines of README prose saying that the receipt of 2026-10-02 read /var/lib on the root filesystem (the correction m1 makes here), and the repository test that pins that prose; no rule, no template"
+    },
+    "reviewed_by_anyone_but_the_author": "revision 2 was reviewed once (third review); the changes of revision 3 were not"
+  },
+  "linux_as_real_root": {
+    "done": false,
+    "image_store": "run.sh sets features.containerd-snapshotter=true, restarts the daemon and requires docker info to name the containerd snapshotter before anything is pulled; not run",
+    "prepared": "linux_root/run.sh, linux_root/shapes.py, linux_root/report.py, linux_root/WORKFLOW.yml.txt",
+    "required_before_any_write_go": true,
+    "run_sh_control_flow": "exercised offline on a copy with stub commands (no Linux, no docker, no systemd, no privilege): seven paths, exit 0 only on the path where everything holds; that is a check of the script's flow, not of anything it is meant to prove",
+    "run_sh_syntax_check_returncodes": {
+      "dash -n": 0,
+      "sh -n": 0
+    },
+    "shapes_self_test_against_the_emulated_cli_only": {
+      "second": {
+        "returncode": 0,
+        "stderr_bytes": 0,
+        "stdout": "SELF_TEST_OK emulated CLI only; nothing here was run against a real engine"
+      },
+      "system": {
+        "returncode": 0,
+        "stderr_bytes": 0,
+        "stdout": "SELF_TEST_OK emulated CLI only; nothing here was run against a real engine"
+      }
+    },
+    "why": "needs one run of linux_root/run.sh on a throwaway GitHub-hosted ubuntu-24.04 runner that exits 0; no Linux, no docker and no CI runner were available offline, and nothing here claims that run"
+  },
+  "mutation_anchor_and_effects_coverage_check": "MUTANTS 677 COMBOS 23 ANCHORS_OK",
+  "mutation_check": {
+    "combined_mutants_of_the_redundant_ones_killed": true,
+    "complete_run": true,
+    "counts": {
+      "combined": 23,
+      "errors": 0,
+      "killed": 698,
+      "redundant_survivors": 2,
+      "single": 677,
+      "survivors": 0
+    },
+    "errors": [],
+    "note": "copies only; a mutant is killed only by a test that is not named static; zero survivors of THIS list, which reviewers extended three times before; a redundant mutant removes a check another check implies, survives alone by construction and is never counted as killed",
+    "python": "Python 3.9.6",
+    "ran_against_these_bytes": true,
+    "record": "MUTATION_RUN.json",
+    "redundant": {
+      "T09_escape_with_a_pending_call_not_looked_at": {
+        "combined_mutants": [
+          "combo_r3_escape_with_a_pending_call_both_checks"
+        ],
+        "why": "a pending call is issued and not settled: Effects.uncertain() is then at least 1 and clean() is already false (T08)"
+      },
+      "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held": {
+        "combined_mutants": [
+          "combo_r3_verify_fresh_walk_and_signed_rows"
+        ],
+        "why": "the fresh walk already requires every component to equal its signed row on device, inode, owner, group and mode (E07), and the identity held was read from a descriptor that passed the same walk"
+      }
+    },
+    "redundant_killed_alone": [],
+    "redundant_survivors": [
+      "T09_escape_with_a_pending_call_not_looked_at",
+      "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held"
+    ],
+    "survivors_with_no_behavioural_failure": []
+  },
+  "mutation_check_second_interpreter": {
+    "combined_mutants_of_the_redundant_ones_killed": true,
+    "complete_run": true,
+    "counts": {
+      "combined": 23,
+      "errors": 0,
+      "killed": 698,
+      "redundant_survivors": 2,
+      "single": 677,
+      "survivors": 0
+    },
+    "errors": [],
+    "note": "copies only; a mutant is killed only by a test that is not named static; zero survivors of THIS list, which reviewers extended three times before; a redundant mutant removes a check another check implies, survives alone by construction and is never counted as killed",
+    "python": "Python 3.12.14",
+    "ran_against_these_bytes": true,
+    "record": "MUTATION_RUN.py312.json",
+    "redundant": {
+      "T09_escape_with_a_pending_call_not_looked_at": {
+        "combined_mutants": [
+          "combo_r3_escape_with_a_pending_call_both_checks"
+        ],
+        "why": "a pending call is issued and not settled: Effects.uncertain() is then at least 1 and clean() is already false (T08)"
+      },
+      "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held": {
+        "combined_mutants": [
+          "combo_r3_verify_fresh_walk_and_signed_rows"
+        ],
+        "why": "the fresh walk already requires every component to equal its signed row on device, inode, owner, group and mode (E07), and the identity held was read from a descriptor that passed the same walk"
+      }
+    },
+    "redundant_killed_alone": [],
+    "redundant_survivors": [
+      "T09_escape_with_a_pending_call_not_looked_at",
+      "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held"
+    ],
+    "survivors_with_no_behavioural_failure": []
+  },
+  "native_tests": "the sources' own Native classes with nothing overridden: real mkdir/open/write/fsync/link/unlink/lstat/fstat/scandir/readlink by dir_fd on a temporary tree, as an ordinary user on macOS, with every call's arguments recorded at the os level; the test user is reported as root and O_NOATIME is a marker bit on macOS",
+  "operation_not_built": [
+    "GO_WRITE_READER_SECRET_ENV_01 (secret.env): specified in CONTRACT.txt, no code",
+    "removal of a leftover temporary: no code (still needed after a process death, an expired window, a replaced directory or temporary, a failed removal)"
+  ],
+  "operational_go_created": false,
+  "operational_prepare_or_resume": 0,
+  "public_safety_scan": {
+    "files_scanned": 86,
+    "hits": [],
+    "kept_on_purpose": "free-space figures and block counts, uid/gid/mode values, Docker and systemd versions, the directory layout, the sha256 of the HOSTFACTS_01 stdout; the inode 2 of \"/\" in the emulated tree is the root inode of any ext filesystem",
+    "matches_allowed_for_a_stated_reason": [
+      [
+        "secret or token",
+        "tests/test_install_units.py",
+        294,
+        "a synthetic canary of the tests: its whole purpose is that no receipt ever carries it"
+      ],
+      [
+        "secret or token",
+        "tests/test_precheck.py",
+        213,
+        "a synthetic canary of the tests: its whole purpose is that no receipt ever carries it"
+      ],
+      [
+        "secret or token",
+        "tests/test_readback.py",
+        18,
+        "the path of the token file, a constant of the layout, not a token"
+      ]
+    ],
+    "rules": [
+      "absolute workstation path",
+      "device or inode number of the receipt",
+      "host name",
+      "identifier of the receipt",
+      "ip address",
+      "secret or token",
+      "ticker symbol",
+      "user name"
+    ]
+  },
+  "ready": false,
+  "real_credential_reads": 0,
+  "receipt_sizes": {
+    "install_units": {
+      "bound_authority_bytes": 2439,
+      "bound_go_bytes": 3744,
+      "bound_request_bytes": 10441,
+      "commands": 0,
+      "complete_receipt_line_bytes": 5993,
+      "final_payload_bytes": 119991,
+      "host_calls": 302,
+      "outcome": "UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED",
+      "reductions": [],
+      "source_bytes": 76387
+    },
+    "limit": {
+      "dispatcher_decode_limit": 65536,
+      "document_limit": 65536,
+      "payload_seal_limit": 60000
+    },
+    "precheck": {
+      "bound_authority_bytes": 1656,
+      "bound_go_bytes": 2613,
+      "bound_request_bytes": 7219,
+      "commands": 2,
+      "complete_receipt_line_bytes": 11584,
+      "final_payload_bytes": 105319,
+      "host_calls": 393,
+      "outcome": "PRECHECK_ALL_OBSERVED",
+      "reductions": [],
+      "source_bytes": 68569
+    },
+    "provision": {
+      "bound_authority_bytes": 3663,
+      "bound_go_bytes": 4911,
+      "bound_request_bytes": 10098,
+      "commands": 5,
+      "complete_receipt_line_bytes": 12314,
+      "final_payload_bytes": 115643,
+      "host_calls": 499,
+      "outcome": "PROVISIONED_ALL_VERIFIED_DURABLE",
+      "reductions": [],
+      "refusal_code": "DESTINATION_PRESENT_UNEXPECTED",
+      "refusal_with_table_line_bytes": 7217,
+      "source_bytes": 73808
+    },
+    "readback": {
+      "bound_authority_bytes": 2766,
+      "bound_go_bytes": 4121,
+      "bound_request_bytes": 13173,
+      "commands": 9,
+      "complete_receipt_line_bytes": 13776,
+      "final_payload_bytes": 153915,
+      "host_calls": 431,
+      "on_the_receipt_free_space": {
+        "findings": [],
+        "line_bytes": 13776,
+        "outcome": "READBACK_ALL_OBSERVED_ALL_EXPECTATIONS_MET"
+      },
+      "outcome": "READBACK_ALL_OBSERVED_ALL_EXPECTATIONS_MET",
+      "reductions": [],
+      "source_bytes": 99334
+    }
+  },
+  "remote_source_minimum_python": "3.7",
+  "repository_head_when_validated": "51289ce76ae1afa41d94856f229725fad4d83cd9",
+  "reviewed_dispatch_base_sha256": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409",
+  "reviewed_launcher_base_sha256": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e",
+  "revision": 3,
+  "revision_1_sha256sums_sha256": "dda2df0c508c676a33a4be0498890d5d573c30e0428e44df9e44c555e22abf64",
+  "revision_2_sha256sums_sha256": "4ba5da3b322fd63cd5f9d6128761b1eecd02951a9ec08ab432a851c939f5e912",
+  "schema": "HOSTOPS01_STDIN_ONCE_OFFLINE_VALIDATION_V3",
+  "second_review": {
+    "beyond_the_review": "signed journal placement A/B, because the README at HEAD changed under the build",
+    "closed_in_code_or_tests": 20,
+    "findings": {
+      "major": 5,
+      "minor": 16
+    },
+    "not_closed": [
+      "F4: never executed on Linux as real root (cannot be done offline)"
+    ]
+  },
+  "status": "REQUIRES_INDEPENDENT_REVIEW_AND_REAL_BINDINGS",
+  "supervisor_readme_sha256_at_head": "644c6211c7351de1dfd17d880842deaf4d5e5b34ea63d23a274c5f4e463461c5",
+  "supervisor_readme_sha256_in_the_working_tree": "644c6211c7351de1dfd17d880842deaf4d5e5b34ea63d23a274c5f4e463461c5",
+  "supervisor_readme_working_tree_differs_from_head": false,
+  "synthetic_prepare_resume_tests_only": true,
+  "systemctl_runs": 0,
+  "systemd": "emulated: documented output shapes; of the host only what the HOSTFACTS_01 receipt read is used as calibration",
+  "templates_equal_repository_head": {
+    "c3po-massive.service": true,
+    "c3po-massive.timer": true
+  },
+  "templates_sha256": {
+    "c3po-massive.service": "9e7de1c6eaf937e5b1fc9540986fdbdf2a2f821a9c57b944f9534a605d07f04a",
+    "c3po-massive.timer": "ec61b1d6cbd1d604e5c2177d186f9045e67bf21ecc092498691591dfd9164ee6"
+  },
+  "tests_optional_inputs": {
+    "present_for_these_counts": [
+      "HOSTOPS_TEST_HOSTFACTS_SOURCE",
+      "HOSTOPS_TEST_INSTALLER_DRAFTS_DIR",
+      "HOSTOPS_TEST_PREFLIGHT_SOURCE",
+      "HOSTOPS_TEST_SIGNED_2026_10_01_DIR"
+    ],
+    "without_them": "sixteen tests are skipped (four per input), plus one static comparison with the repository file"
+  },
+  "tests_second_interpreter": {
+    "counts": {
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "tests": 1109
+    },
+    "python": "Python 3.12.14",
+    "returncode": 0,
+    "summary": "1109 passed in 23.08s"
+  },
+  "tests_system_python": {
+    "counts": {
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "tests": 1109
+    },
+    "python": "Python 3.9.6",
+    "returncode": 0,
+    "summary": "1109 passed in 30.92s"
+  },
+  "tests_xml_hostname_redacted": true,
+  "third_review": {
+    "closed": {
+      "m1": "the /var/lib statement corrected (CONTRACT 4, 12 step 2b, 13c, 16, 18 decision 0; journal_placement above; three comments)",
+      "m2": "tests and mutants T01, T02, T02b for the two unpinned guards (no code change: both guards were in the code); T03 to T07 with tests of their own; T09 and T10 redundant, each dead in the combined mutant of its pair",
+      "m3": "null paths in the unbound dispatch templates; the assembly yields the same bytes at another path",
+      "m4": "existing_journal_leaves in the signed effects of OP_PROVISION and OP_PRECHECK, in both literals and in the EFFECTS table",
+      "m5": "run.sh switches the runner to the containerd image store before any pull and was reworked for a GitHub-hosted runner; shapes.py states the expectations; report.py prints the four output files",
+      "m6": "no path, user, host, address or device/inode number of the build machine or of the production host in any file"
+    },
+    "not_closed": [
+      "F4: the mutating paths never ran on Linux as real uid 0"
+    ],
+    "of": "revision 2, SHA256SUMS 4ba5da3b322fd63cd5f9d6128761b1eecd02951a9ec08ab432a851c939f5e912",
+    "points": {
+      "blocking": 1,
+      "minor": 6
+    },
+    "verdict": "NO_GO for F4 only"
+  },
+  "transport_reused_exact": true,
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_payload_under_isolated_python": {
+    "install_units": {
+      "second": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_CREATED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      },
+      "system": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_CREATED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      }
+    },
+    "precheck": {
+      "second": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_OBSERVED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      },
+      "system": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_OBSERVED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      }
+    },
+    "provision": {
+      "second": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_CREATED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      },
+      "system": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_CREATED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      }
+    },
+    "readback": {
+      "second": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_OBSERVED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      },
+      "system": {
+        "code": "REQUEST_OR_EXECUTOR_UNBOUND",
+        "mutating_calls_issued": 0,
+        "outcome": "REFUSED_NOTHING_OBSERVED",
+        "returncode": 1,
+        "status": "REFUSED",
+        "stderr_bytes": 0
+      }
+    }
+  }
+}

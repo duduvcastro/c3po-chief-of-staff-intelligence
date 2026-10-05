@@ -1,0 +1,3182 @@
+{
+ "G18": [
+  {
+   "day": "2026-10-06",
+   "eve": "2026-10-05",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-05T21:31:59Z",
+     "not_before": "2026-10-05T21:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T21:34:59Z",
+     "not_before": "2026-10-05T21:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-05T21:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T21:57:59Z",
+     "not_before": "2026-10-05T21:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T21:57:59Z",
+     "not_before": "2026-10-05T21:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-05T22:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T22:33:59Z",
+     "not_before": "2026-10-05T22:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T22:31:59Z",
+     "not_before": "2026-10-05T22:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-05T22:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T22:59:59Z",
+     "not_before": "2026-10-05T22:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-05T22:31:59Z",
+     "not_before": "2026-10-05T22:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T22:34:59Z",
+     "not_before": "2026-10-05T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-05T22:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T22:57:59Z",
+     "not_before": "2026-10-05T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T22:57:59Z",
+     "not_before": "2026-10-05T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-05T23:07:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T23:33:59Z",
+     "not_before": "2026-10-05T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T23:31:59Z",
+     "not_before": "2026-10-05T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-05T23:41:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T23:59:59Z",
+     "not_before": "2026-10-05T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T00:05:59Z",
+     "not_before": "2026-10-06T00:00:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-06T00:45:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T00:59:59Z",
+     "not_before": "2026-10-06T00:46:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T00:53:59Z",
+     "not_before": "2026-10-06T00:48:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-06T02:08:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T02:45:59Z",
+     "not_before": "2026-10-06T02:26:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-06T02:34:59Z",
+     "not_before": "2026-10-06T02:29:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-06T02:43:59Z",
+     "not_before": "2026-10-06T02:38:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T02:46:59Z",
+     "not_before": "2026-10-06T02:41:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-06T03:46:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T04:06:59Z",
+     "not_before": "2026-10-06T03:47:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T03:55:59Z",
+     "not_before": "2026-10-06T03:50:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-06T04:15:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T04:45:59Z",
+     "not_before": "2026-10-06T04:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-06T04:34:59Z",
+     "not_before": "2026-10-06T04:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-06T12:34:59Z",
+     "not_before": "2026-10-06T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T13:59:59Z",
+     "not_before": "2026-10-06T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-06T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T14:35:59Z",
+     "not_before": "2026-10-06T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-06T14:34:59Z",
+     "not_before": "2026-10-06T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  },
+  {
+   "day": "2026-10-07",
+   "eve": "2026-10-06",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-06T21:31:59Z",
+     "not_before": "2026-10-06T21:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T21:34:59Z",
+     "not_before": "2026-10-06T21:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-06T21:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T21:57:59Z",
+     "not_before": "2026-10-06T21:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T21:57:59Z",
+     "not_before": "2026-10-06T21:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-06T22:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T22:33:59Z",
+     "not_before": "2026-10-06T22:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T22:31:59Z",
+     "not_before": "2026-10-06T22:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-06T22:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T22:59:59Z",
+     "not_before": "2026-10-06T22:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-06T22:31:59Z",
+     "not_before": "2026-10-06T22:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T22:34:59Z",
+     "not_before": "2026-10-06T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-06T22:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T22:57:59Z",
+     "not_before": "2026-10-06T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T22:57:59Z",
+     "not_before": "2026-10-06T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-06T23:07:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T23:33:59Z",
+     "not_before": "2026-10-06T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T23:31:59Z",
+     "not_before": "2026-10-06T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-06T23:41:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T23:59:59Z",
+     "not_before": "2026-10-06T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T00:05:59Z",
+     "not_before": "2026-10-07T00:00:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-07T00:45:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T00:59:59Z",
+     "not_before": "2026-10-07T00:46:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T00:53:59Z",
+     "not_before": "2026-10-07T00:48:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-07T02:08:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T02:45:59Z",
+     "not_before": "2026-10-07T02:26:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-07T02:34:59Z",
+     "not_before": "2026-10-07T02:29:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-07T02:43:59Z",
+     "not_before": "2026-10-07T02:38:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T02:46:59Z",
+     "not_before": "2026-10-07T02:41:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-07T03:46:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T04:06:59Z",
+     "not_before": "2026-10-07T03:47:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T03:55:59Z",
+     "not_before": "2026-10-07T03:50:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-07T04:15:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T04:45:59Z",
+     "not_before": "2026-10-07T04:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-07T04:34:59Z",
+     "not_before": "2026-10-07T04:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-07T12:34:59Z",
+     "not_before": "2026-10-07T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T13:59:59Z",
+     "not_before": "2026-10-07T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-07T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T14:35:59Z",
+     "not_before": "2026-10-07T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-07T14:34:59Z",
+     "not_before": "2026-10-07T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  },
+  {
+   "day": "2026-10-08",
+   "eve": "2026-10-07",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-07T21:31:59Z",
+     "not_before": "2026-10-07T21:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T21:34:59Z",
+     "not_before": "2026-10-07T21:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-07T21:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T21:57:59Z",
+     "not_before": "2026-10-07T21:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T21:57:59Z",
+     "not_before": "2026-10-07T21:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-07T22:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T22:33:59Z",
+     "not_before": "2026-10-07T22:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T22:31:59Z",
+     "not_before": "2026-10-07T22:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-07T22:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T22:59:59Z",
+     "not_before": "2026-10-07T22:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-07T22:31:59Z",
+     "not_before": "2026-10-07T22:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T22:34:59Z",
+     "not_before": "2026-10-07T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-07T22:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T22:57:59Z",
+     "not_before": "2026-10-07T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T22:57:59Z",
+     "not_before": "2026-10-07T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-07T23:07:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T23:33:59Z",
+     "not_before": "2026-10-07T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T23:31:59Z",
+     "not_before": "2026-10-07T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-07T23:41:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T23:59:59Z",
+     "not_before": "2026-10-07T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T00:05:59Z",
+     "not_before": "2026-10-08T00:00:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-08T00:45:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T00:59:59Z",
+     "not_before": "2026-10-08T00:46:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T00:53:59Z",
+     "not_before": "2026-10-08T00:48:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-08T02:08:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T02:45:59Z",
+     "not_before": "2026-10-08T02:26:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-08T02:34:59Z",
+     "not_before": "2026-10-08T02:29:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-08T02:43:59Z",
+     "not_before": "2026-10-08T02:38:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T02:46:59Z",
+     "not_before": "2026-10-08T02:41:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-08T03:46:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T04:06:59Z",
+     "not_before": "2026-10-08T03:47:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T03:55:59Z",
+     "not_before": "2026-10-08T03:50:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-08T04:15:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T04:45:59Z",
+     "not_before": "2026-10-08T04:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-08T04:34:59Z",
+     "not_before": "2026-10-08T04:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-08T12:34:59Z",
+     "not_before": "2026-10-08T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T13:59:59Z",
+     "not_before": "2026-10-08T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-08T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T14:35:59Z",
+     "not_before": "2026-10-08T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-08T14:34:59Z",
+     "not_before": "2026-10-08T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  },
+  {
+   "day": "2026-10-09",
+   "eve": "2026-10-08",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-08T21:31:59Z",
+     "not_before": "2026-10-08T21:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T21:34:59Z",
+     "not_before": "2026-10-08T21:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-08T21:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T21:57:59Z",
+     "not_before": "2026-10-08T21:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T21:57:59Z",
+     "not_before": "2026-10-08T21:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-08T22:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T22:33:59Z",
+     "not_before": "2026-10-08T22:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T22:31:59Z",
+     "not_before": "2026-10-08T22:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-08T22:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T22:59:59Z",
+     "not_before": "2026-10-08T22:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-08T22:31:59Z",
+     "not_before": "2026-10-08T22:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T22:34:59Z",
+     "not_before": "2026-10-08T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-08T22:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T22:57:59Z",
+     "not_before": "2026-10-08T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T22:57:59Z",
+     "not_before": "2026-10-08T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-08T23:07:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T23:33:59Z",
+     "not_before": "2026-10-08T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T23:31:59Z",
+     "not_before": "2026-10-08T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-08T23:41:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T23:59:59Z",
+     "not_before": "2026-10-08T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T00:05:59Z",
+     "not_before": "2026-10-09T00:00:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-09T00:45:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T00:59:59Z",
+     "not_before": "2026-10-09T00:46:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T00:53:59Z",
+     "not_before": "2026-10-09T00:48:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-09T02:08:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T02:45:59Z",
+     "not_before": "2026-10-09T02:26:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-09T02:34:59Z",
+     "not_before": "2026-10-09T02:29:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-09T02:43:59Z",
+     "not_before": "2026-10-09T02:38:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T02:46:59Z",
+     "not_before": "2026-10-09T02:41:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-09T03:46:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T04:06:59Z",
+     "not_before": "2026-10-09T03:47:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T03:55:59Z",
+     "not_before": "2026-10-09T03:50:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-09T04:15:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T04:45:59Z",
+     "not_before": "2026-10-09T04:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-09T04:34:59Z",
+     "not_before": "2026-10-09T04:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-09T12:34:59Z",
+     "not_before": "2026-10-09T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T13:59:59Z",
+     "not_before": "2026-10-09T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-09T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T14:35:59Z",
+     "not_before": "2026-10-09T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-09T14:34:59Z",
+     "not_before": "2026-10-09T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  }
+ ],
+ "G19": [
+  {
+   "day": "2026-10-06",
+   "eve": "2026-10-05",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-05T22:31:59Z",
+     "not_before": "2026-10-05T22:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T22:34:59Z",
+     "not_before": "2026-10-05T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-05T22:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T22:57:59Z",
+     "not_before": "2026-10-05T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T22:57:59Z",
+     "not_before": "2026-10-05T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-05T23:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T23:33:59Z",
+     "not_before": "2026-10-05T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T23:31:59Z",
+     "not_before": "2026-10-05T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-05T23:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T23:59:59Z",
+     "not_before": "2026-10-05T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-05T23:31:59Z",
+     "not_before": "2026-10-05T23:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-05T23:34:59Z",
+     "not_before": "2026-10-05T23:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-05T23:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-05T23:59:59Z",
+     "not_before": "2026-10-05T23:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T00:05:59Z",
+     "not_before": "2026-10-06T00:00:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-06T00:15:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T00:45:59Z",
+     "not_before": "2026-10-06T00:26:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T00:34:59Z",
+     "not_before": "2026-10-06T00:29:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-06T00:44:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T00:59:59Z",
+     "not_before": "2026-10-06T00:45:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T01:01:59Z",
+     "not_before": "2026-10-06T00:56:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-06T01:41:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T01:59:59Z",
+     "not_before": "2026-10-06T01:42:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T01:49:59Z",
+     "not_before": "2026-10-06T01:44:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-06T03:04:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T04:05:59Z",
+     "not_before": "2026-10-06T03:46:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-06T03:54:59Z",
+     "not_before": "2026-10-06T03:49:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-06T03:58:59Z",
+     "not_before": "2026-10-06T03:53:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T04:01:59Z",
+     "not_before": "2026-10-06T03:56:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-06T05:01:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T06:05:59Z",
+     "not_before": "2026-10-06T05:46:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T05:54:59Z",
+     "not_before": "2026-10-06T05:49:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-06T06:14:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T06:45:59Z",
+     "not_before": "2026-10-06T06:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-06T06:34:59Z",
+     "not_before": "2026-10-06T06:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-06T12:34:59Z",
+     "not_before": "2026-10-06T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T13:59:59Z",
+     "not_before": "2026-10-06T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-06T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T14:35:59Z",
+     "not_before": "2026-10-06T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-06T14:34:59Z",
+     "not_before": "2026-10-06T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  },
+  {
+   "day": "2026-10-07",
+   "eve": "2026-10-06",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-06T22:31:59Z",
+     "not_before": "2026-10-06T22:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T22:34:59Z",
+     "not_before": "2026-10-06T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-06T22:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T22:57:59Z",
+     "not_before": "2026-10-06T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T22:57:59Z",
+     "not_before": "2026-10-06T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-06T23:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T23:33:59Z",
+     "not_before": "2026-10-06T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T23:31:59Z",
+     "not_before": "2026-10-06T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-06T23:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T23:59:59Z",
+     "not_before": "2026-10-06T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-06T23:31:59Z",
+     "not_before": "2026-10-06T23:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-06T23:34:59Z",
+     "not_before": "2026-10-06T23:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-06T23:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-06T23:59:59Z",
+     "not_before": "2026-10-06T23:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T00:05:59Z",
+     "not_before": "2026-10-07T00:00:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-07T00:15:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T00:45:59Z",
+     "not_before": "2026-10-07T00:26:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T00:34:59Z",
+     "not_before": "2026-10-07T00:29:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-07T00:44:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T00:59:59Z",
+     "not_before": "2026-10-07T00:45:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T01:01:59Z",
+     "not_before": "2026-10-07T00:56:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-07T01:41:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T01:59:59Z",
+     "not_before": "2026-10-07T01:42:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T01:49:59Z",
+     "not_before": "2026-10-07T01:44:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-07T03:04:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T04:05:59Z",
+     "not_before": "2026-10-07T03:46:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-07T03:54:59Z",
+     "not_before": "2026-10-07T03:49:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-07T03:58:59Z",
+     "not_before": "2026-10-07T03:53:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T04:01:59Z",
+     "not_before": "2026-10-07T03:56:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-07T05:01:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T06:05:59Z",
+     "not_before": "2026-10-07T05:46:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T05:54:59Z",
+     "not_before": "2026-10-07T05:49:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-07T06:14:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T06:45:59Z",
+     "not_before": "2026-10-07T06:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-07T06:34:59Z",
+     "not_before": "2026-10-07T06:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-07T12:34:59Z",
+     "not_before": "2026-10-07T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T13:59:59Z",
+     "not_before": "2026-10-07T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-07T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T14:35:59Z",
+     "not_before": "2026-10-07T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-07T14:34:59Z",
+     "not_before": "2026-10-07T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  },
+  {
+   "day": "2026-10-08",
+   "eve": "2026-10-07",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-07T22:31:59Z",
+     "not_before": "2026-10-07T22:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T22:34:59Z",
+     "not_before": "2026-10-07T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-07T22:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T22:57:59Z",
+     "not_before": "2026-10-07T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T22:57:59Z",
+     "not_before": "2026-10-07T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-07T23:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T23:33:59Z",
+     "not_before": "2026-10-07T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T23:31:59Z",
+     "not_before": "2026-10-07T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-07T23:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T23:59:59Z",
+     "not_before": "2026-10-07T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-07T23:31:59Z",
+     "not_before": "2026-10-07T23:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-07T23:34:59Z",
+     "not_before": "2026-10-07T23:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-07T23:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-07T23:59:59Z",
+     "not_before": "2026-10-07T23:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T00:05:59Z",
+     "not_before": "2026-10-08T00:00:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-08T00:15:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T00:45:59Z",
+     "not_before": "2026-10-08T00:26:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T00:34:59Z",
+     "not_before": "2026-10-08T00:29:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-08T00:44:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T00:59:59Z",
+     "not_before": "2026-10-08T00:45:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T01:01:59Z",
+     "not_before": "2026-10-08T00:56:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-08T01:41:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T01:59:59Z",
+     "not_before": "2026-10-08T01:42:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T01:49:59Z",
+     "not_before": "2026-10-08T01:44:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-08T03:04:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T04:05:59Z",
+     "not_before": "2026-10-08T03:46:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-08T03:54:59Z",
+     "not_before": "2026-10-08T03:49:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-08T03:58:59Z",
+     "not_before": "2026-10-08T03:53:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T04:01:59Z",
+     "not_before": "2026-10-08T03:56:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-08T05:01:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T06:05:59Z",
+     "not_before": "2026-10-08T05:46:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T05:54:59Z",
+     "not_before": "2026-10-08T05:49:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-08T06:14:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T06:45:59Z",
+     "not_before": "2026-10-08T06:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-08T06:34:59Z",
+     "not_before": "2026-10-08T06:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-08T12:34:59Z",
+     "not_before": "2026-10-08T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T13:59:59Z",
+     "not_before": "2026-10-08T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-08T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T14:35:59Z",
+     "not_before": "2026-10-08T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-08T14:34:59Z",
+     "not_before": "2026-10-08T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  },
+  {
+   "day": "2026-10-09",
+   "eve": "2026-10-08",
+   "rows": [
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-08T22:31:59Z",
+     "not_before": "2026-10-08T22:26:00Z",
+     "operation": "readiness_probe",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T22:34:59Z",
+     "not_before": "2026-10-08T22:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_probe",
+     "run_not_after": "2026-10-08T22:49:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T22:57:59Z",
+     "not_before": "2026-10-08T22:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T22:57:59Z",
+     "not_before": "2026-10-08T22:52:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-08T23:07:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T23:33:59Z",
+     "not_before": "2026-10-08T23:08:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T23:31:59Z",
+     "not_before": "2026-10-08T23:26:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-08T23:41:59Z",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T23:59:59Z",
+     "not_before": "2026-10-08T23:42:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "PRIMARY",
+     "track": "P"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "PROBE",
+     "not_after": "2026-10-08T23:31:59Z",
+     "not_before": "2026-10-08T23:26:00Z",
+     "operation": "readiness_recheck",
+     "phase": "causal_list",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 900,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-08T23:34:59Z",
+     "not_before": "2026-10-08T23:29:00Z",
+     "operation": "collect_launch",
+     "phase": "causal_list",
+     "pred": "readiness_recheck",
+     "run_not_after": "2026-10-08T23:49:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-08T23:59:59Z",
+     "not_before": "2026-10-08T23:50:00Z",
+     "operation": "collect_result",
+     "phase": "causal_list",
+     "pred": "collect_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T00:05:59Z",
+     "not_before": "2026-10-09T00:00:00Z",
+     "operation": "commit_launch",
+     "phase": "causal_list",
+     "pred": "collect_result",
+     "run_not_after": "2026-10-09T00:15:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T00:45:59Z",
+     "not_before": "2026-10-09T00:26:00Z",
+     "operation": "commit_result",
+     "phase": "causal_list",
+     "pred": "commit_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 600,
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T00:34:59Z",
+     "not_before": "2026-10-09T00:29:00Z",
+     "operation": "publish_launch",
+     "phase": "causal_list",
+     "pred": "commit_result",
+     "run_not_after": "2026-10-09T00:44:59Z",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T00:59:59Z",
+     "not_before": "2026-10-09T00:45:00Z",
+     "operation": "publish_result",
+     "phase": "causal_list",
+     "pred": "publish_launch",
+     "slot": "SPARE",
+     "track": "S"
+    },
+    {
+     "ceiling_seconds": 2400,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T01:01:59Z",
+     "not_before": "2026-10-09T00:56:00Z",
+     "operation": "components_launch",
+     "phase": "components",
+     "pred": "publish_result",
+     "run_not_after": "2026-10-09T01:41:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T01:59:59Z",
+     "not_before": "2026-10-09T01:42:00Z",
+     "operation": "components_result",
+     "phase": "components",
+     "pred": "components_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T01:49:59Z",
+     "not_before": "2026-10-09T01:44:00Z",
+     "operation": "sources_launch",
+     "phase": "sources",
+     "pred": "components_result",
+     "run_not_after": "2026-10-09T03:04:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "commit_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T04:05:59Z",
+     "not_before": "2026-10-09T03:46:00Z",
+     "operation": "sources_result",
+     "phase": "sources",
+     "pred": "sources_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-09T03:54:59Z",
+     "not_before": "2026-10-09T03:49:00Z",
+     "operation": "bind",
+     "phase": "risk",
+     "pred": "sources_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-09T03:58:59Z",
+     "not_before": "2026-10-09T03:53:00Z",
+     "operation": "preflight",
+     "phase": "risk",
+     "pred": "bind",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 3600,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T04:01:59Z",
+     "not_before": "2026-10-09T03:56:00Z",
+     "operation": "acquire_launch",
+     "phase": "risk",
+     "pred": "preflight",
+     "run_not_after": "2026-10-09T05:01:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T06:05:59Z",
+     "not_before": "2026-10-09T05:46:00Z",
+     "operation": "acquire_result",
+     "phase": "risk",
+     "pred": "acquire_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T05:54:59Z",
+     "not_before": "2026-10-09T05:49:00Z",
+     "operation": "execute_launch",
+     "phase": "risk",
+     "pred": "acquire_result",
+     "run_not_after": "2026-10-09T06:14:59Z",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T06:45:59Z",
+     "not_before": "2026-10-09T06:26:00Z",
+     "operation": "execute_result",
+     "phase": "risk",
+     "pred": "execute_launch",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [
+      "publish_result"
+     ],
+     "kind": "WRITE",
+     "mode": "ATTACHED",
+     "not_after": "2026-10-09T06:34:59Z",
+     "not_before": "2026-10-09T06:29:00Z",
+     "operation": "stage",
+     "phase": "risk",
+     "pred": "execute_result",
+     "slot": "PRIMARY",
+     "track": "POST"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "POLICY",
+     "not_after": "2026-10-09T12:34:59Z",
+     "not_before": "2026-10-09T12:26:00Z",
+     "operation": "policy_read",
+     "phase": "policy_readonly",
+     "pred": null,
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "LAUNCH",
+     "not_after": "2026-10-09T13:59:59Z",
+     "not_before": "2026-10-09T13:50:00Z",
+     "operation": "capture_launch",
+     "phase": "capture",
+     "pred": null,
+     "run_not_after": "2026-10-09T14:03:00Z",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "READ",
+     "mode": "RESULT",
+     "not_after": "2026-10-09T14:35:59Z",
+     "not_before": "2026-10-09T14:26:00Z",
+     "operation": "capture_result",
+     "phase": "capture",
+     "pred": "capture_launch",
+     "slot": "PRIMARY",
+     "track": "AM"
+    },
+    {
+     "cites": [],
+     "kind": "WRITE",
+     "mode": "CLEANUP",
+     "not_after": "2026-10-09T14:34:59Z",
+     "not_before": "2026-10-09T14:29:00Z",
+     "operation": "capture_cleanup",
+     "phase": "capture",
+     "pred": "capture_result",
+     "slot": "PRIMARY",
+     "track": "AM"
+    }
+   ]
+  }
+ ]
+}

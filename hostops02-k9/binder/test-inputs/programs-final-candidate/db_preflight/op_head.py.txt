@@ -1,0 +1,57 @@
+OPERATION='GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01'
+PHASE='READONLY_DB_PREFLIGHT_THREE_QUERIES'
+REQUEST_SCHEMA='READONLY_HOSTOPS02_DB_PREFLIGHT_REQUEST_V1'
+AUTHORITY_SCHEMA='READONLY_HOSTOPS02_DB_PREFLIGHT_AUTHORITY_V1'
+GO_SCHEMA='READONLY_HOSTOPS02_DB_PREFLIGHT_GO_V1'
+RECEIPT_SCHEMA='READONLY_HOSTOPS02_DB_PREFLIGHT_RECEIPT_V1'
+PLAN_SCHEMA='HOSTOPS02_DB_PREFLIGHT_PLAN_V1'
+SOURCE_NAME='db_preflight.py'
+WRITES_ALLOWED=False
+ACTIVATION_ALLOWED=False
+DATE_CLASS='READ'
+DATES=DATE_SETS[DATE_CLASS]
+EVIDENCE_REQUIRED=True
+# The run that placed the two credentials this source binds read-only into its container (K3-K9, N-5)
+PRIV_OPERATION='GO_READONLY_HOSTOPS02_DB_PRIV_01'
+EVIDENCE_OPERATIONS=('GO_WRITE_HOSTOPS02_K3K9_SECRETS_01',PRIV_OPERATION)
+MAX_GATE_SPAN_SECONDS=1800
+# Separate program under A2 amendment 1 revision 3 E1-11; no shared PRIV/QUERIES runtime.
+MODES=('QUERIES',)
+COMPLETE_OUTCOME='DB_PREFLIGHT_ALL_OBSERVED_ALL_EXPECTATIONS_MET'          # mode QUERIES
+PRIV_COMPLETE_OUTCOME='DB_READER_PRIVILEGES_PROVEN'                       # mode PRIV
+MISMATCH_OUTCOME='DB_PREFLIGHT_OBSERVED_EXPECTATIONS_NOT_MET'
+PARTIAL_OUTCOME='DB_PREFLIGHT_PARTIAL'
+REFUSED_OUTCOME='REFUSED_NOTHING_OBSERVED'
+REDUCED_OUTCOME='DB_PREFLIGHT_PARTIAL'
+ESCAPED_OUTCOME='DB_PREFLIGHT_PARTIAL'
+PLAN_KEYS=frozenset(('mode','secrets_chain','image_id','image_revision','session','release_receipt_sha256','expected','priv_receipt',
+                     'evidence_boot_id_sha256'))
+PRIV_RECEIPT_KEYS=frozenset(('operation','mode','outcome','receipt_sha256','observed_at','boot_id_sha256'))
+QUERIES_ONLY=('session','release_receipt_sha256','expected','priv_receipt')
+
+DBR_EPOCH='R2D2-V2-SHADOW-2026-10-05'                  # ORD:7, EPOCH = NAMESPACE
+DBR_SESSIONS=EPOCH_DAYS[3:8]                           # 2026-10-05 ... 2026-10-09
+DBR_NETWORK='c3po_c3po_internal'                       # compose network c3po_internal (internal: true), where db resolves; no egress
+K9_ROOT='/var/lib/c3po/r2d2-v2-k9-20261005'            # K3-K9 placement, decision N-8
+SECRETS_DIRECTORY=K9_ROOT+'/secrets'
+RISK_ENV_NAME='risk-db.env'
+EMITTER_DIRECTORY_NAME='emitter'
+EMITTER_PASSWORD_NAME='password'
+SECRETS_ENTRIES=3                                      # provider.env, risk-db.env, emitter (what K3-K9 leaves)
+RISK_TARGET='/c3po-dbr-risk-db.env'                    # the one file bound, read-only
+EMITTER_TARGET='/c3po-dbr-emitter'                     # the emitter directory bound, read-only (it holds only the password)
+DBR_CONTAINER_PREFIX='hostops02-dbr-'
+DBR_RUN_PREFIX=['run','--rm','-i','--pull','never','--init','--user','0:0','--network',DBR_NETWORK,'--read-only','--cap-drop','ALL',
+                '--security-opt','no-new-privileges']
+EXPECTED_KEYS=frozenset(('epoch_rows','binding_committed'))
+LINE_KEYS_OF_MODE={'PRIV':frozenset(('schema','mode','status','risk_url','reader_privileges')),
+                   'QUERIES':frozenset(('schema','mode','queries','status','risk_url','emitter_password','epoch_row','binding','emitter'))}
+PRIVILEGE_KEYS=('role_is_the_restricted_reader','role_restricted','transaction_read_only','database_connect','schema_usage','epochs_select',
+                'journal_select')
+BINARIES={'docker':['/usr/bin/docker','/usr/local/bin/docker']}
+COMMANDS={'image':command_row('docker',['image','inspect','--format',IMAGE_FORMAT],'the signed image ID','QUICK','READ'),
+          'container_list':command_row('docker',['ps','-a','--no-trunc','--format',PS_FORMAT],None,'QUICK','READ'),
+          'query':command_row('docker',DBR_RUN_PREFIX,'--name hostops02-dbr-<16 hex of the GO>; PRIV: the risk URL file bound read-only, the '
+                              'signed image ID, python -I -B - PRIV and its container path; QUERIES: the risk URL file and the emitter directory '
+                              'bound read-only, the signed image ID, python -I -B - QUERIES, the two container paths, the epoch, the signed session, '
+                              'the signed release receipt sha256 (state.release_sha of the epoch row); the pinned snippet on standard input','RUN','CONTAINER',stdin=True)}

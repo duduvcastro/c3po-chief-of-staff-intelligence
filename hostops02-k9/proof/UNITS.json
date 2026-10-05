@@ -1,0 +1,89 @@
+{
+ "accepted_findings": [
+  {
+   "classes": [
+    "MAIL_OR_USER_AT_HOST"
+   ],
+   "file": "binder/READER_UNIT_LINK_GUARD.diff",
+   "reason": "26fa5bf4 candidate only: false-positive Python pytest decorators in the reviewed diff; no mail address"
+  },
+  {
+   "classes": [
+    "MAIL_OR_USER_AT_HOST"
+   ],
+   "file": "binder/fixtures/hostops01/REVISION_2_TO_3.diff",
+   "reason": "26fa5bf4 candidate only: false-positive Python pytest decorators in the reviewed historical diff; no mail address"
+  },
+  {
+   "classes": [
+    "IPV4_ADDRESS"
+   ],
+   "file": "binder/fixtures/w1/TESTS.xml",
+   "reason": "26fa5bf4 candidate only: test IDs containing the same reviewed synthetic frozen W1 IP markers; no host data"
+  },
+  {
+   "classes": [
+    "IPV4_ADDRESS"
+   ],
+   "file": "binder/fixtures/w1/test_w1_preflight_once.py",
+   "reason": "26fa5bf4 candidate only: synthetic frozen MockWorld network and LEAKS/never-emit IP markers; no host data or network use"
+  }
+ ],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-bootstrap-proof-20261006",
+ "family": "hostops02-k9",
+ "links": [],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "binder",
+   "files": 1739,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "26fa5bf47caf63f7298ab9a6bfa2652d108636fb5ec8be546776eb0f616677a5",
+   "source": "binder",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "bootstrap_identity",
+   "files": 29,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "b0a1281269e55805f37606fc3a010bc5274b550252aa0ae3d251eb63c04fcc4f",
+   "source": "bootstrap_identity",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "core_bootstrap_identity",
+   "files": 15,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+   "source": "core_bootstrap_identity",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "subset_registry25",
+   "files": 321,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "f0fa77c05b3083a8df5b89024603ac0a55ff4eaf893ced7cd82f0c6503154569",
+   "source": "subset_registry25",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "tree_conformance",
+   "files": 114,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "bd48027feeaa550e49c13dc50dfed0098b9fe7ea6d002df1c65196915d3bac01",
+   "source": "tree_conformance",
+   "withheld": {}
+  }
+ ]
+}

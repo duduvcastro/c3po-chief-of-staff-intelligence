@@ -1,0 +1,58 @@
+HOSTOPS02_BOOTSTRAP_IDENTITY — contrato candidato, revisão 1
+
+Esta família nova e seu núcleo próprio são uma construção offline revisável. Não constituem GO, execução no host, aceite, nem prova Linux/L1/L2. Os quatro slots em build/ são bootstrap_identity.py, dispatch_once.py, launcher_stdin.py e transport_once.py; os pedidos entregues são UNBOUND e devem ser recusados.
+
+Operação: GO_WRITE_HOSTOPS02_BOOTSTRAP_IDENTITY_01.
+Fase: WRITE_BOOTSTRAP_IDENTITY_EPOCH_CLAIM. Modo: BOOTSTRAP_IDENTITY.
+Schemas: WRITE_HOSTOPS02_BOOTSTRAP_IDENTITY_{REQUEST,AUTHORITY,GO,RECEIPT}_V1; plano HOSTOPS02_BOOTSTRAP_IDENTITY_PLAN_V1.
+Época: R2D2-V2-SHADOW-2026-10-05. Slot: FIRST_NIGHT_20261006.
+Data única: 06/10/2026. Janela compilada exata: 20:43:00–20:48:00Z (17:43:00–17:48:00BRT).
+Orçamento do processo: 60s; intervalo máximo do GO: 300s. Sem SPARE, segunda tentativa ou autorização inferida.
+
+Plano e proveniência
+
+PLAN_KEYS contém exatamente mode, epoch, slot, attempt_key, constants, parent_rows, data_volume_chain, source_rows, evidence_boot_id_sha256 e policy_read, além dos campos comuns autenticados do núcleo.
+A chave attempt_key é SHA256 do JSON canônico [epoch,slot]. É compilada e não depende do GO, pedido ou payload.
+constants contém exatamente package_sha256, code_revision, release_sha256, policy_sha256, image_id, runner_sha256, disk_floor_bytes e placement.
+parent_rows contém days, source_root, secrets, tools e claims. Cada cadeia é {path,rows,open_root:null}, nos caminhos N8 compilados, controlada por root, sem links/ancestrais graváveis por grupo/outros; folhas privadas 0700, uid/gid0, sem setgid.
+data_volume_chain contém linhas de seis campos {path,device,inode,uid,gid,mode} até /mnt/day-d-data, com a exceção de open_root legada assinada.
+source_rows contém as cinco posições exatas de fontes de setembro. Cada linha tem oito campos {path,device,inode,uid,gid,mode,mtime_ns,ctime_ns}; mode é inteiro. O programa compara os metadados observados, incluindo identidade e instantes, sem abrir conteúdo dos dois arquivos de credenciais.
+policy_read contém {policy:{directory,file_name},release:{directory,file_name},worker:{container,data_source,data_target}}.
+Worker: c3po-r2d2-worker-1; data_source: /mnt/day-d-data. Policy/release devem ficar sob esse volume; open_root aceita somente null ou /mnt/day-d-data. O novo binder fixa as linhas, nomes e hashes nas fontes M1/M3 reais; não admite proveniência digitada.
+Evidências obrigatórias nomeiam E0, POST da época e K9R TREE_PRE, com hashes exatos. A família autentica pedido/autoridade/GO/fonte. O binder verifica os recibos, estado bound, exit/stderr, relógios, cópias e a proveniência restrita da TREE_PRE parcial. Antes de BOOT não há recibo BOOT a citar.
+
+Observações obrigatórias
+
+No mesmo processo, observar worker container_id e boot_id_sha256 reais; conferir execução do worker, imagem, revisão, release, policy, os cinco nomes LIVE/build, montagem, runner, cadeias root, capacidade e fontes de setembro. Nomes de ambiente duplicados, idênticos ou divergentes, recusam. Todos os itens obrigatórios precisam COMPLETE, matches true e findings vazio antes do primeiro efeito.
+SECRETS deve estar held, pinned, root_private, estável e com entries0. EMITTER precisa ENOENT sob esse pai comprovado. Seu password fica ABSENT_PARENT_CONFIRMED, derivado da ausência positiva do pai; não se abre EMITTER inexistente. provider.env e risk-db.env precisam ENOENT nos nomes exatos sob SECRETS held. Permissão, I/O, ENOTDIR, errno divergente, pai indisponível ou entradas adicionais recusam; UNAVAILABLE não vira ausência.
+Depois do claim, repetir worker/ambiente/imagem, boot, hashes de policy/release/runner, metadados de setembro, piso de 200GiB, SECRETS vazio, as três ausências e todos os pais. Divergência depois de possível criação é PARCIAL/CONSUMIDO/HOLD.
+
+Efeito único e uso consumido
+
+O único efeito é criar bootstrap-<attempt_key>.claim na pasta CLAIMS compilada, fora de SECRETS, no mesmo device do pai held.
+Criação: O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC|O_WRONLY, 0600, uid0/gid0/nlink1. Confirmar metadados/nome/identidade, escrever até 4096 bytes, fsync do arquivo e da pasta, ler os bytes exatos e revalidar o pai. Nenhum unlink, reparo, sobrescrita, mkdir, chmod, chown, rename ou truncate é permitido. Nenhum container é criado/removido/executado, e nenhuma ativação ocorre.
+O conteúdo canônico tem exatamente schema, epoch, slot, attempt_key, request_sha256, go_sha256, payload_sha256, boot_id_sha256 e worker_container_id; schema HOSTOPS02_BOOTSTRAP_EPOCH_CLAIM_V1. Seu hash é content_sha256.
+Dois GOs diferentes disputam o mesmo arquivo. Existência comprovada, inclusive EEXIST da criação exclusiva, bloqueia o perdedor sem efeitos dele. Demais falhas durante possível criação são conservadoramente incertas/consumidas, mesmo que nenhum objeto possa ser comprovado. Depois de criada ou possivelmente criada, a reivindicação nunca é removida e não se infere retry. Crash após claim não reabre a época.
+A unicidade da execução BOOT não prova citação única do recibo por pedidos K3 distintos. Consumo direto é restrito pelo novo binder ao primeiro K3-K9 da primeira noite; cada pedido ainda exige autoridade própria. K3secret.env usa K3 COMPLETE com cadeia rastreável até BOOT. K9R/POLICY diários permanecem com suas regras antigas e não recebem a exceção.
+
+Recibo e estados
+
+Sucesso: status METADATA_ONLY_REQUIRES_REVIEW; outcome BOOTSTRAP_IDENTITY_AND_EPOCH_CLAIM_VERIFIED; code null; expectations_met true; dependents_hold false. Isso não é GO de dependente.
+Identidade observada: /items/worker/container_id. Boot observado: /boot_id_sha256. /effects/evidence_boot_id_sha256 é o valor esperado assinado, cuja igualdade foi conferida.
+/items/directory:SECRETS publica held/pinned/root_private true, entries0 e observed_rows iguais às assinadas.
+/items/directory:EMITTER publica exists false, held false, absence_confirmed true, parent_item directory:SECRETS e code ABSENT_FROM_HELD_SECRETS.
+/items/secret:EMITTER/password publica exists false, parent_absent_confirmed true e code ABSENT_PARENT_CONFIRMED.
+/items/secret:SECRETS/provider.env e risk-db.env publicam exists false, absence_confirmed true, errno2, code ABSENT_ENTRY_CONFIRMED e o pai held.
+INTERFACE.json enumera os 40 itens obrigatórios e as posições de seus readbacks.
+/claim pode ter state NOT_ATTEMPTED, EXISTING, CREATE_UNCERTAIN, CREATED, WRITTEN, FILE_SYNCED, DIRECTORY_SYNCED ou VERIFIED.
+VERIFIED exige possible_creation, created_by_this_run, usage_consumed, file_fsync, directory_fsync, readback_verified e parent_stable true; key/name/path exatos; metadata {type:file,uid0,gid0,mode_octal:0600,device,inode,links1}; content_sha256 exato.
+EXISTING prova que este processo não criou o objeto. CREATE_UNCERTAIN pode ter criado: usage_consumed true e HOLD, sem afirmar que nada mudou.
+Antes de efeito: REFUSED / REFUSED_NOTHING_CHANGED, com código/errno disponível. Depois de possível efeito: PARTIAL_METADATA_REQUIRES_REVIEW / PARTIAL_BOOTSTRAP_CLAIM_CONSUMED_REQUIRES_REVIEW; dependents_hold true.
+Falha de escrita/fsync/readback/close/cleanup, erro de relógio ou mudança de precondição não elimina o claim. Recibo conserva mutating_calls e estados/errno comprovados. Redução explícita torna o recibo parcial, conserva claim/contadores e mantém dependentes em HOLD.
+UTC final precisa estar dentro da janela e não regredir frente ao último gate; tempo monotônico bruto final também não pode regredir, mesmo por menos de 1ms, nem exceder 60s. Falha do relógio publica final_clock_failure com código/errno disponível.
+
+Limite de segredos e alcance das provas
+
+Não se abre conteúdo de credential file; setembro é lstat/metadados. Python recebe somente present/equal dos cinco nomes aprovados. Docker CLI/daemon processam Config.Env internamente; não se promete que esses processos jamais recebem outros campos ou leem qualquer valor secreto. Nenhum valor de segredo é publicado e não se acrescenta leitura específica de credenciais. Esse alcance corresponde à redação corrigida da Emenda2 rev2; a frase absoluta da rev1 não é reivindicada.
+O stderr interno dos comandos Docker é DEVNULL, preservado do runner de origem; não se alega capturá-lo. Recibos publicam códigos/errno/limites/estados comprovados, sem valores secretos. Warnings/erros/omissões da construção e das provas externas não são suprimidos.
+Os testes sintéticos locais e as provas de primitivas em tmp privado não comprovam host root/Linux/Docker, durabilidade física em produção ou L1/L2. Execução Linux e revisão por hashes efetivos continuam obrigatórias antes de promoção. Nenhum GO ou dispatch operacional foi executado na construção.

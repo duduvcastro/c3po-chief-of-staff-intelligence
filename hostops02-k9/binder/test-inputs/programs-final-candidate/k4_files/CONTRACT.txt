@@ -1,0 +1,75 @@
+HOSTOPS02 / K4 modes CHAIN_STATIC, PINS, LAUNCHER, WRITER - k4_files - GO_WRITE_HOSTOPS02_K4_FILES_01 - REVISION 1
+Epoch R2D2-V2-SHADOW-2026-10-05. Plan rows B5 (CHAIN_STATIC), B6 (PINS), A8 (LAUNCHER) and K12's writer (WRITER); one
+signed mode per request.
+
+Offline work only. Nothing in this directory was run on the host, pushed, bound or reviewed by anyone but its author.
+Every hash and count is in VALIDATION.json and SHA256SUMS, written by seal.py. DESIGN.md is the design; this file is
+what a reviewer signs against and what a binder does.
+
+1. STATUS
+
+  Built and tested by its author (Fable). NOT REVIEWED. NOT BOUND. Core: generation
+  4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6, read, never edited. Parts carried: core, parents,
+  files. This source starts no process. THE LINUX-ROOT JOB HAS NOT RUN (set 3, not the author's).
+  Before any GO: (a) the Linux-root job with this directory; (b) Codex's written review of these bytes; (c) for
+  LAUNCHER, the launcher's bytes reviewed by hash with the proofs of ORD:31 on record; (d) for CHAIN_STATIC, the static
+  config built by capacity_day_documents.py static-config from the A5 calendar line and root identities, its hash by
+  command; (e) for PINS, B5, A8 and the reader units (B2) complete, and their receipts give the hashes signed here;
+  (f) a read-only receipt of the same boot with the rows of every chain signed (DESIGN.md Q-K4-1).
+
+2. SPECIFICATION
+
+  CHAIN_STATIC: /var/lib/c3po-capacity/documents/<7 chain documents, names of chain_pins>, bytes compiled into the
+    source (Act B chain W/fable-actb03-20261004, Act B ab241993...aaaf), and
+    /var/lib/c3po-capacity/config/week.static.capacity.json, bytes from the request, judged: canonical JSON,
+    R2D2_CAPACITY_BOOTSTRAP_V3, this epoch, release fc2f64ea...caa1, package b5ce527a...db84, the seven chain pins equal
+    to the compiled documents, one TEMPLATE and one view of the same session, roots /c3po-capacity/{documents,payload,go}.
+  PINS: /etc/c3po-reader/pins.env, the twelve lines of the reader README in order, rendered from signed values (grammar
+    and constants in DESIGN.md section 2), only after the static config named by it, the launcher, c3po-massive.service
+    and c3po-reader.service were read on the host and found to be the signed bytes, the two unit texts bind the same
+    journal source at the journal target of pins.env (the reader's bind read-only, the producer's --journal-root equal),
+    and the reader unit binds /var/lib/c3po-capacity at /c3po-capacity and /etc/c3po-reader/launcher at /c3po-reader,
+    both read-only.
+  LAUNCHER: /etc/c3po-reader/launcher (0700) and in it reader_launcher.py, bytes from the request (<= 32,768).
+  WRITER: /var/lib/c3po-capacity/config/manifest_writer-<sha256>.py, the capacity-day writer compiled into the source
+    (aeda5b12...d387, 46,977 bytes); the request's writer_sha256 must equal it.
+  PINS also (Codex decision 6): C3PO_R2D2_V2_SHADOW_SOURCE_DIR is a top-level container target /c3po-<name>; the reader
+    unit binds /var/lib/c3po/r2d2-v2-source-20261005 there read-only; the source root and the journal host root
+    /var/lib/c3po-bar/journal are walked as root-only chains (leaf 0700) and held to the end.
+  Every file root:root 0600, one link; every directory root:root 0700; exclusive temporary, fsync, link, removal of the
+  temporary proved by identity; readback by descriptor inside the run. Parents walked from "/" against signed rows,
+  no open root, every component uid 0, gid 0, not group/other writable, not setgid; the receiving parent 0:0 0700.
+  Never: overwrite, chmod, chown, rename, truncate, removal of anything but its own temporary, a process, docker,
+  systemctl, a shell, a network connection, a secret, activation, a container, a second attempt.
+  Refuses before any effect: executor not 0:0; boot not the evidence's; any signed row differs; a target name exists;
+  for PINS any input on the host not as signed; less than 1 MiB free on a receiving filesystem; less than 15 s left.
+  A target name that exists is accepted only as a regular file root:root 0600 with one link holding exactly the bytes
+  this run would write (PRESENT_EQUAL: kept, read back, never replaced); LAUNCHER uses an existing launcher/ only if it
+  is root:root 0700 and empty or holding exactly the signed file. Anything else at a target name refuses.
+  Date class WRITE_EPOCH (2026-10-03 ... 2026-10-10 UTC); window at most 900 s on one UTC day.
+  Success: METADATA_ONLY_REQUIRES_REVIEW / K4_FILES_DELIVERED_READ_BACK, exit 0, receipt.mode = the signed mode.
+
+3. WHAT A RECEIPT MEANS
+
+  KNOWN_COMPLETE (exit 0): every file of the mode exists as specified and was read back.
+  KNOWN_REFUSAL (exit 1): nothing was created; the same bytes may be signed again once the cause is gone.
+  KNOWN_PARTIAL (exit 2) or UNCERTAIN (exit 3): a prefix of the files may exist (each final name holds exactly the
+    signed bytes) and at most one temporary .hostops-<go16>-<n>.partial (no removal in the family). A new request of
+    the same mode completes what is missing (DESIGN.md section 6); it never replaces what is there.
+
+4. WHERE EACH BOUND VALUE COMES FROM
+
+  documents_parent, config_parent, reader_parent   rows from the E2 provisioning ledger and a read of the same boot
+  unit_parent                                      rows of /, /etc, /etc/systemd, /etc/systemd/system (same read)
+  evidence_boot_id_sha256                          that read's boot hash
+  evidence                                         GO_READONLY_HOSTOPS_PRECHECK_01 and GO_WRITE_SUPERVISOR_READER_PROVISION_01
+  static_config                                    bytes of static-config's config/week.static.capacity.json, base64, hash and size by command
+  values (PINS)                                    release file path and source directory from the sheet; journal target from
+                                                   the installed producer unit; config hash from B5's receipt; launcher hash
+                                                   from A8's receipt; constants as compiled
+  producer_unit_sha256, reader_unit_sha256         rendered hashes of E3's and B2's receipts
+  launcher                                         bytes of the reviewed reader_launcher.py, base64, hash and size by command
+  source_chain, journal_chain (PINS)               rows of the source root (K4 E0's receipt) and of the journal root (E1/E3 reads)
+  writer_sha256 (WRITER)                           the compiled writer's hash, by command
+
+5. TESTS, MUTATION, REPRODUCE: VALIDATION.json; DESIGN.md sections 9 and 11.

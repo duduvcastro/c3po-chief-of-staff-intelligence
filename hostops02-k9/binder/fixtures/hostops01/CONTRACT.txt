@@ -1,0 +1,1072 @@
+HOSTOPS01 - PRECHECK, PROVISION, UNIT INSTALLATION, READBACK - STDIN / ONCE CANDIDATES - REVISION 3
+
+Operations built
+  GO_READONLY_HOSTOPS_PRECHECK_01            precheck/precheck_readonly.py        read-only
+  GO_WRITE_SUPERVISOR_READER_PROVISION_01    provision/provision_dirs.py          writes: directories and one image tag
+  GO_WRITE_UNITS_EXCLUSIVE_INSTALL_01        install_units/install_units.py       writes: unit files, no activation
+  GO_READONLY_SUPERVISOR_READBACK_01         readback/readback_readonly.py        read-only
+Operations specified here and NOT built
+  GO_WRITE_READER_SECRET_ENV_01              the secret.env step of W4, split out (section 8)
+  removal of a leftover temporary             needed only after an interrupted unit installation (section 9)
+
+1. STATUS
+
+Executable code candidates, unsigned and UNBOUND. Built offline from local files only. No host was contacted, no
+key or credential file was read, no docker or systemctl was run, no prepare/resume was performed outside private
+synthetic tests. No operational GO exists, was created, carried forward or inferred. In every template the
+windows, the date, the host binding, owner, decision, effects, target, key and known-hosts references, command
+pin, claim root and every observed identity are null; status is UNBOUND; execution_authorized is false. Each
+shipped FINAL_PAYLOAD.UNBOUND.py, run under "python3 -I -B -", prints one refusal and exits 1 before touching
+anything (VALIDATION.json, unbound_payload_under_isolated_python). None of these bytes has been reviewed by
+anyone but the author. Binding is a later, human-signed step and is not part of this candidate.
+
+Revision 3 answers the third review, of revision 2 (SHA256SUMS 4ba5da3b...e912): NO_GO for one reason only, F4, the
+mutating paths never ran on Linux as real uid 0, and six minor points (section 13c says how each is closed, and that F4
+is not). Two remote sources changed (OP_PROVISION and OP_PRECHECK show one more member in their effects), a comment
+changed in a third (OP_READBACK), and every dispatch template changed (no path in it): nothing signed against revision 2
+hashes is valid for these bytes. The remote source of OP_INSTALL_UNITS, its request, authority and GO templates and its
+final payload are byte-identical to revision 2; the four dispatchers and the launcher are too.
+Revision 2 answered the second review of revision 1 (five major and sixteen minor findings; section 13b says how each
+is closed, and which one is not). Two things a reader must know before anything else:
+  - the suite has still never run on Linux or as real root (section 16; linux_root/ holds the job for a throwaway
+    GitHub-hosted runner, not run by the author);
+  - the supervisor README moved three times while revision 2 was built (3506d52 -> an uncommitted draft -> 16a7cc5 ->
+    a6dd2b1, the last an amended commit). It now signs a JOURNAL PLACEMENT: A, the journal root next to the state
+    root at /var/lib/c3po-bar/journal, decided by the owner for epoch R2D2-V2-SHADOW-2026-10-05, or B, a leaf of the
+    data volume, which is all revision 1 knew. Revision 2 implements both, as the README stands at a6dd2b1 (README
+    sha256 27bf0e5aa3fc1e152dcc386b35063ac0060a2d700e227e9c14a8828c3c56dc2b). That part was new in revision 2 and
+    the third review is the only one that has seen it. If the repository's reading of the placement rules changes
+    again, a test named static fails (section 18, decision 0). The README moved once more while revision 3 was
+    built: 51289ce (README sha256 644c6211c7351de1dfd17d880842deaf4d5e5b34ea63d23a274c5f4e463461c5), fifteen lines
+    of wording, no rule: it now says, as this document does since revision 3, that the receipt of 2026-10-02 read
+    /var/lib on the root filesystem. The two templates and the repository's reading of the placement rules are the
+    same bytes at 51289ce as at a6dd2b1 (VALIDATION.json).
+
+Remote command, unchanged: sudo -n /usr/bin/python3 -I -B -   with the whole payload on stdin.
+Remote source language level: Python 3.7, standard library only.
+
+2. WHAT IS IN THIS DIRECTORY
+
+  <op>/<source>.py           the remote source of one operation (assembled, see assemble.py)
+  <op>/dispatch_once.py      the reviewed dispatcher 8415e357...c409 with literals replaced (DISPATCH_SCOPE_DELTA.diff)
+  <op>/launcher_stdin.py     the reviewed launcher 2842444e...a08e with five lines replaced (LAUNCHER_DELTA.diff);
+                             the same bytes in the four directories
+  <op>/transport_once.py     byte-identical 5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918
+  <op>/{REQUEST,AUTHORITY,GO,DISPATCH,PUBLICATION_PROOF}.UNBOUND.json and FINAL_PAYLOAD.UNBOUND.py
+  parts/                     the text the sources are assembled from: core, runner, layout, listing, scan, render
+                             (shared, byte-identical in every source that carries them) and one part per operation
+  assemble.py                deterministic assembly: sources from parts, dispatchers and launcher from reviewed_base/
+                             by a fixed substitution table, templates and final payloads. Re-running it changes nothing,
+                             in this directory or in a copy at any other path (no generated file carries a path).
+  reviewed_base/             the three reviewed runtime files the deltas are taken against (hashes asserted)
+  templates/                 c3po-massive.service 9e7de1c6...f04a and c3po-massive.timer ec61b1d6...4ee6, byte-identical
+                             to c3po/deployment/massive-supervisor at a6dd2b1 and at 51289ce, read with git show (hashes asserted)
+  tests/                     hostemu.py (emulated host), family.py (fixtures), oslevel.py (os-level substitution and
+                             record for the native tests), native_child.py, seven test files
+  mutation/                  mutants.py, mutate.py, MUTATION_RUN.json (/usr/bin/python3), MUTATION_RUN.py312.json, both logs
+  linux_root/                run.sh, shapes.py, report.py, WORKFLOW.yml.txt: the suite as real root and as an ordinary
+                             user on a throwaway GitHub-hosted Linux runner, the command shapes never run anywhere,
+                             under the containerd image store, and the printing of the four output files.
+                             NOT RUN by the author. shapes.py --self-test only (emulated).
+  CONTRACT.txt SHA256SUMS VALIDATION.json TESTS.xml TESTS.py312.xml LAUNCHER_DELTA.diff REVISION_2_TO_3.diff
+Public-safety. Nothing in this directory names a path, a user or a host of the machine it was built on, an address,
+or a device or inode number of the production host: the emulated host uses neutral numbers (tests/hostemu.py), the
+mutation records write the location of their private copies as <copy>, and the tests that need bytes that exist only
+on the build machine take their location from the environment and are skipped without it (section 17).
+
+Which shared part each source carries (a reviewer can check each claim below with grep on the source):
+  precheck_readonly.py   core runner layout scan listing   no creating, changing or removing call
+  provision_dirs.py      core runner layout listing        os.mkdir, os.fsync, os.umask; no file opened for writing
+  install_units.py       core scan render                  exclusive open, write, fsync, link, unlink, umask; no
+                                                            subprocess import, no command table, no docker, no systemctl
+  readback_readonly.py   core runner scan render           no creating, changing or removing call
+The three sources that carry the scan also read the text of a symbolic link (os.readlink by dir_fd, alias detection).
+No source calls chmod, chown, rename, truncate, utime or rmdir (the words appear only in docstrings and in the
+signed "never" lists). The test suite pins, by syntax tree, the exact import set and the exact set of os members
+of each source.
+
+3. THE FAMILY DISCIPLINE (the same code, parts/core.py, in the four sources)
+
+3.1 Documents. REQUEST, AUTHORITY and GO are decoded from bytes; duplicate keys, non-finite numbers and invalid
+JSON are refused; each must be exactly its canonical bytes (DOCUMENT_NOT_CANONICAL) and have exactly its keys:
+  REQUEST   16: schema status operation phase date not_before not_after host_binding_sha256 payload_sha256
+                scope_sha256 executor_uid max_seconds writes_allowed activation_allowed evidence plan
+  AUTHORITY 16: schema status operation phase owner decision execution_authorized request_sha256 payload_sha256
+                effects host_binding_sha256 not_before not_after writes_allowed activation_allowed owner_evidence
+  GO        20: schema status operation phase owner action execution_authorized request_sha256 authority_sha256
+                payload_sha256 effects host_binding_sha256 not_before not_after writes_allowed activation_allowed
+                claim_root_identity transport_binding scope_statement success_criterion
+  plan          schema status phase scope window{not_before,expires_at} host_binding_sha256 max_seconds, plus exactly
+                the operation's own keys
+Every operation has its own schema, operation, phase, plan and receipt names. No source accepts a document of
+another operation of this family or of any earlier one (POSTDEPLOY01, PREFLIGHT, PREFLIGHT_STANDALONE, HOSTFACTS,
+the installer drafts): tested in both directions, at source level and at dispatcher level.
+
+3.2 What is explicit in the signed GO, without opening the request.
+  effects            a literal object, recomputed by the code from the plan and compared with authority.effects and
+                     go.effects (EFFECTS_BINDING). Per operation it holds: the paths and modes to create and whether
+                     each is expected ABSENT or PRESENT, the signed row (device, inode, uid, gid, mode) of every
+                     directory that receives a new entry and the hash of all chain rows, the groups, data volume path,
+                     journal leaf, the signed list of journal leaves that already exist (existing_journal_leaves, in
+                     OP_PROVISION and in OP_PRECHECK), capacity paths, tag reference and image ID, and two facts about the data volume
+                     root computed from its signed rows (writable by others without the sticky bit; device different
+                     from its parent's, that is, a mount point), and "journal": the signed placement, the path of the
+                     journal root, the chain that names its filesystem, that filesystem's device and its mount point
+                     as the device numbers of the signed rows show it, and whether the data volume is touched for
+                     it; for the units the placement, the deploy tree, the destination names, profile,
+                     template and rendered hashes and sizes and the six values literally, the allow-list, the
+                     acknowledged leftovers and who reloads the manager; for the readback the mode, the receipt hashes
+                     it reads back, the six values, the placement, the mount point the authorisation names for the
+                     journal root's filesystem, the deploy tree, the floor with its two terms (sessions retained, allowance for
+                     other writers), image ID and revision, tag, catalog expectation, the signed row of the unit
+                     directory and of the data volume root, and identities_sha256: the hash of every device and inode
+                     the readback compares (unit directory rows, both unit files, the six layout paths, the data
+                     volume rows, the catalog root). A request whose pinned identity changes cannot keep its GO.
+                     Each operation's test file compares effects_of() with a literal written by hand, and the
+                     mutation list has one mutant per member (mutate.py check refuses a member without one).
+  scope_statement    must equal the operation's constant sentence (it is part of the signed scope); not free text.
+  success_criterion  must equal the single outcome that counts as success for that request.
+  transport_binding  target, remote command, command pin, runtime pins; the runtime pin of the source must equal
+                     the payload hash (the bytes validated locally are the bytes shipped).
+  claim_root_identity, payload_sha256, request_sha256, authority_sha256, host_binding_sha256.
+  plan.scope         equals the source's SCOPE constant: the literal argv table, binaries, environment, layout table,
+                     lookup directories, limits, declared side effects and the "never" list. request.scope_sha256 pins it.
+Not enforced by code, and labelled so: the content of authority.owner_evidence (a string of 1 to 512 characters that
+is not the word UNBOUND), the role names inside evidence and that the cited hashes are those of real receipts,
+plan.template_revision (40 hex, documentary).
+
+3.3 evidence. A list of {role, operation, receipt_sha256} naming the receipts the pinned rows were copied from.
+The code cannot read those receipts; it requires them to be named (non-empty for the two write operations and for
+the readback; each hash 64 hex and not zero). A write request must cite at least one entry whose operation is
+GO_READONLY_HOSTOPS_PRECHECK_01 (EVIDENCE_PRECHECK_MISSING): the rows it signs come from that operation and from no
+other (section 11). That the cited hash is the hash of a real precheck receipt is checked by the binder, by command.
+
+3.4 Authentication, in this order, before anything is observed (constant codes):
+  PIN_MISMATCH; DOCUMENT_SIZE, DUPLICATE_KEY, NONFINITE_JSON, JSON_INVALID, DOCUMENT_TYPE, DOCUMENT_NOT_CANONICAL;
+  REQUEST_KEYS, AUTHORITY_KEYS, GO_KEYS; REQUEST_OR_EXECUTOR_UNBOUND (names, BOUND, scope and payload hash,
+  executor_uid the integer 0, effective uid 0); REQUEST_SCOPE (max_seconds 60, writes flag of the operation,
+  activation false); AUTHORITY_UNBOUND; GO_UNBOUND; OWNER_UNBOUND; HOST_BINDING (64 hex, not zero, equal in the
+  three); GO_TRANSPORT_UNBOUND; GO_CLAIM_ROOT_UNBOUND; DATE_NOT_IN_SCOPE; WINDOW_UNBOUND; WINDOW_NOT_UTC (offset
+  exactly zero); DATE_WINDOW_MISMATCH; WINDOW_SPAN; OUTSIDE_GO_WINDOW; GO_EXPIRED; CLOCK_REVERSED; PLAN_BINDING;
+  PLAN_KEYS; PLAN_UNBOUND; PHASE_INVALID; LIMITS_INVALID; SCOPE_MISMATCH; PLAN_WINDOW; EVIDENCE_UNBOUND;
+  EVIDENCE_PRECHECK_MISSING; the operation's own request codes; EFFECTS_BINDING; GO_CRITERION.
+The dispatcher runs the same authenticate() locally before any claim, so a malformed plan cannot spend the GO.
+Every member that is null in a template has a refusal code and a test (tests/test_family.py and the per-operation
+"request" tests).
+
+3.5 Time. Gate = latest not_before to earliest not_after of the three documents. Wall clock inside the gate at
+every step, a monotonic deadline of 60 s from authenticated entry, refusal when either clock goes backwards.
+New here: the gate may not be longer than 900 s for the two write operations and 3600 s for the two read-only
+ones (WINDOW_SPAN). The owner's long window is the UTC day; the GO window is the short one. The dispatcher keeps
+latest_start = not_after - 80 s and the 80 s watchdog.
+
+3.6 Date scope. request.date is signed and must be one of the code set of the operation:
+  the two write operations      ('2026-10-02','2026-10-03','2026-10-04')
+  the two read-only operations  ('2026-10-02','2026-10-03','2026-10-04','2026-10-05')
+and all six instants must lie on that UTC day; each dispatcher carries its source's literal (a test compares the
+two) and requires request.date to be the config's day. One run is confined to one UTC day. In local time (BRT =
+UTC-3) each UTC day runs from 21:00 of the previous day to 20:59:59; a window cannot cross 21:00 BRT.
+2026-10-05 UTC begins on Sunday 21:00 BRT and holds the first live session on Monday; the supervisor README places
+every switch between session days. No provision and no unit installation can be dated on it, at the source or at
+the dispatcher (DATE_NOT_IN_SCOPE, DISPATCH_DATE); a precheck or a readback can. 2026-10-02 UTC (Thursday 21:00 BRT
+to Friday 20:59 BRT) stays in the write set: the review objected to 10-05 only and left Friday to the signatories.
+Removing it is one literal (WRITE_DATES in parts/core.py) and a reassembly.
+
+3.7 Envelope. The transport fixes three status strings; the meaning is in "outcome".
+  exit 0  METADATA_ONLY_REQUIRES_REVIEW      KNOWN_COMPLETE   only the operation's success outcome
+  exit 2  PARTIAL_METADATA_REQUIRES_REVIEW   KNOWN_PARTIAL    a read-only run that is incomplete or found a mismatch;
+                                                              a write run that changed something and did not finish
+  exit 1  REFUSED                            KNOWN_REFUSAL    nothing was observed (read-only) / no mutating call
+                                                              succeeded and none is uncertain (write). The receipt
+                                                              may carry the precheck table that names what exists.
+  exit 3  (anything that escapes run())      UNCERTAIN        state unknown; established only by a read-only
+                                                              operation under its own GO
+Sources return every refusal as an object and never raise out of run(). The launcher enters the payload with exit
+code 3, so an exception that escapes run() anyway is filed UNCERTAIN by the unchanged transport and can never be
+read as "refused, nothing happened" (tested with real processes for KeyError, a code-looking ValueError, a non-dict
+result). Inside the sources every mutating call goes through one function: gate, count, call. A call that failed
+with an OS error changed nothing (mkdir, exclusive open, link and unlink are atomic); a call that was issued and
+never settled is uncertain. REFUSED is returned only while nothing succeeded and nothing is uncertain; the last
+resort handler of run() applies the same rule to any exception, KeyboardInterrupt included.
+A refusal receipt of a write operation carries its own request, GO and payload hashes and metadata_sha256; the
+dispatcher does not bind refusals, so they are verified by command when filed. Any remote result consumes the GO.
+A write that outlives its transport: the watchdog kills the local SSH client, not the remote process. The local
+result is then UNCERTAIN, the GO is spent, and the state is established by OP_PRECHECK or OP_READBACK under its own
+GO, never by a second attempt.
+
+3.8 Dispatcher and launcher deltas (generated; tests rebuild them and compare bytes).
+  dispatcher  18 lines replaced for a write operation (15 16 102 103 109 118 127 128 129 141 142 146 147 162 205
+              213 219 239), 17 for a read-only one (no 142). No line added or removed. Names, date set, the signed
+              date tied to the config's day, phase and writes flag.
+  launcher    lines 30 32 33 35 38: neutral module names; entry point run(); exit code 3 while run() executes; the
+              map status -> exit code {complete 0, REFUSED 1, anything else 2}; refusal schema HOSTOPS_STDIN_RESULT_V1
+              with status RUN_RAISED_STATE_UNKNOWN when run() raised.
+  Left as reviewed: the line that maps a result over 4 MiB to a refusal. Unreachable: every receipt is sealed at
+  60000 bytes at most.
+
+3.9 Pinned parents. An existing directory is never assumed: every component from "/" is a signed row
+{path, device, inode, uid, gid, mode} copied from a read-only receipt. The walk opens "/" and each component by
+dir_fd with O_NOFOLLOW; an lstat classifies the component first (missing, symbolic link, not a directory), and the
+held descriptor must equal the row on all five values, mode on all twelve bits. Before each creation the path is
+walked again and must still lead to the descriptor held. In code, and not left to the signers:
+  - outside the data volume every component must be root-owned and not writable by group or other
+    (CHAIN_ROW_UNSAFE); at and below the data volume root the observed owner and mode are accepted as signed, with
+    one floor: a row writable by others without the sticky bit is refused (CHAIN_ROW_WORLD_WRITABLE), because any
+    local user could then rename the root-owned directory this run creates. 1000:1000 0755 (the host, HOSTFACTS_01),
+    0775 and 1777 are accepted;
+  - a directory that receives a new entry must not be setgid (PARENT_SETGID): the kernel would hand its group and
+    the bit to the child, and nothing in this family could then remove the result;
+  - a parameterised path (data volume, capacity root) is never one of the fixed directories of this family nor a
+    directory above one (/etc, /etc/systemd/system, /var/lib, /etc/c3po-bar, /var/lib/c3po-bar, /etc/c3po-reader,
+    /var/lib/c3po-reader): naming /var or /var/lib as the data volume would lift the floor from the chain the fixed
+    layout hangs from (PATH_FORBIDDEN_ZONE). The composed path <data volume>/<leaf> is checked against the
+    forbidden zones as well, not only its two halves.
+Whether the data volume root is a mount point is not refused in code (a volume that is not mounted has other rows
+than the signed ones, PARENT_IDENTITY_MISMATCH); it is shown literally: effects.data_volume_root
+.device_differs_from_parent, and mount_point_by_device_change in the precheck notes.
+The boot identifier: every write request and every gate readback names the SHA-256 of the boot identifier of its
+evidence. A different boot refuses before any effect (EVIDENCE_FROM_EARLIER_BOOT), because device numbers may be
+renumbered by a reboot. OP_PRECHECK and everything that depends on its rows run AFTER the pending security reboot
+(W2), in the same boot.
+
+4. OP_PRECHECK - GO_READONLY_HOSTOPS_PRECHECK_01
+
+Why it exists. The HOSTFACTS_01 receipt does not carry what the two write requests must sign: it has no row for
+/etc, /etc/systemd or /var, only device and inode for /var/lib, no boot identifier, and its image ID is read before
+the deploy of the merged revision. Extending HOSTFACTS_01 would reopen reviewed bytes. This operation reads exactly
+the baseline the write guards are confronted with, with the same walker.
+
+Request plan: groups (subset of SUPERVISOR JOURNAL_LEAF READER CAPACITY), journal_placement (A or B with the
+JOURNAL_LEAF group, null without it), data_volume_path (null when nothing of the request is in the data volume:
+placement A without the capacity tree), journal_leaf, existing_journal_leaves, capacity{root_path,
+receipt_directory_path}, unit_names (1 to 8), image_reference (must be c3po/backend:production). Validated exactly
+as OP_PROVISION validates them. This is the README's operation 1 for the placement: each chain carries, per component,
+whether the device changes there (a mount point) and the bytes available on the filesystem of its last directory,
+so the receipt says which filesystem the journal root WOULD be on (VAR_LIB under placement A, DATA_VOLUME under B)
+and what a floor is compared with. The HOSTFACTS_01 receipt read /var/lib on the device of "/" (section 16), in the
+boot of 2026-10-02 and with no row for /var: this operation reads the whole chain again, in the boot of the write.
+
+Reads (each item on its own; a failure is UNAVAILABLE with a code, never an absence):
+  chains        ETC, VAR_LIB, UNIT_DIRECTORY, and as the request needs them DATA_VOLUME, CAPACITY_PARENT and
+                SUP_STATE_PARENT (placement A for a later epoch): one row per component in exactly the
+                six-key form a write request signs, plus notes: mode in octal, setgid, writable by others without
+                the sticky bit, mount point by device change, and whether the write operations would accept the row
+                (the same function they use); free bytes (f_bavail) of each. The figure of DATA_VOLUME is what a
+                free-space floor is compared with before a readback GO is asked for (section 12, step 2b)
+  destinations  every row of the provision table: proved absence with the first missing component, or type,
+                owner, mode, device, inode, entry count split into table-defined children and others (no names)
+  unit_files    lstat of each unit name in /etc/systemd/system (type, owner, mode, links, identity). No size: this
+                operation cannot tell whether the file is the signed render, and the size of a foreign unit with an
+                inline secret would measure it
+  conflicts     the scan of section 6.3, with leftover temporaries, the units' own dependency directories and
+                alias links
+  secret-bearing names   /etc/c3po-reader/secret.env and /etc/c3po-bar/token: exists, type, uid, gid, mode, links.
+                Never a size, a timestamp, a device or an inode. Never opened.
+  presence only /etc/.git, /etc/.etckeeper (is /etc versioned or copied elsewhere), /run/reboot-required
+  boot          SHA-256 of /proc/sys/kernel/random/boot_id
+  core_pattern  whether the first byte of /proc/sys/kernel/core_pattern is a pipe sign (that boolean only)
+  image         docker image inspect of c3po/backend:production: local ID, tags, revision label. Run after the
+                deploy of merged #437 this is the ID that binds.
+  image_listing docker image ls --no-trunc of c3po/backend: rows (id, repository, tag), whether the inspected ID is
+                among them, and retention tags already present. This is the first run of that listing on the host.
+Outcomes: PRECHECK_ALL_OBSERVED (exit 0) | PARTIAL_OBSERVED | PARTIAL_OR_WINDOW_EXPIRED (exit 2) |
+REFUSED_NOTHING_OBSERVED (exit 1, authentication only).
+
+5. OP_PROVISION - GO_WRITE_SUPERVISOR_READER_PROVISION_01
+
+Supervisor README operation 2 (directories and the retention tag) plus the directory part of W4.
+Deliberately NOT here: secret.env (section 8), the token, any manifest, anything inside the journal root, units,
+accounts, /opt, pins.env, activation.env.
+
+5.1 The table (code constant; plan.creates must equal it for the signed groups, LAYOUT_MISMATCH). Everything is a
+directory, root:root, mode 0700, created in this order:
+  SUPERVISOR     /etc/c3po-bar, /etc/c3po-bar/manifests, /etc/c3po-bar/docker-cli,
+                 /var/lib/c3po-bar, /var/lib/c3po-bar/supervisor
+  JOURNAL_LEAF   the journal root, in the signed placement (plan.journal_placement, literal in effects.journal):
+                 A  /var/lib/c3po-bar/<leaf> (README: /var/lib/c3po-bar/journal), a sibling of the state root and
+                    never the state root; its parent is the directory this request creates, or, when the SUPERVISOR
+                    group is not in the request (a later epoch), the existing private parent pinned by its own
+                    chain SUP_STATE_PARENT (root-owned, signed row by row). The data volume is not a parameter,
+                    not walked, not opened: under placement A nothing of it is touched for the journal.
+                 B  <data volume>/<leaf>, pinned by the chain DATA_VOLUME
+                 Exactly one of the two rows exists in a request; a path of the other placement is LAYOUT_MISMATCH.
+  READER         /etc/c3po-reader, /etc/c3po-reader/docker-cli, /var/lib/c3po-reader
+  CAPACITY       <capacity root>, and inside it config, documents, payload, go; and the receipt directory
+  RETENTION_TAG  c3po/backend:massive-supervisor-<label> on the signed image ID, last
+groups is a signed, ordered subset: operation 2 and W4 may run under one GO or under two (they have different
+authorities in the plan); a later epoch is JOURNAL_LEAF plus RETENTION_TAG alone.
+Parameter rules, before any host access: leaf and capacity names match [A-Za-z0-9][A-Za-z0-9._-]{0,63}, never
+start with a dot and never match r2d2-v2-release-* (an unreadable entry of that name in the data volume root holds
+the automatic security reboot and merges); the data volume and the capacity root are never at or below /etc /usr
+/run /proc /sys /dev /boot /bin /sbin /lib /lib64 /var/run /var/lib/docker /var/lib/containerd /var/lib/c3po-bar
+/var/lib/c3po-reader, never one of the fixed directories of 3.9 or above one (so never /var or /var/lib), and the
+capacity root is never directly in "/"; <data volume>/<leaf> is checked against the same zones; the capacity root is
+never inside, equal to or above a journal leaf (the new one or the signed list existing_journal_leaves, which is a
+list and never null) or the data volume root; the
+receipt directory is a direct child of /var/lib/c3po-reader (the template's default: outside every mount) or of
+the capacity root, in which case effects says receipts_inside_capacity_root true (everything under the capacity
+root is readable by r2d2-worker; under the data volume also writable by three compose services).
+Order with the compose mount: provision the capacity tree BEFORE C3PO_R2D2_V2_CAPACITY_MOUNT_SOURCE is set. If the
+variable points at a path that does not exist, Docker creates it root-owned 0755 at every container start, and
+this operation then refuses it (c3po/deployment/capacity-mount/README.md).
+
+5.2 Each entry carries expect: "ABSENT" (created exclusively) or {device, inode, entries} (signed as present,
+copied from an OP_PRECHECK receipt: verified to be a directory root:root 0700 with that identity and that entry
+count, and never touched). This is the continuation form: after an interrupted run the remaining rows are created
+under a new request, authority and GO that sign what exists. The retention tag has expect ABSENT or PRESENT.
+
+5.3 Effects, in order. Effective uid and gid 0; umask 077; boot identifier equal to the evidence's.
+Precheck of everything, before the first creation: every chain walked and held; every destination looked at by
+lstat through its parent (children of a directory that does not exist are absent by implication); a directory that
+exists is opened and counted; the image inspected by ID; the listing read. Any finding returns REFUSED with the
+whole table and one code by fixed precedence:
+  PARENT_MISSING PARENT_SYMLINK_COMPONENT PARENT_NOT_DIRECTORY PARENT_IDENTITY_MISMATCH PARENT_CHANGED_DURING_WALK
+  DESTINATION_PRESENT_UNEXPECTED   wrong type, owner or mode, or a directory holding anything the table does not define
+  EXPECTATION_MISMATCH             signed as present but absent, or with another identity or entry count
+  ALL_DESTINATIONS_PRESENT         every row exists and conforms (origin unproven; never called an installation)
+  PRIOR_PROVISION_PREFIX_PRESENT   the rows that exist are the first k of the table: the shape an interrupted run leaves
+  PRESENT_SET_NOT_A_PREFIX         conforming rows exist but not as a prefix
+  IMAGE_ABSENT_OR_UNREADABLE IMAGE_ID_MISMATCH IMAGE_METADATA_INVALID TAG_LISTING_UNAVAILABLE
+  TAG_LISTING_INCONSISTENT (the listing does not show the signed image: it proves nothing) RETENTION_TAG_EXISTS
+  BINARY_UNAVAILABLE_OR_UNSAFE COMMAND_TIMEOUT EVIDENCE_FROM_EARLIER_BOOT EXECUTOR_IDENTITY NOATIME_UNAVAILABLE
+  PRECHECK_OS_ERROR (an OS error in the precheck, for example a docker process that cannot be started)
+A directory that exists and is signed as present must be root:root (uid AND gid 0) 0700 with the signed identity
+and entry count, and on the device of the directory it is in: no directory of the layout, the journal root first of
+all, is ever a mount point. Signed as absent, any object there that is not exactly that is
+DESTINATION_PRESENT_UNEXPECTED. A directory this run creates is checked for its parent's device the same way
+(CREATED_METADATA_MISMATCH), so effects.journal.filesystem_device and mount_point_by_device_change, computed from the
+signed rows of the chain the journal hangs from, ARE the filesystem of the journal root: the readback of the README
+("the filesystem the journal root is on, which must be the one the authorisation names").
+Then, per row expected ABSENT: gate; the parent's path proved again; mkdir(name, 0700) relative to the held
+descriptor; the new directory opened without following; lstat of the name equal to the descriptor; directory,
+0:0, exactly 0700, the parent's device; no entries; fsync of the new directory; fsync of the parent.
+Then the tag, only with 16 s of budget left: the listing again; docker image tag <ID> <reference>; inspect by
+reference must print the signed ID and list the reference.
+Then, inside the run: every path resolved again from "/", every pinned parent unchanged.
+
+5.4 After the first creation nothing refuses; the ledger says per row what is on the host:
+  CREATED_DURABLE | CREATED_NOT_DURABLE (FSYNC_FAILED) | CREATED_METADATA_MISMATCH | CREATED_NOT_EMPTY |
+  CREATED_UNVERIFIED (CREATED_OPEN_FAILED, CREATED_STAT_FAILED, CREATED_LIST_FAILED, CREATED_NAME_REPLACED) |
+  NOT_CREATED (DESTINATION_APPEARED_AFTER_PRECHECK, FILESYSTEM_READ_ONLY, FILESYSTEM_FULL, FILESYSTEM_ACCESS_DENIED,
+  FILESYSTEM_ERROR, errno recorded) | NOT_ATTEMPTED (PARENT_REPLACED, GO_EXPIRED, CLOCK_REVERSED, or after an
+  earlier stop) | PRESENT_VERIFIED_NOT_TOUCHED
+  tag: CREATED_VERIFIED | CREATED_UNVERIFIED (TAG_READBACK_MISMATCH, TAG_READBACK_UNAVAILABLE) | NOT_CREATED (the
+  command failed and a listing that succeeded shows no such tag) | UNCERTAIN (timeout, or failure with no proof of
+  absence) | NOT_ATTEMPTED (TAG_NOT_ATTEMPTED_BUDGET, TAG_APPEARED_AFTER_PRECHECK) | PRESENT_VERIFIED_NOT_TOUCHED
+A failure after a successful mkdir is never NOT_CREATED and never a refusal. Nothing is removed, renamed,
+re-owned or re-moded: a created object that does not match is left in place and labelled.
+At the tag step the fifteen directories exist. Nothing that goes wrong there can cost the ledger: an OS error while
+a docker process is started (no descriptor, no memory, no process slot) is caught at each of the three command
+calls and becomes TAG_LISTING_UNAVAILABLE (not attempted), TAG_COMMAND_FAILED (uncertain) or
+TAG_READBACK_UNAVAILABLE (created, unverified); the receipt still carries the device and inode of every directory.
+Outcomes: PROVISIONED_ALL_VERIFIED_DURABLE (exit 0) | PARTIAL_REQUIRES_RECONCILIATION (exit 2) |
+REFUSED_NOTHING_CREATED (exit 1). The device and inode of each created directory in the ledger are the pins of
+the later operations.
+
+5.5 Stated residuals.
+  - The docker commands of this operation run with root's own client configuration (as HOSTFACTS_01), not with
+    the unit's empty DOCKER_CONFIG. OP_READBACK resolves the same image and tag under the unit's configuration,
+    so a difference shows there. This sentence is part of the signed scope statement.
+  - A grpid mount gives a new directory its parent's group: caught only after creation (CREATED_METADATA_MISMATCH).
+    Default ACLs on a parent were not considered beyond the mode bits.
+  - With a data volume root owned by another uid, that owner can rename or remove the empty journal leaf after it
+    is created, or swap in another root-owned empty 0700 directory between mkdir and the checks. The producer's
+    and reader's own guards on the root, and the catalog binding of device and inode, are the defence. (Any OTHER
+    local user is excluded in code: a root writable by others without the sticky bit is refused, 3.9.)
+  - docker image tag silently moves an existing tag; the two listings narrow that window, they do not close it.
+
+6. OP_INSTALL_UNITS - GO_WRITE_UNITS_EXCLUSIVE_INSTALL_01
+
+Supervisor README operation 3 WITHOUT daemon-reload, generic over a signed list.
+
+6.1 Request plan: unit_directory (rows of /, /etc, /etc/systemd, /etc/systemd/system: all root-owned, not group or
+other writable, last one not setgid); units, 1 to 8, each {key, destination_name, mode 420, profile, template_b64,
+template_sha256, placeholders, rendered_sha256, rendered_bytes, expect}; network_allowlist; journal_placement (A or
+B), data_volume_path and deploy_tree_path (strings for the placement rules, never opened; the deploy tree is signed
+under placement A only; all three null when no supervisor service is in the list); template_revision;
+acknowledged_leftovers [{name, device, inode}]; daemon_reload_owner; evidence_boot_id_sha256.
+The placement rules are the README's "Substitution grammar" at a6dd2b1, with the codes and the order of the
+repository's own reading of it (placement_refusal in backend/tests/test_r2d2_v2_massive_supervisor.py; copied into
+tests/test_render.py and compared on its own cases and on every pair of a path pool):
+  every placement  the host journal root neither equals, contains nor is contained in the state root or the
+                   configuration directory (HOST_JOURNAL_OVERLAPS_PRIVATE_ROOT); the container journal root likewise
+                   against the unit's fixed targets /var/lib/c3po-bar/supervisor, /etc/c3po-bar and /tmp
+                   (CONTAINER_JOURNAL_OVERLAPS_FIXED_TARGET); neither private root inside the data volume
+                   (PRIVATE_ROOT_INSIDE_DATA_VOLUME)
+  placement A      host journal root not the data volume nor inside it (A_HOST_JOURNAL_INSIDE_DATA_VOLUME), not
+                   inside the signed deploy tree (A_HOST_JOURNAL_INSIDE_DEPLOY_TREE; DEPLOY_TREE_PATH when it is not
+                   signed); container journal root exactly one new top-level directory
+                   (A_CONTAINER_JOURNAL_NOT_TOP_LEVEL), none of app bin boot dev etc home lib lib64 media mnt opt proc
+                   root run sbin srv sys tmp usr var (A_CONTAINER_JOURNAL_PROVIDED_DIRECTORY)
+  placement B      host journal root a leaf of the data volume (B_HOST_JOURNAL_NOT_A_LEAF_OF_DATA_VOLUME); container
+                   journal root /app/day-d-data/<the same leaf> (B_CONTAINER_JOURNAL_NOT_THE_SAME_LEAF); no deploy tree
+  kept from the installer audit, beyond the README: the data volume not inside a private root
+  (DATA_INSIDE_PRIVATE); state root and configuration directory not overlapping (PRIVATE_PATH_OVERLAP).
+Not checked by this operation, which opens none of the paths it renders: that the host journal root is not a mount
+point. OP_PROVISION creates it on its parent's device and OP_READBACK compares the devices.
+The template bytes travel inside the signed request (base64, canonical encoding only, 16384 bytes each and 24576
+in all, so the request stays under the 65536-byte document limit); the launcher needs no new input.
+destination_name matches c3po-[a-z0-9]+(-[a-z0-9]+)*\.(service|timer), at most 64 characters, unique.
+Profiles:
+  MASSIVE_SUPERVISOR_SERVICE_V1  template hash pinned in code to 9e7de1c6...f04a; exactly the six placeholders with
+                                 occurrences 2/2/2/2/3/1; the README grammar
+  MASSIVE_SUPERVISOR_TIMER_V1    verbatim, pinned in code to ec61b1d6...4ee6
+  VERBATIM_V1                    verbatim, no "@"
+  GENERIC_KINDS_V1               signed {NAME: {kind, value, occurrences}}, kinds IMAGE_ID, ABSOLUTE_PATH, NETWORK;
+                                 for the reader's units, later, under their own request and GO
+A code table binds the two supervisor names to their frozen profiles and the frozen profiles to those names
+(PROFILE_NAME_MISMATCH); effects shows the profile of every unit.
+Request and render codes, all before any host access: UNITS_INVALID UNIT_NAME_INVALID UNIT_NAME_DUPLICATE
+EXPECT_INVALID NOTHING_TO_CREATE PROFILE_UNKNOWN PROFILE_NAME_MISMATCH TEMPLATE_ENCODING TEMPLATE_TOO_LARGE
+TEMPLATE_HASH_MISMATCH FROZEN_TEMPLATE_HASH TEMPLATE_NOT_ASCII SUBSTITUTION_KEYS PATH_INVALID PATH_COMPONENT
+PATH_TOO_LONG IMAGE_ID NETWORK_ALLOWLIST NETWORK_FORBIDDEN NETWORK_NOT_AUTHORIZED PLACEMENT_UNKNOWN and the
+placement codes above DATA_INSIDE_PRIVATE PRIVATE_PATH_OVERLAP PLACEHOLDER_COUNTS TIMER_PLACEHOLDER
+UNRESOLVED_PLACEHOLDER RENDER_TOO_LARGE RENDERED_HASH_MISMATCH RENDERED_SIZE_MISMATCH DATA_VOLUME_PATH
+TEMPLATE_REVISION_UNBOUND RELOAD_OWNER_UNBOUND LEFTOVERS_INVALID CHAIN_ROW_INVALID CHAIN_ROW_UNSAFE PARENT_SETGID
+EVIDENCE_BOOT_UNBOUND.
+
+6.2 Effects, in order. Every unit rendered again from the signed bytes and values (pure). Effective uid and gid 0;
+umask 022; boot identifier; the pinned directory walked and held. Precheck of everything (6.3). Then per unit
+expected ABSENT, service first:
+  a. gate; directory proved again; exclusive temporary .hostops-<first 16 hex of the GO hash>-<index>.partial,
+     O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0644, by dir_fd
+  b. unbuffered writes, a gate before each; fsync of the file; fstat: regular, one link, 0:0, exactly 0644, exact
+     size, the directory's device
+  c. gate; directory proved again; lstat of the temporary: it must still show the inode of the descriptor held,
+     with one link (TEMPORARY_REPLACED otherwise, and no name is given to it); link(temporary, final) by dir_fd
+     without following (a link cannot replace anything); fsync of the directory
+  d. lstat of the temporary must show the inode of the descriptor held; only then unlink; fsync of the directory
+Withdrawal. A failure after the temporary exists and before the final name exists (short or failed write, failed
+fsync, wrong metadata, failed fstat, failed link other than "exists") withdraws the run's own temporary by the same
+identity-proved, gated removal as step d: the row becomes NOT_CREATED with temporary_removed true, the errno of the
+failure is kept, and nothing is left for a later operation to remove. The temporary stays, labelled TEMPORARY_ONLY
+with temporary_removal_code, when the removal cannot be made: the window expired or a clock went back (no mutating
+call after the gate refuses), the directory is no longer the pinned one, the name no longer shows the descriptor
+held, or the unlink itself failed. The run is PARTIAL in every one of these cases: it changed the directory.
+Residual, stated: link() acts on the name, not on the descriptor held. A root process that swaps the temporary
+between the lstat of step c and link() gives the final name to its own object. The run then stops at
+LINKED_TEMPORARY_PRESENT with TEMPORARY_REPLACED, is PARTIAL, never complete, and OP_READBACK reports the name
+(UNIT_NOT_REGULAR or UNIT_BYTES_MISMATCH). Closing it needs O_TMPFILE and linkat through the descriptor (decision 6).
+Then each final name is opened again without following: same inode, one link, 0:0 0644, bytes equal to the signed
+render. Complete, fsynced bytes are the only thing that ever stands under a name systemd loads; the temporary
+starts with a dot and has no unit suffix (documented systemd behaviour; not observed).
+This removal of the run's own temporary is the single removal in the family. The alternative without any removal
+is O_TMPFILE plus linkat through /proc/self/fd, which is Linux-only and cannot be tested on the workstation.
+Never: a process, a systemctl verb, daemon-reload, a drop-in, an enablement link, an overwrite, chmod, chown, rename.
+daemon-reload has NO owner in this family: plan.daemon_reload_owner is a signed name (compared in effects) of the
+operation and GO under which the manager is reloaded. The supervisor README still lists the reload in operation 3;
+it needs an amendment or the GO must say who reloads.
+
+6.3 Precheck table and codes (fixed precedence; none says an installation happened):
+  UNIT_NAME_OCCUPIED                     a destination name is not a regular file (link, directory, ...)
+  UNIT_PRESENT_FOREIGN_CONTENT           a regular file there whose bytes, owner or mode are not what this code installs
+  EXPECTATION_MISMATCH                   signed as present but absent or different; an acknowledged leftover missing
+  ALL_UNITS_PRESENT                      every name holds exactly the signed render, each with ONE link, and no
+                                         temporary lies beside them that the request does not acknowledge
+  PRIOR_PARTIAL_REQUIRES_RECONCILIATION  some names hold the signed render; or all do but one still shares its inode
+                                         with a temporary (a death between link and removal); or a leftover temporary
+                                         is not acknowledged by name AND identity
+  TEMPORARY_NAME_OCCUPIED                this run's own temporary name is taken
+  DROP_IN_PRESENT OWN_DEPENDENCY_DIRECTORY_PRESENT ENABLEMENT_LINK_PRESENT ALIAS_LINK_PRESENT
+  UNIT_SHADOWED_IN_OTHER_PATH CONFLICT_SCAN_UNAVAILABLE
+The table reports per name: type, uid, gid, mode, links, device, inode and whether a regular file found there equals
+the signed render. Its SHA-256 and its size are reported ONLY when it does (they are then the signed values): a
+foreign unit may carry an inline secret, and its digest would be an offline test for it. No content.
+Conflict scan, lstat only, for each name <n>, in each of
+  /etc/systemd/system.control /run/systemd/system.control /run/systemd/transient /run/systemd/generator.early
+  /etc/systemd/system /etc/systemd/system.attached /run/systemd/system /run/systemd/system.attached
+  /run/systemd/generator /usr/local/lib/systemd/system /usr/lib/systemd/system /run/systemd/generator.late :
+  <n> itself (anywhere but the install directory); <n>.d, the type-level service.d / timer.d and every
+  dash-truncated form (c3po-.service.d, c3po-reader-.service.d); <n> inside every *.wants, *.requires and *.upholds
+  directory; the unit's OWN dependency directories <n>.wants, <n>.requires and <n>.upholds (links inside them are
+  dependencies of <n> itself: the effective unit would differ from the signed bytes with no drop-in at all); and
+  every symbolic link named *.service or *.timer whose text ends in <n> (an alias of the unit: the link text is
+  read by descriptor, nothing is followed). A lookup directory that does not exist is a proved absence; one behind a
+  symbolic link, with more than 4096 entries, with a dependency directory that is not a directory or with a link
+  whose text cannot be read makes the scan UNAVAILABLE and refuses.
+  Not scanned: /lib/systemd/system (the same directory as /usr/lib/systemd/system on a merged-/usr host); a link
+  INSIDE a dependency directory whose own name is not <n> but whose text ends in <n> (whether the manager follows
+  such a link to the unit depends on its version and was not established; after a reload the manager's own view in
+  OP_READBACK, WantedBy and RequiredBy, is what would show it); user-manager directories.
+A type-level drop-in directory that legitimately exists on the host makes this operation refuse by design;
+OP_PRECHECK shows it beforehand.
+Continuation: a unit expected {device, inode, links} is verified (regular, 0:0 0644, identity, link count, bytes
+equal to the signed render) and never touched; a leftover temporary listed in acknowledged_leftovers with its
+identity is verified to exist and never touched. Without that signature every leftover refuses.
+
+6.4 After the first creation nothing refuses. Per-unit states: NOT_ATTEMPTED | NOT_CREATED | TEMPORARY_ONLY |
+LINKED_TEMPORARY_PRESENT | INSTALLED_NOT_DURABLE | INSTALLED_DURABLE | PRESENT_VERIFIED_NOT_TOUCHED, with codes
+DESTINATION_APPEARED_AFTER_PRECHECK (the foreign object is untouched; the own temporary is withdrawn if its
+identity is proved) TEMPORARY_NAME_OCCUPIED WRITE_INCOMPLETE FILESYSTEM_READ_ONLY FILESYSTEM_FULL
+(each of these four, and the next four, with the temporary withdrawn as 6.2 says: NOT_CREATED when it was)
+FILESYSTEM_ACCESS_DENIED FILESYSTEM_ERROR CREATED_METADATA_MISMATCH CREATED_STAT_FAILED FSYNC_FAILED
+PARENT_REPLACED TEMPORARY_REPLACED (left in place) TEMPORARY_REMOVAL_FAILED GO_EXPIRED CLOCK_REVERSED
+READBACK_HASH_MISMATCH. A read-only or full filesystem as the very first call is a refusal with the GO spent and
+nothing installed.
+Outcomes: UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED (exit 0) | PARTIAL_REQUIRES_RECONCILIATION (exit 2) |
+REFUSED_NOTHING_CREATED (exit 1). Receipt: hashes and metadata only, never unit text.
+
+7. OP_READBACK - GO_READONLY_SUPERVISOR_READBACK_01
+
+Supervisor README operation 4, complete, read-only, for the two supervisor units. Its own request, window and GO;
+single use through the local claim.
+
+7.1 Request plan: mode GATE | RECONCILIATION; install{receipt_sha256, outcome}; provision{receipt_sha256};
+evidence_boot_id_sha256; unit_directory rows; service and timer {template_b64, rendered_sha256, rendered_bytes,
+device, inode} (identities from the install receipt); substitutions (the six values); network_allowlist;
+journal_placement (A or B) and deploy_tree_path, with the rules of 6.1; journal_mount_point: the mount point of the
+filesystem the authorisation names for the journal root ("/" when /var/lib is on the root filesystem; the data
+volume root under placement B; JOURNAL_MOUNT_POINT_UNBOUND), copied from effects.journal of the provision receipt;
+data_volume{path, rows}: under placement B the rows as observed (compared, never required to be root's); under
+placement A the path alone, for the path rules, and rows null: nothing of the data volume is read; layout {key: {device, inode}} from
+the provision ledger; retention_reference; image_revision (the 40-hex revision the pinned image must carry in its
+label, IMAGE_REVISION_UNBOUND); the floor as README activation gate item 4 writes it: sessions_retained (1 to 366)
+and other_writers_allowance_bytes (FLOOR_TERMS_INVALID), and free_space_floor_bytes, which must EQUAL
+53687091200 + 603979776 * sessions_retained + other_writers_allowance_bytes (FLOOR_NOT_THE_GATE_FORMULA): the floor
+is not a free number and cannot be signed below what the gate requires; catalog{expected INITIALISED | NOT_YET,
+receipt_sha256, device, inode} from the 4b receipt line.
+GATE requires the install outcome to be UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED and every hash and identity.
+RECONCILIATION (after a partial or an uncertain transport) allows null hashes and identities, has its own success
+criterion RECONCILIATION_OBSERVED_NOTHING_GATED, always carries the finding INSTALL_RECEIPT_NOT_COMPLETE and can
+never exit 0.
+
+7.2 Items, each observed on its own, each with status COMPLETE | PARTIAL | UNAVAILABLE and, separately, findings:
+  boot            boot identifier hash; a different boot is ONE finding (EVIDENCE_FROM_EARLIER_BOOT) and device
+                  numbers are then not compared
+  units           the two files through the unit directory: regular, one link, 0:0, 0644, at most 65536 bytes,
+                  identity equal to the install receipt, SHA-256 equal to the signed render, unchanged during the read
+                  (UNIT_ABSENT UNIT_NOT_REGULAR UNIT_METADATA UNIT_IDENTITY_CHANGED UNIT_BYTES_MISMATCH
+                  UNIT_DIRECTORY_IDENTITY_MISMATCH; UNIT_CHANGED_DURING_READ is unavailable)
+  values          the six values parsed from the installed bytes against the literal segments of the frozen
+                  template, a repeated placeholder repeating its value: what is on disk, not the request echoed;
+                  and the placement those values correspond to: the signed placement's own path rules applied to
+                  what was parsed (VALUES_NOT_EXTRACTABLE VALUES_MISMATCH PLACEMENT_MISMATCH)
+  layout          lstat of the six layout paths: type, owner, mode, identity; entry counts of docker-cli (must be 0),
+                  manifests and the state root; the filesystem of the journal root: one row per component from "/",
+                  its device, the mount point the device numbers show, compared with the signed one
+                  (JOURNAL_FILESYSTEM_MISMATCH: for example /var/lib on a filesystem of its own when "/" was signed),
+                  and that the journal root itself is not a mount point (JOURNAL_ROOT_IS_A_MOUNT_POINT); under
+                  placement B the data volume chain rows against the signed ones, under placement A nothing of it
+                  (LAYOUT_ENTRY_ABSENT LAYOUT_METADATA LAYOUT_IDENTITY_CHANGED DOCKER_CONFIG_NOT_EMPTY
+                  DATA_VOLUME_ROW_CHANGED)
+  token           ONE lstat through the configuration directory. Reported: exists, type, uid, gid, mode, link
+                  count, and the boolean "size within 1-4096". Never opened; no size, digest, timestamp, device or
+                  inode (TOKEN_ABSENT TOKEN_NOT_REGULAR TOKEN_METADATA TOKEN_SIZE_POLICY). On the same descriptor
+                  the entries of the configuration directory are counted, names never reported: manifests,
+                  docker-cli and the token, nothing else (CONFIG_DIRECTORY_ENTRIES: an abandoned token.new, a backup)
+  catalog         names in the journal root: INITIALISED expects exactly epoch.json and maintenance.lock, each
+                  regular, 0:0, 0600, one link, and the root's device and inode equal to the 4b receipt; NOT_YET
+                  expects an empty root. No catalog file is opened; other names are counted, not printed
+                  (CATALOG_ENTRIES CATALOG_METADATA CATALOG_IDENTITY_MISMATCH CATALOG_UNEXPECTED)
+  free_space      fstatvfs of the journal root itself, in whichever placement: f_bavail*f_frsize (the producer's
+                  figure) against the signed floor; the receipt carries the two terms, the device of that
+                  filesystem and the bytes above (or below) the floor
+  conflicts       the scan of 6.3 for both names (own dependency directories and alias links included); a leftover
+                  temporary is PRIOR_TEMPORARY_PRESENT
+  docker_init     lstat of the four candidates. Every row is reported; a candidate COUNTS only when it is a regular
+                  file owned by uid 0, not writable by group or other, with an execute bit. A dangling link, a
+                  directory or a file nobody can execute is not an init binary (present_not_counted_paths)
+  systemd_version, docker_unit, unit:<name> x2, timer_enabled, image, retention_tag, docker_daemon, docker_config
+                  systemctl --version (>= 240); systemctl show docker.service (Id, active); systemctl show of each
+                  unit with Id LoadState ActiveState SubState UnitFileState FragmentPath DropInPaths WantedBy
+                  RequiredBy TriggeredBy (inactive; fragment path the installed one or empty; no drop-in, no reverse
+                  dependency, no trigger other than the timer on the service; LoadState bad-setting, error or
+                  masked is a finding); systemctl is-enabled of the timer
+                  (the word "disabled"; no answer is unavailable, never read as disabled; both sources must agree);
+                  docker image inspect by ID and by retention reference (same ID, reference among its tags; the
+                  revision label of the pinned image equal to the signed revision);
+                  docker info once and docker version (init binary named and present on the host; >= 20.10)
+                  (SYSTEMD_TOO_OLD DOCKER_UNIT_NOT_ACTIVE UNIT_NOT_INACTIVE UNIT_LOAD_STATE TIMER_NOT_DISABLED
+                  ENABLEMENT_SOURCES_DISAGREE FRAGMENT_PATH_MISMATCH DROP_IN_REPORTED_BY_MANAGER
+                  REVERSE_DEPENDENCY_REPORTED_BY_MANAGER TRIGGER_REPORTED_BY_MANAGER IMAGE_ID_MISMATCH
+                  IMAGE_REVISION_MISMATCH RETENTION_TAG_MISMATCH INIT_BINARY_MISSING DOCKER_TOO_OLD
+                  DOCKER_CONFIG_CHANGED_DURING_RUN)
+  reboot_marker, clock, actor
+Reported and not gated: LoadState loaded, not-found and stub (no daemon-reload has run; bad-setting, error and
+masked are wrong at any reload state and ARE findings: this readback is the first place systemd's own parse of the
+unit shows), the rootless and user-namespace flags of docker info (rehearsal item 4 of the README), the reboot
+marker, and whether the pinned image still carries c3po/backend:production (after a later deploy the unit keeps its
+ID by design, README "Next deploy"; the boolean tells the signers that a deploy happened in between).
+DOCKER_CONFIG. The docker commands get DOCKER_CONFIG=<HOST_CONFIG_DIR>/docker-cli, so image and tag resolve as
+the unit's own CLI will resolve them. That directory is handed to docker only after it was seen to exist,
+root:root 0700 and EMPTY; otherwise the docker items are UNAVAILABLE and no docker process is started (a
+cli-plugins directory inside it would be executed as root by docker info). It is counted before and after; a
+change during the run is its own finding. Whether the Docker CLI writes into an empty configuration directory
+was never observed on this host; the possibility is in the signed side effects.
+Outcomes: READBACK_ALL_OBSERVED_ALL_EXPECTATIONS_MET (exit 0: the readback half of the activation gate, and
+nothing else is) | OBSERVED_ALL_EXPECTATIONS_NOT_MET | RECONCILIATION_OBSERVED_NOTHING_GATED | PARTIAL_OBSERVED |
+PARTIAL_OR_WINDOW_EXPIRED (exit 2) | REFUSED_NOTHING_OBSERVED (exit 1, authentication only).
+An absent token keeps every other item in the receipt and forces exit 2 with the finding TOKEN_ABSENT.
+This operation is specific to the supervisor pair. A readback of the reader's units is another operation.
+
+8. THE secret.env STEP - SPLIT OUT, SPECIFIED, NOT BUILT
+
+Why it is not inside OP_PROVISION:
+  - its content cannot be signed. Compose builds the value as postgresql://c3po:<password>@db:5432/c3po, so a
+    SHA-256 of the line in any document or receipt is an offline test for the password;
+  - it needs a command that asks Docker for an environment entry; every built payload keeps "no template names Env";
+  - it depends on a live container; inside OP_PROVISION a stopped or duplicated r2d2-worker would turn the
+    directory creation into a partial and spend the GO;
+  - the owner signs a different sentence: a second copy of the database URL at rest.
+Why it is not built here: the one new command (a Go template that narrows .Config.Env inside the Docker CLI) was
+never run on the host, the first design review found a disclosure path in the design, and a payload that moves a
+database password as root should not be delivered half-verified in the same pass as four others. The
+specification that a build must meet, with both reviews folded in:
+  operation GO_WRITE_READER_SECRET_ENV_01, phase WRITE_READER_SECRET_ENV_IN_MEMORY, documents
+  WRITE_HOSTOPS_SECRET_ENV_{REQUEST,AUTHORITY,GO,RECEIPT}_V1, the same core, its own source.
+  - Target: /etc/c3po-reader/secret.env, 0600 root:root, through the pinned /etc/c3po-reader (rows from the
+    OP_PROVISION ledger), by exclusive temporary, fsync, link, removal of the temporary proved by identity.
+  - Source: exactly one running container with compose project c3po and service r2d2-worker, selected with the
+    reviewed HOSTFACTS argv. One new command: docker container inspect --format
+      {{range .Config.Env}}{{$p := split . "="}}{{if eq (index $p 0) "C3PO_DATABASE_URL"}}{{println .}}{{end}}{{end}}
+    The CLI prints only the matching entry; stderr is discarded. No fallback that prints the whole environment.
+  - Accepted byte shape: one entry line plus the inspector's own newline (println and the per-object newline make
+    two); exactly the entry line and one newline is written. The emulator must model both newlines.
+  - Shape check in place on one bytearray: key exact, value 1 to 4096 bytes, no NUL, CR or LF. Buffer zeroed in a
+    finally (best effort). RLIMIT_CORE 0 and 0 written to /proc/self/coredump_filter before the source command
+    (a piped core_pattern ignores the limit; OP_PRECHECK reports whether it is a pipe).
+  - NO SIZE ANYWHERE. For secret.env and for its temporary, in every outcome - complete, refusal with a
+    pre-existing file, partial, leftover after a crash - the tables hold type, uid, gid, mode, links and booleans
+    only (for a leftover at most size_is_zero). Never st_size, a block count, a timestamp, a digest or a length:
+    the size of the file minus a constant is the password length. OP_PRECHECK already follows this rule.
+  - Canary test: the value, any 8-byte substring, base64, hex, MD5, SHA-1, SHA-256 of the value and of the line,
+    the value length, the line length and the file size (with one and with two trailing newlines) appear in no
+    receipt of any outcome, no stderr, no exception text, no argv, no command environment and no file but the
+    target. Mutants: size emitted in the refusal table; template widened; digest or length emitted; written under
+    the final name directly.
+  - Receipt booleans: single_line, key_matches, value_within_1_4096, size_equals_bytes_written,
+    source_unchanged_during_read.
+  - source_unchanged_during_read compares ONLY the one selected field between two reads, never whole inspect rows.
+    On the host, HOSTFACTS_01 found 2 of 6 containers changed within 770 ms (CONTAINER_CHANGED, the cause of its
+    partial result): a comparison of whole rows would refuse a source whose database URL did not change at all.
+Open points for that build: PLAN section 3.3 expects "the same hashes" of secret.env in both gates' receipts,
+which contradicts the no-digest rule (proposed replacement: the identity tuple device, inode, mode, links, ctime,
+mtime; the plan authors decide); whether /etc is versioned or copied (OP_PRECHECK reports /etc/.git and
+/etc/.etckeeper) belongs in the owner's sentence; a crash can leave the 0600 temporary holding the value inside
+the 0700 directory.
+
+9. REMOVAL OF A LEFTOVER - NOT BUILT
+
+Nothing in this family removes a pre-existing object. Since revision 2 OP_INSTALL_UNITS withdraws its own
+temporary when its file cannot be completed (6.2), so a full disk, a failed write or fsync, wrong metadata or a
+failed link no longer leave anything behind. What can still remain after an interrupted OP_INSTALL_UNITS: a
+temporary .hostops-*.partial, or a final name that still has two links, after a process death, an expired window,
+a clock reversal, a replaced directory, a replaced temporary or a failed removal. systemd does not load the temporary
+and a continuation can proceed with it acknowledged, but OP_READBACK reports it (PRIOR_TEMPORARY_PRESENT, or
+UNIT_METADATA for two links) and therefore never reaches its success outcome while it exists. Removing it is an
+operation of its own (signed name, device and inode; unlink only if the name still shows that identity), with its
+own owner sentence. It does not exist. The first design review asked for it to exist before the first write GO is
+spent; the signatories decide whether to wait for it or to accept that an interrupted installation is finished by
+a hand procedure under a separate authorisation.
+
+10. ORDER ON THE WEEKEND, AS THIS FAMILY SEES IT
+
+  HOSTFACTS_01 (already reviewed) -> deploy of merged #437 -> W2 security reboot -> OP_PRECHECK (with the signed
+  placement: it reads the filesystem the journal root would be on) -> OP_PROVISION (operation 2 with the journal root
+  in that placement, W4 directories, tag) -> [4b catalog, token, secret.env: other authorities]
+  -> OP_PRECHECK again if anything is to be signed as present -> OP_INSTALL_UNITS (supervisor pair; later, under
+  another request and GO, the reader's units) -> daemon-reload by its named owner -> OP_READBACK (GATE)
+Every operation after W2 runs in the same boot as the receipt its rows come from.
+
+11. WHERE EACH BOUND VALUE COMES FROM
+
+From the HOSTFACTS_01 receipt (to decide parameters; none of its rows is signed by a write request):
+  - the host source of the mount at /app/day-d-data -> data_volume_path (never assumed)
+  - owner, group and mode of that source and of each ancestor, and whether it is a mount point: tells in advance
+    whether the write guards accept it (non-root owner accepted only at and below the volume root; setgid refuses)
+  - network names of the backend containers -> the candidates for @NETWORK@ and the owner's allow-list
+  - init binary, Docker server version, systemd version, docker.service state: what OP_READBACK will require
+  - free bytes of the data volume against the floor to be signed
+  - that /etc/c3po-bar, /var/lib/c3po-bar, the two unit names and the c3po-bar account are absent
+  - an image ID: observation only, read before the deploy of the merged revision
+From an OP_PRECHECK receipt taken after the deploy and after the reboot (these ARE the signed rows):
+  - chains ETC, VAR_LIB, DATA_VOLUME, CAPACITY_PARENT -> provision plan.chains, copied row by row
+  - chain UNIT_DIRECTORY -> install plan.unit_directory and readback plan.unit_directory
+  - boot.boot_id_sha256 -> evidence_boot_id_sha256 of every dependent request
+  - image.id -> retention_tag.image_id, @IMAGE_ID@
+  - destinations (device, inode, entries) -> expect of a continuation
+  - its metadata_sha256 -> request.evidence
+From the OP_PROVISION receipt: ledger device and inode of each directory -> readback plan.layout;
+  chains.DATA_VOLUME -> readback plan.data_volume.rows; retention_tag.reference; metadata_sha256.
+From the OP_INSTALL_UNITS receipt: ledger device and inode of each unit; outcome; metadata_sha256.
+From the 4b receipt line: device and inode of the journal root; from the signed release: nothing here.
+From the owner's decision on record (README: DUDU_DECISION_BAR_JOURNAL_ON_MAIN_DISK.json, sha256 76dcff83...64a0,
+not read by this build): the journal placement, A for epoch R2D2-V2-SHADOW-2026-10-05, and the pair of journal paths.
+From the pipeline (APP_DIR): the deploy tree path, /opt/chief-of-staff-digital in the repository at a6dd2b1.
+From effects.journal of the OP_PROVISION receipt: journal_mount_point of the readback request.
+Decided by the signatories, not observed: journal leaf name, tag label, capacity root and receipt directory,
+groups per GO, network allow-list, the two terms of the floor (sessions retained and the allowance for other
+writers; five sessions and no allowance give 56706990080), the revision the pinned image must carry,
+daemon_reload_owner, windows, owner, target and key references, claim root.
+
+12. BINDING PROCEDURE (each step by command; nothing typed from memory)
+
+  1. Reviewer accepts these bytes: SHA256SUMS verified by command; assemble.py re-run changes nothing, wherever the
+     reviewer's copy lies. The five blob references of DISPATCH.UNBOUND.json (source, request, authority, go, payload)
+     carry the hash of the unbound bytes and a null path, like ssh_key and known_hosts: the binder writes the bound
+     files and puts their paths and hashes in the config (step 8), as the binding of HOSTFACTS_01 did, where the
+     template's own references were never used. The dispatcher refuses the template as it is (DISPATCH_UNBOUND) and
+     would refuse a null path (LOCAL_PATH); it reads each blob by its pinned hash, so no check is weaker for it.
+  2. Receipts on record as in section 11, each with its hash; every row copied from a receipt named in evidence.
+     A write request cites the OP_PRECHECK receipt its rows come from (the code requires the operation name).
+ 2b. Before a readback request is written: compute the floor by command from the two terms
+     (53687091200 + 603979776 * sessions + allowance) and compare it, by command, with
+     items.chains.<chain>.bytes_available_to_non_root_f_bavail of the OP_PRECHECK receipt, <chain> being the one
+     effects.journal.filesystem_named_by_chain of the provision names (VAR_LIB under placement A, DATA_VOLUME under
+     B): the filesystem the readback measures on the journal root. If the figure is below the floor, do NOT ask for
+     the readback signature: the GATE readback would exit 2 with FREE_SPACE_BELOW_FLOOR and spend its GO. In the
+     same step read, in that chain's notes, where the device changes: effects.journal.mount_point_by_device_change
+     is what the readback request signs as journal_mount_point. On the host as HOSTFACTS_01 read it: placement B
+     (54070542336 bytes) is below the floor for every number of sessions, 220528640 short for one, 2636447744 for
+     five; placement A meets the five-session floor by 538505326592 bytes: that receipt read /var/lib on the device
+     of "/" with the same figures (595212316672 bytes available, section 16). That reading is of the boot of
+     2026-10-02; the figure that counts is the one OP_PRECHECK reads on the VAR_LIB chain in the boot of the write,
+     and the readback gates the filesystem it finds (JOURNAL_FILESYSTEM_MISMATCH).
+  3. Fill the plan. For the units: render with the repository's reference loop (tests/family.py reference_render is
+     that loop) and compute rendered_sha256 and rendered_bytes by command, independently of this code.
+  4. request: status BOUND, date, windows, host binding, executor_uid 0, evidence; canonical bytes; hash.
+  5. effects: compute once with the source's effects_of(plan) offline and READ it: it is what the owner and the GO
+     sign. authority and GO carry it literally.
+  6. authority (owner, SIGNED, APPROVED, request and payload hashes) -> hash -> GO (SIGNED, GO, three hashes,
+     transport_binding with the four runtime pins and the command pin, claim_root_identity, the constant
+     scope_statement, success_criterion).
+  7. Six instants non-null, on request.date, gate span within the cap; config window inside both;
+     latest_start = not_after - 80 s.
+  8. Final payload with launcher_stdin.build; config with its pins and the paths of the five bound blobs (null in
+     the template); publication proof.
+  9. Dry validation: the source's authenticate() on the bound bytes with the target uid injected, and perform()
+     with a gate that raises - nothing may be touched (the tests do this with a host object that fails on any use).
+ 10. Publish the hashes of the final payload and of the config. Prepare -> publication -> resume, once.
+
+13. HOW EACH FINDING OF THE INSTALLER AUDIT IS CLOSED (OPINION.json c870f8f2...8b86)
+
+  B1 no entry point, trust supplied by the caller. Each operation is a complete once candidate: source and three
+     documents embedded by the launcher, four pins checked before compile, module registered, payload_bytes are
+     the compiled bytes, documents decoded from bytes. Templates travel inside the signed request. Own dispatcher
+     names, pinned config as the anchor, prepare -> publication -> resume, LOCAL claim keyed by the GO hash.
+  B2 a receipts directory nobody creates. No host claim and no host receipt. OP_INSTALL_UNITS opens only
+     /etc/systemd/system and the lookup directories; OP_READBACK opens no receipt directory.
+  B3 data volume guard against the real baseline. No "must be root" rule on the data volume: its rows are signed
+     as observed, and tests run with a 1000:1000 0755 volume root. The floor stays, in code, for /etc, /var/lib and
+     the unit directory. OP_INSTALL_UNITS does not open the data volume. OP_PRECHECK reads the baseline first.
+  M1 suite does not pin the guarantees. Exact code per refusal; known-answer render 1746 bytes
+     9010fee9c08b31f641c559e1712a0b671aaf3a6fc682bf5bf7240301fd53ac03 against the repository loop and 2000 random
+     sets; flags of every creating open; fsync per descriptor; an emulated host with no chmod, chown or rename;
+     an audit hook in a child interpreter; the 24 surviving mutants of the audit mapped to this code (names A_*
+     in mutation/mutants.py) and killed, with the rest of the list. Counts in VALIDATION.json.
+  M2 wall clock only. The family Gate: latest start and earliest end of three windows, offset exactly zero,
+     monotonic deadline, reversal refusal, a gate immediately before every mutating call (asserted on the call
+     log), a cap on the gate span, latest_start and the watchdog in the dispatcher.
+  M3 missing bindings, loose keys, shared schema. Exact key sets; SIGNED; host binding in three documents, plan
+     and config; transport_binding, claim_root_identity, payload hash; effects literal in authority and GO;
+     four disjoint name sets; OP_READBACK has its own request and pins the install receipt hash and outcome.
+  M4 PARTIAL label and receipt. Nothing is persisted on the host; REFUSED only while nothing succeeded and nothing
+     is uncertain; EEXIST after the precheck is DESTINATION_APPEARED_AFTER_PRECHECK; EROFS, ENOSPC, EACCES have
+     codes; an escape from run() is UNCERTAIN at the launcher. Rule for the GO: a spent local claim without a
+     COMPLETE receipt is a partial until a read-only operation says otherwise.
+  M5 one code for seven states, raw exceptions. Distinct precheck codes with a per-name table; all destinations
+     evaluated before reporting; constant codes chosen at the call site; exact keys before any access.
+  M6 drop-ins and enablement links. The scan of 6.3 before the first creation, repeated in OP_READBACK and
+     OP_PRECHECK, plus the manager's own view in OP_READBACK. Revision 1 closed half of it: the unit's own
+     dependency directories and alias links were not looked at (section 13b, F1).
+  M7 readback stale, re-executable, all-or-nothing, render not independent. Frozen against the README bytes
+     27bf0e5aa3fc1e152dcc386b35063ac0060a2d700e227e9c14a8828c3c56dc2b (HEAD a6dd2b1, read with git show; revision 1
+     was frozen against 479b44fb...8b38 at 2f6cbb2, before the journal placement existed, see decision 0);
+     catalog item; single use; one status and findings per item; install receipt hash and outcome signed; values
+     parsed from the installed bytes; rendered hash recomputed by the binder with the repository loop.
+  m1 containment both ways (DATA_INSIDE_PRIVATE). m2 journal on its parent's device (JOURNAL_ROOT_IS_A_MOUNT_POINT in the
+     readback; in the provision the new directory must have its parent's device, and since revision 2 a test
+     gives the created object another device, for the directory and for the unit file). m3 length limits and
+     RENDER_TOO_LARGE. m4 temporary plus link. m5 O_NOATIME on every read-only open. m6 the reload has a named
+     owner field and an open README amendment. m7 no fixture exception in production code: the test host is
+     injected; the suite still has to run once as real root on Linux. m8 receipts carry every binding and the
+     expected next to the observed hash. m9 "GO spent with nothing installed" is written in 6.4.
+
+13b. HOW EACH FINDING OF THE SECOND REVIEW (OF REVISION 1) IS CLOSED
+
+Before and after, by execution: the review's cases, one line each (repro.py of the second review's probes), run on
+the revision 1 snapshot and on the bytes of revision 2; the surviving mutants reproduced on revision 1. Those files
+stay with the builder (they are not part of this directory). On the bytes of revision 3 the same script prints the
+same lines as on revision 2 but one: the case that reads the emulated free space by the device number revision 2 gave
+the emulated data volume, which revision 3 replaced by a neutral one (section 13c, m6).
+  F1 (major) own dependency directories. conflict_scan now looks, in each of the twelve lookup directories, for
+     <name>.wants, <name>.requires and <name>.upholds: OWN_DEPENDENCY_DIRECTORY_PRESENT. It refuses the installation,
+     is a finding of the readback and is reported by the precheck, through the shared part. Parametrised test over
+     the twelve directories, six entries; two mutants and one combined.
+  F2 (major) the layer that runs as root was not pinned. The native double no longer overrides open, fstat or
+     lstat: tests/oslevel.py substitutes "/" and the uid on the os module and records the arguments of every system
+     call made by the shipped Native lines (O_NOFOLLOW on every open, O_NOATIME on every walked directory, lstat
+     never following and always by descriptor, fstat and fsync on descriptors this run opened, fsync of each new
+     object then of its parent, link by descriptor with follow_symlinks False, mkdir mode 0700). The reviewer's
+     mutants W01 W02 W03 W04 W05 W06 W33 (and W20-W23, W31, W32, a readlink one) are in mutants.py and die.
+  F3 (major) free space. hostemu carries the figure of the HOSTFACTS_01 receipt (13200816 blocks, 54070542336 bytes).
+     The floor is no longer a free number: the request signs sessions_retained and other_writers_allowance_bytes
+     and the code recomputes README item 4 (FLOOR_NOT_THE_GATE_FORMULA). A test shows that on the receipt figure the
+     GATE readback under placement B exits 2 for one session and for five; binding step 2b compares the floor with
+     the precheck figure before any signature. What makes the gate reachable is not code of this family but the
+     owner's decision the README now records: placement A. With it, and with the root filesystem as the receipt read
+     it, the whole chain precheck -> provision -> install -> readback ends in the success outcome with five sessions
+     and nothing freed (tests/test_precheck.py, the whole chain under both placements). Nothing is freed by this family.
+  F4 (major) never executed on Linux, as root, with O_NOATIME. STILL OPEN. It cannot be closed offline: no Linux,
+     no docker and no CI runner were available to this build. Prepared: on Linux the native tests now hand the
+     kernel's O_NOATIME to every open (no override of noatime()); linux_root/run.sh runs the suite as real root and
+     as the runner's user and linux_root/shapes.py runs the four command shapes with the sources' own argv tables
+     and parsers (self-tested against the emulated CLI only). No write GO before that job has run and its files
+     are attached. Revision 3 reworked the job (section 13c, m5).
+  F5 (major) what the GO shows and how the gate is bounded were not pinned. Tests: a hand-written literal of the
+     effects per operation; effects equal in authority and GO but not those of the plan; the earliest end and the
+     latest start in each of the three documents; a window that begins on the previous day (2026-10-01 with date
+     2026-10-02 included); each member of claim_root_identity and of transport_binding on its own; the plan window
+     against the request. Mutants: the eight real survivors and one per effects member, generated from a table that
+     mutate.py check compares with what each source computes.
+  minor 1  six further survivors (W08 W09 W14 W15 W18 W06): a test and a mutant each; W06 dies on the recorded mode.
+  minor 2  docker cannot be started at the tag step: caught at the three calls; the ledger always reaches the receipt.
+  minor 3  ALL_UNITS_PRESENT after a death between link and removal: now PRIOR_PARTIAL_REQUIRES_RECONCILIATION.
+  minor 4  alias link: ALIAS_LINK_PRESENT in every lookup directory. Swapped temporary: looked at again right before
+           link(); the remaining window is the residual written in 6.2.
+  minor 5  data volume root: a root writable by others without the sticky bit is refused; both facts are literal in
+           effects.data_volume_root; not being a mount point is shown, not refused.
+  minor 6  leftover after a failure before the link: the run withdraws its own temporary (6.2). The removal
+           operation of section 9 is still not built and still needed for the cases listed there.
+  minor 7  LoadState bad-setting, error, masked: UNIT_LOAD_STATE.
+  minor 8  docker-init: only a regular root file, not group or other writable, with an execute bit, counts.
+  minor 9  hostemu and section 16 follow the HOSTFACTS_01 receipt; the secret.env specification compares one field.
+  minor 10 configuration directory entries counted and gated; signed image revision compared; the production tag
+           of the pinned image reported.
+  minor 11 a data volume or capacity root equal to or above a fixed path is refused; <volume>/<leaf> is checked.
+  minor 12 identities_sha256 and the two last rows in the readback effects.
+  minor 13 write operations cannot be dated 2026-10-05, at both layers.
+  minor 14 templates: mode, install.outcome, the readback success criterion and existing_journal_leaves are null.
+  minor 15 owner_evidence may not be the word UNBOUND; a write request cites a precheck receipt.
+  minor 16 no digest and no size of a file at a unit name that is not the signed render; no size in the precheck.
+  Beyond the review, forced by the README moving under the build: the signed journal placement (5.1, 6.1, 7.1, 7.2,
+  section 18 decision 0). It is what turns F3 from "the gate cannot be met on this host" into a reachable outcome,
+  and it is the part of revision 2 that needs a reviewer most.
+
+13c. HOW EACH POINT OF THE THIRD REVIEW (OF REVISION 2) IS CLOSED
+
+  F4 (the only blocker) the mutating paths never ran on Linux as real uid 0. STILL OPEN, and still the condition of any
+     write GO. It is closed by ONE run of linux_root/run.sh on a throwaway GitHub-hosted ubuntu-24.04 runner that
+     exits 0, with its four output files on record. Nothing in this revision claims that run.
+  m1 "no receipt read which filesystem /var/lib belongs to" was false. The HOSTFACTS_01 receipt has, in
+     observation.sections.data_volume.reference_filesystems, a row for "/var/lib" with the device number of "/" and
+     the statvfs figures of "/" (595212316672 bytes available). Corrected in sections 4, 12 (step 2b), 16 and 18
+     (decision 0), in VALIDATION.json (journal_placement) and in three comments. What stays: that reading is of an
+     earlier boot and has no row for /var; OP_PRECHECK reads the VAR_LIB chain again in the boot of the write, and
+     OP_READBACK gates JOURNAL_FILESYSTEM_MISMATCH. The supervisor README called it an expectation up to a6dd2b1;
+     its commit 51289ce, made while this revision was built, corrects the README the same way.
+  m2 two guards nothing pinned. Both are in the code and no code changed; each now has a test and a mutant:
+       the tag readback needs the reference among the tags of the signed image (inspect by reference prints the signed
+       ID, the tag list lacks the reference: CREATED_UNVERIFIED, TAG_READBACK_MISMATCH, a partial)            T01
+       a unit file at a signed name with equal bytes and another group, or another owner, is not what this code
+       installs: UNIT_PRESENT_FOREIGN_CONTENT signed as absent, EXPECTATION_MISMATCH signed as present    T02 T02b
+     The seven other survivors of the third review's own list are checks that a second check would also have
+     caught. Five decide a result of their own, and each now has a test of the case where it decides and a mutant
+     that dies alone: the link count and the size of the temporary on the descriptor, before any unit name exists
+     (T03 T04); owner, group, mode and link count in the readback inside the run (T05 T05b T05c T05d); the link
+     count after the removal of the temporary (T06); the walk comparing what it opened with what it classified,
+     PARENT_CHANGED_DURING_WALK (T07). Two cannot change any result while the other check of their pair stands:
+     "no call pending" beside Effects.clean() (T09), and the comparison of the fresh walk with the descriptor held
+     beside the signed rows (T10). They are listed as REDUNDANT in mutation/mutants.py, run alone and recorded as
+     redundant survivors, and die in the combined mutant of their pair. Seven combined mutants, one per pair.
+  m3 assemble.py was a fixed point only at the build path: the unbound dispatch templates embedded absolute paths.
+     They now carry null paths (section 12, step 1); a test assembles a copy at another path and compares every
+     generated file, and a test hands the shipped template to the dispatcher (DISPATCH_UNBOUND, no claim).
+  m4 plan.existing_journal_leaves was not among the signed effects. It is now a member of effects_of() of
+     OP_PROVISION and of OP_PRECHECK, of both hand-written literals and of the EFFECTS table (one mutant each); a
+     request whose list changes cannot keep its GO (EFFECTS_BINDING, tested).
+  m5 the Linux job did not switch the runner to the containerd image store. run.sh now writes
+     features.containerd-snapshotter=true into daemon.json, restarts the daemon and requires docker info to name the
+     containerd snapshotter BEFORE anything is pulled; otherwise nothing is pulled, no shape runs and the job fails.
+     Reviewed again for a GitHub-hosted runner: it refuses anywhere else (RUNNER_ENVIRONMENT=github-hosted, a
+     machine with none of the supervisor's paths and no c3po/backend:production image); pytest comes from the
+     distribution (apt, no pip: PEP 668) for /usr/bin/python3; the checkout is made unwritable for group and other
+     (modes only), because the dispatcher refuses such runtime files; no bytecode or cache is written, so the root
+     run leaves only its junit file in the checkout, which is handed back to the runner's user; every stage runs
+     whatever the earlier ones did and the status is kept (nothing relies on "set -e"); the two unit files it
+     installs are removed by a trap; the seal is verified before and after; the four output files always exist.
+     shapes.py also takes the manager's view before the installation and after it without a reload (L5), states
+     each expectation the sources rely on as a boolean, and exits 3 when all shapes ran and one is not met.
+     report.py prints the hashes, the junit counts and the two small files for the job log.
+  m6 public-safety. No absolute path of the build machine in any file (tests/test_family.py takes four locations
+     from the environment; mutation records write <copy>; the dispatch templates carry no path); no device or inode
+     number of the host (tests/hostemu.py and the literals of four test files use neutral numbers: any two distinct
+     devices and any inodes prove the same); section 16 names no such number; REVISION_1_TO_2.diff, which quoted
+     them, is replaced by REVISION_2_TO_3.diff, taken against revision 2 with the same renumbering applied.
+
+14. HOW THE TWO DESIGN REVIEWS ARE FOLDED IN
+
+  Review 1 (host safety)
+    password length through file size (blocker)      secret.env not built; the no-size rule is in section 8 and is
+                                                      already followed by OP_PRECHECK for secret-bearing names
+    failure between mkdir and its proof              CREATED_UNVERIFIED and stage codes; outer handler armed by the
+                                                      mutation counter; errno injected after every creating call
+    setgid parent                                    PARENT_SETGID in request validation, three places; reported
+                                                      by OP_PRECHECK; grpid named as a residual
+    one interrupted run dead-ends                    signed continuation (expect) in both write operations;
+                                                      table-defined children and other entries counted; removal
+                                                      operation named as not built (section 9)
+    drop-in and enablement scan too narrow           twelve lookup directories, type-level and prefix drop-ins,
+                                                      dependency directories everywhere, the manager's view
+    pins do not survive the reboot                   boot identifier hash; ordering rule in 3.9 and 10
+    reconciliation readback could be KNOWN_COMPLETE  signed mode, own outcome, never exit 0, mandatory finding
+    core dumps, println newline                      in the specification of section 8
+    DOCKER_CONFIG in the readback, tag asymmetry     counted before and after with its own finding; never handed a
+                                                      non-empty directory; asymmetry in the signed scope statement
+    no forbidden zones                               deny pattern and forbidden prefixes; signed list of leaves
+    supervisor names not bound to profiles           code table both ways; profile in effects
+    README revision moved; /etc versioned            re-pinned by command; presence booleans in OP_PRECHECK
+  Review 2 (authority)
+    no bytes (blocker)                                these bytes; nothing is claimed closed without a test
+    launcher files an escape as a refusal (blocker)   exit code 3 while run() executes; sources return refusals
+    profile bypass; effects undefined; parents only   see 3.2 and 6.1
+      transitive
+    no span cap, latest_start not in the GO           WINDOW_SPAN; the GO window is the short window
+    null acceptance                                   a code and a test per null member (3.4)
+    B3 over-generalised                               code floor for system directories (3.9)
+    date literals, stale statements, free text        one literal tested equal; README re-pinned; scope_statement a
+                                                      constant; the rest labelled not enforced (3.2)
+    source not tied to the imported module            transport_binding.runtime_sha256[source] must equal the
+                                                      payload hash, checked by the source and therefore locally
+    caps, reconciliation, link scan                   aggregate template cap; 7.1; 6.3
+    path overclaim, one-direction matrix              forbidden zones; reverse matrix against the reviewed sources
+
+15. CREDIT
+
+The substitution grammar check (validate_substitutions) and the render loop of the supervisor service are Codex's,
+from installer.py of the installer candidate, revision 2 (sha256 c53732b0be2469344c3b39bd182c401c13dff52dc0d33430
+cdd838df02751356), judged correct by the audit and reused in parts/render.py with the audit's corrections (types
+checked before set(), containment in both directions, length limits). The exclusive-creation core of that
+candidate (descriptor-relative creation, O_EXCL|O_NOFOLLOW, gate before each mutation, fsync of file and
+directory) is the model of OP_INSTALL_UNITS; what is new is the outer layer the audit asked for.
+Gate, strict decoding, the command runner, the trusted-executable walk, the Docker templates and the Go template
+emulation come from the reviewed read-only family (hostfacts_readonly.py 00d20785...4664 and its test file).
+
+16. WHAT IS PROVEN ON THE HOST, WHAT IS REAL ON THE WORKSTATION, WHAT IS STILL UNPROVEN
+
+Proven on the host, by the receipt of GO_READONLY_SUPERVISOR_HOSTFACTS_01 (observed 2026-10-02T01:51:44Z, stdout
+sha256 47abfa0a93d1ffbd7b90fd72a3e414a9c54ce3debda8e70ae679d45be36e528b, exit 2 KNOWN_PARTIAL, stderr 0 bytes).
+That run executed the reviewed read-only source (hostfacts_readonly.py 00d20785...4664), not these bytes; what it
+proves for this family are the read primitives and command shapes both share:
+  - the launcher and runner under "sudo -n /usr/bin/python3 -I -B -" with the payload on stdin, as uid 0, gid 0;
+  - the walk from "/" by dir_fd with O_NOFOLLOW and O_NOATIME, scandir by descriptor (the access time of the data
+    volume root did not change during the listing), fstatvfs on a held descriptor;
+  - docker image inspect with the image template (id, repo_tags, revision label), docker info and docker version
+    with the typed templates, systemctl --version, systemctl show -p (an unset property is printed as "Key=");
+  - facts: Docker server 29.5.3 (containerd snapshotter, not rootless, no user-namespace remap); systemd 255
+    (255.4-1ubuntu8.17); docker-init only at /usr/libexec/docker/docker-init, a regular file 0:0 0755; docker.service
+    active; /etc/systemd/system 0:0 0755; the data volume root /mnt/day-d-data 1000:1000 0755, on a device of its
+    own, a mount point; 54070542336 bytes available there and 595212316672 on the root filesystem;
+    /etc/c3po-bar, /var/lib/c3po-bar, /opt/c3po-bar and both units absent; both units not-found for the manager;
+  - which filesystem /var/lib belongs to: reference_filesystems (in the data_volume section of that receipt) has a
+    row for "/" and a row for "/var/lib" with the same device number and the same statvfs figures (595212316672
+    bytes available): /var/lib was on the root filesystem when the receipt was taken. Revision 2 said no receipt
+    had read this; that was wrong (section 13c, m1).
+  Its partial cause was CONTAINER_CHANGED on 2 of 6 containers within 770 ms; that matters for the secret.env step.
+  What the receipt does not give a write request: it has no row for /var (so no chain a request could sign), it
+  found no /var/lib/c3po-bar (the journal root did not exist), and it was taken before the pending security reboot.
+  That the journal root of placement A is on the root filesystem is therefore a reading of an earlier boot, not an
+  assumption and not yet a signed fact: OP_PRECHECK reads the VAR_LIB chain again in the boot of the write (the rows
+  the request signs), effects.journal shows the filesystem and its mount point, and OP_READBACK gates what it finds
+  on the journal root itself (JOURNAL_FILESYSTEM_MISMATCH).
+tests/hostemu.py world() is calibrated to those facts and figures. The image ID, names and canaries stay synthetic,
+and so does every device and inode number: the emulated host carries neutral numbers, none of the host's.
+
+Emulated only (tests/hostemu.py): the Docker CLI (--format with the typed and raw-JSON modes of the reviewed
+family; image ls and image tag as documented), systemctl (show, is-enabled, --version as documented shapes),
+/proc, device numbers, uid 0 on the emulated tree, every errno injection and every process death.
+
+Real, on the workstation (tests/test_native.py, macOS, an ordinary user): the sources' own Native classes with
+nothing overridden. mkdir, exclusive open, write, fsync, link, unlink, lstat, fstat, scandir and readlink by
+dir_fd on a temporary tree standing in for "/", with the arguments of every call recorded; real symbolic links;
+EEXIST and EACCES of macOS; the audit events of a child interpreter; the launcher and the transport with real
+processes; the final unbound payloads under python3 -I -B - with two interpreters. Not real there: uid 0 (the test
+user is reported as root) and O_NOATIME (macOS has none: a marker bit is recorded and stripped).
+
+Still unproven. Nothing below was ever executed anywhere; reading the code against Linux semantics found no
+defect, and that is reasoning, not execution. linux_root/run.sh is the job that closes L1 to L6; it was NOT run.
+It closes them only by exiting 0: both suites pass, the image store is the containerd snapshotter before anything
+is pulled, every shape ran and every expectation printed in SHAPES.linux-root.json is true.
+  L1 the mutating path as real root on Linux: mkdirat, openat with O_EXCL, linkat, unlinkat and fsync on
+     descriptors opened O_RDONLY|O_DIRECTORY|O_NOATIME, on ext4, with Linux errno values and group inheritance
+  L2 the same suite as an ordinary user on Linux
+  L3 docker image ls --no-trunc --format with typed fields, and whether its ID equals the inspect ID under the
+     containerd image store (the job switches the runner's daemon to that store first and fails if it cannot)
+  L4 docker image tag on an image ID
+  L5 systemctl is-enabled, and show with ten -p properties; what the manager reports for the two units before they
+     are installed, once installed without daemon-reload, and after one (LoadState: systemd's own parse of the
+     rendered unit)
+  L6 docker info and docker version under an empty DOCKER_CONFIG, and whether the CLI writes into that directory
+  and, not covered by that job: that systemd ignores a dot-prefixed *.partial file; the unit lookup path of the
+  host's systemd build; the host's python3 version against the Python 3.7 language level of the sources (tested on
+  3.9.6 and 3.12 only); the runner's Docker version is the runner's, not the host's 29.5.3; the throwaway image is
+  a pulled multi-platform image, not an image built on the host.
+Before any write GO: linux_root/run.sh has run on a throwaway GitHub-hosted ubuntu-24.04 runner and exited 0, with
+its four output files attached, and OP_PRECHECK has run on the host.
+
+17. REPRODUCE (offline; nothing here contacts a host)
+
+  cd <this directory, wherever it lies>
+  /usr/bin/python3 -B assemble.py                                   # rewrites every generated file; must change nothing
+  /usr/bin/python3 -B -m pytest -p no:cacheprovider -q tests        # also with a second interpreter
+  /usr/bin/python3 -B mutation/mutate.py check                      # every anchor once; one mutant per effects member
+  /usr/bin/python3 -B mutation/mutate.py run                        # copies under ../notes/mut-*; writes MUTATION_RUN.json
+  HOSTOPS_MUTATION_PYTHON=<python 3.12> HOSTOPS_MUTATION_RECORD=MUTATION_RUN.py312.json /usr/bin/python3 -B mutation/mutate.py run
+  /usr/bin/python3 -B linux_root/shapes.py --self-test              # emulated CLI only
+  shasum -a 256 -c SHA256SUMS
+Sixteen tests (four for each of four inputs) read bytes of earlier operations that exist only on the build machine
+and are skipped without them: the signed documents of 2026-10-01, the installer drafts, and the two reviewed
+read-only sources. Their locations come from the environment (HOSTOPS_TEST_SIGNED_2026_10_01_DIR,
+HOSTOPS_TEST_INSTALLER_DRAFTS_DIR, HOSTOPS_TEST_HOSTFACTS_SOURCE, HOSTOPS_TEST_PREFLIGHT_SOURCE); one static test
+compares a block of tests/test_render.py with the repository's test file when a checkout lies beside the build
+directory. The counts of VALIDATION.json were taken with all of them present; on a CI runner they are skips.
+Counts, interpreter versions, receipt sizes and both mutation records are in VALIDATION.json; a record counts only
+if its pins equal the bytes of SHA256SUMS (VALIDATION.json says so per record). REVISION_2_TO_3.diff is the unified
+diff of parts/, assemble.py, linux_root/, tests/ and mutation/*.py against revision 2 (SHA256SUMS 4ba5da3b...e912 of
+that tree) after the neutral renumbering of m6 was applied to the revision 2 side, so that it shows what changed and
+quotes no number of the host; the revision 1 to 2 diff stays with the builder, for the same reason.
+History of revision 1: its first mutation run had 13 survivors, answered before it was sealed; the second review
+then found 12 more in the native layer and 69 in the authentication core and the effects with mutants of its own,
+which is why the builder's "0 survivors" of revision 1 was true only of the builder's own list. The same limit
+applies to revision 2: zero survivors of THIS list. The third review then ran 117 mutants of its own against
+revision 2 and nine survived: two guards nothing pinned and seven checks a second check covers (section 13c, m2).
+Revision 3: zero survivors of this list again, two redundant mutants recorded as such, each dead in its pair.
+
+18. OPEN DECISIONS
+
+  0. The README is a moving target, and the placement code is new. While revision 2 was built the supervisor README
+     changed three times: 3506d52 (the bytes of revision 1, 479b44fb...), an uncommitted draft, commit 16a7cc5, and
+     its amendment a6dd2b1 (27bf0e5a...), which changed the container-path rule of placement A after 16a7cc5 had
+     been implemented here. These bytes follow a6dd2b1. tests/test_render.py carries the repository's own reading
+     of the placement rules verbatim and a test named static compares it with the repository file: it fails as soon
+     as that reading changes again; a change of the README's prose alone does not fail it (51289ce did not), so the
+     README revision at binding time is compared by command (VALIDATION.json names the revision followed and the
+     head). What only one review has seen (the third, of revision 2): the signed placement in the
+     four plans, the placement-A row of the provision table and its chain SUP_STATE_PARENT, placement_rules() in
+     parts/render.py, the journal filesystem item of the readback and journal_mount_point.
+     What the placement rests on: /var/lib on the root filesystem. The HOSTFACTS_01 receipt read it so (section 16:
+     the device and the figures of "/"), in the boot of 2026-10-02; the README says so too since 51289ce (it called
+     it an expectation before). A reboot is pending before the writes: OP_PRECHECK reads the VAR_LIB chain again in
+     the boot of the write, effects.journal shows it, and the readback gates it (JOURNAL_FILESYSTEM_MISMATCH).
+     A fact the placement rests on that no receipt has read and nothing in this family can read: a container journal
+     root directly below "/" has never been run on an engine (README). Placement B stays
+     implemented; on the host as known its gate cannot be met without freeing 2636447744 bytes (five sessions).
+  1. The date sets (3.6): whether Friday (2026-10-02 UTC) stays in the write set.
+  2. One GO or two for operation 2 and W4 (groups); the capacity root path and where the receipt directory lives.
+  3. Who runs daemon-reload and under which GO; README amendment of operation 3.
+  4. Whether the removal operation (section 9) must exist before the first write GO, now that only a process
+     death, an expired window, a replaced directory or temporary, or a failed removal can leave a temporary.
+  5. secret.env: build to the specification of section 8, and the plan's "same hashes" sentence.
+  6. Removal of the run's own temporary versus O_TMPFILE (6.2): the second closes the swap residual, is Linux-only
+     and cannot be tested on the workstation.
+  7. The two terms of the floor (sessions retained, allowance for other writers), on whichever filesystem
+     decision 0 puts the journal root.
+  8. A type-level drop-in directory, a dependency directory of the unit's own name, an alias link or a symbolic
+     link among the lookup directories on the host makes OP_INSTALL_UNITS refuse: OP_PRECHECK shows it; the remedy
+     would be a code change or a separately authorised removal, not a parameter.
+  9. Unit files at c3po-* names are assumed to hold no secret when they ARE the signed render (their digest and
+     size are then the signed values). Leftover temporaries of this family are reported with their size.
+ 10. The Linux job (section 16, L1 to L6): who pushes the throwaway branch that runs it, and that its four output
+     files, from a run that exited 0, are attached before any write GO. If an expectation of SHAPES.linux-root.json
+     is false (for example the listing does not show the ID that inspect prints under the containerd store), that
+     is a finding against the sources, to be answered in code before any write GO, not a parameter.

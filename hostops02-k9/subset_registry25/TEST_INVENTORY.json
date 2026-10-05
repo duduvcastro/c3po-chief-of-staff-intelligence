@@ -1,0 +1,35 @@
+{
+  "control_count": 7,
+  "control_names": [
+    "test_binder_identity_uses_retained_pinned_buffers_after_disk_tamper",
+    "test_full_real_registry_has_exact_three_unique_subset_families_and_cores",
+    "test_proof_refuses_output_inside_input_before_creating_it",
+    "test_real_lookup_refuses_missing_or_ambiguous_BOOT_row_DTO[absent]",
+    "test_real_lookup_refuses_missing_or_ambiguous_BOOT_row_DTO[duplicate]",
+    "test_source_and_registry_tampering_refuse_before_compiling_or_selecting[ACCEPTED_SEALS.json-REGISTRY_EXTERNAL_PIN]",
+    "test_source_and_registry_tampering_refuse_before_compiling_or_selecting[bind_once.py-BINDER_EXTERNAL_PIN]"
+  ],
+  "control_names_multiset_sha256": "f06674e06358b1f3e3f388627d6f95540de05cfd9814a916f2e272d6a8fe3a79",
+  "expected_skips_errors_failures": 0,
+  "proof_count": 15,
+  "proof_names": [
+    "input_bytes_and_modes_unchanged_after_all_cases",
+    "real_family_core_HOSTOPS02_BOOTSTRAP_IDENTITY",
+    "real_family_core_HOSTOPS02_K3K9_SECRETS",
+    "real_family_core_HOSTOPS02_K3_SECRET_ENV",
+    "refuses_absent_BOOT_registry_row_DTO",
+    "refuses_altered_binder_source",
+    "refuses_altered_bootstrap_file",
+    "refuses_altered_registry_bytes",
+    "refuses_ambiguous_BOOT_registry_row_DTO",
+    "refuses_genuine_superseded_K3K9_seal_metadata",
+    "refuses_swapped_bootstrap_core",
+    "registry25_exact_with_three_unique_subset_rows",
+    "selected_python_BUILD_EQUAL_HOSTOPS02_BOOTSTRAP_IDENTITY",
+    "selected_python_BUILD_EQUAL_HOSTOPS02_K3K9_SECRETS",
+    "selected_python_BUILD_EQUAL_HOSTOPS02_K3_SECRET_ENV"
+  ],
+  "proof_names_multiset_sha256": "9be8b85839e07b2d1daa4e1d2e4cca02108e04da52f2fe7a478c0e1da068cba0",
+  "schema": "SUBSET_REGISTRY25_CASE_INVENTORY_V1",
+  "scope": "COUNT_EACH_INDEPENDENT_SUITE_NOT_A_SINGLE_22_CASE_OPERATIONAL_SUITE"
+}

@@ -1,0 +1,157 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "date_class": "WRITE_SESSIONS",
+  "dates": [
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07",
+   "2026-10-08",
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "dispatcher_sha256": "eebd1bdd8dedee5877628222769c91d2f191eca021cc98c51a63fc1d234549d0",
+  "final_payload_bytes": 142835,
+  "final_payload_sha256": "5352cbc9924366ae70e835c2b6d20abaf5c841b56a946b62584f3a979cf48e6a",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "be64218ed0c59f29e4c56c6eec6bfd0d15495e7396f433c2148f8511995d2e65",
+  "parts": [
+   "core",
+   "parents",
+   "files"
+  ],
+  "scope_sha256": "751f7bade8bafe01472643676be8d6f59a416805d3dc2c09ddda6477ef2d46ab",
+  "source_bytes": 93593,
+  "source_sha256": "84c32b46227ddf58fd046ecea8140478b84c3bb2c53829d1325dcda84319a07b",
+  "spec_sha256": "ca47e057c7b1b16a394b6adc9a8389609fd2898bbfb81fe06d919d81629ab918",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 9531,
+  "writes_allowed": true
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "core": {
+  "core_sha256sums": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "generation_sha256_of_assemble_py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "fixture": {
+  "module_sha256": "2eccec184432c35caa0aa974a3069b8d8a374180ef5f2714810efbc9c51cdcf3",
+  "producer_bytes": "the render of the e3-20261004-a request (tests/unit_texts.py, copied by command); every other number synthetic",
+  "unit_texts_sha256": "bd243696d879febaf4e73acd4fb7031dd59ba47fb4c24421bbae805136a20bbc"
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "gate": "set 3: the core linux_root job run with this directory as its argument, suite passing as real root",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_CARRIED.json": {
+   "present": false
+  },
+  "MUTATION_RUN.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 216
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 235,
+    "redundant_survivors": 0,
+    "single": 235,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "3f234b15d2cd840cad59570a4627ea1a45661d5a1247cc243312af9ac9d75efb",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 216
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 235,
+    "redundant_survivors": 0,
+    "single": 235,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "c4cf20278e9842685fee29b386ee037ddccdeb5f4c786c4d2fc4d2cdb062c6be",
+   "stale_pins": [],
+   "survivors": []
+  }
+ },
+ "operation": "GO_WRITE_HOSTOPS02_READER_UNITS_01",
+ "placement": {
+  "data_volume_bind": "NOT root-controlled (uid 1000); open question for Codex (DESIGN.md)",
+  "decision_6": "#429 5985748037 item 6: every bind source and its ancestors root-controlled; source root /var/lib/c3po/r2d2-v2-source-20261005 (5985768668)",
+  "decision_6_sha256_of_the_text": "4b169599d1618991a5e8f1425c1820d991cc872dad4a02469017df31f1619c55",
+  "e1_19": "#429 5985937724 E1-19: B2 only after E3 and the real catalogue (evidence and lstat gate)",
+  "note": "location decisions, not a GO of these bytes or a host authorization"
+ },
+ "schema": "HOSTOPS02_READER_UNITS_VALIDATION_V1",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 323,
+   "per_file": {
+    "test_conformance": 121,
+    "test_native": 6,
+    "test_reader_units": 196
+   },
+   "python": "Python 3.9.6",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 323
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 323,
+   "per_file": {
+    "test_conformance": 121,
+    "test_native": 6,
+    "test_reader_units": 196
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 323
+  }
+ ],
+ "suites_with_other_operations": null,
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "81255a1a5feeaa9e1ea1ea27649b3d0a868a41632af23bba8ffb5630753ea13b",
+  "DISPATCH.UNBOUND.json": "fb3bab7a4fb0ce375a5c04a8270d7d4b71c2c1ace08887bc7d075bf699dffb31",
+  "FINAL_PAYLOAD.UNBOUND.py": "5352cbc9924366ae70e835c2b6d20abaf5c841b56a946b62584f3a979cf48e6a",
+  "GO.UNBOUND.json": "e7494c09acb64d256a3f2552a0be4de109a6e792c3b75a0b1d7c286c1ad17955",
+  "PUBLICATION_PROOF.UNBOUND.json": "21dad08e931db1da8d21aed3aecd2e58dd094e2c2d8d7af382725e087550af19",
+  "REQUEST.UNBOUND.json": "15e3f62d635213e50867f2c0a3a548dd74d860aeb243a269dc493eae992db1d7"
+ }
+}

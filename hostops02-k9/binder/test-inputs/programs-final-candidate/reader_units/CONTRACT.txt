@@ -1,0 +1,80 @@
+HOSTOPS02 READER UNITS - GO_WRITE_HOSTOPS02_READER_UNITS_01 - MASTER_PLAN row B2 - epoch R2D2-V2-SHADOW-2026-10-05
+
+STATUS. Offline candidate, unsigned and UNBOUND. Nothing here was run on a host, pushed, bound or reviewed by anyone
+but its author. Built on the frozen HOSTOPS02 core, generation 4c24c5cf...d0d6 (../core, read, never edited). The
+seal is SHA256SUMS; VALIDATION.json carries the counts and the mutation records, computed by seal.py.
+
+WHAT IT DOES. Installs, by exclusive creation, in /etc/systemd/system, root:root 0644, one link each:
+  c3po-reader.service        the reader README's template (opsart 4a6f7675..., launcher form, decision D1 default)
+                             with two insertions for Codex decision 6 (a fifth read-only bind of the epoch source root,
+                             and that root in RequiresMountsFor), rendered with the values of this source
+  c3po-reader.timer          verbatim (dc81e21b...)
+  c3po-reader-alert.service  verbatim (0653bf41...)
+It is the second request of HOSTOPS01's OP_INSTALL_UNITS (whose writes are dated 10-02..10-04 and are closed),
+ported onto the frozen core: the same temporary/link/withdrawal discipline (core files.create_file), the same
+precheck table, the same conflict scan except alias links, the same continuation. Outcome on success:
+UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED (the outcome string of the supervisor install e3-20261004-a).
+
+NEVER. A process (no systemctl, no daemon-reload, no enable, no start, no docker), a drop-in, an enablement link, an
+overwrite, chmod, chown, rename, truncate, a removal other than this run's own temporary proved by identity, a
+secret, a network connection, a second attempt.
+
+VALUES (constants of the source; a request cannot move them)
+  IMAGE_ID               sha256:f86bfb198c186657598c2c410fb39ca3dfed781d0db0522b9a796b80275cb621 (the installed producer's)
+  HOST_DATA_ROOT         /mnt/day-d-data                      -> /app/day-d-data (read-only)
+  HOST_JOURNAL_ROOT      /var/lib/c3po-bar/journal            -> CONTAINER_JOURNAL_ROOT /c3po-bar-journal (read-only)
+  HOST_CAPACITY_ROOT     /var/lib/c3po-capacity               -> /c3po-capacity (read-only)
+  HOST_SOURCE_ROOT       /var/lib/c3po/r2d2-v2-source-20261005 -> CONTAINER_SOURCE_ROOT /c3po-source (read-only)
+  HOST_CONFIG_DIR        /etc/c3po-reader (env files, docker-cli; launcher/ -> /c3po-reader read-only)
+  NETWORK                c3po_c3po_internal
+Rendered SHA-256 / bytes: service 1a01a7d7eb6cede1ca4d406278fa03e4beabd86231a7dfacc5556ab92139aace / 2108;
+timer dc81e21bfc2398330dd7eff02cbc8cf8d0e035bce883653cab4b10a1078ed4ba / 289; alert 0653bf41...ce2f / 414.
+
+DATES AND LIMITS. DATE_CLASS WRITE_SESSIONS (UTC days 2026-10-05 ... 2026-10-10), write gate <= 900 s, payload 60 s,
+15 s must be left before the first creation. WRITES_ALLOWED True, ACTIVATION_ALLOWED False. Parts: core parents files.
+
+EVIDENCE the request must cite (at least one receipt each): GO_READONLY_HOSTOPS_PRECHECK_01 (same boot; it scanned the
+three names alias links included), GO_WRITE_UNITS_EXCLUSIVE_INSTALL_01 (E3, the producer unit), GO_READONLY_SUPERVISOR_
+READBACK_01 (its readback), GO_WRITE_HOSTOPS02_CATALOG_INIT_01 (A9, the real catalogue; Codex #429 5985937724 E1-19).
+
+PLAN (all copied by the binder from read-only receipts of the same boot)
+  unit_rows       rows of / /etc /etc/systemd /etc/systemd/system: uid 0, gid 0, no 022, no setgid anywhere
+  journal_rows    rows of / ... /var/lib/c3po-bar/journal: the same, leaf root:root 0700
+  data_rows       rows of / /mnt /mnt/day-d-data: open root at the volume, which must be a mount point; the journal's
+                  device differs from it
+  units           the three, in the order service, timer, alert: {key, destination_name, expect ABSENT |
+                  {device, inode, links 1..2}, rendered_sha256, rendered_bytes} (the hashes must equal the source's)
+  acknowledged_leftovers   0..16 {name .hostops-<16 hex>-<n>.partial, device, inode}
+  evidence_boot_id_sha256
+
+PRECHECK, in order, nothing created before the end: executor 0:0; umask 022; boot; unit directory walked and held;
+producer unit c3po-massive.service regular 0:0 0644 one link, 1674 bytes, sha256 662c57b9...bc06, its journal bind
+and image equal the reader's, its other bind sources not overlapping the journal; journal root walked and held;
+epoch.json and maintenance.lock in it, by lstat only, regular 0:0 0600 one link; data volume walked; the unit table;
+the conflict scan; the leftovers; the precedence; the budget.
+Codes: EXECUTOR_IDENTITY EVIDENCE_FROM_EARLIER_BOOT PARENT_* PRODUCER_UNIT_ABSENT PRODUCER_UNIT_NOT_AS_SIGNED
+PRODUCER_VALUES_NOT_THE_READER_VALUES HOST_JOURNAL_OVERLAPS_A_PRODUCER_PRIVATE_ROOT CATALOG_NOT_INITIALISED
+CATALOG_FILE_NOT_PRIVATE UNIT_NAME_OCCUPIED UNIT_PRESENT_FOREIGN_CONTENT EXPECTATION_MISMATCH ALL_UNITS_PRESENT
+PRIOR_PARTIAL_REQUIRES_RECONCILIATION TEMPORARY_NAME_OCCUPIED DROP_IN_PRESENT OWN_DEPENDENCY_DIRECTORY_PRESENT
+ENABLEMENT_LINK_PRESENT UNIT_SHADOWED_IN_OTHER_PATH CONFLICT_SCAN_UNAVAILABLE BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT.
+Plan codes (validate_plan, also run by the dispatcher before any claim): CHAIN_ROW_INVALID CHAIN_ROW_UNSAFE
+CHAIN_ROW_WORLD_WRITABLE PARENT_SETGID UNIT_CHAIN_NOT_ROOT_CONTROLLED JOURNAL_CHAIN_NOT_ROOT_CONTROLLED
+JOURNAL_ROOT_NOT_PRIVATE DATA_VOLUME_NOT_A_MOUNT_POINT JOURNAL_ON_THE_DATA_VOLUME EVIDENCE_BOOT_UNBOUND UNITS_INVALID
+UNIT_NAME_INVALID EXPECT_INVALID RENDERED_HASH_MISMATCH NOTHING_TO_CREATE LEFTOVERS_INVALID, and the render's
+TEMPLATE_HASH_MISMATCH TEMPLATE_CHARACTERS PLACEHOLDER_COUNTS SUBSTITUTION_KEYS PATH_INVALID CONTAINER_TARGET_INVALID
+IMAGE_ID_INVALID NETWORK_FORBIDDEN CONFIG_DIRECTORY_OVERLAPS_A_BIND_SOURCE HOST_JOURNAL_OVERLAPS_A_BIND_SOURCE
+SOURCE_ROOT_OVERLAPS_A_BIND_SOURCE CAPACITY_ROOT_OVERLAPS_THE_DATA_VOLUME CONTAINER_TARGETS_NOT_DISTINCT
+UNRESOLVED_PLACEHOLDER RENDER_TOO_LARGE VERBATIM_TEMPLATE_INVALID.
+
+EFFECTS, per unit expected ABSENT, service first: create_file(index, ..., 0644) of the core (exclusive temporary
+.hostops-<GO16>-<index>.partial, unbuffered writes, fsync, exact metadata, link, fsync, identity-proved removal of the
+temporary, fsync). A unit signed PRESENT is verified and never touched (PRESENT_VERIFIED_NOT_TOUCHED). Then the
+readback: every name read again through the held directory (bytes, identity, one link, 0:0 0644), the directory
+walked again from "/". REFUSED_NOTHING_CREATED (exit 1) only while nothing changed; PARTIAL_REQUIRES_RECONCILIATION
+(exit 2) otherwise; UNITS_INSTALLED_NOT_ACTIVATED_NOT_RELOADED (exit 0) only when all three are in place and read back.
+
+WHO RELOADS. Nobody here. effects.daemon_reload.owner = GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01 (M6: systemctl enable
+--now reloads the manager unless --no-reload, Codex decision 3 of 2026-10-04).
+
+SEE DESIGN.md (this directory) for the sources of every value, the deviations, the cross-family constants and the
+open questions.

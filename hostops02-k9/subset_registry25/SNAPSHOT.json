@@ -1,0 +1,74 @@
+{
+  "core_directories": {
+    "core_bootstrap_identity": {
+      "directory": "core_bootstrap_identity",
+      "generation_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+      "sha256sums_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d"
+    },
+    "core_k3": {
+      "directory": "core_k3",
+      "generation_sha256": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+      "sha256sums_sha256": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd"
+    },
+    "core_k3k9": {
+      "directory": "core_k3k9",
+      "generation_sha256": "2db09adfefb4e19c4c4f860735283d6078e91017b24025b1f4a072b52d84d8e8",
+      "sha256sums_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d"
+    }
+  },
+  "families_observed": [
+    {
+      "accepted_row": {
+        "core": {
+          "directory": "core_bootstrap_identity",
+          "generation_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+          "sha256sums_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d"
+        },
+        "family": "HOSTOPS02_BOOTSTRAP_IDENTITY",
+        "revision": "1",
+        "sha256sums_sha256": "b0a1281269e55805f37606fc3a010bc5274b550252aa0ae3d251eb63c04fcc4f"
+      },
+      "directory": "bootstrap_identity",
+      "family": "HOSTOPS02_BOOTSTRAP_IDENTITY",
+      "files": 30
+    },
+    {
+      "accepted_row": {
+        "core": {
+          "directory": "core_k3k9",
+          "generation_sha256": "2db09adfefb4e19c4c4f860735283d6078e91017b24025b1f4a072b52d84d8e8",
+          "sha256sums_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d"
+        },
+        "family": "HOSTOPS02_K3K9_SECRETS",
+        "revision": "4",
+        "sha256sums_sha256": "cbf694266a657e6c831f79c50171f3ba80349ff832425250c6fa871631517f79"
+      },
+      "directory": "k3k9_secrets",
+      "family": "HOSTOPS02_K3K9_SECRETS",
+      "files": 36
+    },
+    {
+      "accepted_row": {
+        "core": {
+          "directory": "core_k3",
+          "generation_sha256": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+          "sha256sums_sha256": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd"
+        },
+        "family": "HOSTOPS02_K3_SECRET_ENV",
+        "revision": "2",
+        "sha256sums_sha256": "de961bbf1f4969d1e650a097db3b002c8e784c48d24ed2dbee04a9279721f6f9"
+      },
+      "directory": "k3_secret_env",
+      "family": "HOSTOPS02_K3_SECRET_ENV",
+      "files": 32
+    }
+  ],
+  "helper_sha256": "fc293f741c7edfff4a058c3177bdd9a21ad905807f9050e430facc12fcca3a61",
+  "registry_entries": 25,
+  "registry_sha256": "b3fdc83f9339d2f13be3f68e52664ef3240aa57074ef3de19f6708769f3da12e",
+  "schema": "SUBSET_REGISTRY25_SNAPSHOT_V1",
+  "scope": "SUBSET_ONLY_THREE_FAMILIES_THREE_CORES_NOT_FULL25_COPY",
+  "snapshot_file_count": 268,
+  "source_sha256": "bb255f8693d2213e5fad33c440bc4a6802f8122310c5384b192922f58fa49fc5",
+  "status": "SOURCE_PINNED_LOCAL_QA_COMPLETE_LINUX_PENDING"
+}

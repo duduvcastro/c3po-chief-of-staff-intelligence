@@ -1,0 +1,416 @@
+{
+  "control_source_sha256": "6db8f24cdf1f37130600217ba0e855a97925556efdfc03b3660648c269c924e6",
+  "cores_observed": 3,
+  "families_observed": 3,
+  "helper_sha256": "fc293f741c7edfff4a058c3177bdd9a21ad905807f9050e430facc12fcca3a61",
+  "linux_status": "PENDING_REAL_LINUX_RUN",
+  "operational_steps": 0,
+  "redactions": [
+    {
+      "file": "qa/py39/CONTROL_JUNIT.xml",
+      "map": {
+        "hostname": "LOCAL_QA_HOST_REDACTED"
+      },
+      "original_private_raw_sha256": "4cd07f935489521fed5e5d18d610c625971c5061d0169b445248ef1d29903f54",
+      "published_sha256": "5b74be9ccc3ea860f871b3b14ab735ef78e0abc88686012c630a57eaf414e678",
+      "test_counts_names_assertions_errors_and_timing_preserved": true,
+      "transformation_categories": [
+        "XML_ATTRIBUTE_HOSTNAME_ONLY"
+      ]
+    },
+    {
+      "file": "qa/py39/CONTROL_STDOUT.txt",
+      "map": {
+        "generated_xml_location": "CONTROL_JUNIT.xml"
+      },
+      "original_private_raw_sha256": "f56894d228d58cfdd6d809b4be6a85b6f2df44a4ce33133f2a12de89055a2043",
+      "published_sha256": "706de2d877159c9f04b5dcfc9d8c4d02ec55b6500909ea7ec8bcf9b20783f815",
+      "transformation_categories": [
+        "GENERATED_XML_LOCATION_ONLY"
+      ],
+      "warnings_errors_counts_preserved": true
+    },
+    {
+      "file": "qa/py312/CONTROL_JUNIT.xml",
+      "map": {
+        "hostname": "LOCAL_QA_HOST_REDACTED"
+      },
+      "original_private_raw_sha256": "ded02a90f075e7da5b5233bb715068874bcaf20a6ded5bcf0a1bf190596e8fe8",
+      "published_sha256": "4e19bf111fb743d1ad141f31a074535e43f347bc7c2dbe2d28b6d12e797f5d53",
+      "test_counts_names_assertions_errors_and_timing_preserved": true,
+      "transformation_categories": [
+        "XML_ATTRIBUTE_HOSTNAME_ONLY"
+      ]
+    },
+    {
+      "file": "qa/py312/CONTROL_STDOUT.txt",
+      "map": {
+        "generated_xml_location": "CONTROL_JUNIT.xml"
+      },
+      "original_private_raw_sha256": "fa4a9a82967353cefdeab95317b1b7614e623061babc255833d883911886d20a",
+      "published_sha256": "fa4a9a82967353cefdeab95317b1b7614e623061babc255833d883911886d20a",
+      "transformation_categories": [
+        "GENERATED_XML_LOCATION_ONLY"
+      ],
+      "warnings_errors_counts_preserved": true
+    }
+  ],
+  "registry_entries": 25,
+  "registry_sha256": "b3fdc83f9339d2f13be3f68e52664ef3240aa57074ef3de19f6708769f3da12e",
+  "runs": [
+    {
+      "control_cases": 7,
+      "control_errors": 0,
+      "control_failures": 0,
+      "control_junit_public_sha256": "5b74be9ccc3ea860f871b3b14ab735ef78e0abc88686012c630a57eaf414e678",
+      "control_passed": 7,
+      "control_skipped": 0,
+      "label": "py39",
+      "outer_helper": {
+        "implementation": "CPython",
+        "version": "3.9.6"
+      },
+      "proof_cases": 15,
+      "proof_errors": 0,
+      "proof_failures": 0,
+      "proof_junit_sha256": "03bcedc4a42b41e90fef568f0397dbb2cd5d417a384fd9cd6d8a4d15ff62883a",
+      "proof_passed": 15,
+      "proof_skipped": 0,
+      "selected_python": {
+        "implementation": "CPython",
+        "version": "3.9.6"
+      },
+      "system_children": [
+        {
+          "exit_code": 0,
+          "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+          "interpreter_slot": "SYSTEM_/usr/bin/python3",
+          "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 12,
+          "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+        },
+        {
+          "exit_code": 0,
+          "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+          "interpreter_slot": "SYSTEM_/usr/bin/python3",
+          "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 12,
+          "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+        },
+        {
+          "exit_code": 0,
+          "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+          "interpreter_slot": "SYSTEM_/usr/bin/python3",
+          "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 12,
+          "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+        }
+      ],
+      "system_python_observed_separately": {
+        "implementation": "CPython",
+        "version": "3.9.6"
+      },
+      "unchanged_streams_and_reports": [
+        {
+          "file": "qa/py39/JUNIT.xml",
+          "published_sha256": "03bcedc4a42b41e90fef568f0397dbb2cd5d417a384fd9cd6d8a4d15ff62883a",
+          "raw_sha256": "03bcedc4a42b41e90fef568f0397dbb2cd5d417a384fd9cd6d8a4d15ff62883a",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/RESULT.json",
+          "published_sha256": "26a289524fbae12e81ac991bb7488e4b223c356c02b557200f3fe11bdbcdfdf8",
+          "raw_sha256": "26a289524fbae12e81ac991bb7488e4b223c356c02b557200f3fe11bdbcdfdf8",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/core_bootstrap_identity_system_child_0.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/core_bootstrap_identity_system_child_0.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/core_k3_secret_env_system_child_2.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/core_k3_secret_env_system_child_2.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/core_k3k9_secrets_system_child_1.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/core_k3k9_secrets_system_child_1.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_bootstrap_identity.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_bootstrap_identity.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_k3_secret_env.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_k3_secret_env.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_k3k9_secrets.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_k3k9_secrets.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_python_probe.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/selected_python_probe.stdout",
+          "published_sha256": "6fde16281c6bcfff99caac66178d583927c08d5db8127f112a614fa6eeb36cfb",
+          "raw_sha256": "6fde16281c6bcfff99caac66178d583927c08d5db8127f112a614fa6eeb36cfb",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/system_python_separate_probe.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/system_python_separate_probe.stdout",
+          "published_sha256": "6fde16281c6bcfff99caac66178d583927c08d5db8127f112a614fa6eeb36cfb",
+          "raw_sha256": "6fde16281c6bcfff99caac66178d583927c08d5db8127f112a614fa6eeb36cfb",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py39/xcrun_db",
+          "published_sha256": "767b97e4e6c44f3e9a7b2496c54bcc1c3901650873f4fc67d811e051bd9f6e8b",
+          "raw_sha256": "767b97e4e6c44f3e9a7b2496c54bcc1c3901650873f4fc67d811e051bd9f6e8b",
+          "redaction": "NONE"
+        }
+      ]
+    },
+    {
+      "control_cases": 7,
+      "control_errors": 0,
+      "control_failures": 0,
+      "control_junit_public_sha256": "4e19bf111fb743d1ad141f31a074535e43f347bc7c2dbe2d28b6d12e797f5d53",
+      "control_passed": 7,
+      "control_skipped": 0,
+      "label": "py312",
+      "outer_helper": {
+        "implementation": "CPython",
+        "version": "3.12.14"
+      },
+      "proof_cases": 15,
+      "proof_errors": 0,
+      "proof_failures": 0,
+      "proof_junit_sha256": "7f23bab4891cc2d0018733fe48b4c79cd57d2f43504b3c113a179dc298a1c305",
+      "proof_passed": 15,
+      "proof_skipped": 0,
+      "selected_python": {
+        "implementation": "CPython",
+        "version": "3.12.14"
+      },
+      "system_children": [
+        {
+          "exit_code": 0,
+          "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+          "interpreter_slot": "SYSTEM_/usr/bin/python3",
+          "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 12,
+          "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+        },
+        {
+          "exit_code": 0,
+          "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+          "interpreter_slot": "SYSTEM_/usr/bin/python3",
+          "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 12,
+          "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+        },
+        {
+          "exit_code": 0,
+          "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+          "interpreter_slot": "SYSTEM_/usr/bin/python3",
+          "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 12,
+          "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+        }
+      ],
+      "system_python_observed_separately": {
+        "implementation": "CPython",
+        "version": "3.9.6"
+      },
+      "unchanged_streams_and_reports": [
+        {
+          "file": "qa/py312/JUNIT.xml",
+          "published_sha256": "7f23bab4891cc2d0018733fe48b4c79cd57d2f43504b3c113a179dc298a1c305",
+          "raw_sha256": "7f23bab4891cc2d0018733fe48b4c79cd57d2f43504b3c113a179dc298a1c305",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/RESULT.json",
+          "published_sha256": "8c7f676027213f3ab744b12d5853b9389908628df5438784f57ceb33657a45ae",
+          "raw_sha256": "8c7f676027213f3ab744b12d5853b9389908628df5438784f57ceb33657a45ae",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/core_bootstrap_identity_system_child_0.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/core_bootstrap_identity_system_child_0.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/core_k3_secret_env_system_child_2.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/core_k3_secret_env_system_child_2.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/core_k3k9_secrets_system_child_1.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/core_k3k9_secrets_system_child_1.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_bootstrap_identity.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_bootstrap_identity.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_k3_secret_env.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_k3_secret_env.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_k3k9_secrets.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_k3k9_secrets.stdout",
+          "published_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "raw_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_python_probe.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/selected_python_probe.stdout",
+          "published_sha256": "a005f0f74aa4f560f3f1dafd4d604bb4b46279c2a1b42a8d949fd66fcc871862",
+          "raw_sha256": "a005f0f74aa4f560f3f1dafd4d604bb4b46279c2a1b42a8d949fd66fcc871862",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/system_python_separate_probe.stderr",
+          "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/system_python_separate_probe.stdout",
+          "published_sha256": "6fde16281c6bcfff99caac66178d583927c08d5db8127f112a614fa6eeb36cfb",
+          "raw_sha256": "6fde16281c6bcfff99caac66178d583927c08d5db8127f112a614fa6eeb36cfb",
+          "redaction": "NONE"
+        },
+        {
+          "file": "qa/py312/xcrun_db",
+          "published_sha256": "767b97e4e6c44f3e9a7b2496c54bcc1c3901650873f4fc67d811e051bd9f6e8b",
+          "raw_sha256": "767b97e4e6c44f3e9a7b2496c54bcc1c3901650873f4fc67d811e051bd9f6e8b",
+          "redaction": "NONE"
+        }
+      ]
+    }
+  ],
+  "schema": "SUBSET_REGISTRY25_VALIDATION_V1",
+  "scope": "OFFLINE_LOCAL_MAC_ONLY_THREE_FAMILIES_THREE_CORES_NOT_FULL25_COPY_NOT_HOST_L1_L2",
+  "source_input_divergences": 0,
+  "source_sha256": "bb255f8693d2213e5fad33c440bc4a6802f8122310c5384b192922f58fa49fc5"
+}

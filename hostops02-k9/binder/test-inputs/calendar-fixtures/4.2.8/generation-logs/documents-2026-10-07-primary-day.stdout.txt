@@ -1,0 +1,1 @@
+{"capacity_config_sha256":"dc617dec21a1229d6628c0f564f369424ea69548ca55509ca8b4f6d7d14ddedf","day":"2026-10-07","documentary_authority":"VERIFIED","files":13,"kind":"CAPACITY_DAY","list":"NOT_EMPTY","sha256sums_sha256":"ddc0609e666671d2bb4ac5fb25407050134b4efd54d39798fcbe33acd93d2dd5","status":"WRITTEN","window":"primary"}

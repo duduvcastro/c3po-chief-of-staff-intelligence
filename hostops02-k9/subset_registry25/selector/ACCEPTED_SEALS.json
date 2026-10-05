@@ -1,0 +1,233 @@
+{
+  "schema": "BIND_ONCE_ACCEPTED_SEALS_V1",
+  "note": "Seals (sha256 of the SHA256SUMS at the family root) this binder binds. A new or changed family is added here by a deliberate edit; the hash of this file is on every sheet the owner signs over. Being listed here says nothing about review: the review status of each seal is in its own contract and in the channel. A seal of the HOSTOPS02 kind names, in \"core\", the CORE_SHA256SUMS hash and the generation (sha256 of assemble.py) of the frozen core that must lie beside the operation directory as ../core. Revision 3 of this binder (2026-10-03): the HOSTOPS02 seals are the ones sent to Codex for review on 2026-10-02 21:12 BRT (NOTE_FOR_CODEX_TIER0.md), with a green Linux run; the superseded seals of K2a (8b2bced3...), K6a (3f0eea45...) and of the core (c13ce685...) are no longer accepted.; CANDIDATE_ONLY deliberate additional bootstrap family; not operational promotion.",
+  "seals": [
+    {
+      "family": "W1PREFLIGHT01",
+      "revision": "3",
+      "sha256sums_sha256": "108b74ca92c0ad32c37d462c7d4cea77074f874022e8e18b89d116f696783347",
+      "sealed": "2026-10-02, nine UTC dates 2026-10-02..2026-10-10"
+    },
+    {
+      "family": "HOSTOPS01",
+      "revision": "3",
+      "sha256sums_sha256": "5609b334ea1b35932626ef7048a5958be16f4b3c769eafe73eb9d0d676e171c1",
+      "sealed": "2026-10-02, precheck, provision, install_units, readback"
+    },
+    {
+      "family": "HOSTOPS02_CATALOG_INIT",
+      "revision": "2",
+      "sha256sums_sha256": "1ccaf83dbc3e901d476efe92d877cbee678caf29d2103008a694c155ea09b0f5",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K2a GO_WRITE_HOSTOPS02_CATALOG_INIT_01 (modes REAL and REHEARSAL), second build, resealed after a test-only change (Linux run 37073034731; source d584aa93..., unchanged); green Linux run 37080926250; the frozen core 73fb546b... beside it as ../core. Replaces 8b2bced3... (removed)"
+    },
+    {
+      "family": "HOSTOPS02_INSTALL_RELEASE",
+      "revision": "2",
+      "sha256sums_sha256": "2705134655d7e580f389a7b32178e18b22d8ca75f2d5b206de3c90483fb84b82",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K10 GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01, revision 2 (payload of revision 1), unchanged; paired with the resealed core 73fb546b... (generation unchanged); green Linux run 37080926250"
+    },
+    {
+      "family": "HOSTOPS02_EPOCH_READBACK",
+      "revision": "2",
+      "sha256sums_sha256": "b1a810fea1e695ba3ef25f7dc839136bbb0c9995f89eef777bc2f93215703c1f",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K11 GO_READONLY_HOSTOPS02_EPOCH_READBACK_01 (modes PRE and POST), revision 2, unchanged; paired with the resealed core 73fb546b... (generation unchanged); green Linux run 37080926250"
+    },
+    {
+      "family": "HOSTOPS02_ACTIVATE",
+      "revision": "2",
+      "sha256sums_sha256": "91366f446d977fac1e0d0fb6d88c2fa8d98c02ef084b0d4098ebb0467a352bad",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      },
+      "sealed": "2026-10-02, K6a GO_WRITE_HOSTOPS02_ACTIVATE_01, repaired candidate, resealed after a test-only change (Linux run 37073034731; source cc054389..., unchanged); green Linux run 37080926250; the frozen core 73fb546b... beside it as ../core. Replaces 3f0eea45... (removed)"
+    },
+    {
+      "family": "HOSTOPS02_K9_PHASE_READ",
+      "revision": "5",
+      "sha256sums_sha256": "248c2ae45d096ec3dfa8a845ecff8d1032f8d02bb71ec6cdfc019d70c7710c66",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K4_E0",
+      "revision": "5",
+      "sha256sums_sha256": "e2b7ebf88b368e5028cb3c150ad21fde3bb57ec5cebe5969b16c8dbdc12bc124",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K9_PHASE_STEP",
+      "revision": "4",
+      "sha256sums_sha256": "a7bce544cc8589876806d8683889722a819c64cbc5ebcfe402ebc88f2c33b01f",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K3K9_SECRETS",
+      "revision": "4",
+      "sha256sums_sha256": "cbf694266a657e6c831f79c50171f3ba80349ff832425250c6fa871631517f79",
+      "core": {
+        "sha256sums_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d",
+        "generation_sha256": "2db09adfefb4e19c4c4f860735283d6078e91017b24025b1f4a072b52d84d8e8",
+        "directory": "core_k3k9"
+      }
+    },
+    {
+      "family": "HOSTOPS02_DB_PRIV",
+      "revision": "split rev3",
+      "sha256sums_sha256": "c8fe13903612c71986b499c272bed541303935893ce5a129dfdcb3cba6a74091",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_DB_PREFLIGHT",
+      "revision": "split rev3",
+      "sha256sums_sha256": "d239ed75952b968e7b88eef255495a4905a2364eee7e823f914612061ec7d234",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_SUPERVISOR_ACTIVATE",
+      "revision": "não numerada no selo e2b6e7bc",
+      "sha256sums_sha256": "e2b6e7bce2cb48109b682e80f8609fbe69a2912c00bcf7fe7e0a6aa3c98ec06e",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K3_SECRET_ENV",
+      "revision": "2",
+      "sha256sums_sha256": "de961bbf1f4969d1e650a097db3b002c8e784c48d24ed2dbee04a9279721f6f9",
+      "core": {
+        "sha256sums_sha256": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd",
+        "generation_sha256": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+        "directory": "core_k3"
+      }
+    },
+    {
+      "family": "HOSTOPS02_CAPACITY_SWITCH",
+      "revision": "2",
+      "sha256sums_sha256": "f8c88581137562fd9504b03c29c715b01fc050cdf55beb87e30bc79b8594b93f",
+      "core": {
+        "sha256sums_sha256": "979e8c8389396ca0c09b014f9852f340ce0f1d6bdf8e05f8c6e4f1643b7d244c",
+        "generation_sha256": "4bb3b3babd292096893fceb335cb4fb8f85fd4c38117e30d779da8669d26c10e",
+        "directory": "core-k6b"
+      }
+    },
+    {
+      "family": "HOSTOPS02_CAPACITY_PROBE",
+      "revision": "2",
+      "sha256sums_sha256": "0ab8a11beec4ca4c5e120600b5994cb22d168e30092ff0b61943292fac95135c",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K8_EVE_DELIVERY",
+      "revision": "1",
+      "sha256sums_sha256": "1140de95d3cff253e541cb80d5b6148a920811254068b0a121d93767d7e52813",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K12_WINDOW",
+      "revision": "3",
+      "sha256sums_sha256": "e5e3bd4c4c1f5cf66bc595f9c55066ddc772fe75b62d0d0e39e43ac88e9a57c3",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K12_COLLECT",
+      "revision": "3",
+      "sha256sums_sha256": "81e177b79210ff5e90c1182b7fa7cfe80fbb406b1207de6e9f55aab04462ac9f",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K12_PREFLIGHT",
+      "revision": "3",
+      "sha256sums_sha256": "6979213f11a07cc3dd57d6bff43d220f0b9f73bd4df20e0ce5e9dbf406ddf77c",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K4_FILES",
+      "revision": "1",
+      "sha256sums_sha256": "765995f64f5318591e89b3b2011702f9c4bfe2092aa492c888ba2d7d904d6ef8",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K13_READER_SWITCH",
+      "revision": "2",
+      "sha256sums_sha256": "81f5ed128643ca3551a4f7eb55098e4522f2a3e32471b82b1aae18fe1fe340e0",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_K13R_READER_LIVENESS",
+      "revision": "2",
+      "sha256sums_sha256": "68ca972cb792a950567c874a70a182bc3f168a475ac3b5f229f5fb396ae7dd9a",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_READER_UNITS",
+      "revision": "2",
+      "sha256sums_sha256": "c90c044c24cafdc77d2d1edad330fe9f25e9c19a4a5263e1af92944590e1c264",
+      "core": {
+        "sha256sums_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6"
+      }
+    },
+    {
+      "family": "HOSTOPS02_BOOTSTRAP_IDENTITY",
+      "revision": "1",
+      "sha256sums_sha256": "b0a1281269e55805f37606fc3a010bc5274b550252aa0ae3d251eb63c04fcc4f",
+      "core": {
+        "directory": "core_bootstrap_identity",
+        "sha256sums_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+        "generation_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25"
+      }
+    }
+  ]
+}

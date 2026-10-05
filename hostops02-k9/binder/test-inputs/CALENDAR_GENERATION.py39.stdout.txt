@@ -1,0 +1,1 @@
+{"calendar_pin_sha256": "31654118a9d5ed9b04f81a434b773514dc06b79bfd499a299ea6d3a7d802e72d", "commands_verified": 20, "manifest_sha256": "2cccd017187e115b28b95ca2502133d51f647c7e52c8a58bdb447c5d3cb17e1b", "version": "4.2.8"}
