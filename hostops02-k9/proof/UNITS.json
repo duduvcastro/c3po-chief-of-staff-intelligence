@@ -1,0 +1,40 @@
+{
+ "accepted_findings": [],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-dbr-split-rev3-20261005",
+ "family": "hostops02-k9",
+ "links": [],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "codex-dbr-split-rev3-20261005/core",
+   "files": 75,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+   "source": "codex-dbr-split-rev3-20261005/core",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "codex-dbr-split-rev3-20261005/db_priv",
+   "files": 35,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "c8fe13903612c71986b499c272bed541303935893ce5a129dfdcb3cba6a74091",
+   "source": "codex-dbr-split-rev3-20261005/db_priv",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "codex-dbr-split-rev3-20261005/db_preflight",
+   "files": 35,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "d239ed75952b968e7b88eef255495a4905a2364eee7e823f914612061ec7d234",
+   "source": "codex-dbr-split-rev3-20261005/db_preflight",
+   "withheld": {}
+  }
+ ]
+}

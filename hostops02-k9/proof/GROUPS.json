@@ -1,0 +1,29 @@
+{
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "groups": {
+  "dbr-split": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "codex-dbr-split-rev3-20261005/core",
+      "../db_priv",
+      "../db_preflight"
+     ],
+     "as_given": [
+      "codex-dbr-split-rev3-20261005/core",
+      "../db_priv",
+      "../db_preflight"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  }
+ },
+ "order": [
+  "dbr-split"
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_GROUPS_V1"
+}
