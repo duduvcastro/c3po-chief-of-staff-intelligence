@@ -3,6 +3,7 @@
   "candidate_python_syntax": "PASS",
   "claim_host_proof": false,
   "claim_real_reader_inputs": false,
+  "consumed_archive_buffer_pin": "PASS_SYNTHETIC_TAR_ONLY",
   "docker_executed": false,
   "docker_host": "unix:///var/run/docker.sock",
   "docker_inherited_settings_removed": [
@@ -10,23 +11,37 @@
     "DOCKER_TLS_VERIFY",
     "DOCKER_CERT_PATH"
   ],
+  "docker_pending_exact_new_source": true,
   "embedded_child_python_syntax": "PASS",
   "engine_result": "NOT_EXECUTED",
+  "external_manifest_pin": "REQUIRED_FROM_INDEPENDENT_DELIVERY_RECORD",
+  "finally_gating_checks": "PASS_SYNTHETIC_CALLBACKS_ONLY",
   "host_contacted": false,
+  "input_seal_mutation_checks": "PASS_SYNTHETIC_FILES_ONLY",
   "local_engine_environment_mock_checks": "PASS",
   "local_socket_guard_mock_checks": "PASS",
   "network_used": false,
   "originals_edited": false,
   "project_code_executed": false,
   "pure_helper_result": "PASS",
-  "pure_helper_tests": 10,
-  "python": "3.9.6",
+  "pure_helper_tests": 21,
+  "python_versions": {
+    "3.12.14": {
+      "failed": 0,
+      "passed": 21
+    },
+    "3.9.6": {
+      "failed": 0,
+      "passed": 21
+    }
+  },
   "real_socket_inspected": false,
   "remaining_concrete_work": [
-    "Fable CI integration and immutable archive/image staging",
-    "Actual directed Docker execution and exact artifact reconciliation",
+    "Root candidate review and independently recorded new delivery manifest SHA256",
+    "Fresh directed Docker execution of exact new source and independent full artifact reconciliation",
     "Real certified worker release/raw/mutable microstructure input proof remains outside stand-in coverage"
   ],
+  "schema": "ORD31_AFTER_SEAL_PURE_QA_V1",
   "shell_snippet_syntax": "PASS",
   "status": "PASS_STATIC_AND_PURE_HELPERS_ONLY"
 }

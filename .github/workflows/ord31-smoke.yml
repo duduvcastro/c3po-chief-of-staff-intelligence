@@ -1,7 +1,7 @@
 name: ord31 reader launcher smoke (proof branch only)
 on:
   push:
-    branches: [ops/hostops02-ord31-smoke-20261005]
+    branches: [ops/hostops02-ord31-smoke-20261005b]
 permissions:
   contents: read
 jobs:
@@ -13,6 +13,7 @@ jobs:
       RELEASE: dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858
       ORD31_EXPECTED_LAUNCHER_SHA256: 9c0519cd9cdd763c4c47909f014b4d98dd4c516b76f5a7214ffbbbab59f05b07
       ORD31_SOURCE_ARCHIVE_SHA256: 61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660
+      ORD31_EXPECTED_HARNESS_MANIFEST_SHA256: a473d24f57d9239fb4b04ff890ff591d6589034a8a962d5115218c2154462729
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -21,6 +22,7 @@ jobs:
       - name: Seals of the staged inputs
         run: |
           set -euo pipefail
+          echo "${ORD31_EXPECTED_HARNESS_MANIFEST_SHA256}  ord31/harness/SHA256SUMS" | sha256sum -c
           (cd ord31/harness && sha256sum -c SHA256SUMS)
           echo "${ORD31_EXPECTED_LAUNCHER_SHA256}  ord31/launcher/reader_launcher.py" | sha256sum -c
           sha256sum ord31/harness/SHA256SUMS
@@ -46,6 +48,7 @@ jobs:
           sudo -n --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HOSTOPS_THROWAWAY_RUNNER /usr/bin/python3 -I -B ord31/harness/run_ci.py \
             --launcher ord31/launcher/reader_launcher.py \
             --expected-launcher-sha256 "$ORD31_EXPECTED_LAUNCHER_SHA256" \
+            --expected-harness-manifest-sha256 "$ORD31_EXPECTED_HARNESS_MANIFEST_SHA256" \
             --image-id "$ORD31_CI_IMAGE_ID" \
             --source-archive "$RUNNER_TEMP/release.tar" \
             --source-archive-sha256 "$ORD31_SOURCE_ARCHIVE_SHA256" \

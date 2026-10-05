@@ -17,6 +17,9 @@
     ORD31_SOURCE_ARCHIVE_SHA256: 61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660
     HOSTOPS_THROWAWAY_RUNNER: 'yes'
     # Set in the reviewed staging/build step, without fetching or pulling here:
+    # ORD31_EXPECTED_HARNESS_MANIFEST_SHA256 is the independently recorded hash
+    # of this new delivery's SHA256SUMS. Supply it externally; embedding its own
+    # value in this sealed snippet would create a circular manifest.
     # ORD31_HARNESS_DIR, ORD31_LAUNCHER, ORD31_CI_IMAGE_ID,
     # ORD31_SOURCE_ARCHIVE, ORD31_SOURCE_ARCHIVE_SHA256.
   run: |
@@ -26,9 +29,15 @@
     : "${ORD31_CI_IMAGE_ID:?validation image ID required}"
     : "${ORD31_SOURCE_ARCHIVE:?certified source archive required}"
     : "${ORD31_SOURCE_ARCHIVE_SHA256:?independently pinned archive digest required}"
+    : "${ORD31_EXPECTED_HARNESS_MANIFEST_SHA256:?independently pinned new delivery manifest required}"
+    echo "${ORD31_EXPECTED_HARNESS_MANIFEST_SHA256}  ${ORD31_HARNESS_DIR}/SHA256SUMS" | sha256sum -c
+    (cd "$ORD31_HARNESS_DIR" && sha256sum -c SHA256SUMS)
+    echo "${ORD31_EXPECTED_LAUNCHER_SHA256}  ${ORD31_LAUNCHER}" | sha256sum -c
+    echo "${ORD31_SOURCE_ARCHIVE_SHA256}  ${ORD31_SOURCE_ARCHIVE}" | sha256sum -c
     sudo -n --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HOSTOPS_THROWAWAY_RUNNER /usr/bin/python3 -I -B "$ORD31_HARNESS_DIR/run_ci.py" \
       --launcher "$ORD31_LAUNCHER" \
       --expected-launcher-sha256 "$ORD31_EXPECTED_LAUNCHER_SHA256" \
+      --expected-harness-manifest-sha256 "$ORD31_EXPECTED_HARNESS_MANIFEST_SHA256" \
       --image-id "$ORD31_CI_IMAGE_ID" \
       --source-archive "$ORD31_SOURCE_ARCHIVE" \
       --source-archive-sha256 "$ORD31_SOURCE_ARCHIVE_SHA256" \

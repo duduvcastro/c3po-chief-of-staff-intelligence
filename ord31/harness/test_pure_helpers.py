@@ -1,12 +1,16 @@
 """Only standard-library and new pure helpers; no project application imports or Docker."""
 import ast
 import importlib.util
+import io
 import json
+import os
 from pathlib import Path
 import stat
+import tarfile
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("ord31_candidate_helpers", HERE / "run_ci.py")
@@ -106,6 +110,204 @@ class PureChecks(unittest.TestCase):
             with self.subTest(kind=kind), self.assertRaisesRegex(RuntimeError, "not a socket"):
                 helpers.local_engine_environment({}, Path("/synthetic/config"),
                                                  socket_stat=lambda _path, kind=kind: SimpleNamespace(st_mode=kind | 0o600))
+
+class InputSealChecks(unittest.TestCase):
+    """Synthetic files and callbacks only: never call run_engine or main."""
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(dir=str(Path(tempfile.gettempdir()).resolve()))
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.harness = self.root / "delivery"
+        self.harness.mkdir()
+        names = helpers.parse_delivery_manifest((HERE / "SHA256SUMS").read_bytes())
+        for name in names:
+            (self.harness / name).write_bytes(("synthetic delivered bytes: " + name).encode("ascii"))
+        self.launcher = self.root / "input-launcher.py"
+        self.launcher.write_bytes(b"synthetic launcher bytes")
+        self.archive = self.root / "source.tar"
+        self.archive.write_bytes(b"synthetic archive bytes")
+        self.bind = self.root / "bind"
+        self.bind.mkdir()
+        (self.bind / "reader_launcher.py").write_bytes(self.launcher.read_bytes())
+        for name in ("driver.py", "observe.py"):
+            (self.bind / name).write_bytes((self.harness / name).read_bytes())
+        self.args = SimpleNamespace(launcher=self.launcher, source_archive=self.archive,
+                                    expected_launcher_sha256=helpers.digest(self.launcher.read_bytes()),
+                                    source_archive_sha256=helpers.digest(self.archive.read_bytes()))
+        self.reseal()
+        self.here_patch = mock.patch.object(helpers, "HERE", self.harness)
+        self.archive_patch = mock.patch.object(helpers, "SOURCE_ARCHIVE_SHA256", self.args.source_archive_sha256)
+        self.here_patch.start()
+        self.archive_patch.start()
+        self.addCleanup(self.here_patch.stop)
+        self.addCleanup(self.archive_patch.stop)
+
+    def reseal(self):
+        lines = [helpers.digest(path.read_bytes()) + "  " + path.name for path in sorted(self.harness.iterdir())
+                 if path.name != "SHA256SUMS"]
+        manifest = ("\n".join(lines) + "\n").encode("ascii")
+        (self.harness / "SHA256SUMS").write_bytes(manifest)
+        self.args.expected_harness_manifest_sha256 = helpers.digest(manifest)
+
+    def gate(self, action, label="evidence"):
+        out = self.root / label
+        out.mkdir()
+        receipt = {"status": "PREPARED_NOT_EXECUTED"}
+        helpers.run_with_input_integrity(self.args, receipt, self.bind, out,
+                                         lambda: action(receipt))
+        return receipt, out
+
+    def test_positive_before_after_seals_cover_all_delivered_and_copied_files(self):
+        before = helpers.snapshot_inputs(self.args, self.bind)
+        self.assertEqual(before["errors"], [])
+        names = set(helpers.parse_delivery_manifest((self.harness / "SHA256SUMS").read_bytes()))
+        self.assertEqual(set(before["files"]), {"harness/SHA256SUMS", "launcher_input", "source_archive",
+                         "bind/reader_launcher.py", "bind/driver.py", "bind/observe.py"} | {"harness/" + name for name in names})
+        receipt, out = self.gate(lambda value: value.update(status="PASS_LAUNCHER_LIFECYCLE_SHAPES"))
+        proof = json.loads((out / "input-integrity-before-after.json").read_text())
+        self.assertEqual(proof["before"], proof["after"])
+        self.assertEqual(proof["status"], "PASS_INPUT_INTEGRITY_BEFORE_AFTER")
+        self.assertEqual(receipt["status"], "PASS_LAUNCHER_LIFECYCLE_SHAPES")
+        self.assertEqual(receipt["input_integrity"]["proof_sha256"], helpers.digest((out / "input-integrity-before-after.json").read_bytes()))
+
+    def test_archive_parser_pins_the_exact_consumed_buffer_before_reading_tar(self):
+        def archive_bytes(body):
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode="w") as archive:
+                entry = tarfile.TarInfo("c3po/backend/app/synthetic_source.py")
+                entry.size = len(body)
+                archive.addfile(entry, io.BytesIO(body))
+            return stream.getvalue()
+        source = b"SYNTHETIC_VALUE = 1\n"
+        certified = archive_bytes(source)
+        self.archive.write_bytes(certified)
+        with mock.patch.object(helpers, "SOURCE_ARCHIVE_SHA256", helpers.digest(certified)):
+            self.assertEqual(helpers.archive_python_files(self.archive),
+                             {"synthetic_source.py": helpers.digest(source)})
+            # The replacement is also a well-formed tar; only the consumed byte pin rejects it.
+            self.archive.write_bytes(archive_bytes(b"SYNTHETIC_VALUE = 2\n"))
+            with self.assertRaisesRegex(RuntimeError, "archive bytes consumed differ"):
+                helpers.archive_python_files(self.archive)
+
+    def test_additional_manifest_file_is_sealed_without_a_frozen_file_count(self):
+        extra = self.harness / "additional-evidence.json"
+        extra.write_bytes(b"synthetic additional evidence")
+        self.reseal()
+        before = helpers.snapshot_inputs(self.args, self.bind)
+        self.assertEqual(before["errors"], [])
+        self.assertIn("harness/additional-evidence.json", before["files"])
+        extra.write_bytes(b"mutated additional evidence")
+        after = helpers.snapshot_inputs(self.args, self.bind, reference=before)
+        self.assertTrue(after["errors"])
+
+    def test_manifest_rejects_duplicate_unsafe_self_and_missing_required_names(self):
+        valid = (self.harness / "SHA256SUMS").read_bytes()
+        malformed = (valid + valid.splitlines(keepends=True)[0],
+                     valid + b"0" * 64 + b"  ../escape.py\n",
+                     valid + b"0" * 64 + b"  subdir/file.py\n",
+                     valid + b"0" * 64 + b"  SHA256SUMS\n",
+                     b"0" * 64 + b"  unrelated.py\n")
+        for data in malformed:
+            with self.subTest(data=data[-100:]), self.assertRaises(helpers.InputIntegrityError):
+                helpers.parse_delivery_manifest(data)
+
+    def test_manifest_rewrite_with_matching_file_hash_still_requires_external_pin(self):
+        path = self.harness / "driver.py"
+        path.write_bytes(b"rewritten synthetic helper")
+        old_pin = self.args.expected_harness_manifest_sha256
+        self.reseal()
+        self.args.expected_harness_manifest_sha256 = old_pin
+        snapshot = helpers.snapshot_inputs(self.args, self.bind)
+        self.assertTrue(any("harness/SHA256SUMS" in error for error in snapshot["errors"]))
+
+    def test_regular_reader_rejects_symlink_file_parent_nonregular_and_traversal(self):
+        link = self.root / "linked.py"
+        link.symlink_to(self.launcher)
+        directory_link = self.root / "linked-dir"
+        directory_link.symlink_to(self.harness, target_is_directory=True)
+        fifo = self.root / "fifo"
+        os.mkfifo(fifo)
+        for path in (link, directory_link / "driver.py", self.harness, fifo,
+                     self.harness / ".." / "input-launcher.py"):
+            with self.subTest(path=path.name), self.assertRaises(helpers.InputIntegrityError):
+                helpers.regular_bytes(path)
+
+    def test_after_mutations_deletion_and_link_always_block_pass(self):
+        targets = [("archive", self.archive), ("launcher", self.launcher),
+                   ("helper", self.harness / "driver.py"),
+                   ("bind-launcher", self.bind / "reader_launcher.py"),
+                   ("bind-helper", self.bind / "observe.py"),
+                   ("manifest", self.harness / "SHA256SUMS"),
+                   ("deletion", self.harness / "ROOT_REVIEW.json"),
+                   ("link", self.harness / "README.md")]
+        for label, path in targets:
+            original = path.read_bytes()
+            out = self.root / label
+            out.mkdir()
+            receipt = {"status": "PREPARED_NOT_EXECUTED"}
+            def action():
+                receipt["status"] = "PASS_LAUNCHER_LIFECYCLE_SHAPES"
+                if label == "deletion":
+                    path.unlink()
+                elif label == "link":
+                    path.unlink()
+                    path.symlink_to(self.launcher)
+                else:
+                    path.write_bytes(original + b"\nmutation")
+            with self.subTest(label=label), self.assertRaises(helpers.InputIntegrityError):
+                helpers.run_with_input_integrity(self.args, receipt, self.bind, out, action)
+            self.assertEqual(receipt["status"], "FAILED_INPUT_INTEGRITY")
+            proof = json.loads((out / "input-integrity-before-after.json").read_text())
+            self.assertEqual(proof["status"], "FAILED_INPUT_INTEGRITY")
+            self.assertTrue(proof["after"]["errors"])
+            # A damaged after-manifest cannot omit any before-listed file.
+            self.assertTrue(set(proof["before"]["files"]) <= set(proof["after"]["files"]))
+            if path.is_symlink():
+                path.unlink()
+            path.write_bytes(original)
+
+    def test_before_integrity_failure_skips_execution_and_still_runs_after_snapshot(self):
+        self.archive.write_bytes(b"changed before")
+        called = []
+        with self.assertRaises(helpers.InputIntegrityError):
+            self.gate(lambda value: called.append(value))
+        self.assertEqual(called, [])
+        proof = json.loads((self.root / "evidence" / "input-integrity-before-after.json").read_text())
+        self.assertIsNotNone(proof["before"])
+        self.assertIsNotNone(proof["after"])
+        self.assertEqual(proof["status"], "FAILED_INPUT_INTEGRITY")
+
+    def test_engine_exception_remains_original_when_after_seals_pass(self):
+        original = ValueError("synthetic engine failure")
+        def action(_receipt):
+            raise original
+        with self.assertRaises(ValueError) as caught:
+            self.gate(action)
+        self.assertIs(caught.exception, original)
+        receipt = json.loads((self.root / "evidence" / "receipt.json").read_text())
+        self.assertEqual(receipt["status"], "FAILED_CI_SCOPE")
+        self.assertEqual(receipt["input_integrity"]["status"], "PASS_INPUT_INTEGRITY_BEFORE_AFTER")
+
+    def test_after_failure_retains_original_engine_exception_in_cause_and_receipt(self):
+        original = ValueError("synthetic original engine failure")
+        def action(_receipt):
+            self.archive.write_bytes(b"changed during failed synthetic action")
+            raise original
+        with self.assertRaises(helpers.InputIntegrityError) as caught:
+            self.gate(action)
+        self.assertIs(caught.exception.__cause__, original)
+        receipt = json.loads((self.root / "evidence" / "receipt.json").read_text())
+        self.assertEqual(receipt["status"], "FAILED_INPUT_INTEGRITY")
+        self.assertEqual(receipt["original_failure_class"], "ValueError")
+        self.assertEqual(receipt["original_failure"], str(original))
+
+    def test_unexpected_after_snapshot_error_blocks_pass(self):
+        before = helpers.snapshot_inputs(self.args, self.bind)
+        with mock.patch.object(helpers, "snapshot_inputs", side_effect=[before, RuntimeError("synthetic after read failure")]):
+            with self.assertRaises(helpers.InputIntegrityError):
+                self.gate(lambda value: value.update(status="PASS_LAUNCHER_LIFECYCLE_SHAPES"))
+        receipt = json.loads((self.root / "evidence" / "receipt.json").read_text())
+        self.assertEqual(receipt["status"], "FAILED_INPUT_INTEGRITY")
 
 if __name__ == "__main__":
     unittest.main()

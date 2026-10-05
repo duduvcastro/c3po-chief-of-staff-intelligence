@@ -1,31 +1,23 @@
 {
-  "schema": "CODEX_ORD31_SMOKE_DELIVERY_REVIEW_V1",
-  "status": "READY_FOR_FABLE_CI_INTEGRATION_NOT_ENGINE_VERIFIED",
-  "origin_manifest_sha256": "9197a27197f54ef11cce902470f316c0f78486e7a09c3273236d979cbddbf848",
-  "origin_listed_files": 9,
-  "origin_mismatches": 0,
-  "expected_launcher_sha256": "9c0519cd9cdd763c4c47909f014b4d98dd4c516b76f5a7214ffbbbab59f05b07",
-  "certified_source_archive_sha256": "61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660",
-  "certified_app_python_files": 190,
-  "reviewed_reader_units_sha256": "84c32b46227ddf58fd046ecea8140478b84c3bb2c53829d1325dcda84319a07b",
-  "template_sha256": "3dc976807a0ff443307fa12e357d478980441b26d19761b0d7964b5580327770",
-  "template_equals_reviewed_compiled_source": true,
-  "root_delta": [
-    "CI upload action fixed to ea165f8d65b6e75b540449e92b4886f43607fa02 v4.6.2",
-    "Outer CI /usr/bin/python3 starts -I -B",
-    "Delivery README provenance amendment"
+  "base_delivery_manifest_sha256": "700abe30c4f4b3a99bfefed3e56a40de35cb99679188b8f9076faa3c07bce1ed",
+  "before_after_input_seals": "IMPLEMENTED_AND_PURE_TESTED_NOT_DOCKER_VERIFIED",
+  "candidate_delta": [
+    "Complete external-manifest-pinned before and after input snapshots",
+    "Every manifest-listed file plus manifest, launcher input, certified archive and three mounted copies sealed",
+    "No-follow regular-file reads and safe unique complete manifest parsing",
+    "Finally proof and receipt gating; after integrity failure cannot retain PASS",
+    "Original engine exception retained in cause and proof/receipt",
+    "Additional pure mutation and lifecycle gating tests",
+    "Certified archive digest checked on the same immutable buffer consumed by the tar parser"
   ],
-  "tests": {
-    "Python 3.9.6": {
-      "pure_helpers_passed": 10,
-      "failed": 0
-    },
-    "Python 3.12.14": {
-      "pure_helpers_passed": 10,
-      "failed": 0
-    }
-  },
-  "source_compilation": "PASS_ONLY",
+  "cases": 7,
+  "certified_app_python_files": 190,
+  "certified_source_archive_sha256": "61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7167e57660",
+  "consumed_archive_buffer_pin": "PASS_PURE_VALID_AND_WRONG_DIGEST_TAR_CHECKS",
+  "docker_pending_exact_new_source": true,
+  "engine_execution": false,
+  "expected_launcher_sha256": "9c0519cd9cdd763c4c47909f014b4d98dd4c516b76f5a7214ffbbbab59f05b07",
+  "future_allowed_verdict": "PASS_LAUNCHER_LIFECYCLE_SHAPES",
   "guards_reviewed": [
     "Explicit Linux GitHub-hosted disposable root runner",
     "Local Docker socket only, inherited remote context/TLS removed",
@@ -34,18 +26,43 @@
     "Exactly five readonly binds, network none, rootfs readonly, docker-init inspected",
     "Seven cases with declared unmodified-entrypoint or directed-clock/stand-in scope; all must pass"
   ],
-  "cases": 7,
-  "future_allowed_verdict": "PASS_LAUNCHER_LIFECYCLE_SHAPES",
-  "engine_execution": false,
   "host_execution": false,
   "network_execution": false,
+  "new_manifest_pin_source": "Independently recorded SHA256SUMS hash supplied by caller; not embedded in sealed files",
+  "origin_is_historical_provenance_only": true,
+  "origin_listed_files": 9,
+  "origin_manifest_sha256": "9197a27197f54ef11cce902470f316c0f78486e7a09c3273236d979cbddbf848",
+  "original_run_scope": "Seven original cases reviewed; original full before/after byte requirement HOLD because after hashes absent",
+  "pending": [
+    "Root review and new delivery manifest pin",
+    "Fresh Docker CI execution of exact new run_ci.py/delivery",
+    "Independent reconciliation of new receipt and input-integrity-before-after artifact",
+    "Exact operational signatures/pins/gates before any host action"
+  ],
   "project_code_execution_in_local_QA": false,
   "real_worker_inputs": "NOT_COVERED_BY_STAND_IN",
-  "systemd_host": "NOT_COVERED",
+  "reviewed_reader_units_sha256": "84c32b46227ddf58fd046ecea8140478b84c3bb2c53829d1325dcda84319a07b",
+  "root_delta": [
+    "CI upload action fixed to ea165f8d65b6e75b540449e92b4886f43607fa02 v4.6.2",
+    "Outer CI /usr/bin/python3 starts -I -B",
+    "Delivery README provenance amendment"
+  ],
+  "schema": "CODEX_ORD31_AFTER_SEAL_CANDIDATE_REVIEW_V1",
   "signatures_GO_BOUND": "NOT_INFERRED",
-  "pending": [
-    "Fable integration/staging/build and independent candidate review",
-    "Actual Docker CI artifacts and exact reconciliation",
-    "Exact operational signatures/pins/gates before any host action"
-  ]
+  "source_compilation": "PASS_ONLY",
+  "status": "PASS_STATIC_AND_PURE_HELPERS_ONLY_DOCKER_PENDING_EXACT_NEW_SOURCE",
+  "systemd_host": "NOT_COVERED",
+  "template_equals_reviewed_compiled_source": true,
+  "template_sha256": "3dc976807a0ff443307fa12e357d478980441b26d19761b0d7964b5580327770",
+  "tests": {
+    "Python 3.12.14": {
+      "failed": 0,
+      "pure_helpers_passed": 21
+    },
+    "Python 3.9.6": {
+      "failed": 0,
+      "pure_helpers_passed": 21
+    },
+    "bash_n": "PASS"
+  }
 }

@@ -5,12 +5,12 @@ directed-process results are recorded separately. Never uses the production imag
 """
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
 import shlex
-import shutil
 import stat
 import subprocess
 import sys
@@ -24,7 +24,148 @@ SOURCE_ARCHIVE_SHA256 = "61bf5dd5e8b4c5b1e421b16949b4294f5dbfefe44a164d7097cdce7
 PRODUCTION_IMAGE_ID = "sha256:f86bfb198c186657598c2c410fb39ca3dfed781d0db0522b9a796b80275cb621"
 TEMPLATE_SHA256 = "3dc976807a0ff443307fa12e357d478980441b26d19761b0d7964b5580327770"
 STATUS_PREFIX = "INFO:__main__:V2 status "
-HERE = Path(__file__).resolve().parent
+HERE = Path(os.path.abspath(__file__)).parent
+
+class InputIntegrityError(RuntimeError):
+    """A delivered or mounted input could not retain its explicit byte seal."""
+
+def regular_bytes(path):
+    """Read a regular file without following any symlink in its path."""
+    path = Path(path)
+    if ".." in path.parts or not path.name:
+        raise InputIntegrityError("unsafe input path")
+    path = Path(os.path.abspath(path))
+    directory = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    descriptor = None
+    try:
+        for component in path.parts[1:-1]:
+            child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=directory)
+            os.close(directory)
+            directory = child
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                             dir_fd=directory)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise InputIntegrityError("nonregular input")
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+        data = b"".join(chunks)
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_size,
+                                 info.st_mtime_ns, info.st_ctime_ns)
+        if identity(before) != identity(after) or len(data) != after.st_size:
+            raise InputIntegrityError("input changed while being read")
+        return data
+    except OSError:
+        raise InputIntegrityError("missing, symlinked or unreadable input") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
+
+def parse_delivery_manifest(data):
+    """Accept every listed file, with safe unique names and no self-reference."""
+    try:
+        lines = data.decode("ascii").splitlines()
+    except UnicodeError:
+        raise InputIntegrityError("manifest is not ASCII") from None
+    entries = {}
+    for line in lines:
+        match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9_.-]*)", line)
+        if match is None:
+            raise InputIntegrityError("unsafe manifest entry")
+        pin, name = match.groups()
+        if name in entries or name == "SHA256SUMS":
+            raise InputIntegrityError("duplicate or self-referential manifest entry")
+        entries[name] = pin
+    required = {"run_ci.py", "driver.py", "observe.py", "reader.service.template"}
+    if not entries or not required <= entries.keys():
+        raise InputIntegrityError("manifest omits required delivered inputs")
+    return entries
+
+def snapshot_inputs(args, launcher_dir, *, harness_dir=None, reference=None):
+    """Capture all manifest inputs and mounted copies; collect every failure."""
+    harness_dir = HERE if harness_dir is None else Path(harness_dir)
+    files, errors, entries = {}, [], {}
+    def capture(path, label, expected):
+        try:
+            data = regular_bytes(path)
+            files[label] = {"bytes": len(data), "sha256": digest(data)}
+            if expected is None or files[label]["sha256"] != expected:
+                errors.append(label + ": expected byte seal differs")
+            return data
+        except InputIntegrityError as error:
+            files[label] = {"error": str(error)}
+            errors.append(label + ": " + str(error))
+            return None
+    manifest = capture(harness_dir / "SHA256SUMS", "harness/SHA256SUMS",
+                       args.expected_harness_manifest_sha256)
+    if manifest is not None:
+        try:
+            entries = parse_delivery_manifest(manifest)
+        except InputIntegrityError as error:
+            errors.append("harness/SHA256SUMS: " + str(error))
+    reference_entries = {} if reference is None else reference["manifest_entries"]
+    # Even a missing/malformed after-manifest cannot suppress the before-list.
+    for name in sorted(entries.keys() | reference_entries.keys()):
+        expected = reference_entries.get(name, entries.get(name))
+        capture(harness_dir / name, "harness/" + name, expected)
+    capture(args.launcher, "launcher_input", args.expected_launcher_sha256)
+    if args.source_archive_sha256 != SOURCE_ARCHIVE_SHA256:
+        errors.append("source_archive: certified external pin differs")
+    capture(args.source_archive, "source_archive", SOURCE_ARCHIVE_SHA256)
+    for name in ("reader_launcher.py", "driver.py", "observe.py"):
+        expected = args.expected_launcher_sha256 if name == "reader_launcher.py" else reference_entries.get(name, entries.get(name))
+        capture(Path(launcher_dir) / name, "bind/" + name, expected)
+    return {"manifest_entries": entries, "files": files, "errors": errors}
+
+def run_with_input_integrity(args, receipt, launcher_dir, out, execute):
+    """Always seal after execution; an after failure cannot retain a PASS verdict."""
+    proof = {"schema": "ORD31_INPUT_INTEGRITY_BEFORE_AFTER_V1", "before": None,
+             "after": None, "status": "FAILED_INPUT_INTEGRITY",
+             "expected_harness_manifest_sha256": args.expected_harness_manifest_sha256,
+             "expected_launcher_sha256": args.expected_launcher_sha256,
+             "expected_source_archive_sha256": SOURCE_ARCHIVE_SHA256}
+    original_error, after_error = None, None
+    try:
+        proof["before"] = snapshot_inputs(args, launcher_dir)
+        if proof["before"]["errors"]:
+            raise InputIntegrityError("before input seals failed")
+        execute()
+    except BaseException as error:
+        original_error = error
+        receipt["status"] = "FAILED_INPUT_INTEGRITY" if isinstance(error, InputIntegrityError) else "FAILED_CI_SCOPE"
+        receipt["failure_class"], receipt["failure"] = type(error).__name__, str(error)
+        raise
+    finally:
+        try:
+            proof["after"] = snapshot_inputs(args, launcher_dir, reference=proof["before"])
+            if proof["before"] is None or proof["before"]["errors"] or proof["after"]["errors"] or proof["before"] != proof["after"]:
+                raise InputIntegrityError("before/after input seals failed or differ")
+            proof["status"] = "PASS_INPUT_INTEGRITY_BEFORE_AFTER"
+        except Exception as error:
+            after_error = InputIntegrityError(str(error))
+            receipt["status"] = "FAILED_INPUT_INTEGRITY"
+            receipt["failure_class"], receipt["failure"] = type(after_error).__name__, str(after_error)
+            proof["after_failure_class"], proof["after_failure"] = type(error).__name__, str(error)
+            if original_error is not None:
+                proof["original_failure_class"], proof["original_failure"] = type(original_error).__name__, str(original_error)
+                receipt["original_failure_class"], receipt["original_failure"] = type(original_error).__name__, str(original_error)
+        write_json(out / "input-integrity-before-after.json", proof)
+        receipt["input_integrity"] = {"status": proof["status"],
+                                      "proof_file": "input-integrity-before-after.json",
+                                      "proof_sha256": digest(regular_bytes(out / "input-integrity-before-after.json"))}
+        write_json(out / "receipt.json", receipt)
+        for evidence in out.iterdir():
+            if evidence.is_file():
+                evidence.chmod(0o644)
+        if after_error is not None:
+            raise after_error from original_error
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -130,7 +271,9 @@ def check_directed(case, code, stdout, stderr, pin, token):
 def archive_python_files(path):
     """Hash app bytes directly from a pinned archive; never execute archived code."""
     result = {}
-    with tarfile.open(path, "r:*") as archive:
+    data = regular_bytes(path)
+    need(digest(data) == SOURCE_ARCHIVE_SHA256, "archive bytes consumed differ from the certified source pin")
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
         for item in archive.getmembers():
             prefix = "c3po/backend/app/"
             if item.isfile() and item.name.startswith(prefix) and item.name.endswith(".py"):
@@ -253,30 +396,32 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", type=Path, required=True)
     parser.add_argument("--expected-launcher-sha256", required=True)
+    parser.add_argument("--expected-harness-manifest-sha256", required=True)
     parser.add_argument("--image-id", required=True)
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--source-archive-sha256", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--execute-ci", action="store_true")
     args = parser.parse_args()
-    need(re.fullmatch(r"[0-9a-f]{64}", args.expected_launcher_sha256) and re.fullmatch(r"sha256:[0-9a-f]{64}", args.image_id), "invalid launcher pin or image ID")
-    need(digest(args.launcher.read_bytes()) == args.expected_launcher_sha256, "input launcher does not match explicit expected pin")
+    need(re.fullmatch(r"[0-9a-f]{64}", args.expected_launcher_sha256) and re.fullmatch(r"[0-9a-f]{64}", args.expected_harness_manifest_sha256) and re.fullmatch(r"sha256:[0-9a-f]{64}", args.image_id), "invalid launcher/manifest pin or image ID")
+    need(digest(regular_bytes(args.launcher)) == args.expected_launcher_sha256, "input launcher does not match explicit expected pin")
     need(args.source_archive_sha256 == SOURCE_ARCHIVE_SHA256, "source archive pin is not the certified dd4ec4bb artifact")
-    need(digest(args.source_archive.read_bytes()) == SOURCE_ARCHIVE_SHA256, "source archive bytes differ from the certified dd4ec4bb artifact")
+    need(digest(regular_bytes(args.source_archive)) == SOURCE_ARCHIVE_SHA256, "source archive bytes differ from the certified dd4ec4bb artifact")
     source_files = archive_python_files(args.source_archive)
     args.out.mkdir(mode=0o755, parents=True, exist_ok=False)
     base = Path(tempfile.mkdtemp(prefix="ord31-reader-ci-", dir=str(args.out)))
     for relative in ("data", "journal", "capacity", "source", "etc", "etc/docker-cli", "etc/launcher"):
         (base / relative).mkdir(mode=0o700)
     for source, name in ((args.launcher, "reader_launcher.py"), (HERE / "driver.py", "driver.py"), (HERE / "observe.py", "observe.py")):
-        shutil.copyfile(source, base / "etc" / "launcher" / name)
+        with (base / "etc" / "launcher" / name).open("xb") as stream:
+            stream.write(regular_bytes(source))
         (base / "etc" / "launcher" / name).chmod(0o600)
     (base / "journal" / "maintenance.lock").write_bytes(b"")
     (base / "journal" / "maintenance.lock").chmod(0o600)
     for name, body in (("secret", "C3PO_DATABASE_URL=\n"), ("pins", make_pins(args.expected_launcher_sha256)), ("activation", "C3PO_R2D2_V2_SHADOW_ENABLED=false\nC3PO_R2D2_V2_MASSIVE_BARS_ENABLED=false\n")):
         (base / "etc" / (name + ".env")).write_text(body, encoding="ascii")
         (base / "etc" / (name + ".env")).chmod(0o600)
-    template = (HERE / "reader.service.template").read_bytes()
+    template = regular_bytes(HERE / "reader.service.template")
     text, argv, check, stop, binds = render_unit(template, args.image_id, base)
     (args.out / "reader.service.rendered").write_text(text, encoding="ascii")
     write_json(args.out / "commands.json", {"ExecStart": argv, "ExecStartPre_image": check, "ExecStop": stop, "binds": binds})
@@ -284,28 +429,17 @@ def main():
                "launcher_sha256": args.expected_launcher_sha256, "image_id": args.image_id,
                "source_revision": SOURCE_REVISION, "source_archive_sha256": args.source_archive_sha256,
                "unit_template_sha256": TEMPLATE_SHA256, "rendered_unit_sha256": digest(text.encode("ascii")),
-               "harness_sha256": {name: digest((HERE / name).read_bytes()) for name in ("run_ci.py", "driver.py", "observe.py")},
+               "harness_sha256": {name: digest(regular_bytes(HERE / name)) for name in ("run_ci.py", "driver.py", "observe.py")},
                "source_app_python_files": len(source_files), "real_worker_inputs": "NOT_COVERED",
                "systemd_host": "NOT_COVERED", "production_image_runtime": "NOT_COVERED",
                "engine_mount_observation_cases": ["term", "kill"],
                "other_directed_cases_use_same_rendered_five_bind_argv": True,
                "claim_real_reader_inputs": False, "claim_host_proof": False}
-    try:
+    def execute():
         if args.execute_ci:
             run_engine(args, receipt, source_files, argv, check, stop, binds, base, args.out)
-    except Exception as error:
-        receipt["status"] = "FAILED_CI_SCOPE"
-        receipt["failure_class"] = type(error).__name__
-        receipt["failure"] = str(error)
-        raise
-    finally:
-        write_json(args.out / "receipt.json", receipt)
-        # Direct evidence files contain only synthetic/public CI data. Keep the
-        # private fixture tree 0700, but let the artifact-upload action read logs.
-        for evidence in args.out.iterdir():
-            if evidence.is_file():
-                evidence.chmod(0o644)
-    print(json.dumps({"status": receipt["status"], "receipt_sha256": digest((args.out / "receipt.json").read_bytes())}, sort_keys=True))
+    run_with_input_integrity(args, receipt, base / "etc" / "launcher", args.out, execute)
+    print(json.dumps({"status": receipt["status"], "receipt_sha256": digest(regular_bytes(args.out / "receipt.json"))}, sort_keys=True))
 
 if __name__ == "__main__":
     main()
