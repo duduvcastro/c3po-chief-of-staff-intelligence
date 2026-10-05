@@ -1,0 +1,27 @@
+{
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "groups": {
+  "reader-units": {
+   "app_python": false,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "hostops02-sealed/core",
+      "../../fable-reader-units-20261004/reader_units"
+     ],
+     "as_given": [
+      "fable-reader-units-20261004/core",
+      "../reader_units"
+     ],
+     "kind": "core"
+    }
+   ],
+   "timeout_minutes": 120
+  }
+ },
+ "order": [
+  "reader-units"
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_GROUPS_V1"
+}

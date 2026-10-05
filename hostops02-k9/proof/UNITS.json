@@ -1,0 +1,35 @@
+{
+ "accepted_findings": [],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-reader-units-proof-20261005",
+ "family": "hostops02-k9",
+ "links": [
+  {
+   "path": "fable-reader-units-20261004/core",
+   "target": "../hostops02-sealed/core"
+  }
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/core",
+   "files": 75,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+   "source": "hostops02-sealed/core",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "fable-reader-units-20261004/reader_units",
+   "files": 32,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "c90c044c24cafdc77d2d1edad330fe9f25e9c19a4a5263e1af92944590e1c264",
+   "source": "fable-reader-units-20261004/reader_units",
+   "withheld": {}
+  }
+ ]
+}
