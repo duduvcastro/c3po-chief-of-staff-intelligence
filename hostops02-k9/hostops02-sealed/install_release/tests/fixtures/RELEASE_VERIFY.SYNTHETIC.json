@@ -1,0 +1,19 @@
+{
+ "build_revision_used": "0123456789abcdef0123456789abcdef01234567",
+ "calendar_library_version": "4.13.2",
+ "implementation_contract_sha": "7c2252a810b0e951a5ff994be60801caa369beeaa8e6e3e3b96a471e5ad5f130",
+ "implementation_package_sha": "b5ce527a544ca0eb08f0718d83546d7b46f9e9774be8e4351afce212e72bdb84",
+ "python": "3.12.14",
+ "release_bytes": 5337,
+ "release_sha256": "b110f364d7d7eeeb884a7038668a4fb7f158dbdd86200c772116eebad14c05f1",
+ "result": {
+  "approved_at": "2026-10-03T19:40:00+00:00",
+  "epoch": "R2D2-V2-SHADOW-2026-10-05",
+  "first_session": "2026-10-05",
+  "mode": "CERTIFIED"
+ },
+ "schema": "HOSTOPS02_INSTALL_RELEASE_SYNTHETIC_FIXTURE_V1",
+ "verified_at_instant": "2026-10-05T08:27:00+00:00",
+ "verified_by": "app.r2d2_v2_shadow.Release.verify of the release tree, real ShadowCalendar",
+ "with_the_deployed_build_revision": "RELEASE_CODE_OR_AUTHORIZATION_UNVERIFIED"
+}

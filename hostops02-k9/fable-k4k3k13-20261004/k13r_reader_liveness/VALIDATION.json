@@ -1,0 +1,159 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "date_class": "READ",
+  "dates": [
+   "2026-10-02",
+   "2026-10-03",
+   "2026-10-04",
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07",
+   "2026-10-08",
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "dispatcher_sha256": "fa6d3160b8d4f25772b580b5ee5c5bf2997d4056f6759174f1d7cd0aa5cf6116",
+  "final_payload_bytes": 122451,
+  "final_payload_sha256": "ace7e683ac553830ad055e5b5c267499ca6f4725b78dd0d6116be9da162973a8",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "fca737a76fb0bb906f228d283ca9c027672bb6ab433af2294fed6e09b23b5022",
+  "parts": [
+   "core",
+   "runner",
+   "docker"
+  ],
+  "scope_sha256": "dd3051185ea0414ab4ac3683f604c8518c45dc87f83c1a9f616bd3e59fdf3a2c",
+  "source_bytes": 81345,
+  "source_sha256": "0fd5be1792a91c630998e38611600472cba4bb5fc2442a406013cdaee87ae5f3",
+  "spec_sha256": "6c8a9e943bb18afb77615d2349caea07e7c962840a8e4947f58528dd331c232d",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 6596,
+  "writes_allowed": false
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "core": {
+  "core_sha256sums": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "generation_sha256_of_assemble_py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "emulated_only": [
+  "systemctl switches (enable --now, start --no-block, reset-failed, disable --now, stop --no-block) and systemctl show/is-enabled output",
+  "the docker CLI: inspect templates with .Args, .ExecIDs, .Mounts, .HostConfig.Init/ReadonlyRootfs; docker info SecurityOptions",
+  "docker top and docker logs are not used: not reading verbs of the frozen core"
+ ],
+ "fixture": {
+  "module_sha256": "b0a49d408390ad1a5d11faf8238f0c41881fc918ab07c1444bbce8822d29904f",
+  "note": "SYNTHETIC host, containers, mounts and units"
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "gate": "set 3: the core linux_root job run with this directory as its argument, suite passing as real root",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_CARRIED.json": {
+   "present": false
+  },
+  "MUTATION_RUN.json": {
+   "by_target": {
+    "dispatcher": 12,
+    "launcher": 4,
+    "op": 151
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 167,
+    "redundant_survivors": 0,
+    "single": 167,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "e82928e4392176c8bfab9dfe8813442536f89827ad134e5769c8fadcad1144f9",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "by_target": {
+    "dispatcher": 12,
+    "launcher": 4,
+    "op": 151
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 167,
+    "redundant_survivors": 0,
+    "single": 167,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "0a5f866694e43c66ba555ca11c13560b42859e95323a07922816b52d334df0b8",
+   "stale_pins": [],
+   "survivors": []
+  }
+ },
+ "operation": "GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01",
+ "review": {
+  "note": "built and tested by its author only",
+  "status": "NOT_REVIEWED"
+ },
+ "schema": "HOSTOPS02_K13R_READER_LIVENESS_VALIDATION_V1",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 211,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k13r": 90
+   },
+   "python": "Python 3.9.6",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 211
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 211,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k13r": 90
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 211
+  }
+ ],
+ "suites_with_other_operations": null,
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "fcf14ffe67245a59a7b6ba1fe1c7065b037da6bcddde64cb6e86f6cf281a6e5f",
+  "DISPATCH.UNBOUND.json": "8a8bf9b1a4901f35ee9cb152d8d6ab3d05433bd9b16222da938f46ad619e3316",
+  "FINAL_PAYLOAD.UNBOUND.py": "ace7e683ac553830ad055e5b5c267499ca6f4725b78dd0d6116be9da162973a8",
+  "GO.UNBOUND.json": "3aa9c4a661856abfdb35dc81201f610b11baeace733a550dedc760ab0fc6d212",
+  "PUBLICATION_PROOF.UNBOUND.json": "7e4808b752562ca30a791b4ab7648ab66c8dd216e78cdb8aa3259ea01cc0770a",
+  "REQUEST.UNBOUND.json": "654aae995763b4159fca34a6f09c43d2fd610399180bc15c4c08f09bc2633b1c"
+ }
+}

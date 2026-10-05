@@ -1,0 +1,4813 @@
+{
+ "complete_run": true,
+ "counts": {
+  "combined": 1,
+  "errors": 0,
+  "killed": 315,
+  "redundant_survivors": 2,
+  "single": 316,
+  "survivors": 0
+ },
+ "errors": [],
+ "pins_sha256": {
+  "build/dispatch_once.py": "eabfdc0213393d71c3e74d6ba30043e96b75bebb65c5541a542d563da3b40a00",
+  "build/k9_phase_read.py": "0f0d65ba3724d92f7f80761b3ba6659340425d397858185a815a55a987d2de52",
+  "core/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "core/assemble.py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "core/tests/conformance.py": "0389343929e0d6cf4374a08b45e8eb3661fbf4b93f039920463a2ef7b8a302dd",
+  "core/tests/family.py": "f291fcf0885597bc6222780f9f0c67743db3218f1539d2b41d6db3ba208a4dc4",
+  "core/tests/hostemu.py": "aa4ba46eb0c984708e6d504e65743cefbb42d2128e9573a7a94bea83ec1e34f7",
+  "core/tests/oslevel.py": "1711bcb146a81b8e4cd63ce61f0fb380f7af0ad84a95d74b82edd3d5caab695b",
+  "mutation/mutants.py": "ef8a0aff189920c75111d202669e3dd58ad22972825d8442400d15d979c0577e",
+  "op.py": "f24d81af6a7a26f9a85b7c68cbc9546e126f04ab9ace0338c5da4142e2d1860c",
+  "spec.py": "4fe7e13929775a376fe0a3ed06b11de43b6b9200588b8a5b9b215bf4c974205d",
+  "tests/conftest.py": "46821071d411ea109d3b826bf2c478b5b883e120dcd8635b4ce723faac998fc2",
+  "tests/k9r.py": "67ad2bf5816eacb54c840d31ff4676e751111ac008ef2ef400ae18fdcab802f8",
+  "tests/native_child_k9r.py": "1cd43f8824c4d0a38c2d9af711622252a4ba515322f25d75b3aa77e521ae8427",
+  "tests/test_conformance.py": "2433eded92eac9b13c038151ad48c6f3b0bfc80989976aaf9ab5fe85d1498cdf",
+  "tests/test_native.py": "998ab44990bbd393c7b50b90ea62aa71146a289a1ce984bc74b86bbbff114f6f",
+  "tests/test_plan.py": "d62dfd8fc24ad89f570911e0cf26a7e279b356b7cfd6d5abd6554a4a118c8cf0",
+  "tests/test_read.py": "95047fc7c9fb0eefe9b7ab1487ccf95ceb1b439df1955432f2aaebe6d4449fb8",
+  "tests/test_snippet.py": "350ac4d08880046af7326aacc9ccfc18c35f2bf157722b0fb373122ae7690fd5"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {
+  "F07_days_not_proved_again": {
+   "combined_mutants": [
+    "Z01_neither_k9_root_nor_days_proved_again"
+   ],
+   "why": "the proof of k9_root sees a replaced k9_root; a replaced days/ alone is seen by directories_stable"
+  },
+  "G08_k9_root_not_proved_again": {
+   "combined_mutants": [
+    "Z01_neither_k9_root_nor_days_proved_again"
+   ],
+   "why": "the proof of days/ walks again through k9_root from \"/\" and sees its replacement"
+  }
+ },
+ "redundant_killed_alone": [],
+ "redundant_survivors": [
+  "G08_k9_root_not_proved_again",
+  "F07_days_not_proved_again"
+ ],
+ "results": [
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'OPERATION_NOT_OF_THIS_MODE' == 'MODE_INVALID'",
+   "killed": true,
+   "mutant": "P01_any_mode",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.59s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_and_the_operation_table - Failed: ...",
+   "killed": true,
+   "mutant": "P02_any_epoch",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.55s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P03_note_not_compared",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.70s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P04_package_not_compared",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.89s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P05_revision_not_compared",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.91s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P06_snippet_hash_not_compared",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.95s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P07_readiness_rule_not_compared",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 1.00s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P08_placement_not_compared",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.98s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P09_runner_hash_unbound",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 1.13s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P10_image_id_any_string",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.87s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P11_network_classes_not_exact",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.80s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P12_network_names_any",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.83s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P13_provider_network_any",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.83s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P14_risk_limit_keys",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 1.11s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P15_risk_limit_zero",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 1.07s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'DISK_FLOOR_N..._COMPILED_ONE' == 'CONSTANTS_INVALID'",
+   "killed": true,
+   "mutant": "P16_floor_unbounded",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 0.97s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "P17_constants_extra_keys",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 1.31s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/k9_phase_read.py:1447: KeyError: 'days'",
+   "killed": true,
+   "mutant": "P18_tree_may_sign_rows",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 2 passed, 1 skipped, 29 deselected in 1.97s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'ATTEMPT_KEY_MISMATCH' == 'DAY_INVALID'",
+   "killed": true,
+   "mutant": "P19_any_day",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.53s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'ATTEMPT_KEY_MISMATCH' == 'OPERATION_NOT_OF_THIS_MODE'",
+   "killed": true,
+   "mutant": "P20_mode_of_the_operation_not_compared",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_and_the_operation_table - Failed: ...",
+   "killed": true,
+   "mutant": "P21_phase_of_the_operation_not_compared",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.60s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_and_the_operation_table - Failed: ...",
+   "killed": true,
+   "mutant": "P22_any_slot",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_and_the_operation_table - Failed: ...",
+   "killed": true,
+   "mutant": "P23_attempt_key_not_compared",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.65s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_and_the_operation_table - k9_phase...",
+   "killed": true,
+   "mutant": "P24_attempt_key_of_another_order",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.59s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:61: AssertionError: assert '0b35545a3f85...ec059beafe79f' == '41a630adca75...447a6220ea736'",
+   "killed": true,
+   "mutant": "P25_attempt_key_not_canonical",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 29 deselected in 0.42s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_mode_epoch_and_the_operation_table - Failed: ...",
+   "killed": true,
+   "mutant": "P26_evidence_boot_unbound",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/k9_phase_read.py:1381: KeyError: 'claims'",
+   "killed": true,
+   "mutant": "P27_parent_rows_any_keys",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.81s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_run_not_after_only_in_result_and_in_the_one_spelling",
+   "killed": true,
+   "mutant": "P32_run_not_after_any_spelling",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 4 passed, 1 skipped, 29 deselected in 2.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_run_not_after_only_in_result_and_in_the_one_spelling",
+   "killed": true,
+   "mutant": "P33_run_not_after_outside_result",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 4 passed, 1 skipped, 29 deselected in 2.08s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_policy_read_only_in_policy_and_as_required - ...",
+   "killed": true,
+   "mutant": "P34_policy_read_outside_policy",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 2.58s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_policy_read_only_in_policy_and_as_required - ...",
+   "killed": true,
+   "mutant": "P35_worker_may_be_an_id",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 2.54s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_policy_read_only_in_policy_and_as_required - ...",
+   "killed": true,
+   "mutant": "P36_worker_data_source_any",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 2.67s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_policy_read_only_in_policy_and_as_required - ...",
+   "killed": true,
+   "mutant": "P37_file_name_any",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 2.58s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_policy_read_only_in_policy_and_as_required - ...",
+   "killed": true,
+   "mutant": "P38_directory_outside_the_volume",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 2.75s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_policy_read_only_in_policy_and_as_required - ...",
+   "killed": true,
+   "mutant": "P39_directory_may_be_the_volume",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 3.00s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'CHAIN_ROW_UNSAFE' == 'POLICY_READ_INVALID'",
+   "killed": true,
+   "mutant": "P40_free_chain_open_root_any",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 3.13s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'POLICY_READ_...E_DATA_VOLUME' == 'POLICY_READ_INVALID'",
+   "killed": true,
+   "mutant": "P41_worker_paths_unclean",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 3.03s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_policy_read_only_in_policy_and_as_required - ...",
+   "killed": true,
+   "mutant": "P42_entry_name_may_start_with_a_dot",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 5 passed, 1 skipped, 29 deselected in 3.14s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:166: AssertionError: assert ([('open', '/'...d', 260), ...] == []",
+   "killed": true,
+   "mutant": "W01_window_not_judged",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 3.04s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:172: AssertionError: assert ('REFUSED', '..._OBSERVATION') == ('REFUSED', '..._OBSERVATION')",
+   "killed": true,
+   "mutant": "W02_window_may_start_before_the_eve",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 2.85s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:166: AssertionError: assert ([('open', '/'...d', 260), ...] == []",
+   "killed": true,
+   "mutant": "W03_window_may_end_after_the_morning",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 2.88s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:171: AssertionError: assert ('REFUSED', '...G_OF_THE_DAY') == ('REFUSED', '...G_OF_THE_DAY')",
+   "killed": true,
+   "mutant": "W04_the_eve_is_the_day_itself",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 3.04s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:166: AssertionError: assert ([('open', '/'...d', 260), ...] == []",
+   "killed": true,
+   "mutant": "W05_probe_after_the_causal_limit",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 3.83s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:166: AssertionError: assert ([('open', '/'...d', 260), ...] == []",
+   "killed": true,
+   "mutant": "W06_policy_on_the_eve",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 3.41s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:166: AssertionError: assert ([('open', '/'...d', 260), ...] == []",
+   "killed": true,
+   "mutant": "W07_run_not_after_anywhere",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 3.13s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:166: AssertionError: assert ([('open', '/'...d', 260), ...] == []",
+   "killed": true,
+   "mutant": "W08_result_before_its_launch_ended",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 3.77s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:185: AssertionError: assert (('METADATA_ON...REVIEW', None) == ('REFUSED', '...TOR_IDENTITY')",
+   "killed": true,
+   "mutant": "W09_executor_any",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 9 passed, 1 skipped, 29 deselected in 4.64s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E01_writes",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.69s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...oved': 0, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E02_claims",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.67s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E03_containers_removed",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.68s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_effects_of_a_probe_policy_and_tree_are_the_literal",
+   "killed": true,
+   "mutant": "E04_containers_run",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 4.26s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E05_parent_rows",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.14s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...oved': 0, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E06_constants",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.18s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E07_launch_key",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.19s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E08_launch_record_path",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.24s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:206: AssertionError: assert ('K9_RUNNER' == 'PACKAGED_RISK_SPOOL'",
+   "killed": true,
+   "mutant": "E09_receipts_kind",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 4.44s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:210: AssertionError: assert {'alarm_secon...recheck', ...} == {'alarm_secon...recheck', ...}",
+   "killed": true,
+   "mutant": "E10_probe_command",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 4.39s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:210: AssertionError: assert {'alarm_secon...6-probe', ...} == {'alarm_secon...recheck', ...}",
+   "killed": true,
+   "mutant": "E11_probe_container_name",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 4.38s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:217: AssertionError: assert None == {'C3PO_BUILD_SHA': 'dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858', 'C3PO_R2D2_V2_LIVE_POLICY_FILE': '/app/day-d-data/r2d2-...dc5694347', 'C3PO_R2D2_V2_SHADOW_RELEASE_FILE': '/app/day-d-data/r2d2-v2-release-20261005/release.CERTIFIED.json', ..",
+   "killed": true,
+   "mutant": "E12_expected_environment",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 4.28s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:223: AssertionError: assert [] == ['/var/lib/c3...ter/password']",
+   "killed": true,
+   "mutant": "E13_tree_secret_files",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 4.43s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:224: AssertionError: assert ('/var/lib/c3p...0261005/tools' == '/var/lib/c3p...7b0b1469ee.py'",
+   "killed": true,
+   "mutant": "E14_tree_runner_file",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 4.38s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:225: AssertionError: assert [] == ['/mnt/day-d-...ret/password']",
+   "killed": true,
+   "mutant": "E19_tree_september_sources",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 4.28s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'K9_PHASE_RES..._ALL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "E15_success_of_one_mode",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 3.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E16_slot",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 3.88s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E17_run_not_after",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 3.32s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:204: AssertionError: assert {'activation'...b', ...}, ...} == {'activation'...b', ...}, ...}",
+   "killed": true,
+   "mutant": "E18_evidence_boot",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 10 passed, 1 skipped, 29 deselected in 3.72s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R01_record_schema",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 32 passed, 1 skipped, 29 deselected in 4.52s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R02_record_keys",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 41 passed, 1 skipped, 29 deselected in 4.96s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R03_record_day",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 29 passed, 1 skipped, 29 deselected in 4.50s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R04_record_operation",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 30 passed, 1 skipped, 29 deselected in 4.69s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R05_record_attempt_key",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 28 passed, 1 skipped, 29 deselected in 4.57s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R06_record_slot",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 38 passed, 1 skipped, 29 deselected in 4.76s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('UNCERTAIN',..._AS_RECORDED') == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R07_record_request",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 39 passed, 1 skipped, 29 deselected in 4.79s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('UNCERTAIN',...OF_THIS_STEP') == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R08_record_step_plan",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 40 passed, 1 skipped, 29 deselected in 4.92s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('UNCERTAIN',...N_INCOMPLETE') == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R09_record_container_id",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 35 passed, 1 skipped, 29 deselected in 5.09s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('UNCERTAIN',..._AS_RECORDED') == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R10_record_container_name",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 31 passed, 1 skipped, 29 deselected in 4.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R11_record_timeout",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 36 passed, 1 skipped, 29 deselected in 4.67s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R12_record_clocks",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 33 passed, 1 skipped, 29 deselected in 4.90s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:65: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...CORD_INVALID')",
+   "killed": true,
+   "mutant": "R13_record_created_after_start",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 34 passed, 1 skipped, 29 deselected in 5.19s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:168: AssertionError: assert {'DAY_DIRECTO..._NOT_PRIVATE'} <= {'DAY_DIRECTO..._NOT_PRIVATE'}",
+   "killed": true,
+   "mutant": "R14_record_not_private_no_finding",
+   "returncode": 1,
+   "seconds": 12.4,
+   "summary": "1 failed, 93 passed, 1 skipped, 29 deselected in 11.66s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:168: AssertionError: assert {'DAY_DIRECTO..._NOT_PRIVATE'} <= {'LAUNCH_RECO..._NOT_PRIVATE'}",
+   "killed": true,
+   "mutant": "R15_day_directory_not_private_no_finding",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 93 passed, 1 skipped, 29 deselected in 11.37s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:55: AssertionError: assert (('UNCERTAIN',...N_INCOMPLETE') == ('UNCERTAIN',...CTORY_ABSENT')",
+   "killed": true,
+   "mutant": "R16_inspect_any_record",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 27 passed, 1 skipped, 29 deselected in 6.05s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:90: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "L01_name_not_compared",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 47 passed, 1 skipped, 29 deselected in 10.77s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:88: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "L02_image_not_compared",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 47 passed, 1 skipped, 29 deselected in 11.01s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:84: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "L03_attempt_label_not_compared",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 45 passed, 1 skipped, 29 deselected in 10.91s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:84: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "L04_request_label_not_compared",
+   "returncode": 1,
+   "seconds": 11.9,
+   "summary": "1 failed, 46 passed, 1 skipped, 29 deselected in 11.19s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:95: AssertionError: assert (('UNCERTAIN',...R_NOT_EXITED') == ('UNCERTAIN',...R_NOT_EXITED')",
+   "killed": true,
+   "mutant": "L05_exited_by_running_alone",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 49 passed, 1 skipped, 29 deselected in 11.08s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:529: KeyError: 'code'",
+   "killed": true,
+   "mutant": "L06_inspect_line_any_keys",
+   "returncode": 1,
+   "seconds": 31.6,
+   "summary": "1 failed, 202 passed, 1 skipped, 29 deselected in 30.73s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:529: KeyError: 'code'",
+   "killed": true,
+   "mutant": "L07_inspect_line_another_container",
+   "returncode": 1,
+   "seconds": 31.6,
+   "summary": "1 failed, 203 passed, 1 skipped, 29 deselected in 30.95s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:529: KeyError: 'code'",
+   "killed": true,
+   "mutant": "L08_exit_code_any",
+   "returncode": 1,
+   "seconds": 31.3,
+   "summary": "1 failed, 204 passed, 1 skipped, 29 deselected in 30.63s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:529: KeyError: 'code'",
+   "killed": true,
+   "mutant": "L09_label_any",
+   "returncode": 1,
+   "seconds": 30.5,
+   "summary": "1 failed, 207 passed, 1 skipped, 29 deselected in 29.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:20: KeyError: 'phase_result'",
+   "killed": true,
+   "mutant": "D01_incomplete_observation_decides_nothing",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 42 passed, 1 skipped, 29 deselected in 9.75s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:55: AssertionError: assert (('UNCERTAIN',...ECORD_ABSENT') == ('UNCERTAIN',...CTORY_ABSENT')",
+   "killed": true,
+   "mutant": "D02_day_absent_not_uncertain",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 27 passed, 1 skipped, 29 deselected in 8.63s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:58: AssertionError: assert ('UNCERTAIN',...CORD_INVALID') == ('UNCERTAIN',...ECORD_ABSENT')",
+   "killed": true,
+   "mutant": "D03_record_absent_not_uncertain",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 27 passed, 1 skipped, 29 deselected in 8.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:20: KeyError: 'phase_result'",
+   "killed": true,
+   "mutant": "D04_record_invalid_not_uncertain",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 28 passed, 1 skipped, 29 deselected in 9.02s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:84: AssertionError: assert (('UNCERTAIN',...IDE_THE_STEP') == ('UNCERTAIN',..._AS_RECORDED')",
+   "killed": true,
+   "mutant": "D05_container_not_recorded",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 44 passed, 1 skipped, 29 deselected in 10.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:95: AssertionError: assert (('UNCERTAIN',...IDE_THE_STEP') == ('UNCERTAIN',...R_NOT_EXITED')",
+   "killed": true,
+   "mutant": "D06_container_running",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 49 passed, 1 skipped, 29 deselected in 10.80s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:98: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...BOTH_PRESENT')",
+   "killed": true,
+   "mutant": "D07_both_receipts",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 53 passed, 1 skipped, 29 deselected in 11.19s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:99: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "D08_marker_of_another_step",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 53 passed, 1 skipped, 29 deselected in 11.17s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:45: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "D09_receipt_of_another_step",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 26 passed, 1 skipped, 29 deselected in 8.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:101: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...START_MARKER')",
+   "killed": true,
+   "mutant": "D10_receipt_without_marker",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 53 passed, 1 skipped, 29 deselected in 11.42s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:116: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',..._THE_RECEIPT')",
+   "killed": true,
+   "mutant": "D11_exit_code_not_compared",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 73 passed, 1 skipped, 29 deselected in 12.39s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:116: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',..._THE_RECEIPT')",
+   "killed": true,
+   "mutant": "D12_oom_not_compared",
+   "returncode": 1,
+   "seconds": 13.6,
+   "summary": "1 failed, 75 passed, 1 skipped, 29 deselected in 12.95s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:128: AssertionError: assert (('UNCERTAIN',...IDE_THE_STEP') == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "D13_outputs_not_compared",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 77 passed, 1 skipped, 29 deselected in 12.78s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:154: AssertionError: assert (('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "D14_failed_receipt_of_another_step",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 91 passed, 1 skipped, 29 deselected in 14.05s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:154: AssertionError: assert (('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OR_UNCERTAIN')",
+   "killed": true,
+   "mutant": "D15_deadline_is_a_failure",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 90 passed, 1 skipped, 29 deselected in 13.95s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:214: AssertionError: assert ('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OR_UNCERTAIN')",
+   "killed": true,
+   "mutant": "D16_packaged_uncertain_is_a_failure",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 110 passed, 1 skipped, 29 deselected in 14.98s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:159: AssertionError: assert ('FAILED', 'E...START_MARKER') == ('UNCERTAIN',...HOUT_RECEIPT')",
+   "killed": true,
+   "mutant": "D17_started_without_receipt_is_a_failure",
+   "returncode": 1,
+   "seconds": 14.4,
+   "summary": "1 failed, 92 passed, 1 skipped, 29 deselected in 13.59s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:160: AssertionError: assert ('FAILED', 'E...START_MARKER') == ('UNCERTAIN',...HOUT_RECEIPT')",
+   "killed": true,
+   "mutant": "D18_exit_zero_without_receipt_is_a_failure",
+   "returncode": 1,
+   "seconds": 14.0,
+   "summary": "1 failed, 92 passed, 1 skipped, 29 deselected in 13.41s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:161: AssertionError: assert ('UNCERTAIN',...START_MARKER') == ('FAILED', 'E...START_MARKER')",
+   "killed": true,
+   "mutant": "D19_nothing_started_is_uncertain",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 92 passed, 1 skipped, 29 deselected in 13.42s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:55: AssertionError: assert (('UNCERTAIN',...CTORY_ABSENT') == ('UNCERTAIN',...CTORY_ABSENT')",
+   "killed": true,
+   "mutant": "D20_phase_not_a_finding",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 27 passed, 1 skipped, 29 deselected in 8.23s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:193: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('PARTIAL_MET...'RUN_STOPPED')",
+   "killed": true,
+   "mutant": "D21_stop_leaves_a_decision",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 97 passed, 1 skipped, 29 deselected in 13.66s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S01_identity_schema",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 65 passed, 1 skipped, 29 deselected in 11.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S02_identity_keys",
+   "returncode": 1,
+   "seconds": 12.3,
+   "summary": "1 failed, 72 passed, 1 skipped, 29 deselected in 11.72s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S03_identity_day",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 61 passed, 1 skipped, 29 deselected in 10.89s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S04_identity_phase",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 59 passed, 1 skipped, 29 deselected in 10.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S05_identity_operation",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 60 passed, 1 skipped, 29 deselected in 10.78s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:99: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S06_identity_attempt",
+   "returncode": 1,
+   "seconds": 10.8,
+   "summary": "1 failed, 53 passed, 1 skipped, 29 deselected in 10.32s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S07_identity_step_plan",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 54 passed, 1 skipped, 29 deselected in 10.57s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S08_epoch_not_compared",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 62 passed, 1 skipped, 29 deselected in 13.83s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S09_package_not_compared",
+   "returncode": 1,
+   "seconds": 15.1,
+   "summary": "1 failed, 55 passed, 1 skipped, 29 deselected in 14.43s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S10_build_not_compared",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 56 passed, 1 skipped, 29 deselected in 14.67s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S11_clocks_not_compared",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 63 passed, 1 skipped, 29 deselected in 15.24s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:100: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S12_future_allowed",
+   "returncode": 1,
+   "seconds": 14.4,
+   "summary": "1 failed, 53 passed, 1 skipped, 29 deselected in 13.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S14_receipt_any_status",
+   "returncode": 1,
+   "seconds": 17.4,
+   "summary": "1 failed, 57 passed, 1 skipped, 29 deselected in 16.40s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S15_receipt_with_a_code",
+   "returncode": 1,
+   "seconds": 17.0,
+   "summary": "1 failed, 58 passed, 1 skipped, 29 deselected in 16.23s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:168: AssertionError: assert {'DAY_DIRECTO..._NOT_PRIVATE'} <= {'DAY_DIRECTO...LT_UNCERTAIN'}",
+   "killed": true,
+   "mutant": "S19_step_file_not_private_no_finding",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 93 passed, 1 skipped, 29 deselected in 20.53s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S21_output_key_root_any",
+   "returncode": 1,
+   "seconds": 18.8,
+   "summary": "1 failed, 67 passed, 1 skipped, 29 deselected in 17.89s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S22_outputs_unbounded",
+   "returncode": 1,
+   "seconds": 16.7,
+   "summary": "1 failed, 69 passed, 1 skipped, 29 deselected in 15.80s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S23_output_hash_any",
+   "returncode": 1,
+   "seconds": 16.8,
+   "summary": "1 failed, 68 passed, 1 skipped, 29 deselected in 15.79s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S24_aggregate_any_shape",
+   "returncode": 1,
+   "seconds": 16.7,
+   "summary": "1 failed, 70 passed, 1 skipped, 29 deselected in 15.86s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:128: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O01_hash_not_compared",
+   "returncode": 1,
+   "seconds": 17.4,
+   "summary": "1 failed, 77 passed, 1 skipped, 29 deselected in 16.51s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:128: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O02_absent_is_equal",
+   "returncode": 1,
+   "seconds": 17.9,
+   "summary": "1 failed, 78 passed, 1 skipped, 29 deselected in 16.90s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:128: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O03_not_regular_is_equal",
+   "returncode": 1,
+   "seconds": 18.0,
+   "summary": "1 failed, 79 passed, 1 skipped, 29 deselected in 17.04s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:148: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O04_aggregate_not_judged",
+   "returncode": 1,
+   "seconds": 16.9,
+   "summary": "1 failed, 83 passed, 1 skipped, 29 deselected in 16.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:148: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O05_aggregate_count_not_compared",
+   "returncode": 1,
+   "seconds": 16.6,
+   "summary": "1 failed, 83 passed, 1 skipped, 29 deselected in 15.89s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:148: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O06_aggregate_hash_not_compared",
+   "returncode": 1,
+   "seconds": 15.5,
+   "summary": "1 failed, 85 passed, 1 skipped, 29 deselected in 14.74s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:148: KeyError: 'aggregates'",
+   "killed": true,
+   "mutant": "O07_aggregate_follows_anything",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 86 passed, 1 skipped, 29 deselected in 15.32s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:551: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O08_aggregate_link_is_absent_ok",
+   "returncode": 1,
+   "seconds": 36.4,
+   "summary": "1 failed, 218 passed, 1 skipped, 29 deselected in 35.54s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('UNCERTAIN',...OF_THIS_STEP') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "O09_outputs_of_an_invalid_receipt",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 54 passed, 1 skipped, 29 deselected in 13.01s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:148: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O10_all_equal_without_aggregates",
+   "returncode": 1,
+   "seconds": 17.2,
+   "summary": "1 failed, 83 passed, 1 skipped, 29 deselected in 16.40s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:128: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O11_output_finding_removed",
+   "returncode": 1,
+   "seconds": 17.0,
+   "summary": "1 failed, 77 passed, 1 skipped, 29 deselected in 16.09s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:135: KeyError: 'files_different_or_not_regular'",
+   "killed": true,
+   "mutant": "O12_child_follows_links",
+   "returncode": 1,
+   "seconds": 17.9,
+   "summary": "1 failed, 82 passed, 1 skipped, 29 deselected in 16.90s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:128: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O13_leaf_not_classified",
+   "returncode": 1,
+   "seconds": 16.5,
+   "summary": "1 failed, 79 passed, 1 skipped, 29 deselected in 15.60s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:545: KeyError: 'code'",
+   "killed": true,
+   "mutant": "O14_packaged_acquired_path_any",
+   "returncode": 1,
+   "seconds": 36.7,
+   "summary": "1 failed, 217 passed, 1 skipped, 29 deselected in 35.83s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:230: AssertionError: assert ('OBSERVATION_FAILED' == 'OUTPUT_REFERENCE_INVALID'",
+   "killed": true,
+   "mutant": "O15_packaged_assessment_path_any",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 115 passed, 1 skipped, 29 deselected in 19.34s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:226: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O16_packaged_risk_not_hashed",
+   "returncode": 1,
+   "seconds": 20.2,
+   "summary": "1 failed, 114 passed, 1 skipped, 29 deselected in 19.42s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:226: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...RECEIPT_SAYS')",
+   "killed": true,
+   "mutant": "O17_packaged_manifest_not_hashed",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 113 passed, 1 skipped, 29 deselected in 19.35s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K01_packaged_manifest_hash_not_compared",
+   "returncode": 1,
+   "seconds": 18.9,
+   "summary": "1 failed, 104 passed, 1 skipped, 29 deselected in 17.94s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K02_packaged_go_not_compared",
+   "returncode": 1,
+   "seconds": 18.8,
+   "summary": "1 failed, 103 passed, 1 skipped, 29 deselected in 18.03s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K03_packaged_phase_not_compared",
+   "returncode": 1,
+   "seconds": 19.2,
+   "summary": "1 failed, 105 passed, 1 skipped, 29 deselected in 18.28s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K04_packaged_session_date",
+   "returncode": 1,
+   "seconds": 18.5,
+   "summary": "1 failed, 99 passed, 1 skipped, 29 deselected in 17.55s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:205: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K05_packaged_namespace_any",
+   "returncode": 1,
+   "seconds": 17.9,
+   "summary": "1 failed, 98 passed, 1 skipped, 29 deselected in 17.03s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K06_packaged_activation",
+   "returncode": 1,
+   "seconds": 18.6,
+   "summary": "1 failed, 101 passed, 1 skipped, 29 deselected in 17.65s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K07_packaged_certification",
+   "returncode": 1,
+   "seconds": 18.6,
+   "summary": "1 failed, 102 passed, 1 skipped, 29 deselected in 17.82s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K08_packaged_status",
+   "returncode": 1,
+   "seconds": 18.3,
+   "summary": "1 failed, 100 passed, 1 skipped, 29 deselected in 17.47s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K09_packaged_schema",
+   "returncode": 1,
+   "seconds": 18.5,
+   "summary": "1 failed, 106 passed, 1 skipped, 29 deselected in 17.80s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:541: AssertionError: assert ('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K10_packaged_failed_any_status",
+   "returncode": 1,
+   "seconds": 36.1,
+   "summary": "1 failed, 216 passed, 1 skipped, 29 deselected in 35.14s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:203: AssertionError: assert (('COMPLETE', None) == ('COMPLETE', None)",
+   "killed": true,
+   "mutant": "K12_namespace_form_of_shadow",
+   "returncode": 1,
+   "seconds": 17.7,
+   "summary": "1 failed, 98 passed, 1 skipped, 29 deselected in 16.91s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:201: AssertionError: assert 'SHADOW' == 'DIAG_R4'",
+   "killed": true,
+   "mutant": "K13_namespace_of_another_day",
+   "returncode": 1,
+   "seconds": 17.6,
+   "summary": "1 failed, 98 passed, 1 skipped, 29 deselected in 16.81s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:296: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B01_started_without_the_env_file",
+   "returncode": 1,
+   "seconds": 27.9,
+   "summary": "1 failed, 133 passed, 1 skipped, 29 deselected in 27.04s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:296: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B02_env_file_any_metadata",
+   "returncode": 1,
+   "seconds": 27.9,
+   "summary": "1 failed, 133 passed, 1 skipped, 29 deselected in 26.89s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:255: AssertionError: assert ('NOT_READY' == 'NOT_READY'",
+   "killed": true,
+   "mutant": "B03_not_ready_is_no_finding",
+   "returncode": 1,
+   "seconds": 21.5,
+   "summary": "1 failed, 118 passed, 1 skipped, 29 deselected in 20.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B04_request_not_echoed",
+   "returncode": 1,
+   "seconds": 29.2,
+   "summary": "1 failed, 160 passed, 1 skipped, 29 deselected in 28.36s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B05_day_not_echoed",
+   "returncode": 1,
+   "seconds": 29.5,
+   "summary": "1 failed, 150 passed, 1 skipped, 29 deselected in 28.59s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B06_calls_any",
+   "returncode": 1,
+   "seconds": 29.6,
+   "summary": "1 failed, 148 passed, 1 skipped, 29 deselected in 28.46s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B07_counts_any",
+   "returncode": 1,
+   "seconds": 30.2,
+   "summary": "1 failed, 157 passed, 1 skipped, 29 deselected in 29.39s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B08_previous_session_any",
+   "returncode": 1,
+   "seconds": 29.2,
+   "summary": "1 failed, 151 passed, 1 skipped, 29 deselected in 28.36s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B09_payload_hashes_any",
+   "returncode": 1,
+   "seconds": 29.1,
+   "summary": "1 failed, 155 passed, 1 skipped, 29 deselected in 28.18s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B10_python_any",
+   "returncode": 1,
+   "seconds": 28.5,
+   "summary": "1 failed, 156 passed, 1 skipped, 29 deselected in 27.58s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B11_readiness_not_recomputed",
+   "returncode": 1,
+   "seconds": 27.6,
+   "summary": "1 failed, 144 passed, 1 skipped, 29 deselected in 26.80s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B12_required_minimum_not_recomputed",
+   "returncode": 1,
+   "seconds": 26.8,
+   "summary": "1 failed, 145 passed, 1 skipped, 29 deselected in 26.08s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B13_present_above_eligible",
+   "returncode": 1,
+   "seconds": 26.7,
+   "summary": "1 failed, 146 passed, 1 skipped, 29 deselected in 25.83s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B14_usable_above_present",
+   "returncode": 1,
+   "seconds": 26.9,
+   "summary": "1 failed, 147 passed, 1 skipped, 29 deselected in 26.19s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B15_dated_above_bulk",
+   "returncode": 1,
+   "seconds": 26.9,
+   "summary": "1 failed, 161 passed, 1 skipped, 29 deselected in 26.21s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:331: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B16_done_any_keys",
+   "returncode": 1,
+   "seconds": 27.7,
+   "summary": "1 failed, 159 passed, 1 skipped, 29 deselected in 26.91s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:338: AssertionError: assert (['PROBE_SNIPPET_FAILED'] == ['PROBE_RUN_FAILED']",
+   "killed": true,
+   "mutant": "B17_failed_any_code",
+   "returncode": 1,
+   "seconds": 27.3,
+   "summary": "1 failed, 162 passed, 1 skipped, 29 deselected in 26.53s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:338: AssertionError: assert (['PROBE_SNIPPET_FAILED'] == ['PROBE_RUN_FAILED']",
+   "killed": true,
+   "mutant": "B18_failed_any_calls",
+   "returncode": 1,
+   "seconds": 27.3,
+   "summary": "1 failed, 162 passed, 1 skipped, 29 deselected in 26.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:285: AssertionError: assert (['PROBE_RUN_FAILED'] == ['PROBE_ENGINE_FAILURE']",
+   "killed": true,
+   "mutant": "B19_engine_failure_is_a_snippet_failure",
+   "returncode": 1,
+   "seconds": 25.8,
+   "summary": "1 failed, 132 passed, 1 skipped, 29 deselected in 25.21s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:555: AssertionError: assert ([] == ['IMAGE_REVISION_MISMATCH']",
+   "killed": true,
+   "mutant": "B21_image_revision_no_finding",
+   "returncode": 1,
+   "seconds": 33.8,
+   "summary": "1 failed, 219 passed, 1 skipped, 29 deselected in 33.06s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:578: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B23_secrets_not_verified_before_the_run",
+   "returncode": 1,
+   "seconds": 32.9,
+   "summary": "1 failed, 221 passed, 1 skipped, 29 deselected in 32.16s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "B24_probe_network_none",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 7.26s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "B25_probe_writable_root",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 7.23s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'OBSERVED_ALL...TIONS_NOT_MET' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "B26_probe_producers_off",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 7.39s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "B27_probe_timeout_word",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 6.80s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:178: AssertionError: assert 'PARTIAL_META...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "B28_probe_container_name",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 6.51s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "B29_probe_without_bytecode_flag",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 7.05s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_snippet.py:79: AssertionError: assert (-14 in (-14, 142) and b'' == b''",
+   "killed": true,
+   "mutant": "N01_alarm_disarmed",
+   "returncode": 1,
+   "seconds": 37.0,
+   "summary": "1 failed, 275 passed, 1 skipped, 29 deselected in 36.57s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'OBSERVED_ALL...TIONS_NOT_MET' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "N02_retries",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 7.07s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'OBSERVED_ALL...TIONS_NOT_MET' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "N03_timeout",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 6.39s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "N04_rule",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 6.98s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:273: AssertionError: assert ([] == ['PROBE_SNIPPET_FAILED']",
+   "killed": true,
+   "mutant": "N05_package_not_checked",
+   "returncode": 1,
+   "seconds": 21.2,
+   "summary": "1 failed, 124 passed, 1 skipped, 29 deselected in 20.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_snippet.py:72: KeyError: 'code'",
+   "killed": true,
+   "mutant": "N06_switch_not_checked",
+   "returncode": 1,
+   "seconds": 33.5,
+   "summary": "1 failed, 273 passed, 1 skipped, 29 deselected in 33.05s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:277: AssertionError: assert 'REGISTRY_CAP..._BEFORE_CLOSE' == 'PREVIOUS_SESSION_NOT_CLOSED'",
+   "killed": true,
+   "mutant": "N07_close_not_checked",
+   "returncode": 1,
+   "seconds": 21.7,
+   "summary": "1 failed, 131 passed, 1 skipped, 29 deselected in 20.99s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'OBSERVED_ALL...TIONS_NOT_MET' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "N08_bulk_of_the_day_itself",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 6.43s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:240: AssertionError: assert ('READY' == 'READY'",
+   "killed": true,
+   "mutant": "N09_eligible_any_type",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 116 passed, 1 skipped, 29 deselected in 12.52s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_read.py::test_stale_and_unusable_rows_are_counted_as_e28_counts_them",
+   "killed": true,
+   "mutant": "N10_rows_of_any_date",
+   "returncode": 1,
+   "seconds": 22.2,
+   "summary": "1 failed, 220 passed, 1 skipped, 29 deselected in 21.82s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:264: AssertionError: assert ('UNKNOWN' == 'READY'",
+   "killed": true,
+   "mutant": "N11_conflicts_are_present_only_once",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 121 passed, 1 skipped, 29 deselected in 14.57s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_snippet.py::test_arguments_are_two_and_in_their_grammar[arguments0]",
+   "killed": true,
+   "mutant": "N13_arguments_not_checked",
+   "returncode": 1,
+   "seconds": 25.2,
+   "summary": "1 failed, 268 passed, 1 skipped, 29 deselected in 24.70s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "N14_request_not_echoed",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 5.53s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "N15_calls_not_counted",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 4.92s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:240: AssertionError: assert ('READY' == 'READY'",
+   "killed": true,
+   "mutant": "N16_registry_of_the_provider_bypassed",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 116 passed, 1 skipped, 29 deselected in 11.77s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_read.py::test_stale_and_unusable_rows_are_counted_as_e28_counts_them",
+   "killed": true,
+   "mutant": "N17_usable_counts_any_bar",
+   "returncode": 1,
+   "seconds": 21.0,
+   "summary": "1 failed, 220 passed, 1 skipped, 29 deselected in 20.67s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:369: AssertionError: assert ('POLICY_SHA_NOT_THE_SIGNED_ONE' in [])",
+   "killed": true,
+   "mutant": "C01_policy_sha_no_finding",
+   "returncode": 1,
+   "seconds": 17.7,
+   "summary": "1 failed, 167 passed, 1 skipped, 29 deselected in 17.35s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:369: AssertionError: assert ('POLICY_FILE_NOT_PRIVATE' in [])",
+   "killed": true,
+   "mutant": "C02_policy_private_no_finding",
+   "returncode": 1,
+   "seconds": 18.2,
+   "summary": "1 failed, 166 passed, 1 skipped, 29 deselected in 17.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:377: AssertionError: assert ([] == ['POLICY_OUTSIDE_ITS_WINDOW']",
+   "killed": true,
+   "mutant": "C03_window_not_judged",
+   "returncode": 1,
+   "seconds": 18.4,
+   "summary": "1 failed, 176 passed, 1 skipped, 29 deselected in 17.99s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:377: AssertionError: assert ([] == ['POLICY_OUTSIDE_ITS_WINDOW']",
+   "killed": true,
+   "mutant": "C04_window_end_inclusive",
+   "returncode": 1,
+   "seconds": 19.2,
+   "summary": "1 failed, 176 passed, 1 skipped, 29 deselected in 18.68s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:382: AssertionError: assert [] == ['POLICY_WINDOW_UNREADABLE']",
+   "killed": true,
+   "mutant": "C05_window_unreadable_no_finding",
+   "returncode": 1,
+   "seconds": 19.1,
+   "summary": "1 failed, 176 passed, 1 skipped, 29 deselected in 18.72s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:369: AssertionError: assert ('POLICY_FILE_ABSENT' in [])",
+   "killed": true,
+   "mutant": "C06_absent_no_finding",
+   "returncode": 1,
+   "seconds": 16.8,
+   "summary": "1 failed, 165 passed, 1 skipped, 29 deselected in 16.46s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:369: AssertionError: assert ('WORKER_IMAGE_NOT_THE_SIGNED_ONE' in [])",
+   "killed": true,
+   "mutant": "C07_worker_image_no_finding",
+   "returncode": 1,
+   "seconds": 17.2,
+   "summary": "1 failed, 172 passed, 1 skipped, 29 deselected in 16.82s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:369: AssertionError: assert ('WORKER_NOT_RUNNING' in [])",
+   "killed": true,
+   "mutant": "C08_worker_running_no_finding",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 171 passed, 1 skipped, 29 deselected in 15.69s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:369: AssertionError: assert ('WORKER_LIVE_NAMES_NOT_AS_SIGNED' in [])",
+   "killed": true,
+   "mutant": "C09_live_names_presence_only",
+   "returncode": 1,
+   "seconds": 16.6,
+   "summary": "1 failed, 174 passed, 1 skipped, 29 deselected in 16.25s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:369: AssertionError: assert ('WORKER_BUILD_REVISION_MISMATCH' in [])",
+   "killed": true,
+   "mutant": "C10_build_no_finding",
+   "returncode": 1,
+   "seconds": 15.3,
+   "summary": "1 failed, 175 passed, 1 skipped, 29 deselected in 14.80s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:217: AssertionError: assert {'C3PO_BUILD_...ED.json', ...} == {'C3PO_BUILD_...ED.json', ...}",
+   "killed": true,
+   "mutant": "C11_policy_path_in_the_worker",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 3.58s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:217: AssertionError: assert {'C3PO_BUILD_...ED.json', ...} == {'C3PO_BUILD_...ED.json', ...}",
+   "killed": true,
+   "mutant": "C12_release_hash_of_the_policy",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 3.13s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:416: AssertionError: assert ('DIRECTORY_NOT_ROOT_PRIVATE' in [])",
+   "killed": true,
+   "mutant": "T01_private_no_finding",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 180 passed, 1 skipped, 29 deselected in 13.38s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:457: AssertionError: assert 'ROWS_NOT_ACCEPTABLE_TO_THE_K9_REQUESTS' in []",
+   "killed": true,
+   "mutant": "T02_rows_acceptability_no_finding",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 190 passed, 1 skipped, 29 deselected in 13.93s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:297: AssertionError: assert 'SECRET_FILE_ABSENT' in []",
+   "killed": true,
+   "mutant": "T06_secret_absent_no_finding",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 133 passed, 1 skipped, 29 deselected in 11.74s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:296: KeyError: 'code'",
+   "killed": true,
+   "mutant": "T07_secret_any_metadata",
+   "returncode": 1,
+   "seconds": 12.3,
+   "summary": "1 failed, 134 passed, 1 skipped, 29 deselected in 11.90s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:296: KeyError: 'code'",
+   "killed": true,
+   "mutant": "T08_secret_links_any",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 137 passed, 1 skipped, 29 deselected in 13.38s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:426: AssertionError: assert [] == ['RUNNER_FILE_ABSENT']",
+   "killed": true,
+   "mutant": "T09_runner_absent_no_finding",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 188 passed, 1 skipped, 29 deselected in 15.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:427: AssertionError: assert [] == ['RUNNER_BYTE..._SIGNED_ONES']",
+   "killed": true,
+   "mutant": "T10_runner_bytes_no_finding",
+   "returncode": 1,
+   "seconds": 16.9,
+   "summary": "1 failed, 188 passed, 1 skipped, 29 deselected in 16.44s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:428: AssertionError: assert [] == ['RUNNER_FILE_NOT_PRIVATE']",
+   "killed": true,
+   "mutant": "T11_runner_private_no_finding",
+   "returncode": 1,
+   "seconds": 18.0,
+   "summary": "1 failed, 188 passed, 1 skipped, 29 deselected in 17.58s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:400: KeyError: 'boot_id_sha256'",
+   "killed": true,
+   "mutant": "T13_tree_boot_not_in_the_receipt",
+   "returncode": 1,
+   "seconds": 16.8,
+   "summary": "1 failed, 178 passed, 1 skipped, 29 deselected in 16.32s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:573: KeyError: 'code'",
+   "killed": true,
+   "mutant": "T15_secret_file_not_held_parent",
+   "returncode": 1,
+   "seconds": 19.3,
+   "summary": "1 failed, 221 passed, 1 skipped, 29 deselected in 18.95s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:186: AssertionError: assert ([] == ['EVIDENCE_FR...LT_UNCERTAIN']",
+   "killed": true,
+   "mutant": "X01_boot_no_finding",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 96 passed, 1 skipped, 29 deselected in 8.74s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:186: AssertionError: assert (['PARENT_IDEN...LT_UNCERTAIN'] == ['EVIDENCE_FR...LT_UNCERTAIN']",
+   "killed": true,
+   "mutant": "X02_devices_compared_after_a_reboot",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 96 passed, 1 skipped, 29 deselected in 8.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:177: AssertionError: assert ('PARENT_IDENTITY_MISMATCH' in ['PHASE_RESULT_UNCERTAIN'])",
+   "killed": true,
+   "mutant": "X03_walk_findings_raised",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 95 passed, 1 skipped, 29 deselected in 8.83s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:573: AssertionError: assert ('PARENT_REPLACED' == 'PARENT_REPLACED'",
+   "killed": true,
+   "mutant": "X04_stable_no_finding",
+   "returncode": 1,
+   "seconds": 19.0,
+   "summary": "1 failed, 221 passed, 1 skipped, 29 deselected in 18.61s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:55: AssertionError: assert (('UNCERTAIN',...CTORY_ABSENT') == ('UNCERTAIN',...CTORY_ABSENT')",
+   "killed": true,
+   "mutant": "X05_findings_complete",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 27 passed, 1 skipped, 29 deselected in 5.27s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:71: AssertionError: assert 'OBSERVED_ALL...TIONS_NOT_MET' == 'PARTIAL_OBSERVED'",
+   "killed": true,
+   "mutant": "X06_incomplete_complete",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 42 passed, 1 skipped, 29 deselected in 5.98s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:193: AssertionError: assert ('PARTIAL_MET...N_INCOMPLETE') == ('PARTIAL_MET...'RUN_STOPPED')",
+   "killed": true,
+   "mutant": "X07_expiry_continues",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 97 passed, 1 skipped, 29 deselected in 7.55s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:193: KeyError: 'phase_result'",
+   "killed": true,
+   "mutant": "X08_refusal_after_an_observation",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 97 passed, 1 skipped, 29 deselected in 7.43s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_read.py::test_a_reduced_receipt_is_never_the_success_of_its_mode",
+   "killed": true,
+   "mutant": "X09_reduction_keeps_the_flag",
+   "returncode": 1,
+   "seconds": 15.5,
+   "summary": "1 failed, 201 passed, 1 skipped, 29 deselected in 15.07s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:514: AssertionError: assert (False is False and None == 'RECEIPT_REDUCED_FOR_SIZE')",
+   "killed": true,
+   "mutant": "X10_reduction_without_a_code",
+   "returncode": 1,
+   "seconds": 15.8,
+   "summary": "1 failed, 201 passed, 1 skipped, 29 deselected in 15.19s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_read.py::test_a_reduced_receipt_is_never_the_success_of_its_mode",
+   "killed": true,
+   "mutant": "X11_rows_reduction_skipped",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 201 passed, 1 skipped, 29 deselected in 15.42s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:438: AssertionError: assert ([] == ['DISK_FREE_BELOW_FLOOR']",
+   "killed": true,
+   "mutant": "T04_floor_no_finding",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 14.37s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:438: AssertionError: assert ([] == ['DISK_FREE_BELOW_FLOOR']",
+   "killed": true,
+   "mutant": "T05_floor_never_given",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 14.10s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:402: KeyError: 'observed_rows'",
+   "killed": true,
+   "mutant": "T12_tree_rows_not_in_the_receipt",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 178 passed, 1 skipped, 29 deselected in 13.79s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'PLACEMENT_NO..._COMPILED_ONE' == 'DAY_INVALID'",
+   "killed": true,
+   "mutant": "G01_k9_tree_on_the_data_volume_open_root",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.51s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:477: AssertionError: assert ('K9_TREE_SPANS_FILESYSTEMS' in ['DISK_FREE_BELOW_FLOOR', 'SOURCE_ROOT_NOT_ON_THE_FILESYSTEM_OF_DAYS'])",
+   "killed": true,
+   "mutant": "G05_spanning_no_finding",
+   "returncode": 1,
+   "seconds": 15.1,
+   "summary": "1 failed, 197 passed, 1 skipped, 29 deselected in 14.62s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:477: AssertionError: assert ('K9_TREE_SPANS_FILESYSTEMS' in ['DISK_FREE_BELOW_FLOOR', 'SOURCE_ROOT_NOT_ON_THE_FILESYSTEM_OF_DAYS'])",
+   "killed": true,
+   "mutant": "G07_spanning_by_inode",
+   "returncode": 1,
+   "seconds": 15.1,
+   "summary": "1 failed, 197 passed, 1 skipped, 29 deselected in 14.69s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "G08_k9_root_not_proved_again",
+   "redundant": true,
+   "returncode": 0,
+   "seconds": 115.9,
+   "summary": "858 passed, 5 skipped, 29 deselected in 115.44s (0:01:55)",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:481: AssertionError: assert ('SOURCE_ROOT_NOT_ON_THE_FILESYSTEM_OF_DAYS' in ['DISK_FREE_BELOW_FLOOR', 'SOURCE_ROOT_NOT_ON_THE_FILESYSTEM_OF_DAYS'] and 0 is None)",
+   "killed": true,
+   "mutant": "G09_inodes_of_the_whole_filesystem",
+   "returncode": 1,
+   "seconds": 14.9,
+   "summary": "1 failed, 197 passed, 1 skipped, 29 deselected in 14.46s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_constants_are_the_compiled_ones_or_in_their_grammar",
+   "killed": true,
+   "mutant": "F01_floor_any_value",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 1 skipped, 29 deselected in 1.07s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_read.py::test_tree_floor_mount_point_and_acceptable_rows - ...",
+   "killed": true,
+   "mutant": "F02_floor_on_k9_root",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 13.94s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'DISK_FLOOR_N..._COMPILED_ONE' == 'DAY_INVALID'",
+   "killed": true,
+   "mutant": "F03_floor_of_200_gib_changed",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.47s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:438: AssertionError: assert (['DISK_FREE_BELOW_FLOOR'] == ['DISK_FREE_BELOW_FLOOR']",
+   "killed": true,
+   "mutant": "F05_hold_flag",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 13.52s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F07_days_not_proved_again",
+   "redundant": true,
+   "returncode": 0,
+   "seconds": 109.9,
+   "summary": "858 passed, 5 skipped, 29 deselected in 109.57s (0:01:49)",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:111: AssertionError: assert (('UNCERTAIN',...RECEIPT_SAYS') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S13_outputs_grammar_not_checked",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 66 passed, 1 skipped, 29 deselected in 4.90s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:154: AssertionError: assert (('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S16_failed_any_status",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 91 passed, 1 skipped, 29 deselected in 5.78s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:653: AssertionError: assert ('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S17_failed_any_code",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 239 passed, 1 skipped, 29 deselected in 15.56s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:99: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S18_started_marker_not_judged",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 53 passed, 1 skipped, 29 deselected in 4.47s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:45: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S25_runner_counts_upper_case",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 26 passed, 1 skipped, 29 deselected in 3.29s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:45: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S26_counts_not_judged",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 26 passed, 1 skipped, 29 deselected in 3.46s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:45: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "S27_counts_key_without_underscore",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 26 passed, 1 skipped, 29 deselected in 3.64s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:210: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K11_packaged_clocks",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 109 passed, 1 skipped, 29 deselected in 6.48s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:685: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K14_packaged_not_tied",
+   "returncode": 1,
+   "seconds": 16.7,
+   "summary": "1 failed, 250 passed, 1 skipped, 29 deselected in 16.31s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:49: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K15_packaged_counts_any",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 26 passed, 1 skipped, 29 deselected in 3.43s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:633: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K16_previous_not_compared",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 232 passed, 1 skipped, 29 deselected in 15.93s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:641: AssertionError: assert ('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K18_failed_previous_any",
+   "returncode": 1,
+   "seconds": 16.5,
+   "summary": "1 failed, 232 passed, 1 skipped, 29 deselected in 15.97s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:648: AssertionError: assert (('FAILED', 'S...D_OR_REFUSED') == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "K19_failed_code_any_constant",
+   "returncode": 1,
+   "seconds": 15.5,
+   "summary": "1 failed, 235 passed, 1 skipped, 29 deselected in 15.11s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:29: AssertionError: assert ('PARTIAL_META...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "K20_prior_of_the_wrong_phase",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 22 passed, 1 skipped, 29 deselected in 3.02s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:255: AssertionError: assert ('UNKNOWN' == 'NOT_READY'",
+   "killed": true,
+   "mutant": "B20_ready_rule_90",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 118 passed, 1 skipped, 29 deselected in 6.44s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:261: AssertionError: assert ('UNKNOWN' == 'NOT_READY'",
+   "killed": true,
+   "mutant": "B30_minimum_not_recomputed",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 121 passed, 1 skipped, 29 deselected in 7.03s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:180: AssertionError: assert 'PARTIAL_OBSERVED' == 'K9_READINESS..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "B31_probe_before_the_image",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 2.09s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:282: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B32_probe_without_the_image_gate",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 132 passed, 1 skipped, 29 deselected in 8.40s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:556: KeyError: 'code'",
+   "killed": true,
+   "mutant": "B33_image_ok_by_id_only",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 219 passed, 1 skipped, 29 deselected in 11.11s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:245: AssertionError: assert ['run', '--rm...'--init', ...] == ['run', '--rm...'--init', ...]",
+   "killed": true,
+   "mutant": "B34_probe_memory_unbounded",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 116 passed, 1 skipped, 29 deselected in 5.43s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:245: AssertionError: assert ['run', '--rm...'--init', ...] == ['run', '--rm...'--init', ...]",
+   "killed": true,
+   "mutant": "B35_probe_pids_unbounded",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 116 passed, 1 skipped, 29 deselected in 5.39s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:660: AssertionError: assert (['PROBE_SNIPPET_FAILED'] == ['PROBE_RUN_FAILED']",
+   "killed": true,
+   "mutant": "B36_snippet_code_any_constant",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 244 passed, 1 skipped, 29 deselected in 12.33s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:273: AssertionError: assert (['PROBE_RUN_FAILED'] == ['PROBE_SNIPPET_FAILED']",
+   "killed": true,
+   "mutant": "N12_message_leaves",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 122 passed, 1 skipped, 29 deselected in 6.92s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:261: AssertionError: assert ('UNKNOWN' == 'NOT_READY'",
+   "killed": true,
+   "mutant": "N18_snippet_minimum_removed",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 121 passed, 1 skipped, 29 deselected in 6.51s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:167: AssertionError: assert (('COMPLETE', None) == ('UNCERTAIN',...IDE_THE_STEP')",
+   "killed": true,
+   "mutant": "M01_complete_beside_findings",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 93 passed, 1 skipped, 29 deselected in 4.46s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:678: AssertionError: assert ('UNAVAILABLE' == 'UNAVAILABLE'",
+   "killed": true,
+   "mutant": "M02_complete_beside_gaps",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 249 passed, 1 skipped, 29 deselected in 12.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:609: AssertionError: assert (['EVIDENCE_FROM_EARLIER_BOOT'] == ['EVIDENCE_FROM_EARLIER_BOOT']",
+   "killed": true,
+   "mutant": "M03_ready_beside_findings",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 225 passed, 1 skipped, 29 deselected in 11.31s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:680: AssertionError: assert ('READY' == 'READY'",
+   "killed": true,
+   "mutant": "M04_ready_beside_gaps",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 249 passed, 1 skipped, 29 deselected in 12.42s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:255: AssertionError: assert ('UNKNOWN' == 'NOT_READY'",
+   "killed": true,
+   "mutant": "M05_not_ready_counts_as_another_finding",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 118 passed, 1 skipped, 29 deselected in 5.81s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:690: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "T20_tied_ignores_the_record",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 251 passed, 1 skipped, 29 deselected in 12.41s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:629: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "T21_tied_ignores_the_container_start",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 229 passed, 1 skipped, 29 deselected in 11.75s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:623: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "T22_tied_ignores_the_container_end",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 228 passed, 1 skipped, 29 deselected in 11.70s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_result_reads_the_step_files_and_hashes_the_outputs_again",
+   "killed": true,
+   "mutant": "T23_tied_without_a_container",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 277 passed, 5 skipped, 29 deselected in 15.40s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:629: AssertionError: assert ('COMPLETE', None) == ('UNCERTAIN',...OF_THIS_STEP')",
+   "killed": true,
+   "mutant": "T24_docker_instant_seconds_only",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 229 passed, 1 skipped, 29 deselected in 11.91s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows_are_the_five_chains_of_the_placement_with_rows_of_the_tree",
+   "killed": true,
+   "mutant": "G14_setgid_allowed",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.47s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows_are_the_five_chains_of_the_placement_with_rows_of_the_tree",
+   "killed": true,
+   "mutant": "G15_any_group_allowed",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.58s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:725: AssertionError: assert ('SEPTEMBER_SOURCE_ABSENT' in [])",
+   "killed": true,
+   "mutant": "Q01_absent_no_finding",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 253 passed, 1 skipped, 29 deselected in 12.55s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:725: AssertionError: assert ('SEPTEMBER_SOURCE_IS_A_LINK' in ['SEPTEMBER_SOURCE_NOT_A_REGULAR_FILE'])",
+   "killed": true,
+   "mutant": "Q02_link_followed",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 255 passed, 1 skipped, 29 deselected in 12.53s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:725: AssertionError: assert ('SEPTEMBER_SOURCE_IS_A_LINK' in [])",
+   "killed": true,
+   "mutant": "Q03_link_no_finding",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 255 passed, 1 skipped, 29 deselected in 12.34s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:444: AssertionError: assert (['DATA_VOLUME..._MOUNT_POINT'] == ['DATA_VOLUME...OTHER_DEVICE']",
+   "killed": true,
+   "mutant": "Q04_device_not_compared",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 9.97s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:725: AssertionError: assert ('SEPTEMBER_DIRECTORY_GROUP_OR_WORLD_WRITABLE' in [])",
+   "killed": true,
+   "mutant": "Q05_group_writable_allowed",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 258 passed, 1 skipped, 29 deselected in 12.43s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:725: AssertionError: assert ('SEPTEMBER_SOURCE_NOT_A_REGULAR_FILE' in [])",
+   "killed": true,
+   "mutant": "Q06_regular_not_required",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 260 passed, 1 skipped, 29 deselected in 12.34s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:725: AssertionError: assert ('SEPTEMBER_SOURCE_NOT_A_DIRECTORY' in [])",
+   "killed": true,
+   "mutant": "Q07_directory_not_required",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 261 passed, 1 skipped, 29 deselected in 12.48s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:697: AssertionError: assert ({'ctime_ns', ...is_link', ...} == {'ctime_ns', ...is_link', ...}",
+   "killed": true,
+   "mutant": "Q08_size_reported",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 252 passed, 1 skipped, 29 deselected in 12.27s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_read.py::test_tree_reads_the_september_sources_by_lstat_only",
+   "killed": true,
+   "mutant": "Q09_mtime_not_reported",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 252 passed, 1 skipped, 29 deselected in 12.42s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:446: AssertionError: assert [] == ['DATA_VOLUME...T_ACCEPTABLE']",
+   "killed": true,
+   "mutant": "Q10_volume_rows_not_judged",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 9.99s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:444: AssertionError: assert (['SEPTEMBER_S...OTHER_DEVICE'] == ['DATA_VOLUME...OTHER_DEVICE']",
+   "killed": true,
+   "mutant": "Q11_volume_mount_not_judged",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 9.90s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:444: AssertionError: assert ([] == ['DATA_VOLUME...OTHER_DEVICE']",
+   "killed": true,
+   "mutant": "Q12_item_not_observed",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 9.86s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:181: AssertionError: assert 'OBSERVED_ALL...TIONS_NOT_MET' == 'K9_TREE_AS_R..._ALL_OBSERVED'",
+   "killed": true,
+   "mutant": "Q13_volume_rows_without_open_root",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 8 passed, 1 skipped, 29 deselected in 2.13s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:225: AssertionError: assert ['/mnt/day-d-...database-url'] == ['/mnt/day-d-...ret/password']",
+   "killed": true,
+   "mutant": "Q14_only_the_first_source",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 11 passed, 1 skipped, 29 deselected in 2.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:481: AssertionError: assert ('SOURCE_ROOT_NOT_ON_THE_FILESYSTEM_OF_DAYS' in ['DISK_FREE_BELOW_FLOOR'])",
+   "killed": true,
+   "mutant": "G06_source_not_on_days_no_finding",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 197 passed, 1 skipped, 29 deselected in 10.31s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'PLACEMENT_NO..._COMPILED_ONE' == 'DAY_INVALID'",
+   "killed": true,
+   "mutant": "G10_placement_open_root_of_the_k9_tree",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.35s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:481: AssertionError: assert ('SOURCE_ROOT_NOT_ON_THE_FILESYSTEM_OF_DAYS' in ['DISK_FREE_BELOW_FLOOR'])",
+   "killed": true,
+   "mutant": "F04_source_device_against_k9_root",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 197 passed, 1 skipped, 29 deselected in 10.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_read.py::test_tree_floor_mount_point_and_acceptable_rows - ...",
+   "killed": true,
+   "mutant": "F06_together_flag",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 189 passed, 1 skipped, 29 deselected in 10.14s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:740: KeyError: 'code'",
+   "killed": true,
+   "mutant": "D601_source_not_proved_again",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 266 passed, 1 skipped, 29 deselected in 12.71s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'PLACEMENT_NO..._COMPILED_ONE' == 'DAY_INVALID'",
+   "killed": true,
+   "mutant": "D602_source_root_back_on_the_volume",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.37s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'PLACEMENT_NO..._COMPILED_ONE' == 'DAY_INVALID'",
+   "killed": true,
+   "mutant": "D603_source_open_root_in_the_placement",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 1 skipped, 29 deselected in 0.36s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'CHAIN_ROW_NOT_ROOT_GROUP' == 'PARENT_SETGID'",
+   "killed": true,
+   "mutant": "P28_no_chain_receives_an_entry",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.51s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows_are_the_five_chains_of_the_placement_with_rows_of_the_tree",
+   "killed": true,
+   "mutant": "P29_chain_path_not_compared",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.38s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows_are_the_five_chains_of_the_placement_with_rows_of_the_tree",
+   "killed": true,
+   "mutant": "P30_chain_open_root_not_compared",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.39s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/k9_phase_read.py:941: TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "P31_chain_rows_may_be_null",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.37s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_plan.py:22: AssertionError: assert 'CHAIN_ROW_WORLD_WRITABLE' == 'CHAIN_ROW_UNSAFE'",
+   "killed": true,
+   "mutant": "P32_chain_with_the_volume_as_open_root",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.44s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:460: AssertionError: assert (False is False and '/var/lib/c3po' in [])",
+   "killed": true,
+   "mutant": "G03_loose_components_not_listed",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 190 passed, 1 skipped, 29 deselected in 10.14s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:667: AssertionError: assert (['ROWS_NOT_AC..._K9_REQUESTS'] == ['ROWS_NOT_AC..._K9_REQUESTS']",
+   "killed": true,
+   "mutant": "G11_group_rule_not_listed",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 246 passed, 1 skipped, 29 deselected in 12.23s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:667: AssertionError: assert ([] == ['ROWS_NOT_AC..._K9_REQUESTS']",
+   "killed": true,
+   "mutant": "G12_group_rule_not_judged_in_tree",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 246 passed, 1 skipped, 29 deselected in 12.22s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_plan.py::test_parent_rows_are_the_five_chains_of_the_placement_with_rows_of_the_tree",
+   "killed": true,
+   "mutant": "G13_group_rule_not_judged_in_the_plan",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 3 passed, 1 skipped, 29 deselected in 1.47s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:457: AssertionError: assert 'ROWS_NOT_ACCEPTABLE_TO_THE_K9_REQUESTS' in []",
+   "killed": true,
+   "mutant": "G16_tree_rows_judged_with_an_open_root",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 190 passed, 1 skipped, 29 deselected in 10.19s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_read.py:592: KeyError: 'code'",
+   "killed": true,
+   "mutant": "Z01_neither_k9_root_nor_days_proved_again",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 223 passed, 1 skipped, 29 deselected in 8.81s",
+   "tests": [
+    "test_plan.py",
+    "test_read.py",
+    "test_snippet.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

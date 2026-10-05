@@ -1,0 +1,1658 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "core_seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 124,
+  "redundant_survivors": 0,
+  "single": 124,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "69be3b8830f15657d9b382f05fba5af1daa88f10eed9d50910ac60c1f9452af1",
+  "build/AUTHORITY.UNBOUND.json": "30f0990a204c114854c19049b6d57d939e70af4153d3d3636233968f4b3d3525",
+  "build/DISPATCH.UNBOUND.json": "ccead54f8763fb19c2b7018a3be2545b8c5d1304bbdff94f722fa6bf55600283",
+  "build/DISPATCH_SCOPE_DELTA.diff": "028d63d1c526752d05854c77421c3b3307fbee0f2654c5e9b25436d28ce67d14",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "9d1ee1512a29f67dbca040f5b710773d6700c9f676043bc701c9862dfbd2b5f3",
+  "build/GO.UNBOUND.json": "7800ef36da603c21382b0174f90e8c968529df4fa7b8ae69063d48854603db7b",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "cf3a9c9c9c56b1d9ff976c4e2650e08b5f8e1cc89637112d559acdc30c8ef55c",
+  "build/REQUEST.UNBOUND.json": "48c7b3bef0c3861a381856b3540ff8a3cbc3e2f183f7ee43582fdbe9ba783b64",
+  "build/dispatch_once.py": "0e2f389826d7d6e4a6e4b9d9f375cc3641adc6d4a936c39d58bf1688609374e6",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/supervisor_activate.py": "5363bde1473d482e309c18e99c8da7986a10e6b3903164a89e8b270455a87259",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "6afa8daab3a295d42a15599731c53800c043e99959fbeab1b8648c07aaedf0bf",
+  "mutation/mutate.py": "440f20faa5cfeeb9fcf59c523d82559edce0804e3ce9d544a5c1e4bef6b3478d",
+  "op.py": "dc94b5191239a9c332944b42a136e049e614ad861ceb4c512fb00d1779520cc7",
+  "spec.py": "0fa4ab27157ba793857799412f3afb26a0c1f48e1fd0a56edb13d0779fc52829",
+  "tests/conftest.py": "e88cb2666abeeb117b37009bdb801dd339ee8aa07afd5edf6958fbfbeb76ef44",
+  "tests/k5.py": "6147daf0c2dfcb864264d1350d9871192051dd5a64bf0339af6ae26de8c14f5e",
+  "tests/test_conformance.py": "1faa7548c356bf2601463fb67f9edf5f02bd61403ba8f843a91ef3885715b4ea",
+  "tests/test_k5.py": "ee4f9e9a011401e7e3497a547d5419182c614719b14b625094b14ebbe666298d",
+  "tests/test_native.py": "5bc1ad6a21433a54d3ee88aeb98add05b6a92036d06c14b6843a7fbca6f200f7"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: assert (True and True is True and True is True and 'WRITE_EPOCH' == 'WRITE_SESSIONS'",
+   "killed": true,
+   "mutant": "C01_writes_any_day_of_the_epoch",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 172 passed, 10 deselected in 8.42s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_UN..._INSTALL_01',) == ('GO_READONLY...E_INSTALL_01')",
+   "killed": true,
+   "mutant": "C02_readback_evidence_not_required",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.27s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_READONLY...READBACK_01',) == ('GO_READONLY...E_INSTALL_01')",
+   "killed": true,
+   "mutant": "C03_install_evidence_not_required",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 173 passed, 10 deselected in 8.89s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_the_gate_must_lie_wholly_outside_the_session_window_with_its_margin[2026-10-05T12:45:00-15-False]",
+   "killed": true,
+   "mutant": "C04_no_margin_before_the_session_window",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 131 passed, 10 deselected in 7.17s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_the_gate_must_lie_wholly_outside_the_session_window_with_its_margin[2026-10-07T19:45:00-15-False]",
+   "killed": true,
+   "mutant": "C05_session_window_ends_an_hour_early",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 134 passed, 10 deselected in 8.26s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('REFUSED', '...SSION_WINDOW')",
+   "killed": true,
+   "mutant": "C06_first_session_day_not_forbidden",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 129 passed, 10 deselected in 8.13s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'days': ['20...': '20:00:00'} == {'days': ['20...': '20:00:00'}",
+   "killed": true,
+   "mutant": "C07_last_session_day_not_forbidden",
+   "returncode": 1,
+   "seconds": 12.4,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.88s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...OT_A_REFUSAL') == ('METADATA_ON...ENDING', None)",
+   "killed": true,
+   "mutant": "C08_refusal_status_is_one",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 10 deselected in 1.80s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...ENDING', None) == ('REFUSED', '...FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "C09_no_time_kept_for_the_reads",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 128 passed, 10 deselected in 7.30s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...RIES_INVALID') == ('METADATA_ON...ENDING', None)",
+   "killed": true,
+   "mutant": "C10_journal_of_three_entries",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 10 deselected in 1.84s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...MMAND_FAILED') == ('METADATA_ON...ENDING', None)",
+   "killed": true,
+   "mutant": "C11_enable_without_now",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 10 deselected in 1.72s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...MMAND_FAILED') == ('METADATA_ON...ENDING', None)",
+   "killed": true,
+   "mutant": "C12_enable_of_the_service",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 10 deselected in 1.11s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...MMAND_FAILED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C13_reset_failed_of_the_timer",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 1 passed, 10 deselected in 1.43s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['QUICK', 'SWITCH'] == ['SWITCH', 'SWITCH']",
+   "killed": true,
+   "mutant": "C14_enable_in_the_quick_class",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 4 passed, 10 deselected in 2.03s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...TOKEN_ABSENT') == ('METADATA_ON...ENDING', None)",
+   "killed": true,
+   "mutant": "C15_token_name_is_another",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 10 deselected in 1.76s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._LINK_ABSENT') == ('METADATA_ON...ENDING', None)",
+   "killed": true,
+   "mutant": "C16_enablement_link_in_another_target",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 10 deselected in 1.67s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "C17_drop_in_of_the_service_not_looked_for",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 50 passed, 10 deselected in 4.34s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_the_supervisor_container_while_the_start_runs_is_a_fact_in_activate",
+   "killed": true,
+   "mutant": "C18_supervisor_container_name_is_another",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 16 passed, 10 deselected in 2.91s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...RIES_INVALID') == ('METADATA_ON...ENDING', None)",
+   "killed": true,
+   "mutant": "C19_the_claim_root_is_not_counted",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 10 deselected in 1.60s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...STILL_FAILED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C20_reset_mode_runs_the_enable",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 10 deselected in 1.67s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...ENDING', None) == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C21_reset_succeeds_with_the_activate_outcome",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 1 passed, 10 deselected in 1.51s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'INVOCATION_ID_INVALID' == 'MODE_INVALID'",
+   "killed": true,
+   "mutant": "P01_mode_unchecked",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 144 passed, 10 deselected in 8.58s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_the_gate_must_lie_wholly_outside_the_session_window_with_its_margin[2026-10-05T12:45:00-15-False]",
+   "killed": true,
+   "mutant": "P02_window_not_compared_with_the_session_window",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 131 passed, 10 deselected in 8.50s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_the_gate_must_lie_wholly_outside_the_session_window_with_its_margin[2026-10-05T12:44:00-15-True]",
+   "killed": true,
+   "mutant": "P03_window_touching_the_margin_refused",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 130 passed, 10 deselected in 8.13s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[unit_directory.-1.gid=5]",
+   "killed": true,
+   "mutant": "P04_unit_directory_group_unchecked",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 169 passed, 10 deselected in 9.92s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[units.service.name='other.service']",
+   "killed": true,
+   "mutant": "P05_unit_name_unchecked",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 157 passed, 10 deselected in 10.07s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[units.timer.bytes=0]",
+   "killed": true,
+   "mutant": "P06_unit_size_unchecked",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 159 passed, 10 deselected in 10.63s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[units.timer.inode=0]",
+   "killed": true,
+   "mutant": "P07_unit_inode_zero_accepted",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 160 passed, 10 deselected in 9.40s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[supervisor_paths.CONFIG.-1.gid=5]",
+   "killed": true,
+   "mutant": "P08_supervisor_path_mode_unchecked",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 165 passed, 10 deselected in 10.03s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[expected_entries.JOURNAL=3]",
+   "killed": true,
+   "mutant": "P09_journal_count_unchecked",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 147 passed, 10 deselected in 8.53s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[expected_entries.JOURNAL=2.0]",
+   "killed": true,
+   "mutant": "P10_journal_count_may_be_a_float",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 148 passed, 10 deselected in 8.76s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[expected_entries.DOCKER_CLI=1]",
+   "killed": true,
+   "mutant": "P11_docker_cli_count_unchecked",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 149 passed, 10 deselected in 9.04s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[expected_entries.STATE=-1]",
+   "killed": true,
+   "mutant": "P12_claim_count_unchecked",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 151 passed, 10 deselected in 8.92s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[image_id='c3po/backend:produc]",
+   "killed": true,
+   "mutant": "P13_image_id_unchecked",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 154 passed, 10 deselected in 8.85s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[retention_reference='sha256:fbfbfbfbfbfb]",
+   "killed": true,
+   "mutant": "P14_retention_reference_may_be_an_id",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 155 passed, 10 deselected in 8.51s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[retention_reference='massive-supervisor-]",
+   "killed": true,
+   "mutant": "P15_retention_reference_without_a_tag",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 156 passed, 10 deselected in 8.73s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[evidence_boot_id_sha256='0000000000000000000]",
+   "killed": true,
+   "mutant": "P16_evidence_boot_unchecked",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 171 passed, 10 deselected in 9.95s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_HO...timer'], None) == ('GO_WRITE_HO...timer'], None)",
+   "killed": true,
+   "mutant": "E01_mode_not_shown",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.39s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_HO...TE', [], None) == ('GO_WRITE_HO...timer'], None)",
+   "killed": true,
+   "mutant": "E02_command_not_shown",
+   "returncode": 1,
+   "seconds": 11.9,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.19s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_HO...rvice'], None) == ('GO_WRITE_HO...service'], 78)",
+   "killed": true,
+   "mutant": "E03_reset_condition_not_shown",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.81s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'days': ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'], 'from': '12:59:00', 'until': '20:00:00'}",
+   "killed": true,
+   "mutant": "E04_forbidden_interval_not_shown",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 173 passed, 10 deselected in 10.26s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_effects_are_exactly_what_the_signers_see - asse...",
+   "killed": true,
+   "mutant": "E05_activation_not_shown",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.87s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_effects_are_exactly_what_the_signers_see - asse...",
+   "killed": true,
+   "mutant": "E06_reload_not_shown",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.71s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ((0, 0) == (0, 0)",
+   "killed": true,
+   "mutant": "E07_units_not_shown",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.47s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == ['CONFIG', 'D...STS', 'STATE']",
+   "killed": true,
+   "mutant": "E08_paths_not_shown",
+   "returncode": 1,
+   "seconds": 10.9,
+   "summary": "1 failed, 173 passed, 10 deselected in 8.42s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0})",
+   "killed": true,
+   "mutant": "E09_entries_not_shown",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.33s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'JOURNAL': 2...OCKER_CLI': 0} == {'JOURNAL': 2...OCKER_CLI': 0}",
+   "killed": true,
+   "mutant": "E10_retention_not_shown",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.17s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'c812e1edb64417d6090dcfbaf16c21cd8e8665c04396e1edb472fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E11_boot_not_shown",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.96s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_effects_are_exactly_what_the_signers_see - asse...",
+   "killed": true,
+   "mutant": "E12_waits_said_otherwise",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 173 passed, 10 deselected in 9.86s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "E13_unit_directory_not_shown",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 173 passed, 10 deselected in 10.10s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R01_executor_not_checked",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 65 passed, 10 deselected in 5.15s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R02_boot_not_checked",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 61 passed, 10 deselected in 5.05s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('REFUSED', '...SSION_WINDOW')",
+   "killed": true,
+   "mutant": "R03_clock_not_checked",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 129 passed, 10 deselected in 7.40s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': False}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R04_unit_files_not_compared",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 44 passed, 10 deselected in 3.66s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R05_unit_mode_unchecked",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 45 passed, 10 deselected in 3.64s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R06_unit_identity_unchecked",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 48 passed, 10 deselected in 4.28s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R07_drop_in_accepted",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 50 passed, 10 deselected in 4.58s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}}",
+   "killed": true,
+   "mutant": "R09_unreadable_link_path_accepted",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 55 passed, 10 deselected in 5.01s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R10_link_before_activate_accepted",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 66 passed, 10 deselected in 5.56s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R11_link_before_reset_unchecked",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 110 passed, 10 deselected in 6.66s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R12_link_before_reset_any_type",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 111 passed, 10 deselected in 6.76s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 3, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R13_entries_not_compared",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 41 passed, 10 deselected in 4.06s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R14_token_metadata_not_compared",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 36 passed, 10 deselected in 3.95s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R15_token_link_count_unchecked",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 40 passed, 10 deselected in 3.70s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R16_token_group_unchecked",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 38 passed, 10 deselected in 3.78s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0}",
+   "killed": true,
+   "mutant": "R17_absent_token_said_otherwise",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 35 passed, 10 deselected in 3.80s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R18_image_id_not_compared",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 60 passed, 10 deselected in 4.88s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R19_retention_tag_not_compared",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 58 passed, 10 deselected in 4.89s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...K_INCOMPLETE')",
+   "killed": true,
+   "mutant": "R20_supervisor_container_accepted",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 34 passed, 10 deselected in 3.04s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R21_docker_state_unchecked",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 56 passed, 10 deselected in 4.01s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R22_drop_in_paths_unchecked",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 53 passed, 10 deselected in 4.33s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R23_service_drop_in_path_unchecked",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 54 passed, 10 deselected in 4.32s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R24_timer_state_before_activate_unchecked",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 67 passed, 10 deselected in 4.68s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R25_service_state_before_activate_unchecked",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 69 passed, 10 deselected in 5.30s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R26_earlier_invocation_accepted",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 71 passed, 10 deselected in 4.92s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R27_load_state_unchecked",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 73 passed, 10 deselected in 5.02s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R46_not_loaded_units_accepted",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 74 passed, 10 deselected in 5.44s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R47_fragment_before_activate_unchecked",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 76 passed, 10 deselected in 5.31s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R48_timer_fragment_before_activate_unchecked",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 77 passed, 10 deselected in 5.31s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R45_any_start_reset",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 127 passed, 10 deselected in 7.83s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[invocation_id='0000000000000000000]",
+   "killed": true,
+   "mutant": "P17_invocation_unchecked",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 142 passed, 10 deselected in 8.87s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_member_of_the_plan_has_its_constant_refusal[invocation_id='0000000000000000000]",
+   "killed": true,
+   "mutant": "P18_activate_with_an_invocation",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 142 passed, 10 deselected in 8.12s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_reset_needs_the_invocation_id_of_one_start[0000000000000000000000000000001]",
+   "killed": true,
+   "mutant": "P19_invocation_any_text",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 176 passed, 10 deselected in 9.69s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == '0000000000000000000000000000abc1'",
+   "killed": true,
+   "mutant": "E14_invocation_not_shown",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 173 passed, 10 deselected in 8.63s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...TARTED_AGAIN')",
+   "killed": true,
+   "mutant": "X23_start_after_reset_not_judged",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 180 passed, 10 deselected in 9.10s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R28_timer_before_reset_unchecked",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 112 passed, 10 deselected in 6.30s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R29_timer_fragment_before_reset_unchecked",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 115 passed, 10 deselected in 7.01s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R30_timer_load_before_reset_unchecked",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 116 passed, 10 deselected in 6.31s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R31_service_before_reset_unchecked",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 117 passed, 10 deselected in 6.78s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R32_service_fragment_before_reset_unchecked",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 125 passed, 10 deselected in 6.44s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R33_service_load_before_reset_unchecked",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 126 passed, 10 deselected in 7.88s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...ENDING', None) == ('REFUSED', '...FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "R34_budget_unchecked",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 128 passed, 10 deselected in 7.66s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R35_property_output_not_ascii_accepted",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 64 passed, 10 deselected in 4.68s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R36_service_idle_without_success",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 70 passed, 10 deselected in 5.02s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "R37_timer_on_without_next_elapse",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 13 passed, 10 deselected in 2.28s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "R38_timer_on_with_na_elapse",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 14 passed, 10 deselected in 2.15s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "R39_exit_status_not_compared",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 10 passed, 10 deselected in 2.15s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "R40_restart_count_not_compared",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 11 passed, 10 deselected in 2.11s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R41_exit_code_kind_not_compared",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 121 passed, 10 deselected in 6.95s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R42_failed_substate_not_compared",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 122 passed, 10 deselected in 6.82s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R43_refusal_without_an_invocation",
+   "returncode": 1,
+   "seconds": 9.1,
+   "summary": "1 failed, 124 passed, 10 deselected in 6.77s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'unit_file_service': {'as_installed': True}, 'unit_file_timer': {'as_installed': True}, 'entries': {'JOURNAL': 2, 'STATE': 0, 'DOCKER_CLI': 0}, 'manifests': 0, ...}",
+   "killed": true,
+   "mutant": "R44_fragment_not_compared",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 76 passed, 10 deselected in 5.07s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('TIMER_NOT_ACTIVE_AFTER_RUN', ['TIMER_NOT_ACTIVE_AFTER_RUN'])",
+   "killed": true,
+   "mutant": "X01_enable_judged_by_its_status_only",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 13 passed, 10 deselected in 2.37s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NOT_VERIFIED')",
+   "killed": true,
+   "mutant": "X02_enable_judged_without_its_status",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 19 passed, 10 deselected in 2.77s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...NOT_VERIFIED') == ('REFUSED', '...ER_UNCHANGED')",
+   "killed": true,
+   "mutant": "X03_enable_without_effect_counted_uncertain",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 17 passed, 10 deselected in 2.18s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_activate_gives_exactly_enable_now_of_the_timer_and_reads_it_back",
+   "killed": true,
+   "mutant": "X04_activation_said_false_after_success",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 10 deselected in 1.61s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_activate_gives_exactly_enable_now_of_the_timer_and_reads_it_back",
+   "killed": true,
+   "mutant": "X05_reload_said_false_after_success",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 10 deselected in 1.41s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...NOT_VERIFIED') == ('PARTIAL_MET...NOT_VERIFIED')",
+   "killed": true,
+   "mutant": "X06_uncertain_enable_said_not_performed",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 19 passed, 10 deselected in 2.39s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k5.py::test_every_end_of_the_enable[<lambda>-PARTIAL_METADATA_REQUIRES_REVIEW-ENABLE_NOT_VERIFIED-None-1]",
+   "killed": true,
+   "mutant": "X07_uncertain_reload_said_not_performed",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 19 passed, 10 deselected in 2.56s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._AFTER_RESET') == ('REFUSED', '...STILL_FAILED')",
+   "killed": true,
+   "mutant": "X08_reset_judged_by_its_status_only",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 23 passed, 10 deselected in 2.86s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...NOT_VERIFIED') == ('REFUSED', '...STILL_FAILED')",
+   "killed": true,
+   "mutant": "X09_reset_without_effect_counted_uncertain",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 23 passed, 10 deselected in 3.02s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SUPERVISOR_ENTRIES_CHANGED' in ['SERVICE_START_NOT_A_REFUSAL'])",
+   "killed": true,
+   "mutant": "X10_claim_taken_not_a_finding",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 15 passed, 10 deselected in 2.42s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...FILE_CHANGED')",
+   "killed": true,
+   "mutant": "X11_unit_file_changed_not_a_finding",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 31 passed, 10 deselected in 3.04s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...VE_AFTER_RUN')",
+   "killed": true,
+   "mutant": "X12_timer_after_the_run_not_judged",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 30 passed, 10 deselected in 3.73s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "X13_enablement_link_not_judged",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 12 passed, 10 deselected in 2.68s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "X14_start_not_judged",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 8 passed, 10 deselected in 2.32s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "X15_restart_counts_as_pending",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 8 passed, 10 deselected in 2.37s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, [])",
+   "killed": true,
+   "mutant": "X16_ended_service_counts_as_pending",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 9 passed, 10 deselected in 2.68s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET..._AFTER_RESET')",
+   "killed": true,
+   "mutant": "X17_service_after_reset_not_judged",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 33 passed, 10 deselected in 3.75s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...NTAINER_LEFT')",
+   "killed": true,
+   "mutant": "X18_container_after_reset_not_judged",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 28 passed, 10 deselected in 3.27s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('SERVICE_START_NOT_A_REFUSAL', ['SERVICE_START_NOT_A_REFUSAL'])",
+   "killed": true,
+   "mutant": "X19_refused_while_something_changed",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 8 passed, 10 deselected in 1.46s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, ['SERVICE_START_NOT_A_REFUSAL'])",
+   "killed": true,
+   "mutant": "X20_complete_despite_findings",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 8 passed, 10 deselected in 1.98s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...K_INCOMPLETE')",
+   "killed": true,
+   "mutant": "X21_readback_failure_not_a_finding",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 34 passed, 10 deselected in 3.44s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ER_UNCHANGED') == ('REFUSED', '...ER_UNCHANGED')",
+   "killed": true,
+   "mutant": "X22_partial_never_refused",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 17 passed, 10 deselected in 2.95s",
+   "tests": [
+    "test_k5.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

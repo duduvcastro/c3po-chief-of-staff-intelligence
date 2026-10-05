@@ -1,0 +1,1970 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "core_seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 148,
+  "redundant_survivors": 0,
+  "single": 148,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "3e6d95a3c70b058db7fd904b2ddad3eabf6f59b828431136caba5e40fcf76f2f",
+  "build/AUTHORITY.UNBOUND.json": "65fd3f2009bbbeccc9d29b3b5a034795cff67e1d5c9a38c70ed583a474d75015",
+  "build/DISPATCH.UNBOUND.json": "40b367efc8f5a6d5ef07dad92f6a58fcf0e7e63dcfbeb87b0ab0bf1c5bb227ca",
+  "build/DISPATCH_SCOPE_DELTA.diff": "377cc1effb794973d804652c916d04c337326b1c823ed95b6d2025341ae54553",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "738584d87fdd46245f7e13c64806024e74608f87ba0cbd3e5b44462f63eb56c5",
+  "build/GO.UNBOUND.json": "1dee39cd443d9b80567dbc3a06f211b6003b929b26e6184b1ac776875b52e0c7",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "0c7268418554458eabeb94fb5b23edb5a07804e839bfd30849da77337e7933a1",
+  "build/REQUEST.UNBOUND.json": "d18ea5166da423df660b7c7d60f65e44e5a53f69e7e2e7f1dc3f287f580c0c2e",
+  "build/db_preflight.py": "af78862806feb3d4cbf38a1fd78ef25cdf0737ee14e3f6e4343c6470461196bb",
+  "build/dispatch_once.py": "c55f3be88483f7732b8fc989909c237194a7a6b79b36b68f22790682a23173d0",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "24db77263620096c8756de0e34f9fada5fcca10b266df706e4ff6007a374b997",
+  "mutation/mutate.py": "33b184fbbc7e5b8fd60549c15770050a336b753d22ebd8c1d8f6c7ae58eb974a",
+  "op.py": "a30cd8be543e9fa0ec663062b4c33ceeec4b9637d08c528c35ea450fc3d90b1f",
+  "spec.py": "5f75488a13798376c5154445bc93ee5d4fe1f0c8111afec93e0743bb6df3ed9d",
+  "tests/conftest.py": "2d3385ef70604fb1771c9cd2821c9e01570004718a9de820def50baef2f26846",
+  "tests/dbr.py": "66ad3775d7574b5f364c461696bd2c526fd86e771b3db3eb8079e47427144743",
+  "tests/test_conformance.py": "ced3ad249994fff08b92d8a495719a6cd3b194c55472fa2cc76a3fbe16d73418",
+  "tests/test_dbr.py": "05b62baffe54f5628e86c3bc3c1d90e5389b2eb3a32d6997601d9984ab86547f",
+  "tests/test_native.py": "070fb53fabb58411dacca917fa2797667aabc542dbbf6c6699184a7831f2579a"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: assert ('c812e1edb644...2fecfb2797c6a' == 'c812e1edb644...2fecfb2797c6a'",
+   "killed": true,
+   "mutant": "C01_no_evidence_operation",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.33s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[session='2026-10-10']",
+   "killed": true,
+   "mutant": "C02_saturday_is_a_session",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 73 passed, 11 deselected in 4.43s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C03_bridge_network",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 11 deselected in 1.45s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['run', '--rm...'--init', ...] == ['run', '--rm...'--init', ...]",
+   "killed": true,
+   "mutant": "C04_risk_target_elsewhere",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 11 deselected in 1.27s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C05_four_secrets_expected",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 11 deselected in 1.33s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C06_root_filesystem_writable",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 11 deselected in 1.49s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C07_capabilities_kept",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 11 deselected in 1.33s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C08_another_user",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 11 deselected in 1.43s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_complete_run_starts_one_container_with_exactly_the_signed_argv_and_reads_the_line",
+   "killed": true,
+   "mutant": "C09_short_class",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 11 deselected in 1.41s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...NAL_DISAGREE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C10_epoch_of_another_day",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 11 deselected in 1.24s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['run', '--rm...'--init', ...] == ['run', '--rm...'--init', ...]",
+   "killed": true,
+   "mutant": "C11_emitter_target_elsewhere",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 11 deselected in 1.55s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[secrets_chain.-1.mode=488]",
+   "killed": true,
+   "mutant": "P01_secrets_chain_owner_and_mode_unchecked",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 85 passed, 11 deselected in 4.57s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[secrets_chain.-2.gid=5]",
+   "killed": true,
+   "mutant": "P02_secrets_chain_last_row_only",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 86 passed, 11 deselected in 4.60s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'IMAGE_ID' == 'IMAGE_PLAN_INVALID'",
+   "killed": true,
+   "mutant": "P03_image_id_unchecked",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 83 passed, 11 deselected in 4.72s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[image_revision='dd4ec4bb']",
+   "killed": true,
+   "mutant": "P04_image_revision_unchecked",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 84 passed, 11 deselected in 4.82s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[session='2026-10-10']",
+   "killed": true,
+   "mutant": "P05_session_unchecked",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 73 passed, 11 deselected in 4.33s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[release_receipt_sha256='000000000000000]",
+   "killed": true,
+   "mutant": "P06_release_unchecked",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 76 passed, 11 deselected in 4.55s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[expected.epoch_rows=2]",
+   "killed": true,
+   "mutant": "P07_epoch_rows_any_integer",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 78 passed, 11 deselected in 4.39s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[expected.epoch_rows=True]",
+   "killed": true,
+   "mutant": "P08_epoch_rows_any_type",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 79 passed, 11 deselected in 4.81s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[expected.binding_committed=1]",
+   "killed": true,
+   "mutant": "P09_binding_expectation_any_type",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 81 passed, 11 deselected in 4.60s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[expected.other=None]",
+   "killed": true,
+   "mutant": "P10_expected_keys_not_exact",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 82 passed, 11 deselected in 5.46s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PRIV_RECEIPT_OF_ANOTHER_BOOT' == 'EVIDENCE_BOOT_UNBOUND'",
+   "killed": true,
+   "mutant": "P11_boot_unchecked",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 90 passed, 11 deselected in 4.86s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == '7a9cc5f817d6bf1671fe521826fa02c042672369ee3904c7205fa3ecf4a8cab4')",
+   "killed": true,
+   "mutant": "E03_snippet_not_shown",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 91 passed, 11 deselected in 4.84s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('7a9cc5f817d6...fa3ecf4a8cab4' == '7a9cc5f817d6...fa3ecf4a8cab4'",
+   "killed": true,
+   "mutant": "E09_container_not_shown",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 91 passed, 11 deselected in 4.62s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'c812e1edb64417d6090dcfbaf16c21cd8e8665c04396e1edb472fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E12_boot_not_shown",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 91 passed, 11 deselected in 4.44s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('c3po_c3po_internal' == 'c3po_c3po_internal'",
+   "killed": true,
+   "mutant": "E13_epoch_not_shown",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 91 passed, 11 deselected in 4.43s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestConformance::test_effective_uid_and_gid_must_be_root_before_anything_is_looked_at",
+   "killed": true,
+   "mutant": "R01_executor_unchecked",
+   "returncode": 1,
+   "seconds": 19.1,
+   "summary": "1 failed, 292 passed, 11 deselected in 16.77s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: []",
+   "killed": true,
+   "mutant": "R02_boot_not_a_finding",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 42 passed, 11 deselected in 3.04s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: []",
+   "killed": true,
+   "mutant": "R03_entries_not_counted",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 25 passed, 11 deselected in 2.31s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['QUERY_UNAVAILABLE_BINDING', 'QUERY_UNAVAILABLE_EPOCH_ROW', 'QUERY_UNAVAILABLE_RISK_URL']",
+   "killed": true,
+   "mutant": "R04_credential_mode_and_group_unchecked",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 27 passed, 11 deselected in 2.66s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['QUERY_UNAVAILABLE_BINDING', 'QUERY_UNAVAILABLE_EPOCH_ROW', 'QUERY_UNAVAILABLE_RISK_URL']",
+   "killed": true,
+   "mutant": "R05_credential_links_unchecked",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 30 passed, 11 deselected in 3.34s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['SECRETS_DIRECTORY_NOT_AS_PLACED']",
+   "killed": true,
+   "mutant": "R06_credential_absence_skipped",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 26 passed, 11 deselected in 2.93s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['QUERY_UNAVAILABLE_EMITTER', 'QUERY_UNAVAILABLE_EMITTER_PASSWORD']",
+   "killed": true,
+   "mutant": "R07_password_file_unchecked",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 36 passed, 11 deselected in 3.35s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['EMITTER_DIRECTORY_NOT_AS_PLACED']",
+   "killed": true,
+   "mutant": "R08_password_absence_skipped",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 35 passed, 11 deselected in 3.22s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: []",
+   "killed": true,
+   "mutant": "R09_emitter_directory_count_unchecked",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 39 passed, 11 deselected in 3.62s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: []",
+   "killed": true,
+   "mutant": "R10_image_revision_not_a_finding",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 40 passed, 11 deselected in 3.70s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['DBR_CONTAINER_LEFT']",
+   "killed": true,
+   "mutant": "R11_taken_name_not_a_finding",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 41 passed, 11 deselected in 3.47s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([{'argv': ['/...t(0)\\n', ...}] == []",
+   "killed": true,
+   "mutant": "R12_ready_despite_findings",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 25 passed, 11 deselected in 2.84s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'status': 'U...ITY_MISMATCH'} == {'status': 'U...ITY_MISMATCH'}",
+   "killed": true,
+   "mutant": "R13_ready_despite_an_unavailable_item",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 43 passed, 11 deselected in 3.71s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([{'argv': ['/...t(0)\\n', ...}] == []",
+   "killed": true,
+   "mutant": "R14_container_whatever_the_preconditions",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 25 passed, 11 deselected in 3.23s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['run', '--rm...'--init', ...] == ['run', '--rm...'--init', ...]",
+   "killed": true,
+   "mutant": "R15_no_container_name",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 11 deselected in 1.95s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'containers_after'",
+   "killed": true,
+   "mutant": "R16_containers_not_looked_for_after",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 11 deselected in 2.13s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'DBR_CONTAINER_LEFT')",
+   "killed": true,
+   "mutant": "R17_container_left_not_a_finding",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 71 passed, 11 deselected in 6.28s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SNIPPET_LINE_INVALID' == 'QUERY_RUN_FAILED'",
+   "killed": true,
+   "mutant": "R18_failed_container_read_as_a_line",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 67 passed, 11 deselected in 6.12s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('IMAGE_ID_MISMATCH' in [])",
+   "killed": true,
+   "mutant": "R19_image_id_not_a_finding",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 116 passed, 11 deselected in 7.03s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L05_unavailable_may_carry_text",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 60 passed, 11 deselected in 5.52s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L06_unavailable_code_any_text",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 61 passed, 11 deselected in 5.24s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L07_sqlstate_any_text",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 62 passed, 11 deselected in 5.33s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L08_complete_part_any_keys",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 52 passed, 11 deselected in 4.87s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L09_part_status_any",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 63 passed, 11 deselected in 5.11s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L13_state_sha_unchecked",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 51 passed, 11 deselected in 4.74s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L14_equal_said_without_a_row",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 53 passed, 11 deselected in 4.75s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L15_binding_of_another_session",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 54 passed, 11 deselected in 4.69s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L16_binding_sha_while_not_committed",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 55 passed, 11 deselected in 4.70s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L17_journal_any_value",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 57 passed, 11 deselected in 4.57s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L18_emitter_values_any_type",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 58 passed, 11 deselected in 4.33s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J04_epoch_rows_not_compared",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 3 passed, 11 deselected in 1.90s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J05_release_not_compared",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 5 passed, 11 deselected in 1.98s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J06_zero_version_not_judged",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 6 passed, 11 deselected in 2.08s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J07_binding_not_compared",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 8 passed, 11 deselected in 1.92s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J08_binding_and_journal_not_compared",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 10 passed, 11 deselected in 2.70s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J09_emitter_identity_not_judged",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 18 passed, 11 deselected in 2.98s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_snippet_risk_url_grammar[C3PO_R2D2_RISK_DATABASE_URL=postgresql://c3po:x@db/c3po\\n-RISK_URL_NOT_THE_RESTRICTED_READER]",
+   "killed": true,
+   "mutant": "S01_any_role_in_the_risk_url",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 93 passed, 11 deselected in 6.58s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_snippet_files_are_read_without_following_a_link_and_only_when_private",
+   "killed": true,
+   "mutant": "S02_file_owner_unchecked",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 92 passed, 11 deselected in 6.07s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: Regex pattern did not match.",
+   "killed": true,
+   "mutant": "S03_link_followed",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 92 passed, 11 deselected in 6.17s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_snippet_password_grammar[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+   "killed": true,
+   "mutant": "S04_short_password_accepted",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 98 passed, 11 deselected in 6.29s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SET TRANSACT...PEATABLE READ' == 'SET TRANSACT...EAD READ ONLY'",
+   "killed": true,
+   "mutant": "S05_reader_transaction_not_read_only",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 113 passed, 11 deselected in 7.24s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SET TRANSACT...EAD READ ONLY' == 'SET TRANSACT...EAD READ ONLY'",
+   "killed": true,
+   "mutant": "S06_emitter_transaction_not_read_only",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 113 passed, 11 deselected in 7.24s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ABLE_EMITTER') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "S07_scram_not_required",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 11 deselected in 1.68s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_statement_is_one_of_the_fixed_reads_in_a_read_only_transaction_that_is_rolled_back",
+   "killed": true,
+   "mutant": "S10_emitter_not_rolled_back",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 1 passed, 11 deselected in 1.54s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'status': 'U... 'password=x'} == {'status': 'U..., 'code': 'X'}",
+   "killed": true,
+   "mutant": "S11_any_sqlstate_leaves",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 114 passed, 11 deselected in 7.62s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'status': 'U...T_RESTRICTED'} == {'status': 'U..., 'code': 'X'}",
+   "killed": true,
+   "mutant": "S12_any_exception_text_is_a_code",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 111 passed, 11 deselected in 6.74s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'SELECT count...och<>%s::text' == 'SELECT count...poch=%s::text'",
+   "killed": true,
+   "mutant": "S13_epoch_row_of_every_epoch",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 113 passed, 11 deselected in 7.38s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...NAL_DISAGREE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "S15_journal_key_prefix",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 11 deselected in 1.57s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "S16_libpq_unchecked",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 20 passed, 11 deselected in 3.24s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "S17_arguments_unchecked",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 11 deselected in 1.86s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S20_reader_role_not_compared",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 155 passed, 11 deselected in 7.91s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "S21_emitter_user_not_compared",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 23 passed, 11 deselected in 3.02s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_statement_is_one_of_the_fixed_reads_in_a_read_only_transaction_that_is_rolled_back",
+   "killed": true,
+   "mutant": "S22_authority_not_called",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 11 deselected in 1.61s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...IONS_NOT_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "S23_binding_sha_any_text",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 24 passed, 11 deselected in 3.00s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'code': 'EMI...'UNAVAILABLE'} == {'status': 'U...'FILE_FORMAT'}",
+   "killed": true,
+   "mutant": "S24_password_read_beyond_64",
+   "returncode": 1,
+   "seconds": 9.0,
+   "summary": "1 failed, 117 passed, 11 deselected in 6.74s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J10_dsn_host_not_judged",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 21 passed, 11 deselected in 3.26s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L19_host_flag_any_type",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 66 passed, 11 deselected in 5.22s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "S25_dsn_host_always_db",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 21 passed, 11 deselected in 3.11s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_after_a_failed_query_one_query_three_runs_in_a_new_read_only_transaction",
+   "killed": true,
+   "mutant": "S26_query_three_after_a_failed_one_in_the_aborted_transaction",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 118 passed, 11 deselected in 6.30s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'status': 'C...r': True, ...} == {'status': 'U...PET_DEADLINE'}",
+   "killed": true,
+   "mutant": "S27_query_two_begun_whatever_the_time",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 119 passed, 11 deselected in 6.00s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ABLE_BINDING') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "S28_longer_connection_timeout",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 11 deselected in 1.56s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L11_rows_any_count",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 49 passed, 11 deselected in 3.74s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L12_rows_may_be_a_bool",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 115 passed, 11 deselected in 5.91s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "L24_emitter_may_be_held",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 11 deselected in 1.52s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...IGHT_PARTIAL') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "S18_count_beyond_one_accepted",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 22 passed, 11 deselected in 2.94s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "S19_release_compared_with_nothing",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 5 passed, 11 deselected in 1.71s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "R20_bind_sources_not_proved_again",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 149 passed, 11 deselected in 7.35s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_every_member_of_the_plan_has_its_constant_refusal[secrets_chain.3.mode=509]",
+   "killed": true,
+   "mutant": "P12_chain_rows_any_owner",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 87 passed, 11 deselected in 6.14s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...PROVE_SELECT') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "C12_priv_success_is_the_queries_success",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 11 deselected in 1.84s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DB_PREFLIGHT...ECTATIONS_MET' == 'DB_READER_PRIVILEGES_PROVEN'",
+   "killed": true,
+   "mutant": "C13_priv_success_by_both_modes",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 91 passed, 11 deselected in 6.10s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_the_mode_is_one_of_two[None] - Failed: DID NOT...",
+   "killed": true,
+   "mutant": "P13_mode_unchecked",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 186 passed, 11 deselected in 9.35s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_a_priv_plan_carries_no_member_of_the_queries[session-2026-10-05]",
+   "killed": true,
+   "mutant": "P14_priv_plan_may_carry_queries_members",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 182 passed, 11 deselected in 9.87s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_REQUIRED1]",
+   "killed": true,
+   "mutant": "P15_priv_receipt_keys_not_exact",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 181 passed, 11 deselected in 9.10s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_NOT_OF_THIS_OPERATION0]",
+   "killed": true,
+   "mutant": "P16_priv_receipt_of_another_operation",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 171 passed, 11 deselected in 8.78s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_NOT_OF_THIS_OPERATION1]",
+   "killed": true,
+   "mutant": "P17_priv_receipt_of_another_mode",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 172 passed, 11 deselected in 8.80s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_DID_NOT_PROVE_SELECT0]",
+   "killed": true,
+   "mutant": "P18_priv_receipt_any_outcome",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 173 passed, 11 deselected in 9.08s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_REQUIRED0]",
+   "killed": true,
+   "mutant": "P19_priv_receipt_hash_unchecked",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 175 passed, 11 deselected in 8.93s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_OF_ANOTHER_BOOT]",
+   "killed": true,
+   "mutant": "P20_priv_receipt_of_another_boot",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 176 passed, 11 deselected in 9.39s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_NOT_OF_THIS_DAY0]",
+   "killed": true,
+   "mutant": "P21_priv_receipt_of_another_day",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 177 passed, 11 deselected in 8.75s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_NOT_OF_THIS_DAY1]",
+   "killed": true,
+   "mutant": "P22_priv_receipt_after_the_window",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 178 passed, 11 deselected in 9.24s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dbr.py::test_queries_refuses_without_a_priv_receipt_of_the_same_boot_and_day_that_proved_select[<lambda>-PRIV_RECEIPT_NOT_OF_THIS_DAY2]",
+   "killed": true,
+   "mutant": "P23_priv_receipt_at_the_window_start",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 179 passed, 11 deselected in 9.00s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == [{'source': '..._only': True}]",
+   "killed": true,
+   "mutant": "E01_binds_not_shown",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.98s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [] == ['python', '-...-db.env', ...]",
+   "killed": true,
+   "mutant": "E02_command_not_shown",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.92s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'c3po_c3po_internal')",
+   "killed": true,
+   "mutant": "E04_network_not_shown",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.29s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([{'source': '..._only': True}] == [{'source': '..._only': True}]",
+   "killed": true,
+   "mutant": "E14_mode_not_shown",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.10s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'operation': 'GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01', 'mode': 'PRIV', 'outcome': 'DB_READER_PRIVILEGES_PROVEN', 'receipt_sha256': '7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e', ...}",
+   "killed": true,
+   "mutant": "E15_priv_receipt_not_shown",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.78s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('c3po_c3po_internal' == 'c3po_c3po_internal'",
+   "killed": true,
+   "mutant": "E16_query_count_not_shown",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.58s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == '2026-10-05')",
+   "killed": true,
+   "mutant": "E17_session_not_shown",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.67s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-05' == '2026-10-05'",
+   "killed": true,
+   "mutant": "E18_release_not_shown",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.94s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-05' == '2026-10-05'",
+   "killed": true,
+   "mutant": "E19_expectation_not_shown",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.91s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "E20_secrets_not_shown",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 91 passed, 11 deselected in 6.10s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('/var/lib/c3p...61005/secrets' == '/var/lib/c3p...61005/secrets'",
+   "killed": true,
+   "mutant": "E21_revision_not_shown",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.97s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([{'source': '..._only': True}] == [{'source': '..._only': True}]",
+   "killed": true,
+   "mutant": "M01_priv_binds_the_emitter_too",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.58s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['python', '-...-db.env', ...] == ['python', '-...-risk-db.env']",
+   "killed": true,
+   "mutant": "M02_priv_runs_the_queries",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 91 passed, 11 deselected in 5.39s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L01_schema_unchecked",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 46 passed, 11 deselected in 3.34s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'line': {'mo...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L02_line_mode_unchecked",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 165 passed, 11 deselected in 8.03s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L03_status_unchecked",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 48 passed, 11 deselected in 3.94s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L04_line_keys_unchecked",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 45 passed, 11 deselected in 3.42s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'status': 'U...ATION_FAILED'} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L05_line_keys_of_the_other_mode",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 190 passed, 11 deselected in 8.78s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'line': {'bi...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L06_query_count_unchecked",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 47 passed, 11 deselected in 3.73s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'line': {'mo...code': 0, ...} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L10_privilege_values_any_type",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 161 passed, 11 deselected in 7.82s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'status': 'U...ATION_FAILED'} == {'status': 'U...LINE_INVALID'}",
+   "killed": true,
+   "mutant": "L20_privilege_keys_any",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 162 passed, 11 deselected in 8.11s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...CTATIONS_MET') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "J01_unavailable_part_not_a_finding",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 13 passed, 11 deselected in 2.39s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "J02_privilege_not_proven_not_a_finding",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 151 passed, 11 deselected in 7.68s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "J03_privileges_judged_by_presence",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 151 passed, 11 deselected in 7.75s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "J04_priv_parts_not_judged",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 159 passed, 11 deselected in 7.86s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: exactly queries 1 and 3, one snapshot, no privilege read",
+   "killed": true,
+   "mutant": "S09_reader_not_rolled_back_at_the_end",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 11 deselected in 1.56s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: one catalog read, rolled back",
+   "killed": true,
+   "mutant": "S29_priv_not_rolled_back",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 150 passed, 11 deselected in 7.20s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S30_proof_ignores_the_journal",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 152 passed, 11 deselected in 7.11s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S31_proof_ignores_the_epochs",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 151 passed, 11 deselected in 7.49s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S32_proof_ignores_connect",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 153 passed, 11 deselected in 7.66s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S33_proof_ignores_usage",
+   "returncode": 1,
+   "seconds": 10.8,
+   "summary": "1 failed, 154 passed, 11 deselected in 8.14s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S34_proof_ignores_the_role",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 155 passed, 11 deselected in 7.78s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S35_proof_ignores_restriction",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 156 passed, 11 deselected in 8.06s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S36_proof_ignores_read_only",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 158 passed, 11 deselected in 8.68s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S38_session_user_not_compared",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 157 passed, 11 deselected in 8.34s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: one catalog read, rolled back",
+   "killed": true,
+   "mutant": "S39_priv_transaction_not_read_only",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 150 passed, 11 deselected in 7.45s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...N_INCOMPLETE') == ('METADATA_ON...PROVEN', None)",
+   "killed": true,
+   "mutant": "S40_priv_mode_runs_the_queries",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 150 passed, 11 deselected in 7.18s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   IndexError: list index out of range",
+   "killed": true,
+   "mutant": "S41_priv_arguments_unchecked",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 104 passed, 11 deselected in 6.25s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('OTHER' in (None, 'PRIV', 'QUERIES'))",
+   "killed": true,
+   "mutant": "S42_any_mode_word",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 103 passed, 11 deselected in 5.71s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...R_PRIVILEGES') == ('METADATA_ON...PROVEN', None)",
+   "killed": true,
+   "mutant": "S43_priv_session_not_read_only",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 150 passed, 11 deselected in 7.14s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ABLE_BINDING') == ('METADATA_ON...NS_MET', None)",
+   "killed": true,
+   "mutant": "S44_queries_session_not_read_only",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 11 deselected in 1.72s",
+   "tests": [
+    "test_dbr.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

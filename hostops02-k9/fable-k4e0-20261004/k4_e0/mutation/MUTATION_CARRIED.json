@@ -1,0 +1,4231 @@
+{
+ "by_target": {
+  "core": 157,
+  "files": 146,
+  "parents": 15
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 278,
+  "redundant_survivors": 0,
+  "single": 318,
+  "survivors": 40
+ },
+ "errors": [],
+ "list": "carried",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "41e2bd93a42803edb36064608bdb8ce8201da555fc9b076fe99d235dbcf03300",
+  "build/AUTHORITY.UNBOUND.json": "19c1debff865ae2b7439a43d8c5e31b1aed5acae47daa1b56f43ba900ec9f77f",
+  "build/DISPATCH.UNBOUND.json": "cbc0b67b7204062f579d427df852d3773fa950b3a2e58244d52bd7f4f3578f26",
+  "build/DISPATCH_SCOPE_DELTA.diff": "65a3f4ab2ea12000c3ac87372b3f20589df63b58de9ab6bcede6fc6d21ea8b7c",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "190845537533d06650cecee1b922791656781cdf3b46e5dcc1522cef9d0d0d9e",
+  "build/GO.UNBOUND.json": "4f127a423a4b508e3d60faf84f13f1beedb0930a457ea0d70fd4539ca7c40910",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "0be773822a0f56ee8715f4c51c2fab5b0462d103797bac2d95b6f0b2d1e31b2c",
+  "build/REQUEST.UNBOUND.json": "71aeaea788aa3f3526cbd8927d3d97f728fc10b14ba0cd96dd659f3faee939ba",
+  "build/dispatch_once.py": "72c9bb1622a3804956344531b616618b0bd2be461be5a209c4d52e386ff0ba91",
+  "build/k4_e0.py": "e775a3eab247dae4cc9a65a01e769a42163cbcad98082cbc38238edacaeb27f9",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "98efad2c0d6986d97f97a47de2d1702d1e2fb126c2b6560144a8342fecbefdcc",
+  "op.py": "1c104dcd04bc7edaf99e0acbda9a2192b2891896b6bcdd2a6c7d4feed362ea49",
+  "spec.py": "41bc4ac7aa37aa49b9d729c4b848acea8c44b3892a8ffcd5613d170d4dd7df9a",
+  "tests/conftest.py": "c2279a9b963645b510f54dd519dffa5a7db83160dea14531faf4fcf5914f39da",
+  "tests/k4e0.py": "24e25a94065f85052c5b9588498518d49a5d11fb7afb12913b473957b45bd569",
+  "tests/native_child.py": "cbd1c9d766581cd50dd688bd60995eac47dc4d74c90b4f9f119a4f6f25469a3e",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/test_conformance.py": "d7b502a15bebeafabbca12b836f99406cede87441da0bd7be7ae49d747074988",
+  "tests/test_k4_e0.py": "847a01a30be272cb6847cce16588ff14302db1070343d42224e76969b8d8bce5",
+  "tests/test_native.py": "8ec86395bad0d5f697940c8178b12af1e0602458a0fdae5d188d14c519dc77eb"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": false,
+ "results": [
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M01_create_without_excl",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 2.29s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M04_create_without_nofollow",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 5 deselected in 2.54s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M05_create_without_excl_and_nofollow",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 5 deselected in 2.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:70: AssertionError: assert ('file', 0, 0..., 1, 801, ...) == ('file', 0, 0..., 1, 801, ...)",
+   "killed": true,
+   "mutant": "A_M06_file_fsync_dropped",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 5 deselected in 2.14s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:67: AssertionError: /var/lib/c3po/r2d2-v2-source-20261005",
+   "killed": true,
+   "mutant": "A_M07a_directory_fsync_after_mkdir_dropped",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 5 deselected in 2.22s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:71: AssertionError: assert (b'# SYNTHETIC...ed anywhere\\n' == b'# SYNTHETIC...ed anywhere\\n'",
+   "killed": true,
+   "mutant": "A_M07b_parent_fsync_after_mkdir_dropped",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 5 deselected in 2.34s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:76: AssertionError: assert ['/var/lib/c3...ib/c3po', ...] == ['/var/lib/c3...ib/c3po', ...]",
+   "killed": true,
+   "mutant": "A_M07c_directory_fsync_after_link_dropped",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 5 deselected in 2.46s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:76: AssertionError: assert ['/var/lib/c3...ib/c3po', ...] == ['/var/lib/c3...ib/c3po', ...]",
+   "killed": true,
+   "mutant": "A_M07d_directory_fsync_after_removal_dropped",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 2.45s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:61: KeyError: 'readback'",
+   "killed": true,
+   "mutant": "A_M08_chain_walk_without_nofollow",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 5 deselected in 2.39s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_an_existing_c3po_directory_that_changes_during_the_run_stops_it",
+   "killed": true,
+   "mutant": "A_M10a_parent_not_verified_before_mkdir",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 2 passed, 5 deselected in 2.52s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_tools_changed_before_the_temporary_or_before_the_link_stops_the_runner",
+   "killed": true,
+   "mutant": "A_M10b_directory_not_verified_before_temporary",
+   "returncode": 1,
+   "seconds": 44.6,
+   "summary": "1 failed, 95 passed, 5 deselected in 42.55s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:700: AssertionError: assert 'INSTALLED_DURABLE' == 'TEMPORARY_ONLY'",
+   "killed": true,
+   "mutant": "A_M10c_directory_not_verified_before_link",
+   "returncode": 1,
+   "seconds": 43.8,
+   "summary": "1 failed, 95 passed, 5 deselected in 41.53s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "A_M11_excl_replaced_by_trunc",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 5 deselected in 2.00s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: FREE_SPACE_BELOW_FLOOR",
+   "killed": true,
+   "mutant": "A_M14_chain_row_device_not_compared",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 9 passed, 5 deselected in 3.03s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_inode_not_compared",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 9 passed, 5 deselected in 2.92s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_uid_not_compared",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 9 passed, 5 deselected in 3.19s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_gid_not_compared",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 9 passed, 5 deselected in 3.06s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: None",
+   "killed": true,
+   "mutant": "A_M14_chain_row_mode_not_compared",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 9 passed, 5 deselected in 3.14s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:61: AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "A_M17b_fchmod_of_a_created_file",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 5 deselected in 2.27s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:61: KeyError: 'readback'",
+   "killed": true,
+   "mutant": "A_M17c_fchown_of_a_created_file",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 5 deselected in 2.11s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:61: AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "A_M17d_fchmod_of_a_created_directory",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 2.41s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_pins_must_match_the_bytes - ...",
+   "killed": true,
+   "mutant": "C01_pin_not_compared_with_bytes",
+   "returncode": 1,
+   "seconds": 71.9,
+   "summary": "1 failed, 129 passed, 5 deselected in 70.15s (0:01:10)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_are_decoded_from_bytes_and_must_be_canonical",
+   "killed": true,
+   "mutant": "C02_non_canonical_document_accepted",
+   "returncode": 1,
+   "seconds": 71.8,
+   "summary": "1 failed, 133 passed, 5 deselected in 69.38s (0:01:09)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_are_decoded_from_bytes_and_must_be_canonical",
+   "killed": true,
+   "mutant": "C03_duplicate_key_accepted",
+   "returncode": 1,
+   "seconds": 74.7,
+   "summary": "1 failed, 133 passed, 5 deselected in 72.80s (0:01:12)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/build/k4_e0.py:383: KeyError: 'activation_allowed'",
+   "killed": true,
+   "mutant": "C04_request_keys_not_exact",
+   "returncode": 1,
+   "seconds": 72.7,
+   "summary": "1 failed, 130 passed, 5 deselected in 70.54s (0:01:10)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/build/k4_e0.py:387: KeyError: 'activation_allowed'",
+   "killed": true,
+   "mutant": "C05_authority_keys_not_exact",
+   "returncode": 1,
+   "seconds": 75.9,
+   "summary": "1 failed, 131 passed, 5 deselected in 73.74s (0:01:13)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/build/k4_e0.py:390: KeyError: 'action'",
+   "killed": true,
+   "mutant": "C06_go_keys_not_exact",
+   "returncode": 1,
+   "seconds": 75.3,
+   "summary": "1 failed, 132 passed, 5 deselected in 73.04s (0:01:13)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_each_document_has_exactly_its_keys[0-REQUEST_KEYS]",
+   "killed": true,
+   "mutant": "C07_extra_key_accepted",
+   "returncode": 1,
+   "seconds": 79.0,
+   "summary": "1 failed, 130 passed, 5 deselected in 76.96s (0:01:16)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C08_request_schema_dropped",
+   "returncode": 1,
+   "seconds": 84.9,
+   "summary": "1 failed, 207 passed, 5 deselected in 82.82s (0:01:22)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-status-UNBOUND-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C09_request_status_dropped",
+   "returncode": 1,
+   "seconds": 77.6,
+   "summary": "1 failed, 134 passed, 5 deselected in 75.95s (0:01:15)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C10_request_operation_dropped",
+   "returncode": 1,
+   "seconds": 83.2,
+   "summary": "1 failed, 207 passed, 5 deselected in 80.87s (0:01:20)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C11_request_phase_dropped",
+   "returncode": 1,
+   "seconds": 82.2,
+   "summary": "1 failed, 207 passed, 5 deselected in 79.59s (0:01:19)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-scope_sha256-3333333333333333333333333333333333333333333333333333333333333333-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C12_request_scope_hash_dropped",
+   "returncode": 1,
+   "seconds": 80.1,
+   "summary": "1 failed, 138 passed, 5 deselected in 77.67s (0:01:17)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-payload_sha256-3333333333333333333333333333333333333333333333333333333333333333-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C13_request_payload_hash_dropped",
+   "returncode": 1,
+   "seconds": 80.7,
+   "summary": "1 failed, 139 passed, 5 deselected in 77.82s (0:01:17)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_effective_uid_and_gid_must_be_root_before_anything_is_looked_at",
+   "killed": true,
+   "mutant": "C14_effective_uid_not_checked",
+   "returncode": 1,
+   "seconds": 87.3,
+   "summary": "1 failed, 215 passed, 5 deselected in 85.22s (0:01:25)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-executor_uid-1000-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C15_declared_uid_not_checked",
+   "returncode": 1,
+   "seconds": 75.5,
+   "summary": "1 failed, 135 passed, 5 deselected in 72.60s (0:01:12)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-executor_uid-False-REQUEST_OR_EXECUTOR_UNBOUND]",
+   "killed": true,
+   "mutant": "C16_declared_uid_type_not_checked",
+   "returncode": 1,
+   "seconds": 80.4,
+   "summary": "1 failed, 136 passed, 5 deselected in 76.82s (0:01:16)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C20_authority_schema_dropped",
+   "returncode": 1,
+   "seconds": 111.1,
+   "summary": "1 failed, 207 passed, 5 deselected in 107.87s (0:01:47)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C21_authority_operation_dropped",
+   "returncode": 1,
+   "seconds": 110.5,
+   "summary": "1 failed, 207 passed, 5 deselected in 107.52s (0:01:47)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C22_authority_phase_dropped",
+   "returncode": 1,
+   "seconds": 113.6,
+   "summary": "1 failed, 207 passed, 5 deselected in 110.65s (0:01:50)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-status-UNBOUND-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C23_authority_status_dropped",
+   "returncode": 1,
+   "seconds": 113.1,
+   "summary": "1 failed, 148 passed, 5 deselected in 110.21s (0:01:50)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-decision-REJECTED-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C24_authority_decision_dropped",
+   "returncode": 1,
+   "seconds": 108.9,
+   "summary": "1 failed, 149 passed, 5 deselected in 106.62s (0:01:46)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-execution_authorized-1-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C25_authority_execution_flag_dropped",
+   "returncode": 1,
+   "seconds": 114.4,
+   "summary": "1 failed, 151 passed, 5 deselected in 111.71s (0:01:51)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_hash_chain_between_the_three_documents",
+   "killed": true,
+   "mutant": "C26_authority_request_hash_dropped",
+   "returncode": 1,
+   "seconds": 119.2,
+   "summary": "1 failed, 200 passed, 5 deselected in 116.90s (0:01:56)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-payload_sha256-3333333333333333333333333333333333333333333333333333333333333333-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C27_authority_payload_hash_dropped",
+   "returncode": 1,
+   "seconds": 110.9,
+   "summary": "1 failed, 152 passed, 5 deselected in 107.64s (0:01:47)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner_evidence-None-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C30_owner_evidence_dropped",
+   "returncode": 1,
+   "seconds": 86.6,
+   "summary": "1 failed, 156 passed, 5 deselected in 83.51s (0:01:23)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner_evidence-UNBOUND-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "C30b_owner_evidence_may_be_the_word_unbound",
+   "returncode": 1,
+   "seconds": 85.4,
+   "summary": "1 failed, 158 passed, 5 deselected in 82.71s (0:01:22)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner_evidence-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "killed": true,
+   "mutant": "C30c_owner_evidence_length_cap_dropped",
+   "returncode": 1,
+   "seconds": 86.5,
+   "summary": "1 failed, 159 passed, 5 deselected in 83.99s (0:01:23)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C31_go_schema_dropped",
+   "returncode": 1,
+   "seconds": 89.6,
+   "summary": "1 failed, 207 passed, 5 deselected in 86.72s (0:01:26)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-status-UNBOUND-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C32_go_status_dropped",
+   "returncode": 1,
+   "seconds": 87.0,
+   "summary": "1 failed, 162 passed, 5 deselected in 84.76s (0:01:24)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-action-NO_GO-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C33_go_action_dropped",
+   "returncode": 1,
+   "seconds": 85.6,
+   "summary": "1 failed, 163 passed, 5 deselected in 83.64s (0:01:23)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C34_go_phase_dropped",
+   "returncode": 1,
+   "seconds": 73.1,
+   "summary": "1 failed, 207 passed, 5 deselected in 71.18s (0:01:11)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_of_another_operation_are_refused_in_both_directions",
+   "killed": true,
+   "mutant": "C35_go_operation_dropped",
+   "returncode": 1,
+   "seconds": 71.3,
+   "summary": "1 failed, 207 passed, 5 deselected in 69.47s (0:01:09)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-execution_authorized-False-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C36_go_execution_flag_dropped",
+   "returncode": 1,
+   "seconds": 53.3,
+   "summary": "1 failed, 165 passed, 5 deselected in 51.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_hash_chain_between_the_three_documents",
+   "killed": true,
+   "mutant": "C39_go_request_hash_dropped",
+   "returncode": 1,
+   "seconds": 51.0,
+   "summary": "1 failed, 200 passed, 5 deselected in 48.92s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_hash_chain_between_the_three_documents",
+   "killed": true,
+   "mutant": "C40_go_authority_hash_dropped",
+   "returncode": 1,
+   "seconds": 50.9,
+   "summary": "1 failed, 200 passed, 5 deselected in 48.54s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-payload_sha256-3333333333333333333333333333333333333333333333333333333333333333-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "C41_go_payload_hash_dropped",
+   "returncode": 1,
+   "seconds": 47.3,
+   "summary": "1 failed, 169 passed, 5 deselected in 44.69s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_owner_is_bound_and_equal_in_authority_and_go",
+   "killed": true,
+   "mutant": "C42_unbound_owner_accepted",
+   "returncode": 1,
+   "seconds": 47.4,
+   "summary": "1 failed, 198 passed, 5 deselected in 45.51s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-owner-OTHER-OWNER_UNBOUND]",
+   "killed": true,
+   "mutant": "C43_owner_equality_dropped",
+   "returncode": 1,
+   "seconds": 43.3,
+   "summary": "1 failed, 160 passed, 5 deselected in 41.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C44_null_host_binding_accepted",
+   "returncode": 1,
+   "seconds": 46.3,
+   "summary": "1 failed, 201 passed, 5 deselected in 44.82s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C45_host_binding_authority_dropped",
+   "returncode": 1,
+   "seconds": 47.2,
+   "summary": "1 failed, 201 passed, 5 deselected in 45.74s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C46_host_binding_go_dropped",
+   "returncode": 1,
+   "seconds": 50.4,
+   "summary": "1 failed, 201 passed, 5 deselected in 48.62s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_host_binding_is_one_non_null_value_in_three_documents_and_the_plan",
+   "killed": true,
+   "mutant": "C46b_host_binding_equalities_dropped",
+   "returncode": 1,
+   "seconds": 50.9,
+   "summary": "1 failed, 201 passed, 5 deselected in 49.71s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C47_null_transport_target_accepted",
+   "returncode": 1,
+   "seconds": 50.9,
+   "summary": "1 failed, 199 passed, 5 deselected in 49.49s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C48_null_command_pin_accepted",
+   "returncode": 1,
+   "seconds": 51.5,
+   "summary": "1 failed, 199 passed, 5 deselected in 49.76s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C49_remote_command_not_pinned",
+   "returncode": 1,
+   "seconds": 50.4,
+   "summary": "1 failed, 199 passed, 5 deselected in 49.10s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_transport_binding_and_writes_flag_in_every_document",
+   "killed": true,
+   "mutant": "C50_runtime_pin_of_the_source_not_tied_to_the_payload",
+   "returncode": 1,
+   "seconds": 51.8,
+   "summary": "1 failed, 199 passed, 5 deselected in 50.35s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-claim_root_identity-value44-GO_CLAIM_ROOT_UNBOUND]",
+   "killed": true,
+   "mutant": "C51_null_claim_root_accepted",
+   "returncode": 1,
+   "seconds": 51.7,
+   "summary": "1 failed, 178 passed, 5 deselected in 49.97s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_every_day_of_the_class_is_accepted_and_the_day_before_is_not",
+   "killed": true,
+   "mutant": "C52_date_set_dropped",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 62 passed, 5 deselected in 6.79s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_instant_of_the_three_windows_lies_on_the_signed_day",
+   "killed": true,
+   "mutant": "C53_request_date_not_tied_to_the_windows",
+   "returncode": 1,
+   "seconds": 54.6,
+   "summary": "1 failed, 218 passed, 5 deselected in 53.21s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C54_window_span_cap_dropped",
+   "returncode": 1,
+   "seconds": 54.9,
+   "summary": "1 failed, 216 passed, 5 deselected in 53.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C55_empty_window_accepted",
+   "returncode": 1,
+   "seconds": 53.9,
+   "summary": "1 failed, 216 passed, 5 deselected in 52.39s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C56_gate_uses_first_window_only",
+   "returncode": 1,
+   "seconds": 54.8,
+   "summary": "1 failed, 216 passed, 5 deselected in 53.16s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C57_non_utc_offset_accepted",
+   "returncode": 1,
+   "seconds": 55.0,
+   "summary": "1 failed, 216 passed, 5 deselected in 53.17s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C58_gate_initial_window_dropped",
+   "returncode": 1,
+   "seconds": 56.4,
+   "summary": "1 failed, 216 passed, 5 deselected in 54.67s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_gate_monotonic_deadline_and_clock_reversal",
+   "killed": true,
+   "mutant": "C59_gate_wall_window_dropped",
+   "returncode": 1,
+   "seconds": 54.4,
+   "summary": "1 failed, 220 passed, 5 deselected in 53.03s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:547: AssertionError: (4, 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "C60_gate_monotonic_deadline_dropped",
+   "returncode": 1,
+   "seconds": 24.2,
+   "summary": "1 failed, 83 passed, 5 deselected in 22.62s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_gate_monotonic_deadline_and_clock_reversal",
+   "killed": true,
+   "mutant": "C61_wall_clock_reversal_accepted",
+   "returncode": 1,
+   "seconds": 57.2,
+   "summary": "1 failed, 220 passed, 5 deselected in 54.75s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:547: AssertionError: (180, None)",
+   "killed": true,
+   "mutant": "C62_monotonic_reversal_accepted",
+   "returncode": 1,
+   "seconds": 31.2,
+   "summary": "1 failed, 83 passed, 5 deselected in 30.06s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-host_binding_sha256-2222222222222222222222222222222222222222222222222222222222222222-PLAN_BINDING]",
+   "killed": true,
+   "mutant": "C63_plan_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 53.0,
+   "summary": "1 failed, 184 passed, 5 deselected in 51.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_each_document_has_exactly_its_keys[0-REQUEST_KEYS]",
+   "killed": true,
+   "mutant": "C64_plan_keys_not_exact",
+   "returncode": 1,
+   "seconds": 51.6,
+   "summary": "1 failed, 130 passed, 5 deselected in 50.07s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-schema-OTHER_PLAN_V1-PLAN_UNBOUND]",
+   "killed": true,
+   "mutant": "C65_plan_schema_dropped",
+   "returncode": 1,
+   "seconds": 52.4,
+   "summary": "1 failed, 181 passed, 5 deselected in 50.72s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-status-UNBOUND-PLAN_UNBOUND]",
+   "killed": true,
+   "mutant": "C66_plan_status_dropped",
+   "returncode": 1,
+   "seconds": 52.5,
+   "summary": "1 failed, 180 passed, 5 deselected in 51.06s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-phase-READONLY_HOSTFACTS-PHASE_INVALID]",
+   "killed": true,
+   "mutant": "C67_plan_phase_dropped",
+   "returncode": 1,
+   "seconds": 52.6,
+   "summary": "1 failed, 182 passed, 5 deselected in 51.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-max_seconds-61-LIMITS_INVALID]",
+   "killed": true,
+   "mutant": "C68_plan_limits_dropped",
+   "returncode": 1,
+   "seconds": 51.9,
+   "summary": "1 failed, 183 passed, 5 deselected in 50.49s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_scope_is_fixed_by_the_source_and_signed",
+   "killed": true,
+   "mutant": "C69_scope_not_compared",
+   "returncode": 1,
+   "seconds": 51.9,
+   "summary": "1 failed, 206 passed, 5 deselected in 50.46s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[plan-window-value54-WINDOW_UNBOUND]",
+   "killed": true,
+   "mutant": "C70_plan_window_not_tied_to_the_request",
+   "returncode": 1,
+   "seconds": 46.5,
+   "summary": "1 failed, 188 passed, 5 deselected in 44.95s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_evidence_names_the_prior_receipts_and_the_operations_the_source_requires",
+   "killed": true,
+   "mutant": "C71_empty_evidence_accepted",
+   "returncode": 1,
+   "seconds": 48.7,
+   "summary": "1 failed, 205 passed, 5 deselected in 46.89s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_evidence_names_the_prior_receipts_and_the_operations_the_source_requires",
+   "killed": true,
+   "mutant": "C72_evidence_receipt_hash_not_checked",
+   "returncode": 1,
+   "seconds": 48.6,
+   "summary": "1 failed, 205 passed, 5 deselected in 47.08s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_effects_are_literal_in_authority_and_go_and_recomputed_from_the_plan",
+   "killed": true,
+   "mutant": "C73_effects_in_the_authority_not_compared",
+   "returncode": 1,
+   "seconds": 47.9,
+   "summary": "1 failed, 202 passed, 5 deselected in 46.39s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_effects_are_literal_in_authority_and_go_and_recomputed_from_the_plan",
+   "killed": true,
+   "mutant": "C74_effects_in_the_go_not_compared",
+   "returncode": 1,
+   "seconds": 48.0,
+   "summary": "1 failed, 202 passed, 5 deselected in 46.42s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_effects_are_literal_in_authority_and_go_and_recomputed_from_the_plan",
+   "killed": true,
+   "mutant": "C74b_effects_not_compared_at_all",
+   "returncode": 1,
+   "seconds": 47.8,
+   "summary": "1 failed, 202 passed, 5 deselected in 46.56s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-scope_statement-anything else-GO_CRITERION]",
+   "killed": true,
+   "mutant": "C75_scope_statement_free_text",
+   "returncode": 1,
+   "seconds": 46.9,
+   "summary": "1 failed, 173 passed, 5 deselected in 45.50s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-success_criterion-SOME_OTHER_OUTCOME-GO_CRITERION]",
+   "killed": true,
+   "mutant": "C76_success_criterion_free_text",
+   "returncode": 1,
+   "seconds": 50.6,
+   "summary": "1 failed, 175 passed, 5 deselected in 48.92s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:509: AssertionError: ('mkdir', '/var/lib/c3po', 448)",
+   "killed": true,
+   "mutant": "E01_gate_not_called_before_a_mutating_call",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 80 passed, 5 deselected in 8.95s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:395: AssertionError: assert ('PARTIAL_MET...K', 'EFFECTS') == ('REFUSED', '...K', 'EFFECTS')",
+   "killed": true,
+   "mutant": "E02_failed_call_left_uncertain",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 63 passed, 5 deselected in 5.62s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:63: AssertionError: assert ({'failed_noth...ncertain': 11} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "E03_successful_call_not_counted",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 5 deselected in 1.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:527: AssertionError: (31, 'open', 'B1_C3PO')",
+   "killed": true,
+   "mutant": "E04_escaped_exception_always_a_refusal",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 81 passed, 5 deselected in 8.41s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:527: AssertionError: (31, 'open', 'B1_C3PO')",
+   "killed": true,
+   "mutant": "E05_escape_after_start_of_a_write_is_a_refusal_when_uncertain",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 81 passed, 5 deselected in 8.62s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:189: AssertionError: assert ('METADATA_ON..._size': True}) == ('PARTIAL_MET..._size': True})",
+   "killed": true,
+   "mutant": "E06_reduced_receipt_stays_complete",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 8 passed, 5 deselected in 1.59s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: None",
+   "killed": true,
+   "mutant": "E07_chain_rows_not_compared",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 9 passed, 5 deselected in 2.02s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: PARENT_CHANGED_DURING_WALK",
+   "killed": true,
+   "mutant": "E08_symlink_component_opened",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 9 passed, 5 deselected in 2.06s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "E09_verify_skips_the_fresh_walk",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 79 passed, 5 deselected in 7.98s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: READBACK_MISMATCH",
+   "killed": true,
+   "mutant": "E10_verify_skips_the_name_of_a_child",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 76 passed, 5 deselected in 6.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E11_probe_follows_nothing_but_reports_a_symlink_component_absent",
+   "returncode": 0,
+   "seconds": 101.3,
+   "summary": "233 passed, 5 deselected in 99.39s (0:01:39)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E12_descend_without_nofollow",
+   "returncode": 0,
+   "seconds": 104.1,
+   "summary": "233 passed, 5 deselected in 101.90s (0:01:41)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E13_descend_enters_a_symlink_component",
+   "returncode": 0,
+   "seconds": 104.9,
+   "summary": "233 passed, 5 deselected in 103.22s (0:01:43)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "E14_file_change_during_read_ignored",
+   "returncode": 1,
+   "seconds": 36.4,
+   "summary": "1 failed, 96 passed, 5 deselected in 35.14s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "E15_file_size_limit_ignored",
+   "returncode": 1,
+   "seconds": 37.1,
+   "summary": "1 failed, 96 passed, 5 deselected in 35.87s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: EVIDENCE_FROM_EARLIER_BOOT",
+   "killed": true,
+   "mutant": "E16_boot_id_shape_unchecked",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 9 passed, 5 deselected in 2.74s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_noatime_is_required_and_fails_closed_where_the_platform_lacks_it",
+   "killed": true,
+   "mutant": "E17_noatime_not_required",
+   "returncode": 1,
+   "seconds": 46.0,
+   "summary": "1 failed, 113 passed, 5 deselected in 44.61s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:359: AssertionError: assert ('REFUSED', '...HING_CHANGED') == ('REFUSED', '...HING_CHANGED')",
+   "killed": true,
+   "mutant": "E18_authentication_refusal_raised_out_of_run",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 14 passed, 5 deselected in 4.03s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[7]",
+   "killed": true,
+   "mutant": "L12_chain_row_shape_unchecked",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 21 passed, 5 deselected in 3.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:81: AssertionError: assert (('/var/lib/c3...cb38a8ace.py') == ('/var/lib/c3...cb38a8ace.py')",
+   "killed": true,
+   "mutant": "P07_umask_not_set",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 5 deselected in 1.55s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_created_directory_that_is_not_what_was_signed_is_left_in_place_labelled_and_nothing_more_is_created",
+   "killed": true,
+   "mutant": "P17_failure_after_mkdir_reported_not_created",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 75 passed, 5 deselected in 6.22s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: READBACK_MISMATCH",
+   "killed": true,
+   "mutant": "P19_created_name_identity_not_checked",
+   "returncode": 1,
+   "seconds": 37.2,
+   "summary": "1 failed, 92 passed, 5 deselected in 35.58s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: READBACK_MISMATCH",
+   "killed": true,
+   "mutant": "P20_created_emptiness_not_checked",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 75 passed, 5 deselected in 6.81s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "P22_refused_after_a_creation",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 2 passed, 5 deselected in 1.93s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[21]",
+   "killed": true,
+   "mutant": "P43_evidence_boot_shape_unchecked",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 35 passed, 5 deselected in 4.80s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:59: AssertionError: {'activation_performed': False, 'authority_sha256': 'eb180eb99dd059d04ea264509b9d67f4157014e036a3cca7759fb3a2095c9cae'...k': {'monotonic_elapsed_ms': 0, 'utc_end': '2026-10-05T17:00:00+00:00', 'utc_start': '2026-10-05T17:00:00+00:00'}, ...}",
+   "killed": true,
+   "mutant": "I01_link_replaced_by_rename",
+   "returncode": 1,
+   "seconds": 39.8,
+   "summary": "1 failed, 99 passed, 5 deselected in 38.24s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:61: AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "I02_final_name_removed_instead_of_the_temporary",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 5 deselected in 2.05s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:672: AssertionError: assert ('CREATED_METADATA_MISMATCH' == 'TEMPORARY_REPLACED'",
+   "killed": true,
+   "mutant": "I03_temporary_removed_without_identity_proof",
+   "returncode": 1,
+   "seconds": 37.2,
+   "summary": "1 failed, 94 passed, 5 deselected in 35.75s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:75: AssertionError: assert [('mkdir', '/...claims'), ...] == [('mkdir', '/...claims'), ...]",
+   "killed": true,
+   "mutant": "I04_temporary_name_loadable_by_systemd",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 5 deselected in 1.88s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "I19_short_write_accepted",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 77 passed, 5 deselected in 7.12s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "I21_failed_file_fsync_ignored",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 77 passed, 5 deselected in 7.15s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_the_temporary_is_proved_before_the_link_and_before_its_removal",
+   "killed": true,
+   "mutant": "I22_failed_directory_fsync_after_link_ignored",
+   "returncode": 1,
+   "seconds": 46.3,
+   "summary": "1 failed, 94 passed, 5 deselected in 44.44s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "I23_refused_after_a_creation",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 2 passed, 5 deselected in 2.37s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: None",
+   "killed": true,
+   "mutant": "I29_boot_of_the_evidence_not_compared",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 9 passed, 5 deselected in 1.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:24: AssertionError: None",
+   "killed": true,
+   "mutant": "I30_executor_group_not_checked",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 9 passed, 5 deselected in 3.25s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:156: AssertionError: assert (b'foreign' == b'foreign'",
+   "killed": true,
+   "mutant": "I40_own_temporary_left_after_a_lost_race",
+   "returncode": 1,
+   "seconds": 51.5,
+   "summary": "1 failed, 102 passed, 5 deselected in 49.55s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:67: AssertionError: assert ([{'by_dir_fd': False, 'call': 'open', 'flags': 1048576, 'mode': None, ...}, {'by_dir_fd': True, 'call': 'open', 'flags... 'open', 'flags': 1048576, 'mode': None, ...}, {'by_dir_fd': True, 'call': 'open', 'flags': 4, 'mode': None, ...}, ..",
+   "killed": true,
+   "mutant": "W01_native_open_strips_nofollow",
+   "returncode": 1,
+   "seconds": 50.2,
+   "summary": "1 failed, 99 passed, 5 deselected in 48.88s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:59: AssertionError: {'activation_performed': False, 'authority_sha256': 'bc9998de4fa66572cc6119b6ba4739e5010d1addcf021ddf7641810d929d4ac2'...k': {'monotonic_elapsed_ms': 0, 'utc_end': '2026-10-05T17:00:00+00:00', 'utc_start': '2026-10-05T17:00:00+00:00'}, ...}",
+   "killed": true,
+   "mutant": "W01b_native_open_ignores_the_descriptor",
+   "returncode": 1,
+   "seconds": 52.8,
+   "summary": "1 failed, 99 passed, 5 deselected in 51.35s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:71: AssertionError: assert ([{'by_dir_fd': True, 'call': 'stat', 'follow_symlinks': True, 'path': '/var'}, {'by_dir_fd': True, 'call': 'stat', 'fo... True, 'path': '/var/lib'}, {'by_dir_fd': True, 'call': 'stat', 'follow_symlinks': True, 'path': '/var/lib/c3po'}, ..",
+   "killed": true,
+   "mutant": "W02_native_lstat_follows_links",
+   "returncode": 1,
+   "seconds": 52.8,
+   "summary": "1 failed, 99 passed, 5 deselected in 51.12s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:59: AssertionError: {'activation_performed': False, 'authority_sha256': '9be50a0a391ed19f566407b94f661639cf0a8822b6587e454d178fef303502f5'...k': {'monotonic_elapsed_ms': 0, 'utc_end': '2026-10-05T17:00:00+00:00', 'utc_start': '2026-10-05T17:00:00+00:00'}, ...}",
+   "killed": true,
+   "mutant": "W33_native_fstat_of_another_descriptor",
+   "returncode": 1,
+   "seconds": 46.1,
+   "summary": "1 failed, 99 passed, 5 deselected in 43.55s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_identity_is_the_effective_uid_and_gid_and_fsync_reaches_the_kernel",
+   "killed": true,
+   "mutant": "W32_native_identity_reports_root_unconditionally",
+   "returncode": 1,
+   "seconds": 54.7,
+   "summary": "1 failed, 116 passed, 5 deselected in 52.18s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_e0_creates_the_seven_directories_and_the_runner_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W06_native_mkdir_ignores_the_signed_mode",
+   "returncode": 1,
+   "seconds": 43.9,
+   "summary": "1 failed, 99 passed, 5 deselected in 41.82s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:59: AssertionError: {'activation_performed': False, 'authority_sha256': 'e8898811488cebc48ace9461025734e3dac83b34b8f2347aad1ae3eb5ba4417c'...k': {'monotonic_elapsed_ms': 0, 'utc_end': '2026-10-05T17:00:00+00:00', 'utc_start': '2026-10-05T17:00:00+00:00'}, ...}",
+   "killed": true,
+   "mutant": "W20_native_mkdir_not_relative_to_the_held_descriptor",
+   "returncode": 1,
+   "seconds": 43.8,
+   "summary": "1 failed, 99 passed, 5 deselected in 41.74s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_identity_is_the_effective_uid_and_gid_and_fsync_reaches_the_kernel",
+   "killed": true,
+   "mutant": "W04_native_fsync_is_a_noop_in_install",
+   "returncode": 1,
+   "seconds": 51.2,
+   "summary": "1 failed, 116 passed, 5 deselected in 49.83s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_e0_creates_the_seven_directories_and_the_runner_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W05_native_link_follows_a_symlinked_temporary",
+   "returncode": 1,
+   "seconds": 43.1,
+   "summary": "1 failed, 99 passed, 5 deselected in 41.56s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_native.py:59: AssertionError: {'activation_performed': False, 'authority_sha256': 'cf3be0160ba9c0360efda3106e857cea76367026eb93913947875bcbce073ed2'...k': {'monotonic_elapsed_ms': 0, 'utc_end': '2026-10-05T17:00:00+00:00', 'utc_start': '2026-10-05T17:00:00+00:00'}, ...}",
+   "killed": true,
+   "mutant": "W21_native_unlink_not_relative_to_the_held_descriptor",
+   "returncode": 1,
+   "seconds": 41.6,
+   "summary": "1 failed, 99 passed, 5 deselected in 40.47s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_e0_creates_the_seven_directories_and_the_runner_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W22_native_create_strips_excl",
+   "returncode": 1,
+   "seconds": 41.8,
+   "summary": "1 failed, 99 passed, 5 deselected in 40.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_e0_creates_the_seven_directories_and_the_runner_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W23_native_create_strips_nofollow",
+   "returncode": 1,
+   "seconds": 42.7,
+   "summary": "1 failed, 99 passed, 5 deselected in 40.55s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_e0_creates_the_seven_directories_and_the_runner_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "W31_native_umask_is_a_noop_in_install",
+   "returncode": 1,
+   "seconds": 42.4,
+   "summary": "1 failed, 99 passed, 5 deselected in 40.44s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:655: AssertionError: assert (None == 'CREATED_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W15_created_file_device_not_compared_with_the_directory",
+   "returncode": 1,
+   "seconds": 39.1,
+   "summary": "1 failed, 94 passed, 5 deselected in 36.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_the_temporary_is_proved_before_the_link_and_before_its_removal",
+   "killed": true,
+   "mutant": "I47_temporary_not_looked_at_again_before_the_link",
+   "returncode": 1,
+   "seconds": 38.8,
+   "summary": "1 failed, 94 passed, 5 deselected in 36.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "I48_temporary_with_a_second_link_accepted_before_the_link",
+   "returncode": 1,
+   "seconds": 39.1,
+   "summary": "1 failed, 94 passed, 5 deselected in 37.43s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_failures_while_the_runner_is_written_withdraw_only_the_temporary_of_this_run",
+   "killed": true,
+   "mutant": "I49_incomplete_temporary_left_behind",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 77 passed, 5 deselected in 7.10s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:683: AssertionError: assert ('FILESYSTEM_...MPORARY_ONLY') == ('FILESYSTEM_...MPORARY_ONLY')",
+   "killed": true,
+   "mutant": "I51_removal_errno_overwrites_the_errno_of_the_failure",
+   "returncode": 1,
+   "seconds": 36.4,
+   "summary": "1 failed, 94 passed, 5 deselected in 35.05s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_effects_equal_in_authority_and_go_but_not_those_of_the_plan_are_refused",
+   "killed": true,
+   "mutant": "C77_effects_compared_between_the_two_documents_only",
+   "returncode": 1,
+   "seconds": 52.9,
+   "summary": "1 failed, 203 passed, 5 deselected in 50.53s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_gate_is_bounded_by_the_latest_start_and_the_earliest_end_whichever_document_holds_them",
+   "killed": true,
+   "mutant": "C78_gate_ends_with_the_go_window_only",
+   "returncode": 1,
+   "seconds": 55.4,
+   "summary": "1 failed, 217 passed, 5 deselected in 53.83s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78b_gate_ends_with_the_request_window_only",
+   "returncode": 1,
+   "seconds": 52.0,
+   "summary": "1 failed, 216 passed, 5 deselected in 49.84s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78c_gate_ends_with_the_authority_window_only",
+   "returncode": 1,
+   "seconds": 52.8,
+   "summary": "1 failed, 216 passed, 5 deselected in 50.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78d_gate_starts_with_the_go_window_only",
+   "returncode": 1,
+   "seconds": 53.3,
+   "summary": "1 failed, 216 passed, 5 deselected in 51.52s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78e_gate_starts_with_the_request_window_only",
+   "returncode": 1,
+   "seconds": 54.5,
+   "summary": "1 failed, 216 passed, 5 deselected in 52.55s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_gate_is_bounded_by_the_latest_start_and_the_earliest_end_whichever_document_holds_them",
+   "killed": true,
+   "mutant": "C78f_gate_starts_with_the_authority_window_only",
+   "returncode": 1,
+   "seconds": 52.5,
+   "summary": "1 failed, 217 passed, 5 deselected in 51.37s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C78g_gate_takes_the_widest_window",
+   "returncode": 1,
+   "seconds": 47.7,
+   "summary": "1 failed, 216 passed, 5 deselected in 46.58s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_instant_of_the_three_windows_lies_on_the_signed_day",
+   "killed": true,
+   "mutant": "C79_only_the_ends_must_lie_on_the_signed_day",
+   "returncode": 1,
+   "seconds": 44.4,
+   "summary": "1 failed, 218 passed, 5 deselected in 42.70s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_instant_of_the_three_windows_lies_on_the_signed_day",
+   "killed": true,
+   "mutant": "C79b_only_the_starts_must_lie_on_the_signed_day",
+   "returncode": 1,
+   "seconds": 44.2,
+   "summary": "1 failed, 218 passed, 5 deselected in 42.91s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C80_plan_window_start_not_tied_to_the_request",
+   "returncode": 1,
+   "seconds": 41.4,
+   "summary": "1 failed, 204 passed, 5 deselected in 39.73s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C80b_plan_window_end_not_tied_to_the_request",
+   "returncode": 1,
+   "seconds": 41.2,
+   "summary": "1 failed, 204 passed, 5 deselected in 40.14s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C81_transport_binding_keys_not_exact",
+   "returncode": 1,
+   "seconds": 40.3,
+   "summary": "1 failed, 204 passed, 5 deselected in 38.68s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C82_claim_root_keys_not_exact",
+   "returncode": 1,
+   "seconds": 37.6,
+   "summary": "1 failed, 204 passed, 5 deselected in 36.34s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C83_claim_root_path_unchecked",
+   "returncode": 1,
+   "seconds": 41.7,
+   "summary": "1 failed, 204 passed, 5 deselected in 40.06s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C83b_claim_root_path_may_be_relative",
+   "returncode": 1,
+   "seconds": 48.9,
+   "summary": "1 failed, 204 passed, 5 deselected in 47.47s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C84_claim_root_device_and_inode_unchecked",
+   "returncode": 1,
+   "seconds": 50.0,
+   "summary": "1 failed, 204 passed, 5 deselected in 48.46s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C84b_claim_root_device_unchecked",
+   "returncode": 1,
+   "seconds": 52.9,
+   "summary": "1 failed, 204 passed, 5 deselected in 51.01s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "C84c_claim_root_inode_unchecked",
+   "returncode": 1,
+   "seconds": 58.6,
+   "summary": "1 failed, 204 passed, 5 deselected in 57.13s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E19_mount_point_always_the_root",
+   "returncode": 0,
+   "seconds": 104.9,
+   "summary": "233 passed, 5 deselected in 103.86s (0:01:43)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "E19b_mount_point_one_component_too_high",
+   "returncode": 0,
+   "seconds": 104.8,
+   "summary": "233 passed, 5 deselected in 103.88s (0:01:43)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:655: AssertionError: assert ('TEMPORARY_REPLACED' == 'CREATED_METADATA_MISMATCH'",
+   "killed": true,
+   "mutant": "T03_created_file_link_count_not_checked",
+   "returncode": 1,
+   "seconds": 34.7,
+   "summary": "1 failed, 94 passed, 5 deselected in 33.05s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "T06_link_count_after_the_removal_of_the_temporary_not_checked",
+   "returncode": 1,
+   "seconds": 36.2,
+   "summary": "1 failed, 94 passed, 5 deselected in 33.75s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:626: AssertionError: assert (('REFUSED', '...', 'PRECHECK') == ('REFUSED', '...', 'PRECHECK')",
+   "killed": true,
+   "mutant": "T07_walk_does_not_compare_the_lstat_with_the_descriptor",
+   "returncode": 1,
+   "seconds": 37.4,
+   "summary": "1 failed, 90 passed, 5 deselected in 35.52s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "T08_clean_ignores_uncertain_calls",
+   "returncode": 0,
+   "seconds": 96.5,
+   "summary": "233 passed, 5 deselected in 94.73s (0:01:34)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "T09_escape_with_a_pending_call_not_looked_at",
+   "returncode": 0,
+   "seconds": 95.4,
+   "summary": "233 passed, 5 deselected in 93.90s (0:01:33)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+   "returncode": 0,
+   "seconds": 90.9,
+   "summary": "233 passed, 5 deselected in 89.11s (0:01:29)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__operation",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 5 deselected in 2.34s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__groups",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 5 deselected in 2.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_path",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 5 deselected in 2.09s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal_leaf",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 2.14s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__existing_journal_leaves",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 2.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 5 deselected in 2.30s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 5 deselected in 2.28s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__directories_to_create",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 5 deselected in 2.79s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 5 deselected in 2.42s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__chains_sha256",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 5 deselected in 1.95s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_root",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 5 deselected in 2.46s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 5 deselected in 2.52s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__evidence_boot_id_sha256",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 5 deselected in 2.61s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__files_created",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 5 deselected in 2.46s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__pre_existing_objects_modified",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 5 deselected in 2.09s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__daemon_reload",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 5 deselected in 2.52s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'c3po_direct...6-10-05', ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__activation",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 5 deselected in 2.55s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 5 deselected in 2.47s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__key",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 5 deselected in 2.29s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__path",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 5 deselected in 2.24s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__mode_octal",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 5 deselected in 2.43s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__creates__expect",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 5 deselected in 2.51s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag__reference",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 5 deselected in 2.44s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag__image_id",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 5 deselected in 2.33s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__retention_tag__expect",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 5 deselected in 1.90s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__placement",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 5 deselected in 2.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__path",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 5 deselected in 2.27s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__filesystem_named_by_chain",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 5 deselected in 1.92s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__filesystem_device",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.21s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__mount_point_by_device_change",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.14s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__journal__data_volume_touched_for_the_journal",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.28s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity__root_path",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.24s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity__receipt_directory_path",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.30s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__capacity__receipts_inside_capacity_root",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 5 deselected in 1.28s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_root__world_writable_without_sticky",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__data_volume_root__device_differs_from_parent",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 5 deselected in 1.12s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents__DATA_VOLUME",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents__ETC",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_provision__direct_parents__VAR_LIB",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 5 deselected in 1.30s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__operation",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 5 deselected in 1.13s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 5 deselected in 1.18s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 5 deselected in 1.20s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__chain_sha256",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.24s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__files_to_create",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.22s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__network_allowlist",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.16s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__data_volume_path",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.35s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__template_revision",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 5 deselected in 1.27s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__acknowledged_leftovers",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.25s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__evidence_boot_id_sha256",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.25s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__daemon_reload",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.13s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__external_processes",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 5 deselected in 1.22s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__pre_existing_objects_modified",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'c3po_direct...6-10-05', ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__activation",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 5 deselected in 1.45s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__journal_placement",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.30s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__deploy_tree_path",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__destination_name",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__mode_octal",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.20s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__profile",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 5 deselected in 1.33s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__template_sha256",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.40s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__rendered_sha256",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.38s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__rendered_bytes",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 deselected in 1.60s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__substitutions",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 deselected in 1.56s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__units__expect",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 5 deselected in 1.87s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__daemon_reload__performed_by_this_operation",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 5 deselected in 1.87s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__daemon_reload__owner",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 5 deselected in 1.65s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__path",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 5 deselected in 1.36s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__device",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 5 deselected in 1.18s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__inode",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.35s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__uid",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 5 deselected in 1.28s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__gid",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.35s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "EF_install_units__directory_row__mode",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 deselected in 1.40s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-activation_allowed-FLIP-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K01_request_activation_flag_dropped",
+   "returncode": 1,
+   "seconds": 61.3,
+   "summary": "1 failed, 143 passed, 5 deselected in 59.83s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-activation_allowed-FLIP-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K02_request_activation_flag_any_boolean",
+   "returncode": 1,
+   "seconds": 59.8,
+   "summary": "1 failed, 143 passed, 5 deselected in 58.37s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K03_request_activation_flag_must_be_false_as_in_hostops01",
+   "returncode": 0,
+   "seconds": 112.3,
+   "summary": "233 passed, 5 deselected in 111.29s (0:01:51)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-writes_allowed-FLIP-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K04_request_writes_flag_dropped",
+   "returncode": 1,
+   "seconds": 59.4,
+   "summary": "1 failed, 145 passed, 5 deselected in 57.90s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-max_seconds-61-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K05_request_max_seconds_dropped",
+   "returncode": 1,
+   "seconds": 61.1,
+   "summary": "1 failed, 140 passed, 5 deselected in 59.92s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[request-max_seconds-60.0-REQUEST_SCOPE]",
+   "killed": true,
+   "mutant": "K06_request_max_seconds_type_unchecked",
+   "returncode": 1,
+   "seconds": 63.9,
+   "summary": "1 failed, 142 passed, 5 deselected in 62.23s (0:01:02)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-activation_allowed-FLIP-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "K07_authority_activation_flag_dropped",
+   "returncode": 1,
+   "seconds": 69.6,
+   "summary": "1 failed, 153 passed, 5 deselected in 67.71s (0:01:07)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[authority-writes_allowed-FLIP-AUTHORITY_UNBOUND]",
+   "killed": true,
+   "mutant": "K08_authority_writes_flag_dropped",
+   "returncode": 1,
+   "seconds": 67.4,
+   "summary": "1 failed, 155 passed, 5 deselected in 65.91s (0:01:05)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K09_authority_activation_flag_must_be_false",
+   "returncode": 0,
+   "seconds": 97.6,
+   "summary": "233 passed, 5 deselected in 96.15s (0:01:36)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-activation_allowed-FLIP-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "K10_go_activation_flag_dropped",
+   "returncode": 1,
+   "seconds": 67.9,
+   "summary": "1 failed, 166 passed, 5 deselected in 66.62s (0:01:06)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_every_unbound_or_foreign_member_has_its_constant_refusal[go-writes_allowed-FLIP-GO_UNBOUND]",
+   "killed": true,
+   "mutant": "K11_go_writes_flag_dropped",
+   "returncode": 1,
+   "seconds": 67.6,
+   "summary": "1 failed, 168 passed, 5 deselected in 65.95s (0:01:05)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K12_go_activation_flag_must_be_false",
+   "returncode": 0,
+   "seconds": 99.1,
+   "summary": "233 passed, 5 deselected in 98.33s (0:01:38)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_evidence_must_name_the_precheck_receipt_the_rows_were_copied_from",
+   "killed": true,
+   "mutant": "K13_required_evidence_operation_not_required",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 61 passed, 5 deselected in 7.79s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K14_one_required_evidence_operation_is_enough",
+   "returncode": 0,
+   "seconds": 91.3,
+   "summary": "233 passed, 5 deselected in 89.47s (0:01:29)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:133: AssertionError: assert (True, False,...RECHECK_01',)) == (True, False,...RECHECK_01',))",
+   "killed": true,
+   "mutant": "K15_epoch_ends_one_day_earlier",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 3.08s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:133: AssertionError: assert (True, False,...RECHECK_01',)) == (True, False,...RECHECK_01',))",
+   "killed": true,
+   "mutant": "K16_epoch_goes_on_one_more_day",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.59s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:133: AssertionError: assert (True, False,...RECHECK_01',)) == (True, False,...RECHECK_01',))",
+   "killed": true,
+   "mutant": "K17_epoch_starts_one_day_earlier",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.66s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K18_weekend_writes_reach_the_first_session_day",
+   "returncode": 0,
+   "seconds": 86.0,
+   "summary": "233 passed, 5 deselected in 84.15s (0:01:24)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K19_first_session_class_holds_two_days",
+   "returncode": 0,
+   "seconds": 84.7,
+   "summary": "233 passed, 5 deselected in 83.15s (0:01:23)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K20_first_session_class_is_the_weekend",
+   "returncode": 0,
+   "seconds": 77.0,
+   "summary": "233 passed, 5 deselected in 76.03s (0:01:16)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:133: AssertionError: assert (True, False,...RECHECK_01',)) == (True, False,...RECHECK_01',))",
+   "killed": true,
+   "mutant": "K21_session_writes_start_on_sunday",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.97s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K22_epoch_writes_include_friday_the_second",
+   "returncode": 0,
+   "seconds": 75.0,
+   "summary": "233 passed, 5 deselected in 73.61s (0:01:13)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K23_read_class_stops_before_the_last_day",
+   "returncode": 0,
+   "seconds": 73.7,
+   "summary": "233 passed, 5 deselected in 72.58s (0:01:12)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK4E0::test_documents_are_decoded_from_bytes_and_must_be_canonical",
+   "killed": true,
+   "mutant": "K24_document_size_limit_removed",
+   "returncode": 1,
+   "seconds": 41.7,
+   "summary": "1 failed, 133 passed, 5 deselected in 40.49s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K25_document_limit_argument_ignored",
+   "returncode": 0,
+   "seconds": 74.2,
+   "summary": "233 passed, 5 deselected in 72.61s (0:01:12)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:736: AssertionError: assert ('RECEIPT_REDUCED_TO_MINIMUM' == 'RECEIPT_REDUCED_TO_MINIMUM'",
+   "killed": true,
+   "mutant": "K26_receipt_does_not_name_the_core",
+   "returncode": 1,
+   "seconds": 29.5,
+   "summary": "1 failed, 98 passed, 5 deselected in 28.08s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "K27_escape_of_a_switching_source_says_false",
+   "returncode": 0,
+   "seconds": 74.4,
+   "summary": "233 passed, 5 deselected in 73.33s (0:01:13)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:736: KeyError: 'core_sha256'",
+   "killed": true,
+   "mutant": "K28_minimum_receipt_loses_the_core_hash",
+   "returncode": 1,
+   "seconds": 30.2,
+   "summary": "1 failed, 98 passed, 5 deselected in 28.89s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:738: RuntimeError: broken clock",
+   "killed": true,
+   "mutant": "K29_timing_raises_when_a_clock_fails",
+   "returncode": 1,
+   "seconds": 31.7,
+   "summary": "1 failed, 98 passed, 5 deselected in 30.28s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P01_any_owner_accepted_outside_an_open_root",
+   "returncode": 0,
+   "seconds": 73.6,
+   "summary": "233 passed, 5 deselected in 72.55s (0:01:12)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P02_world_writable_directory_accepted_inside_an_open_root",
+   "returncode": 0,
+   "seconds": 71.6,
+   "summary": "233 passed, 5 deselected in 70.29s (0:01:10)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P03_sticky_bit_does_not_excuse",
+   "returncode": 0,
+   "seconds": 72.3,
+   "summary": "233 passed, 5 deselected in 71.18s (0:01:11)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P04_group_writable_counted_as_world_writable",
+   "returncode": 0,
+   "seconds": 72.4,
+   "summary": "233 passed, 5 deselected in 71.02s (0:01:11)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:358: AssertionError: PARENT_SETGID",
+   "killed": true,
+   "mutant": "P05_setgid_parent_accepted",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 29 passed, 5 deselected in 3.30s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P06_setgid_refused_even_when_nothing_is_created_there",
+   "returncode": 0,
+   "seconds": 73.3,
+   "summary": "233 passed, 5 deselected in 71.96s (0:01:11)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P07_open_root_unchecked",
+   "returncode": 0,
+   "seconds": 72.3,
+   "summary": "233 passed, 5 deselected in 71.32s (0:01:11)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P08_open_root_may_be_the_whole_tree",
+   "returncode": 0,
+   "seconds": 69.3,
+   "summary": "233 passed, 5 deselected in 68.13s (0:01:08)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/build/k4_e0.py:544: TypeError: 'NoneType' object is not iterable",
+   "killed": true,
+   "mutant": "P09_rows_of_the_chain_not_validated",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 14 passed, 5 deselected in 2.64s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "P10_chain_effects_name_the_first_row",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.46s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:47: AssertionError: assert {'activation'....}, ...}, ...} == {'activation'....}, ...}, ...}",
+   "killed": true,
+   "mutant": "P11_chain_hash_of_the_last_row_only",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 5 deselected in 1.48s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:92: AssertionError: assert {'free_bytes'...t_effect': 60} == {'free_bytes'...t_effect': 60}",
+   "killed": true,
+   "mutant": "P12_free_bytes_counts_blocks_reserved_for_root",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 5 deselected in 1.23s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P13_signature_without_the_content_change_instants",
+   "returncode": 0,
+   "seconds": 68.2,
+   "summary": "233 passed, 5 deselected in 67.20s (0:01:07)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P14_signature_without_identity",
+   "returncode": 0,
+   "seconds": 69.1,
+   "summary": "233 passed, 5 deselected in 67.93s (0:01:07)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "P15_signature_without_owner_and_mode",
+   "returncode": 0,
+   "seconds": 69.9,
+   "summary": "233 passed, 5 deselected in 68.80s (0:01:08)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F01_directory_mode_unchecked_before_the_mkdir",
+   "returncode": 0,
+   "seconds": 70.2,
+   "summary": "233 passed, 5 deselected in 68.98s (0:01:08)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F02_directory_path_not_tied_to_the_pinned_parent",
+   "returncode": 0,
+   "seconds": 67.4,
+   "summary": "233 passed, 5 deselected in 66.20s (0:01:06)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F03_file_mode_unchecked_before_the_creation",
+   "returncode": 0,
+   "seconds": 70.6,
+   "summary": "233 passed, 5 deselected in 69.56s (0:01:09)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F04_file_size_unbounded",
+   "returncode": 0,
+   "seconds": 72.1,
+   "summary": "233 passed, 5 deselected in 70.74s (0:01:10)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F05_empty_file_accepted",
+   "returncode": 0,
+   "seconds": 74.2,
+   "summary": "233 passed, 5 deselected in 72.84s (0:01:12)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F06_file_name_unchecked",
+   "returncode": 0,
+   "seconds": 81.8,
+   "summary": "233 passed, 5 deselected in 80.76s (0:01:20)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F07_go_prefix_unchecked",
+   "returncode": 0,
+   "seconds": 82.8,
+   "summary": "233 passed, 5 deselected in 81.45s (0:01:21)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F08_name_grammar_unchecked",
+   "returncode": 0,
+   "seconds": 81.9,
+   "summary": "233 passed, 5 deselected in 80.07s (0:01:20)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F09_path_need_not_lie_in_the_pinned_parent",
+   "returncode": 0,
+   "seconds": 84.3,
+   "summary": "233 passed, 5 deselected in 82.77s (0:01:22)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F10_same_temporary_name_for_every_file",
+   "returncode": 0,
+   "seconds": 83.2,
+   "summary": "233 passed, 5 deselected in 81.54s (0:01:21)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:75: AssertionError: assert [('mkdir', '/...claims'), ...] == [('mkdir', '/...claims'), ...]",
+   "killed": true,
+   "mutant": "F11_temporary_name_not_keyed_by_the_go",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 5 deselected in 1.59s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "F12_mkdir_with_a_fixed_mode",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 5 deselected in 1.53s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: READBACK_MISMATCH",
+   "killed": true,
+   "mutant": "F13_created_directory_mode_compared_with_a_constant",
+   "returncode": 1,
+   "seconds": 32.0,
+   "summary": "1 failed, 93 passed, 5 deselected in 30.74s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:655: AssertionError: assert ('READBACK_HASH_MISMATCH' == 'CREATED_METADATA_MISMATCH'",
+   "killed": true,
+   "mutant": "F14_created_file_mode_not_compared",
+   "returncode": 1,
+   "seconds": 33.5,
+   "summary": "1 failed, 94 passed, 5 deselected in 32.30s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F15_readback_does_not_compare_the_bytes",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 79 passed, 5 deselected in 8.23s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F16_readback_does_not_compare_the_identity",
+   "returncode": 1,
+   "seconds": 31.0,
+   "summary": "1 failed, 96 passed, 5 deselected in 29.37s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F17_readback_does_not_compare_the_owner",
+   "returncode": 1,
+   "seconds": 32.3,
+   "summary": "1 failed, 96 passed, 5 deselected in 30.88s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F18_readback_does_not_compare_the_mode",
+   "returncode": 1,
+   "seconds": 32.4,
+   "summary": "1 failed, 96 passed, 5 deselected in 30.80s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F19_readback_does_not_compare_the_link_count",
+   "returncode": 1,
+   "seconds": 33.0,
+   "summary": "1 failed, 96 passed, 5 deselected in 31.51s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F20_readback_without_proving_the_directory_again",
+   "returncode": 1,
+   "seconds": 30.8,
+   "summary": "1 failed, 96 passed, 5 deselected in 29.50s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F21_directory_readback_ignores_the_entries",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 2 passed, 5 deselected in 1.93s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F22_directory_readback_ignores_the_resolved_path",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 76 passed, 5 deselected in 6.12s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:28: AssertionError: None",
+   "killed": true,
+   "mutant": "F23_directory_readback_ignores_owner_and_mode",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 79 passed, 5 deselected in 7.98s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_the_temporary_is_proved_before_the_link_and_before_its_removal",
+   "killed": true,
+   "mutant": "F24_objects_left_forgets_a_temporary",
+   "returncode": 1,
+   "seconds": 30.4,
+   "summary": "1 failed, 94 passed, 5 deselected in 28.93s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k4_e0.py::test_failures_after_the_link_leave_the_complete_runner_and_the_receipt_says_what_is_left",
+   "killed": true,
+   "mutant": "F25_objects_left_counts_a_linked_pair_once",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 78 passed, 5 deselected in 6.94s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F26_file_request_accepts_any_mode",
+   "returncode": 0,
+   "seconds": 80.9,
+   "summary": "233 passed, 5 deselected in 79.71s (0:01:19)",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/k4_e0/tests/test_k4_e0.py:358: AssertionError: RUNNER_PLAN_INVALID",
+   "killed": true,
+   "mutant": "F27_file_request_accepts_the_null_hash",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 44 passed, 5 deselected in 5.42s",
+   "tests": [
+    "test_k4_e0.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": [
+  "E11_probe_follows_nothing_but_reports_a_symlink_component_absent",
+  "E12_descend_without_nofollow",
+  "E13_descend_enters_a_symlink_component",
+  "E19_mount_point_always_the_root",
+  "E19b_mount_point_one_component_too_high",
+  "T08_clean_ignores_uncertain_calls",
+  "T09_escape_with_a_pending_call_not_looked_at",
+  "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+  "K03_request_activation_flag_must_be_false_as_in_hostops01",
+  "K09_authority_activation_flag_must_be_false",
+  "K12_go_activation_flag_must_be_false",
+  "K14_one_required_evidence_operation_is_enough",
+  "K18_weekend_writes_reach_the_first_session_day",
+  "K19_first_session_class_holds_two_days",
+  "K20_first_session_class_is_the_weekend",
+  "K22_epoch_writes_include_friday_the_second",
+  "K23_read_class_stops_before_the_last_day",
+  "K25_document_limit_argument_ignored",
+  "K27_escape_of_a_switching_source_says_false",
+  "P01_any_owner_accepted_outside_an_open_root",
+  "P02_world_writable_directory_accepted_inside_an_open_root",
+  "P03_sticky_bit_does_not_excuse",
+  "P04_group_writable_counted_as_world_writable",
+  "P06_setgid_refused_even_when_nothing_is_created_there",
+  "P07_open_root_unchecked",
+  "P08_open_root_may_be_the_whole_tree",
+  "P13_signature_without_the_content_change_instants",
+  "P14_signature_without_identity",
+  "P15_signature_without_owner_and_mode",
+  "F01_directory_mode_unchecked_before_the_mkdir",
+  "F02_directory_path_not_tied_to_the_pinned_parent",
+  "F03_file_mode_unchecked_before_the_creation",
+  "F04_file_size_unbounded",
+  "F05_empty_file_accepted",
+  "F06_file_name_unchecked",
+  "F07_go_prefix_unchecked",
+  "F08_name_grammar_unchecked",
+  "F09_path_need_not_lie_in_the_pinned_parent",
+  "F10_same_temporary_name_for_every_file",
+  "F26_file_request_accepts_any_mode"
+ ]
+}

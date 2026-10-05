@@ -1,0 +1,168 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "date_class": "WRITE_SESSIONS",
+  "dates": [
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07",
+   "2026-10-08",
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "dispatcher_sha256": "8a7bf63f78459dc935e09b0c2d2bb44177e6c4664075644ffa4e7d4b151c6948",
+  "final_payload_bytes": 258947,
+  "final_payload_sha256": "e358e7f8e11460de86d945a75a47efb7b18cef1600b880aa0d57073c43f1b937",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "63f6a5ba4e72ef0ce7bb6f27b78513dca324dc46234090e779eba34ae3a2ad74",
+  "parts": [
+   "core",
+   "runner",
+   "docker",
+   "parents",
+   "files"
+  ],
+  "scope_sha256": "0c3f75f402f8bd418e8d6415422c36994330acfa8dd2a48eece8076513dc616b",
+  "source_bytes": 171811,
+  "source_sha256": "7698a9934997571f7ede4f5dbe7d555f0ecab6ac85644de99d0177a814690707",
+  "spec_sha256": "89dc183d12a8672b56eda747ccbedeca75e778db408e45aedacee16567b2beb2",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 18440,
+  "writes_allowed": true
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "contracts": {
+  "k9r_build": "../k9_phase_read/build/k9_phase_read.py",
+  "k9r_build_sha256": "0f0d65ba3724d92f7f80761b3ba6659340425d397858185a815a55a987d2de52",
+  "meaning": "the files the step plan, launch record and receipt checks were matched to when this was sealed; both are in progress",
+  "runner_source": "W/fable-k9runner-20261004/src/k9_runner.readable.py",
+  "runner_source_sha256": null
+ },
+ "core": {
+  "core_sha256sums": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "generation_sha256_of_assemble_py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "fixture": {
+  "module_sha256": "00e14b43d3ebdbe14a5fa281f6f06b454853d6ab312fbdaab828c9737744bece",
+  "runner_bytes": "SYNTHETIC test bytes only (tests/k9w.py RUNNER); the runner is judged by hash on the host (TREE), not here"
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "entry_point": "linux_root/run.sh (after core/linux_root/run.sh ../k9_phase_step)",
+  "gate": "set 3: the core linux_root job run with this directory as its argument, suite passing as real root, then linux_root/run.sh exit 0",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_RUN.json": {
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 242,
+    "redundant_survivors": 0,
+    "single": 242,
+    "survivors": 0
+   },
+   "errors": [],
+   "killed_by_the_time_limit": [],
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "sha256": "18c06a75155a6e13efbf3afe135ad51e045a5154aeacfe506a6e557141bad04a",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 242,
+    "redundant_survivors": 0,
+    "single": 242,
+    "survivors": 0
+   },
+   "errors": [],
+   "killed_by_the_time_limit": [],
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "sha256": "e8f1fad7ba8f91c8426956b28ebb823e5ef4a348313b2edbc36e859bdb4f1627",
+   "stale_pins": [],
+   "survivors": []
+  }
+ },
+ "operation": "GO_WRITE_HOSTOPS02_K9_PHASE_STEP_01",
+ "placement": {
+  "amended_by": "Codex decision 6, #429 comment 5985748037: source_root /var/lib/c3po/r2d2-v2-source-20261005, root-only chain, on the filesystem of days/",
+  "decision_file": "W/codex-n8-placement-20261004.txt",
+  "decision_sha256": "d30f7f9048af4a39cf4fa7d9f49292ad387a2d41f33bad39816e83d3d1fc2c53",
+  "note": "a location decision, not a GO of these bytes or a host authorization",
+  "previous_revision": "../k9_phase_step.rev1-165330a6",
+  "revision": 3,
+  "status": "DECIDED_BY_CODEX_2026_10_04"
+ },
+ "revision": 3,
+ "schema": "HOSTOPS02_K9_PHASE_STEP_VALIDATION_V1",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 653,
+   "per_file": {
+    "test_conformance": 605,
+    "test_linux_root": 2,
+    "test_native": 4,
+    "test_plan": 17,
+    "test_step": 29
+   },
+   "python": "Python 3.9.6",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 4,
+   "skipped_tests": [
+    "test_attempt_key_is_the_act_b_one_by_its_own_function",
+    "test_every_write_window_of_both_grids_of_the_note_passes_the_window_rule",
+    "test_static_the_write_operations_are_those_of_k9_operations_json_and_the_note_is_the_pinned_one",
+    "test_the_step_plan_is_the_runners_by_its_own_tables"
+   ],
+   "tests": 657
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 653,
+   "per_file": {
+    "test_conformance": 605,
+    "test_linux_root": 2,
+    "test_native": 4,
+    "test_plan": 17,
+    "test_step": 29
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 4,
+   "skipped_tests": [
+    "test_attempt_key_is_the_act_b_one_by_its_own_function",
+    "test_every_write_window_of_both_grids_of_the_note_passes_the_window_rule",
+    "test_static_the_write_operations_are_those_of_k9_operations_json_and_the_note_is_the_pinned_one",
+    "test_the_step_plan_is_the_runners_by_its_own_tables"
+   ],
+   "tests": 657
+  }
+ ],
+ "suites_with_other_operations": null,
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "349bd2e0e9737f7ad33e907705571d8398d5f77261e47dcb174cece926620feb",
+  "DISPATCH.UNBOUND.json": "5d8eb3110263d394a1285c46c6864d3fbc5eabb817e5bf82e2cafda4e7439776",
+  "FINAL_PAYLOAD.UNBOUND.py": "e358e7f8e11460de86d945a75a47efb7b18cef1600b880aa0d57073c43f1b937",
+  "GO.UNBOUND.json": "a5fde1de8ba3056cc2d689f4c5ab9b90a73f73e9963272323e36218bbb592e3b",
+  "PUBLICATION_PROOF.UNBOUND.json": "16530f7f427c22e998800115d453e4a0ba91565d9030793d05bf1d43f7183b6b",
+  "REQUEST.UNBOUND.json": "66d0368896801a75f6fc7107877be04d2b5ef7a43ea045941565f8c2783af44c"
+ }
+}

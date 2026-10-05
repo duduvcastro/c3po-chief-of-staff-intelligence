@@ -1,0 +1,472 @@
+HOSTOPS02 / K10 - install_release - GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01
+Epoch R2D2-V2-SHADOW-2026-10-05, first session Monday 2026-10-05. SINGLE SHOT for the epoch by the signed order.
+Revision 2, after the review of 2026-10-02. The payload bytes are those of revision 1 (same source hash).
+
+Offline work only. Nothing in this directory was run on the host, pushed, or bound. Every hash of a file of this
+directory and every count is in VALIDATION.json and SHA256SUMS, written by seal.py from the files and from the runs;
+none is typed here. The two values typed in section 5 (the deployed revision and its implementation package) are
+facts of the release, not of this directory; they are constants of binding/release_fields.py and a test pins them.
+DESIGN.md is the design (effects in order, every refusal, crash points, budget, what is signed, what only the host
+can prove, and in its section 12 every finding of the review with what answers it); this file is the specification
+a reviewer signs against, the binding steps, the Monday steps, and what a receipt means.
+
+1. STATUS
+
+  Built and tested by its author (Fable). Revision 1 was read by two reviewers (lenses: purity and authentication;
+  host). They found no defect in the payload bytes and fifteen findings around them, three of them MAJOR: nothing
+  had run on Linux as root; no gate on Monday before the dispatch; the revision of the release was judged by grammar
+  only. All fifteen were accepted (four with a detail corrected) and answered without changing a payload byte: by
+  three bind-time tools, by tests, by two more mutation lists, by the seal and by this text.
+  Not bound: the release bytes do not exist yet (cut on Saturday); they are a bind-time input (section 6).
+  Core: generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6 (sha256 of ../core/assemble.py),
+  seal ../core/CORE_SHA256SUMS; the core was read, never edited. seal.py refuses to seal on any other core.
+  Parts carried: core, parents, files. NOT carried: runner, docker, lock. This source starts no process.
+  THE LINUX JOB HAS NOT RUN. Nothing may be bound until binding/linux_proof.py has accepted its two junit files
+  (section 6, step 2). This is a gate, not a note: no byte of K10 has executed mkdirat, the exclusive creation,
+  linkat, unlinkat or fsync by descriptor on Linux, as real root, or on the host, K10 has no dry mode, and K11 PRE
+  runs other bytes.
+  Before any GO: (a) the Linux proof accepted; (b) the reviewers' reading of this revision (the three tools, the new
+  tests; op.py, spec.py and build/ are unchanged); (c) the open decisions of section 10 answered, D-6 and D-11
+  first; (d) K11 PRE on the real release bytes; (e) the host evidence of section 5 (j) on record.
+
+2. WHAT IS IN THIS DIRECTORY
+
+  DESIGN.md CONTRACT.txt VALIDATION.json SHA256SUMS seal.py
+  spec.py                 assembly specification (name, parts, header, unbound plan)
+  op.py                   the operation's own part: constants, validate_plan, effects_of, perform
+  build/                  written by ../core/assemble.py from spec.py, op.py and the sealed core; never edited:
+                          install_release.py (THE payload source), dispatch_once.py, launcher_stdin.py,
+                          transport_once.py, REQUEST|AUTHORITY|GO|DISPATCH|PUBLICATION_PROOF.UNBOUND.json,
+                          FINAL_PAYLOAD.UNBOUND.py, the two delta diffs, ASSEMBLY.json
+  binding/                the three tools of the binder. None is payload; each prints one JSON object, writes
+                          nothing and contacts nothing:
+    release_fields.py     release file + three required expectations -> the plan member "release" (step 4)
+    linux_proof.py        the two junit files of the Linux job -> LINUX_PROOF_ACCEPTED or REFUSED (step 2)
+    predispatch.py        M0's receipt -> DISPATCH_ALLOWED or DO_NOT_DISPATCH (Sunday step 12, Monday steps 14, 15)
+  tests/                  conftest.py k10.py native_child.py native_support.py
+                          test_conformance.py test_install_release.py test_effects_guards.py test_dispatch_guards.py
+                          test_purity.py test_native.py test_binding.py test_linux_proof.py test_predispatch.py
+                          make_synthetic_release.py make_m0_fixture.py (author's tools that write the fixtures)
+                          fixtures/release.SYNTHETIC.json fixtures/RELEASE_VERIFY.SYNTHETIC.json
+                          fixtures/M0_REQUEST|M0_RECEIPT|M0_FIXTURE.W1_EMULATION.json
+  mutation/               mutate.py mutants.py sweep.py review.py tools.py and the records (section 9)
+  work/                   scratch (mutation copies, logs, an extracted release tree); not sealed, not needed
+  review-*/               where reviewers of these bytes wrote; not sealed, read by nothing
+
+  The fixture release is SYNTHETIC: a document in the shape and with the constants of a release of this epoch,
+  verified by the application's own Release.verify at dd4ec4bb with a synthetic build revision. With the deployed
+  revision the application refuses it (RELEASE_CODE_OR_AUTHORIZATION_UNVERIFIED, recorded and tested). It carries
+  no approval of anyone. It must never be bound, and binding/release_fields.py refuses it by its marker.
+  The M0 fixture is a receipt PRODUCED by the W1 source itself on the emulated host of W1's own test file; every
+  value in it is a constant of that emulation, none is a value of the host.
+
+3. SPECIFICATION
+
+3.1 Identity
+  operation GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01     phase WRITE_INSTALL_RELEASE_NO_ACTIVATION
+  schemas   WRITE_HOSTOPS02_INSTALL_RELEASE_{REQUEST,AUTHORITY,GO,RECEIPT}_V1, HOSTOPS02_INSTALL_RELEASE_PLAN_V1
+  writes_allowed true, activation_allowed false, date class WRITE_FIRST_SESSION (2026-10-05 UTC only, at the source
+  and at the dispatcher), gate span at most 900 s, evidence required and it must name GO_READONLY_HOSTOPS_PRECHECK_01.
+  Authentication, pins, canonical documents, effects binding, windows, executor uid, single-use claim, launcher and
+  transport: the family's, unchanged (CORE.md sections 2, 5; the conformance suite on this source).
+
+3.2 Constants (bytes of the signed source; a request cannot move them)
+  epoch R2D2-V2-SHADOW-2026-10-05; first session 2026-10-05; release schema R2D2_V2_RELEASE_V3; mode CERTIFIED
+  New York day of the first session: 2026-10-05T04:00:00+00:00 to 2026-10-06T04:00:00+00:00 (UTC-4 on that day)
+  data volume /mnt/day-d-data; directory r2d2-v2-release-20261005; file release.CERTIFIED.json
+  path in the worker /app/day-d-data/r2d2-v2-release-20261005/release.CERTIFIED.json (reported, not verified here)
+  maintenance pin /mnt/day-d-data/.r2d2-v2-pinned
+  release at most 32768 bytes; free-space floor 1048576 bytes; 15 s left before the first effect; budget 60 s
+  NOT a constant of the source: the deployed revision and its implementation package. The source judges
+  code_revision and implementation_package_sha of the release by grammar only (D-11); the comparison with the
+  deployed values is made at binding (section 6, step 4).
+
+3.3 Plan (what a request adds to the seven common members)
+  parent                   three rows, for "/", "/mnt", "/mnt/day-d-data": {path, device, inode, uid, gid, mode}
+  evidence_boot_id_sha256  sha256 of the boot identifier of the receipt the rows come from
+  release                  {path (the constant), content_b64 (strict base64 of the release bytes), sha256, bytes}
+
+3.4 Effects (literal in the authority and in the GO; recomputed from the plan and compared)
+  operation; parent {path, row, chain_sha256, mount_point_by_device_change}; open_root; directory {path, 0700, 0:0,
+  expect ABSENT}; file {path, sha256, bytes, 0600, 0:0, links 1}; release {schema, mode, epoch, first_session,
+  code_revision, implementation_package_sha, approved_at} as read from the bytes; release_file_in_the_worker;
+  maintenance_pin {path, required PRESENT_REGULAR_ROOT_OWNED}; new_york_day_utc; evidence_boot_id_sha256;
+  pre_existing_objects_modified false; activation false; container_recreated false; process_started false.
+  Success criterion of the GO: RELEASE_INSTALLED_BYTES_READ_BACK_NOT_ACTIVATED.
+
+3.5 The run
+  Refused from the bytes, before any claim: DESIGN.md 3.1 (fifteen codes of this operation and the family's).
+  Looked at on the host before the first creation, in this order: executor uid and gid 0; the New York day by the
+  run's own clock; the boot of the evidence; the three parents by descriptor against the signed rows; the pin
+  (regular, root:root); the destination (absent); free space; the time left. Any failure: REFUSED, nothing created.
+  Then, each through the core's mutate(): mkdir 0700 -> exclusive temporary 0600 -> write -> link to the final
+  name -> removal of the temporary; five fsyncs. Then the readback inside the run: the bytes through a descriptor
+  against the signed bytes with identity, owner, mode and link count; the directory resolved again from "/" with
+  exactly one entry; the parents again.
+  REFUSED only while no mutating call succeeded and none is uncertain. Anything else that is not complete is
+  PARTIAL, and its ledger names the state. Nothing is repaired, nothing that exists is overwritten, renamed,
+  chmodded, chowned or removed, except the temporary of this run once its identity is proved. No second attempt.
+  After a refusal of the gate (expiry, a clock that stepped back) nothing more is looked at and nothing is removed.
+
+3.6 Receipt members (beyond the family's envelope)
+  phase_reached            AUTHENTICATION | BEFORE_ANY_EFFECT | PRECHECK | EFFECTS | ESCAPED
+  effects                  as signed
+  parent                   the rows as observed (they carry device and inode numbers: the receipt is private)
+  precheck                 maintenance_pin {type, uid, gid, mode_octal, links}; destination {exists, found};
+                           free_bytes; seconds_left_before_first_effect
+  directories[0]           the ledger row of the directory: state, code, errno, observed, fsync flags
+  ledger[0]                the ledger row of the file: state, code, sha256_signed, sha256_observed, bytes, mode,
+                           uid, gid, links, device, inode, temporary name and what became of it, fsync flags
+  mutating_calls           issued, succeeded, failed_nothing_changed, uncertain
+  objects_left_by_this_run 0 | 1 | 2 | 3
+  readback                 COMPLETE or null
+  installed                null unless complete: path, release_file_in_the_worker, sha256 (as read back), bytes,
+                           mode, uid, gid, links, directory mode and entries, bytes_equal_the_signed_bytes true,
+                           epoch, verified_with_the_application false
+  The release bytes never enter a receipt (hash and size only). No secret is read. A complete receipt of the
+  fixture is under 5000 bytes.
+
+4. WHAT A RECEIPT MEANS FOR THE GATES
+
+  NEVER DISPATCHED (binding/predispatch.py answered DO_NOT_DISPATCH; no claim file of this GO exists)
+    Nothing was refused: the signed order speaks of a phase that is refused or stays uncertain, and a request that
+    is never dispatched is neither. The owner's signature on that request is not spent by a refusal; it is simply
+    not used. The way on is section 6, step 14.
+  KNOWN_COMPLETE (exit 0, outcome RELEASE_INSTALLED_BYTES_READ_BACK_NOT_ACTIVATED)
+    It says: at the constant path stands a regular file root:root 0600 with one link, in a directory root:root 0700
+    with one entry, and its bytes, read back through a descriptor inside the run, are the signed bytes.
+    It does NOT say: that the release verifies (installed.verified_with_the_application is false), that the release
+    was cut for the deployed revision (the source does not compare it; the binding did), that the worker sees the
+    path, or that anything was activated.
+    Gate: M2 (K11 POST) may be dispatched; M3 (K6a) only after M2. K11 POST can pin installed.sha256 and the
+    identities in ledger[0] and directories[0].observed; K6a's override must name installed.release_file_in_the_worker
+    and installed.sha256.
+  KNOWN_REFUSAL (exit 1, outcome REFUSED_NOTHING_CHANGED)
+    Nothing of this run exists on the host (mutating_calls.succeeded 0, uncertain 0, objects_left_by_this_run 0).
+    The code says why. By ORD:7 the epoch does not start. The spare request is not a retry: it is usable only if
+    the primary was never dispatched (Q-R), and the Monday gate refuses it otherwise (section 6, step 15).
+  KNOWN_PARTIAL (exit 2, outcome PARTIAL_REQUIRES_RECONCILIATION or RECEIPT_REDUCED_STATE_REQUIRES_READBACK)
+    Something of this run exists; directories[0].state and ledger[0].state say what (DESIGN.md 3.3 and 5).
+    A second request refuses with DESTINATION_PRESENT and repairs nothing.
+    In three of the partial states the final name holds exactly the signed bytes. What the gates AS BUILT do:
+
+      ledger[0].state            on the host                              reader of the     K11 POST            K6a
+                                                                          application
+      LINKED_TEMPORARY_PRESENT   final name and the temporary: one        accepts           two findings:       refuses: the file
+      (state D)                  inode, two links, two entries                              RELEASE_DIRECTORY_  must have one link
+                                                                                            ENTRIES, RELEASE_   (RELEASE_FILE_NOT_
+                                                                                            FILE_METADATA       AS_INSTALLED)
+      INSTALLED_NOT_DURABLE      final name alone; the last directory     accepts           no finding of its   accepts the layout
+      (state E)                  fsync failed or was not reached (one                       own (durability
+                                 link). With the code CREATED_METADATA_                     is not visible);
+                                 MISMATCH the file has another link:                        with another link
+                                 then as state D for the two gates                          as state D
+      INSTALLED_DURABLE,         final name alone, one link, fsynced;     accepts           no finding          accepts the layout
+      installed null (state E)   the readback or the last look at the
+                                 parents did not finish (expiry, EIO)
+
+    State D cannot be activated with K6a as built, and the family has no operation that removes the temporary
+    (C2 is unbuilt): the epoch is lost for a release that is in place, unless D-6 is answered otherwise before
+    Sunday's signature (accept the loss; or build and pre-bind the removal of this run's own temporary; or let
+    K11 and K6a accept the second link when it is the temporary of M1's own GO).
+    UNTIL D-6 IS ANSWERED IN WRITING BY THE OWNER AND THE CO-AUDITOR, THE STRICT READING HOLDS: every
+    KNOWN_PARTIAL of install_release on 05/10 is "uncertain" in the sense of ORD:7 and the epoch does not start,
+    whatever K11 POST then finds. This source does not decide it.
+  UNCERTAIN (no receipt, or a receipt the dispatcher could not bind)
+    The host is in one of five states (DESIGN.md 5), told apart by one lstat and one listing: a read-only operation
+    under its own GO. Never a second dispatch.
+  For the end of the epoch (X4, X5): the directory this source creates is not an entry the security guard's release
+  clause reads (it reads root-level r2d2-v2-release-*.json); the pin is what holds the routine. Tested against the
+  guard's bytes at dd4ec4bb.
+
+5. WHERE EACH BOUND VALUE COMES FROM
+
+  plan.parent                    chain DATA_VOLUME of the OP_PRECHECK receipt taken in the boot of the write (S1),
+                                 copied row by row; compared by command with the newest read of the same rows
+                                 (Sunday) before signing
+  plan.evidence_boot_id_sha256   boot.boot_id_sha256 of that receipt
+  plan.release                   binding/release_fields.py <release file> --expect-sha256 --expect-code-revision
+                                 --expect-package-sha (step 4). The three expectations are taken by command from
+                                 where they were established, never from the release file: the SHA-256 the three
+                                 hands approved and K11 PRE verified (K11's signed request: plan.release.sha256;
+                                 the same value as policy release_sha and as what K6a's request will carry); the
+                                 revision and the package K11 PRE's request signs (plan.revision,
+                                 plan.package_sha256), which are
+                                     dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858
+                                     b5ce527a544ca0eb08f0718d83546d7b46f9e9774be8e4351afce212e72bdb84
+                                 The tool also holds these two values and refuses a release cut for any other,
+                                 whatever the arguments say. A deploy after this seal is a new seal of this
+                                 directory (the tool and this text); the payload hash does not move.
+  request.evidence               the OP_PRECHECK receipt by its metadata_sha256 (the code requires the operation
+                                 name), the Sunday reads, and the host evidence of check (j) below, each as
+                                 {role, operation, receipt_sha256}
+  request.date                   2026-10-05
+  windows                        M1 2026-10-05T08:26:00+00:00 to 08:41:00+00:00 (05:26-05:41 BRT); spare 08:42 to
+                                 08:57. Every instant written with datetime.isoformat() in UTC
+  effects                        the source's effects_of(plan), computed offline and READ before it is signed
+  host binding, owner, owner evidence, target, key and known-hosts references, command pin, claim root: as in the
+  family (HOSTOPS01 contract section 12; the generic binder).
+
+  To check BEFORE the owner is asked to sign (a refusal on Monday ends the epoch). Checks a, b, c, d, e, f and h
+  are made by one command: binding/predispatch.py --step prepare on the newest W1 receipt (step 12), whose request
+  must name r2d2-v2-release-20261005 among its release directory candidates.
+    a. the pin exists, is a regular file, uid 0 AND gid 0. K10 refuses on the group too (D-4); neither the pin's
+       creator of 25/09 nor K11 PRE judged the group. W1: sections.data_volume.root.pin {exists, type, uid, gid}
+    b. no entry named r2d2-v2-release-20261005 in the volume root. W1: the candidate's row, exists false
+    c. the volume root is not setgid, and its device differs from that of /mnt (a mount point): validate_plan
+    d. the rows of Sunday equal those of S1, and the boot is the same. W1: sections.data_volume.ancestors (all
+       three rows with device and inode) and runtime.boot.boot_epoch_utc earlier than the evidence
+    e. the filesystem of the data volume has hard links (D-10). W1: sections.data_volume.mount.filesystem_type
+    f. free bytes far above the floor: at least 16 MiB (the receipts read about 54 GB). W1: filesystem.f_bavail
+    g. K11 PRE verified exactly these release bytes in the deployed image
+    h. free inodes: at least 1024 (the run needs two; the core's precheck reads blocks only). W1:
+       sections.data_volume.filesystem.f_favail
+    i. facts.code_revision and facts.implementation_package_sha are the two values above: made by
+       binding/release_fields.py itself (it refuses otherwise), and read again in the effects before signing
+    j. host evidence for the creating calls, by receipt, each KNOWN_COMPLETE and named in request.evidence:
+         A3 (hostops01 provision, GO_WRITE_SUPERVISOR_READER_PROVISION_01): mkdir by descriptor, the O_NOATIME
+            open of the new directory, fsync of the directory and of its parent, as root on this host (/etc and
+            /var/lib: the root filesystem). A4 the same; say from its receipt whether its tree is on the data volume
+         B1 (hostops01 install_units, GO_WRITE_UNITS_EXCLUSIVE_INSTALL_01): the exclusive creation, write, fsync,
+            linkat and unlinkat of the .partial temporary, with the bytes the core's files part was derived from
+            (../core/DELTA/files.create_file.diff: arguments only). B1 writes in the unit directory, on the root
+            filesystem, never on the data volume.
+       These are the first executions of those calls by this family as root under the host's /usr/bin/python3.
+       They close U-K10-4 for these calls and U-K10-3 as far as the root filesystem goes; they NARROW U-K10-1 (the
+       same two calls on the data volume's filesystem are first made on Monday) and do not close it. If any of the
+       three is not KNOWN_COMPLETE on Sunday, the owner is told so in the request to sign, in these words.
+    k. the Linux proof was accepted for this seal (step 2), with the hashes of the two junit files
+
+6. BINDING PROCEDURE (each step by command; nothing typed from memory)
+
+   1. Bind and dispatch from a copy in W/ that holds only the files SHA256SUMS lists, SHA256SUMS itself and
+      ../core. There: shasum -a 256 -c SHA256SUMS ; /usr/bin/python3 -B seal.py check -> SEAL_OK (the core is
+      the sealed one, build/ is the assembly, every file is the listed one). Directories named review-* and work/
+      are outside the seal: their presence does not break it, and nothing of them is copied.
+   2. THE LINUX PROOF. On a throwaway GitHub-hosted ubuntu-24.04 runner (decision D-9; a push, not done here):
+      from ../core, sh linux_root/run.sh ../install_release ; exit 0. Then, here:
+        /usr/bin/python3 -B binding/linux_proof.py TESTS.install_release.linux-root.xml TESTS.install_release.linux-user.xml
+      -> LINUX_PROOF_ACCEPTED, exit 0. It accepts only the whole suite of THIS seal (the payload hash and the hash
+      of SHA256SUMS are recorded by the run itself), no failure, every creating test run as effective uid 0 on
+      ext4 under Python 3.12 with the kernel's O_NOATIME, the created directory and file 0:0 as the kernel made
+      them. Record the two file hashes it prints. REFUSED: nothing is bound. A new seal needs a new job.
+   3. Evidence on record as in section 5, each receipt with its hash; check (j).
+   4. /usr/bin/python3 -B binding/release_fields.py <release file> --expect-sha256 <...> --expect-code-revision <...>
+        --expect-package-sha <...>
+      -> one JSON object: "release" (the plan member), "facts" (what the release says of itself), "expected" (what
+      was compared), "payload_sha256" (must equal source_sha256 of build/ASSEMBLY.json). Exit 1 with one line
+      REFUSED <CODE>: the release is not bound. The codes of this tool: RELEASE_SHA256_NOT_THE_EXPECTED_HASH,
+      RELEASE_CODE_REVISION_NOT_THE_EXPECTED_REVISION, RELEASE_PACKAGE_NOT_THE_EXPECTED_PACKAGE,
+      EXPECTATION_NOT_THE_DEPLOYED_RELEASE, RELEASE_IS_A_SYNTHETIC_FIXTURE, EXPECTATION_INVALID; any other code is
+      the refusal authenticate() would raise.
+   5. Plan: parent (three rows), evidence_boot_id_sha256, release (step 4); schema, status BOUND, phase, the scope
+      of the source, window, host binding, max_seconds 60.
+   6. Request: status BOUND, date, windows, host binding, executor_uid 0, evidence; canonical bytes; hash.
+      It is at most 65536 bytes (with the largest release, 32768 bytes, about 48 KB).
+   7. Effects: effects_of(plan) of the source, offline; read it; the authority and the GO carry it literally.
+   8. Authority (owner, SIGNED, APPROVED, request and payload hashes) -> hash -> GO (SIGNED, GO, three hashes,
+      transport_binding with the four runtime pins and the command pin, claim_root_identity, the constant
+      scope_statement, success_criterion RELEASE_INSTALLED_BYTES_READ_BACK_NOT_ACTIVATED).
+   9. Six instants non-null, on 2026-10-05, not before 04:00:00+00:00, span at most 900 s; config window inside
+      both; latest_start = not_after - 80 s.
+  10. Final payload with launcher_stdin.build; config with its pins and the paths of the five bound blobs;
+      publication proof.
+  11. Dry validation: the source's authenticate() on the bound bytes with uid 0 injected and a clock inside the
+      window, then perform() with a gate that raises: nothing may be touched (the conformance tests do exactly
+      this with a host object that fails on any use). The same for the spare request (other windows, same payload
+      hash, same effects).
+  12. THE SUNDAY RUN OF THE GATE, before the owner is asked to countersign: binding/predispatch.py --step prepare
+      --role primary on the newest W1 receipt of Sunday (its request naming the destination candidate), with that
+      receipt's own exit record. On Sunday exactly one check fails by construction, because the snapshot is not
+      Monday's: M0_IS_OF_THE_SAME_DAY_AND_NOT_OLDER_THAN_AN_HOUR. The output must list no other failed check; any
+      other, and the request is not presented for signature. This run is also the rehearsal of the gate on a
+      receipt of the real host (U-K10-5).
+  13. Publish the hashes of the final payload and of the config, and M0's binding: M0 is bound over the W1 bytes
+      the gate reads (payload sha256 as in tests/fixtures/M0_FIXTURE.W1_EMULATION.json; the gate refuses a
+      snapshot of other bytes) with candidates.release_directories naming r2d2-v2-release-20261005. The W1 request
+      dispatched on 2026-10-02 named no candidate at all: Sunday's and Monday's must, or the gate answers
+      DO_NOT_DISPATCH for the destination (W1 emits no name; it answers only for a candidate its request signs).
+
+  MONDAY
+
+  14. THE GATE BEFORE M1. After M0's receipt (05:00), immediately before the prepare (the dispatcher admits a
+      prepare from 05:26:00; a snapshot older than one hour is refused, and so is a prepare with less than 60 s
+      left before the dispatcher's latest start, which is 80 s before the window ends):
+        /usr/bin/python3 -B binding/predispatch.py --step prepare --role primary --request <M1 request>
+          --evidence <the OP_PRECHECK receipt> --m0-request <...> --m0-receipt <M0 stdout.private.json>
+          --m0-exit <M0 exit.json>
+      DISPATCH_ALLOWED (exit 0): prepare -> publication -> the same command with --step resume (it refuses before
+      not_before + 120 s by this machine's clock, and from 15 s before the latest start) -> resume, ONCE.
+      DO_NOT_DISPATCH (exit 1), or exit 2: NEITHER M1 NOR M1' IS PREPARED. The spare carries the same rows and the
+      same boot: it is no hedge against anything this gate reads. The owner is told at once (reachable 05:00 to
+      07:00) with the failed checks by name. The way on is a re-bind: a new OP_PRECHECK receipt (hostops01's
+      precheck is dated through 2026-10-05), a new plan from its rows and boot, steps 5 to 11 again, a new
+      countersign by hash. The source accepts any window of at most 900 s between 04:00Z and 24:00Z of 10-05; M3's
+      own windows bound what is useful. A state the re-bind cannot cure (the destination exists; the pin is not
+      root:root; no free inode; the volume read-only) is the owner's decision, with nothing dispatched.
+      What each field of M0 covers of K10's host precheck, and what it cannot:
+        observation.actor                                   EXECUTOR_IDENTITY
+        runtime.boot.boot_epoch_utc before the evidence     EVIDENCE_FROM_EARLIER_BOOT (inferred: M0 does not read
+                                                            the boot identifier; a boot that began before the
+                                                            evidence was taken and is still running is its boot)
+        data_volume.ancestors (three rows, device, inode)   PARENT_MISSING, PARENT_IDENTITY_MISMATCH and the others
+        data_volume.filesystem.read_only, .mount            FILESYSTEM_READ_ONLY; a volume that is not mounted
+        data_volume.mount.filesystem_type                   a link the filesystem cannot make (U-K10-1)
+        data_volume.root.pin                                MAINTENANCE_PIN_ABSENT, _NOT_A_REGULAR_FILE, _NOT_ROOT_OWNED
+        release_directories.candidates[i].exists            DESTINATION_PRESENT, by the exact name the M0 request signs
+        data_volume.filesystem.f_bavail, f_favail           DATA_VOLUME_FREE_SPACE_BELOW_FLOOR, FILESYSTEM_FULL
+        clock.utc_end against exit.json finished_at         OUTSIDE_GO_WINDOW (a skew above 30 s: do not dispatch)
+        NOT covered: the boot identifier itself; whatever changes between M0 and the dispatch; the host's clock
+        at the dispatch; group inheritance on the volume root (the pin's owner is the witness); fsync latency.
+  15. THE SPARE. M1' is used only if M1 was never dispatched. Once M1's claim file exists, the config and the blobs
+      of M1' are moved out of the dispatch directory by command. The 05:42 slot is taken only through
+        binding/predispatch.py --step prepare --role spare ... --primary-go <M1's GO> --claim-root <M1's dispatch root>
+      which refuses when .go-<sha256 of M1's GO>.claim exists. The dispatcher cannot do this: its claim is keyed by
+      the GO hash and the two requests have two GOs (a test shows the second set being prepared without refusal).
+  16. After M1: the dispatcher's verdict and the receipt, read as section 4 says. Never a second dispatch.
+
+7. WHAT THE TESTS COVER
+
+  tests/test_conformance.py     the family's suite on this source (documents, pins, windows, date class at both
+                                layers, dry gate, expiry, every host call failing once in four ways, dispatcher claim
+                                and bindings, the unbound payload under python3 -I -B -); sibling operations named by
+                                the caller are added to the operations whose documents must be refused
+  tests/test_install_release.py the emulated host: the literal effects and scope; every precheck refusal with the
+                                proof that nothing changed; the order of the precheck; the plan refusals, each also
+                                refused by the dispatcher before any claim; the New York day and the budget to their
+                                edges; the hostile states of DESIGN.md section 4; process death at every host call;
+                                expiry and a reversed clock at every look at the clock; a gate immediately before
+                                each mutating call; no second attempt; the receipt
+  tests/test_effects_guards.py  the guards of the creating calls the first suite left unpinned: owner alone, mode,
+                                size, a non-OSError after the effect, a refusal raised inside a creating call, the
+                                expiry while the file is written, a short read, O_NOATIME on every read open
+  tests/test_dispatch_guards.py single use with a transport that counts its calls; the final bundle, the inner
+                                windows and hash chain, the budget pair, the claim and the intent at resume, the
+                                receipt bound to the payload, the pins before the claim, the source pin on stdin
+  tests/test_purity.py          documents of other operations and families refused whole and one by one; M1 and the
+                                spare to their edges; other executors; nothing nominal or secret in any receipt
+                                (a canary at every host call); the refusal order; the five creating calls only
+  tests/test_native.py          real system calls by the source's own Native on a temporary tree: the exact calls
+                                and flags, the interpreter's audit events, refusals, two real races, a real process
+                                death at five points, the record of where the run was made (for the Linux proof), and
+                                (with a checkout of the release) the file read by the application's own reader and
+                                verified by its Release.verify, and the security guard's own bytes on the result
+  tests/test_binding.py         release_fields.py: the member the source accepts; every refusal of a release that is
+                                not the expected one; the fixture; the exact usage
+  tests/test_linux_proof.py     linux_proof.py: an accepted pair; each required fact missing; the file pytest really
+                                writes, which on any machine alone is refused
+  tests/test_predispatch.py     predispatch.py on the receipt the W1 bytes emit: allowed; every state K10 would
+                                refuse (with K10's own answer in the same state on the emulation); a snapshot that
+                                cannot answer; the clocks; the request and the evidence; the spare
+  Counts per interpreter, skips by name and their reasons: VALIDATION.json (suites).
+
+8. PROVEN, EMULATED, UNPROVEN
+
+  Proven on the host by earlier receipts (other bytes): the launcher under sudo -n /usr/bin/python3 -I -B -; the
+  walk by dir_fd with O_NOFOLLOW|O_NOATIME on the data volume; fstatvfs; the release layout, owner and modes, read
+  by the worker (23/09 and 28/09).
+  Real on the workstation (macOS, an ordinary user reported as root, a marker bit for O_NOATIME, the volume's
+  device substituted at the stat level): mkdir, exclusive create, write, fsync, link, unlink by dir_fd; a real
+  race; a real process death; the application's reader and Release.verify on the file written.
+  Emulated only: uid 0, device numbers, every errno injection; the receipt of M0 (W1's own emulation).
+  UNPROVEN (DESIGN.md section 9), and what closes or narrows each:
+    U-K10-1  linkat and unlinkat inside a new directory of the host's data volume (no payload ever did it there).
+             Narrowed by the Linux proof (ext4, real root), by B1's receipt (the same calls as root on this host, on
+             the root filesystem) and by a W1 receipt naming the volume's filesystem type. First executed Monday.
+    U-K10-2  the mutating path of the core's files part as real root on Linux (U1 of the core).
+             Closed by the Linux proof, which is a gate of the binding (section 6, step 2). NOT RUN yet.
+    U-K10-3  root-created entries in the volume root are 0:0 on the volume's device (witness: the pin, whose uid
+             AND gid the gate reads). On the root filesystem: A3's receipt. On the volume: first executed Monday.
+    U-K10-4  these bytes under the host's own /usr/bin/python3. The sibling bytes: A3, A4, B1. These bytes: Monday.
+    U-K10-5  the receipt of M0 as the gate reads it. The gate was tested on a receipt produced by the W1 source
+             on W1's emulation; the first receipt of a real host it reads in anger is Monday's. Sunday's run of the
+             gate on Sunday's W1 receipt (step 12) is its rehearsal on real bytes of the same source.
+  The CI proof for K10: from ../core, "sh linux_root/run.sh ../install_release" on a throwaway GitHub-hosted
+  ubuntu-24.04 runner (OPERATIONS="../install_release" in WORKFLOW.yml.txt): assemble.py --check, then this
+  directory's suite as real root and as the runner's user. K10 has no command row, so it adds no shape.
+
+9. MUTATION
+
+  mutation/mutate.py is the core's harness with its tables changed, the copy step adapted and two lists added.
+    MUTATION_RUN.json, MUTATION_RUN.py312.json   list "own": the mutants of the operation part (one per member of
+        effects_of(), one per refusal of validate_plan and of the precheck, the constants, the order, each effect)
+        and those of the dispatcher and launcher generated for this operation. Required: zero survivors. mutate.py
+        check fails when a member of effects_of() or a refusal code of op.py has no mutant named for it.
+    MUTATION_SWEEP.json   list "sweep": generic operators applied mechanically to every line of code of the
+        operation part, not written against the tests. Required: zero survivors that are not named equivalent.
+    MUTATION_REVIEW.json, MUTATION_REVIEW.py312.json   list "review": the reviewer's own 60 mutants, anchors and
+        replacements as he wrote them (mutation/review.py). Against revision 1's suite 33 were killed and 27
+        survived (reproduced on a copy of that directory with both interpreters). Required now: zero survivors
+        except the two rows review.EQUIVALENT names with their reasons. The reviewer named seven equivalent; five
+        of them change a result and are killed.
+    MUTATION_TOOLS.json, MUTATION_TOOLS.py312.json   list "tools": the three bind-time tools. One mutant per check
+        of the two gates, generated from the check names in the tool's own text (a new check without a test is a
+        survivor), one per refusal of release_fields.py, the constants and the conjuncts. Required: zero survivors.
+    MUTATION_CARRIED.json list "carried": INFORMATION. The core's own rows for the parts this source carries, run
+        against this operation's tests only. Its survivors are of three kinds, and the first revision described
+        them as one ("lines this operation does not reach"), which was stronger than the record:
+          - not reached by K10: other date classes, descend(), stat_signature(), the request grammar of the files
+            part for arguments K10 passes as constants;
+          - reached, and without effect on any result of this operation: flags that are false in every K10
+            document (K03, K09, K12), one required evidence operation (K14), a second proof of what the walk or
+            the count of uncertain calls already proved (T09, T10), a symlink component reported one way or the
+            other and refused either way (E11), a read limit of 1 MiB that only renames the refusal of a hostile
+            file above it (E15);
+          - reached, real, and killed here only since the review: the mode of the created directory (the core's
+            F13) and the count of uncertain calls (T08). They were survivors of revision 1.
+        Every row is killed by the core's own suite on the same sealed bytes. The names are in VALIDATION.json.
+  Results and pins: VALIDATION.json (mutation). A record counts only while its pins equal the files.
+  History, as it happened. Revision 1: the first run of the own list had 3 survivors (two real gaps got tests, one
+  equivalent mutant left the list with its reason); the carried list showed 52 survivors, 12 of them worth testing
+  here; the sweep had none. Revision 1 then said "zero survivors of THESE lists: the history of HOSTOPS01 says a
+  reviewer's own mutants find more", and the reviewer's did: 27. Revision 2: the first run of the tools list had 3
+  survivors, each a test that was missing (the pin's presence when its other fields are there; the declared count
+  of a junit file trusted without counting; an unknown option taken for the file). Zero survivors of five lists
+  says what these lists say and nothing more.
+
+10. OPEN DECISIONS (DESIGN.md section 10 has the reasons)
+
+  D-1  No Release.verify inside K10; K11 PRE and POST carry it.                          co-auditor, then owner
+  D-2  The path /mnt/day-d-data/r2d2-v2-release-20261005/release.CERTIFIED.json.         Saturday sheet (C#7)
+  D-3  Evidence required by name: hostops01 OP_PRECHECK.                                 co-auditor
+  D-4  The pin must be a regular file owned by root:root (uid AND gid). If the owner prefers the guard's rule
+       (any existing name), that is a new payload hash. Decide before sealing the binding.                owner
+  D-5  No install.started.json marker.                                                   co-auditor
+  D-6  WIDENED: what each KNOWN_PARTIAL in which the final name holds the signed bytes means for ORD:7 (three
+       states, section 4), and what is done about state D, which K11 POST and K6a as built refuse. Until answered
+       the strict reading holds.                                                          owner and co-auditor
+  D-7  The spare is not a retry; the Monday gate enforces it.                             Q-R
+  D-8  Limits: release 32768 bytes, floor 1 MiB, 15 s.                                   co-auditor
+  D-9  Who pushes the throwaway branch for the Linux job. Without the job nothing is bound.              owner
+  D-10 The filesystem type of the data volume: read from any W1 receipt, checked by the gate.           binder
+  D-11 NEW: the source does not compare code_revision and implementation_package_sha with the deployed values
+       (the precedents did, as payload constants). The comparison is at binding. Enough, or constants of op.py
+       (a new payload hash and a fixture question)?                                       co-auditor
+  D-12 NEW: on DO_NOT_DISPATCH nothing is dispatched and the way on is a re-bound request signed by hash that
+       morning. The owner's line on the sheet.                                            owner
+
+11. CORE DEFECTS
+
+  None that blocks this operation; nothing was worked around; the core was not edited. Eight observations for the
+  core's author are in DESIGN.md section 11. The five that came out of the review: the conformance test of single
+  use passes when the spawn marker is not written; eleven dispatcher and launcher guards are unpinned by the
+  conformance suite for an operation; free_bytes() reads blocks only (no inode count before the first effect); a
+  Refused raised inside a mutating action is filed as a refusal of the gate with the ledger row NOT_ATTEMPTED; two
+  guards of the files part are checks of states no kernel produces and are not said to be.
+
+12. REPRODUCE (offline; nothing here contacts a host)
+
+  cd <this directory; the sealed core lies beside it as ../core>
+  shasum -a 256 -c SHA256SUMS
+  /usr/bin/python3 -B seal.py check                                       # SEAL_OK
+  /usr/bin/python3 -B ../core/assemble.py --check .                       # BUILD_EQUAL
+  /usr/bin/python3 -B -m pytest -p no:cacheprovider -q tests              # also with a 3.12 interpreter
+  HOSTOPS02_TEST_RELEASE_REPOSITORY=<checkout holding dd4ec4bb> <python with exchange_calendars> -B -m pytest -p no:cacheprovider -q tests
+  HOSTOPS02_TEST_OTHER_OPERATIONS=<sibling and earlier directories, separated by ":"> HOSTOPS02_TEST_BOUND_POSTDEPLOY=<the bound set> ... -m pytest -q tests
+  /usr/bin/python3 -B mutation/mutate.py check                            # anchors once; members and refusals covered
+  /usr/bin/python3 -B mutation/mutate.py run                              # copies under work/mut-*; MUTATION_RUN.json
+  HOSTOPS_MUTATION_LIST=sweep|review|tools|carried /usr/bin/python3 -B mutation/mutate.py run
+  HOSTOPS_MUTATION_PYTHON=<3.12> HOSTOPS_MUTATION_RECORD=MUTATION_<RUN|REVIEW|TOOLS>.py312.json [HOSTOPS_MUTATION_LIST=...] /usr/bin/python3 -B mutation/mutate.py run
+  <python with exchange_calendars> -B tests/make_synthetic_release.py <release tree>   # rewrites the release fixture; author only
+  <python with pytest> -B tests/make_m0_fixture.py <the W1 candidate directory>        # rewrites the M0 fixture; author only
+  HOSTOPS_SEAL_PYTHON_2=<3.12> [HOSTOPS_SEAL_OTHER_OPERATIONS=... HOSTOPS_SEAL_BOUND_POSTDEPLOY=...] /usr/bin/python3 -B seal.py write   # author only

@@ -1,0 +1,328 @@
+HOSTOPS02 - K6a - ACTIVATE - STDIN / ONCE CANDIDATE
+
+Operation built
+  GO_WRITE_HOSTOPS02_ACTIVATE_01      build/activate.py      writes: one directory, two files, one recreate of r2d2-worker
+Assembled from the frozen core of HOSTOPS02, generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
+(CORE_SHA256SUMS 73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1), parts core, runner, docker, parents,
+files, lock. DESIGN.md gives the reasons, the file:line of every precedent, the crash points and the open decisions;
+this file is the specification, the binding steps, and what the receipt means for the gates.
+
+1. STATUS
+
+Executable code candidate, unsigned and UNBOUND. Built offline from local files only. No host was contacted, no key or
+credential file was read, no docker was run (none exists on the workstation), no prepare/resume was performed outside
+private synthetic tests. No operational GO exists, was created, carried forward or inferred. In every template the
+windows, the date, the host binding, owner, decision, effects, target, key and known-hosts references, command pin,
+claim root and every plan member are null; status is UNBOUND; execution_authorized is false. FINAL_PAYLOAD.UNBOUND.py,
+run under "python3 -I -B -", prints one refusal and exits 1 before touching anything (conformance suite). None of
+these bytes has been reviewed by anyone but the author. The FIRST candidate of this operation was read by two
+independent passes on 2026-10-02 (one against the reality of the host, one for purity); their twelve findings were all
+accepted and are answered in DESIGN.md section 12. The repair moved the payload bytes: every hash of the first
+candidate is void, and the repaired bytes have been read by nobody but the author. The core they are assembled from
+has been verified once by an independent pass and by nobody else, and was not touched by the repair; the Linux job
+(linux_root/) has never run. Binding is a later, human-signed step and is not part of this candidate.
+
+By the signed order this operation is SINGLE-SHOT for the whole epoch: a refusal or an uncertain result on Monday
+means the epoch does not start. Nothing in this candidate may be dispatched before (a) the co-auditor has reviewed
+these bytes, (b) the Linux job has run and exited 0 with SHAPES.activate.linux-root.json attached, (c) the Sunday dry
+run (K11 PRE) has shown on the production host that `docker compose` renders under the family's fixed environment
+(DESIGN.md section 8, UA-1) and what its JSON says of the worker's bind (UA-2), has reported the two compose inputs
+as regular files and the free space of the data volume, and (d) a read of the same boot has shown that no container
+carries a temporary name of the worker's (<anything>_<project>-r2d2-worker-1): each of these is now a refusal.
+
+Remote command, unchanged: sudo -n /usr/bin/python3 -I -B -   with the whole payload on stdin.
+Remote source language level: Python 3.7, standard library only.
+
+2. WHAT IS IN THIS DIRECTORY
+
+  spec.py, op.py             the two files written by the author; everything in build/ is a function of them and of the core
+  build/activate.py          the ONE remote source (header, seal, the six shared parts between marker lines, the operation's part)
+  build/dispatch_once.py     the reviewed dispatcher with the family's literal substitutions (18 lines, none added or removed)
+  build/launcher_stdin.py    the launcher of HOSTOPS01, byte for byte (ac4085e4...3caa)
+  build/transport_once.py    the reviewed transport, byte for byte (5900efbf...2918)
+  build/REQUEST|AUTHORITY|GO|DISPATCH|PUBLICATION_PROOF.UNBOUND.json, build/FINAL_PAYLOAD.UNBOUND.py, build/ASSEMBLY.json,
+  build/DISPATCH_SCOPE_DELTA.diff, build/LAUNCHER_DELTA.diff
+  DESIGN.md                  design: effects, refusals, crash points, budget, proven and unproven shapes, open decisions
+  CONTRACT.txt               this file
+  VALIDATION.json            counts, interpreter versions, hashes of the build, state of the mutation records (written by validate.py)
+  seal.py, validate.py       the author's two tools: SHA256SUMS and its check; the commands of section 11 and VALIDATION.json
+  tests/                     k6a.py (fixtures, the eight in-between states of a recreate), test_conformance.py (the core's 121), test_activate.py, test_plan.py,
+                             test_precheck.py, test_effects.py, test_budget.py, test_crash_points.py, test_native_calls.py
+                             (+ native_engine.py, native_child.py), test_linux_root.py, test_static_sources.py
+  mutation/                  mutate.py (the core's, three tables changed), mutants.py, MUTATION_RUN.json, MUTATION_RUN.py312.json,
+                             MUTATION_INHERITED.json (the core's own mutants against this operation's suite: information)
+  linux_root/                run.sh, shapes.py, WORKFLOW.steps.txt: the job for a throwaway Linux runner (NOT RUN)
+  SHA256SUMS                 every file above
+
+3. THE OPERATION
+
+  OPERATION  GO_WRITE_HOSTOPS02_ACTIVATE_01          PHASE  WRITE_ACTIVATE_WORKER_RELEASE_AND_LIVE_POLICY
+  schemas    WRITE_HOSTOPS02_ACTIVATE_{REQUEST,AUTHORITY,GO,RECEIPT}_V1, HOSTOPS02_ACTIVATE_PLAN_V1
+  flags      writes_allowed true; activation_allowed false (no systemd unit is switched)
+  dates      2026-10-05 UTC only (WRITE_FIRST_SESSION): Sunday 21:00 BRT to Monday 20:59:59 BRT; gate at most 900 s
+  evidence   required, and at least one receipt of GO_READONLY_HOSTOPS02_EPOCH_READBACK_01 (K11) among it: its dry run
+             of the same boot gives the rows this request signs. Any other receipt may be cited besides.
+  budget     60 s from authenticated entry; dispatcher watchdog 80 s; transport 270 s
+
+Code constants in the signed scope: epoch R2D2-V2-SHADOW-2026-10-05; revision dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858;
+package b5ce527a544ca0eb08f0718d83546d7b46f9e9774be8e4351afce212e72bdb84; runtime order 1ad8b90c...9d8e; first open
+2026-10-05T13:30:00Z; last close 2026-10-09T20:00:00Z; service r2d2-worker; the four names
+C3PO_R2D2_V2_LIVE_POLICY_FILE, C3PO_R2D2_V2_LIVE_POLICY_SHA, C3PO_R2D2_V2_SHADOW_RELEASE_FILE,
+C3PO_R2D2_V2_SHADOW_RELEASE_SHA; reboot marker /run/c3po-security/reboot.pending; pin name .r2d2-v2-pinned; deploy
+layout .env, <project>/compose.yml, .deploy-version, runtime/security/deployment.lock; settle 3 s; free-space floor
+1048576 bytes and 8 inodes on the filesystem of the live parent; compose file at most 1048576 bytes.
+
+4. REQUEST PLAN (PLAN_KEYS; refused from the bytes, before any claim, when not as below)
+
+  data_root                clean absolute path, not "/": the data volume root, open root of the two chains below it and
+                           source of the worker's bind
+  live_parent              rows from "/" of the existing parent of the new directory; inside data_root; not setgid; outside
+                           data_root every component root-owned and closed to group and other; inside it as signed, never
+                           world-writable without the sticky bit
+  directory_name           plain name [A-Za-z0-9][A-Za-z0-9._-]{0,127}; the path a clean path
+  policy                   {name, content_b64, sha256, bytes}: plain name; strict base64; at most 16384 bytes; the bytes have
+                           the signed hash and size; a JSON object without duplicate keys that is what the release's
+                           controller and assembler require: schema R2D2_V2_LIVE_POLICY_V1, mode LIVE, epoch, release_sha =
+                           release.sha256, order_sha, package_sha, code_revision, capacity 1..550, c8_receipt_sha and
+                           head_go_sha 64 hex non-zero, valid_from < valid_until in UTC, at most 90 days, valid_from <=
+                           first open, valid_until >= last close, valid_from <= the start of this run's window
+  override_name            plain name, not the policy's and not beginning "<policy name>."; both file paths clean paths
+  release                  {parent (rows), directory_name, file_name, sha256, bytes <= 65536}: inside data_root; the release
+                           directory and the live directory not inside one another
+  worker                   {image_id sha256:<64 hex>, mount_target clean path, not "/"}
+  compose                  {project, env_file, files}: env_file = <deploy>/.env, files = [<deploy>/<project>/compose.yml]
+  deploy_directory         rows of the deploy tree root (its own open root); not inside data_root, nor data_root inside it
+  lock                     {directory (rows of <deploy>/runtime/security), wait_seconds 0..20}
+  evidence_boot_id_sha256  64 hex, not zero
+
+Derived by the source, shown in effects, never free: the four values (the two container paths = mount_target + the
+path below data_root; the two hashes); the override bytes = json.dumps({"services":{"r2d2-worker":{"environment":
+{the four}}}},sort_keys=True), their hash and size; the container <project>-r2d2-worker-1; the lock file
+<lock directory>/deployment.lock; the pin <data_root>/.r2d2-v2-pinned. In effects.policy the digest of the policy is the
+one the assembler of the release computes (keys sorted, compact separators, ensure_ascii=False): Act B's policy_sha.
+
+5. EFFECTS, IN ORDER (all under the deployment lock; DESIGN.md section 1 for the precedent of each)
+
+  E1  mkdir <live parent>/<directory_name>, root:root 0700, by descriptor in the pinned parent; proved; fsynced
+  E2  <directory>/<policy name>, root:root 0600, the signed bytes: exclusive temporary .hostops-<go16>-0.partial, fsync,
+      link (never replaces), proved removal of the temporary
+  E3  <directory>/<override name>, root:root 0600, the derived bytes: the same, temporary index 1
+      readback: both files by descriptor (inode, one link, owner, mode, bytes); the directory (two entries, 0700); the
+      lock file still the one held; the render from the delivered file judged like the first; then the release
+      directory, the project directory with the deploy tree, and the lock directory still reached by their names
+  E4  docker compose --project-name <project> --env-file <deploy>/.env -f <deploy>/<project>/compose.yml -f <override>
+      up -d --no-deps --no-build --pull never --force-recreate r2d2-worker      (C3PO_BUILD_SHA=<revision>; once)
+      readback: DESIGN.md section 4
+Never: docker exec, a shell, systemctl, a pull, a build, a second recreate, a change of .env or compose.yml, an
+overwrite, chmod, chown, rename, a removal other than the run's own temporary once its identity is proved.
+No value READ from a container, from the render or from the environment file is printed, stored or put in an argv;
+of .env and of compose.yml no byte, digest or size leaves the run. The four signed values and the build revision are
+not secrets and do travel: the four are written to the override (E3) and shown in effects.recreate.environment of
+every receipt, and the five are compared inside the docker template, in whose argv they stand (the core's
+environment_format). The scope statement the owner signs in every GO says exactly this.
+
+6. REFUSALS (constant codes; exit 1, verdict KNOWN_REFUSAL; nothing on the host changed)
+
+  from the bytes (phase_reached AUTHENTICATION; also met locally by the dispatcher before any claim):
+    the core's authentication codes; PATH_INVALID EVIDENCE_BOOT_UNBOUND CHAIN_ROW_INVALID CHAIN_ROW_UNSAFE
+    CHAIN_ROW_WORLD_WRITABLE PARENT_SETGID LIVE_PARENT_OUTSIDE_DATA_ROOT DIRECTORY_NAME_INVALID RELEASE_REQUEST_INVALID
+    RELEASE_OUTSIDE_DATA_ROOT PATHS_OVERLAP POLICY_REQUEST_INVALID POLICY_BYTES_NOT_THE_SIGNED_HASH POLICY_JSON_INVALID
+    POLICY_SCHEMA POLICY_IDENTITY POLICY_RUNTIME_ORDER POLICY_PACKAGE POLICY_REVISION POLICY_CAPACITY
+    POLICY_RECERTIFICATION POLICY_WINDOW POLICY_NOT_EPOCH_WIDE POLICY_WINDOW_DOES_NOT_COVER_THE_GO OVERRIDE_NAME_INVALID
+    EVIDENCE_OPERATION_MISSING (no receipt of the epoch readback is cited)
+    FILE_PATH_INVALID WORKER_REQUEST_INVALID COMPOSE_REQUEST_INVALID COMPOSE_PROJECT COMPOSE_FILES
+    COMPOSE_NOT_THE_DEPLOY_LAYOUT LOCK_REQUEST_INVALID LOCK_NOT_THE_DEPLOYMENT_LOCK ENVIRONMENT_EXPECTATION
+  on the host before the first effect (phase_reached PRECHECK), in the order of DESIGN.md section 3:
+    EXECUTOR_IDENTITY EVIDENCE_FROM_EARLIER_BOOT BOOT_ID_INVALID NOATIME_UNAVAILABLE PARENT_MISSING
+    PARENT_SYMLINK_COMPONENT PARENT_NOT_DIRECTORY PARENT_CHANGED_DURING_WALK PARENT_IDENTITY_MISMATCH PARENT_UNREADABLE
+    DESTINATION_PRESENT MAINTENANCE_PIN_ABSENT RELEASE_NOT_INSTALLED RELEASE_DIRECTORY_NOT_AS_INSTALLED
+    RELEASE_FILE_NOT_AS_INSTALLED RELEASE_HASH_MISMATCH FILE_NOT_REGULAR FILE_TOO_LARGE FILE_CHANGED_DURING_READ
+    DEPLOY_VERSION_ABSENT DEPLOY_VERSION_NOT_REGULAR DEPLOY_VERSION_MISMATCH ENV_FILE_ABSENT ENV_FILE_NOT_REGULAR
+    COMPOSE_FILE_ABSENT COMPOSE_DIRECTORY_NOT_A_DIRECTORY COMPOSE_FILE_NOT_REGULAR
+    LOCK_FILE_ABSENT LOCK_FILE_NOT_REGULAR LOCK_FILE_REPLACED BINARY_UNAVAILABLE_OR_UNSAFE COMMAND_FAILED COMMAND_TIMEOUT
+    COMMAND_OUTPUT_LIMIT COMMAND_NOT_STARTED COMMAND_SKIPPED_AFTER_TIMEOUT JSON_INVALID DOCUMENT_TYPE DOCUMENT_SIZE
+    DUPLICATE_KEY CONTAINER_METADATA_INVALID WORKER_NOT_RUNNING WORKER_IMAGE_NOT_THE_SIGNED_ONE IMAGE_ABSENT_OR_UNREADABLE
+    IMAGE_METADATA_INVALID IMAGE_REVISION_MISMATCH ENVIRONMENT_METADATA_INVALID WORKER_BUILD_REVISION
+    WORKER_ALREADY_CARRIES_THE_KEYS COMPOSE_RENDER_INVALID COMPOSE_SERVICE_INVALID RENDER_BUILD_REVISION
+    RENDER_ENVIRONMENT_MISMATCH RENDER_IMAGE_INVALID RENDER_VOLUMES_INVALID WORKER_MOUNT_NOT_AS_SIGNED
+    RENDER_IMAGE_UNRESOLVED RENDER_IMAGE_CHANGED LOCK_NOT_TAKEN_BUDGET DEPLOY_LOCK_BUSY LOCK_UNAVAILABLE
+    REBOOT_STATE_UNAVAILABLE SECURITY_REBOOT_PENDING COMPONENT_NOT_DIRECTORY RELEASE_DIRECTORY_REPLACED
+    DEPLOY_TREE_REPLACED LOCK_DIRECTORY_REPLACED ENV_FILE_CHANGED_BEFORE_THE_LOCK COMPOSE_FILE_CHANGED_BEFORE_THE_LOCK
+    RELEASE_CHANGED_BEFORE_THE_LOCK WORKER_CHANGED_BEFORE_THE_LOCK CONTAINER_LIST_INVALID CONTAINER_LIST_INCONSISTENT
+    WORKER_SERVICE_LEFTOVER_CONTAINER DATA_VOLUME_FREE_SPACE_BELOW_FLOOR DATA_VOLUME_FREE_INODES_BELOW_FLOOR
+    STATVFS_INVALID BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT GO_EXPIRED CLOCK_REVERSED PRECHECK_OS_ERROR PRECHECK_FAILED
+  at the first creation (phase_reached EFFECTS, mutating_calls issued 1, failed 1):
+    FILESYSTEM_READ_ONLY FILESYSTEM_FULL FILESYSTEM_ACCESS_DENIED FILESYSTEM_ERROR DESTINATION_APPEARED_AFTER_PRECHECK
+    PARENT_REPLACED GO_EXPIRED CLOCK_REVERSED
+  last resort, nothing started or nothing issued: RUN_FAILED_BEFORE_ANY_EFFECT
+A run is REFUSED only while no mutating call succeeded and none is uncertain.
+
+7. THE RECEIPT, AND WHAT IT MEANS FOR THE GATES
+
+Members beyond the family's envelope: effects (as signed), clock, commands_started, mutating_calls, chains (the rows as
+read), precheck (worker id, start instant and restart count before; lock attempts; booleans; containers_listed;
+free_bytes and free_inodes of the filesystem of the live parent), budget (what was needed
+and kept, what was left at each decision, how long the first render and the render from the files took), directories
+and ledger (the core's rows: state, code, hashes, sizes, modes of what this run created), recreate {state, started,
+returned, returncode, code, milliseconds (the command alone), replaced, facts, unavailable}, objects_left_by_this_run,
+(facts: one member per criterion, and four counts that are never judged: others_appeared, others_gone,
+others_same_name_new_id, service_leftovers = containers under a temporary name of the worker's),
+worker_container_replaced (true | false | null), pre_existing_objects_modified, phase_reached, readback.
+activation_performed and daemon_reload_performed are false in every receipt: they speak of systemd units.
+
+  exit 0  KNOWN_COMPLETE   outcome ACTIVATE_WORKER_RECREATED_AND_VERIFIED
+          Every criterion of DESIGN.md section 4 held. For the gates: M3 is done. The worker carries the release and
+          live-policy pins of the epoch and was read running, restart count 0, twice, three seconds apart.
+          It does NOT say that the worker stays up or that the application accepted the pins: M3r (06:05, 06:50) and the
+          policy read of P0 say that. recreate.facts.worker_status, when present, is the controller's own status:
+          LIVE_EPOCH_NOT_FOUND is expected while no epoch row exists; any LIVE_POLICY_* or LIVE_RELEASE_MISMATCH there
+          is a finding to take to the owner at once, in a receipt that is nevertheless complete.
+  exit 2  KNOWN_PARTIAL    five outcomes:
+          PARTIAL_OBJECTS_LEFT_WORKER_NOT_RECREATED    (recreate.state NOT_STARTED or NOT_RECREATED)
+              The directory and the files the ledger names exist; the worker is the container it was.
+              For the gates: activate did NOT happen. The signature is spent. The directory stays: a later request with
+              the same directory_name refuses (DESTINATION_PRESENT). Whether a spare bound with another
+              directory_name may run is the owner's decision (DESIGN.md open decision 3); by the order as written
+              the epoch does not start.
+          PARTIAL_WORKER_RECREATED_NOT_FULLY_VERIFIED  (recreate.state RECREATED_VERIFIED_ONCE or RECREATED_NOT_VERIFIED)
+              A new worker container exists. recreate.facts says which criteria held, recreate.unavailable which
+              could not be read. With code OTHER_CONTAINERS_CHANGED the counts say what it was: others_appeared or
+              others_gone with others_same_name_new_id 0 and service_leftovers 0 is an unrelated container that came
+              or went during the run; others_same_name_new_id above 0 is a service that was recreated;
+              service_leftovers above 0 is the recreate itself that did not finish (DESIGN.md sections 4 and 6).
+              RECREATED_VERIFIED_ONCE: everything held at one reading and only the second reading
+              three seconds later is missing. For the gates: the worker WAS replaced; whether that counts as
+              "activate completed" is not this receipt's to say (DESIGN.md open decision 2); a read of section 6 of
+              DESIGN.md and M3r settle the facts. Never dispatch again: the worker already carries the names
+              (a second run refuses with WORKER_ALREADY_CARRIES_THE_KEYS or DESTINATION_PRESENT).
+          PARTIAL_RECREATE_UNCERTAIN_REQUIRES_READBACK (recreate.state UNCERTAIN)
+              The recreate command was started; the worker is not known to be new. It may be the old container, a
+              stopped one, or absent, and a second container of the service may exist under a temporary name
+              (service_leftovers). For the gates: unknown until read by the rule of DESIGN.md section 6; tell the
+              owner at once (in six of the eight in-between states of a recreate no worker runs).
+          PARTIAL_REQUIRES_RECONCILIATION              (code RUN_ESCAPED_STATE_UNKNOWN)
+              The run escaped after an effect; only mutating_calls is known. Read as for exit 3.
+          RECEIPT_REDUCED_STATE_REQUIRES_READBACK: the receipt was reduced to fit; it is never complete.
+  exit 1  KNOWN_REFUSAL    nothing changed; the signature is spent; by the order the epoch does not start, unless the
+          refusal was met locally by the dispatcher before the claim (a refusal from the bytes), in which case
+          nothing was dispatched and nothing is spent.
+  exit 3 / no receipt  UNCERTAIN   one of the states S0 to S8 of DESIGN.md section 6, or one of the eight in-between
+          states of the engine; settled only by a later read, never by a second dispatch. The rule of that read: the
+          WHOLE container listing is looked at. "Untouched" (S0 to S7) only when the worker's name shows the old ID
+          running without the four names AND no container name ends with _<worker container> AND, where the IDs
+          listed before the run are known, none appeared. "Activated" (S8) only when the name shows a new ID running
+          with restart count 0 and the four names equal, no temporary name exists and the old ID is gone. Anything
+          else is reported as it is.
+  M3r (the W1 bytes: the worker by name, running, restart count 0) cannot tell the first in-between state from S7. It
+          may say "activate completed" only together with a KNOWN_COMPLETE receipt of M3, and "the worker is
+          untouched" only together with a receipt of M3 that says REFUSED, NOT_STARTED or NOT_RECREATED.
+
+In every outcome nothing is removed and nothing is rolled back. Consequences that outlive the run: every later compose
+command for this project must name the same two files (the deploy's file and this override), or it removes the four
+names from the worker; a deploy (which names one file) does exactly that. The override and the policy lie in a
+directory the worker can write: compare them with the hashes of this receipt before relying on them.
+
+8. WHERE EACH BOUND VALUE COMES FROM
+
+  rows of live_parent, release.parent, deploy_directory, lock.directory; evidence_boot_id_sha256
+      a read-only receipt of the boot of the write (K11 PRE on Sunday, or a later one of the same boot), copied row by
+      row; its hash goes into request.evidence. The release directory itself is not signed by rows: it does not
+      exist when the request is signed; it is opened by name under its pinned parent and must be root:root 0700.
+  data_root, worker.mount_target      the source and the target of the worker's bind of the data volume, as a
+      read-only receipt shows them and as K11 PRE's render shows them (c3po/compose.yml:165)
+  worker.image_id                     the backend image ID of the post-deploy readback / K11 PRE (the ID the worker runs)
+  policy bytes, release sha256/bytes  the policy and the release approved by hash (the documentary chain); the release
+      path is the one K10 is bound with
+  compose.project, env_file, files    the deploy layout: c3po, <deploy>/.env, <deploy>/c3po/compose.yml
+  directory_name, override_name, lock.wait_seconds, windows, owner, target and key references, claim root
+      decided by the signatories
+  not bound, read at run time and compared with itself: container IDs, start instants, the bytes of .env.
+
+Before the signature is asked for, the binder checks in the read-only receipt (a refusal here is a refusal on Monday):
+  - a directory created by root in live_parent is root:root (no group inheritance) and on its device; live_parent is
+    not setgid;
+  - the worker runs, restart count read, on worker.image_id, whose revision label is the epoch's revision;
+  - .deploy-version says the revision; the pin exists; no reboot is pending; the worker does not carry the four names;
+  - K11 PRE's render with this override shows the four values, the build revision, the image, and the bind of
+    data_root at mount_target with no other volume above or below the two files;
+  - K11 PRE reports both compose inputs (<deploy>/.env, <deploy>/<project>/compose.yml) as regular files reached
+    without a link, and at least 1 MiB free on the data volume;
+  - the latest read of the same boot shows no container under a temporary name of the worker's
+    (<anything>_<project>-r2d2-worker-1: a leftover of an interrupted recreate, for instance of the capacity mount
+    of Sunday, which runs after K11 PRE). K11's candidate as repaired on 2026-10-02 reports it
+    (containers.worker_service_leftovers, finding WORKER_SERVICE_LEFTOVER_CONTAINER); the W1 bytes count the
+    containers of the service r2d2-worker by label, and the count must be 1 (DESIGN.md open decision 18).
+
+9. BINDING PROCEDURE (each step by command; nothing typed from memory)
+
+  1. Reviewer accepts these bytes: `shasum -a 256 -c SHA256SUMS`; the core's seal (`shasum -a 256 -c CORE_SHA256SUMS`
+     in the core directory); `python3 -B <core>/assemble.py --check <this directory>` prints BUILD_EQUAL wherever the
+     copies lie. The five blob references of DISPATCH.UNBOUND.json carry the hash of the unbound bytes and a null path.
+  2. Receipts on record as in section 8, each with its hash; every row copied from a receipt named in evidence.
+     The evidence must name the K11 receipt of the same boot the rows were copied from (operation
+     GO_READONLY_HOSTOPS02_EPOCH_READBACK_01): without it the request is refused locally, before any claim.
+  3. Fill the plan. Compute by command, independently of this code: sha256 and size of the policy bytes and of the
+     release bytes; the four values; the override bytes (json.dumps with sort_keys, default separators) and their hash.
+  4. request: status BOUND, date 2026-10-05, windows, host binding, executor_uid 0, evidence; canonical bytes; hash.
+     Instants written as datetime.isoformat() writes them in UTC.
+  5. effects: compute once with the source's effects_of(plan) offline and READ it: it is what the owner and the GO
+     sign. Compare its four values, the override hash and the policy digest with the figures of step 3. The policy
+     digest is compared with Act B's policy_sha, computed independently as the assembler does (json.dumps with
+     sort_keys, separators (',',':'), ensure_ascii=False): equal for any policy, ASCII or not.
+  6. authority (owner, SIGNED, APPROVED, request and payload hashes, effects) -> hash -> GO (SIGNED, GO, three hashes,
+     effects, transport_binding with the four runtime pins and the command pin, claim_root_identity, the constant
+     scope_statement, success_criterion ACTIVATE_WORKER_RECREATED_AND_VERIFIED).
+  7. Six instants non-null, on 2026-10-05 UTC, gate span within 900 s; config window inside both;
+     latest_start = not_after - 80 s. The run needs 43 s plus its prechecks from its own start: a start in the last
+     minute of the window is refused (LOCK_NOT_TAKEN_BUDGET).
+  8. Final payload with launcher_stdin.build; config with its pins and the paths of the five bound blobs; publication proof.
+  9. Dry validation: the source's authenticate() on the bound bytes with the target uid injected and a clock inside
+     the window, and perform() with a gate that raises: nothing may be touched (the conformance suite does this with a
+     host object that fails on any use).
+ 10. Publish the hashes of the final payload and of the config. Prepare -> publication -> resume, once. Never a retry.
+A spare request (M3') is a second binding of the same payload bytes with its own windows, request, authority and GO;
+see section 7 for what it can and cannot do after the primary ran.
+
+10. PROVEN, EMULATED, UNPROVEN
+
+Ran on the host before, by other payloads: the words of the two renders and of the recreate (activation of
+2026-09-28), the container and listing templates (post-deploy readback), the image template (hostops01), the launcher
+and transport under sudo -n /usr/bin/python3 -I -B -, the walks by dir_fd.
+Real on the workstation (tests/test_native_calls.py; macOS, an ordinary user reported as root): every file call of this
+operation by the source's own Native: the walks, the release opened by name without following, the reads, mkdir,
+exclusive open, link, unlink, fsync, the real flock held by another descriptor, the real pause.
+Emulated only: the docker CLI and compose, uid 0, device numbers, every errno injection and process death, and every
+in-between state of an interrupted recreate.
+UNPROVEN: DESIGN.md section 8, UA-1 to UA-12. UA-1 (compose without HOME) has a partial precedent on this host: the
+security controller runs `docker compose ... ps -q` from a system unit without HOME; `up`, `config` and `-f -` under
+PATH=/usr/bin:/bin do not. Without any precedent: UA-2 (the shape of a bind in the render JSON) and UA-10 (the order
+in which the compose plugin of this host makes the calls of a recreate, and what its interruption leaves).
+
+11. REPRODUCE (offline; nothing here contacts a host)
+
+  cd <this directory, wherever it lies; the core beside it as ../core>
+  shasum -a 256 -c SHA256SUMS
+  /usr/bin/python3 -B seal.py check                                       # SEAL_OK BUILD_EQUAL
+  /usr/bin/python3 -B ../core/assemble.py --check .                       # BUILD_EQUAL
+  /usr/bin/python3 -B -m pytest -p no:cacheprovider -q tests              # also with a 3.12 interpreter
+  /usr/bin/python3 -B mutation/mutate.py check                            # every anchor exactly once
+  /usr/bin/python3 -B mutation/mutate.py run                              # private copies under ../work/mut-activate-*
+  HOSTOPS_MUTATION_PYTHON=<python 3.12> HOSTOPS_MUTATION_RECORD=MUTATION_RUN.py312.json /usr/bin/python3 -B mutation/mutate.py run
+  HOSTOPS_MUTATION_INHERITED=yes HOSTOPS_MUTATION_WRITE=yes HOSTOPS_MUTATION_RECORD=MUTATION_INHERITED.json /usr/bin/python3 -B mutation/mutate.py run I_
+  /usr/bin/python3 -B linux_root/shapes.py --self-test                    # emulated engine only
+  /usr/bin/python3 -B validate.py <python 3.9> <python 3.12>              # runs the above except the mutation; rewrites VALIDATION.json
+Six tests read bytes that exist only on the build machine and are skipped without them: the release tree at dd4ec4bb
+(HOSTOPS02_TEST_RELEASE_REPOSITORY, five tests) and the activation payload of 2026-09-28 (HOSTOPS02_TEST_ACTIVATION_28,
+one). One more compares EVIDENCE_OPERATIONS with the operation name in the source of the epoch readback when that
+operation lies beside this directory (../epoch_readback/op.py), and is skipped otherwise. The counts of
+VALIDATION.json were taken with all of them present.
+
+12. OPEN DECISIONS
+
+DESIGN.md section 10, twenty points; the first (evidence) is closed by the repair. The ones that must be closed
+before the signature: 2 (which receipts let the epoch start), 3 (the spare), 5 (the hold file), 7 (the pause), 9 (the
+lock wait), 17 (no way back), 18 (a read after the capacity mount that shows no leftover container), 19 (the legacy
+cron), 20 (the refusals the repair added).
+The largest open risk is not a decision: `docker compose up` has never been started with the family's fixed
+environment (PATH=/usr/bin:/bin, no HOME) by this family on any host (DESIGN.md section 8, UA-1), and K11 only
+renders.

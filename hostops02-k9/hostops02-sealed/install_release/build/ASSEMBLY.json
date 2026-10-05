@@ -1,0 +1,55 @@
+{
+ "activation_allowed": false,
+ "core_parts": {
+  "core": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a",
+  "files": "6b96ad64fe8ce5a9a2293b109964e069c2ad32169e7d421449da3f88516b60ba",
+  "parents": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b"
+ },
+ "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "date_class": "WRITE_FIRST_SESSION",
+ "dates": [
+  "2026-10-05"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  142,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "49233a0dcab1670a9166e525cb06b362bd9c512d624c7911d8c00452f6794be0",
+ "final_payload_bytes": 97975,
+ "final_payload_sha256": "54450b106bbdc3c9b108304b6ade092164069b266d5705abc68f505e1b26ea8c",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "install_release",
+ "name": "install_release",
+ "operation": "GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01",
+ "operation_part_sha256": "0317fde20c9083887588ae2bda3d58a8371b5fe5d4451c4addfa62a1422984e1",
+ "parts": [
+  "core",
+  "parents",
+  "files"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "41043cafe76d8ccabddaca9095039bd7400a088571ff45631d717620fa97f2d4",
+ "source_bytes": 65842,
+ "source_sha256": "e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae",
+ "spec_sha256": "f0f2e58f0de24e54aa538c7891a0d6100ffc9533726ec99de52bca829e28fbff",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 3850,
+ "writes_allowed": true
+}
