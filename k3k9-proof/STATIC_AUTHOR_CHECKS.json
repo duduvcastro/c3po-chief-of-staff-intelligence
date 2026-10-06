@@ -1,0 +1,71 @@
+{
+ "all_status_and_case_descendants_accounted": true,
+ "artifact_synthetic_address_allowlist": "Only two literal original reserved test addresses by SHA256, after all package hashes pass; raw logs never changed",
+ "ast_parsed_own_helpers": 3,
+ "config_same_buffer_before_after": true,
+ "core": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d",
+ "core_generation_sha256": "2db09adfefb4e19c4c4f860735283d6078e91017b24025b1f4a072b52d84d8e8",
+ "current_family": "cbf694266a657e6c831f79c50171f3ba80349ff832425250c6fa871631517f79",
+ "executable_guard_precedes_first_child": true,
+ "execution_count": 0,
+ "family_exact_genuine_collection_required": true,
+ "family_or_core_import_count": 0,
+ "final_payload_sha256": "dde459b4f6ae50e1a7eeee24bbee7db998aaf2856be7ed4905beef3d752b3394",
+ "historical_job_37293011841_family": "dbbfc11eda3b3459a0f61feb7f88d718c7837ba2d1306abfc4705e65e07efbda",
+ "independent_review_pending": true,
+ "mutants_expected": {
+  "core": 600,
+  "family": 179
+ },
+ "mutants_run": 0,
+ "mutation_consumed_source_pins_compared": true,
+ "mutation_junit": "Derived from exact original records; original merged-inner-stream semantics retained",
+ "original_linux_root_u1_u7_workflow_part": "NOT_RUN",
+ "original_system_interpreter_scope": "Observed separately; required 3.12; not a 3.9/selected-layer transfer",
+ "partial_builder_r1": "preserved; passive safety regex inspection exceeded initial wait; no candidate program executed",
+ "private_content_classification": [
+  {
+   "file": "proof/artifact_guard.py",
+   "kind": "regex definition; no personal path",
+   "matches": 1
+  },
+  {
+   "file": "units/core/tests/family.py",
+   "kind": "reserved .invalid test address, original sealed buffer",
+   "matches": 2
+  },
+  {
+   "file": "units/core/tests/conformance.py",
+   "kind": "reserved .invalid test address, original sealed buffer",
+   "matches": 2
+  }
+ ],
+ "private_pattern_observations": [
+  {
+   "count": 1,
+   "file": "proof/artifact_guard.py"
+  },
+  {
+   "count": 2,
+   "file": "units/core/tests/family.py"
+  },
+  {
+   "count": 2,
+   "file": "units/core/tests/conformance.py"
+  }
+ ],
+ "raw_failure_outputs_preserved_before_parsing": true,
+ "schema": "K3K9_STATIC_AUTHOR_CHECK_V2",
+ "source_generation_sha256": "8bc1cdfc6b4ccd204db9fb25e93b208adfefe9fc37b786c892e01cd77537bb91",
+ "source_units_byte_equal": true,
+ "status": "NOT_RUN",
+ "strict_junit_hierarchy": true,
+ "strict_properties_leaf_schema": true,
+ "suite_expected": {
+  "core": 589,
+  "family": 306
+ },
+ "suite_rootdir_explicit": true,
+ "tests_run": 0,
+ "units_exact_listed_sets_verified": true
+}
