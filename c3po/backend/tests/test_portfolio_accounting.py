@@ -74,10 +74,48 @@ def test_closed_period_uses_historical_holdings_and_dated_fx():
     assert dates==[date(2026,9,15)]
 
 
-def test_position_restatement_makes_period_unknown():
+def test_position_restatement_after_a_flow_makes_period_unknown():
     from datetime import date
     from app.portfolio_accounting import period_result
-    result=period_result([event(day='2026-08-31'),event(kind='position',day='2026-09-02',sequence=2)],date(2026,9,1),date(2026,9,30),None,None)
+    events=[event(day='2026-08-31'),event(day='2026-09-01',sequence=2),event(kind='position',day='2026-09-02',sequence=3)]
+    result=period_result(events,date(2026,9,1),date(2026,9,30),None,None)
+    assert result['profit_usd'] is None and 'correção' in result['reason']
+
+
+def _flat_value(price):
+    def value_at(positions, day):
+        return sum(p.quantity * price(day) for p in positions.values())
+    return value_at
+
+
+def test_positions_informed_on_the_first_day_measure_the_whole_month():
+    from datetime import date
+    from app.portfolio_accounting import period_result
+    events=[event(kind='position',quantity='10',total='50',day='2026-10-01')]
+    price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(12)
+    result=period_result(events,date(2026,10,1),date(2026,10,6),_flat_value(price),lambda market,day:Decimal(1))
+    assert result['start']=='2026-10-01' and result['reason'] is None
+    assert Decimal(result['profit_usd'])==Decimal(20) and Decimal(result['return_percent'])==Decimal(20)
+
+
+def test_positions_informed_inside_the_year_measure_from_their_date():
+    from datetime import date
+    from app.portfolio_accounting import period_result
+    events=[event(kind='position',quantity='10',total='50',day='2026-10-01'),
+            event(quantity='5',total='60',day='2026-10-03',sequence=2)]
+    price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(12)
+    result=period_result(events,date(2026,1,1),date(2026,10,6),_flat_value(price),lambda market,day:Decimal(1))
+    assert result['start']=='2026-10-01' and '01/10/2026' in result['reason']
+    # opening 100, closing 180, purchase 60 on 10/03: profit 20
+    assert Decimal(result['profit_usd'])==Decimal(20)
+
+
+def test_flow_before_a_later_position_in_the_period_stays_unknown():
+    from datetime import date
+    from app.portfolio_accounting import period_result
+    events=[event(day='2026-09-30'),event(quantity='1',total='10',day='2026-10-02',sequence=2),
+            event(kind='position',quantity='5',total='50',day='2026-10-03',sequence=3)]
+    result=period_result(events,date(2026,10,1),date(2026,10,6),None,None)
     assert result['profit_usd'] is None and 'correção' in result['reason']
 
 
