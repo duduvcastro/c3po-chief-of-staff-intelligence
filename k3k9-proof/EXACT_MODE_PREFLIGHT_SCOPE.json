@@ -1,0 +1,38 @@
+{
+ "authority": "No third push, dispatch or execution is authorized by this candidate. New Fable and owner authority remains required.",
+ "exact_permitted_mutation": {
+  "binary_basename": "python3.12",
+  "bytes": 17752,
+  "call": "os.fchmod on the held identity-checked read-only descriptor; remove only 022",
+  "gid": 1000,
+  "links": 1,
+  "mode_after": "0755",
+  "mode_before": "0777",
+  "path_version": "3.12.14",
+  "regular": true,
+  "sha256": "bef88f140b625959f8af25c7b75cce2cd5d4b29cc2f2b079befd7f68eda4dba0",
+  "uid": 1001
+ },
+ "executions": 0,
+ "failure_retention": "Exclusive private preflight JSON and raw job stdout; guarded system privacy consumes the pinned original artifact gate even after preflight refusal.",
+ "limits": [
+  "No Linux proof, suite PASS, mutation PASS, engine-shapes result or readiness exists for these new bytes.",
+  "FD and named-ancestor identity checks describe the observed preflight interval; no global TOCTOU guarantee is asserted.",
+  "No source family, core, baseline, JUnit/collector or run_current guard is changed.",
+  "No chmod/chown/sudo/copy-executable/fallback/global grant; the sole proposed mutating call is exact FD fchmod.",
+  "R6/R7/R8 and their failures remain preserved."
+ ],
+ "origin_r8_manifest_sha256": "aab0de0c591958f0f4628225ca28485626e430e538f7d6ba9669b0dd3725ca52",
+ "other_py312_route": "HOLD, including another patch, buffer, metadata or an already changed mode. This is not a general toolcache repair.",
+ "preflight_sha256": "4516789c658c89ee74b9f7802e5031307a2a635a0d99a38fc9fd40dd73ce85aa",
+ "proof_gating": "Trusted system preflight before pip and every selected interpreter invocation. Original always steps additionally require preflight success.",
+ "py39_route": "Canonical selected 3.9 file, regular/nlink1/owner1001 and no022; no mutation and complete same-FD before-after readback.",
+ "run_current_unchanged_sha256": "205ff765432105563be25fa82ba84d874a1928147a3357b75180ab9cc6578bc1",
+ "schema": "K3K9_R9_EXACT_MODE_PREFLIGHT_SCOPE_V1",
+ "source_imports": 0,
+ "status": "NOT_RUN",
+ "system_interpreter_scope": "System preflight version recorded separately; selected proof version still observed by unchanged run_current after its unchanged 022 guard.",
+ "tests_mutants_children": 0,
+ "workflow_sha256": "f0d5472a806f519ddfd8932d2cdac0b6ec528adfb47116658403f7f0801ad387",
+ "workflow_version_selection": "Matrix remains 3.9/3.12, not patch-pinned. A different selected 3.12 patch is a nominal HOLD."
+}

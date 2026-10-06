@@ -1,0 +1,63 @@
+--- R8/WORKFLOW.yml.txt
++++ R9/WORKFLOW.yml.txt
+@@ -31,8 +31,6 @@
+         with:
+           python-version: ${{ matrix.python }}
+           check-latest: false
+-      - name: install pytest in selected interpreter
+-        run: '"${{ steps.selected.outputs.python-path }}" -I -B -m pip install pytest==8.4.2'
+       - name: layer label
+         run: |
+           case '${{ matrix.python }}' in
+@@ -40,22 +38,28 @@
+             3.12) echo 'PROOF_LABEL=py312' >> "$GITHUB_ENV" ;;
+             *) exit 2 ;;
+           esac
++      - name: trusted system exact selected executable preflight
++        id: preflight
++        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/preflight.json"'
++      - name: install pytest only after exact selected executable preflight
++        if: ${{ success() && steps.preflight.outcome == 'success' }}
++        run: '"${{ steps.selected.outputs.python-path }}" -I -B -m pip install pytest==8.4.2'
+       - name: current own core root and user suites
+-        if: success()
++        if: ${{ success() && steps.preflight.outcome == 'success' }}
+         run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part core --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/core"'
+       - name: current family root and user suites and BUILD_EQUAL
+-        if: ${{ always() && steps.selected.outcome == 'success' }}
++        if: ${{ always() && steps.selected.outcome == 'success' && steps.preflight.outcome == 'success' }}
+         run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part family --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/family"'
+       - name: all original core and family mutants
+-        if: ${{ always() && steps.selected.outcome == 'success' }}
++        if: ${{ always() && steps.selected.outcome == 'success' && steps.preflight.outcome == 'success' }}
+         run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part mutations --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/mutations"'
+       - name: original family synthetic Docker config proof on disposable runner
+-        if: ${{ always() && steps.selected.outcome == 'success' }}
++        if: ${{ always() && steps.selected.outcome == 'success' && steps.preflight.outcome == 'success' }}
+         run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part secret-config --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/secret-config"'
+       - name: final read-only input integrity and artifact privacy gate
+         if: always()
+         id: artifact-safe
+-        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/artifact_guard.py "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL"'
++        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --privacy-root "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL" --label "$PROOF_LABEL"'
+       - name: all original streams JUnit mutation records and scoped results
+         if: ${{ always() && steps.artifact-safe.outcome == 'success' }}
+         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+@@ -83,12 +87,16 @@
+         with:
+           python-version: '3.12'
+           check-latest: false
++      - name: trusted system exact orchestration executable preflight
++        id: preflight
++        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --python "${{ steps.selected.outputs.python-path }}" --label py312 --out "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312/preflight.json"'
+       - name: frozen original core U1 to U7 plus current family on its own disposable runner
++        if: ${{ success() && steps.preflight.outcome == 'success' }}
+         run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part original-linux-root --python "${{ steps.selected.outputs.python-path }}" --label py312 --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312"'
+       - name: original artifact privacy and whole-package integrity
+         if: always()
+         id: artifact-safe
+-        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/artifact_guard.py "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312"'
++        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --privacy-root "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312" --label py312'
+       - name: original job streams and engine shapes
+         if: ${{ always() && steps.artifact-safe.outcome == 'success' }}
+         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

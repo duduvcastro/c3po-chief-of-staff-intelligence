@@ -1,0 +1,129 @@
+--- R9/SOURCE.from-R9.diff
++++ R10/SOURCE.from-R9.diff
+@@ -112,7 +112,7 @@
+     workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+     need(str(workspace) == os.environ['GITHUB_WORKSPACE'],'WORKSPACE_NOT_CANONICAL')
+     permitted = workspace/('k3k9-proof-out/'+label+'/preflight.json')
+-    alternate = workspace/'k3k9-proof-original-out/system312/preflight.json'
++    alternate = workspace/'k3k9-proof-original-out/preflight-system312/preflight.json'
+     need(Path(path) in (permitted,alternate) and (Path(path) != alternate or label == 'py312'),'OUTPUT_DOMAIN')
+     current = workspace
+     for part in Path(path).relative_to(workspace).parts[:-1]:
+@@ -140,14 +140,78 @@
+         os.close(fd)
+     verify_held(held)
+ 
++def artifact_snapshot(path):
++    """Observe every upload object through held no-follow descriptors, without rewriting it."""
++    held,parent,unused = held_parent(str(Path(path)/'.privacy-root-anchor'))
++    records = {}
++    def walk(fd,prefix):
++        before = os.fstat(fd)
++        need(stat.S_ISDIR(before.st_mode),'ARTIFACT_NOT_DIRECTORY')
++        records[prefix or '.'] = metadata(before,None)
++        with os.scandir(fd) as entries:
++            names = sorted(item.name for item in entries)
++        for name in names:
++            relative = name if not prefix else prefix+'/'+name
++            named = os.stat(name,dir_fd=fd,follow_symlinks=False)
++            need(not stat.S_ISLNK(named.st_mode),'LINKED_ARTIFACT_UPLOAD_REFUSED')
++            if stat.S_ISDIR(named.st_mode):
++                child = os.open(name,DIRECTORY_FLAGS,dir_fd=fd)
++                try:
++                    need(signature(os.fstat(child)) == signature(named),'ARTIFACT_DIRECTORY_CHANGED')
++                    walk(child,relative)
++                    need(signature(os.stat(name,dir_fd=fd,follow_symlinks=False)) == signature(os.fstat(child)),
++                         'ARTIFACT_DIRECTORY_NAME_CHANGED')
++                finally:
++                    os.close(child)
++            else:
++                need(stat.S_ISREG(named.st_mode),'NONREGULAR_ARTIFACT_UPLOAD_REFUSED')
++                leaf = os.open(name,READ_FLAGS,dir_fd=fd)
++                try:
++                    first = os.fstat(leaf)
++                    need(signature(first) == signature(named),'ARTIFACT_FILE_NAME_CHANGED')
++                    hasher = hashlib.sha256()
++                    size = 0
++                    while True:
++                        block = os.read(leaf,1048576)
++                        if not block:
++                            break
++                        hasher.update(block)
++                        size += len(block)
++                    last = os.fstat(leaf)
++                    need(signature(first) == signature(last) and size == first.st_size,'ARTIFACT_FILE_CHANGED_DURING_READ')
++                    need(signature(os.stat(name,dir_fd=fd,follow_symlinks=False)) == signature(last),
++                         'ARTIFACT_FILE_NAME_CHANGED_AFTER_READ')
++                    records[relative] = metadata(first,hasher.hexdigest())
++                finally:
++                    os.close(leaf)
++        need(signature(os.fstat(fd)) == signature(before),'ARTIFACT_DIRECTORY_CHANGED_DURING_SCAN')
++    try:
++        verify_held(held)
++        walk(parent,'')
++        verify_held(held)
++        return records
++    finally:
++        for fd,parent,name,stamp in reversed(held):
++            os.close(fd)
++
+ def privacy_main(path,label):
+-    """Use the pinned original privacy gate through the guarded system interpreter, never the selected binary."""
++    """Scan the entire literal upload root around the pinned original privacy gate through system Python."""
+     guard()
+     inputs_before,pins_before = proof_pins()
+     workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+     need(str(workspace) == os.environ['GITHUB_WORKSPACE'],'WORKSPACE_NOT_CANONICAL')
+-    need(Path(path) in (workspace/('k3k9-proof-out/'+label),workspace/'k3k9-proof-original-out/system312'),
++    need(Path(path) == workspace/'k3k9-proof-out'
++         or (label == 'py312' and Path(path) == workspace/'k3k9-proof-original-out'),
+          'PRIVACY_OUTPUT_DOMAIN')
++    record = {'schema':'CURRENT_K3K9_UPLOAD_BOUNDARY_OBSERVATION_V1','status':'HOLD',
++              'original_scanner_called':False,'original_scanner_error':None,
++              'before':None,'after':None,'after_error':None,'proof_success_not_inferred':True}
++    try:
++        record['before'] = artifact_snapshot(path)
++    except BaseException as error:
++        record['before_error'] = type(error).__name__+': '+str(error)
++        print(json.dumps(record,sort_keys=True))
++        raise
+     source = PACKAGE/'proof/artifact_guard.py'
+     fd = os.open(source,READ_FLAGS)
+     try:
+@@ -156,13 +220,34 @@
+         os.close(fd)
+     need(sha(data) == pins_before['proof/artifact_guard.py'],'PRIVACY_SOURCE_PIN')
+     saved = sys.argv
++    original_error = None
++    after_error = None
+     try:
+         sys.argv = [str(source),str(path)]
++        record['original_scanner_called'] = True
+         exec(compile(data,str(source),'exec',dont_inherit=True),{'__name__':'__main__','__file__':str(source)})
++    except BaseException as error:
++        original_error = error
++        record['original_scanner_error'] = type(error).__name__+': '+str(error)
+     finally:
+         sys.argv = saved
+-    inputs_after,pins_after = proof_pins()
+-    need(inputs_after == inputs_before and pins_after == pins_before,'PRIVACY_PROOF_INPUTS_CHANGED')
++    try:
++        record['after'] = artifact_snapshot(path)
++        inputs_after,pins_after = proof_pins()
++        record['proof_before_after_equal'] = inputs_after == inputs_before and pins_after == pins_before
++        record['upload_before_after_equal'] = record['after'] == record['before']
++        need(record['proof_before_after_equal'],'PRIVACY_PROOF_INPUTS_CHANGED')
++        need(record['upload_before_after_equal'],'UPLOAD_DOMAIN_CHANGED_DURING_PRIVACY_GATE')
++    except BaseException as error:
++        after_error = error
++        record['after_error'] = type(error).__name__+': '+str(error)
++    if original_error is None and after_error is None:
++        record['status'] = 'ARTIFACT_BOUNDARY_AND_ORIGINAL_PRIVACY_CHECKED'
++    print(json.dumps(record,sort_keys=True))
++    if original_error is not None:
++        raise original_error
++    if after_error is not None:
++        raise after_error
+     return 0
+ 
+ def main():

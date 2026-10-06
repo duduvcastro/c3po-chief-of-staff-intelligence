@@ -1,0 +1,28 @@
+--- R9/WORKFLOW.from-R9.diff
++++ R10/WORKFLOW.from-R9.diff
+@@ -59,7 +59,7 @@
+       - name: final read-only input integrity and artifact privacy gate
+         if: always()
+         id: artifact-safe
+-        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --privacy-root "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL" --label "$PROOF_LABEL"'
++        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --privacy-root "$GITHUB_WORKSPACE/k3k9-proof-out" --label "$PROOF_LABEL"'
+       - name: all original streams JUnit mutation records and scoped results
+         if: ${{ always() && steps.artifact-safe.outcome == 'success' }}
+         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+@@ -89,14 +89,14 @@
+           check-latest: false
+       - name: trusted system exact orchestration executable preflight
+         id: preflight
+-        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --python "${{ steps.selected.outputs.python-path }}" --label py312 --out "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312/preflight.json"'
++        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --python "${{ steps.selected.outputs.python-path }}" --label py312 --out "$GITHUB_WORKSPACE/k3k9-proof-original-out/preflight-system312/preflight.json"'
+       - name: frozen original core U1 to U7 plus current family on its own disposable runner
+         if: ${{ success() && steps.preflight.outcome == 'success' }}
+         run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part original-linux-root --python "${{ steps.selected.outputs.python-path }}" --label py312 --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312"'
+       - name: original artifact privacy and whole-package integrity
+         if: always()
+         id: artifact-safe
+-        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --privacy-root "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312" --label py312'
++        run: '/usr/bin/python3 -I -B k3k9-proof/proof/selected_executable_preflight.py --privacy-root "$GITHUB_WORKSPACE/k3k9-proof-original-out" --label py312'
+       - name: original job streams and engine shapes
+         if: ${{ always() && steps.artifact-safe.outcome == 'success' }}
+         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

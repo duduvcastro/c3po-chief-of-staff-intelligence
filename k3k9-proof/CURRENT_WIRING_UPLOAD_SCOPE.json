@@ -1,0 +1,33 @@
+{
+ "added_functions": [
+  "artifact_snapshot"
+ ],
+ "all_objects_scan": "No-follow FD/lstat recursive inventory includes upload root and every directory and file. Links including dangling/directory links and nonregular objects refuse before the original scanner; same inventory is observed afterward.",
+ "buffers_and_metadata": "Regular artifact buffers are hashed on held read-only descriptors; complete stat observations and content hashes are printed as raw JSON to the job log. No artifact buffer is rewritten.",
+ "changed_existing_functions": [
+  "output_parent",
+  "privacy_main"
+ ],
+ "exact_mode_fchmod_and_system_gating_unchanged": true,
+ "execution_count": 0,
+ "historical_origin_contract": "EXACT_MODE_PREFLIGHT_SCOPE.json, WORKFLOW.from-R8.diff and ORIGIN_R8_INPUT_HASHES.json are preserved R9-origin records. This file describes current R10 layout/source pins.",
+ "limits": [
+  "No execution or third push authorization. Independent static review is still required.",
+  "No atomic upload exclusion or global TOCTOU guarantee is asserted; only two complete observed scan intervals and equality are tested by the future wrapper.",
+  "The original source family/core/baseline, JUnit/collector, run_current guard022 and known exact FD fchmod condition are unchanged.",
+  "R9 remains a preserved static HOLD for output overlap and incomplete original privacy enumeration. No historical leak or execution is inferred."
+ ],
+ "matrix_upload_and_privacy_domain": "k3k9-proof-out",
+ "origin_r9_manifest_sha256": "f3d4fb6c1eee01493ec17175b19ba57efdd6d623ad22d6c2d652e52b3934025b",
+ "original_privacy_behavior": "Original pinned artifact_guard bytes execute unchanged; original refusals are retained and re-raised. All-object boundary is additional, not a replacement scanner.",
+ "original_proof_output_fresh": "k3k9-proof-original-out/system312",
+ "original_upload_and_privacy_domain": "k3k9-proof-original-out",
+ "preflight_original_output": "k3k9-proof-original-out/preflight-system312/preflight.json",
+ "preflight_sha256": "b21be2cc7e778912d592326aca1139666a8abea85f6729c5e47cc1209bc3dcdf",
+ "run_current_unchanged_sha256": "205ff765432105563be25fa82ba84d874a1928147a3357b75180ab9cc6578bc1",
+ "schema": "K3K9_R10_WIRING_UPLOAD_SCOPE_V1",
+ "source_imports": 0,
+ "status": "NOT_RUN",
+ "tests_children_mutants": 0,
+ "workflow_sha256": "e23f6c35151e6fa7c8ba2155bd72ddf59c71b6574934496d5e7aec817075278c"
+}
