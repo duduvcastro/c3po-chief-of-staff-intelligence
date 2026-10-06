@@ -1,0 +1,18 @@
+--- R6/proof/run_current.py
++++ R8/proof/run_current.py
+@@ -136,6 +136,15 @@
+         executable=Path(a.python).resolve()
+         if not re.fullmatch(r'/opt/hostedtoolcache/Python/3\.(9|12)\.[0-9]+/x64/bin/python[0-9.]*',str(executable)):raise ValueError('NOT_SELECTED_ACTION_EXECUTABLE')
+         est=executable.stat()
++        observation={'realpath':str(executable),'file_type_bits':stat.S_IFMT(est.st_mode),
++                     'regular':stat.S_ISREG(est.st_mode),'mode_octal':format(stat.S_IMODE(est.st_mode),'04o'),
++                     'uid':est.st_uid,'gid':est.st_gid,'nlink':est.st_nlink,'device':est.st_dev,'inode':est.st_ino,
++                     'size':est.st_size,'mtime_ns':est.st_mtime_ns,'ctime_ns':est.st_ctime_ns,
++                     'buffer_sha256':None,'buffer_read_error':None}
++        result['selected_executable_observation']=observation
++        if stat.S_ISREG(est.st_mode):
++            try:observation['buffer_sha256']=digest(executable.read_bytes())
++            except OSError as error:observation['buffer_read_error']=type(error).__name__+': '+str(error)
+         if not stat.S_ISREG(est.st_mode) or est.st_mode&0o022:raise ValueError('UNSAFE_SELECTED_EXECUTABLE')
+         executable_before=digest(executable.read_bytes())
+         version=json.loads(run('python-version',[a.python,'-I','-B','-c','import json,platform,sys;print(json.dumps({"python":platform.python_version(),"executable":sys.executable}))']))

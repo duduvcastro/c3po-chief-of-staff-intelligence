@@ -1,0 +1,38 @@
+{
+ "artifact_five_results": "HOLD with UNSAFE_SELECTED_EXECUTABLE before children; exact original type/mode/owner were not retained.",
+ "behavior_delta": "Retain original selected executable stat metadata and a regular-file buffer hash before the unchanged unsafe-executable guard.",
+ "candidate_helper_sha256": "205ff765432105563be25fa82ba84d874a1928147a3357b75180ab9cc6578bc1",
+ "execution_count": 0,
+ "imports_of_family_or_core": 0,
+ "limits": [
+  "This candidate does not correct UNSAFE_SELECTED_EXECUTABLE or establish PASS.",
+  "The regular-file hash is a diagnostic read, not an execution grant or a trusted executable identity.",
+  "The same original path regex and metadata guard still precede the first child.",
+  "No test, mutation, source import, Docker, host operation, Git mutation, push or dispatch was run.",
+  "R6 and R7 remain preserved; only Fable may select a future push after review."
+ ],
+ "no_chmod_chown_copy_executable_grant_or_guard_relaxation": true,
+ "only_changed_function": "main",
+ "origin_helper_sha256": "8735ff2bda7302be358ea39b18f8b519b9083e2c296724e4254b5c6cf751a5da",
+ "origin_manifest_sha256": "16a4edcd9e75314b73eeecea88438d39dbba08a8bc6c559eb3b61432b9fa05ae",
+ "retained_observation_fields": [
+  "realpath",
+  "file_type_bits",
+  "regular",
+  "mode_octal",
+  "uid",
+  "gid",
+  "nlink",
+  "device",
+  "inode",
+  "size",
+  "mtime_ns",
+  "ctime_ns",
+  "buffer_sha256",
+  "buffer_read_error"
+ ],
+ "schema": "K3K9_R8_DIAGNOSTIC_SCOPE_V1",
+ "status": "NOT_RUN",
+ "tests_run": 0,
+ "workflow_sha256": "1a93aced5c8998f5b23618cb2cb889acb9726907b7d6ddb639274d5eefea27fd"
+}

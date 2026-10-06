@@ -1,0 +1,99 @@
+# CANDIDATE / NOT_RUN. Fable selects the sole push; Codex does not push or dispatch.
+name: current-k3k9-cbf-proof
+on:
+  push:
+    branches: [ops/hostops02-k3k9-cbf-proof-20261006b]
+permissions:
+  contents: read
+concurrency:
+  group: current-k3k9-cbf-proof-20261006
+  cancel-in-progress: false
+jobs:
+  current-k3k9:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12']
+    env:
+      HOSTOPS_THROWAWAY_RUNNER: 'yes'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: checkout release history with no saved credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: selected Python
+        id: selected
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: ${{ matrix.python }}
+          check-latest: false
+      - name: install pytest in selected interpreter
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B -m pip install pytest==8.4.2'
+      - name: layer label
+        run: |
+          case '${{ matrix.python }}' in
+            3.9) echo 'PROOF_LABEL=py39' >> "$GITHUB_ENV" ;;
+            3.12) echo 'PROOF_LABEL=py312' >> "$GITHUB_ENV" ;;
+            *) exit 2 ;;
+          esac
+      - name: current own core root and user suites
+        if: success()
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part core --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/core"'
+      - name: current family root and user suites and BUILD_EQUAL
+        if: ${{ always() && steps.selected.outcome == 'success' }}
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part family --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/family"'
+      - name: all original core and family mutants
+        if: ${{ always() && steps.selected.outcome == 'success' }}
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part mutations --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/mutations"'
+      - name: original family synthetic Docker config proof on disposable runner
+        if: ${{ always() && steps.selected.outcome == 'success' }}
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part secret-config --python "${{ steps.selected.outputs.python-path }}" --label "$PROOF_LABEL" --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL/secret-config"'
+      - name: final read-only input integrity and artifact privacy gate
+        if: always()
+        id: artifact-safe
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/artifact_guard.py "$GITHUB_WORKSPACE/k3k9-proof-out/$PROOF_LABEL"'
+      - name: all original streams JUnit mutation records and scoped results
+        if: ${{ always() && steps.artifact-safe.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: current-k3k9-cbf-${{ matrix.python }}
+          if-no-files-found: error
+          retention-days: 30
+          path: k3k9-proof-out/
+
+  original-linux-root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      HOSTOPS_THROWAWAY_RUNNER: 'yes'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: checkout exact proof and release history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: orchestration Python 3.12, original job uses observed system Python separately
+        id: selected
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12'
+          check-latest: false
+      - name: frozen original core U1 to U7 plus current family on its own disposable runner
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/run_current.py --part original-linux-root --python "${{ steps.selected.outputs.python-path }}" --label py312 --repo "$GITHUB_WORKSPACE" --out "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312"'
+      - name: original artifact privacy and whole-package integrity
+        if: always()
+        id: artifact-safe
+        run: '"${{ steps.selected.outputs.python-path }}" -I -B k3k9-proof/proof/artifact_guard.py "$GITHUB_WORKSPACE/k3k9-proof-original-out/system312"'
+      - name: original job streams and engine shapes
+        if: ${{ always() && steps.artifact-safe.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: current-k3k9-cbf-original-linux-root
+          if-no-files-found: error
+          retention-days: 30
+          path: k3k9-proof-original-out/
