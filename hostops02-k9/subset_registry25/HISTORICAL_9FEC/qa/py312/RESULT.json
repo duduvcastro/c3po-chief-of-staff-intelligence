@@ -1,0 +1,300 @@
+{
+  "Linux_acceptance_transfer": false,
+  "case_inventory_sha256": "9be8b85839e07b2d1daa4e1d2e4cca02108e04da52f2fe7a478c0e1da068cba0",
+  "cases": 15,
+  "cores_observed": 3,
+  "errors": 0,
+  "expected_cases": [
+    "registry25_exact_with_three_unique_subset_rows",
+    "real_family_core_HOSTOPS02_BOOTSTRAP_IDENTITY",
+    "real_family_core_HOSTOPS02_K3K9_SECRETS",
+    "real_family_core_HOSTOPS02_K3_SECRET_ENV",
+    "selected_python_BUILD_EQUAL_HOSTOPS02_BOOTSTRAP_IDENTITY",
+    "selected_python_BUILD_EQUAL_HOSTOPS02_K3K9_SECRETS",
+    "selected_python_BUILD_EQUAL_HOSTOPS02_K3_SECRET_ENV",
+    "refuses_swapped_bootstrap_core",
+    "refuses_genuine_superseded_K3K9_seal_metadata",
+    "refuses_altered_bootstrap_file",
+    "refuses_altered_binder_source",
+    "refuses_altered_registry_bytes",
+    "refuses_absent_BOOT_registry_row_DTO",
+    "refuses_ambiguous_BOOT_registry_row_DTO",
+    "input_bytes_and_modes_unchanged_after_all_cases"
+  ],
+  "failed": 0,
+  "families_observed": 3,
+  "helper_sha256": "fc293f741c7edfff4a058c3177bdd9a21ad905807f9050e430facc12fcca3a61",
+  "input_inventory_before_sha256": "ca691faf52bf414f4d2ef802a57b0c814f4c3dd0d56a2fb77843904d926136fc",
+  "input_thin_selector_before_sha256": "085b78bd986ef8df6b9d8fcf3bb3e756e9167a8acf26c39c662633c8fbcd5c28",
+  "junit_sha256": "7f23bab4891cc2d0018733fe48b4c79cd57d2f43504b3c113a179dc298a1c305",
+  "operational_steps": 0,
+  "passed": 15,
+  "prepare_sign_dispatch_transport_Docker_host": false,
+  "real_binder_system_children_observed": [
+    {
+      "exit_code": 0,
+      "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+      "interpreter_slot": "SYSTEM_/usr/bin/python3",
+      "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 12,
+      "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+    },
+    {
+      "exit_code": 0,
+      "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+      "interpreter_slot": "SYSTEM_/usr/bin/python3",
+      "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 12,
+      "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+    },
+    {
+      "exit_code": 0,
+      "interpreter_path_sha256": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6",
+      "interpreter_slot": "SYSTEM_/usr/bin/python3",
+      "kind": "REAL_BINDER_CORE_ASSEMBLY_CHECK",
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 12,
+      "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+    }
+  ],
+  "registry_entries": 25,
+  "registry_sha256": "b3fdc83f9339d2f13be3f68e52664ef3240aa57074ef3de19f6708769f3da12e",
+  "results": [
+    {
+      "case": "registry25_exact_with_three_unique_subset_rows",
+      "detail": {
+        "cores_observed": 3,
+        "families_observed": 3,
+        "outer_helper": {
+          "implementation": "CPython",
+          "version": "3.12.14"
+        },
+        "registry_entries": 25,
+        "same_buffer_source_and_registry": true,
+        "selected_probe": {
+          "exit_code": 0,
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 52,
+          "stdout_sha256": "a005f0f74aa4f560f3f1dafd4d604bb4b46279c2a1b42a8d949fd66fcc871862"
+        },
+        "selected_python": {
+          "implementation": "CPython",
+          "version": "3.12.14"
+        },
+        "system_probe": {
+          "exit_code": 0,
+          "stderr_bytes": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_bytes": 50,
+          "stdout_sha256": "6fde16281c6bcfff99caac66178d583927c08d5db8127f112a614fa6eeb36cfb"
+        },
+        "system_python_separately_observed": {
+          "implementation": "CPython",
+          "version": "3.9.6"
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "real_family_core_HOSTOPS02_BOOTSTRAP_IDENTITY",
+      "detail": {
+        "assembly_check": {
+          "answer": "BUILD_EQUAL",
+          "bytecode_cache_prefix_stayed_empty": true,
+          "command": "assemble.py --check",
+          "interpreter": "/usr/bin/python3"
+        },
+        "core": {
+          "directory": "core_bootstrap_identity",
+          "generation_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+          "sha256sums_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d"
+        },
+        "family": "HOSTOPS02_BOOTSTRAP_IDENTITY",
+        "manifest_sha256": "b0a1281269e55805f37606fc3a010bc5274b550252aa0ae3d251eb63c04fcc4f",
+        "real_APIs": [
+          "verify_family",
+          "accepted_seal",
+          "select_operation",
+          "load_runtime",
+          "hostops02_core"
+        ],
+        "scope": "THREE_FAMILY_SUBSET_ONLY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "real_family_core_HOSTOPS02_K3K9_SECRETS",
+      "detail": {
+        "assembly_check": {
+          "answer": "BUILD_EQUAL",
+          "bytecode_cache_prefix_stayed_empty": true,
+          "command": "assemble.py --check",
+          "interpreter": "/usr/bin/python3"
+        },
+        "core": {
+          "directory": "core_k3k9",
+          "generation_sha256": "2db09adfefb4e19c4c4f860735283d6078e91017b24025b1f4a072b52d84d8e8",
+          "sha256sums_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d"
+        },
+        "family": "HOSTOPS02_K3K9_SECRETS",
+        "manifest_sha256": "cbf694266a657e6c831f79c50171f3ba80349ff832425250c6fa871631517f79",
+        "real_APIs": [
+          "verify_family",
+          "accepted_seal",
+          "select_operation",
+          "load_runtime",
+          "hostops02_core"
+        ],
+        "scope": "THREE_FAMILY_SUBSET_ONLY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "real_family_core_HOSTOPS02_K3_SECRET_ENV",
+      "detail": {
+        "assembly_check": {
+          "answer": "BUILD_EQUAL",
+          "bytecode_cache_prefix_stayed_empty": true,
+          "command": "assemble.py --check",
+          "interpreter": "/usr/bin/python3"
+        },
+        "core": {
+          "directory": "core_k3",
+          "generation_sha256": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+          "sha256sums_sha256": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd"
+        },
+        "family": "HOSTOPS02_K3_SECRET_ENV",
+        "manifest_sha256": "de961bbf1f4969d1e650a097db3b002c8e784c48d24ed2dbee04a9279721f6f9",
+        "real_APIs": [
+          "verify_family",
+          "accepted_seal",
+          "select_operation",
+          "load_runtime",
+          "hostops02_core"
+        ],
+        "scope": "THREE_FAMILY_SUBSET_ONLY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "selected_python_BUILD_EQUAL_HOSTOPS02_BOOTSTRAP_IDENTITY",
+      "detail": {
+        "answer": "BUILD_EQUAL",
+        "core_generation": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+        "exit_code": 0,
+        "interpreter": "EXPLICIT_SELECTED_PYTHON_NOT_SYSTEM_CHILD",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 12,
+        "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "selected_python_BUILD_EQUAL_HOSTOPS02_K3K9_SECRETS",
+      "detail": {
+        "answer": "BUILD_EQUAL",
+        "core_generation": "2db09adfefb4e19c4c4f860735283d6078e91017b24025b1f4a072b52d84d8e8",
+        "exit_code": 0,
+        "interpreter": "EXPLICIT_SELECTED_PYTHON_NOT_SYSTEM_CHILD",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 12,
+        "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "selected_python_BUILD_EQUAL_HOSTOPS02_K3_SECRET_ENV",
+      "detail": {
+        "answer": "BUILD_EQUAL",
+        "core_generation": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+        "exit_code": 0,
+        "interpreter": "EXPLICIT_SELECTED_PYTHON_NOT_SYSTEM_CHILD",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 12,
+        "stdout_sha256": "78a82f8c36132ce9f3ecbf2fbec273f5a3729b9092f62216c9940e8f9a4a2116"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "refuses_swapped_bootstrap_core",
+      "detail": {
+        "refusal": "CORE_SEAL_NOT_ACCEPTED",
+        "scope": "NEGATIVE_LOCAL_ONLY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "refuses_genuine_superseded_K3K9_seal_metadata",
+      "detail": {
+        "genuine_prior_manifest_sha256": "1eda0e5c483ee11b04f6babfe0de937296e56e6d3ba1f37714816b1bd784d7d7",
+        "refusal": "FAMILY_SEAL_NOT_ACCEPTED",
+        "scope": "REAL_PRIOR_SEAL_LOOKUP_METADATA_ONLY_NOT_OLD_FAMILY_EXECUTION"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "refuses_altered_bootstrap_file",
+      "detail": {
+        "refusal": "FAMILY_HASH",
+        "scope": "NEGATIVE_LOCAL_ONLY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "refuses_altered_binder_source",
+      "detail": {
+        "refusal": "BINDER_EXTERNAL_PIN",
+        "scope": "NEGATIVE_INPUT_PIN_ONLY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "refuses_altered_registry_bytes",
+      "detail": {
+        "refusal": "REGISTRY_EXTERNAL_PIN",
+        "scope": "NEGATIVE_INPUT_PIN_ONLY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "refuses_absent_BOOT_registry_row_DTO",
+      "detail": {
+        "refusal": "FAMILY_SEAL_NOT_ACCEPTED",
+        "scope": "IN_MEMORY_NEGATIVE_DTO_NOT_AN_ACCEPTED_REGISTRY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "refuses_ambiguous_BOOT_registry_row_DTO",
+      "detail": {
+        "refusal": "FAMILY_SEAL_NOT_ACCEPTED",
+        "scope": "IN_MEMORY_NEGATIVE_DTO_NOT_AN_ACCEPTED_REGISTRY"
+      },
+      "status": "PASS"
+    },
+    {
+      "case": "input_bytes_and_modes_unchanged_after_all_cases",
+      "detail": {
+        "hash_or_mode_divergences": 0,
+        "subset_input_files_before_after": 268,
+        "thin_selector_files_before_after": 2
+      },
+      "status": "PASS"
+    }
+  ],
+  "schema": "SUBSET_REGISTRY25_OFFLINE_PROOF_V1",
+  "scope": "THREE_FAMILIES_THREE_CORES_ONLY_NOT_FULL25_COPY_NOT_LINUX_HOST_L1_L2",
+  "sealed_copy_full25": false,
+  "skipped": 0,
+  "source_sha256": "bb255f8693d2213e5fad33c440bc4a6802f8122310c5384b192922f58fa49fc5",
+  "status": "PASS_SUBSET_REGISTRY25_LOCAL_ONLY"
+}

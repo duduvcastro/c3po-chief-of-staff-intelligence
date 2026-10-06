@@ -1,0 +1,8 @@
+{
+  "BIND_TEST_K8_CONFIG": {
+    "relative_name": "c3po/backend/app/config.py",
+    "sha256": "91619929a513074f2eee01a6bcd78342305e0066e61ac79f2afd087c2e035897",
+    "use": "runtime proof copy only, original certified package identity",
+    "not_shipped": true
+  }
+}

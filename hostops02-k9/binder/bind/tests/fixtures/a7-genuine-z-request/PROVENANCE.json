@@ -1,0 +1,69 @@
+{
+  "emissions": [
+    {
+      "layer": "py39",
+      "original_exit_sha256": "d945694813a137fe0473f20ed77b6ab9d8f3f1a00e3a065bcb0666fad61cdb3a",
+      "original_request_sha256": "75a73076e38f252d13be57ead9fbfa0faed261134fd015b531ff599672448ec8",
+      "original_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_stdout_sha256": "b2e9a540bea5e948d33540a2a49a043bd26b4e0600e06d50f3426ce732ff2d82",
+      "receipt_metadata_sha256": "dd3ecabfb952d1a9c47a53c26b6bd7a032efbe125673674865129f38b73ec68a",
+      "role": "K3",
+      "scope": "GENUINE_REHEARSAL_EMISSION_NOT_HOST"
+    },
+    {
+      "layer": "py39",
+      "original_exit_sha256": "ce610d0de373854a195407edf2e1d65c9a146521fcb04db849694ec66a4a01b3",
+      "original_request_sha256": "e41bdd53c1e7215b7ffdc01dba976c0684e9fe7286d61c22b72e94929bd0c3ea",
+      "original_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_stdout_sha256": "fd89466457238186bebfc26348ee792fee91b69c2d05beb0c23a80949556c686",
+      "receipt_metadata_sha256": "2cc7c0497eaf66d2b2ff8355af8cf3743e165cd95210c4ba2a5f75128ac5c7d0",
+      "role": "BOOTSTRAP",
+      "scope": "GENUINE_REHEARSAL_EMISSION_NOT_HOST"
+    },
+    {
+      "layer": "py312",
+      "original_exit_sha256": "67053f1cefa6d35c7aca58c67cacbed1808de1005b988901f5fc249e9dbac847",
+      "original_request_sha256": "7eafd4831f99872d122c972159210bca9dbdedcf17a38663a9cbfb5add4b37ee",
+      "original_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_stdout_sha256": "8466c83debadc5bd4d2cfde7527a4a68079ba7589fa4acd2c15389f3597f67cf",
+      "receipt_metadata_sha256": "d8300b8d03b826cbe4975dca1c1b47be12abd330d86a19d8d267de4ed85e0b9f",
+      "role": "K3",
+      "scope": "GENUINE_REHEARSAL_EMISSION_NOT_HOST"
+    },
+    {
+      "layer": "py312",
+      "original_exit_sha256": "2595ba153dd4e3e7e0ad23935ce3a8639668a7b33ee3e90c48421cbe68d5419b",
+      "original_request_sha256": "a11821c68f197c857de25b4419da73930245da98d6819de894257ed1adcd5fbd",
+      "original_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_stdout_sha256": "eb70cf4aba0c565957792081838d870e580e2eeae6e882b244fa6cbeac5383b7",
+      "receipt_metadata_sha256": "a9f2dca75c6bb33050b57aa4658c6ec2559f4bb3b4b948b7c78bdcabd1ce07e0",
+      "role": "BOOTSTRAP",
+      "scope": "GENUINE_REHEARSAL_EMISSION_NOT_HOST"
+    }
+  ],
+  "facts": "Explicit inert synthetic context facts; full load_evidence and physical runtime gates are not exercised",
+  "input_files": {
+    "producer/REQUEST.UNBOUND.json": "4e03eb80676b27fb01cf3c8553f83b46c3c00ae747e2e20188b9bbec2998e042",
+    "producer/k3k9_secrets.py": "8bc1cdfc6b4ccd204db9fb25e93b208adfefe9fc37b786c892e01cd77537bb91",
+    "py312/BOOTSTRAP.stdout.original.json": "eb70cf4aba0c565957792081838d870e580e2eeae6e882b244fa6cbeac5383b7",
+    "py312/K3.stdout.original.json": "8466c83debadc5bd4d2cfde7527a4a68079ba7589fa4acd2c15389f3597f67cf",
+    "py312/REQUEST.BOUND.original.json": "7eafd4831f99872d122c972159210bca9dbdedcf17a38663a9cbfb5add4b37ee",
+    "py312/SHEET.SCOPED_PROJECTION.json": "8a33a36dce622eb2e15a5ace59c54b8f9ad4e34dde636acd335e33ec56fd7288",
+    "py39/BOOTSTRAP.stdout.original.json": "fd89466457238186bebfc26348ee792fee91b69c2d05beb0c23a80949556c686",
+    "py39/K3.stdout.original.json": "b2e9a540bea5e948d33540a2a49a043bd26b4e0600e06d50f3426ce732ff2d82",
+    "py39/REQUEST.BOUND.original.json": "75a73076e38f252d13be57ead9fbfa0faed261134fd015b531ff599672448ec8",
+    "py39/SHEET.SCOPED_PROJECTION.json": "8a33a36dce622eb2e15a5ace59c54b8f9ad4e34dde636acd335e33ec56fd7288"
+  },
+  "old_binder_source_sha256": "9fec60db32ac9a275876d6a421b95521aaf19f79ba05c0a088af07f6c26758ee",
+  "operational_steps": 0,
+  "producer_family_sha256": "cbf694266a657e6c831f79c50171f3ba80349ff832425250c6fa871631517f79",
+  "schema": "A7_GENUINE_Z_REQUEST_FIXTURE_V1",
+  "scope": "PURE_HELPER_WITH_GENUINE_SYNTHETIC_STREAMS_NOT_LOAD_EVIDENCE_OR_HOST",
+  "sheet_projection_fields": [
+    "operation",
+    "mode",
+    "hostops02.rules.k9_prerequisite",
+    "plan_values_copied_from_receipts"
+  ],
+  "signed_bytes_modified": false
+}

@@ -1,0 +1,77 @@
+{
+  "raw_XMLs_preserved_privately": true,
+  "rows": [
+    {
+      "case_counts_failures_errors_skips_and_streams_unchanged": true,
+      "category": "DECLARED_SYNTHETIC_TEST_CASE_ID_ONLY",
+      "file": "full539-r1-HOLD.W1-child.py39.xml",
+      "new_projection_sha256": "3324bf9f65372b57b62cc4c9702b1d592b52b48dfed41622075dc2a5dea404b5",
+      "original_private_raw_sha256": "6841747c53292755e532fe93a071c14a9c4839eb629413a437ef924fd16e506a",
+      "previous_projection_sha256": "955adaa886c979077c6c2ac2a98c368e6b347773da44887a90603aa6c92b432c",
+      "source_proving_canary_sha256": "f449b13a1072c681f5142e7b1a563f96f9c0d107741c8af10549815702cbfa00",
+      "synthetic_case_names": [
+        {
+          "original_case_name_sha256": "20869effcfadb1f4cdbc95eb0d50e73e65c62fc5b8b4c50d839e82af36da1547",
+          "published_case_name": "test_kernel_release_is_reduced_to_its_number_and_no_name_shaped_text_passes[${DECLARED_SYNTHETIC_CANARY_IPV4}-expected1]"
+        },
+        {
+          "original_case_name_sha256": "4c272d2b72d092f36e53e4e082d628bfb911286598528cf37c34de644dbb0709",
+          "published_case_name": "test_kernel_release_is_reduced_to_its_number_and_no_name_shaped_text_passes[6.8.0-${DECLARED_SYNTHETIC_CANARY_IPV4}-expected4]"
+        },
+        {
+          "original_case_name_sha256": "641336d8ac6554e64a31653945c75bac65dad5f3b399b552d5f11ad1598a3707",
+          "published_case_name": "test_docker_server_version_is_reduced_to_its_number_and_no_name_shaped_text_passes[${DECLARED_SYNTHETIC_CANARY_IPV4}-None]"
+        },
+        {
+          "original_case_name_sha256": "6ada1543d05742ed97132e73713270e41e94fca5335588288cb9b22ef6c593af",
+          "published_case_name": "test_docker_server_version_is_reduced_to_its_number_and_no_name_shaped_text_passes[29.5.3+${DECLARED_SYNTHETIC_CANARY_IPV4}-expected5]"
+        },
+        {
+          "original_case_name_sha256": "fa32590092f2cebeb6f6753e2f7fae50a71129b1c0091de0c106277accd6f65a",
+          "published_case_name": "test_started_at_is_an_rfc_3339_timestamp_or_the_row_is_refused[${DECLARED_SYNTHETIC_CANARY_IPV4}-False]"
+        }
+      ]
+    },
+    {
+      "case_counts_failures_errors_skips_and_streams_unchanged": true,
+      "category": "DECLARED_SYNTHETIC_TEST_CASE_ID_ONLY",
+      "file": "full539-r1-HOLD.W1-child.py312.xml",
+      "new_projection_sha256": "3ff6518a789a91693c8d7283dcbbf636bab4432dea6c9ad5b4f5590835bf4f83",
+      "original_private_raw_sha256": "7636f4ecf0c487c0e2b4c1d61a8e718c069fa465194d93e50ac26d2509ec212c",
+      "previous_projection_sha256": "ccb21caefb8773ed58e3d6f4cb060576f56744530126b5b2138fda0d04466d3d",
+      "source_proving_canary_sha256": "f449b13a1072c681f5142e7b1a563f96f9c0d107741c8af10549815702cbfa00",
+      "synthetic_case_names": [
+        {
+          "original_case_name_sha256": "20869effcfadb1f4cdbc95eb0d50e73e65c62fc5b8b4c50d839e82af36da1547",
+          "published_case_name": "test_kernel_release_is_reduced_to_its_number_and_no_name_shaped_text_passes[${DECLARED_SYNTHETIC_CANARY_IPV4}-expected1]"
+        },
+        {
+          "original_case_name_sha256": "4c272d2b72d092f36e53e4e082d628bfb911286598528cf37c34de644dbb0709",
+          "published_case_name": "test_kernel_release_is_reduced_to_its_number_and_no_name_shaped_text_passes[6.8.0-${DECLARED_SYNTHETIC_CANARY_IPV4}-expected4]"
+        },
+        {
+          "original_case_name_sha256": "641336d8ac6554e64a31653945c75bac65dad5f3b399b552d5f11ad1598a3707",
+          "published_case_name": "test_docker_server_version_is_reduced_to_its_number_and_no_name_shaped_text_passes[${DECLARED_SYNTHETIC_CANARY_IPV4}-None]"
+        },
+        {
+          "original_case_name_sha256": "6ada1543d05742ed97132e73713270e41e94fca5335588288cb9b22ef6c593af",
+          "published_case_name": "test_docker_server_version_is_reduced_to_its_number_and_no_name_shaped_text_passes[29.5.3+${DECLARED_SYNTHETIC_CANARY_IPV4}-expected5]"
+        },
+        {
+          "original_case_name_sha256": "fa32590092f2cebeb6f6753e2f7fae50a71129b1c0091de0c106277accd6f65a",
+          "published_case_name": "test_started_at_is_an_rfc_3339_timestamp_or_the_row_is_refused[${DECLARED_SYNTHETIC_CANARY_IPV4}-False]"
+        }
+      ]
+    }
+  ],
+  "schema": "DECLARED_SYNTHETIC_W1_TEST_ID_REDACTION_V1",
+  "scope": "ONLY_PUBLIC_TESTCASE_LABELS_NOT_SOURCE_OR_RECEIPTS",
+  "source_definition_lines": [
+    2727,
+    2728,
+    2731,
+    2738,
+    2739,
+    2746
+  ]
+}

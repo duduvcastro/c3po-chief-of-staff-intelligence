@@ -1,0 +1,5103 @@
+{
+ "by_target": {
+  "dispatcher": 15,
+  "launcher": 4,
+  "op": 372
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 391,
+  "redundant_survivors": 0,
+  "single": 391,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "own",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "47152789ee6588dc871f19035a45cf865de8a8676b1a24f00ae2a974696baa23",
+  "build/AUTHORITY.UNBOUND.json": "6c23ab73896ee0804e7b26eb086c13c2b915e631e34042e9f6433134f6abbcbb",
+  "build/DISPATCH.UNBOUND.json": "0be0061e1b6d0d74513f794afa19fe5bbe01842c084a6fd6c218131b554dc520",
+  "build/DISPATCH_SCOPE_DELTA.diff": "99c23637ac64bcd54303a1d0b9f3b1ecfdf96e6ce96d40896f0f53f78363ffd4",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "ac3acf17ae54e0d2feb7a0f3f4ca8fffcd102892cd60549f6b7b79d3e61e9ad9",
+  "build/GO.UNBOUND.json": "3840a8d9d25d7a67a9e1a0666e88bb00919f7ce93a876d55a2901793780dac9f",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "ebbde18e8fbe6b4466317979746b14fa3be09241ca109cc690cbc81039c86131",
+  "build/REQUEST.UNBOUND.json": "ebba043481269f852378fc60bfd0c210c1c8f582882a736afd0dd60b546da1c2",
+  "build/dispatch_once.py": "20c0989f7530aeab5d086da5d0ef8c73d2d30be1188c061805bd0facbbe43c56",
+  "build/k13_reader_switch.py": "47b6815ccede646c18520da0be094be27d7b35dec2968dd07ba5aa55d794db84",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "f391ec90e75640444896746a5356aca785d14778d625fa96b2293e0f509780e8",
+  "op.py": "e47f493497a75766c32c8c233b8674d7ee8a1e2b2452829847bfa8242cc1fede",
+  "spec.py": "f9d73f97c348b9cd9ca25685c28258aab45b431d2164440e6fa32fa7c7636212",
+  "tests/conftest.py": "ed43fc9d911891ad781505deac9934a83f86c3c87553ffc786ace8c87efd5232",
+  "tests/k13.py": "631d15bda29f1edc1e2f2fdbbfcf2cbcc078594b9755975cf219943996409b70",
+  "tests/native_child.py": "04442e770d13c3dcc5ff4f4c8676e37642e8acdf818409998ba237f8486aaf7a",
+  "tests/native_support.py": "487bf2382f25c21e4a9bcf66f4c79283e4ca027d6f7e26e1891336462ccb3c6b",
+  "tests/test_conformance.py": "0cc69ccd4212ba20a3cbd957897a0f3ad9c4eda4fd9dceaf9fef2cbaf25b98d0",
+  "tests/test_k13.py": "c8e891802e2a4a409b727691f3dfee4c98b7b869d724930ffa5c66c093ee209e",
+  "tests/test_native.py": "d4a413e1a265e8e28ae44c7a8199cbed6231dc1f6754dfa3c59145d6a22ec6a2",
+  "tests/unit_texts.py": "81f1b4e72845d72edbaccef63a9825a3f191684ffd65963b59f1f4a4c7007153"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C01_another_epoch",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.03s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C02_saturday_is_a_session",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.43s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C03_tuesday_is_not_a_session",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.04s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C04_window_opens_a_second_early",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 69 passed, 5 deselected in 5.40s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_OUTSIDE_LAUNCH_WINDOW', {})",
+   "killed": true,
+   "mutant": "C05_window_opens_a_second_late",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 69 passed, 5 deselected in 4.94s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C06_window_closes_a_second_late",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 69 passed, 5 deselected in 5.48s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_OUTSIDE_LAUNCH_WINDOW', {})",
+   "killed": true,
+   "mutant": "C07_window_closes_a_second_early",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 69 passed, 5 deselected in 5.13s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 13:28:29",
+   "killed": true,
+   "mutant": "C08_late_a_second_early",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 69 passed, 5 deselected in 5.30s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 13:28:30",
+   "killed": true,
+   "mutant": "C09_late_a_second_late",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 69 passed, 5 deselected in 5.04s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'session': '... 'late': True} == {'session': '...'late': False}",
+   "killed": true,
+   "mutant": "C10_late_flag_inverted",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 67 passed, 5 deselected in 4.61s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_INVALID' == 'CHAIN_ROW_UNSAFE'",
+   "killed": true,
+   "mutant": "C11_unit_directory",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 9 passed, 5 deselected in 2.32s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "C12_service_unit",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.92s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "C13_timer_unit",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.77s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C14_alert_unit",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.78s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C15_producer_unit",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.17s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C16_config_directory",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.76s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'LAUNCHER_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "C17_launcher_name",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.38s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'PINS_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "C18_pins_name",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.32s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('SWITCH_NOT_READ_BACK_AS_DONE', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C19_secret_name",
+   "returncode": 1,
+   "seconds": 10.9,
+   "summary": "1 failed, 155 passed, 5 deselected in 8.94s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C20_activation_name",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.08s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C21_docker_cli_name",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 161 passed, 5 deselected in 9.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (b'C3PO_R2D2_V...NABLED=true\\n' == b'C3PO_R2D2_V...NABLED=true\\n'",
+   "killed": true,
+   "mutant": "C22_activation_bytes_one_flag_false",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 5 deselected in 2.03s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (b'C3PO_R2D2_V..._ENABLED=true' == b'C3PO_R2D2_V...NABLED=true\\n'",
+   "killed": true,
+   "mutant": "C23_activation_bytes_without_final_newline",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 5 deselected in 1.88s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (b'C3PO_R2D2_V...NABLED=true\\n' == b'C3PO_R2D2_V...NABLED=true\\n'",
+   "killed": true,
+   "mutant": "C24_activation_sha_signed_is_another",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 5 deselected in 1.83s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_INVALID' == 'JOURNAL_ROOT_NOT_PRIVATE'",
+   "killed": true,
+   "mutant": "C25_journal_host_root",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 23 passed, 5 deselected in 3.02s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C26_journal_container_root",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.87s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'CATALOG_NOT_THIS_EPOCH_AND_ROOT')",
+   "killed": true,
+   "mutant": "C27_catalog_schema",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.36s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'CATALOG_FILE_NOT_PRIVATE')",
+   "killed": true,
+   "mutant": "C28_epoch_file_name",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.28s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C29_catalog_lock_name",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 170 passed, 5 deselected in 9.41s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "C30_data_volume",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.83s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'PINS_CONTENT_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "C31_data_target",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.42s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_INVALID' == 'JOURNAL_ON_THE_DATA_VOLUME'",
+   "killed": true,
+   "mutant": "C32_capacity_root",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 3.23s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'READER_UNIT_MOUNTS_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "C33_capacity_target",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.79s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'READER_UNIT_MOUNTS_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "C34_launcher_target",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.26s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_activate_reports_the_container_when_the_start_created_it",
+   "killed": true,
+   "mutant": "C35_reader_container",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 68 passed, 5 deselected in 4.57s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_a_window_of_exactly_fifteen_minutes_is_accepted",
+   "killed": true,
+   "mutant": "C36_producer_floor_one_byte_more",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 64 passed, 5 deselected in 4.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[floor_below_five_sessions]",
+   "killed": true,
+   "mutant": "C37_producer_floor_one_byte_less",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 60 passed, 5 deselected in 4.08s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C38_unit_file_limit",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 103 passed, 5 deselected in 7.40s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PINS_CONTENT_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path':...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C39_pins_limit",
+   "returncode": 1,
+   "seconds": 16.5,
+   "summary": "1 failed, 249 passed, 5 deselected in 14.10s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C40_command_words_limit",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 187 passed, 5 deselected in 11.44s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'PINS_CONTENT_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "C41_pins_names_lose_the_launcher_pin",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.26s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'PINS_CONTENT_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "C42_pins_names_out_of_order",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.91s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C43_pins_value_with_spaces",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 243 passed, 5 deselected in 14.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C44_pins_value_may_be_empty",
+   "returncode": 1,
+   "seconds": 15.8,
+   "summary": "1 failed, 241 passed, 5 deselected in 13.48s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C45_worker_marker",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 188 passed, 5 deselected in 11.78s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_of_an_active_reader_with_its_own_container",
+   "killed": true,
+   "mutant": "C46_launcher_marker",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 77 passed, 5 deselected in 5.83s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_PROCESS_FOUND', {})",
+   "killed": true,
+   "mutant": "C47_capacity_day_marker",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 215 passed, 5 deselected in 13.15s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "C48_paused_not_scanned",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 191 passed, 5 deselected in 11.00s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DONE' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "C49_reloading_is_not_active",
+   "returncode": 1,
+   "seconds": 17.5,
+   "summary": "1 failed, 278 passed, 5 deselected in 14.98s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('SERVICE_NOT_STOPPED', {})",
+   "killed": true,
+   "mutant": "C50_failed_is_not_stopped",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 71 passed, 5 deselected in 5.91s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([42, 20, 42] == [42, 20, 42]",
+   "killed": true,
+   "mutant": "C51_allowance_one_second_less",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 2 passed, 5 deselected in 2.31s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([42, 20, 42] == [42, 20, 42]",
+   "killed": true,
+   "mutant": "C52_allowance_one_second_more",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 2 passed, 5 deselected in 2.07s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DATE_NOT_IN_SCOPE' == 'CONFIG_DIRECTORY_NOT_PRIVATE'",
+   "killed": true,
+   "mutant": "C53_date_class_first_session",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 39 passed, 5 deselected in 3.62s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: source",
+   "killed": true,
+   "mutant": "C54_date_class_epoch",
+   "returncode": 1,
+   "seconds": 68.8,
+   "summary": "1 failed, 311 passed, 5 deselected in 66.49s (0:01:06)",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_evidence_must_cite_a_precheck_receipt - Failed...",
+   "killed": true,
+   "mutant": "C55_no_evidence_operation",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 63 passed, 5 deselected in 3.96s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_a_window_of_exactly_fifteen_minutes_is_accepted",
+   "killed": true,
+   "mutant": "C56_gate_span",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 64 passed, 5 deselected in 3.93s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REQUIRED_CONSTANT' == 'REQUIRED_CONSTANT'",
+   "killed": true,
+   "mutant": "C57_outcome_of_restart_is_activate",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.11s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'MODE_INVALID' == 'CONFIG_DIRECTORY_NOT_PRIVATE'",
+   "killed": true,
+   "mutant": "C58_mode_list_loses_restart",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 39 passed, 5 deselected in 3.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {})",
+   "killed": true,
+   "mutant": "C59_unit_property_dropped",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 71 passed, 5 deselected in 4.86s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'COMMAND_FAILED')",
+   "killed": true,
+   "mutant": "R01_image_row_with_the_container_template",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.95s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'exists'",
+   "killed": true,
+   "mutant": "R02_container_row_with_the_command_template",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 68 passed, 5 deselected in 4.09s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'PRECHECK_FAILED')",
+   "killed": true,
+   "mutant": "R03_listing_without_all",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.95s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_CONTAINER_NOT_THE_PINNED_READER', {})",
+   "killed": true,
+   "mutant": "R04_command_template_without_args",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 77 passed, 5 deselected in 5.03s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "R05_command_template_without_path",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 79 passed, 5 deselected in 5.02s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "R06_command_template_without_exec_ids",
+   "returncode": 1,
+   "seconds": 11.9,
+   "summary": "1 failed, 186 passed, 5 deselected in 9.79s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'ENGINE_SECURITY_OPTIONS_INVALID')",
+   "killed": true,
+   "mutant": "R07_security_template_prints_the_driver",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.20s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'UNIT_PROPERTIES_INVALID')",
+   "killed": true,
+   "mutant": "R08_service_show_of_the_timer",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.22s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'UNIT_PROPERTIES_INVALID')",
+   "killed": true,
+   "mutant": "R09_service_show_without_properties",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'UNIT_PROPERTIES_INVALID')",
+   "killed": true,
+   "mutant": "R10_timer_show_of_the_service",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.90s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'TIMER_ENABLED_INVALID')",
+   "killed": true,
+   "mutant": "R11_is_enabled_of_the_service",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.55s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R12_enable_without_now",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.63s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R13_enable_of_the_service",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.65s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R14_enable_is_reenable",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.33s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R15_enable_class_quick",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R16_start_blocking",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.78s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R17_start_of_the_timer",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.52s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R18_start_is_restart",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.56s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R19_start_class_switch",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.57s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R20_reset_failed_of_the_timer",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.95s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R21_reset_failed_is_a_restart",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R22_disable_without_now",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R23_disable_of_the_service",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.94s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R24_disable_is_mask",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.72s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R25_stop_blocking",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.79s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R26_stop_of_the_timer",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.85s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...SWITCH'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R27_stop_is_kill",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.95s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'enable_now_...'QUICK'), ...} == {'enable_now_...SWITCH'), ...}",
+   "killed": true,
+   "mutant": "R28_disable_class_quick",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 1 passed, 5 deselected in 2.05s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'ACTIVATE': ...top_service')} == {'ACTIVATE': ...top_service')}",
+   "killed": true,
+   "mutant": "R29_activate_switches_reversed",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.74s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'ACTIVATE': ...top_service')} == {'ACTIVATE': ...top_service')}",
+   "killed": true,
+   "mutant": "R30_activate_without_the_service_start",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.89s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'ACTIVATE': ...top_service')} == {'ACTIVATE': ...top_service')}",
+   "killed": true,
+   "mutant": "R31_restart_without_the_reset",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.65s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'ACTIVATE': ..._now_timer',)} == {'ACTIVATE': ...top_service')}",
+   "killed": true,
+   "mutant": "R32_deactivate_without_the_stop",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.51s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'ACTIVATE': ...e_now_timer')} == {'ACTIVATE': ...top_service')}",
+   "killed": true,
+   "mutant": "R33_deactivate_stop_first",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 1 passed, 5 deselected in 1.79s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_deactivate_disables_and_stops_and_deletes_nothing",
+   "killed": true,
+   "mutant": "R34_reloading_rows_without_disable",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 73 passed, 5 deselected in 5.06s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_restart_resets_and_starts_and_reloads_nothing",
+   "killed": true,
+   "mutant": "R35_reloading_rows_with_the_start",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 71 passed, 5 deselected in 4.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'REACTIVATE'",
+   "killed": true,
+   "mutant": "P01_mode_not_checked",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 1.94s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[boot]",
+   "killed": true,
+   "mutant": "P02_boot_not_checked",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 passed, 5 deselected in 1.85s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[unit_rows_short]",
+   "killed": true,
+   "mutant": "P03_unit_chain_not_validated",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 1.99s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[unit_rows_group]",
+   "killed": true,
+   "mutant": "P04_unit_chain_group_accepted",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 10 passed, 5 deselected in 2.12s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[unit_rows_setgid]",
+   "killed": true,
+   "mutant": "P05_root_controlled_accepts_setgid",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 11 passed, 5 deselected in 2.10s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[unit_rows_group]",
+   "killed": true,
+   "mutant": "P06_root_controlled_accepts_any_group",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 10 passed, 5 deselected in 2.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'pins'",
+   "killed": true,
+   "mutant": "P07_files_keys_not_exact",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 12 passed, 5 deselected in 2.18s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[files_hex]",
+   "killed": true,
+   "mutant": "P11_file_pins_not_checked",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 13 passed, 5 deselected in 2.52s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CONFIG_DIRECTORY_NOT_PRIVATE' == 'PARENT_SETGID'",
+   "killed": true,
+   "mutant": "P12_config_chain_not_validated",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 18 passed, 5 deselected in 3.16s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CONFIG_DIRECTORY_NOT_PRIVATE' == 'PARENT_SETGID'",
+   "killed": true,
+   "mutant": "P13_config_may_be_setgid",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 18 passed, 5 deselected in 2.92s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'LAUNCHER_DIR...Y_NOT_PRIVATE' == 'CONFIG_DIRECTORY_NOT_PRIVATE'",
+   "killed": true,
+   "mutant": "P14_config_not_private",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 15 passed, 5 deselected in 2.66s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'LAUNCHER_DIR...Y_NOT_PRIVATE' == 'CONFIG_DIRECTORY_NOT_PRIVATE'",
+   "killed": true,
+   "mutant": "P15_config_chain_group",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 17 passed, 5 deselected in 2.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'LAUNCHER_DIR...Y_NOT_PRIVATE' == 'CONFIG_DIRECTORY_NOT_PRIVATE'",
+   "killed": true,
+   "mutant": "P16_private_row_any_mode",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 15 passed, 5 deselected in 2.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'LAUNCHER_DIR...Y_NOT_PRIVATE' == 'CHAIN_ROW_INVALID'",
+   "killed": true,
+   "mutant": "P17_launcher_chain_not_validated",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 22 passed, 5 deselected in 2.82s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[launcher_elsewhere]",
+   "killed": true,
+   "mutant": "P18_launcher_not_under_config",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 21 passed, 5 deselected in 2.70s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[launcher_mode]",
+   "killed": true,
+   "mutant": "P19_launcher_not_private",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 20 passed, 5 deselected in 2.27s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'JOURNAL_ROOT_NOT_PRIVATE' == 'CHAIN_ROW_UNSAFE'",
+   "killed": true,
+   "mutant": "P20_journal_chain_not_validated",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 25 passed, 5 deselected in 2.55s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[journal_mode]",
+   "killed": true,
+   "mutant": "P21_journal_not_private",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 23 passed, 5 deselected in 2.51s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[journal_parent_group]",
+   "killed": true,
+   "mutant": "P22_journal_chain_group",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 24 passed, 5 deselected in 2.63s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DATA_VOLUME_...A_MOUNT_POINT' == 'RELEASE_NOT_...E_DATA_VOLUME'",
+   "killed": true,
+   "mutant": "P23_release_outside_the_volume",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 27 passed, 5 deselected in 2.96s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[release_is_data]",
+   "killed": true,
+   "mutant": "P24_release_is_the_volume",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 28 passed, 5 deselected in 2.71s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_UNSAFE' == 'JOURNAL_ON_THE_DATA_VOLUME'",
+   "killed": true,
+   "mutant": "P25_release_chain_without_open_root",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.63s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[data_world_writable]",
+   "killed": true,
+   "mutant": "P26_release_chain_not_validated",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 32 passed, 5 deselected in 2.77s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'JOURNAL_ON_THE_DATA_VOLUME' == 'DATA_VOLUME_...A_MOUNT_POINT'",
+   "killed": true,
+   "mutant": "P27_data_volume_not_a_mount_point",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 31 passed, 5 deselected in 2.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[journal_on_data]",
+   "killed": true,
+   "mutant": "P28_journal_on_the_data_volume",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.58s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "P29_data_volume_row_of_the_root",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[release_keys]",
+   "killed": true,
+   "mutant": "P30_release_keys_not_exact",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 33 passed, 5 deselected in 3.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[release_name]",
+   "killed": true,
+   "mutant": "P31_release_name_not_checked",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 34 passed, 5 deselected in 2.90s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[release_hash]",
+   "killed": true,
+   "mutant": "P32_release_hash_not_checked",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 35 passed, 5 deselected in 2.72s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[image]",
+   "killed": true,
+   "mutant": "P33_image_not_checked",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 36 passed, 5 deselected in 2.66s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_INVALID' == 'RELEASE_NOT_...E_DATA_VOLUME'",
+   "killed": true,
+   "mutant": "P36_release_rows_not_a_list",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 30 passed, 5 deselected in 2.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E01_operation",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E02_mode",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('RESTART_RETU...NESS_READBACK' == 'RETURNED_REQ...NESS_READBACK'",
+   "killed": true,
+   "mutant": "E03_success_outcome_in_effects",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 3 passed, 5 deselected in 2.02s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([['enable', '...der.service']] == [['reset-fail...der.service']]",
+   "killed": true,
+   "mutant": "E04_switches",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 3 passed, 5 deselected in 2.00s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E05_activation_path",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.80s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E06_activation_action",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.58s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E09_unit_timer",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E10_unit_alert",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.97s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E11_unit_producer",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.84s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E12_boot",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.84s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([['enable', '...der.service']] == [['enable', '...der.service']]",
+   "killed": true,
+   "mutant": "E13_files_deleted",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 3 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E14_daemon_reload",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E17_window_utc",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.61s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E18_window_late",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.60s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E19_launcher_directory",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.63s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E20_launcher_sha",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.49s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E21_pins_sha",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.63s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E22_journal_root",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.47s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E23_journal_container",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E24_journal_floor",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E25_journal_data_device",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.88s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E26_release_path",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.79s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E27_release_sha",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 4 passed, 5 deselected in 2.05s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E28_release_directory",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.98s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E29_image",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.57s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('RETURNED_REQ...NESS_READBACK' == 'RESTART_RETU...NESS_READBACK'",
+   "killed": true,
+   "mutant": "E30_success_of_is_constant",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 3 passed, 5 deselected in 1.73s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E31_release_path_joins_without_slash",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.60s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_effective_uid_and_gid_must_be_root_before_anything_is_looked_at",
+   "killed": true,
+   "mutant": "G01_executor_not_checked",
+   "returncode": 1,
+   "seconds": 64.6,
+   "summary": "1 failed, 409 passed, 5 deselected in 63.02s (0:01:03)",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_activate_creates_only_activation_env_with_exactly_these_system_calls",
+   "killed": true,
+   "mutant": "G02_umask_not_set",
+   "returncode": 1,
+   "seconds": 50.0,
+   "summary": "1 failed, 294 passed, 5 deselected in 48.30s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G03_boot_not_compared",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 96 passed, 5 deselected in 5.38s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G06_session_day_not_checked",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 70 passed, 5 deselected in 4.34s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:25:00+00:00', None)",
+   "killed": true,
+   "mutant": "G07_window_not_bounded",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G08_window_end_inclusive",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 69 passed, 5 deselected in 3.94s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'READER_OUTSIDE_LAUNCH_WINDOW')",
+   "killed": true,
+   "mutant": "G09_window_in_local_time",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.45s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G10_unit_hash_not_compared",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 97 passed, 5 deselected in 5.07s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'UNIT_FILE_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "G11_unit_mode_0600",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.29s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'd...': 801, 'inode': 5002, 'uid': 0, ...}, {'path': '/etc/systemd/system', 'device': 801, 'inode': 4001, 'uid': 0, ...}]}})",
+   "killed": true,
+   "mutant": "G12_pinned_file_absent_not_checked",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 102 passed, 5 deselected in 5.03s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G13_pinned_file_any_owner",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 87 passed, 5 deselected in 4.70s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G14_pinned_file_any_links",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 88 passed, 5 deselected in 4.34s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('FILE_NOT_REGULAR', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', '...e': 'disabled', 'SubState': 'dead', 'Result': 'success', 'NeedDaemonReload': 'no', ...}, 'timer_enabled': 'disabled'}})",
+   "killed": true,
+   "mutant": "G15_pinned_file_not_regular",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 90 passed, 5 deselected in 4.36s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('FILE_TOO_LARGE', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'de...e': 'disabled', 'SubState': 'dead', 'Result': 'success', 'NeedDaemonReload': 'no', ...}, 'timer_enabled': 'disabled'}})",
+   "killed": true,
+   "mutant": "G16_pinned_file_size_unbounded",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 83 passed, 5 deselected in 4.31s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '...OT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "G17_pinned_file_held_not_compared",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 217 passed, 5 deselected in 8.91s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...ECK_OS_ERROR') == ('REFUSED', '...OT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "G18_pinned_file_absent_at_open_escapes",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 217 passed, 5 deselected in 8.65s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G19_alert_not_read",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 111 passed, 5 deselected in 5.45s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G21_service_not_fit",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 125 passed, 5 deselected in 6.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G22_timer_not_fit",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 126 passed, 5 deselected in 5.53s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G23_not_loaded_accepted",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 125 passed, 5 deselected in 6.67s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G24_fragment_not_checked",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 127 passed, 5 deselected in 7.00s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G25_drop_in_accepted",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 128 passed, 5 deselected in 6.91s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'd...h': '/etc/systemd/system', 'device': 801, 'inode': 4001, 'uid': 0, ...}]}, 'unit_files': 'EQUAL_TO_THE_SIGNED_HASHES'})",
+   "killed": true,
+   "mutant": "G26_properties_any_bytes",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 222 passed, 5 deselected in 10.09s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G27_property_line_without_equals",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 223 passed, 5 deselected in 10.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G28_property_value_any",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 130 passed, 5 deselected in 6.71s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G29_property_twice",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 224 passed, 5 deselected in 10.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READBACK_UNAVAILABLE', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G30_properties_incomplete",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 129 passed, 5 deselected in 6.33s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G31_property_id_any",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 131 passed, 5 deselected in 6.97s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('TIMER_ENABLED_BEFORE_ACTIVATION', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'p...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G32_enabled_word_any",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 132 passed, 5 deselected in 6.80s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G33_text_checks_skipped",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 133 passed, 5 deselected in 6.91s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G34_mounts_not_checked",
+   "returncode": 1,
+   "seconds": 9.0,
+   "summary": "1 failed, 133 passed, 5 deselected in 6.80s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G35_mount_count_not_checked",
+   "returncode": 1,
+   "seconds": 9.0,
+   "summary": "1 failed, 142 passed, 5 deselected in 7.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G36_mount_without_readonly",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 225 passed, 5 deselected in 10.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'READER_UNIT_MOUNTS_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "G37_mount_list_loses_the_capacity",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.90s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G38_image_not_checked",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 143 passed, 5 deselected in 7.28s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G39_placeholder_accepted",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 145 passed, 5 deselected in 7.16s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G40_image_once_enough",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 144 passed, 5 deselected in 7.24s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G41_producer_not_checked",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 147 passed, 5 deselected in 6.98s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G42_producer_argument_not_checked",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 148 passed, 5 deselected in 7.47s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G43_launcher_not_compared",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 149 passed, 5 deselected in 7.57s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'LAUNCHER_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "G44_launcher_mode_0644",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.88s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PINS_CONTENT_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path':...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G45_pins_not_compared",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 152 passed, 5 deselected in 8.01s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'PINS_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "G46_pins_mode_0644",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('SWITCH_NOT_READ_BACK_AS_DONE', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G47_secret_absent_accepted",
+   "returncode": 1,
+   "seconds": 9.0,
+   "summary": "1 failed, 155 passed, 5 deselected in 7.25s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G48_secret_any_mode",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 156 passed, 5 deselected in 7.19s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G49_secret_any_links",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 159 passed, 5 deselected in 7.68s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G50_secret_any_kind",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 160 passed, 5 deselected in 7.83s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G51_docker_cli_not_checked",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 161 passed, 5 deselected in 8.40s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G52_docker_cli_any_kind",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 164 passed, 5 deselected in 8.67s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('ACTIVATION_ENV_CHANGED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/e...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G53_activation_any_content",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 85 passed, 5 deselected in 5.76s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('ACTIVATION_ENV_NOT_THE_CONSTANT', {})",
+   "killed": true,
+   "mutant": "G54_activation_mode_0644",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 71 passed, 5 deselected in 4.99s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('SWITCH_NOT_READ_BACK_AS_DONE', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G55_restart_without_activation",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 198 passed, 5 deselected in 9.90s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G56_catalog_any_bytes",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 165 passed, 5 deselected in 8.68s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'CATALOG_NOT_THIS_EPOCH_AND_ROOT')",
+   "killed": true,
+   "mutant": "G57_catalog_inode_of_the_parent",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.01s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G58_lock_not_checked",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 170 passed, 5 deselected in 9.40s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G59_lock_any_links",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 173 passed, 5 deselected in 8.79s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G60_lock_any_kind",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 174 passed, 5 deselected in 9.99s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...bled'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 56706985984, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G61_free_space_not_checked",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 197 passed, 5 deselected in 10.99s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('JOURNAL_FREE_SPACE_BELOW_FLOOR', {})",
+   "killed": true,
+   "mutant": "G62_free_space_strict",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 231 passed, 5 deselected in 13.48s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G63_release_not_compared",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 175 passed, 5 deselected in 10.30s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'engine'",
+   "killed": true,
+   "mutant": "G64_engine_not_read",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 67 passed, 5 deselected in 5.37s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'd...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G65_engine_shape_any",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 180 passed, 5 deselected in 9.83s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G66_engine_userns_accepted",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 178 passed, 5 deselected in 10.52s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G67_engine_rootless_accepted",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 179 passed, 5 deselected in 11.08s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G68_engine_case_sensitive",
+   "returncode": 1,
+   "seconds": 12.2,
+   "summary": "1 failed, 179 passed, 5 deselected in 10.23s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'options': 0...tless': False} == {'options': 3...tless': False}",
+   "killed": true,
+   "mutant": "G69_engine_options_count",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 67 passed, 5 deselected in 4.79s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G70_image_id_not_compared",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 183 passed, 5 deselected in 9.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G71_pins_release_file_any",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 232 passed, 5 deselected in 12.04s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G72_pins_release_sha_any",
+   "returncode": 1,
+   "seconds": 14.0,
+   "summary": "1 failed, 234 passed, 5 deselected in 11.59s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G73_pins_journal_any",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 235 passed, 5 deselected in 12.61s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G74_pins_launcher_any",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 236 passed, 5 deselected in 12.45s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G75_pins_build_sha_any",
+   "returncode": 1,
+   "seconds": 11.6,
+   "summary": "1 failed, 184 passed, 5 deselected in 9.52s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'd...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G76_pins_any_bytes",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 246 passed, 5 deselected in 12.04s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G77_pins_without_final_newline",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 248 passed, 5 deselected in 11.61s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'd...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G78_pins_any_count",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 238 passed, 5 deselected in 10.88s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G79_pins_any_name",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 240 passed, 5 deselected in 10.85s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_CONTAINER_NOT_THE_PINNED_READER', {})",
+   "killed": true,
+   "mutant": "G81_scan_not_made",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 77 passed, 5 deselected in 4.67s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'd...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G82_scan_any_shape",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 226 passed, 5 deselected in 10.98s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G83_scan_args_unbounded",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 187 passed, 5 deselected in 9.41s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G84_scan_exec_ids_any",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 186 passed, 5 deselected in 9.65s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G85_scan_args_any",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 185 passed, 5 deselected in 9.22s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_exec_sessions_are_counted_never_judged_and_no_command_word_leaves",
+   "killed": true,
+   "mutant": "G88_scan_exec_count",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 216 passed, 5 deselected in 10.72s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_PROCESS_FOUND', {})",
+   "killed": true,
+   "mutant": "G89_scan_exited_too",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 215 passed, 5 deselected in 12.34s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_PROCESS_FOUND', {})",
+   "killed": true,
+   "mutant": "G90_capacity_day_is_a_reader",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 215 passed, 5 deselected in 11.63s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_of_an_active_reader_with_its_own_container",
+   "killed": true,
+   "mutant": "G91_marker_exact_word",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 77 passed, 5 deselected in 5.95s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G92_fresh_timer_enabled_accepted",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 193 passed, 5 deselected in 10.93s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G93_fresh_timer_active_accepted",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 194 passed, 5 deselected in 10.26s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G94_fresh_service_active_accepted",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 195 passed, 5 deselected in 10.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G95_reconcile_any_state",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 95 passed, 5 deselected in 6.61s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_after_a_crash_after_the_file_completes_the_switches_without_creating",
+   "killed": true,
+   "mutant": "G96_reconcile_not_said",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 76 passed, 5 deselected in 5.30s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G97_restart_timer_disabled_accepted",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 199 passed, 5 deselected in 10.52s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G98_restart_active_accepted",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 200 passed, 5 deselected in 10.09s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None in ('READER_CONTAINER_NOT_THE_PINNED_READER',)",
+   "killed": true,
+   "mutant": "GA0_reconcile_container_not_checked",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 91 passed, 5 deselected in 5.36s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None in ('READER_CONTAINER_NOT_THE_PINNED_READER',)",
+   "killed": true,
+   "mutant": "GA1_reconcile_container_any_image",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 91 passed, 5 deselected in 5.53s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GA2_reconcile_container_not_running",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 92 passed, 5 deselected in 5.68s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GA3_reconcile_second_reader_accepted",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 93 passed, 5 deselected in 5.72s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_CONTAINER_NOT_THE_PINNED_READER', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, .....led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GA4_reconcile_when_inactive",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 94 passed, 5 deselected in 6.34s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GA5_container_present_accepted",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 94 passed, 5 deselected in 7.09s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GA6_reader_process_accepted",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 188 passed, 5 deselected in 12.05s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (True is True and None == '0dd899386da7bf4da6eaf637b6e3b7beb7ff84bcc33b5ee40b1282a6f6d6c270')",
+   "killed": true,
+   "mutant": "GA7_reconciled_container_facts_dropped",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 77 passed, 5 deselected in 5.41s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GA8_budget_not_checked",
+   "returncode": 1,
+   "seconds": 18.0,
+   "summary": "1 failed, 279 passed, 5 deselected in 15.71s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT",
+   "killed": true,
+   "mutant": "GA9_budget_strict",
+   "returncode": 1,
+   "seconds": 17.2,
+   "summary": "1 failed, 279 passed, 5 deselected in 14.18s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GB0_budget_of_one_switch",
+   "returncode": 1,
+   "seconds": 18.5,
+   "summary": "1 failed, 279 passed, 5 deselected in 15.40s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PRECHECK_FAILED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'd...e': 'disabled', 'SubState': 'dead', 'Result': 'success', 'NeedDaemonReload': 'no', ...}, 'timer_enabled': 'disabled'}})",
+   "killed": true,
+   "mutant": "GB1_precheck_os_error_code",
+   "returncode": 1,
+   "seconds": 14.0,
+   "summary": "1 failed, 221 passed, 5 deselected in 11.68s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:25:00+00:00', 'RUN_ESCAPED_STATE_UNKNOWN')",
+   "killed": true,
+   "mutant": "GB2_precheck_failure_is_not_a_refusal",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 65 passed, 5 deselected in 4.05s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_budget_edge_before_the_first_effect[ACTIVATE-45]",
+   "killed": true,
+   "mutant": "GB3_seconds_left_not_said",
+   "returncode": 1,
+   "seconds": 16.1,
+   "summary": "1 failed, 279 passed, 5 deselected in 13.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('DESTINATION_APPEARED_AFTER_PRECHECK', {'enable_now_timer': {'started': False, 'settled': 'NOT_ATTEMPTED', 'changed': False}, 'start_service': {'started': False, 'settled': 'NOT_ATTEMPTED', 'changed': False}})",
+   "killed": true,
+   "mutant": "W01_file_created_in_reconcile",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 76 passed, 5 deselected in 4.76s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'CREATED_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W02_file_mode_0644",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.88s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...BACK_AS_DONE') == ('REFUSED', '...EM_READ_ONLY')",
+   "killed": true,
+   "mutant": "W03_switch_after_a_failed_file",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 267 passed, 5 deselected in 12.27s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SWITCH_NOT_READ_BACK_AS_DONE' == 'COMMAND_NOT_STARTED'",
+   "killed": true,
+   "mutant": "W05_not_started_continues",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 264 passed, 5 deselected in 12.47s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...MMAND_FAILED') == ('PARTIAL_MET...MAND_TIMEOUT')",
+   "killed": true,
+   "mutant": "W06_uncertain_continues",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 260 passed, 5 deselected in 12.09s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...BACK_AS_DONE') == ('PARTIAL_MET...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W07_failed_command_continues",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 81 passed, 5 deselected in 4.92s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_META...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "W08_readback_failure_ignored",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 266 passed, 5 deselected in 12.04s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'SWITCH_NOT_READ_BACK_AS_DONE')",
+   "killed": true,
+   "mutant": "W09_settle_skipped",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.69s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'SWITCH_NOT_READ_BACK_AS_DONE')",
+   "killed": true,
+   "mutant": "W10_readback_of_the_timer_word_as_before",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.54s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'DONE'} == {'UNKNOWN'}",
+   "killed": true,
+   "mutant": "W11_settle_unknown_when_no_readback_is_done",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 266 passed, 5 deselected in 11.40s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DONE' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W12_enable_reached_without_active",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 81 passed, 5 deselected in 4.71s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DONE' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W13_enable_reached_without_word",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 278 passed, 5 deselected in 12.00s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DONE' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W14_start_reached_when_reloading",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 278 passed, 5 deselected in 11.69s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNKNOWN' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W15_start_reached_when_inactive",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 258 passed, 5 deselected in 12.13s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DONE' == 'DONE'",
+   "killed": true,
+   "mutant": "W16_reset_reached_on_failure",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 278 passed, 5 deselected in 12.11s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SWITCH_NOT_READ_BACK_AS_DONE' == 'SWITCH_NOT_READ_BACK_AS_DONE'",
+   "killed": true,
+   "mutant": "W17_reset_reached_when_failed",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 273 passed, 5 deselected in 13.00s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DONE' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W18_disable_reached_without_inactive",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 278 passed, 5 deselected in 12.65s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'DONE' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W19_disable_reached_without_word",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 278 passed, 5 deselected in 12.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'SWITCH_NOT_READ_BACK_AS_DONE')",
+   "killed": true,
+   "mutant": "W20_stop_reached_always",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 277 passed, 5 deselected in 12.68s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SWITCH_COMMAND_FAILED' == 'SWITCH_COMMAND_FAILED'",
+   "killed": true,
+   "mutant": "W22_failed_whatever_changed",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 274 passed, 5 deselected in 12.07s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNKNOWN' == 'FAILED_NOTHING_CHANGED'",
+   "killed": true,
+   "mutant": "W23_enable_judged_on_the_service",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 278 passed, 5 deselected in 12.17s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SWITCH_COMMAND_FAILED' == 'SWITCH_COMMAND_FAILED'",
+   "killed": true,
+   "mutant": "W24_start_judged_on_the_timer",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 262 passed, 5 deselected in 10.33s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('SWITCH_COMMAND_FAILED' == 'SWITCH_COMMAND_FAILED'",
+   "killed": true,
+   "mutant": "W25_stop_judged_on_the_timer",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 277 passed, 5 deselected in 11.11s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_deactivate_disable_returning_zero_without_effect_is_uncertain",
+   "killed": true,
+   "mutant": "W26_disable_judged_on_the_service",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 276 passed, 5 deselected in 11.46s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DONE' == 'DONE'",
+   "killed": true,
+   "mutant": "W27_reset_judged_on_the_timer",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 278 passed, 5 deselected in 11.51s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W28_created_file_not_read_back",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 269 passed, 5 deselected in 11.47s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...ASH_MISMATCH')",
+   "killed": true,
+   "mutant": "W29_readback_failure_not_a_stop",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 269 passed, 5 deselected in 11.33s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET..._ENV_CHANGED')",
+   "killed": true,
+   "mutant": "W30_reconciled_file_not_read_again",
+   "returncode": 1,
+   "seconds": 13.5,
+   "summary": "1 failed, 270 passed, 5 deselected in 11.61s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('METADATA_ON...REVIEW', None) == ('PARTIAL_MET..._ENV_CHANGED')",
+   "killed": true,
+   "mutant": "W31_reconciled_readback_failure_ignored",
+   "returncode": 1,
+   "seconds": 13.6,
+   "summary": "1 failed, 270 passed, 5 deselected in 11.58s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('COMMAND_FAILED', None)",
+   "killed": true,
+   "mutant": "W32_container_fact_is_a_gate",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 271 passed, 5 deselected in 11.95s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: a fact, reported as read; the liveness read (K13r) judges it",
+   "killed": true,
+   "mutant": "W33_container_fact_image",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 68 passed, 5 deselected in 3.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (True is True and None == 'be58a1cb68159b09e75c7cc25f2b9c9d2e8600a14036dd329fde467672fcf6be')",
+   "killed": true,
+   "mutant": "W34_container_fact_id",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 68 passed, 5 deselected in 3.45s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...BACK_AS_DONE')",
+   "killed": true,
+   "mutant": "W35_complete_with_an_unsettled_switch",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 258 passed, 5 deselected in 11.34s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('PARTIAL_MET...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W36_complete_whatever",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 81 passed, 5 deselected in 5.07s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...MMAND_FAILED') == ('PARTIAL_MET...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W37_changed_host_is_a_refusal",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 81 passed, 5 deselected in 4.61s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...MMAND_FAILED') == ('REFUSED', '...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W38_clean_run_is_a_partial",
+   "returncode": 1,
+   "seconds": 12.4,
+   "summary": "1 failed, 257 passed, 5 deselected in 10.54s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_activate_late_flag_and_window_edges - assert (...",
+   "killed": true,
+   "mutant": "W39_activation_performed_always",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 69 passed, 5 deselected in 4.14s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNKNOWN' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W40_activation_uncertain_said_false",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 258 passed, 5 deselected in 10.24s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'disable_now_timer': {'started': True, 'returned': True, 'returncode': 0, 'code': None, ...}, 'stop_service': {'started': True, 'returned': True, 'returncode': 0, 'code': None, ...}})",
+   "killed": true,
+   "mutant": "W43_complete_outcome_is_activate",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 70 passed, 5 deselected in 4.00s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...MMAND_FAILED') == ('PARTIAL_MET...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W44_partial_reported_complete",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 81 passed, 5 deselected in 4.17s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('ABSENT' == 'ABSENT'",
+   "killed": true,
+   "mutant": "W45_objects_left_not_counted",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 67 passed, 5 deselected in 3.31s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_after_a_crash_after_the_file_completes_the_switches_without_creating",
+   "killed": true,
+   "mutant": "W46_reconcile_not_reported",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 76 passed, 5 deselected in 3.89s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: every descriptor of the run is closed",
+   "killed": true,
+   "mutant": "W47_held_not_closed",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 67 passed, 5 deselected in 3.28s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'enabled')",
+   "killed": true,
+   "mutant": "W48_after_units_dropped",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 67 passed, 5 deselected in 3.30s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_activate_creates_the_constant_file_then_enables_and_starts_with_exactly_these_commands",
+   "killed": true,
+   "mutant": "W49_files_deleted_said",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 67 passed, 5 deselected in 2.81s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['PRECHECK_DROPPED'] == ['PROCESS_SCA...HECK_DROPPED']",
+   "killed": true,
+   "mutant": "W50_reduction_scan_dropped",
+   "returncode": 1,
+   "seconds": 46.3,
+   "summary": "1 failed, 292 passed, 5 deselected in 44.77s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['RECEIPT_REDUCED_TO_MINIMUM'] == ['PROCESS_SCA...HECK_DROPPED']",
+   "killed": true,
+   "mutant": "W51_reduction_precheck_dropped",
+   "returncode": 1,
+   "seconds": 45.7,
+   "summary": "1 failed, 292 passed, 5 deselected in 44.11s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'containers'...ader_like': 0} == {'containers'...ader_like': 1}",
+   "killed": true,
+   "mutant": "W52_reduction_scan_counts",
+   "returncode": 1,
+   "seconds": 46.2,
+   "summary": "1 failed, 292 passed, 5 deselected in 44.67s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_of_an_active_reader_changes_nothing_and_says_so",
+   "killed": true,
+   "mutant": "W53_before_state_of_the_service_not_kept",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 78 passed, 5 deselected in 4.43s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == {'session': '2026-10-05', 'late': False})",
+   "killed": true,
+   "mutant": "W54_launch_not_reported",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 67 passed, 5 deselected in 4.21s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[deactivate_unit_rows]",
+   "killed": true,
+   "mutant": "C60_deactivate_uses_the_units",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 40 passed, 5 deselected in 2.82s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[deactivate_files]",
+   "killed": true,
+   "mutant": "C61_deactivate_uses_the_files",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 46 passed, 5 deselected in 2.98s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[floor_below_five_sessions]",
+   "killed": true,
+   "mutant": "C62_retention_per_session",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 60 passed, 5 deselected in 4.24s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_CONTAINER_NOT_THE_PINNED_READER', {})",
+   "killed": true,
+   "mutant": "C63_reader_command_words",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 77 passed, 5 deselected in 5.12s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[deactivate_unit_rows]",
+   "killed": true,
+   "mutant": "P08_deactivate_accepts_unused_members",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 40 passed, 5 deselected in 2.12s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_INVALID' == 'PLAN_MEMBER_NOT_USED_BY_MODE'",
+   "killed": true,
+   "mutant": "P09_deactivate_validated_like_activate",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 40 passed, 5 deselected in 2.37s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[floor_low]",
+   "killed": true,
+   "mutant": "P34_floor_not_checked",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 37 passed, 5 deselected in 2.18s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[floor_below_five_sessions]",
+   "killed": true,
+   "mutant": "P35_floor_of_the_producer_alone",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 60 passed, 5 deselected in 2.80s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_floor_is_the_producer_floor_plus_the_retention_of_the_sessions_left",
+   "killed": true,
+   "mutant": "P37_floor_counts_every_session",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 66 passed, 5 deselected in 3.46s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[floor_below_five_sessions]",
+   "killed": true,
+   "mutant": "P38_floor_leaves_the_day_out",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 60 passed, 5 deselected in 2.94s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E07_unit_directory",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.39s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E08_unit_service",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.32s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E15_deactivate_names_a_window",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.22s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E15b_deactivate_names_unit_files",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.31s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E16_window_days",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.35s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E32_unit_names",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.19s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:25:00+00:00', None)",
+   "killed": true,
+   "mutant": "G04_window_not_checked",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 65 passed, 5 deselected in 2.48s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_NOT_A_SESSION_DAY', {})",
+   "killed": true,
+   "mutant": "G05_units_walked_in_deactivate",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 70 passed, 5 deselected in 3.21s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_NOT_THE_INSTALLED_FILE', {})",
+   "killed": true,
+   "mutant": "G20_unit_fit_in_deactivate",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 213 passed, 5 deselected in 7.65s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_CONTAINER_NOT_THE_PINNED_READER', {})",
+   "killed": true,
+   "mutant": "G86_scan_path_ignored",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 77 passed, 5 deselected in 3.39s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_CONTAINER_NOT_THE_PINNED_READER', {})",
+   "killed": true,
+   "mutant": "G87_scan_args_ignored",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 77 passed, 5 deselected in 3.70s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "G99_restart_stale_unit_accepted",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 202 passed, 5 deselected in 6.89s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GB4_reconcile_stale_unit_accepted",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 79 passed, 5 deselected in 3.84s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...INNED_READER') == ('REFUSED', '...INER_CHANGED')",
+   "killed": true,
+   "mutant": "GB5_reconcile_id_not_compared",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 80 passed, 5 deselected in 3.97s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GB6_reconcile_command_not_checked",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 79 passed, 5 deselected in 3.53s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "GB7_launcher_command_any",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 79 passed, 5 deselected in 3.47s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('FAILED_NOTHING_CHANGED' == 'FAILED_NOTHING_CHANGED'",
+   "killed": true,
+   "mutant": "W04_switch_after_a_stop",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 256 passed, 5 deselected in 9.01s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('FAILED_NOTHING_CHANGED' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W21_failed_without_returncode",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 258 passed, 5 deselected in 9.73s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...MMAND_FAILED') == ('PARTIAL_MET...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W21b_reload_rule_ignored",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 81 passed, 5 deselected in 3.99s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...MMAND_FAILED') == ('PARTIAL_MET...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W21c_reload_rule_on_the_wrong_word",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 81 passed, 5 deselected in 3.98s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...MMAND_FAILED') == ('PARTIAL_MET...MMAND_FAILED')",
+   "killed": true,
+   "mutant": "W21d_target_words_swapped",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 81 passed, 5 deselected in 4.23s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_restart_resets_and_starts_and_reloads_nothing",
+   "killed": true,
+   "mutant": "W41_reload_said_for_every_switch",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 71 passed, 5 deselected in 3.51s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNKNOWN' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W42_reload_uncertain_said_false",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 81 passed, 5 deselected in 4.18s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNKNOWN' == 'UNKNOWN'",
+   "killed": true,
+   "mutant": "W42b_reload_on_failure_said_true",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 81 passed, 5 deselected in 4.40s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: reload said True only when the reloading switch exited 0",
+   "killed": true,
+   "mutant": "W42c_reload_done_with_failure_said_false",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 259 passed, 5 deselected in 9.70s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_enable_that_hangs_is_uncertain_and_nothing_follows",
+   "killed": true,
+   "mutant": "W55_changed_unknown_said_false",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 260 passed, 5 deselected in 9.85s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_of_an_active_reader_changes_nothing_and_says_so",
+   "killed": true,
+   "mutant": "W56_changed_never_said",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 78 passed, 5 deselected in 3.87s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_of_an_active_reader_changes_nothing_and_says_so",
+   "killed": true,
+   "mutant": "W57_changed_compares_nothing",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 78 passed, 5 deselected in 4.02s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_enable_that_hangs_is_uncertain_and_nothing_follows",
+   "killed": true,
+   "mutant": "W58_changed_for_an_unreturned_switch",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 260 passed, 5 deselected in 10.29s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('FAILED_NOTHING_CHANGED' == 'FAILED_NOTHING_CHANGED'",
+   "killed": true,
+   "mutant": "W59_not_started_said_unknown",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 256 passed, 5 deselected in 9.10s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_reconcile_of_an_active_reader_changes_nothing_and_says_so",
+   "killed": true,
+   "mutant": "W60_changed_not_reported",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 78 passed, 5 deselected in 3.92s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CHAIN_ROW_INVALID' == 'JOURNAL_ON_THE_DATA_VOLUME'",
+   "killed": true,
+   "mutant": "D01_source_root_elsewhere",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 26 passed, 5 deselected in 2.01s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D02_source_target_any",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 250 passed, 5 deselected in 8.88s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D03_source_target_may_be_the_capacity",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 251 passed, 5 deselected in 9.21s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D04_source_target_may_be_the_launcher",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 252 passed, 5 deselected in 9.32s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D05_source_target_may_be_the_journal",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 253 passed, 5 deselected in 9.42s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[source_parent_uid_1000]",
+   "killed": true,
+   "mutant": "D06_source_chain_not_validated",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 53 passed, 5 deselected in 2.49s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[source_mode]",
+   "killed": true,
+   "mutant": "D07_source_chain_not_private",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 51 passed, 5 deselected in 2.92s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[source_mode]",
+   "killed": true,
+   "mutant": "D08_source_leaf_any_mode",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 51 passed, 5 deselected in 3.03s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CAPACITY_ROOT_NOT_PRIVATE' == 'CHAIN_ROW_UNSAFE'",
+   "killed": true,
+   "mutant": "D09_capacity_chain_not_validated",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 57 passed, 5 deselected in 3.25s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[capacity_mode]",
+   "killed": true,
+   "mutant": "D10_capacity_chain_not_private",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 55 passed, 5 deselected in 3.62s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k13.py::test_plan_refusals_before_anything_is_touched[capacity_mode]",
+   "killed": true,
+   "mutant": "D11_capacity_leaf_any_mode",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 55 passed, 5 deselected in 3.23s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D12_source_not_walked",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 211 passed, 5 deselected in 8.56s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'path': '/etc', 'device': 801, ...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D13_capacity_not_walked",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 212 passed, 5 deselected in 8.96s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D14_pins_source_dir_any",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 250 passed, 5 deselected in 9.65s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {'chains': {'units': [{'path': '/', 'device': 801, 'inode': 2, 'uid': 0, ...}, {'...led'}, 'journal': {'device': 801, 'inode': 5062, 'free_bytes': 595212316672, 'catalog': 'EPOCH_JSON_EQUAL', ...}, ...})",
+   "killed": true,
+   "mutant": "D15_pins_source_dir_taken_accepted",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 251 passed, 5 deselected in 9.50s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-07T07:35:00+00:00', 'READER_UNIT_MOUNTS_NOT_AS_SIGNED')",
+   "killed": true,
+   "mutant": "D16_source_bind_not_required",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 65 passed, 5 deselected in 3.07s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READER_UNIT_MOUNTS_NOT_AS_SIGNED', {})",
+   "killed": true,
+   "mutant": "D17_source_bind_at_any_target",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 228 passed, 5 deselected in 9.58s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == ['/mnt/day-d-data']",
+   "killed": true,
+   "mutant": "D18_data_volume_flag_dropped",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 227 passed, 5 deselected in 9.44s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['/mnt/day-d-data'] == []",
+   "killed": true,
+   "mutant": "D19_data_volume_flag_in_deactivate",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 227 passed, 5 deselected in 9.39s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E33_bind_source_root",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.54s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E34_bind_capacity_root",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.75s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E35_bind_not_root_controlled",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.67s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'operation':...EADBACK', ...} == {'operation':...LE_ONLY', ...}",
+   "killed": true,
+   "mutant": "E36_deactivate_names_bind_sources",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.45s",
+   "tests": [
+    "test_k13.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D71k_dispatcher_date_set_dropped",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 102 passed, 5 deselected in 8.47s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D72k_dispatcher_accepts_the_sunday_before",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 102 passed, 5 deselected in 8.59s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D73k_dispatcher_accepts_the_day_after_the_epoch",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 102 passed, 5 deselected in 8.20s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D02_dispatcher_one_day_rule_dropped",
+   "returncode": 1,
+   "seconds": 35.2,
+   "summary": "1 failed, 109 passed, 5 deselected in 33.48s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D03_dispatcher_signed_date_not_tied_to_the_config_day",
+   "returncode": 1,
+   "seconds": 36.6,
+   "summary": "1 failed, 109 passed, 5 deselected in 34.73s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path",
+   "killed": true,
+   "mutant": "D04_dispatcher_config_schema_dropped",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 5 deselected in 0.45s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_dispatcher_unsigned_go_accepted",
+   "returncode": 1,
+   "seconds": 35.1,
+   "summary": "1 failed, 108 passed, 5 deselected in 33.64s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D06_dispatcher_unsigned_authority_accepted",
+   "returncode": 1,
+   "seconds": 34.6,
+   "summary": "1 failed, 108 passed, 5 deselected in 33.27s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D07_dispatcher_claim_root_binding_dropped",
+   "returncode": 1,
+   "seconds": 35.5,
+   "summary": "1 failed, 108 passed, 5 deselected in 33.98s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D08_dispatcher_transport_binding_dropped",
+   "returncode": 1,
+   "seconds": 33.6,
+   "summary": "1 failed, 108 passed, 5 deselected in 32.12s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D09_dispatcher_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 34.5,
+   "summary": "1 failed, 108 passed, 5 deselected in 33.19s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_names_of_every_earlier_operation_are_refused_at_both_layers[READONLY_POSTDEPLOY01_GO_V1-GO_READONLY_POSTDEPLOY_01-READONLY_POSTDEPLOY]",
+   "killed": true,
+   "mutant": "D10_dispatcher_local_authentication_dropped",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 91 passed, 5 deselected in 5.87s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_receipt_of_another_operation_is_filed_uncertain",
+   "killed": true,
+   "mutant": "D11_dispatcher_receipt_schema_not_checked",
+   "returncode": 1,
+   "seconds": 34.3,
+   "summary": "1 failed, 113 passed, 5 deselected in 32.95s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D12_dispatcher_late_start_accepted",
+   "returncode": 1,
+   "seconds": 33.5,
+   "summary": "1 failed, 109 passed, 5 deselected in 32.13s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_prepare_does_not_spawn_then_resume_once_and_the_go_is_single_use",
+   "killed": true,
+   "mutant": "D13_dispatcher_claim_not_exclusive",
+   "returncode": 1,
+   "seconds": 31.2,
+   "summary": "1 failed, 107 passed, 5 deselected in 29.76s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[raise_value-UNCERTAIN-3]",
+   "killed": true,
+   "mutant": "X01_launcher_enters_the_payload_with_the_refusal_exit_code",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 7 passed, 5 deselected in 1.07s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[refused-KNOWN_REFUSAL-1]",
+   "killed": true,
+   "mutant": "X02_launcher_maps_a_refusal_to_partial",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.84s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[partial-KNOWN_PARTIAL-2]",
+   "killed": true,
+   "mutant": "X03_launcher_maps_everything_to_complete",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.84s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK13::test_launcher_refuses_wrong_pins_at_build_and_on_stdin",
+   "killed": true,
+   "mutant": "X04_launcher_document_pins_not_checked",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 11 passed, 5 deselected in 1.33s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "results_from_the_resume_cache": 0,
+ "survivors": []
+}

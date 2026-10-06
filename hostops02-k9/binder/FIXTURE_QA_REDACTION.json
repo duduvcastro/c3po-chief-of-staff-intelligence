@@ -1,0 +1,247 @@
+{
+  "map_categories_only_no_private_literals": true,
+  "raw_evidence_preserved": true,
+  "schema": "CODEX_FIXTURE_QA_REDACTION_V1",
+  "transformations": [
+    {
+      "artifact": "FIXTURE_QA/morning-portable-binder-485-py39.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "a3a735ad75faf947b2ea77ceb50ada02fb8cd3f719150729b3f7d42ef24b73b2",
+      "published_sha256": "a47657531c2f6e1000c9b8820c8a2953c3120a5ad7df11eec38cf4f9f0c7998f",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-portable-binder-485-py39.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "f4361f9cec77019f721066ae009d7741a8f3a197e7b4dbd8a9056bbd17d8b535",
+      "published_sha256": "0b14f69e2579a0c448dbf6431ab63bfd5853a71f4f59f8075e9fbc05d1a79fa2",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r1-py39.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "dc7e06f0547c7f25c171acad1f7b8d60c6e0d6aa3746d8d86a6d51ef84fd1a14",
+      "published_sha256": "1c8f0382f5d02003a4172d381c9f84928729e2ab523bdcb472bcf7cbb325a227",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r1-py39.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "ab1e0ba552d063d6dad6e78ce1594bf4d4baec41f631ee5e864b08fc603d2042",
+      "published_sha256": "2d316b00ae5b527215f0e3127f8f83b8b0b8a6e07de5c2f9e0d4ecbb4cd15114",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r2-py39.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "99f262146aee939df6526064f8370de898b6c3b7a02d9533f9f37b4d258cf225",
+      "published_sha256": "d8db5f9d88dd521a7a256bf6c3451d7ff4b0ab870980037dc0f1ac020e07c87b",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r2-py39.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "66db3b968cafbcb2a6ba8a8a92adb0bdf07808f49ba71db3a212d4af41664d92",
+      "published_sha256": "43390058a6b1ad332c0fd569c300372643bd2a3dde10c086041195541a12c60b",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r1-py39.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "7b0ad7e864d51ef190d00e6f69f1fcd7f6e7c2b27559876aea2b16ee8e2ee700",
+      "published_sha256": "65c56e6130fd1f44087cc20c83ec7fd608b7731dfab57dc80de0845227857260",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r1-py39.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "47ce82dc49808bbe037589680f89037c3e7ba627c88a26c8096c9da977674f8e",
+      "published_sha256": "faed205136b5af8c5a0985444f0689864cedcf7a1094c7f5211c02f3622924d6",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r2-py39.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "878fbeed713006934d4e494d46057e1e71aa3be42c3ae6d3be35923828615026",
+      "published_sha256": "f0a48cec868cbe270c1792b8aedbfdd21d859b40d6ac640922a6ca3921ebc383",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r2-py39.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "5c60a8eff473c87ef0e2b49f23210768184142a727ff936fcf15092da9081c80",
+      "published_sha256": "eb8b98118eb0bd1fabdfa037a37c391ee9e29b9ccd0fb16e52e5cb81fcdadf24",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-portable-binder-485-py312.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "2efdfcc5c0b876a3a335b4794bbf5c9ccdd2e45cc30b60ccf2edf542417b1deb",
+      "published_sha256": "2d44b0df674512a2e547b79a589af21b3ea6111f323a2152320d7ba35ce99695",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-portable-binder-485-py312.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "8073028558095604c060401c23b2f2f06fd05d4671e2677a407c1996d2b3cbca",
+      "published_sha256": "11d09d5f4ce0d384c25d7c4a12b0365bd8c2a08dd4777a71ff7cdc31ecc835d0",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r1-py312.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "70539f34cae6cb9c680a42d593153e9979afc4c453a02a8db609f7bbc7826612",
+      "published_sha256": "8a990649b3ae48add4254939aac78b7ba3f48ec5c596d937151a81f2506e833d",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r1-py312.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "bb9c976f778c0ec709d482b1a6c9a2638487a32eeb5fe64d7621b71a5bb1feb5",
+      "published_sha256": "fbe27d79e6a5577a08aebf834f0469897b1ddf21a39282cbd53e39f739a8e43e",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r2-py312.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "28b003a74ac0a9bde205042e56942ba1a3af1ada089550b589a1a7eed0c30273",
+      "published_sha256": "77c36a4caacb43653d4ad2c54f9f00c8af9feed49c38fc451375c953d5dd0fdf",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-full-r2-py312.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "6c11700b8d94f19554e32f2a8bc70b10a883b4adb330f79d3b604fe188e6efe8",
+      "published_sha256": "1952c63738a5a8cdf6cbf24bf58c3a37b4bb0cf8a41be60f5a7c426d9459b75b",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r1-py312.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "4fc5c3b2eec37462bc75d6e69858766bb46b6b8e8d0cd45e9d10e2af439c1222",
+      "published_sha256": "eeaedc0060b596fd4d1ea4b956aa4aee3720c702457e9bc858eadb88678548b8",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r1-py312.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "05f403d36185f8698621afdd521277a812985405bdb5dbe673bcb34f4a021100",
+      "published_sha256": "05f403d36185f8698621afdd521277a812985405bdb5dbe673bcb34f4a021100",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r2-py312.xml",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN",
+        "XML_SERIALIZATION",
+        "HOSTNAME_TOKEN"
+      ],
+      "original_private_raw_sha256": "2935d765bd639e7f2be516c9527b25cecef0bf72801276a37c2814e876f950ab",
+      "published_sha256": "a9fd7ed1f89283bc008a0bad6bf69492f997180d9c7dee70ededf8d321bbba4b",
+      "warning_error_counts_not_filtered": true
+    },
+    {
+      "artifact": "FIXTURE_QA/morning-fixture-target-r2-py312.stdout.txt",
+      "categories": [
+        "WORKSPACE_PREFIX_TOKEN",
+        "PRIVATE_TMP_PREFIX_TOKEN",
+        "TMPDIR_PATH_TOKEN"
+      ],
+      "original_private_raw_sha256": "62edff37d16dc65798fb791755e055ba398fec483a9ee070e90faad8f5b08adf",
+      "published_sha256": "62edff37d16dc65798fb791755e055ba398fec483a9ee070e90faad8f5b08adf",
+      "warning_error_counts_not_filtered": true
+    }
+  ]
+}

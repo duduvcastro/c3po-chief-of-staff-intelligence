@@ -1,0 +1,664 @@
+{
+  "raw_reconstruction": "Concatenate prefix + text for every row in order, encoded UTF-8; preserves every original diff byte.",
+  "raw_unified_diff_sha256": "4edc38b54381ee5bbc3ec910d800009334943d97adcc71be62e870189ba5ff19",
+  "reason": "Metadata serialization keeps diff line prefixes separate from decorator text. No executable/test/source buffer is transformed.",
+  "rows": [
+    {
+      "prefix": "-",
+      "text": "-- original/run_candidate_tests.py\n"
+    },
+    {
+      "prefix": "+",
+      "text": "++ candidate/run_candidate_tests.py\n"
+    },
+    {
+      "prefix": "@",
+      "text": "@ -20,6 +20,11 @@\n"
+    },
+    {
+      "prefix": " ",
+      "text": "env.update(BIND_CANDIDATE_ROOT=str(trial),BIND_WORK_ROOT=str(trial/'optional-work'),BIND_TEST_OPERATIONAL_SEALS=str(base/'bind/ACCEPTED_SEALS.json'))\n"
+    },
+    {
+      "prefix": " ",
+      "text": "seals_path=trial/'bind/ACCEPTED_SEALS.json'\n"
+    },
+    {
+      "prefix": " ",
+      "text": "seals=json.loads(seals_path.read_text())\n"
+    },
+    {
+      "prefix": "+",
+      "text": "fixture_families={'W1PREFLIGHT01','HOSTOPS01','HOSTOPS02_CATALOG_INIT','HOSTOPS02_INSTALL_RELEASE','HOSTOPS02_EPOCH_READBACK','HOSTOPS02_ACTIVATE'}\n"
+    },
+    {
+      "prefix": "+",
+      "text": "seals['seals']=[row for row in seals['seals'] if row['family'] in fixture_families]\n"
+    },
+    {
+      "prefix": "+",
+      "text": "assert len(seals['seals'])==6\n"
+    },
+    {
+      "prefix": "+",
+      "text": "# FIXTURE_REGRESSION_NOT_OPERATIVE25_REGISTRY_ACCEPTANCE: unmodified operative registry remains under base/bind.\n"
+    },
+    {
+      "prefix": "+",
+      "text": "(trial/'FIXTURE_REGISTRY_SCOPE.json').write_text(json.dumps({'scope':'FIXTURE_REGRESSION_NOT_OPERATIVE25_REGISTRY_ACCEPTANCE','operational_registry_sha256':hashlib.sha256((base/'bind/ACCEPTED_SEALS.json').read_bytes()).hexdigest(),'families':sorted(fixture_families)},sort_keys=True)+'\\n')\n"
+    },
+    {
+      "prefix": " ",
+      "text": "fixtures={}\n"
+    },
+    {
+      "prefix": " ",
+      "text": "for name in ['fixtures/w1','fixtures/hostops01','fixtures/hostops02/epoch_readback']:\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    directory=base/name\n"
+    },
+    {
+      "prefix": "-",
+      "text": "-- original/bind/tests/test_bootstrap_identity_binding.py\n"
+    },
+    {
+      "prefix": "+",
+      "text": "++ candidate/bind/tests/test_bootstrap_identity_binding.py\n"
+    },
+    {
+      "prefix": "@",
+      "text": "@ -64,7 +64,7 @@\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    items['directories_stable']=item(directories={key:True for key,_ in b.BOOTSTRAP_TREE_DIRECTORIES if key!='EMITTER'})\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    return dict(operation=b.K9R_OPERATION,mode='TREE',status=b.RECEIPT_STATUS['KNOWN_PARTIAL'],outcome='PARTIAL_OBSERVED',\n"
+    },
+    {
+      "prefix": " ",
+      "text": "        boot_id_sha256=BOOT,findings=['PARENT_MISSING','SECRET_FILE_ABSENT'],items_not_complete=['secret:EMITTER/password'],\n"
+    },
+    {
+      "prefix": "-",
+      "text": "        items_omitted_by_the_plan=[],items=items,clock=clock('12:20:00','12:12:40'),effects={'mode':'TREE','reads':{\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        items_omitted_by_the_plan=[],items=items,clock=clock('12:20:00','12:20:40'),effects={'mode':'TREE','reads':{\n"
+    },
+    {
+      "prefix": " ",
+      "text": "            'directories':{key:b.K9_PLACEMENT_PATHS[name] for key,name in b.BOOTSTRAP_TREE_DIRECTORIES},\n"
+    },
+    {
+      "prefix": " ",
+      "text": "            'secret_files_lstat_only':[b.K9_PLACEMENT_PATHS[key] for key in ('provider_env_file','risk_db_env_file','emitter_password')]}})\n"
+    },
+    {
+      "prefix": " ",
+      "text": "\n"
+    },
+    {
+      "prefix": "-",
+      "text": "-- original/bind/tests/test_reader_install_binding.py\n"
+    },
+    {
+      "prefix": "+",
+      "text": "++ candidate/bind/tests/test_reader_install_binding.py\n"
+    },
+    {
+      "prefix": "@",
+      "text": "@ -153,7 +153,7 @@\n"
+    },
+    {
+      "prefix": " ",
+      "text": " from test_programs import ctx_of\n"
+    },
+    {
+      "prefix": " ",
+      "text": " op='GO_WRITE_HOSTOPS02_READER_UNITS_01'\n"
+    },
+    {
+      "prefix": " ",
+      "text": " names=(('READER_SERVICE','c3po-reader.service'),('READER_TIMER','c3po-reader.timer'),('READER_ALERT','c3po-reader-alert.service'))\n"
+    },
+    {
+      "prefix": "-",
+      "text": " source=types.SimpleNamespace(UNIT_ORDER=names,EVIDENCE_OPERATIONS=(b.PRECHECK_OPERATION,),WRITES_ALLOWED=True)\n"
+    },
+    {
+      "prefix": "+",
+      "text": " source=types.SimpleNamespace(OPERATION=op,PLAN_KEYS=('units','evidence_boot_id_sha256'),UNIT_ORDER=names,EVIDENCE_OPERATIONS=(b.PRECHECK_OPERATION,),WRITES_ALLOWED=True)\n"
+    },
+    {
+      "prefix": " ",
+      "text": " programs=types.SimpleNamespace(modules={op:(None,None,{'source':source})})\n"
+    },
+    {
+      "prefix": " ",
+      "text": " c=ctx_of(programs,op)\n"
+    },
+    {
+      "prefix": " ",
+      "text": " assert [unit['expect'] for unit in c['plan']['units']]==['ABSENT']*3\n"
+    },
+    {
+      "prefix": "-",
+      "text": "-- original/bind/tests/test_k9.py\n"
+    },
+    {
+      "prefix": "+",
+      "text": "++ candidate/bind/tests/test_k9.py\n"
+    },
+    {
+      "prefix": "@",
+      "text": "@ -673,9 +673,9 @@\n"
+    },
+    {
+      "prefix": " ",
+      "text": "\n"
+    },
+    {
+      "prefix": " ",
+      "text": "\n"
+    },
+    {
+      "prefix": " ",
+      "text": "def test_rev4_leaves_the_accepted_seals_file_as_it_was_and_ships_the_template():\n"
+    },
+    {
+      "prefix": "-",
+      "text": "    \"\"\"ACCEPTED_SEALS.json is byte for byte revision 3's (no K9 seal is accepted until a deliberate edit); the template\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    \"\"\"The externally pinned current operative registry is unchanged by fixture projection; the historical template\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    names the three families a K9 bind needs.\"\"\"\n"
+    },
+    {
+      "prefix": "-",
+      "text": "    assert b.sha(Path(os.environ['BIND_TEST_OPERATIONAL_SEALS']).read_bytes()) == 'fdab49c6251ce4aa411d2c81b8aa0c2bbd76169ec7705aaf0eae114482ddd6d2'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert b.sha(Path(os.environ['BIND_TEST_OPERATIONAL_SEALS']).read_bytes()) == '78eb4ab25db448d677b5c54bb2f91346c194427fee88028260d1ba2f7be50d72'\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    template = json.loads((h.BIND / 'ACCEPTED_SEALS.K9-TEMPLATE.json').read_bytes())\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    families = {item['family']: item for item in template['seals_to_add']}\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    assert set(families) == {'HOSTOPS02_K4_E0', 'HOSTOPS02_K9_PHASE_READ', 'HOSTOPS02_K9_PHASE_STEP', 'HOSTOPS02_K3K9_SECRETS'}\n"
+    },
+    {
+      "prefix": "-",
+      "text": "-- original/bind/tests/test_programs.py\n"
+    },
+    {
+      "prefix": "+",
+      "text": "++ candidate/bind/tests/test_programs.py\n"
+    },
+    {
+      "prefix": "@",
+      "text": "@ -164,11 +164,17 @@\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    if operation == 'GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01' and copied is None and receipts:\n"
+    },
+    {
+      "prefix": " ",
+      "text": "        tree_role = next(role for role, (_, row) in receipts.items() if row.get('mode') == 'TREE')\n"
+    },
+    {
+      "prefix": " ",
+      "text": "        copied = [{'plan_pointer':'/days_parent','evidence_role':tree_role,'receipt_pointer':'/items/directory:DAYS/observed_rows'}]\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    inputs = {}\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if operation == 'GO_WRITE_HOSTOPS02_K4_FILES_01' and plan.get('mode') == 'CHAIN_STATIC':\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        # Inert signed-bytes fixture for common-rule plumbing, not validation of the static document contract.\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        raw = b'synthetic static configuration fixture\\n'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        plan.setdefault('delivery', {})['static_config'] = {'content_b64':b.base64.b64encode(raw).decode('ascii'),'sha256':b.sha(raw),'bytes':len(raw)}\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        inputs['k4_static_config'] = raw\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    end = start + timedelta(minutes=minutes) - timedelta(seconds=1)\n"
+    },
+    {
+      "prefix": " ",
+      "text": "    return {'operation': operation, 'plan': plan, 'params': params if params is not None else {}, 'rt': {'source': m}, 'mode': mode,\n"
+    },
+    {
+      "prefix": " ",
+      "text": "            'request': {'writes_allowed': m.WRITES_ALLOWED}, 'window': {'start': start, 'end': end, 'gate_start': start, 'gate_end': end},\n"
+    },
+    {
+      "prefix": " ",
+      "text": "            'watchdog': 80, 'entries': [{'role': role, 'operation': op} for role, (op, _) in receipts.items()],\n"
+    },
+    {
+      "prefix": "-",
+      "text": "            'receipts': {role: receipt for role, (_, receipt) in receipts.items()},\n"
+    },
+    {
+      "prefix": "+",
+      "text": "            'receipts': {role: receipt for role, (_, receipt) in receipts.items()}, 'inputs':inputs,\n"
+    },
+    {
+      "prefix": " ",
+      "text": "            'evidence_facts': facts if facts is not None else [{'role': role, 'complete': True} for role in receipts], 'copied': copied or []}\n"
+    },
+    {
+      "prefix": " ",
+      "text": "\n"
+    },
+    {
+      "prefix": " ",
+      "text": "\n"
+    },
+    {
+      "prefix": "-",
+      "text": "-- original/bind/tests/test_current_identity_projection_binding.py\n"
+    },
+    {
+      "prefix": "+",
+      "text": "++ candidate/bind/tests/test_current_identity_projection_binding.py\n"
+    },
+    {
+      "prefix": "@",
+      "text": "@ -0,0 +1,90 @@\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\"\"\"Proje\u00e7\u00f5es atuais sobre recibos emitidos por fontes seladas em FakeHost.\n"
+    },
+    {
+      "prefix": "+",
+      "text": "As facts de proveni\u00eancia s\u00e3o contextos sint\u00e9ticos inertes; n\u00e3o provam load_evidence/BOUND ou host.\n"
+    },
+    {
+      "prefix": "+",
+      "text": "Nenhuma identidade da esta\u00e7\u00e3o ou hash de recibo real foi convertido em fixture.\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\"\"\"\n"
+    },
+    {
+      "prefix": "+",
+      "text": "import copy,types\n"
+    },
+    {
+      "prefix": "+",
+      "text": "from datetime import datetime,timezone,timedelta\n"
+    },
+    {
+      "prefix": "+",
+      "text": "import pytest\n"
+    },
+    {
+      "prefix": "+",
+      "text": "import helpers as h\n"
+    },
+    {
+      "prefix": "+",
+      "text": "import hostops02_fixtures as x\n"
+    },
+    {
+      "prefix": "+",
+      "text": "from test_programs import programs\n"
+    },
+    {
+      "prefix": "+",
+      "text": "b=h.b\n"
+    },
+    {
+      "prefix": "+",
+      "text": "NOW=datetime(2026,10,6,12,26,tzinfo=timezone.utc)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.fixture(scope='module')\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def emitted_projection_receipts(tmp_path_factory,families):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    root=h.resolved(tmp_path_factory.mktemp('projection-producers'));h2=x.hostops02(x.sealed_copy(root/'tier'))\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    release=x.k10_receipt(h2,x.M1,x.release_bytes(h2))\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    docs,host=h2.k6a.case(now=x.M3);policy=docs.run(host)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert policy['outcome']=='ACTIVATE_WORKER_RECREATED_AND_VERIFIED'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    h1=x.hostops01(families['hostops']);f=h1.family;k=f.load('readback');host,provision,install=f.ready_host(k,placement='A')\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    readback=f.Docs(k,f.readback_fields(k,host,provision,install),now=h.HOSTOPS_NOW).run(host)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert readback['outcome']=='READBACK_ALL_OBSERVED_ALL_EXPECTATIONS_MET'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    return {'release':release,'policy':policy,'unit':readback}\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def context(receipt,operation,mode):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    r=copy.deepcopy(receipt);producer=r['operation'];role='READBACK' if operation=='GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01' else 'PRODUCER'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    return {'operation':operation,'plan_mode':mode,'source':types.SimpleNamespace(OPERATION=operation),\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        'operations':{role:producer},'entries':[{'role':role,'operation':producer}],\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        'receipts':{role:r},'evidence_facts':[{'role':role,'operation':producer,'receipt_sha256':r['metadata_sha256'],\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        'complete':True,'source':'BOUND_SET','receipt_host_binding_is_the_one_of_this_set':True,\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        'receipt_payload_is_the_sealed_source_of_that_operation':True,'exit_json_binds_these_bytes':True,\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        'bound_set':{'stderr_empty':True,'exit_json_binds_config_request_go_and_output':True}}],\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        'blobs':{role:{'source':'bound'}},'inputs':{},'used':[],'copied':[],\n"
+    },
+    {
+      "prefix": "+",
+      "text": "        'plan':{'mode':mode,'evidence_boot_id_sha256':b.receipt_boot(r)},'window':{'start':NOW}}\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def reseal(ctx,role):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    r=ctx['receipts'][role];r.pop('metadata_sha256',None);r['metadata_sha256']=b.sha(b.canonical(r));ctx['evidence_facts'][0]['receipt_sha256']=r['metadata_sha256']\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.mark.parametrize('kind',['release','policy'])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def test_created_chain_uses_genuine_emulated_receipt_and_whole_list_provenance(emitted_projection_receipts,kind):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    c=context(emitted_projection_receipts[kind],b.BOOTSTRAP_OPERATION,b.BOOTSTRAP_MODE);before=b.canonical(c['receipts'])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    p='/policy_read/'+kind+'/directory/rows';rows=b.resolve_hostops02({'$created_directory_chain':{'evidence':'PRODUCER','kind':kind}},c,p)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert rows[-1]['mode']==0o700 and rows[-1]['uid']==rows[-1]['gid']==0\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert b.created_directory_chain_provenance(c,c['copied'][0])==rows\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert b.canonical(c['receipts'])==before\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.mark.parametrize('damage,code',[\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    ('pointer','CREATED_DIRECTORY_CHAIN_INVALID'),('fact','CREATED_DIRECTORY_CHAIN_NOT_BOUND_COMPLETE'),\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    ('seal','CREATED_DIRECTORY_CHAIN_RECEIPT_SEAL'),('boot','CREATED_DIRECTORY_CHAIN_BOOT_UNKNOWN'),\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    ('clock','CREATED_DIRECTORY_CHAIN_CLOCK_INVALID'),('future','CREATED_DIRECTORY_CHAIN_PREDECESSOR_NOT_FINISHED')])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.mark.parametrize('kind',['release','policy'])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def test_created_chain_refuses_unproved_stale_or_uncertain_identity(emitted_projection_receipts,kind,damage,code):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    c=context(emitted_projection_receipts[kind],b.BOOTSTRAP_OPERATION,b.BOOTSTRAP_MODE);r=c['receipts']['PRODUCER'];p='/policy_read/'+kind+'/directory/rows'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='pointer':p='/caller_chosen'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='fact':c['evidence_facts'][0]['bound_set']['stderr_empty']=False\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='seal':r['directories'][0]['observed']['inode']+=1\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='boot':r['effects']['evidence_boot_id_sha256']=None;reseal(c,'PRODUCER')\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='clock':r['clock']['monotonic_elapsed_ms']=True;reseal(c,'PRODUCER')\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='future':c['window']['start']=datetime.fromisoformat(r['clock']['utc_end'])-timedelta(seconds=1)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    with h.refused(code):b.created_directory_chain(c,{'evidence':'PRODUCER','kind':kind},p)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.mark.parametrize('kind',['service','timer'])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def test_supervisor_whole_unit_record_is_observed_not_child_scalar_guess(emitted_projection_receipts,kind):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    c=context(emitted_projection_receipts['unit'],'GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01','ACTIVATE');before=b.canonical(c['receipts'])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    result=b.resolve_hostops02({'$supervisor_unit_record':{'evidence':'READBACK','kind':kind}},c,'/units/'+kind)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert set(result)=={'name','sha256','bytes','device','inode'}\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    assert b.supervisor_unit_record_provenance(c,c['copied'][0])==result and b.canonical(c['receipts'])==before\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.mark.parametrize('damage,code',[\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    ('pointer','SUPERVISOR_UNIT_RECORD_INVALID'),('fact','SUPERVISOR_UNIT_RECORD_NOT_BOUND_COMPLETE'),\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    ('seal','SUPERVISOR_UNIT_RECORD_RECEIPT_SEAL'),('boot','SUPERVISOR_UNIT_RECORD_BOOT_UNKNOWN'),\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    ('clock','SUPERVISOR_UNIT_RECORD_CLOCK_INVALID'),('future','SUPERVISOR_UNIT_RECORD_PREDECESSOR_NOT_FINISHED')])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.mark.parametrize('kind',['service','timer'])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def test_supervisor_unit_refuses_unproved_stale_or_uncertain_identity(emitted_projection_receipts,kind,damage,code):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    c=context(emitted_projection_receipts['unit'],'GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01','ACTIVATE');r=c['receipts']['READBACK'];p='/units/'+kind\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='pointer':p='/caller_chosen'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='fact':c['evidence_facts'][0]['bound_set']['stderr_empty']=False\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='seal':r['items']['units']['files']['c3po-massive.'+kind]['inode']+=1\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='boot':r['items']['boot']['device_numbers_compared']=False;reseal(c,'READBACK')\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='clock':r['observed_at']='not-a-time';reseal(c,'READBACK')\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='future':c['window']['start']=datetime.fromisoformat(r['observed_at'])-timedelta(seconds=1)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    with h.refused(code):b.supervisor_unit_record(c,{'evidence':'READBACK','kind':kind},p)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "\n"
+    },
+    {
+      "prefix": "+",
+      "text": "@pytest.mark.parametrize('damage,code',[('numeric','SEALED_PROGRAM_MODE_ENUM_INVALID'),('operation','SEALED_PROGRAM_MODE_SOURCE_MISMATCH')])\n"
+    },
+    {
+      "prefix": "+",
+      "text": "def test_operational_mode_enum_ignores_permission_tuples_and_refuses_wrong_source(programs,damage,code):\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    op='GO_WRITE_HOSTOPS02_K4_FILES_01';m=types.SimpleNamespace(**vars(programs.modules[op][2]['source']))\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    m.FILE_MODES=(0o600,0o644);m.DIRECTORY_MODES=(0o700,)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='numeric':m.K4_MODES=(0o700,)\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    if damage=='operation':m.OPERATION='GO_UNKNOWN'\n"
+    },
+    {
+      "prefix": "+",
+      "text": "    with h.refused(code):b.sealed_program_modes(m,op)\n"
+    }
+  ],
+  "schema": "RECONSTRUCTABLE_UNIFIED_DIFF_V1"
+}

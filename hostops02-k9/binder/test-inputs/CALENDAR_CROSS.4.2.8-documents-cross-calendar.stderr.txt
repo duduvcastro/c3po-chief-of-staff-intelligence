@@ -1,0 +1,2 @@
+<PY39_FIXTURE_ENV>/lib/python3.9/site-packages/exchange_calendars/exchange_calendar.py:2345: FutureWarning: 'T' is deprecated and will be removed in a future version. Please use 'min' instead of 'T'.
+  align: pd.Timedelta | str = pd.Timedelta(1, "T"),

@@ -1,0 +1,123 @@
+{
+  "core_manifest_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+  "core_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+  "external_binder_authenticate": {
+    "passed_per_interpreter": 1,
+    "runs": [
+      {
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 1
+        },
+        "junit": "QA_EXTERNAL/TESTS.binder.py39.xml",
+        "junit_sha256": "7ce201a88105ec957d6ef1616780c381b3833e58ee47c85dcb8965521327430a",
+        "scope": "UNMODIFIED_BINDER_C6_AUTHENTICATE_UNTOUCHABLE_SYNTHETIC_ONLY_NOT_RULES_OF_PREPARE",
+        "slot": "py39",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "ca2581073352b01027a1735ec53354284b6312c41927c89cf39c15bde93c2df2",
+        "tests": 1
+      },
+      {
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 1
+        },
+        "junit": "QA_EXTERNAL/TESTS.binder.py312.xml",
+        "junit_sha256": "ad2442b8ced3d585226d97fa83ce7f5c5c4f3d732a73c963b0098b8470a67ffe",
+        "scope": "UNMODIFIED_BINDER_C6_AUTHENTICATE_UNTOUCHABLE_SYNTHETIC_ONLY_NOT_RULES_OF_PREPARE",
+        "slot": "py312",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "3605abb09038ce24e90d81df8f7c0d87bb6f647a5e016bf461d8a8fcb408f6e9",
+        "tests": 1
+      }
+    ],
+    "scope": "SEPARATE_INERT_EXACT_BINDER_DRY_AUTHENTICATE_NOT_PREPARE_NOT_HOST",
+    "source_sha256": "c6fa6ebeb944888b93ab3fab85c734bf9c7a3bf6210df0aaccf4e53a06de0ea4",
+    "tests": 1
+  },
+  "first_dry_gate_fix_preserved": true,
+  "historical_result_not_reused": true,
+  "operation_sha256": "3c33b4767df864ba1b20891c20a9fe25565e73debc9d971877c881397e3aa677",
+  "previous_family_sha256": "923a40d75f5ae44aa6c5815006bb3922ef384bed73abaa5fb2dc3acc1cd7fcdf",
+  "revision": 7,
+  "runs": [
+    {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 157
+      },
+      "exit_code": 0,
+      "interpreter": {
+        "implementation": "CPython",
+        "pytest_version": "8.4.2",
+        "slot": "py39",
+        "version": "3.9.6"
+      },
+      "junit": "TESTS.local.py39.xml",
+      "junit_sha256": "fe7e4e79d849b8ae425b481619a683c188f209323ba196335f57adcbfc6bb90f",
+      "raw_junit_sha256": "9b3a9dd0f7e0c356c4494cf087b4a457dd2756e73991284082e0b2c8fe330154",
+      "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_stdout_sha256": "8dbb056e0ef822bc038adbcde0400e05dfc5e48f0a9d1a8cc5425b90b1981512",
+      "redactions": [
+        "HOSTNAME_ATTRIBUTE",
+        "[PRIVATE_TMP]"
+      ],
+      "scope": "LOCAL_SYNTHETIC_NOT_LINUX_HOST_L1_L2",
+      "stderr": "../../QA_EXTERNAL/py39.stderr.txt",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "TESTS.local.py39.txt",
+      "stdout_sha256": "97c1f0b4847fd78ad8ff94d2abe3a82306d6993ae80620e6fed784e80a3499d1"
+    },
+    {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 157
+      },
+      "exit_code": 0,
+      "interpreter": {
+        "implementation": "CPython",
+        "pytest_version": "9.1.1",
+        "slot": "py312",
+        "version": "3.12.14"
+      },
+      "junit": "TESTS.local.py312.xml",
+      "junit_sha256": "7f9b4158ff87f01f5ade3cfa574c77d6b03ea8a80d0bf26f483b285c93f2e808",
+      "raw_junit_sha256": "7cde5951059869736720f159f82217edb49083dd60322c860644c8ecac5bed90",
+      "raw_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_stdout_sha256": "815882c60829334a27d4ea621b42e41cad668718218de5d4e2916d8dc1d96e2f",
+      "redactions": [
+        "HOSTNAME_ATTRIBUTE"
+      ],
+      "scope": "LOCAL_SYNTHETIC_NOT_LINUX_HOST_L1_L2",
+      "stderr": "../../QA_EXTERNAL/py312.stderr.txt",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "TESTS.local.py312.txt",
+      "stdout_sha256": "815882c60829334a27d4ea621b42e41cad668718218de5d4e2916d8dc1d96e2f"
+    }
+  ],
+  "schema": "BOOTSTRAP_MORNING_WINDOW_VALIDATION_V1",
+  "source_sha256": "c55fe9dc56d845d8fb4d463e27c360138dbe1d372238cc632e72bfb34106f4c2",
+  "status": "PASS_LOCAL_SYNTHETIC_ONLY",
+  "test_files": {
+    "tests/fixtures.py": "fc6064988d657c9486eda500a7a1172207dda7bbd467cb21cd533813faf9cb99",
+    "tests/test_authentication.py": "d82cab6449cc8f4ea908e4db19ca427e4104d1dd99c41378b782654c0a8b8813",
+    "tests/test_bootstrap.py": "b5b9d6b77ff999259ecb3d17be75cc989db04ec8e012af199c11e2c7f861c46e",
+    "tests/test_dry_gate.py": "076c803f5067cac34d14da55c43359c58df249992a7f48884a77c966d80e002c"
+  },
+  "test_inventory": "validation/TEST_INVENTORY.json",
+  "test_inventory_sha256": "7b40bc2a579f58227c03d34cab316abf9182ead3327beb91fe9b166e9b497648",
+  "window_proposal": {
+    "authority": "PENDING_EXACT_MORNING_EMENDA_SIGNATURE_REVIEW_LINUX_RUNTIME",
+    "expires_at": "2026-10-06T12:31:00+00:00",
+    "not_before": "2026-10-06T12:26:00+00:00",
+    "scope": "CANDIDATE_NO_GO"
+  }
+}

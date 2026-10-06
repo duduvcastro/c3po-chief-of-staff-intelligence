@@ -1,0 +1,3 @@
+Prova offline: definir BIND_TEST_K8_CONFIG como o arquivo local de configuração do pacote certificado, com hash obrigatório de EXTERNAL_TEST_INPUTS.json. Depois executar python3 -B run_candidate_tests.py em Python 3.9 e 3.12 com pytest e exchange_calendars fixados conforme PROOF_REQUIREMENTS.md. As famílias restantes, núcleos, fontes de comparação histórica e documentos sintéticos estão no pacote. O script monta uma cópia privada temporária; nunca altera a aceitação operacional. Não usar o pacote incompleto diretamente como binder operacional.
+
+Executar o binder e a suíte como usuário não-root. Não incluir a entrada externa no branch público; ela só é copiada para o workspace privado da prova.

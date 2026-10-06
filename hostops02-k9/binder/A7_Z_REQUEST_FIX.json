@@ -1,0 +1,19 @@
+{
+  "accepted_seals_sha256": "78eb4ab25db448d677b5c54bb2f91346c194427fee88028260d1ba2f7be50d72",
+  "authenticated_source_unit_before_QA_sha256": "6a32a2de5160be48e6a5ed230cf733d950e6d3224d8ab892595f4242a6087e91",
+  "current_case_inventory_sha256": "f18650c770836f745284d52ec72e72176a8cab94df5720d6d18f354c1dc2b634",
+  "current_focal_receipt_sha256": "0536b55e9a5edc17170223b89cbda27124bef2e12c313abd976f46f3e0e974b9",
+  "current_integral_HOLD_receipt_sha256": "e57d312536f40af5cf666f435d8671a4de548555c1996ee697cf71d36e65671d",
+  "current_integral_diagnostic_sha256": "2e26c13bb4362cc17b7e92f6ca48d075f56891b9ae280983dae38287cb6d063b",
+  "fixture_provenance_sha256": "01740982bfbfb8281d16df80020619566674d9f38e5883e77e264b06a109fccb",
+  "full_Linux_host_PASS": false,
+  "operational_steps": 0,
+  "original_child_raw_UNAVAILABLE": true,
+  "outside_sandbox_auto_review_rejection_preserved": true,
+  "parent_binder_manifest_sha256": "5591a8ed4305f298f30364e956a0c27b4a59dfb4b630918a62b0942d51edff78",
+  "previous_metadata_is_historical": true,
+  "schema": "A7_Z_REQUEST_BINDER_CANDIDATE_V1",
+  "source_sha256": "c5730380bae38027be58f1b34c49eca072611d03d1ebc2837f2604a0ee2cf3d2",
+  "status": "CANDIDATE_FOCAL24_PASS_FULL539_HOLD_W1_CHILD",
+  "test_file_sha256": "416d512cf5d303c1f871a3f601167fa0dc1bfe7dc72de44c1bb250d450701939"
+}

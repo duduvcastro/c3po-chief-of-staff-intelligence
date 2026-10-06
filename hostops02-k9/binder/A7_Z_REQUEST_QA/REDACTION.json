@@ -1,0 +1,191 @@
+{
+  "maps": [
+    {
+      "artifact": "focal24.py39.xml",
+      "categories": [
+        "XML_AWARE_ATTR_TEXT_ESCAPE_AND_HOSTNAME_TOKEN",
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "a62b3be1c33ea7d84f03c70c0e85280a46c1eae21b6fd65f0630f9277ee6a82a",
+      "published_sha256": "0ced761bd52c98a8819cb86666a73f10b269edecd3b5d3f55595163561927430",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "focal24.py39.stdout.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "9eeefdb49b236eea2675306bc8a2c71d066175c13a218c82fbd0660fb709858c",
+      "published_sha256": "c8026eee536dd625f887c320868d4d4917be21334c365989afbee270a71b46fc",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "focal24.py39.stderr.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.py39.xml",
+      "categories": [
+        "XML_AWARE_ATTR_TEXT_ESCAPE_AND_HOSTNAME_TOKEN",
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "de654758f5a59ffb62fac87345685aee946ac62cef488f91ed0578b99b05828f",
+      "published_sha256": "32f2e44f45267f95da67dd19093a35a238313bbbba2e54435fdd47e9f71cd466",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.py39.stdout.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "8dbd18739c6f6e67006a0fe92ccfaa5b90d779ad4b26a28e634220f1ad7b4c8e",
+      "published_sha256": "48a092e4dc0857dbbdd0bf7c41705e326bf7432564d40d8f399a42093a41eb66",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.py39.stderr.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.W1-child.py39.xml",
+      "categories": [
+        "XML_AWARE_ATTR_TEXT_ESCAPE_AND_HOSTNAME_TOKEN",
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "6841747c53292755e532fe93a071c14a9c4839eb629413a437ef924fd16e506a",
+      "published_sha256": "955adaa886c979077c6c2ac2a98c368e6b347773da44887a90603aa6c92b432c",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "focal24.py312.xml",
+      "categories": [
+        "XML_AWARE_ATTR_TEXT_ESCAPE_AND_HOSTNAME_TOKEN",
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "b9281ea249f9704ce465a97b25d9da9a8bfa4831fe51de6f7bcd64c290eab83d",
+      "published_sha256": "73b74cc24fafc2228940ed4f0fcb7d2302c6ccfc0dc0d487bd13f556aa17b0d8",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "focal24.py312.stdout.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "cafad75a79093740238130e07207fe460b41db8a4f60deb3955765fccd7138fc",
+      "published_sha256": "cafad75a79093740238130e07207fe460b41db8a4f60deb3955765fccd7138fc",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "focal24.py312.stderr.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.py312.xml",
+      "categories": [
+        "XML_AWARE_ATTR_TEXT_ESCAPE_AND_HOSTNAME_TOKEN",
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "f1feeeabb0dbac73c499bd17dc10b3743f2ec29788630679f280fd9dec7de689",
+      "published_sha256": "4cf744fa63fd6e2a0c88985edaebb725f48505ad3d5cb768bc3cc42c80ab4590",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.py312.stdout.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "2b4546649a2720e6dfd3d21580896cc0a23c6c53a6e8714b22e26f28e47807e2",
+      "published_sha256": "b4180e4ea7441421778ed9a3cd5d551129410ccd10f7967b94e624d77f6e5133",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.py312.stderr.txt",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "full539-r1-HOLD.W1-child.py312.xml",
+      "categories": [
+        "XML_AWARE_ATTR_TEXT_ESCAPE_AND_HOSTNAME_TOKEN",
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "7636f4ecf0c487c0e2b4c1d61a8e718c069fa465194d93e50ac26d2509ec212c",
+      "published_sha256": "ccb21caefb8773ed58e3d6f4cb060576f56744530126b5b2138fda0d04466d3d",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "FOCAL24.json",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "0536b55e9a5edc17170223b89cbda27124bef2e12c313abd976f46f3e0e974b9",
+      "published_sha256": "0536b55e9a5edc17170223b89cbda27124bef2e12c313abd976f46f3e0e974b9",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "W1_SYSTEM_CHILD_SEPARATE_REPRODUCTION.json",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "457cf222f5deba4708c1c4122abc933350b99620a054b7a7dbec7a090fc086fd",
+      "published_sha256": "457cf222f5deba4708c1c4122abc933350b99620a054b7a7dbec7a090fc086fd",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "SOURCE.diff",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "0498edeb8754e2a2316a3ede62509d5cef65f49a84e46baaa56f8639863238bf",
+      "published_sha256": "0498edeb8754e2a2316a3ede62509d5cef65f49a84e46baaa56f8639863238bf",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "SOURCE_INDEPENDENT_REVIEW.json",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "da30a09bae063ddad1ea67a00e6dcbecb1e89ecbec825ed7e2b0c6829f693229",
+      "published_sha256": "da30a09bae063ddad1ea67a00e6dcbecb1e89ecbec825ed7e2b0c6829f693229",
+      "semantics_counts_warnings_errors_preserved": true
+    },
+    {
+      "artifact": "CONTROLS_INDEPENDENT_REVIEW.json",
+      "categories": [
+        "EXACT_LOCAL_PATH_PREFIX_TOKENS"
+      ],
+      "original_private_raw_sha256": "a80cc6e3c0140027b4daee9e16ac0d8f6056171d0ae3ee720a51eb87b523ba25",
+      "published_sha256": "a80cc6e3c0140027b4daee9e16ac0d8f6056171d0ae3ee720a51eb87b523ba25",
+      "semantics_counts_warnings_errors_preserved": true
+    }
+  ],
+  "original_path_literals_not_published": true,
+  "private_originals_preserved": true,
+  "schema": "QA_LOSSLESS_XML_AWARE_PUBLIC_REDACTION_V1",
+  "supplemental_synthetic_test_id_redaction_sha256": "873c32b919ed2fb5504d9c3c239247b7fe1eafc89b9e228d82036494dc14dd6e",
+  "symbolic_prefixes": [
+    "${WORKSPACE_ROOT}",
+    "${TEMP_ROOT}",
+    "${PROOF_TMP}",
+    "${LOCAL_HOSTNAME}"
+  ]
+}

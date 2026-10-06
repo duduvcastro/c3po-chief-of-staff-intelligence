@@ -1,0 +1,12 @@
+{
+  "accepted_findings": 0,
+  "excluded_private_historical_full25_package": true,
+  "final_files_including_receipt_and_manifest": 322,
+  "findings": 0,
+  "no_waiver": true,
+  "scan_scope": "ENTIRE_NEW_PUBLIC_SUBSET_PACKAGE_ONLY",
+  "scanner_source_sha256": "8ddaa70e8ec6c7d0cc94c22873ec68100a4a40e0d0449907ab66553d0ca8e348",
+  "scanner_unchanged": true,
+  "schema": "SUBSET_PUBLIC_SAFETY_V1",
+  "status": "PUBLIC_SAFETY_CLEAN_NO_WAIVER"
+}

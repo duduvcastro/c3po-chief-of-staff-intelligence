@@ -1,0 +1,7 @@
+# REAL_TREE_CONFORMANCE
+
+Esta unidade contém a família K9R248c e o núcleo75 arquivos, copiados somente pelos manifestos originais, além da fonte bb255 do binder. O programa executa oito casos TREE com a FakeHost genuína: primeira árvore vazia e sete recusas. Cada módulo executado é conferido por hash sobre o mesmo buffer antes de compilar. Não instancia Native nem executa comandos host/Docker. As alterações dos cenários acontecem apenas na memória antes da execução; o programa TREE não pode modificar esse modelo.
+
+Interface: `run_tree_conformance.py --python PY --package ROOT --evidence-out FRESH`. O Python deve ser explicitamente absoluto e já conter pytest, requerido pelos fixtures originais. Não há instalação, fallback ou omissões. ROOT não pode conter links; FRESH deve ser externo, novo e vazio. Resultado: RESULT.json, TESTS.xml e oito recibos emulados. A saída JSON reproduz os mesmos dados de RESULT.json. Qualquer falta, alteração ou falha recusa a prova.
+
+Sucesso: PASS_REAL_K9R_EMULATED_TREE_SCHEMA_CONFORMANCE, tests=8, passed=8, failures=0, errors=0, omissions=0. JUnit possui os mesmos oito nomes compilados. Inventário integral antes/depois deve ser igual. Os fatos BOUND usados para exercitar a regra do binder são sintéticos: a prova valida a forma produzida pelo K9R real emulado e sua aceitação/recusa estreita. Não comprova BOUND real, Linux, Docker, host, assinatura, autorização, gates ou despacho.

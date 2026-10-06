@@ -1,0 +1,124 @@
+{
+ "accepted_findings": [
+  {
+   "classes": [
+    "MAIL_OR_USER_AT_HOST"
+   ],
+   "file": "binder/READER_UNIT_LINK_GUARD.diff",
+   "reason": "1730c4ae candidate only: false-positive Python pytest decorators in the reviewed diff; no mail address"
+  },
+  {
+   "classes": [
+    "MAIL_OR_USER_AT_HOST"
+   ],
+   "file": "binder/fixtures/hostops01/REVISION_2_TO_3.diff",
+   "reason": "1730c4ae candidate only: false-positive Python pytest decorators in the reviewed historical diff; no mail address"
+  },
+  {
+   "classes": [
+    "IPV4_ADDRESS"
+   ],
+   "file": "binder/fixtures/w1/TESTS.xml",
+   "reason": "1730c4ae candidate only: test IDs containing the same reviewed synthetic frozen W1 IP markers; no host data"
+  },
+  {
+   "classes": [
+    "IPV4_ADDRESS"
+   ],
+   "file": "binder/fixtures/w1/test_w1_preflight_once.py",
+   "reason": "1730c4ae candidate only: synthetic frozen MockWorld network and LEAKS/never-emit IP markers; no host data or network use"
+  }
+ ],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-morning-proof-20261006",
+ "family": "hostops02-k9",
+ "links": [
+  {
+   "path": "core",
+   "target": "probe_core"
+  }
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "binder",
+   "files": 1887,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "1730c4aea4ceb82d4772dc7dd530a199c20844162604c565cbcf0ade95f5118d",
+   "source": "binder",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "bootstrap_identity",
+   "files": 30,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "7068c24fb3a771a5250e1070e46b6f98abb244d963809a668c331337493cf149",
+   "source": "bootstrap_identity",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "core_bootstrap_identity",
+   "files": 15,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+   "source": "core_bootstrap_identity",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "subset_registry25",
+   "files": 324,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "46efe0aa01c1ebc19b8fc048af56d986719b1f413a69f1af8c06022b349b1815",
+   "source": "subset_registry25",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "tree_conformance",
+   "files": 115,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "7c68376151387930758ffecb4a0d4f3cf0a5bde4c5e0f29834fff62af4cca4df",
+   "source": "tree_conformance",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "capacity_probe",
+   "files": 34,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "987ab4708e9a9d94c0c1a96f5fbbe160409c933376f3c099e7d0ce66ff25de58",
+   "source": "capacity_probe",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "probe_core",
+   "files": 75,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+   "source": "probe_core",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "probe_documents",
+   "files": 2,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "c03596242ca21c74e320861d01cbf82dfeb549723256561e4eb0f252716c8e13",
+   "source": "probe_documents",
+   "withheld": {}
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+..............s......................................................... [ 13%]
+........................................................................ [ 27%]
+........................................................................ [ 41%]
+........................................................................ [ 55%]
+........................................................................ [ 69%]
+........................................................................ [ 83%]
+..................................................................s..... [ 97%]
+ssssssssss.                                                              [100%]
+=========================== short test summary info ============================
+SKIPPED [1] ../../../../../..${TMPDIR}:785: no executed bound set on this machine
+SKIPPED [1] ../../../../../..${TMPDIR}:18: today is outside the date set of the family, or too close to midnight UTC
+SKIPPED [1] ../../../../../..${TMPDIR}:84: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:99: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:128: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:95: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [4] ../../../../../..${TMPDIR}:116: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TMPDIR}:137: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TMPDIR}:171: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+503 passed, 12 skipped in 241.27s (0:04:01)

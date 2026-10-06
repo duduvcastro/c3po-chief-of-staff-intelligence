@@ -1,0 +1,11 @@
+--- historical-source-9fec/bind_once.py
++++ candidate-source/bind_once.py
+@@ -4238,7 +4238,7 @@
+                  ('/worker_container_id','/items/worker/container_id'),('/evidence_boot_id_sha256','/boot_id_sha256'))),
+          'BOOTSTRAP_K3_CHAIN_NOT_LINKED')
+     start,end=bootstrap_clock(receipt);_,bootstrap_end=bootstrap_clock(bootstrap)
+-    try:request_start=utc_instant(request.get('not_before'));request_end=utc_instant(request.get('not_after'))
++    try:request_start=parse_utc(request.get('not_before'),code='BOOTSTRAP_K3_CHAIN_NOT_LINKED');request_end=parse_utc(request.get('not_after'),code='BOOTSTRAP_K3_CHAIN_NOT_LINKED')
+     except (ValueError,TypeError):raise Refused('BOOTSTRAP_K3_CHAIN_NOT_LINKED')
+     need(bootstrap_end<=request_start<=start<=end<=request_end
+          and request_start.date().isoformat()==BOOTSTRAP_DAY

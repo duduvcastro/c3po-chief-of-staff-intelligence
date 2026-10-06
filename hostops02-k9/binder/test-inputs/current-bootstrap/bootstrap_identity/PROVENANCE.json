@@ -1,0 +1,52 @@
+{
+  "assembly_sha256": "e16d156be189089cd202c69dc43957d73e6c40623312028b62df452b66236067",
+  "base_integrity_file": "../INPUTS.before.json",
+  "base_integrity_sha256": "bcd5fb75d81d1eea2c312529e12a2f3284ca23c3b78e2b239a2cd2407086bf18",
+  "changed_executable_inputs": {
+    "op.py": "3c33b4767df864ba1b20891c20a9fe25565e73debc9d971877c881397e3aa677",
+    "tests/fixtures.py": "fc6064988d657c9486eda500a7a1172207dda7bbd467cb21cd533813faf9cb99"
+  },
+  "core_generation": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+  "core_manifest_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+  "design_sha256": "ee014ee54bd131de4ff09e4971e40b2539cf1207b51cf16df0e9fa7ef8be5e1e",
+  "dry_gate_delta_pt": "A primeira chamada gate foi movida para antes dos relógios e dos construtores puros, fora de try. Sua exceção propaga por identidade, sem host ou efeitos. O gate antigo dentro de try foi retirado; número e ordem dos gates posteriores não mudaram. Falhas posteriores mantêm o protocolo de recibo e claim consumido/PARCIAL.",
+  "emenda2_rev2_sha256": "bac09de11e5f2bc290793755763b5c85b316ef641d54693ce9b524dffc730633",
+  "executed_binder_source_sha256": "c6fa6ebeb944888b93ab3fab85c734bf9c7a3bf6210df0aaccf4e53a06de0ea4",
+  "family": "HOSTOPS02_BOOTSTRAP_IDENTITY",
+  "go_literal_required": {
+    "driver_sha256": "a3c2a153189d0abd85f1c3a8d24d1472a42b80c2461289d583c4f211724ecbb6",
+    "expected_comparisons": 46,
+    "helper_sha256": "0850dfaad2c86bd1cebf2b017556554d84338bef7273b59805d8089690cab46f",
+    "local_result": "NOT_RUN_GO_UNAVAILABLE"
+  },
+  "historical_original_family_sha256": "b0a1281269e55805f37606fc3a010bc5274b550252aa0ae3d251eb63c04fcc4f",
+  "morning_delta_pt": "Somente as duas constantes de janela BOOTSTRAP_START/END e NOW da fixture mudam. Primeiro gate, efeitos, claim único por época/slot independente de GO, núcleo, orçamento e demais funções permanecem idênticos. A família revisada não promove o binder c6, que ainda recusa esta janela em RULES_OF.",
+  "mutations_of_original_controls": 0,
+  "negative_duplicate_LIVE_raw_proof_sha256": "68e10bfa2d616cae4f109351025d143673dd332dfd4751cce0b5125c0f8d8438",
+  "operation_part": "3c33b4767df864ba1b20891c20a9fe25565e73debc9d971877c881397e3aa677",
+  "original_k9r_manifest_sha256": "248c2ae45d096ec3dfa8a845ecff8d1032f8d02bb71ec6cdfc019d70c7710c66",
+  "original_k9r_operation_part_sha256": "09528cdb7bc2b15cb6f0a83be7fff9a9bedb610319b6949882f0de97d2f9cd5c",
+  "previous_emenda_scope": "HISTORICAL_SCOPE_ONLY_NOT_AUTHORITY_FOR_NEW_WINDOW",
+  "previous_family_sha256": "923a40d75f5ae44aa6c5815006bb3922ef384bed73abaa5fb2dc3acc1cd7fcdf",
+  "previous_source_sha256": "a7987a369245d3a1b71b1b48e24ec7389da8e517f82b9d6a112ee92a46901a2a",
+  "prior_window_metadata_authority": "HISTORICAL_ONLY",
+  "revision": 7,
+  "runtime_effects_in_construction": "SOMENTE_EMULADOS_OU_PRIMITIVAS_EM_TMP_PRIVADO",
+  "runtimes": {
+    "bootstrap_identity.py": "c55fe9dc56d845d8fb4d463e27c360138dbe1d372238cc632e72bfb34106f4c2",
+    "dispatch_once.py": "b11eb94c76770c4feefd33d8c7450dcccd0f89135ad4c2ace250d2dcb4503197",
+    "launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+    "transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918"
+  },
+  "schema": "BOOTSTRAP_FAMILY_PROVENANCE_V1",
+  "scope": "CONSTRUCAO_OFFLINE_NOVA_FAMILIA_NUCLEO_PROPRIO",
+  "source": "c55fe9dc56d845d8fb4d463e27c360138dbe1d372238cc632e72bfb34106f4c2",
+  "spec": "afef384bb7295e2158bc61b3129099ce1f9b26c083de19cd9b4731dbb9cf973b",
+  "unchanged_core_manifest_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+  "window_proposal": {
+    "authority": "PENDING_EXACT_MORNING_EMENDA_SIGNATURE_REVIEW_LINUX_RUNTIME",
+    "expires_at": "2026-10-06T12:31:00+00:00",
+    "not_before": "2026-10-06T12:26:00+00:00",
+    "scope": "CANDIDATE_NO_GO"
+  }
+}

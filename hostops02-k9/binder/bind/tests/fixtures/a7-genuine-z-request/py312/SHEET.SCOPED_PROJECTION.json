@@ -1,0 +1,47 @@
+{
+  "hostops02": {
+    "rules": {
+      "k9_prerequisite": {
+        "bootstrap_role": "BOOTSTRAP",
+        "claim_limits": "BOOTSTRAP_EXECUTION_ONLY_NOT_RECEIPT_CITATION",
+        "e0_role": "E0",
+        "identity_source": "BOOTSTRAP_IDENTITY_OBSERVED",
+        "post_role": "M2_POST",
+        "program": "K3K9",
+        "sendable_seconds": 221,
+        "tree_complete": false,
+        "tree_role": "TREE_PRE"
+      }
+    }
+  },
+  "mode": "REHEARSAL",
+  "operation": "GO_WRITE_HOSTOPS02_K3K9_SECRETS_01",
+  "plan_values_copied_from_receipts": [
+    {
+      "evidence_role": "TREE_PRE",
+      "plan_pointer": "/source_rows",
+      "receipt_pointer": "/items/september_sources/components",
+      "receipt_transformation": "BOOTSTRAP_SOURCE_ROWS_V1"
+    },
+    {
+      "evidence_role": "TREE_PRE",
+      "plan_pointer": "/data_volume_chain",
+      "receipt_pointer": "/items/september_sources/data_volume_rows"
+    },
+    {
+      "evidence_role": "BOOTSTRAP",
+      "plan_pointer": "/evidence_boot_id_sha256",
+      "receipt_pointer": "/boot_id_sha256"
+    },
+    {
+      "evidence_role": "TREE_PRE",
+      "plan_pointer": "/secrets_chain",
+      "receipt_pointer": "/items/directory:SECRETS/observed_rows"
+    },
+    {
+      "evidence_role": "BOOTSTRAP",
+      "plan_pointer": "/worker_container_id",
+      "receipt_pointer": "/items/worker/container_id"
+    }
+  ]
+}

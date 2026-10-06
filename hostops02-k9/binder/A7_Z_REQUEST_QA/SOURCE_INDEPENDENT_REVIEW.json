@@ -1,0 +1,58 @@
+{
+  "candidate_source_sha256": "c5730380bae38027be58f1b34c49eca072611d03d1ebc2837f2604a0ee2cf3d2",
+  "concrete_blockers_observed": [],
+  "controls_reviewed": false,
+  "delta": {
+    "AST_only_two_REQUEST_parser_calls_changed": true,
+    "AST_other_top_level_objects_unchanged": true,
+    "byte_line_count_changed": 1,
+    "changed_function": "bootstrap_k3env_identity",
+    "explicit_refusal_code": "BOOTSTRAP_K3_CHAIN_NOT_LINKED",
+    "parser": "existing parse_utc",
+    "request_fields": [
+      "not_before",
+      "not_after"
+    ]
+  },
+  "diff_sha256": "0498edeb8754e2a2316a3ede62509d5cef65f49a84e46baaa56f8639863238bf",
+  "full_L2_pass": false,
+  "gates": [
+    "Author genuine-request positives and strict malformed/identity/link/clock negatives under CPython3.9 and3.12.",
+    "Independent final controls and source/manifest linkage.",
+    "Fresh affected REHEARSAL proof with the new source; old r12 worlds and BOUNDs remain historical.",
+    "New measured operative runtime and Linux/owner authority remain separate gates."
+  ],
+  "genuine_REQUEST_buffers_reviewed": [
+    {
+      "exterior": "py39",
+      "not_after": "2026-10-06T12:43:00Z",
+      "not_before": "2026-10-06T12:38:00Z",
+      "sha256": "75a73076e38f252d13be57ead9fbfa0faed261134fd015b531ff599672448ec8"
+    },
+    {
+      "exterior": "py312",
+      "not_after": "2026-10-06T12:43:00Z",
+      "not_before": "2026-10-06T12:38:00Z",
+      "sha256": "7eafd4831f99872d122c972159210bca9dbdedcf17a38663a9cbfb5add4b37ee"
+    }
+  ],
+  "historical_py312_scope_reconciliation_sha256": "49b3254c5d4343cd10bdd81b50b2fe1e948469500254c584abda6d97ceb1fb45",
+  "historical_py39_HOLD_reconciliation_sha256": "66f34bb2d41009ae17c8a8bdc57f5cdb25c9f1a0d27bb57a3d8b798058192f6f",
+  "invariants": [
+    "utc_instant and all receipt clock parsing and every other caller remain byte-for-byte unchanged.",
+    "The existing strict UTC_SECOND fullmatch accepts only whole-second UTC Z or +00:00; parse_utc normalizes through +00:00 for CPython3.9 compatibility and refuses invalid types, timezone offsets, fractional seconds and invalid calendar values.",
+    "Every existing K3 completeness, same-identity, BOUND source, request digest, bootstrap citation and copy provenance check remains unchanged.",
+    "Chronology and same-day bounds after the two parser calls remain unchanged.",
+    "The two calls do not reread, rewrite or reseal REQUEST buffers."
+  ],
+  "limits": [
+    "Static source review only; it does not claim executed corrected A7 prepare or whole-chain L2.",
+    "No old proof transfers automatically to new source bytes."
+  ],
+  "new_execution_by_reviewer": 0,
+  "old_source_sha256": "9fec60db32ac9a275876d6a421b95521aaf19f79ba05c0a088af07f6c26758ee",
+  "runtime_linux_host_authority_inferred": false,
+  "schema": "MORNING_A7_Z_REQUEST_MINIMAL_SOURCE_INDEPENDENT_REVIEW_V1",
+  "source_or_emission_modified_by_reviewer": false,
+  "status": "SOURCE_DELTA_REVIEWED_NO_CONCRETE_BLOCKER_OBSERVED_CONTROLS_PENDING"
+}

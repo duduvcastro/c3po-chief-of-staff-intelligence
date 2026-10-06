@@ -1,0 +1,552 @@
+{
+  "document_input_output_and_listing_files_identical": 462,
+  "documents_and_two_actual_test_files_identical": true,
+  "files": [
+    {
+      "categories": [
+        "MANIFEST_RESEAL"
+      ],
+      "file": "bind/SHA256SUMS",
+      "prefix_replacements": [],
+      "published_sha256": "dcd768448330705ab6ee0dcb981352b8aaecaec4707b1abefebe18792fb8b0d6",
+      "raw_private_sha256": "668d6a6c089372b486f0a97f770b847338cba219af2ae5af2478ef64fd3e1d4a"
+    },
+    {
+      "categories": [
+        "TWO_FIXTURE_MANIFEST_PINS_ONLY"
+      ],
+      "file": "bind/tests/calendar_fixture_selection.py",
+      "prefix_replacements": [],
+      "published_sha256": "e0f5b93bfd8660980c5da79961ff5349ef401e79c0e98923c6ca064b136fc804",
+      "raw_private_sha256": "8a25371c17a521ad86045c0088ec55ca003aa294331ecbfb8e79901437fc824a"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/CALENDAR_CROSS.4.2.8-documents-cross-calendar.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/CALENDAR_CROSS.4.2.8-k12-documents-cross-calendar.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "PUBLISHED_FIXTURE_MANIFEST_PINS",
+        "PUBLICATION_TRANSFORM_DESCRIPTION"
+      ],
+      "file": "test-inputs/CALENDAR_FIXTURE_REVIEW.md",
+      "prefix_replacements": [],
+      "published_sha256": "e0fd204d9c5776b312c2f4c6c0e47ec5a48319de6bfdfe2028ac779764e06d6c",
+      "raw_private_sha256": "e1d6adf3599d9b594869905cd6211d5678b898f7c53a5c8153cfcf273078aa96"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/CALENDAR_GENERATION.py39.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/CALENDAR_PUBLIC_QA.py312.txt",
+      "published_sha256": "37f5cf9abcc576a615bf0d2861759ed41995eefcbc6ec8704598b59ab32e944b",
+      "raw_private_sha256": "37f5cf9abcc576a615bf0d2861759ed41995eefcbc6ec8704598b59ab32e944b"
+    },
+    {
+      "categories": [
+        "QA_HOSTNAME_ATTRIBUTE_REMOVAL"
+      ],
+      "file": "test-inputs/CALENDAR_PUBLIC_QA.py312.xml",
+      "published_sha256": "9cd87d6b8b4e3b8922dd79464364e49e93179303558c3036c7d043181a543320",
+      "raw_private_sha256": "1a09049d793f13bb820b9fcad5d41c29786317738d1bdecace4fdcd826002788"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/CALENDAR_PUBLIC_QA.py39.txt",
+      "published_sha256": "8f365b69733ccede981f41da70f3e3677b1a1833402c3ae4197a0eccb832f324",
+      "raw_private_sha256": "e128c03849bf29c3357584968934d290a2a542712e1eee01d71428acdaefa730"
+    },
+    {
+      "categories": [
+        "QA_HOSTNAME_ATTRIBUTE_REMOVAL"
+      ],
+      "file": "test-inputs/CALENDAR_PUBLIC_QA.py39.xml",
+      "published_sha256": "271e46bf13802a4cdf32550de1b058d1c99432b132a714e56cadc211c9fee7d4",
+      "raw_private_sha256": "393f1e0be717b049551c632b470d0a351b0d68aeebaa173d815119c400e7e38d"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION",
+        "PUBLISHED_FIXTURE_AND_STREAM_HASH_REFERENCES",
+        "PRIVATE_AND_PUBLIC_QA_ATTRIBUTION"
+      ],
+      "file": "test-inputs/CALENDAR_VALIDATION.json",
+      "prefix_replacements": [
+        {
+          "category": "SYNTHETIC_FIXTURE_WORKDIR",
+          "occurrences": 8,
+          "token": "<SYNTHETIC_FIXTURE_ROOT>"
+        },
+        {
+          "category": "GENERATOR_RUNTIME_WORKDIR",
+          "occurrences": 4,
+          "token": "<GENERATOR_RUNTIME>"
+        },
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 2,
+          "token": "<PY39_FIXTURE_ENV>"
+        },
+        {
+          "category": "ISOLATED_PY312_ENVIRONMENT",
+          "occurrences": 2,
+          "token": "<PY312_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "f0b4307c1126164710edb459ab284a0eb70aa1e321bcd3999427ed722acd94bc",
+      "raw_private_sha256": "96ba07aea2abfdb055fbc9036613743e1d8bc6b1f92d9ed2219dd606e660536c"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION",
+        "PUBLISHED_STREAM_HASH_REFERENCES",
+        "PUBLISHED_OUTPUT_HASH_REFERENCES",
+        "RAW_PRIVATE_PROVENANCE_LINK"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.13.2/PROVENANCE.json",
+      "prefix_replacements": [
+        {
+          "category": "SYNTHETIC_FIXTURE_WORKDIR",
+          "occurrences": 60,
+          "token": "<SYNTHETIC_FIXTURE_ROOT>"
+        },
+        {
+          "category": "GENERATOR_RUNTIME_WORKDIR",
+          "occurrences": 20,
+          "token": "<GENERATOR_RUNTIME>"
+        },
+        {
+          "category": "ISOLATED_PY312_ENVIRONMENT",
+          "occurrences": 21,
+          "token": "<PY312_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "7fc36858d44069b63d93c7755d801235bfe60155fe496033036a27ca2bce8ccf",
+      "raw_private_sha256": "29b2585c7cdc5aeab12368a74a30eb8fe1831011d1a377c7ddb8abfbcab819c5"
+    },
+    {
+      "categories": [
+        "MANIFEST_RESEAL"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.13.2/SHA256SUMS",
+      "prefix_replacements": [],
+      "published_sha256": "e2d952c55ec817110d04cf80c99acf9cf649c94639855ea01efffe994357f31a",
+      "raw_private_sha256": "007e802311aa62566a7c727b919b208f3edf12d81c45018fcaa0bb250dbf57a1"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION",
+        "PUBLISHED_STREAM_HASH_REFERENCES",
+        "PUBLISHED_OUTPUT_HASH_REFERENCES",
+        "RAW_PRIVATE_PROVENANCE_LINK"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/PROVENANCE.json",
+      "prefix_replacements": [
+        {
+          "category": "SYNTHETIC_FIXTURE_WORKDIR",
+          "occurrences": 60,
+          "token": "<SYNTHETIC_FIXTURE_ROOT>"
+        },
+        {
+          "category": "GENERATOR_RUNTIME_WORKDIR",
+          "occurrences": 20,
+          "token": "<GENERATOR_RUNTIME>"
+        },
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 21,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "31099dd1b0a05ee46a680c5b3576df8e6800d687e88c38c26b046490c2a32473",
+      "raw_private_sha256": "4a66a917246375597b9fb68558950605c0c7568c23f6e9a4bf72e98a695ddc1f"
+    },
+    {
+      "categories": [
+        "MANIFEST_RESEAL"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/SHA256SUMS",
+      "prefix_replacements": [],
+      "published_sha256": "01d7e54324eb6e08919c1991eff635f577bf0fa36c6b105daa38eec1f899ca20",
+      "raw_private_sha256": "2cccd017187e115b28b95ca2502133d51f647c7e52c8a58bdb447c5d3cb17e1b"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-06-contingency_1-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-06-contingency_1-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-06-contingency_2-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-06-contingency_2-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-06-primary-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-06-primary-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-07-contingency_1-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-07-contingency_1-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-07-contingency_2-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-07-contingency_2-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-07-primary-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-07-primary-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-08-contingency_1-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-08-contingency_1-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-08-contingency_2-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-08-contingency_2-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-08-primary-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/documents-2026-10-08-primary-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/k12-documents-2026-10-06-primary-day.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    },
+    {
+      "categories": [
+        "LOCAL_PATH_PREFIX_REDACTION"
+      ],
+      "file": "test-inputs/calendar-fixtures/4.2.8/generation-logs/k12-documents-2026-10-06-primary-verify.stderr.txt",
+      "prefix_replacements": [
+        {
+          "category": "ISOLATED_PY39_ENVIRONMENT",
+          "occurrences": 1,
+          "token": "<PY39_FIXTURE_ENV>"
+        }
+      ],
+      "published_sha256": "9a10d703c30f7585bd4a588bf62cbca53f45a686b34a5fbb5f6ba72ffc01ef5f",
+      "raw_private_sha256": "d038f1e95de89dde4558d4b56febf00dce56070381f2501681875f6668ce548e"
+    }
+  ],
+  "helper_change": "EXACTLY_TWO_MANIFEST_PIN_LITERALS_NO_LOGIC_CHANGE",
+  "map": [
+    {
+      "category": "SYNTHETIC_FIXTURE_WORKDIR",
+      "original_prefix_sha256": "9bfb80a3255a09fc27ab0bd226b99d01fb32b5a66f9443f4767c797ff7c6e5d8",
+      "published_token": "<SYNTHETIC_FIXTURE_ROOT>"
+    },
+    {
+      "category": "GENERATOR_RUNTIME_WORKDIR",
+      "original_prefix_sha256": "9eeeffedab447d289745031b2b41d41d983f923ef26a8558298bcdf7414db7cd",
+      "published_token": "<GENERATOR_RUNTIME>"
+    },
+    {
+      "category": "ISOLATED_PY39_ENVIRONMENT",
+      "original_prefix_sha256": "521f6777d1c4605ff7fa03c131d1f5e8994fc4b011408005962a63984ce0a1ec",
+      "published_token": "<PY39_FIXTURE_ENV>"
+    },
+    {
+      "category": "ISOLATED_PY312_ENVIRONMENT",
+      "original_prefix_sha256": "7a265bdbb3dfd1d691fd2823f82bc20aac7f0622ac16fafc8b873d7f8ce8eddd",
+      "published_token": "<PY312_FIXTURE_ENV>"
+    },
+    {
+      "category": "PUBLICATION_QA_WORKDIR",
+      "original_prefix_sha256": "ae219c3db1dc681123fa45fce30dd53c86ebb20d171e75609a27119c5afa959b",
+      "published_token": "<PUBLISHED_CANDIDATE_WORKDIR>"
+    }
+  ],
+  "method": "EXACT_PREFIX_TOKEN_SUBSTITUTION_PLUS_HASH_REFERENCE_RESEAL",
+  "private_raw_artifacts_retained": true,
+  "raw_private_candidate_manifest_sha256": "6de6ce85342cbf1d5aa87cc258e38b6a97f8cd6677561b19e952cc80f024d501",
+  "root_manifest_note": "ROOT_MANIFEST_DIGEST_IS_EXTERNAL_TO_THIS_SELF_REFERENCING_REPORT",
+  "schema": "BINDER_CALENDAR_PUBLICATION_REDACTION_V1",
+  "scope": "OFFLINE_EVIDENCE_ONLY_NO_RULE_OR_DOCUMENT_CHANGE_NO_LINUX_PASS",
+  "warnings_errors_results_and_counts_preserved": true
+}

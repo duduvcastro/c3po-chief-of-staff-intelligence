@@ -1,0 +1,12 @@
+{
+  "current_findings": 19,
+  "new_files": 1887,
+  "new_findings": [],
+  "old_files": 1849,
+  "old_findings": 19,
+  "previous_21finding_projection_preserved_external_sha256": "29782d97d376950299e3b86a9e27547e34ac5d5f78bb97cc6f5d8c3fb9d12186",
+  "scanner_sha256": "a1c534f0f67f5daa73d3ac12a51573c6fcfa840dca994f19f0036f993dee9be2",
+  "schema": "A7_PUBLIC_SAFETY_FINAL_DELTA_V1",
+  "scope": "NEW_FILES_DELTA_NO_WAIVER_BASELINE_SYNTHETIC19_SEPARATE",
+  "synthetic_canary_redaction_sha256": "873c32b919ed2fb5504d9c3c239247b7fe1eafc89b9e228d82036494dc14dd6e"
+}

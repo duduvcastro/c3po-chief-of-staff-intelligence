@@ -1,0 +1,108 @@
+{
+  "profiles": {
+    "subset_registry25": {
+      "case_names": [
+        "input_bytes_and_modes_unchanged_after_all_cases",
+        "real_family_core_HOSTOPS02_BOOTSTRAP_IDENTITY",
+        "real_family_core_HOSTOPS02_K3K9_SECRETS",
+        "real_family_core_HOSTOPS02_K3_SECRET_ENV",
+        "refuses_absent_BOOT_registry_row_DTO",
+        "refuses_altered_binder_source",
+        "refuses_altered_bootstrap_file",
+        "refuses_altered_registry_bytes",
+        "refuses_ambiguous_BOOT_registry_row_DTO",
+        "refuses_genuine_superseded_K3K9_seal_metadata",
+        "refuses_swapped_bootstrap_core",
+        "registry25_exact_with_three_unique_subset_rows",
+        "selected_python_BUILD_EQUAL_HOSTOPS02_BOOTSTRAP_IDENTITY",
+        "selected_python_BUILD_EQUAL_HOSTOPS02_K3K9_SECRETS",
+        "selected_python_BUILD_EQUAL_HOSTOPS02_K3_SECRET_ENV"
+      ],
+      "count": 15,
+      "evidence_dir_mode": "FRESH_PATH",
+      "helper_extra_args": [],
+      "helper_file": "prove_subset_registry25.py",
+      "helper_sha256": "cfbdefcc7e192429c765150378e31c5ce3bec6a744ff6ff6063673bd83a24001",
+      "junit_file": "JUNIT.xml",
+      "result_case_names_field": "expected_cases",
+      "result_count_fields": {
+        "errors": "errors",
+        "failures": "failed",
+        "passed": "passed",
+        "skipped": "skipped",
+        "tests": "cases"
+      },
+      "result_exact": {
+        "cores_observed": 3,
+        "families_observed": 3,
+        "helper_sha256": "cfbdefcc7e192429c765150378e31c5ce3bec6a744ff6ff6063673bd83a24001",
+        "operational_steps": 0,
+        "prepare_sign_dispatch_transport_Docker_host": false,
+        "registry_entries": 25,
+        "registry_sha256": "78eb4ab25db448d677b5c54bb2f91346c194427fee88028260d1ba2f7be50d72",
+        "sealed_copy_full25": false,
+        "source_sha256": "c5730380bae38027be58f1b34c49eca072611d03d1ebc2837f2604a0ee2cf3d2"
+      },
+      "result_schema": "SUBSET_REGISTRY25_OFFLINE_PROOF_V1",
+      "status": "PASS_SUBSET_REGISTRY25_LOCAL_ONLY",
+      "stdout_fields": [
+        "status",
+        "cases",
+        "passed",
+        "failed",
+        "errors",
+        "skipped",
+        "registry_entries",
+        "families_observed",
+        "cores_observed",
+        "operational_steps"
+      ],
+      "unit_sha256": "46efe0aa01c1ebc19b8fc048af56d986719b1f413a69f1af8c06022b349b1815"
+    },
+    "tree_conformance": {
+      "case_names": [
+        "actual_tree_before_first_k3_schema_and_source_rows",
+        "unexpected_secret_entry",
+        "provider_already_exists",
+        "emitter_permission_denied_is_not_absence",
+        "emitter_io_error_is_not_absence",
+        "below_floor",
+        "source_group_writable",
+        "runner_hash_wrong"
+      ],
+      "case_receipt_artifacts_required": true,
+      "count": 8,
+      "evidence_dir_mode": "EMPTY_DIRECTORY",
+      "helper_extra_args": [
+        "--worker"
+      ],
+      "helper_file": "run_tree_conformance.py",
+      "helper_sha256": "6b7ae7524964339880833c3ab23ce8a7c8ef239d6528a8ed1c60f2dda74f36d4",
+      "junit_file": "TESTS.xml",
+      "registry_scope": "NOT_CONSUMED_BY_TREE_SCHEMA_PROOF",
+      "result_case_names_field": "case_names",
+      "result_count_fields": {
+        "errors": "counts.errors",
+        "failures": "counts.failures",
+        "passed": "counts.passed",
+        "skipped": "counts.omissions",
+        "tests": "counts.tests"
+      },
+      "result_exact": {
+        "binder_source_sha256": "c5730380bae38027be58f1b34c49eca072611d03d1ebc2837f2604a0ee2cf3d2",
+        "core_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+        "family_sha256": "248c2ae45d096ec3dfa8a845ecff8d1032f8d02bb71ec6cdfc019d70c7710c66",
+        "integrity": {
+          "files_changed": 0
+        },
+        "scope": "Actual sealed K9R TREE executes only its genuine in-memory FakeHost. Binder context/BOUND facts are synthetic; no real BOUND verification, Linux/Docker/host/authority/GO proof. No Native, subprocess, host command or model mutation.",
+        "source_sha256": "42521f6c17fe1a96ad07200b24c5786036b63ef4091753514f41e80ad3169d7f"
+      },
+      "result_schema": 1,
+      "status": "PASS_REAL_K9R_EMULATED_TREE_SCHEMA_CONFORMANCE",
+      "stdout_fields": [],
+      "unit_sha256": "7c68376151387930758ffecb4a0d4f3cf0a5bde4c5e0f29834fff62af4cca4df"
+    }
+  },
+  "schema": 1
+}

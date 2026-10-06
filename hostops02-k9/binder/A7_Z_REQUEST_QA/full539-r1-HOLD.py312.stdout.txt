@@ -1,0 +1,54 @@
+......................................s................................. [ 13%]
+........................................................................ [ 26%]
+..................F..................................................... [ 40%]
+........................................................................ [ 53%]
+........................................................................ [ 66%]
+........................................................................ [ 80%]
+........................................................................ [ 93%]
+..................s.....ssssssssss.                                      [100%]
+=================================== FAILURES ===================================
+___ test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder ___
+${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_candidate_suite_on_bound_documents.py:32: in test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder
+    assert done.returncode == 0, tail
+E   AssertionError: ........................................................................ [ 13%]
+E     ......................................sssssss........................... [ 27%]
+E     ........................................................F............... [ 41%]
+E     ........................................................................ [ 55%]
+E     ........................................................................ [ 69%]
+E     ........................................................................ [ 83%]
+E     ........................................................................ [ 97%]
+E     ...........ss                                                            [100%]
+E     =================================== FAILURES ===================================
+E     _ test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr _
+E     
+E         @pytest.mark.skipif(os.geteuid()==0,reason='as root the payload would start observing this machine')
+E         def test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr():
+E             """The file that would be sent, byte for byte, run as python3 -I -B - by a non-root user: it compiles, imports and refuses."""
+E             payload=(ROOT/'FINAL_PAYLOAD.UNBOUND.py').read_bytes();command=['/usr/bin/python3','-I','-B','-']
+E             result,out,err=t.once(payload,payload_sha256=p.sha(payload),command=command,command_sha256=t.command_pin(command),
+E                                   authorize=lambda a,b:True,seconds=30)
+E     >       assert result['status']=='KNOWN_REFUSAL' and err==b'' and json.loads(out)['code']=='REQUEST_OR_EXECUTOR_UNBOUND'
+E     E       AssertionError: assert ('UNCERTAIN' == 'KNOWN_REFUSAL'
+E     E         
+E     E         - KNOWN_REFUSAL
+E     E         + UNCERTAIN)
+E     
+E     test_w1_preflight_once.py:1284: AssertionError
+E     =========================== short test summary info ============================
+E     FAILED test_w1_preflight_once.py::test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr
+E     1 failed, 507 passed, 9 skipped in 63.08s (0:01:03)
+E     
+E   assert 1 == 0
+E    +  where 1 = CompletedProcess(args=['${WORKSPACE_ROOT}/work/codex-bootstrap-operative-runtime-2026...l_payload_refuses_under_the_system_python_with_an_empty_stderr\n1 failed, 507 passed, 9 skipped in 63.08s (0:01:03)\n').returncode
+=========================== short test summary info ============================
+FAILED ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_candidate_suite_on_bound_documents.py::test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_bind_once.py:785: no executed bound set on this machine
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rehearsals_in_real_time.py:18: today is outside the date set of the family, or too close to midnight UTC
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rev1_equivalence.py:84: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rev1_equivalence.py:99: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rev1_equivalence.py:128: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rev3_equivalence.py:95: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [4] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rev3_equivalence.py:116: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rev3_equivalence.py:137: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TEMP_ROOT}/binder-offline-proof-4_dsxlae/bind/tests/test_rev3_equivalence.py:171: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+1 failed, 526 passed, 12 skipped in 277.78s (0:04:37)

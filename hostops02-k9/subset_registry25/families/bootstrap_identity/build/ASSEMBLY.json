@@ -1,0 +1,59 @@
+{
+ "activation_allowed": false,
+ "core_parts": {
+  "claim": "c98e36f93acde05e6426737eac0a9a10204c7b5743b0539203bc812000347147",
+  "core": "958c28f1fb3dd88d8c608101a87688cce136544b95df31b4f2df7a7c51e29fa7",
+  "docker": "3d22e8ad6577b3391bff6a43e815fb7bdb9487dafb07733eb2bb8eaa8b910ccb",
+  "parents": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b",
+  "runner": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7"
+ },
+ "core_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+ "date_class": "WRITE_BOOTSTRAP",
+ "dates": [
+  "2026-10-06"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  142,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "b11eb94c76770c4feefd33d8c7450dcccd0f89135ad4c2ace250d2dcb4503197",
+ "final_payload_bytes": 161763,
+ "final_payload_sha256": "287030b870729c13a16db223a4762bda85e66b01cabf7b231037ac8fe6d19d56",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "bootstrap_identity",
+ "name": "bootstrap_identity",
+ "operation": "GO_WRITE_HOSTOPS02_BOOTSTRAP_IDENTITY_01",
+ "operation_part_sha256": "3c33b4767df864ba1b20891c20a9fe25565e73debc9d971877c881397e3aa677",
+ "parts": [
+  "core",
+  "runner",
+  "docker",
+  "parents",
+  "claim"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "798f3146dcbe241961c588cc50d8fbe7b836cae638d07d4db4703107749c50a0",
+ "source_bytes": 111789,
+ "source_sha256": "c55fe9dc56d845d8fb4d463e27c360138dbe1d372238cc632e72bfb34106f4c2",
+ "spec_sha256": "afef384bb7295e2158bc61b3129099ce1f9b26c083de19cd9b4731dbb9cf973b",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 5506,
+ "writes_allowed": true
+}

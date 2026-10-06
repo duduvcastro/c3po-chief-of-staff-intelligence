@@ -1,0 +1,3035 @@
+..............s..............................FF................FFFFFF... [ 14%]
+FFF................F..................FF..FF..FF..FF........F..FFFF...EE [ 29%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE..EE......E [ 44%]
+.....EEEEEEEEE.FEEEEEEEEEEEEEE.......................................... [ 59%]
+...............................EE.EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 74%]
+EEEEEEEEEEEEEEEEEEEE....EEEEE...EEE........EEEEEEEEEEEEEEEEE.EE......... [ 89%]
+..................................F.s.FFFFssssEEEEssF                    [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_catalog_a6_then_a9_with_its_dispatch_gates_and_resumes_on_k2a_emulated_host _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_readback_pre_then_post_gated_on_the_install ______
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_release_primary_and_spare_with_the_sunday_and_monday_gates _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_activate_primary_and_spare_gated_on_the_post_readback _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___________ ERROR at setup of test_family_core_and_assembly_refusals ___________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_________ ERROR at setup of test_evidence_of_other_families_and_inputs _________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_________________ ERROR at setup of test_catalog_rule_refusals _________________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+________________ ERROR at setup of test_readback_rule_refusals _________________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_________________ ERROR at setup of test_release_rule_refusals _________________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+________________ ERROR at setup of test_activate_rule_refusals _________________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+____________________ ERROR at setup of test_spare_refusals _____________________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_________________ ERROR at setup of test_check_gates_refusals __________________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_________ ERROR at setup of test_sealed_copy_and_what_is_derived_again _________
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_real_weekend_chain_every_citation_a_bound_set_and_every_resume_on_an_emulated_host _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_blocker_the_accepted_seals_are_the_ones_sent_for_review_and_a_superseded_seal_is_never_bound _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_major_k11_carries_the_review_of_its_bytes_and_the_owner_reads_it _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_major_the_review_and_the_waiver_name_these_bytes_and_a_write_waits_for_the_review_of_the_bound_set _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_major_a_pending_reboot_always_fails_the_a9_gate_and_the_a6_receipt_must_be_of_this_image_script_and_path _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_major_the_dispatch_and_resume_verdicts_fold_the_minutes_to_avoid_and_blocks_6_and_9_enforce_them _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_major_the_owner_reads_what_partial_and_no_receipt_mean_for_each_operation _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_minor_one_spare_per_primary_a_primary_with_content_is_prepared_and_k2a_k6a_spares_follow_a1 _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_minor_k10_names_both_provisions_or_the_reason_and_k11_compares_the_worker_and_the_sibling_record _
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_actual_k12_parser_accepts_tool_generated_request ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_window_ties_document_bytes_to_complete_tree_and_k8_delivery _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[missing_tree-K12_TREE_NOT_ONE_COMPLETE_READ] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[partial_tree-K12_TREE_NOT_ONE_COMPLETE_READ] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[wrong_tree_row-K12_PARENTS_NOT_FROM_TREE] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[wrong_input-K12_REQUEST_NOT_THE_BINDER_INPUT_BYTES] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[missing_documents-K12_DOCUMENT_SET_REQUIRED] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[no_delivery-K12_K8_DELIVERY_NOT_CITED] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[partial_delivery-K12_K8_DELIVERY_NOT_COMPLETE] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[wrong_contract-K12_DOCUMENTS_NOT_THE_K8_DELIVERY] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[wrong_config-K12_DOCUMENTS_NOT_THE_K8_DELIVERY] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_holds_unproved_or_mismatched_predecessors[late_delivery-K12_K8_DELIVERY_NOT_FINISHED] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_actual_pinned_tool_reverifies_k12_document_bytes ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_actual_pinned_tool_refuses_k12_documents_from_other_calendar _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_dependent_requires_exact_launch_receipt[PERSIST] ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_____ ERROR at setup of test_dependent_requires_exact_launch_receipt[STOP] _____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_dependent_requires_exact_launch_receipt[COLLECT] ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_requires_proven_stopped_container_and_exact_launch_image _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[missing_collect-K12_REMOVE_CONTAINER_NOT_CITED] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[partial_collect-K12_REMOVE_NOT_THE_CITED_CONTAINER] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[running-K12_REMOVE_NOT_THE_CITED_CONTAINER] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[foreign-K12_REMOVE_NOT_THE_CITED_CONTAINER] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[wrong_capacity-K12_REMOVE_NOT_THE_CITED_CONTAINER] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[missing_launch-K12_REMOVE_LAUNCH_NOT_CITED] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[partial_launch-K12_REMOVE_IMAGE_NOT_THE_LAUNCH] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[wrong_image-K12_REMOVE_IMAGE_NOT_THE_LAUNCH] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_remove_refuses_unproved_members[wrong_day-K12_REMOVE_IMAGE_NOT_THE_LAUNCH] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[bad_member-K12_CAPACITY_REQUEST_INVALID] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[bad_summary-K12_DOCUMENTS_INVALID] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[request_changed-K12_REQUEST_NOT_THE_VERIFIED_DOCUMENT_BYTES] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[chain_changed-K12_DOCUMENT_CHAIN_INVALID] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[verifier_refuses-K12_DOCUMENTS_NOT_VERIFIED] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_window_matches_actual_contract_and_delivery_bytes _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_____ ERROR at setup of test_unverified_or_unbound_window_refused[absent] ______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_unverified_or_unbound_window_refused[missing_window] __
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_unverified_or_unbound_window_refused[not_checked] ___
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+____ ERROR at setup of test_unverified_or_unbound_window_refused[other_day] ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+__ ERROR at setup of test_unverified_or_unbound_window_refused[other_listing] __
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_unverified_or_unbound_window_refused[other_contract] __
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_______ ERROR at setup of test_actual_pinned_tool_reverifies_all_windows _______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_actual_pinned_tool_refuses_k8_documents_from_other_calendar _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_window_request_contract_cannot_drift[True] _______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_window_request_contract_cannot_drift[False] ______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_____________ ERROR at setup of test_signed_chain_changed_refuses ______________
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_tree_binds_with_the_runner_e0_delivered_and_the_owner_reads_it _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_____________________ ERROR at setup of test_tree_refusals _____________________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_every_daily_read_of_the_eve_and_morning_binds_on_g18_and_each_sheet_is_told_apart _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_g19_the_other_days_and_typed_values_equal_to_the_tree_reads _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_policy_read_takes_its_directory_rows_from_the_cited_k11_post _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+__________________ ERROR at setup of test_daily_read_refusals __________________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___________ ERROR at setup of test_spare_of_a_primary_on_the_s_track ___________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k9w_plug_every_step_of_the_eve_and_morning_passes_the_rules _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___________________ ERROR at setup of test_k9w_plug_refusals ___________________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_the_compiled_runner_is_the_runner_file_and_the_constants_are_checked _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___________ ERROR at setup of test_k9_chains_must_be_root_controlled ___________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_k4e0_binds_with_the_runner_file_of_the_week ______
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_____________________ ERROR at setup of test_k4e0_refusals _____________________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+____________________ ERROR at setup of test_k3k9_plug_rules ____________________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_k3k9_policy_identity_must_follow_tree[bad_clock0] ___
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_k3k9_policy_identity_must_follow_tree[bad_clock1] ___
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_k3k9_policy_identity_must_follow_tree[bad_clock2] ___
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+________ ERROR at setup of test_the_binders_k9w_block_is_the_sealed_k9w ________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_a_k9w_step_binds_end_to_end_from_the_tree_receipt[collect_launch] _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_a_k9w_step_binds_end_to_end_from_the_tree_receipt[bind] _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_a_k9w_step_binds_end_to_end_from_the_tree_receipt[capture_cleanup] _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+________________ ERROR at setup of test_k9w_end_to_end_refusals ________________
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_decision_6_the_placement_refuses_n8_bytes_and_requires_root_control _
+${TMPDIR}:85: in k9env
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+__ ERROR at setup of test_every_program_is_one_of_the_table_with_a_fixed_text __
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_sealed_directory_and_the_core_it_names_check_with_the_binder _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+____________ ERROR at setup of test_sealed_copy_holds_a_second_core ____________
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_______ ERROR at setup of test_the_common_rule_passes_for_every_program ________
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_______________ ERROR at setup of test_the_common_rule_refusals ________________
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+____ ERROR at setup of test_k5_reset_signs_an_invocation_copied_from_a_read ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+________ ERROR at setup of test_dbr_queries_sign_the_cited_priv_receipt ________
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_the_effects_lines_and_the_question_of_a_sealed_program _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_new_family_contract_is_derived_only_from_sealed_runtime_and_fixed_owner_text _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+__ ERROR at setup of test_missing_contract_is_still_refused_for_old_families ___
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_CAPACITY_PROBE_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_DB_PRIV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_K12_COLLECT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K12_WINDOW_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K4_FILES_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_READER_UNITS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_READONLY_HOSTOPS02_DB_PRIV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K12_WINDOW_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K4_FILES_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_READER_UNITS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_READONLY_HOSTOPS02_DB_PRIV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K12_WINDOW_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K4_FILES_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_READER_UNITS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_READONLY_HOSTOPS02_DB_PRIV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K12_WINDOW_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K4_FILES_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_READER_UNITS_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_k8_tree_and_commit_are_distinct_cited_reads ______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k8_does_not_deliver_without_this_days_complete_commit[absent] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k8_does_not_deliver_without_this_days_complete_commit[partial] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k8_does_not_deliver_without_this_days_complete_commit[other_day] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_k8_does_not_deliver_without_this_days_complete_commit[other_step] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_____ ERROR at setup of test_k8_requires_exactly_one_complete_tree[absent] _____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_k8_requires_exactly_one_complete_tree[duplicate] ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+____ ERROR at setup of test_k8_requires_exactly_one_complete_tree[partial] _____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___________ ERROR at setup of test_k6b_activation_members_must_match ___________
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_capacity_mount_load_enable_chain_is_exact[False] ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+____ ERROR at setup of test_capacity_mount_load_enable_chain_is_exact[True] ____
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-missing] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-partial] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-boot] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-hash] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-clock] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-missing] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-partial] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-boot] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-hash] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-clock] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_enable_does_not_accept_a_read_instead_of_load[CALENDAR] _
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_ ERROR at setup of test_enable_does_not_accept_a_read_instead_of_load[IDENT] __
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_______ ERROR at setup of test_probe_complete_outcome_is_the_signed_step _______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+___ ERROR at setup of test_probe_outside_its_signed_band_is_a_closed_refusal ___
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_____ ERROR at setup of test_enable_mount_link_and_order_are_not_inferred ______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_probe_unknown_step_is_not_load_or_identity _______
+${TMPDIR}:42: in programs
+    copy = x.sealed_copy(root / 'tier')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_______ ERROR at setup of test_hostops02_same_inputs_same_bytes[catalog] _______
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_hostops02_same_inputs_same_bytes[readback] _______
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+_______ ERROR at setup of test_hostops02_same_inputs_same_bytes[release] _______
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+______ ERROR at setup of test_hostops02_same_inputs_same_bytes[activate] _______
+${TMPDIR}:30: in env
+    copy = x.sealed_copy(root / 'hostops02')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:76: in sealed_copy
+    result = b.sealed_copy(Path(destination), [str(path) for path in sources()])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:6011: in sealed_copy
+    need(len(found) == 1 and not found & set(cores), 'SEALED_COPY_SOURCE_NOT_FOUND')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_COPY_SOURCE_NOT_FOUND
+=================================== FAILURES ===================================
+_ test_first_prepare_accepts_only_completed_components_without_future_bootstrap _
+${TMPDIR}:187: in test_first_prepare_accepts_only_completed_components_without_future_bootstrap
+    c=context();before=copy.deepcopy(c);result=b.bootstrap_program_rules(c)['bootstrap_identity']
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+_ test_first_k3_and_secret_env_follow_one_observation_without_mutating_receipts _
+${TMPDIR}:194: in test_first_k3_and_secret_env_follow_one_observation_without_mutating_receipts
+    c=k3_context();before=copy.deepcopy(c);result=b.k3k9_rules(c)['k9_prerequisite']
+                                                  ^^^^^^^^^^^^^^^
+${TMPDIR}:2508: in k3k9_rules
+    if cited(ctx,BOOTSTRAP_OPERATION):return bootstrap_k3k9_rules(ctx)
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:4178: in bootstrap_k3k9_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[typed-BOOTSTRAP_HOST_IDENTITY_NOT_FROM_COMPLETE_COMPONENT] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                         ^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3977: in bootstrap_metadata_provenance
+    checked_role,_=bootstrap_tree_pre(ctx)
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_HOST_IDENTITY_NOT_FROM_COMPLETE_COMPONENT
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[whole_partial-BOOTSTRAP_HOST_IDENTITY_NOT_FROM_COMPLETE_COMPONENT] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                         ^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3977: in bootstrap_metadata_provenance
+    checked_role,_=bootstrap_tree_pre(ctx)
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_HOST_IDENTITY_NOT_FROM_COMPLETE_COMPONENT
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[rows-BOOTSTRAP_TREE_ROWS_NOT_EXACT_COPIES] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                                                                                                ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_TREE_ROWS_NOT_EXACT_COPIES
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[source_link-BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                                                                                                ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[source_mode-BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                                                                                                ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[source_links-BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                                                                                                ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[post_partial-BOOTSTRAP_PREDECESSORS_NOT_COMPLETE] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                                                                                                ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_PREDECESSORS_NOT_COMPLETE
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[post_late-BOOTSTRAP_PREDECESSOR_NOT_FINISHED] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                                                                                                ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_PREDECESSOR_NOT_FINISHED
+_ test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[linux-LINUX_JOB_RECORD_REQUIRED] _
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+                                                                                                ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:255: in test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies
+    with h.refused(code):action(c,'TREE_PRE') if action is b.bootstrap_metadata_provenance else action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected LINUX_JOB_RECORD_REQUIRED
+_ test_k3_requires_complete_observed_identity_positive_absence_and_durable_claim[corroboration-BOOTSTRAP_TREE_PRE_NOT_CORROBORATED] _
+${TMPDIR}:287: in test_k3_requires_complete_observed_identity_positive_absence_and_durable_claim
+    with h.refused(code):action(c)
+                         ^^^^^^^^^
+${TMPDIR}:4178: in bootstrap_k3k9_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:287: in test_k3_requires_complete_observed_identity_positive_absence_and_durable_claim
+    with h.refused(code):action(c)
+         ^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_TREE_PRE_NOT_CORROBORATED
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[loose-E0] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[loose-POST] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[stderr-E0] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[stderr-POST] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[source-E0] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[source-POST] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[exit-E0] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[exit-POST] _
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+                                                   ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:353: in test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source
+    with h.refused('BOOTSTRAP_EVIDENCE_NOT_BOUND'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected BOOTSTRAP_EVIDENCE_NOT_BOUND
+_ test_bootstrap_path_does_not_accept_an_extra_cited_receipt_of_a_different_boot[prepare] _
+${TMPDIR}:374: in test_bootstrap_path_does_not_accept_an_extra_cited_receipt_of_a_different_boot
+    with h.refused('EVIDENCE_NOT_OF_THE_SAME_BOOT'):action(c)
+                                                    ^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+
+During handling of the above exception, another exception occurred:
+${TMPDIR}:374: in test_bootstrap_path_does_not_accept_an_extra_cited_receipt_of_a_different_boot
+    with h.refused('EVIDENCE_NOT_OF_THE_SAME_BOOT'):action(c)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+${TMPDIR}:43: in refused
+    assert str(caught.value) == code, 'refused with %s, expected %s' % (caught.value, code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: refused with BOOTSTRAP_PREDECESSOR_CLOCK_INVALID, expected EVIDENCE_NOT_OF_THE_SAME_BOOT
+________ test_real_k9r248c_schema_projects_dir_and_refuses_directory[0] ________
+${TMPDIR}:382: in test_real_k9r248c_schema_projects_dir_and_refuses_directory
+    assert b.bootstrap_program_rules(c)['bootstrap_identity']['tree_complete'] is False
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+________ test_real_k9r248c_schema_projects_dir_and_refuses_directory[2] ________
+${TMPDIR}:382: in test_real_k9r248c_schema_projects_dir_and_refuses_directory
+    assert b.bootstrap_program_rules(c)['bootstrap_identity']['tree_complete'] is False
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+________ test_real_k9r248c_schema_projects_dir_and_refuses_directory[3] ________
+${TMPDIR}:382: in test_real_k9r248c_schema_projects_dir_and_refuses_directory
+    assert b.bootstrap_program_rules(c)['bootstrap_identity']['tree_complete'] is False
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:4075: in bootstrap_program_rules
+    role,tree=bootstrap_tree_pre(ctx);predecessors=bootstrap_predecessors(ctx,tree)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3968: in bootstrap_tree_pre
+    bootstrap_clock(tree)
+${TMPDIR}:3879: in bootstrap_clock
+    need(valid,'BOOTSTRAP_PREDECESSOR_CLOCK_INVALID')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: BOOTSTRAP_PREDECESSOR_CLOCK_INVALID
+___ test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder ___
+${TMPDIR}:32: in test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder
+    assert done.returncode == 0, tail
+E   AssertionError: ........................................................................ [ 13%]
+E     ......................................sssssss........................... [ 27%]
+E     ........................................................F............... [ 41%]
+E     ........................................................................ [ 55%]
+E     ........................................................................ [ 69%]
+E     ........................................................................ [ 83%]
+E     ........................................................................ [ 97%]
+E     ...........ss                                                            [100%]
+E     =================================== FAILURES ===================================
+E     _ test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr _
+E     
+E         @pytest.mark.skipif(os.geteuid()==0,reason='as root the payload would start observing this machine')
+E         def test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr():
+E             """The file that would be sent, byte for byte, run as python3 -I -B - by a non-root user: it compiles, imports and refuses."""
+E             payload=(ROOT/'FINAL_PAYLOAD.UNBOUND.py').read_bytes();command=['/usr/bin/python3','-I','-B','-']
+E             result,out,err=t.once(payload,payload_sha256=p.sha(payload),command=command,command_sha256=t.command_pin(command),
+E                                   authorize=lambda a,b:True,seconds=30)
+E     >       assert result['status']=='KNOWN_REFUSAL' and err==b'' and json.loads(out)['code']=='REQUEST_OR_EXECUTOR_UNBOUND'
+E     E       AssertionError: assert ('UNCERTAIN' == 'KNOWN_REFUSAL'
+E     E         
+E     E         - KNOWN_REFUSAL
+E     E         + UNCERTAIN)
+E     
+E     test_w1_preflight_once.py:1284: AssertionError
+E     =========================== short test summary info ============================
+E     FAILED test_w1_preflight_once.py::test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr
+E     1 failed, 507 passed, 9 skipped in 69.17s (0:01:09)
+E     
+E   assert 1 == 0
+E    +  where 1 = CompletedProcess(args=['${WORKSPACE_ROOT}/work/codex-bootstrap-operative-runtime-2026...l_payload_refuses_under_the_system_python_with_an_empty_stderr\n1 failed, 507 passed, 9 skipped in 69.17s (0:01:09)\n').returncode
+__ test_rev4_leaves_the_accepted_seals_file_as_it_was_and_ships_the_template ___
+${TMPDIR}:678: in test_rev4_leaves_the_accepted_seals_file_as_it_was_and_ships_the_template
+    assert b.sha(Path(os.environ['BIND_TEST_OPERATIONAL_SEALS']).read_bytes()) == 'fdab49c6251ce4aa411d2c81b8aa0c2bbd76169ec7705aaf0eae114482ddd6d2'
+E   AssertionError: assert '78eb4ab25db4...1ba2f7be50d72' == 'fdab49c6251c...e114482ddd6d2'
+E     
+E     - fdab49c6251ce4aa411d2c81b8aa0c2bbd76169ec7705aaf0eae114482ddd6d2
+E     + 78eb4ab25db448d677b5c54bb2f91346c194427fee88028260d1ba2f7be50d72
+_ test_reader_units_default_common_rule_fixture_supplies_absent_unit_expectations _
+${TMPDIR}:160: in test_reader_units_default_common_rule_fixture_supplies_absent_unit_expectations
+    assert b.sealed_program_rules(c)['sealed_program']['extra']=={'mode':None}
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:4322: in sealed_program_rules
+    modes = sealed_program_modes(m, operation)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+${TMPDIR}:3333: in sealed_program_modes
+    need(operation in SEALED_PROGRAM_MODE_ENUMS and observed_operation == operation, 'SEALED_PROGRAM_MODE_SOURCE_MISMATCH')
+${TMPDIR}:249: in need
+    raise Refused(code)
+E   bind_once.Refused: SEALED_PROGRAM_MODE_SOURCE_MISMATCH
+_ test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[catalog] _
+${TMPDIR}:82: in test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt
+    assert done.returncode == 0 and 'Traceback' not in text and 'REHEARSAL COMPLETE: %s' % kind in text, text[-3000:]
+E   AssertionError: python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+E     sealed-copy of the core and the four operations            REFUSED SEALED_COPY_SOURCE_NOT_FOUND
+E     REHEARSAL STOPPED: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})
+E     
+E   assert (1 == 0)
+E    +  where 1 = CompletedProcess(args=['/usr/bin/python3', '-B', '${TMPDIR}: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})\n").returncode
+_ test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[readback] _
+${TMPDIR}:82: in test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt
+    assert done.returncode == 0 and 'Traceback' not in text and 'REHEARSAL COMPLETE: %s' % kind in text, text[-3000:]
+E   AssertionError: python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+E     sealed-copy of the core and the four operations            REFUSED SEALED_COPY_SOURCE_NOT_FOUND
+E     REHEARSAL STOPPED: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})
+E     
+E   assert (1 == 0)
+E    +  where 1 = CompletedProcess(args=['/usr/bin/python3', '-B', '${TMPDIR}: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})\n").returncode
+_ test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[release] _
+${TMPDIR}:82: in test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt
+    assert done.returncode == 0 and 'Traceback' not in text and 'REHEARSAL COMPLETE: %s' % kind in text, text[-3000:]
+E   AssertionError: python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+E     sealed-copy of the core and the four operations            REFUSED SEALED_COPY_SOURCE_NOT_FOUND
+E     REHEARSAL STOPPED: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})
+E     
+E   assert (1 == 0)
+E    +  where 1 = CompletedProcess(args=['/usr/bin/python3', '-B', '${TMPDIR}: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})\n").returncode
+_ test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[activate] _
+${TMPDIR}:82: in test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt
+    assert done.returncode == 0 and 'Traceback' not in text and 'REHEARSAL COMPLETE: %s' % kind in text, text[-3000:]
+E   AssertionError: python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+E     sealed-copy of the core and the four operations            REFUSED SEALED_COPY_SOURCE_NOT_FOUND
+E     REHEARSAL STOPPED: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})
+E     
+E   assert (1 == 0)
+E    +  where 1 = CompletedProcess(args=['/usr/bin/python3', '-B', '${TMPDIR}: step sealed-copy of the core and the four operations did not end as expected ({'status': 'SEALED_COPY_WRITTEN'})\n").returncode
+_____ test_zz_every_refusal_code_of_the_binder_is_exercised_by_these_tests _____
+${TMPDIR}:1798: in test_zz_every_refusal_code_of_the_binder_is_exercised_by_these_tests
+    assert missing == [], 'refusal codes of bind_once.py that no test exercised: %s' % missing
+E   AssertionError: refusal codes of bind_once.py that no test exercised: ['ACTIVATE_DERIVED_VALUES_NOT_REPRODUCED', 'ACTIVATE_EVIDENCE_NOT_ONE_FULL_PRE', 'ACTIVATE_NOT_WHAT_THE_PRE_RENDERED', 'ASSEMBLY_RECORD_NOT_THE_BUILD', 'BINDING_TOOL_MISSING', 'BINDING_TOOL_NOT_THE_ONE_OF_THE_PREPARE', 'BIND_INPUT_NOT_USED', 'BIND_INPUT_UNREADABLE', 'BOOTSTRAP_HOST_IDENTITY_NOT_FROM_COMPLETE_COMPONENT', 'BOOTSTRAP_PREDECESSORS_NOT_COMPLETE', 'BOOTSTRAP_TREE_PRE_NOT_CORROBORATED', 'BOOTSTRAP_TREE_ROWS_NOT_EXACT_COPIES', 'CATALOG_4B_RECEIPT_NOT_ONE', 'CATALOG_4B_RECEIPT_NOT_THE_COMPLETE_REAL_ONE', 'CATALOG_CHAIN_NOT_THE_RECEIPTS_ROWS', 'CATALOG_EVIDENCE_INCOMPLETE', 'CATALOG_EXPECTATION_NOT_THE_CITED_4B', 'CITED_RECEIPTS_NOT_FOUND_AGAIN', 'CODEX_REVIEW_DOCUMENT_UNREADABLE', 'CORE_ASSEMBLY_CHECK_FAILED', 'CORE_FILE_SET', 'CORE_GENERATION_NOT_THE_SOURCES', 'CORE_HASH', 'CORE_NOT_FOUND', 'CORE_SEAL_NOT_ACCEPTED', 'CORE_SUMS_INVALID', 'CREATED_DIRECTORY_CHAIN_BOOT_UNKNOWN', 'CREATED_DIRECTORY_CHAIN_CLOCK_INVALID', 'CREATED_DIRECTORY_CHAIN_INVALID', 'CREATED_DIRECTORY_CHAIN_NOT_BOUND_COMPLETE', 'CREATED_DIRECTORY_CHAIN_PREDECESSOR_NOT_FINISHED', 'CREATED_DIRECTORY_CHAIN_RECEIPT_SEAL', 'DBR_PRIV_NOT_OF_THE_SAME_UTC_DAY', 'DBR_PRIV_RECEIPT_NOT_CITED', 'DBR_SPLIT_PRIV_PROGRAM_REQUIRED', 'DOCKER_ARGUMENTS_NOT_THE_READMES', 'EPOCH_NOT_THE_RELEASES', 'EVIDENCE_FAMILY_NOT_AN_ACCEPTED_SEAL', 'GATES_FILE_INVALID', 'GATES_NEED_THE_FAMILY', 'GATES_NOT_DEFINED_FOR_THIS_SET', 'GATE_WINDOW_ONLY_IN_MINUTES_TO_AVOID', 'HOSTOPS02_OPERATION_WITHOUT_BINDING_RULES', 'HOSTOPS02_RULE_INPUT_MALFORMED', 'IMAGE_NOT_THE_ONE_OF_THE_CITED_READ', 'IMAGE_WITHOUT_A_CITED_READ', 'K12_CAPACITY_REQUEST_INVALID', 'K12_DOCUMENTS_INVALID', 'K12_DOCUMENTS_NOT_THE_K8_DELIVERY', 'K12_DOCUMENTS_NOT_VERIFIED', 'K12_DOCUMENT_CHAIN_INVALID', 'K12_DOCUMENT_SET_REQUIRED', 'K12_K8_DELIVERY_NOT_CITED', 'K12_K8_DELIVERY_NOT_COMPLETE', 'K12_LAUNCH_NOT_THE_CITED_WINDOW', 'K12_LAUNCH_REQUEST_NOT_CITED', 'K12_PARENTS_NOT_FROM_TREE', 'K12_REMOVE_CONTAINER_NOT_CITED', 'K12_REMOVE_IMAGE_NOT_THE_LAUNCH', 'K12_REMOVE_LAUNCH_NOT_CITED', 'K12_REMOVE_NOT_THE_CITED_CONTAINER', 'K12_REQUEST_NOT_THE_BINDER_INPUT_BYTES', 'K12_REQUEST_NOT_THE_VERIFIED_DOCUMENT_BYTES', 'K12_TREE_NOT_ONE_COMPLETE_READ', 'K3K9_EVIDENCE_NOT_COMPLETE', 'K3K9_EVIDENCE_NOT_E0_POST_AND_TREE', 'K3K9_TREE_READ_NOT_ACCEPTABLE', 'K4E0_EVIDENCE_NOT_ONE_COMPLETE_PRECHECK', 'K4E0_RUNNER_PATH_NOT_CONTENT_ADDRESSED', 'K5_INVOCATION_ID_NOT_COPIED_FROM_A_READ', 'K6B_ACTIVATION_MEMBERS_NOT_THE_CITED_ONES', 'K6B_LOAD_HASH_NOT_CITED', 'K6B_LOAD_MOUNT_LINK_INVALID', 'K6B_MOUNT_NOT_FINISHED_BEFORE_LOAD', 'K8_COMMIT_RESULT_NOT_CITED', 'K8_COMMIT_RESULT_NOT_COMPLETE', 'K8_DOCUMENTS_CHAIN_INVALID', 'K8_DOCUMENTS_NOT_THE_DELIVERY_BYTES', 'K8_DOCUMENT_SETS_REQUIRED', 'K8_TREE_NOT_ONE_COMPLETE_READ', 'K8_WINDOW_REQUEST_INVALID', 'K8_WINDOW_REQUEST_NOT_THE_DELIVERY_CONTRACT', 'K9_ATTEMPT_KEY_NOT_RECOMPUTED', 'K9_BIND_MEMBERS_OUTSIDE_BIND', 'K9_BIND_NAMESPACE_NOT_ACCEPTED', 'K9_BIND_ORDER_NOT_THE_GRIDS', 'K9_CHAIN_NOT_ROOT_CONTROLLED', 'K9_CLEANUP_BEFORE_CAPTURE_RUN_NOT_AFTER', 'K9_CONSTANTS_NOT_OF_THIS_INTERFACE', 'K9_CONSTANTS_NOT_THE_COMPILED_ONES', 'K9_CONSTANTS_NOT_THE_TREE_READS', 'K9_DAY_NOT_A_SESSION_WITH_A_K9_LIST', 'K9_E0_RECEIPT_NOT_COMPLETE', 'K9_E0_RECEIPT_NOT_ONE', 'K9_GATE_IS_THE_GRID_WINDOW', 'K9_GRID_NOT_NAMED', 'K9_GRID_ROW_NOT_OF_THIS_MODE', 'K9_MODE_NOT_OF_THIS_PROGRAM', 'K9_OPERATION_NOT_OF_THIS_PROGRAM', 'K9_POLICY_ROWS_NOT_COPIED_FROM_A_CITED_RECEIPT', 'K9_PREREQUISITE_WINDOW_NOT_IN_ITS_BAND', 'K9_PROGRAM_NOT_OF_THIS_INTERFACE', 'K9_PROGRAM_NOT_OF_THIS_PLACEMENT', 'K9_RUNNER_NOT_THE_ONE_E0_DELIVERED', 'K9_RUNNER_NOT_THE_REVIEWED_ONE', 'K9_RUN_NOT_AFTER_AFTER_THE_STEP_LIMIT', 'K9_RUN_NOT_AFTER_NOT_THE_GRIDS', 'K9_RUN_NOT_AFTER_NOT_WINDOW_END_PLUS_CEILING', 'K9_RUN_NOT_AFTER_TOO_CLOSE_TO_THE_LATEST_START', 'K9_SENDABLE_SECONDS_BELOW_180', 'K9_SLOT_INVALID', 'K9_SPARE_NOT_OF_ITS_PRIMARY', 'K9_SPARE_WITHOUT_ITS_PRIMARY', 'K9_TREE_PLAN_INVALID', 'K9_TREE_READ_DID_NOT_FIND_THE_SIGNED_RUNNER', 'K9_TREE_RECEIPT_NOT_CITED', 'K9_TREE_RECEIPT_NOT_THE_COMPLETE_TREE_READ', 'K9_TREE_WITHOUT_THE_E0_RECEIPT', 'K9_WATCHDOG_NOT_THE_GRIDS', 'K9_WINDOW_NOT_OF_THE_STEP_CLASS', 'K9_WINDOW_NOT_THE_GRIDS', 'LIMITS_NOT_THE_SIBLINGS_FLOORS', 'LINUX_JOB_RECORD_NOT_OF_THESE_BYTES', 'LINUX_JOB_RECORD_REQUIRED', 'LINUX_JOB_RECORD_UNREADABLE', 'LINUX_PROOF_NOT_ACCEPTED', 'LINUX_PROOF_REQUIRED', 'LIVE_PARENT_NOT_ACCEPTABLE_TO_A_WRITE', 'OVERRIDE_FILE_NOT_THE_ONE_ACTIVATE_WRITES', 'OWNER_WAIVER_NOT_A_SIGNED_RECORD_FOR_THESE_BYTES', 'PLAN_INPUT_INVALID', 'PLAN_ROWS_NOT_THE_ROWS_OF_A_CITED_RECEIPT', 'POLICY_IDENTITY_NOT_AFTER_TREE', 'POLICY_NOT_VERIFIED_AT_THIS_GATE', 'PROBE_MOUNT_HASH_NOT_CITED', 'PROBE_STEP_INVALID', 'PROBE_WINDOW_OUTSIDE_SIGNED_BAND', 'PROVISION_LEDGER_ROW_NOT_FOUND', 'READBACK_EVIDENCE_WITHOUT_A_BOOT', 'README_COMMAND_NOT_FOUND', 'REHEARSAL_RECEIPT_NOT_THE_ONE_A9_NEEDS', 'RELEASE_EVIDENCE_INCOMPLETE', 'RELEASE_FIELDS_', 'RELEASE_HOST_EVIDENCE_A4_NOT_CITED_AND_NO_REASON', 'RELEASE_MEMBER_NOT_THE_TOOLS', 'RELEASE_NOT_VERIFIED_BY_A_FULL_PRE', 'RELEASE_PARENT_NOT_THE_ONE_THE_PRE_READ', 'RELEASE_PLACE_NOT_THE_SIBLINGS', 'RELEASE_SUNDAY_GATE_FAILED', 'RELEASE_SUNDAY_READ_NOT_A_BOUND_SET', 'RELEASE_TREE_REQUIRED', 'RELEASE_TREE_UNREADABLE', 'RETENTION_TAG_NOT_THE_SIGNED_IMAGE', 'REVIEW_DOCUMENT_DOES_NOT_NAME_THESE_BYTES', 'REVIEW_OR_WAIVER_MISSING_FOR_A_CONTAINER_RUN', 'REVISION_NOT_THE_RELEASES', 'SCRIPT_NOT_THE_READMES', 'SEALED_COPY_FILE_NOT_FOUND', 'SEALED_COPY_SOURCE_HOLDS_A_SUPERSEDED_SEAL', 'SEALED_COPY_SOURCE_NOT_FOUND', 'SEALED_PROGRAM_EVIDENCE_BOOT_UNKNOWN', 'SEALED_PROGRAM_EVIDENCE_NOT_CITED', 'SEALED_PROGRAM_MODE_ENUM_INVALID', 'SEALED_PROGRAM_MODE_INVALID', 'SEALED_PROGRAM_MODE_SOURCE_MISMATCH', 'SIBLINGS_NOT_THE_SEALED_SIBLINGS', 'SIBLINGS_TESTS_NOT_RERUN_FOR_THE_ACCEPTED_SEALS', 'SIBLINGS_TESTS_RECORD_NOT_OF_THE_ACCEPTED_SEALS', 'SIBLINGS_TESTS_RECORD_UNREADABLE', 'SPARE_ALREADY_BOUND_FOR_THIS_PRIMARY', 'SPARE_EFFECTS_NOT_THE_PRIMARYS', 'SPARE_PRIMARY_ALREADY_PREPARED', 'SPARE_PRIMARY_CLAIM_ROOT_NOT_FOUND', 'SPARE_PRIMARY_NOT_A_SIGNED_SET', 'SPARE_PRIMARY_NOT_OF_THIS_OPERATION', 'SPARE_REGISTRY_UNREADABLE', 'SPARE_WINDOW_NOT_AFTER_THE_PRIMARY', 'STEP_RESUME_NOT_FOR_THIS_OPERATION', 'SUPERVISOR_UNIT_RECORD_BOOT_UNKNOWN', 'SUPERVISOR_UNIT_RECORD_CLOCK_INVALID', 'SUPERVISOR_UNIT_RECORD_INVALID', 'SUPERVISOR_UNIT_RECORD_NOT_BOUND_COMPLETE', 'SUPERVISOR_UNIT_RECORD_PREDECESSOR_NOT_FINISHED', 'SUPERVISOR_UNIT_RECORD_RECEIPT_SEAL', 'WORKER_OR_IMAGE_NOT_THE_ONES_OF_THE_CITED_READ']
+E   assert ['ACTIVATE_DE...PREPARE', ...] == []
+E     
+E     Left contains 185 more items, first extra item: 'ACTIVATE_DERIVED_VALUES_NOT_REPRODUCED'
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED ../../../../../..${TMPDIR}::test_first_prepare_accepts_only_completed_components_without_future_bootstrap
+FAILED ../../../../../..${TMPDIR}::test_first_k3_and_secret_env_follow_one_observation_without_mutating_receipts
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[typed-BOOTSTRAP_HOST_IDENTITY_NOT_FROM_COMPLETE_COMPONENT]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[whole_partial-BOOTSTRAP_HOST_IDENTITY_NOT_FROM_COMPLETE_COMPONENT]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[rows-BOOTSTRAP_TREE_ROWS_NOT_EXACT_COPIES]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[source_link-BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[source_mode-BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[source_links-BOOTSTRAP_SOURCE_ROWS_TRANSFORM_INVALID]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[post_partial-BOOTSTRAP_PREDECESSORS_NOT_COMPLETE]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[post_late-BOOTSTRAP_PREDECESSOR_NOT_FINISHED]
+FAILED ../../../../../..${TMPDIR}::test_prepare_refuses_typed_partial_borrowing_and_circular_future_dependencies[linux-LINUX_JOB_RECORD_REQUIRED]
+FAILED ../../../../../..${TMPDIR}::test_k3_requires_complete_observed_identity_positive_absence_and_durable_claim[corroboration-BOOTSTRAP_TREE_PRE_NOT_CORROBORATED]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[loose-E0]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[loose-POST]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[stderr-E0]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[stderr-POST]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[source-E0]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[source-POST]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[exit-E0]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_paths_require_the_verified_bound_exit_go_stderr_and_source[exit-POST]
+FAILED ../../../../../..${TMPDIR}::test_bootstrap_path_does_not_accept_an_extra_cited_receipt_of_a_different_boot[prepare]
+FAILED ../../../../../..${TMPDIR}::test_real_k9r248c_schema_projects_dir_and_refuses_directory[0]
+FAILED ../../../../../..${TMPDIR}::test_real_k9r248c_schema_projects_dir_and_refuses_directory[2]
+FAILED ../../../../../..${TMPDIR}::test_real_k9r248c_schema_projects_dir_and_refuses_directory[3]
+FAILED ../../../../../..${TMPDIR}::test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder
+FAILED ../../../../../..${TMPDIR}::test_rev4_leaves_the_accepted_seals_file_as_it_was_and_ships_the_template
+FAILED ../../../../../..${TMPDIR}::test_reader_units_default_common_rule_fixture_supplies_absent_unit_expectations
+FAILED ../../../../../..${TMPDIR}::test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[catalog]
+FAILED ../../../../../..${TMPDIR}::test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[readback]
+FAILED ../../../../../..${TMPDIR}::test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[release]
+FAILED ../../../../../..${TMPDIR}::test_rehearsal_driver_hostops02_runs_each_operation_to_a_verified_receipt[activate]
+FAILED ../../../../../..${TMPDIR}::test_zz_every_refusal_code_of_the_binder_is_exercised_by_these_tests
+ERROR ../../../../../..${TMPDIR}::test_catalog_a6_then_a9_with_its_dispatch_gates_and_resumes_on_k2a_emulated_host
+ERROR ../../../../../..${TMPDIR}::test_readback_pre_then_post_gated_on_the_install
+ERROR ../../../../../..${TMPDIR}::test_release_primary_and_spare_with_the_sunday_and_monday_gates
+ERROR ../../../../../..${TMPDIR}::test_activate_primary_and_spare_gated_on_the_post_readback
+ERROR ../../../../../..${TMPDIR}::test_family_core_and_assembly_refusals
+ERROR ../../../../../..${TMPDIR}::test_evidence_of_other_families_and_inputs
+ERROR ../../../../../..${TMPDIR}::test_catalog_rule_refusals
+ERROR ../../../../../..${TMPDIR}::test_readback_rule_refusals
+ERROR ../../../../../..${TMPDIR}::test_release_rule_refusals
+ERROR ../../../../../..${TMPDIR}::test_activate_rule_refusals
+ERROR ../../../../../..${TMPDIR}::test_spare_refusals
+ERROR ../../../../../..${TMPDIR}::test_check_gates_refusals
+ERROR ../../../../../..${TMPDIR}::test_sealed_copy_and_what_is_derived_again
+ERROR ../../../../../..${TMPDIR}::test_real_weekend_chain_every_citation_a_bound_set_and_every_resume_on_an_emulated_host
+ERROR ../../../../../..${TMPDIR}::test_blocker_the_accepted_seals_are_the_ones_sent_for_review_and_a_superseded_seal_is_never_bound
+ERROR ../../../../../..${TMPDIR}::test_major_k11_carries_the_review_of_its_bytes_and_the_owner_reads_it
+ERROR ../../../../../..${TMPDIR}::test_major_the_review_and_the_waiver_name_these_bytes_and_a_write_waits_for_the_review_of_the_bound_set
+ERROR ../../../../../..${TMPDIR}::test_major_a_pending_reboot_always_fails_the_a9_gate_and_the_a6_receipt_must_be_of_this_image_script_and_path
+ERROR ../../../../../..${TMPDIR}::test_major_the_dispatch_and_resume_verdicts_fold_the_minutes_to_avoid_and_blocks_6_and_9_enforce_them
+ERROR ../../../../../..${TMPDIR}::test_major_the_owner_reads_what_partial_and_no_receipt_mean_for_each_operation
+ERROR ../../../../../..${TMPDIR}::test_minor_one_spare_per_primary_a_primary_with_content_is_prepared_and_k2a_k6a_spares_follow_a1
+ERROR ../../../../../..${TMPDIR}::test_minor_k10_names_both_provisions_or_the_reason_and_k11_compares_the_worker_and_the_sibling_record
+ERROR ../../../../../..${TMPDIR}::test_actual_k12_parser_accepts_tool_generated_request
+ERROR ../../../../../..${TMPDIR}::test_window_ties_document_bytes_to_complete_tree_and_k8_delivery
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[missing_tree-K12_TREE_NOT_ONE_COMPLETE_READ]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[partial_tree-K12_TREE_NOT_ONE_COMPLETE_READ]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[wrong_tree_row-K12_PARENTS_NOT_FROM_TREE]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[wrong_input-K12_REQUEST_NOT_THE_BINDER_INPUT_BYTES]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[missing_documents-K12_DOCUMENT_SET_REQUIRED]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[no_delivery-K12_K8_DELIVERY_NOT_CITED]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[partial_delivery-K12_K8_DELIVERY_NOT_COMPLETE]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[wrong_contract-K12_DOCUMENTS_NOT_THE_K8_DELIVERY]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[wrong_config-K12_DOCUMENTS_NOT_THE_K8_DELIVERY]
+ERROR ../../../../../..${TMPDIR}::test_k12_holds_unproved_or_mismatched_predecessors[late_delivery-K12_K8_DELIVERY_NOT_FINISHED]
+ERROR ../../../../../..${TMPDIR}::test_actual_pinned_tool_reverifies_k12_document_bytes
+ERROR ../../../../../..${TMPDIR}::test_actual_pinned_tool_refuses_k12_documents_from_other_calendar
+ERROR ../../../../../..${TMPDIR}::test_dependent_requires_exact_launch_receipt[PERSIST]
+ERROR ../../../../../..${TMPDIR}::test_dependent_requires_exact_launch_receipt[STOP]
+ERROR ../../../../../..${TMPDIR}::test_dependent_requires_exact_launch_receipt[COLLECT]
+ERROR ../../../../../..${TMPDIR}::test_remove_requires_proven_stopped_container_and_exact_launch_image
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[missing_collect-K12_REMOVE_CONTAINER_NOT_CITED]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[partial_collect-K12_REMOVE_NOT_THE_CITED_CONTAINER]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[running-K12_REMOVE_NOT_THE_CITED_CONTAINER]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[foreign-K12_REMOVE_NOT_THE_CITED_CONTAINER]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[wrong_capacity-K12_REMOVE_NOT_THE_CITED_CONTAINER]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[missing_launch-K12_REMOVE_LAUNCH_NOT_CITED]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[partial_launch-K12_REMOVE_IMAGE_NOT_THE_LAUNCH]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[wrong_image-K12_REMOVE_IMAGE_NOT_THE_LAUNCH]
+ERROR ../../../../../..${TMPDIR}::test_remove_refuses_unproved_members[wrong_day-K12_REMOVE_IMAGE_NOT_THE_LAUNCH]
+ERROR ../../../../../..${TMPDIR}::test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[bad_member-K12_CAPACITY_REQUEST_INVALID]
+ERROR ../../../../../..${TMPDIR}::test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[bad_summary-K12_DOCUMENTS_INVALID]
+ERROR ../../../../../..${TMPDIR}::test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[request_changed-K12_REQUEST_NOT_THE_VERIFIED_DOCUMENT_BYTES]
+ERROR ../../../../../..${TMPDIR}::test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[chain_changed-K12_DOCUMENT_CHAIN_INVALID]
+ERROR ../../../../../..${TMPDIR}::test_k12_document_parser_chain_and_real_verifier_cannot_be_bypassed[verifier_refuses-K12_DOCUMENTS_NOT_VERIFIED]
+ERROR ../../../../../..${TMPDIR}::test_each_window_matches_actual_contract_and_delivery_bytes
+ERROR ../../../../../..${TMPDIR}::test_unverified_or_unbound_window_refused[absent]
+ERROR ../../../../../..${TMPDIR}::test_unverified_or_unbound_window_refused[missing_window]
+ERROR ../../../../../..${TMPDIR}::test_unverified_or_unbound_window_refused[not_checked]
+ERROR ../../../../../..${TMPDIR}::test_unverified_or_unbound_window_refused[other_day]
+ERROR ../../../../../..${TMPDIR}::test_unverified_or_unbound_window_refused[other_listing]
+ERROR ../../../../../..${TMPDIR}::test_unverified_or_unbound_window_refused[other_contract]
+ERROR ../../../../../..${TMPDIR}::test_actual_pinned_tool_reverifies_all_windows
+ERROR ../../../../../..${TMPDIR}::test_actual_pinned_tool_refuses_k8_documents_from_other_calendar
+ERROR ../../../../../..${TMPDIR}::test_window_request_contract_cannot_drift[True]
+ERROR ../../../../../..${TMPDIR}::test_window_request_contract_cannot_drift[False]
+ERROR ../../../../../..${TMPDIR}::test_signed_chain_changed_refuses
+ERROR ../../../../../..${TMPDIR}::test_tree_binds_with_the_runner_e0_delivered_and_the_owner_reads_it
+ERROR ../../../../../..${TMPDIR}::test_tree_refusals
+ERROR ../../../../../..${TMPDIR}::test_every_daily_read_of_the_eve_and_morning_binds_on_g18_and_each_sheet_is_told_apart
+ERROR ../../../../../..${TMPDIR}::test_g19_the_other_days_and_typed_values_equal_to_the_tree_reads
+ERROR ../../../../../..${TMPDIR}::test_policy_read_takes_its_directory_rows_from_the_cited_k11_post
+ERROR ../../../../../..${TMPDIR}::test_daily_read_refusals
+ERROR ../../../../../..${TMPDIR}::test_spare_of_a_primary_on_the_s_track
+ERROR ../../../../../..${TMPDIR}::test_k9w_plug_every_step_of_the_eve_and_morning_passes_the_rules
+ERROR ../../../../../..${TMPDIR}::test_k9w_plug_refusals
+ERROR ../../../../../..${TMPDIR}::test_the_compiled_runner_is_the_runner_file_and_the_constants_are_checked
+ERROR ../../../../../..${TMPDIR}::test_k9_chains_must_be_root_controlled
+ERROR ../../../../../..${TMPDIR}::test_k4e0_binds_with_the_runner_file_of_the_week
+ERROR ../../../../../..${TMPDIR}::test_k4e0_refusals
+ERROR ../../../../../..${TMPDIR}::test_k3k9_plug_rules
+ERROR ../../../../../..${TMPDIR}::test_k3k9_policy_identity_must_follow_tree[bad_clock0]
+ERROR ../../../../../..${TMPDIR}::test_k3k9_policy_identity_must_follow_tree[bad_clock1]
+ERROR ../../../../../..${TMPDIR}::test_k3k9_policy_identity_must_follow_tree[bad_clock2]
+ERROR ../../../../../..${TMPDIR}::test_the_binders_k9w_block_is_the_sealed_k9w
+ERROR ../../../../../..${TMPDIR}::test_a_k9w_step_binds_end_to_end_from_the_tree_receipt[collect_launch]
+ERROR ../../../../../..${TMPDIR}::test_a_k9w_step_binds_end_to_end_from_the_tree_receipt[bind]
+ERROR ../../../../../..${TMPDIR}::test_a_k9w_step_binds_end_to_end_from_the_tree_receipt[capture_cleanup]
+ERROR ../../../../../..${TMPDIR}::test_k9w_end_to_end_refusals
+ERROR ../../../../../..${TMPDIR}::test_decision_6_the_placement_refuses_n8_bytes_and_requires_root_control
+ERROR ../../../../../..${TMPDIR}::test_every_program_is_one_of_the_table_with_a_fixed_text
+ERROR ../../../../../..${TMPDIR}::test_each_sealed_directory_and_the_core_it_names_check_with_the_binder
+ERROR ../../../../../..${TMPDIR}::test_sealed_copy_holds_a_second_core
+ERROR ../../../../../..${TMPDIR}::test_the_common_rule_passes_for_every_program
+ERROR ../../../../../..${TMPDIR}::test_the_common_rule_refusals
+ERROR ../../../../../..${TMPDIR}::test_k5_reset_signs_an_invocation_copied_from_a_read
+ERROR ../../../../../..${TMPDIR}::test_dbr_queries_sign_the_cited_priv_receipt
+ERROR ../../../../../..${TMPDIR}::test_the_effects_lines_and_the_question_of_a_sealed_program
+ERROR ../../../../../..${TMPDIR}::test_new_family_contract_is_derived_only_from_sealed_runtime_and_fixed_owner_text
+ERROR ../../../../../..${TMPDIR}::test_missing_contract_is_still_refused_for_old_families
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_CAPACITY_PROBE_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_DB_PRIV_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_K12_COLLECT_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K12_WINDOW_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K4_FILES_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_READER_UNITS_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_a_required_receipt_from_another_boot[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_READONLY_HOSTOPS02_DB_PRIV_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K12_WINDOW_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K4_FILES_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_READER_UNITS_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_missing_required_receipt[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_READONLY_HOSTOPS02_DB_PRIV_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K12_WINDOW_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K4_FILES_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_READER_UNITS_01]
+ERROR ../../../../../..${TMPDIR}::test_each_family_rejects_incomplete_required_evidence[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_READONLY_HOSTOPS02_DB_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_READONLY_HOSTOPS02_DB_PRIV_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_READONLY_HOSTOPS02_K13R_READER_LIVENESS_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_CAPACITY_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K12_PREFLIGHT_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K12_WINDOW_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K13_READER_SWITCH_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K4_FILES_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_READER_UNITS_01]
+ERROR ../../../../../..${TMPDIR}::test_required_evidence_without_boot_cannot_release_a_dependent[GO_WRITE_HOSTOPS02_SUPERVISOR_ACTIVATE_01]
+ERROR ../../../../../..${TMPDIR}::test_k8_tree_and_commit_are_distinct_cited_reads
+ERROR ../../../../../..${TMPDIR}::test_k8_does_not_deliver_without_this_days_complete_commit[absent]
+ERROR ../../../../../..${TMPDIR}::test_k8_does_not_deliver_without_this_days_complete_commit[partial]
+ERROR ../../../../../..${TMPDIR}::test_k8_does_not_deliver_without_this_days_complete_commit[other_day]
+ERROR ../../../../../..${TMPDIR}::test_k8_does_not_deliver_without_this_days_complete_commit[other_step]
+ERROR ../../../../../..${TMPDIR}::test_k8_requires_exactly_one_complete_tree[absent]
+ERROR ../../../../../..${TMPDIR}::test_k8_requires_exactly_one_complete_tree[duplicate]
+ERROR ../../../../../..${TMPDIR}::test_k8_requires_exactly_one_complete_tree[partial]
+ERROR ../../../../../..${TMPDIR}::test_k6b_activation_members_must_match
+ERROR ../../../../../..${TMPDIR}::test_capacity_mount_load_enable_chain_is_exact[False]
+ERROR ../../../../../..${TMPDIR}::test_capacity_mount_load_enable_chain_is_exact[True]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-missing]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-partial]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-boot]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-hash]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[False-clock]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-missing]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-partial]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-boot]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-hash]
+ERROR ../../../../../..${TMPDIR}::test_capacity_load_chain_refuses_missing_or_uncertain_proof[True-clock]
+ERROR ../../../../../..${TMPDIR}::test_enable_does_not_accept_a_read_instead_of_load[CALENDAR]
+ERROR ../../../../../..${TMPDIR}::test_enable_does_not_accept_a_read_instead_of_load[IDENT]
+ERROR ../../../../../..${TMPDIR}::test_probe_complete_outcome_is_the_signed_step
+ERROR ../../../../../..${TMPDIR}::test_probe_outside_its_signed_band_is_a_closed_refusal
+ERROR ../../../../../..${TMPDIR}::test_enable_mount_link_and_order_are_not_inferred
+ERROR ../../../../../..${TMPDIR}::test_probe_unknown_step_is_not_load_or_identity
+ERROR ../../../../../..${TMPDIR}::test_hostops02_same_inputs_same_bytes[catalog]
+ERROR ../../../../../..${TMPDIR}::test_hostops02_same_inputs_same_bytes[readback]
+ERROR ../../../../../..${TMPDIR}::test_hostops02_same_inputs_same_bytes[release]
+ERROR ../../../../../..${TMPDIR}::test_hostops02_same_inputs_same_bytes[activate]
+SKIPPED [1] ../../../../../..${TMPDIR}:785: no executed bound set on this machine
+SKIPPED [1] ../../../../../..${TMPDIR}:18: today is outside the date set of the family, or too close to midnight UTC
+SKIPPED [1] ../../../../../..${TMPDIR}:84: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:99: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:128: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:95: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TMPDIR}:137: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TMPDIR}:171: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+32 failed, 265 passed, 8 skipped, 180 errors in 149.68s (0:02:29)

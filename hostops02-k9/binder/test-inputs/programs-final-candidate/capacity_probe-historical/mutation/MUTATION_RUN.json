@@ -1,0 +1,4431 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "core_seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 313,
+  "redundant_survivors": 0,
+  "single": 313,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "fa73e7dbeb0586297cdbc45fc0519a1665113791511293863f348ade3c3c4f86",
+  "build/AUTHORITY.UNBOUND.json": "9ea59c9fbb995560e07e70c9dd529a10f47bacb8c607eed48439e2b9b75e42f9",
+  "build/DISPATCH.UNBOUND.json": "f40c6d4c6cc16285543f248b6d1c0d4df9a9324755c822590c768e2ee4e0cce3",
+  "build/DISPATCH_SCOPE_DELTA.diff": "a0e7bf900aab296a6ba4e694a3bc5ef334f947370183cb5fc11fc1f4b8650268",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "6b125abe14cd23024b2fda85bb789895746cd6e5c0c61ea85f23dfdd9818c230",
+  "build/GO.UNBOUND.json": "8a7faf8710681a912ac6c46e3fe91f969305aad167318e274cc51aa4854cf3ee",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "f29b8c3378e7630b2375298f1ee7516c61e1116ddea6caa85cf96cb211e0e518",
+  "build/REQUEST.UNBOUND.json": "585d57145caab7c63bc0bb2faca44cf11537ba2a908f646e4267147f6af47a9f",
+  "build/capacity_probe.py": "a7ff494d0c67234e6b865dd86d079059401ff8681882fb60241b3ec3fe8e2220",
+  "build/dispatch_once.py": "6dda9535fcfb808d26cb66a4af16c49edcfab3d34ff1b6b3501ac355b9750563",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "1459fbdb872a3b113b9160486abaf50de845690cb248fd4081f682b4041e5433",
+  "mutation/mutate.py": "605a32e4fbadddab4efe5fb9330b2a0e8c91729bc1b77bfdc20d69cbffa6f952",
+  "op.py": "a9d0b498c43af80f4530d5ea1d610a0e2c6d99606a4ab16a8df74cf19f3638ef",
+  "spec.py": "90a74d0b513ca2816076bcb35c1a4a9d3d87c45a3bd095d82ac08268fef249dd",
+  "tests/conftest.py": "71beecaae8add036e987aeb8461d1dcd2fd0e85579b2dd2c8987374a2235e0d1",
+  "tests/kprobe.py": "51d268c8237bc88321c24fb1c48d541ffeb4d7c9ea1220483557af4f3f3f6815",
+  "tests/test_conformance.py": "f94685cc020229c3a612ba706832d042f85717805c9769f29bf2189d694716c7",
+  "tests/test_linux_root.py": "b1efe341961acdc80b1956de983ec5937c171a8525365bef86a9790e4a7c1669",
+  "tests/test_native.py": "09c30fead8a0567b83d45b5fb75a8642da4f0e4edf106ca5a36852d416aff965",
+  "tests/test_probe.py": "571d019ba20317a8b48f7b950f7b39b25de0afc7ada2353208db1719358d2c00",
+  "tests/test_scripts.py": "77da13849b6f767ace8b6ba70b2dda704a7288261ddc0bc1acd1b902d40e7aa2",
+  "tests/test_static_pins.py": "58a4ba6a2b17f785eb759def9f60dda51b5e9c8c98ff23e5619a194deb62e847"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": true,
+ "results": [
+  {
+   "first_failure": "<copy>/tests/test_probe.py:71: AssertionError: assert ('READONLY_SCOPE' == 'STEP_INVALID'",
+   "killed": true,
+   "mutant": "C01_writes_allowed",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 15 deselected in 2.08s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:245: AssertionError: assert (False is False and True is False)",
+   "killed": true,
+   "mutant": "C02_activation_allowed",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 65 passed, 15 deselected in 4.60s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:164: AssertionError: assert (('GO_READONLY...PRECHECK_01',) == ()",
+   "killed": true,
+   "mutant": "C03_evidence_requires_the_precheck",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 60 passed, 15 deselected in 4.63s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:164: AssertionError: assert (() == ()",
+   "killed": true,
+   "mutant": "C04_evidence_not_required",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 60 passed, 15 deselected in 4.39s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:154: AssertionError: assert (3599 == 3600)",
+   "killed": true,
+   "mutant": "C05_gate_of_3601_s",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.50s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:69: AssertionError: assert 'STEP_INVALID' == 'EVIDENCE_BOOT_UNBOUND'",
+   "killed": true,
+   "mutant": "C06_steps_without_load",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 6 passed, 15 deselected in 2.60s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_probe.py:1279: KeyError: 'TLS'",
+   "killed": true,
+   "mutant": "C07_steps_with_tls",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 2 passed, 15 deselected in 2.07s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "C08_sunday_band_opens_a_minute_early",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.29s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "C09_sunday_band_closes_late",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 61 passed, 15 deselected in 4.57s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "C10_a5_monday_opens_early",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.68s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "C11_a5_without_thursday",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.40s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "C12_a5_friday_added",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.56s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "C13_b4c_on_sunday",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.58s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C14_b4c_monday_opens_early",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 63 passed, 15 deselected in 4.84s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C15_b4c_thursday_closes_late",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 63 passed, 15 deselected in 4.69s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "C16_load_in_the_a5_bands",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.27s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:69: AssertionError: assert 'STEP_DAY_NOT_IN_SCOPE' == 'EVIDENCE_BOOT_UNBOUND'",
+   "killed": true,
+   "mutant": "C17_ident_in_the_b4c_bands",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 5 passed, 15 deselected in 2.76s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "C18_calendar_outcome_renamed",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.03s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C19_ident_outcome_renamed",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 62 passed, 15 deselected in 4.98s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C20_load_outcome_renamed",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.53s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'CALENDAR_LIN...AGE_AS_PINNED' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C21_outcomes_of_two_steps_swapped",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.66s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:696: AssertionError: assert ('PARTIAL_MET...STILL_LISTED') == ('PARTIAL_MET...STILL_LISTED')",
+   "killed": true,
+   "mutant": "C22_findings_outcome_is_the_unknown_one",
+   "returncode": 1,
+   "seconds": 19.2,
+   "summary": "1 failed, 164 passed, 15 deselected in 17.26s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:571: AssertionError: assert ('PARTIAL_MET...IN_THE_IMAGE') == ('PARTIAL_MET...IN_THE_IMAGE')",
+   "killed": true,
+   "mutant": "C23_not_as_expected_is_the_findings_one",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 135 passed, 15 deselected in 13.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:69: AssertionError: assert 'IMAGE_REVISI...T_THE_RELEASE' == 'IMAGE_ID'",
+   "killed": true,
+   "mutant": "C24_release_revision_is_another",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 10 passed, 15 deselected in 2.95s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "C25_epoch_is_another",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 61 passed, 15 deselected in 6.13s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "C26_package_is_another",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.55s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "C27_document_order_is_another",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.80s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:69: AssertionError: assert 'CONFIG_FILE_INVALID' == 'IMAGE_ID'",
+   "killed": true,
+   "mutant": "C28_target_under_app",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 12 passed, 15 deselected in 3.62s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'STEP_RAN_ANS...T_AS_EXPECTED' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C29_target_name_of_the_host",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.08s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C30_children_without_config",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.31s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C31_roots_without_go",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 63 passed, 15 deselected in 4.66s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'REFUSED_NO_CONTAINER_STARTED' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C32_private_is_0750",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.19s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "C33_private_any_group",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 80 passed, 15 deselected in 6.47s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_capacity_member_of_ident_and_load_is_refused_from_its_bytes[changes5-CAPACITY_ROOT_INVALID]",
+   "killed": true,
+   "mutant": "C34_root_name_any_case",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 24 passed, 15 deselected in 4.14s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_capacity_member_of_ident_and_load_is_refused_from_its_bytes[changes9-CAPACITY_ROOT_INVALID]",
+   "killed": true,
+   "mutant": "C35_root_name_64",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 28 passed, 15 deselected in 4.09s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_capacity_member_of_ident_and_load_is_refused_from_its_bytes[changes6-CAPACITY_ROOT_INVALID]",
+   "killed": true,
+   "mutant": "C36_root_name_may_start_with_a_dash",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 25 passed, 15 deselected in 3.99s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value3-CONFIG_FILE_INVALID]",
+   "killed": true,
+   "mutant": "C37_config_anywhere_in_the_tree",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 39 passed, 15 deselected in 4.02s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value4-CONFIG_FILE_INVALID]",
+   "killed": true,
+   "mutant": "C38_config_name_may_start_with_a_dot",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 40 passed, 15 deselected in 4.34s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value9-CONFIG_FILE_INVALID]",
+   "killed": true,
+   "mutant": "C39_config_name_101",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 45 passed, 15 deselected in 4.50s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:118: AssertionError: assert 'LOAD_VALUES_INVALID' == 'CONFIG_FILE_INVALID'",
+   "killed": true,
+   "mutant": "C40_config_name_with_a_quote",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 43 passed, 15 deselected in 4.61s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "C41_config_limit_small",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: CONFIG_FILE_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "C42_config_limit_large",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 84 passed, 15 deselected in 7.84s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C43_worker_is_another",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.21s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C44_veto_mode_continuous",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.15s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:164: AssertionError: assert (() == ()",
+   "killed": true,
+   "mutant": "C45_mount_operation_is_another",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 60 passed, 15 deselected in 5.00s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "C46_mount_rows_unbounded",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.95s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:476: AssertionError: assert 'REFUSED_NO_CONTAINER_STARTED' == 'STATIC_CONFI...E_WORKER_BIND'",
+   "killed": true,
+   "mutant": "C47_mount_rows_31",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.99s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:707: AssertionError: assert (12 == (12 * 1) and 12 == 8)",
+   "killed": true,
+   "mutant": "C48_new_rows_unbounded",
+   "returncode": 1,
+   "seconds": 19.4,
+   "summary": "1 failed, 164 passed, 15 deselected in 17.54s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C49_container_prefix_of_tls",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.38s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C50_command_without_isolation",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.09s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C51_command_writes_bytecode",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.22s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:284: AssertionError: assert (137 == (128 + 14))",
+   "killed": true,
+   "mutant": "C52_alarm_status_is_kill",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 67 passed, 15 deselected in 5.95s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C53_ident_alarm_not_the_scripts",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 62 passed, 15 deselected in 5.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C54_load_alarm_not_the_scripts",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.22s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:284: AssertionError: assert (142 == (128 + 14) and '[A-Za-z0-9_ .-]{1,80}' == '[A-Z][A-Za-z0-9_]{0,79}'",
+   "killed": true,
+   "mutant": "C55_class_name_of_any_text",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 67 passed, 15 deselected in 5.55s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:284: AssertionError: assert (142 == (128 + 14) and '[A-Za-z_][A-Za-z0-9_]{0,79}' == '[A-Z][A-Za-z0-9_]{0,79}'",
+   "killed": true,
+   "mutant": "C56_class_name_of_lower_case",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 67 passed, 15 deselected in 5.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:284: AssertionError: assert (142 == (128 + 14) and '[A-Z][A-Za-z0-9_]{0,80}' == '[A-Z][A-Za-z0-9_]{0,79}'",
+   "killed": true,
+   "mutant": "C57_class_name_81",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 67 passed, 15 deselected in 5.62s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:254: AssertionError: assert (0 == 0 and {'mounts': [{...pe': 'bind'}]} == {'mounts': [{...pe': 'bind'}]}",
+   "killed": true,
+   "mutant": "C58_mounts_without_rw",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 66 passed, 15 deselected in 5.67s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "C59_mounts_source_is_the_name",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.36s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "C60_mounts_without_separator",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.57s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C61_load_call_without_json",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.84s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:317: AssertionError: assert (('PARTIAL_MET...AS_SPECIFIED') == ('METADATA_ON...PINNED', None)",
+   "killed": true,
+   "mutant": "C62_calendar_keys_without_version",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 70 passed, 15 deselected in 5.94s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2 b...er_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "C63_calendar_version_of_any_text",
+   "returncode": 1,
+   "seconds": 22.1,
+   "summary": "1 failed, 144 passed, 15 deselected in 19.46s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': 'vvvvvvvv...er_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "C64_calendar_version_41",
+   "returncode": 1,
+   "seconds": 23.6,
+   "summary": "1 failed, 145 passed, 15 deselected in 21.37s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2', 'document_order_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'r2d2', ...}",
+   "killed": true,
+   "mutant": "C65_epoch_text_of_lower_case",
+   "returncode": 1,
+   "seconds": 24.1,
+   "summary": "1 failed, 140 passed, 15 deselected in 21.63s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2',...820af5da2b13d7a118', 'epoch': 'EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE', ...}",
+   "killed": true,
+   "mutant": "C66_epoch_text_81",
+   "returncode": 1,
+   "seconds": 23.8,
+   "summary": "1 failed, 142 passed, 15 deselected in 21.49s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:351: AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('METADATA_ON...R_BIND', None)",
+   "killed": true,
+   "mutant": "C67_load_keys_without_config_sha",
+   "returncode": 1,
+   "seconds": 12.4,
+   "summary": "1 failed, 72 passed, 15 deselected in 9.43s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'extra', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "C68_load_roots_any_name",
+   "returncode": 1,
+   "seconds": 26.3,
+   "summary": "1 failed, 161 passed, 15 deselected in 24.23s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:664: AssertionError: assert False is True",
+   "killed": true,
+   "mutant": "C69_load_roots_without_restore",
+   "returncode": 1,
+   "seconds": 25.0,
+   "summary": "1 failed, 161 passed, 15 deselected in 23.06s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "C70_veto_modes_any",
+   "returncode": 1,
+   "seconds": 23.0,
+   "summary": "1 failed, 161 passed, 15 deselected in 20.45s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:664: AssertionError: assert False is True",
+   "killed": true,
+   "mutant": "C71_veto_modes_without_continuous",
+   "returncode": 1,
+   "seconds": 20.4,
+   "summary": "1 failed, 161 passed, 15 deselected in 18.23s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:569: AssertionError: assert 'LINE_NOT_AS_SPECIFIED' == 'EXIT_STATUS_NOT_AS_THE_LINE'",
+   "killed": true,
+   "mutant": "C72_calendar_refusal_status",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 135 passed, 15 deselected in 12.41s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_a_second_ident_run_follows_only_a_first_that_returned",
+   "killed": true,
+   "mutant": "C73_ident_refusal_status",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 98 passed, 15 deselected in 9.86s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:569: AssertionError: assert 'LINE_NOT_AS_SPECIFIED' == 'EXIT_STATUS_NOT_AS_THE_LINE'",
+   "killed": true,
+   "mutant": "C74_load_refusal_status",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 137 passed, 15 deselected in 12.76s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:317: AssertionError: assert (('PARTIAL_MET...AS_SPECIFIED') == ('METADATA_ON...PINNED', None)",
+   "killed": true,
+   "mutant": "C75_calendar_ok_status",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 70 passed, 15 deselected in 5.57s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C76_ident_ok_status",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.97s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:351: AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('METADATA_ON...R_BIND', None)",
+   "killed": true,
+   "mutant": "C77_load_ok_status",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 72 passed, 15 deselected in 5.20s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:680: AssertionError: assert ('PARTIAL_MET...IN_THE_IMAGE') == ('PARTIAL_MET...IN_THE_IMAGE')",
+   "killed": true,
+   "mutant": "C78_refused_code_of_load_is_ident_s",
+   "returncode": 1,
+   "seconds": 17.4,
+   "summary": "1 failed, 162 passed, 15 deselected in 15.61s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'REFUSED_NO_CONTAINER_STARTED' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C79_ident_in_the_long_class",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.60s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C80_load_in_the_short_class",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.16s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "C81_calendar_in_the_short_class",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.35s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STAT...ER_MAY_REMAIN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "C82_ident_runs_once",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.92s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "C83_load_runs_the_ident_row",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.28s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "C84_worker_row_with_the_mounts_template",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.43s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_probe.py:1279: KeyError: None",
+   "killed": true,
+   "mutant": "V01_step_of_any_type",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 15 deselected in 2.11s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "V02_window_day_not_checked",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 58 passed, 15 deselected in 5.07s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "V03_window_start_not_checked",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.91s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "V04_window_end_not_checked",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 58 passed, 15 deselected in 5.21s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "V05_window_end_strict",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.71s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:151: AssertionError: assert 'IMAGE_ID' == 'STEP_DAY_NOT_IN_SCOPE'",
+   "killed": true,
+   "mutant": "V06_window_after_members",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 58 passed, 15 deselected in 4.61s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[IDENT-evidence_boot_id_sha256-0000000000000000000000000000000000000000000000000000000000000000-EVIDENCE_BOOT_UNBOUND]",
+   "killed": true,
+   "mutant": "V07_boot_not_checked",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 5 passed, 15 deselected in 2.41s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[IDENT-image_revision-DD4EC4BB8DAB4D8B0372B0F9EABC90BF6443E858-IMAGE_REVISION_NOT_THE_RELEASE]",
+   "killed": true,
+   "mutant": "V08_revision_any_type",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 9 passed, 15 deselected in 3.04s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_probe.py:947: IndexError: list index out of range",
+   "killed": true,
+   "mutant": "V10_calendar_with_capacity",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 13 passed, 15 deselected in 3.32s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_probe.py:1333: KeyError: 'config_file'",
+   "killed": true,
+   "mutant": "V11_load_member_of_other_steps",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 14 passed, 15 deselected in 3.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:94: AssertionError: ('IDENT', {'extra': 1, 'parent_rows': [], 'root_path': '/var/lib/c3po-capacity'})",
+   "killed": true,
+   "mutant": "V12_capacity_extra_keys",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 19 passed, 15 deselected in 4.04s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:94: AssertionError: ('IDENT', {'root_path': '/var/a=b/c3po-capacity'})",
+   "killed": true,
+   "mutant": "V13_root_path_grammar_dropped",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 29 passed, 15 deselected in 4.30s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:94: AssertionError: ('IDENT', {'root_path': '/var/lib/c3po-capacity/'})",
+   "killed": true,
+   "mutant": "V14_root_path_not_clean",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 22 passed, 15 deselected in 3.87s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:94: AssertionError: ('IDENT', {'root_path': '/c3po-capacity'})",
+   "killed": true,
+   "mutant": "V15_root_at_the_top",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 20 passed, 15 deselected in 3.80s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_capacity_member_of_ident_and_load_is_refused_from_its_bytes[changes5-CAPACITY_ROOT_INVALID]",
+   "killed": true,
+   "mutant": "V16_root_name_not_checked",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 24 passed, 15 deselected in 3.94s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_capacity_member_of_ident_and_load_is_refused_from_its_bytes[changes13-CHAIN_ROW_UNSAFE]",
+   "killed": true,
+   "mutant": "V17_chain_not_validated",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 32 passed, 15 deselected in 4.30s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value0-LOAD_UNBOUND]",
+   "killed": true,
+   "mutant": "V18_load_extra_keys",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 36 passed, 15 deselected in 4.96s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value2-CONFIG_FILE_INVALID]",
+   "killed": true,
+   "mutant": "V20_config_file_grammar_dropped",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 38 passed, 15 deselected in 4.82s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value12-CONFIG_SHA_INVALID]",
+   "killed": true,
+   "mutant": "V21_config_sha_any",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 48 passed, 15 deselected in 5.32s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value14-RELEASE_SHA_INVALID]",
+   "killed": true,
+   "mutant": "V22_release_sha_any",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 50 passed, 15 deselected in 5.32s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value16-MOUNT_RECEIPT_UNBOUND]",
+   "killed": true,
+   "mutant": "V23_mount_receipt_any",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 52 passed, 15 deselected in 5.02s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_member_is_refused_from_its_bytes[value18-LOAD_HASH_REUSED]",
+   "killed": true,
+   "mutant": "V24_hashes_may_repeat",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 54 passed, 15 deselected in 5.36s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_window_is_validated_for_its_step_and_before_the_members",
+   "killed": true,
+   "mutant": "V25_run_arguments_not_checked",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 58 passed, 15 deselected in 5.50s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_values_travel_as_one_appended_line_and_only_signed_values",
+   "killed": true,
+   "mutant": "V27_literal_quote_not_refused",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 68 passed, 15 deselected in 6.06s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_load_values_travel_as_one_appended_line_and_only_signed_values",
+   "killed": true,
+   "mutant": "V28_literal_backslash_not_refused",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 68 passed, 15 deselected in 5.89s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_a_script_that_is_not_the_pinned_one_is_never_given",
+   "killed": true,
+   "mutant": "V29_pinned_size_not_checked",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 69 passed, 15 deselected in 5.24s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "V30_load_values_with_the_receipt",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 63 passed, 15 deselected in 6.19s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "V31_load_values_release_is_the_config",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.90s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "V32_ident_names_are_one",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 62 passed, 15 deselected in 5.46s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "V33_name_without_the_step",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.26s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/build/capacity_probe.py:1274: TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "V34_calendar_with_the_bind",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 10 passed, 15 deselected in 3.76s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_the_members_accept_exactly_their_grammar_at_its_edges",
+   "killed": true,
+   "mutant": "V35_bind_writable",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 57 passed, 15 deselected in 5.71s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E01_effects_without_step",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.01s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E02_effects_success_constant",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 61 passed, 15 deselected in 4.98s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...e, ...}], ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E03_effects_without_bands",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.00s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E04_effects_image_without_revision",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 61 passed, 15 deselected in 4.92s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E05_effects_without_boot",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 61 passed, 15 deselected in 4.91s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E06_effects_count_constant",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 62 passed, 15 deselected in 4.77s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E07_effects_without_signature",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 61 passed, 15 deselected in 4.54s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E08_effects_arguments_without_name",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 61 passed, 15 deselected in 4.83s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E09_effects_without_binds",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.08s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E10_effects_stdin_of_the_script_only",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.38s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E11_effects_stdin_bytes_of_the_script",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.60s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E12_effects_time_limit_constant",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 62 passed, 15 deselected in 5.21s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E13_effects_alarm_constant",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.29s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...pacity'}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E14_effects_capacity_without_parents",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 62 passed, 15 deselected in 5.35s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E15_effects_load_without_release",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.98s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:166: KeyError: 'mount_receipt'",
+   "killed": true,
+   "mutant": "E16_effects_load_without_receipt",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 60 passed, 15 deselected in 5.30s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E17_effects_load_without_expectation",
+   "returncode": 1,
+   "seconds": 8.2,
+   "summary": "1 failed, 63 passed, 15 deselected in 6.12s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y': None, ...} == {'activation'...y': None, ...}",
+   "killed": true,
+   "mutant": "E18_effects_calendar_without_expectation",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 61 passed, 15 deselected in 5.84s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...y', ...}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E19_effects_load_without_config_file",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 63 passed, 15 deselected in 6.01s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:215: AssertionError: assert {'activation'...pacity'}, ...} == {'activation'...y', ...}, ...}",
+   "killed": true,
+   "mutant": "E20_effects_capacity_without_children",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 62 passed, 15 deselected in 5.96s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:399: AssertionError: assert not [('open', '/', 1048832), ('open', '/proc', 1048832), ('open', '/proc/sys', 1048832), ('open', '/proc/sys/kernel', 1048832), ('open', '/proc/sys/kernel/random', 1048832), ('open', '/proc/sys/kernel/random/boot_id', 260), ...]",
+   "killed": true,
+   "mutant": "P01_identity_after_boot",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 77 passed, 15 deselected in 6.81s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P02_identity_uid_only",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 77 passed, 15 deselected in 6.69s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P03_boot_not_compared",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 77 passed, 15 deselected in 6.47s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P04_image_id_not_compared",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 77 passed, 15 deselected in 6.68s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P05_revision_not_compared",
+   "returncode": 1,
+   "seconds": 8.4,
+   "summary": "1 failed, 77 passed, 15 deselected in 6.37s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STAT...ER_MAY_REMAIN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "P06_tree_not_held_for_ident",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.82s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:354: AssertionError: assert None == {'bytes': 104, 'private': True, 'regular': True, 'sha256_as_signed': True}",
+   "killed": true,
+   "mutant": "P07_config_not_read",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 72 passed, 15 deselected in 5.47s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "P08_worker_not_read",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.60s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: ENGINE_COULD_NOT_RUN_THE_CONTAINER",
+   "killed": true,
+   "mutant": "P09_names_not_compared",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 86 passed, 15 deselected in 9.19s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: ENGINE_COULD_NOT_RUN_THE_CONTAINER",
+   "killed": true,
+   "mutant": "P10_names_first_only",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 87 passed, 15 deselected in 9.47s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:374: AssertionError: ('IDENT', 16.01)",
+   "killed": true,
+   "mutant": "P11_budget_of_one_run",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 74 passed, 15 deselected in 5.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:374: AssertionError: ('CALENDAR', 16)",
+   "killed": true,
+   "mutant": "P12_budget_strict",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 73 passed, 15 deselected in 5.76s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: CAPACITY_TREE_CHANGED_DURING_THE_STEP",
+   "killed": true,
+   "mutant": "P13_walk_without_device",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 80 passed, 15 deselected in 6.99s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P14_root_not_private",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 80 passed, 15 deselected in 6.71s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: ROOT_IDENTITIES_REFUSED_IN_THE_IMAGE",
+   "killed": true,
+   "mutant": "P15_child_not_private",
+   "returncode": 1,
+   "seconds": 8.5,
+   "summary": "1 failed, 80 passed, 15 deselected in 6.75s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: PRECHECK_OS_ERROR",
+   "killed": true,
+   "mutant": "P16_child_not_a_directory_accepted",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 80 passed, 15 deselected in 7.04s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P17_walk_not_compared",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 82 passed, 15 deselected in 8.90s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P18_walk_inode_only",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 82 passed, 15 deselected in 7.75s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: CAPACITY_ROOT_NOT_A_DIRECTORY",
+   "killed": true,
+   "mutant": "P19_missing_child_said_otherwise",
+   "returncode": 1,
+   "seconds": 8.1,
+   "summary": "1 failed, 80 passed, 15 deselected in 6.09s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'STEP_RAN_ANS...T_AS_EXPECTED' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "P20_identity_of_the_root_name",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.48s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'STEP_RAN_ANS...T_AS_EXPECTED' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "P21_identity_without_the_root",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.93s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'STEP_RAN_ANS...T_AS_EXPECTED' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "P22_identity_not_canonical",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 59 passed, 15 deselected in 5.38s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:785: AssertionError: assert ('ROOT_IDENTIT...L_TO_THE_HOST' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "P23_same_device_not_told",
+   "returncode": 1,
+   "seconds": 21.0,
+   "summary": "1 failed, 175 passed, 15 deselected in 18.91s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "P24_children_held_in_another_order",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 63 passed, 15 deselected in 5.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: CONFIG_FILE_UNREADABLE",
+   "killed": true,
+   "mutant": "P25_config_absent_said_unreadable",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 84 passed, 15 deselected in 7.67s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P26_config_owner_not_checked",
+   "returncode": 1,
+   "seconds": 9.7,
+   "summary": "1 failed, 84 passed, 15 deselected in 7.82s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P27_config_links_not_checked",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 84 passed, 15 deselected in 7.76s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P28_config_group_readable",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 84 passed, 15 deselected in 7.28s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: CAPACITY_STARTUP_REFUSED_IN_THE_IMAGE",
+   "killed": true,
+   "mutant": "P29_config_hash_not_compared",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 84 passed, 15 deselected in 7.94s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:354: AssertionError: assert {'bytes': Non...signed': True} == {'bytes': 104...signed': True}",
+   "killed": true,
+   "mutant": "P30_config_bytes_not_told",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 72 passed, 15 deselected in 5.55s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: WORKER_MOUNTS_INVALID",
+   "killed": true,
+   "mutant": "P31_mounts_command_failure_said_invalid",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 85 passed, 15 deselected in 9.78s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:484: AssertionError: b'{\"mounts\":[],\"x\":1}",
+   "killed": true,
+   "mutant": "P32_mounts_extra_members",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 85 passed, 15 deselected in 9.40s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P33_mounts_unbounded",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 85 passed, 15 deselected in 9.25s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:484: AssertionError: b'{\"mounts\":[{\"type\":\"bind\",\"source\":\"/a\",\"destination\":\"/b\",\"rw\":false,\"name\":\"x\"}]}",
+   "killed": true,
+   "mutant": "P34_mount_members_not_checked",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 85 passed, 15 deselected in 9.66s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:484: AssertionError: b'{\"mounts\":[{\"type\":\"bind\",\"source\":\"/a\",\"destination\":\"/b\",\"rw\":\"false\"}]}",
+   "killed": true,
+   "mutant": "P35_mount_rw_any_type",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 85 passed, 15 deselected in 9.31s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:484: AssertionError: b'{\"mounts\":[{\"type\":\"bind\",\"source\":null,\"destination\":\"/b\",\"rw\":false}]}",
+   "killed": true,
+   "mutant": "P36_mount_source_any_type",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 85 passed, 15 deselected in 9.22s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: WORKER_NOT_RUNNING",
+   "killed": true,
+   "mutant": "P37_worker_absent_said_otherwise",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 85 passed, 15 deselected in 9.25s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P38_worker_running_flag_only",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.32s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P39_worker_state_only",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.09s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P40_worker_image_not_compared",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 85 passed, 15 deselected in 7.94s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P41_mount_absent_accepted",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: WORKER_MOUNT_INSIDE_THE_CAPACITY_TARGET",
+   "killed": true,
+   "mutant": "P42_two_mounts_accepted",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.00s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: WORKER_CAPACITY_MOUNT_OTHER_SOURCE",
+   "killed": true,
+   "mutant": "P43_volume_accepted",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.28s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P44_other_source_accepted",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.43s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P45_writable_mount_accepted",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.50s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "P46_mount_destination_prefix",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 85 passed, 15 deselected in 8.03s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:353: AssertionError: assert 'c3po-r2d2-worker-1' == '06fc1a027249...e7419db2457f1'",
+   "killed": true,
+   "mutant": "P47_mounts_of_the_name",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 72 passed, 15 deselected in 4.94s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:355: AssertionError: assert {'capacity_mo...unts': 2, ...} == {'capacity_mo...unts': 2, ...}",
+   "killed": true,
+   "mutant": "P48_worker_report_without_id",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 72 passed, 15 deselected in 5.02s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: COMMAND_FAILED",
+   "killed": true,
+   "mutant": "P49_listing_failure_said_otherwise",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 86 passed, 15 deselected in 7.64s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: IMAGE_ID_MISMATCH",
+   "killed": true,
+   "mutant": "P50_image_absent_said_otherwise",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 77 passed, 15 deselected in 5.39s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:525: AssertionError: assert (['DID_NOT_RET...D_NOT_RETURN'] == ['DID_NOT_RETURN']",
+   "killed": true,
+   "mutant": "R01_second_run_after_one_that_did_not_return",
+   "returncode": 1,
+   "seconds": 10.8,
+   "summary": "1 failed, 96 passed, 15 deselected in 9.17s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:517: AssertionError: assert (('PARTIAL_MET..._NOT_STARTED') == ('REFUSED', '..._NOT_STARTED')",
+   "killed": true,
+   "mutant": "R02_not_started_first_said_partial",
+   "returncode": 1,
+   "seconds": 10.6,
+   "summary": "1 failed, 92 passed, 15 deselected in 8.90s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:517: AssertionError: assert (('REFUSED', '..._NOT_STARTED') == ('REFUSED', '..._NOT_STARTED')",
+   "killed": true,
+   "mutant": "R03_not_started_phase_precheck",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 92 passed, 15 deselected in 8.62s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:525: AssertionError: assert (['RETURNED'] == ['DID_NOT_RETURN']",
+   "killed": true,
+   "mutant": "R04_did_not_return_said_returned",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 95 passed, 15 deselected in 9.05s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:791: AssertionError: assert ('ROOT_IDENTIT...L_TO_THE_HOST' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "R05_seconds_rounded",
+   "returncode": 1,
+   "seconds": 19.9,
+   "summary": "1 failed, 176 passed, 15 deselected in 18.14s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "R06_run_without_the_bind",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.58s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'PARTIAL_STEP_RESULT_UNKNOWN' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "R07_run_without_a_name",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.91s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_an_expected_answer_with_something_left_or_moved_is_a_finding_beside_it[CALENDAR]",
+   "killed": true,
+   "mutant": "R08_after_count_is_before",
+   "returncode": 1,
+   "seconds": 17.6,
+   "summary": "1 failed, 164 passed, 15 deselected in 15.99s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:530: AssertionError: assert ('COMMAND_TIMEOUT' == 'COMMAND_TIMEOUT'",
+   "killed": true,
+   "mutant": "R09_names_present_of_the_first",
+   "returncode": 1,
+   "seconds": 12.3,
+   "summary": "1 failed, 96 passed, 15 deselected in 10.79s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:698: AssertionError: assert ('CONTAINER_PR..._THERE_BEFORE' == 'CONTAINER_PR..._THERE_BEFORE'",
+   "killed": true,
+   "mutant": "R10_new_rows_flag_constant",
+   "returncode": 1,
+   "seconds": 17.7,
+   "summary": "1 failed, 164 passed, 15 deselected in 15.78s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:352: AssertionError: assert (['image', 'wo...', 'run', ...] == ['image', 'wo...', 'run', ...]",
+   "killed": true,
+   "mutant": "R11_worker_not_read_after",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 72 passed, 15 deselected in 5.98s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:343: AssertionError: assert (None == {'code': None, 'status': 'COMPLETE', 'unchanged': True})",
+   "killed": true,
+   "mutant": "R12_tree_not_read_after",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 71 passed, 15 deselected in 6.20s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:313: AssertionError: assert ([] == []",
+   "killed": true,
+   "mutant": "R13_held_not_closed",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 71 passed, 15 deselected in 6.41s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:728: AssertionError: assert ('METADATA_ON...R_BIND', None) == ('PARTIAL_MET...ING_THE_STEP')",
+   "killed": true,
+   "mutant": "R14_worker_after_id_only",
+   "returncode": 1,
+   "seconds": 18.4,
+   "summary": "1 failed, 167 passed, 15 deselected in 16.48s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:728: AssertionError: assert ('METADATA_ON...R_BIND', None) == ('PARTIAL_MET...ING_THE_STEP')",
+   "killed": true,
+   "mutant": "R15_worker_after_without_restarts",
+   "returncode": 1,
+   "seconds": 18.2,
+   "summary": "1 failed, 167 passed, 15 deselected in 16.62s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:728: AssertionError: assert ('METADATA_ON...R_BIND', None) == ('PARTIAL_MET...ING_THE_STEP')",
+   "killed": true,
+   "mutant": "R16_worker_after_without_image",
+   "returncode": 1,
+   "seconds": 18.5,
+   "summary": "1 failed, 167 passed, 15 deselected in 16.73s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:740: AssertionError: /var/lib/c3po-capacity",
+   "killed": true,
+   "mutant": "R17_tree_replaced_said_unavailable",
+   "returncode": 1,
+   "seconds": 19.0,
+   "summary": "1 failed, 168 passed, 15 deselected in 16.98s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:752: AssertionError: assert {'code': None...hanged': True} == {'code': 'OBS...hanged': None}",
+   "killed": true,
+   "mutant": "R18_tree_unavailable_said_unchanged",
+   "returncode": 1,
+   "seconds": 17.9,
+   "summary": "1 failed, 168 passed, 15 deselected in 16.35s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:536: AssertionError: assert (2 == 2 and 'ROOT_IDENTIT..._IN_THE_IMAGE' == 'OUTPUT_NOT_ONE_LINE'",
+   "killed": true,
+   "mutant": "R19_line_kept_when_not_one_line",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 98 passed, 15 deselected in 10.21s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:549: AssertionError: assert {'line': {}, ...code': 0, ...} == {'line': None...code': 0, ...}",
+   "killed": true,
+   "mutant": "R20_invalid_line_kept",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 129 passed, 15 deselected in 11.29s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:549: AssertionError: assert {'line': None...de': 125, ...} == {'line': None...de': 125, ...}",
+   "killed": true,
+   "mutant": "R21_empty_output_said_present",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 99 passed, 15 deselected in 9.89s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'code': 'Error', 'status': 'CALENDAR_PIN_REFUSED', 'x': 1}",
+   "killed": true,
+   "mutant": "G01_refused_line_extra_members",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 155 passed, 15 deselected in 12.22s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'code': 'module not found', 'status': 'CALENDAR_PIN_REFUSED'}",
+   "killed": true,
+   "mutant": "G02_refused_code_any",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 152 passed, 15 deselected in 12.52s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2', 'document_order_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'r2d2', ...}",
+   "killed": true,
+   "mutant": "G03_calendar_epoch_any",
+   "returncode": 1,
+   "seconds": 13.6,
+   "summary": "1 failed, 140 passed, 15 deselected in 12.10s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '', 'docu...er_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "G04_calendar_version_any",
+   "returncode": 1,
+   "seconds": 13.5,
+   "summary": "1 failed, 143 passed, 15 deselected in 12.15s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': '0000000000000000000000000000000000000000000000000000000000000000', 'calendar_version': '4.13.2',...er_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "G05_calendar_pin_any",
+   "returncode": 1,
+   "seconds": 13.3,
+   "summary": "1 failed, 147 passed, 15 deselected in 11.84s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2',...er_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "G06_calendar_package_any",
+   "returncode": 1,
+   "seconds": 13.3,
+   "summary": "1 failed, 148 passed, 15 deselected in 11.70s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2', 'document_order_sha': 'x', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "G07_calendar_order_any",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 150 passed, 15 deselected in 12.30s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2',...er_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "G08_calendar_extra_members",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 139 passed, 15 deselected in 11.63s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:610: AssertionError: {'identities': {'config': '27b5209dbafb0ea21511ddb869f9dd898dbf8012c02f74b6304c974b45690387', 'documents': '51a77535bc...', 'payload': '4646f6b8dc4826ca39bffd75489ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'status': 'ROOT_IDENTITIES', 'x': 1}",
+   "killed": true,
+   "mutant": "G09_ident_extra_members",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 158 passed, 15 deselected in 11.68s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:610: AssertionError: {'identities': {'config': '27b5209dbafb0ea21511ddb869f9dd898dbf8012c02f74b6304c974b45690387', 'documents': '51a77535bc...4f4', 'payload': '4646f6b8dc4826ca39bffd75489ae5d9d90d7b1311c68fdbf2284b2e565ebe39', ...}, 'status': 'ROOT_IDENTITIES'}",
+   "killed": true,
+   "mutant": "G10_ident_names_any",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 158 passed, 15 deselected in 12.92s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:610: AssertionError: {'identities': {'config': '27b5209dbafb0ea21511ddb869f9dd898dbf8012c02f74b6304c974b45690387', 'documents': '51a77535bc...00000000', 'payload': '4646f6b8dc4826ca39bffd75489ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'status': 'ROOT_IDENTITIES'}",
+   "killed": true,
+   "mutant": "G11_ident_values_any",
+   "returncode": 1,
+   "seconds": 14.2,
+   "summary": "1 failed, 158 passed, 15 deselected in 12.78s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "G12_load_extra_members",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 161 passed, 15 deselected in 13.52s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'extra', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "G13_load_roots_any_name",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 161 passed, 15 deselected in 13.55s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['go', 'documents', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "G14_load_roots_unsorted",
+   "returncode": 1,
+   "seconds": 14.9,
+   "summary": "1 failed, 161 passed, 15 deselected in 13.61s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "G15_load_veto_any",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 161 passed, 15 deselected in 14.21s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "G16_load_identities_of_other_roots",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 161 passed, 15 deselected in 13.68s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51a...ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "G17_load_identity_values_any",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 161 passed, 15 deselected in 13.26s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:659: AssertionError: {'config_sha256': '0000000000000000000000000000000000000000000000000000000000000000', 'identities': {'documents': '51a...ae5d9d90d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "G18_load_config_sha_any",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 161 passed, 15 deselected in 14.23s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:583: AssertionError: {'calendar_pin_sha': 'd4ed8c2d69523a0fdac1648eb8f8eedcaa74976292ba630310725b6d4b317e99', 'calendar_version': '4.13.2',...er_sha': '1a5253bf23f5006224b79527da06697646c34c6f5a3a4f820af5da2b13d7a118', 'epoch': 'R2D2-V2-SHADOW-2026-10-05', ...}",
+   "killed": true,
+   "mutant": "G19_unknown_status_is_ok",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 151 passed, 15 deselected in 13.54s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:524: AssertionError: assert ('PARTIAL_MET...MMAND_FAILED') == ('PARTIAL_MET...MAND_TIMEOUT')",
+   "killed": true,
+   "mutant": "X01_answer_not_returned_said_failed",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 95 passed, 15 deselected in 10.12s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:548: AssertionError: assert ('PARTIAL_MET...NOT_ONE_LINE') == ('PARTIAL_MET...HE_CONTAINER')",
+   "killed": true,
+   "mutant": "X02_engine_status_not_told",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 99 passed, 15 deselected in 9.93s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:548: AssertionError: assert ('PARTIAL_MET...NOT_ONE_LINE') == ('PARTIAL_MET...BY_ITS_ALARM')",
+   "killed": true,
+   "mutant": "X03_alarm_not_told",
+   "returncode": 1,
+   "seconds": 12.0,
+   "summary": "1 failed, 108 passed, 15 deselected in 10.42s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:536: AssertionError: assert (2 == 2 and 'LINE_NOT_AS_SPECIFIED' == 'OUTPUT_NOT_ONE_LINE'",
+   "killed": true,
+   "mutant": "X04_not_one_line_said_not_as_specified",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 98 passed, 15 deselected in 10.09s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:563: AssertionError: 1",
+   "killed": true,
+   "mutant": "X05_exit_status_not_compared",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 135 passed, 15 deselected in 11.45s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:569: AssertionError: assert 'CALENDAR_PIN..._IN_THE_IMAGE' == 'EXIT_STATUS_NOT_AS_THE_LINE'",
+   "killed": true,
+   "mutant": "X06_refused_line_expects_zero",
+   "returncode": 1,
+   "seconds": 12.1,
+   "summary": "1 failed, 135 passed, 15 deselected in 10.37s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:635: AssertionError: assert ('PARTIAL_MET...TATE_UNKNOWN') == ('PARTIAL_MET...IN_THE_IMAGE')",
+   "killed": true,
+   "mutant": "X07_refusal_not_told",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 159 passed, 15 deselected in 12.33s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:591: AssertionError: assert ('METADATA_ON...PINNED', None) == ('PARTIAL_MET...OCH_MISMATCH')",
+   "killed": true,
+   "mutant": "X08_calendar_epoch_not_compared",
+   "returncode": 1,
+   "seconds": 13.6,
+   "summary": "1 failed, 157 passed, 15 deselected in 11.76s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:591: AssertionError: assert ('METADATA_ON...PINNED', None) == ('PARTIAL_MET...AGE_MISMATCH')",
+   "killed": true,
+   "mutant": "X09_calendar_package_not_compared",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 157 passed, 15 deselected in 12.23s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:591: AssertionError: assert ('METADATA_ON...PINNED', None) == ('PARTIAL_MET...DER_MISMATCH')",
+   "killed": true,
+   "mutant": "X10_calendar_order_not_compared",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 157 passed, 15 deselected in 12.00s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:618: AssertionError: assert ('METADATA_ON...E_HOST', None) == ('PARTIAL_MET...THE_TWO_RUNS')",
+   "killed": true,
+   "mutant": "X11_runs_not_compared",
+   "returncode": 1,
+   "seconds": 14.7,
+   "summary": "1 failed, 159 passed, 15 deselected in 13.17s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:623: AssertionError: documents",
+   "killed": true,
+   "mutant": "X12_ident_host_not_compared",
+   "returncode": 1,
+   "seconds": 14.4,
+   "summary": "1 failed, 159 passed, 15 deselected in 12.78s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:627: AssertionError: the identity of the config directory is reported and not required",
+   "killed": true,
+   "mutant": "X13_ident_host_compared_with_config",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 159 passed, 15 deselected in 12.73s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:677: AssertionError: ({'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51...9abe60d4256ea374f4'}, 'roots': ['documents', 'go'], 'status': 'CAPACITY_STARTUP_OK', ...}, 'RUN_ESCAPED_STATE_UNKNOWN')",
+   "killed": true,
+   "mutant": "X14_roots_not_compared",
+   "returncode": 1,
+   "seconds": 15.1,
+   "summary": "1 failed, 162 passed, 15 deselected in 13.69s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:677: AssertionError: ({'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51...0d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}, None)",
+   "killed": true,
+   "mutant": "X15_veto_not_compared",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 162 passed, 15 deselected in 14.57s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:677: AssertionError: ({'config_sha256': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'identities': {'documents': '51...0d7b1311c68fdbf2284b2e565ebe39'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}, None)",
+   "killed": true,
+   "mutant": "X16_config_sha_not_compared",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 162 passed, 15 deselected in 14.26s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:677: AssertionError: ({'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '51...cccccccccccccccccccccccccccccc'}, 'roots': ['documents', 'go', 'payload'], 'status': 'CAPACITY_STARTUP_OK', ...}, None)",
+   "killed": true,
+   "mutant": "X17_load_identities_not_compared",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 162 passed, 15 deselected in 13.99s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:701: AssertionError: assert None == 'CONTAINER_LISTING_UNAVAILABLE_AFTER_RUN'",
+   "killed": true,
+   "mutant": "X18_listing_unavailable_ignored",
+   "returncode": 1,
+   "seconds": 17.1,
+   "summary": "1 failed, 164 passed, 15 deselected in 15.42s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:696: AssertionError: assert ('PARTIAL_MET...THERE_BEFORE') == ('PARTIAL_MET...STILL_LISTED')",
+   "killed": true,
+   "mutant": "X19_name_left_ignored",
+   "returncode": 1,
+   "seconds": 16.7,
+   "summary": "1 failed, 164 passed, 15 deselected in 15.12s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:698: AssertionError: assert (None == 'CONTAINER_PRESENT_THAT_WAS_NOT_THERE_BEFORE')",
+   "killed": true,
+   "mutant": "X20_new_container_ignored",
+   "returncode": 1,
+   "seconds": 16.6,
+   "summary": "1 failed, 164 passed, 15 deselected in 15.11s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:728: AssertionError: assert ('PARTIAL_MET...ING_THE_STEP') == ('PARTIAL_MET...TER_THE_STEP')",
+   "killed": true,
+   "mutant": "X21_worker_unavailable_ignored",
+   "returncode": 1,
+   "seconds": 17.8,
+   "summary": "1 failed, 167 passed, 15 deselected in 16.43s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:728: AssertionError: assert ('METADATA_ON...R_BIND', None) == ('PARTIAL_MET...ING_THE_STEP')",
+   "killed": true,
+   "mutant": "X22_worker_change_ignored",
+   "returncode": 1,
+   "seconds": 18.4,
+   "summary": "1 failed, 167 passed, 15 deselected in 16.46s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:753: AssertionError: assert 'CAPACITY_TRE...RING_THE_STEP' == 'CAPACITY_TRE...FTER_THE_STEP'",
+   "killed": true,
+   "mutant": "X23_tree_unavailable_ignored",
+   "returncode": 1,
+   "seconds": 19.8,
+   "summary": "1 failed, 168 passed, 15 deselected in 17.97s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:740: AssertionError: /var/lib/c3po-capacity",
+   "killed": true,
+   "mutant": "X24_tree_change_ignored",
+   "returncode": 1,
+   "seconds": 19.6,
+   "summary": "1 failed, 168 passed, 15 deselected in 17.86s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:383: AssertionError: assert ('PARTIAL_MET...TATE_UNKNOWN') == ('PARTIAL_MET..._NOT_STARTED')",
+   "killed": true,
+   "mutant": "X25_missing_second_run_ignored",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 76 passed, 15 deselected in 5.44s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:571: AssertionError: assert ('METADATA_ON...IN_THE_IMAGE') == ('PARTIAL_MET...IN_THE_IMAGE')",
+   "killed": true,
+   "mutant": "X26_expectation_not_partial",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 135 passed, 15 deselected in 12.16s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:797: AssertionError: assert ('PARTIAL_MET...STILL_LISTED') == ('PARTIAL_MET...IN_THE_IMAGE')",
+   "killed": true,
+   "mutant": "X27_findings_before_the_expectation",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 177 passed, 15 deselected in 19.29s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:160: AssertionError: assert 'STATIC_CONFI...E_WORKER_BIND' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "X28_success_outcome_constant",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 59 passed, 15 deselected in 4.13s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:619: AssertionError: assert {'equal_to_th..._agree': True} == {'equal_to_th...agree': False}",
+   "killed": true,
+   "mutant": "X29_comparison_runs_agree_constant",
+   "returncode": 1,
+   "seconds": 17.6,
+   "summary": "1 failed, 159 passed, 15 deselected in 15.85s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:341: AssertionError: assert {'equal_to_th..._agree': True} == {'equal_to_th..._agree': True}",
+   "killed": true,
+   "mutant": "X30_comparison_without_config",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 71 passed, 15 deselected in 6.03s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_executor_boot_and_image_are_refused_before_anything_else[CALENDAR]",
+   "killed": true,
+   "mutant": "X31_step_succeeded_always",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 77 passed, 15 deselected in 6.42s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:335: AssertionError: assert (None == {'config': '27b5209dbafb0ea21511ddb869f9dd898dbf8012c02f74b6304c974b45690387', 'documents': '51a77535bc575a6af3235f7b7...242a8ac25b421ae2a9799abe60d4256ea374f4', 'payload': '4646f6b8dc4826ca39bffd75489ae5d9d90d7b1311c68fdbf2284b2e565ebe",
+   "killed": true,
+   "mutant": "X32_receipt_without_host_identities",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 71 passed, 15 deselected in 5.14s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_executor_boot_and_image_are_refused_before_anything_else[CALENDAR]",
+   "killed": true,
+   "mutant": "X33_receipt_containers_run_constant",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 77 passed, 15 deselected in 5.35s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:273: AssertionError: assert 'Expr(value=C...keywords=[]))' == 'Expr(value=C...keywords=[]))'",
+   "killed": true,
+   "mutant": "S01_ident_without_alarm",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 67 passed, 15 deselected in 4.85s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:281: AssertionError: assert ('/c3po-capacity/config' == '/c3po-capacity'",
+   "killed": true,
+   "mutant": "S02_ident_other_target",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 67 passed, 15 deselected in 4.70s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:283: AssertionError: assert ('documents', 'go', 'payload') == ('config', 'd...o', 'payload')",
+   "killed": true,
+   "mutant": "S03_ident_without_config",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 67 passed, 15 deselected in 4.99s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:55: AssertionError: {'code': \"[Errno 2] No such file or directory: 'payload'\", 'status': 'ROOT_IDENTITIES_REFUSED'}",
+   "killed": true,
+   "mutant": "S04_ident_code_of_any_text",
+   "returncode": 1,
+   "seconds": 29.0,
+   "summary": "1 failed, 188 passed, 15 deselected in 28.02s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:115: AssertionError: {'code': 'ShadowIntegrityError', 'status': 'ROOT_IDENTITIES_REFUSED'}",
+   "killed": true,
+   "mutant": "S05_ident_class_name_of_shadow_codes",
+   "returncode": 1,
+   "seconds": 28.3,
+   "summary": "1 failed, 188 passed, 15 deselected in 27.35s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:56: AssertionError: (0, {'code': 'ROOT_NOT_PRIVATE', 'status': 'ROOT_IDENTITIES_REFUSED'}, b'')",
+   "killed": true,
+   "mutant": "S06_ident_refusal_exits_zero",
+   "returncode": 1,
+   "seconds": 28.2,
+   "summary": "1 failed, 188 passed, 15 deselected in 27.43s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:246: AssertionError: b''",
+   "killed": true,
+   "mutant": "S07_ident_without_app_root",
+   "returncode": 1,
+   "seconds": 93.0,
+   "summary": "1 failed, 205 passed, 15 deselected in 91.95s (0:01:31)",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:54: AssertionError: (0, b'{\"identities\": {\"config\": \"13537db634fd3156ee3f149bd7882f6e6f988ffffe6373e069d1a0840231cb55\", \"documents\": \"498b...\"payload\": \"7705cb5793b674625184197cd7fb1fe057b86ac58765279ca6889b8f0f5f0653\"}, \"status\": \"ROOT_IDENTITIES\"}",
+   "killed": true,
+   "mutant": "S08_ident_line_not_compact",
+   "returncode": 1,
+   "seconds": 26.6,
+   "summary": "1 failed, 186 passed, 15 deselected in 25.49s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:100: AssertionError: assert {'config': 'e...8d23b699e480'} == {'config': 'e...adb25161eb14'}",
+   "killed": true,
+   "mutant": "S09_ident_root_not_closed_identity_of_the_first",
+   "returncode": 1,
+   "seconds": 26.5,
+   "summary": "1 failed, 186 passed, 15 deselected in 25.33s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:273: AssertionError: assert 'Expr(value=C...keywords=[]))' == 'Expr(value=C...keywords=[]))'",
+   "killed": true,
+   "mutant": "S10_load_without_alarm",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 67 passed, 15 deselected in 6.36s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:194: AssertionError: assert {'r2d2_v2_cap...ON_ONLY', ...} == {'r2d2_v2_cap...ON_ONLY', ...}",
+   "killed": true,
+   "mutant": "S11_load_not_required",
+   "returncode": 1,
+   "seconds": 28.5,
+   "summary": "1 failed, 191 passed, 15 deselected in 26.61s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:194: AssertionError: assert {'r2d2_v2_cap...ON_ONLY', ...} == {'r2d2_v2_cap...ON_ONLY', ...}",
+   "killed": true,
+   "mutant": "S12_load_config_sha_of_the_release",
+   "returncode": 1,
+   "seconds": 27.7,
+   "summary": "1 failed, 191 passed, 15 deselected in 26.28s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:281: AssertionError: assert ('/c3po-capacity' == '/c3po-capacity'",
+   "killed": true,
+   "mutant": "S13_load_veto_continuous",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 67 passed, 15 deselected in 3.87s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:194: AssertionError: assert {'r2d2_v2_cap...IVATION_ONLY'} == {'r2d2_v2_cap...ON_ONLY', ...}",
+   "killed": true,
+   "mutant": "S14_load_release_not_passed",
+   "returncode": 1,
+   "seconds": 28.0,
+   "summary": "1 failed, 191 passed, 15 deselected in 26.97s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:194: AssertionError: assert {'r2d2_v2_cap...ON_ONLY', ...} == {'r2d2_v2_cap...ON_ONLY', ...}",
+   "killed": true,
+   "mutant": "S15_load_config_file_other",
+   "returncode": 1,
+   "seconds": 26.9,
+   "summary": "1 failed, 191 passed, 15 deselected in 25.83s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:55: AssertionError: {'config_sha256': 'b98c37fa2ba6adefcd5efe56339c3b5f0f8d0a6a67131334a523fc694bf7c64d', 'identities': {'documents': '9b1...c1b030b6d7ee748a7426952f9b852d5a935e5'}, 'roots': ['payload', 'go', 'documents'], 'status': 'CAPACITY_STARTUP_OK', ...}",
+   "killed": true,
+   "mutant": "S16_load_roots_unsorted",
+   "returncode": 1,
+   "seconds": 27.4,
+   "summary": "1 failed, 191 passed, 15 deselected in 26.54s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:200: AssertionError: assert None == 'CAPACITY_VETO_MODE_NOT_AS_SIGNED'",
+   "killed": true,
+   "mutant": "S17_load_veto_of_the_settings",
+   "returncode": 1,
+   "seconds": 28.2,
+   "summary": "1 failed, 194 passed, 15 deselected in 27.18s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:200: AssertionError: assert None == 'CAPACITY_CONFIG_SHA_NOT_EQUAL'",
+   "killed": true,
+   "mutant": "S18_load_config_sha_of_the_settings",
+   "returncode": 1,
+   "seconds": 27.7,
+   "summary": "1 failed, 193 passed, 15 deselected in 26.53s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_scripts.py::test_load_script_every_branch_with_a_stub_application[ok-CAPACITY_STARTUP_OK-None]",
+   "killed": true,
+   "mutant": "S19_load_not_closed_on_success",
+   "returncode": 1,
+   "seconds": 27.0,
+   "summary": "1 failed, 191 passed, 15 deselected in 26.31s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:56: AssertionError: (0, {'code': 'CAPACITY_CONFIG_HASH', 'status': 'CAPACITY_STARTUP_REFUSED'}, b'SETTINGS {\"r2d2_v2_capacity_config_file\"...DERIVATION_ONLY\", \"r2d2_v2_shadow_release_sha\": \"5c9f1bbdd01a34bf88ad62dcd04e9bc419eb1758c2b862048f419a594f33ee98\"}",
+   "killed": true,
+   "mutant": "S20_load_refusal_exits_zero",
+   "returncode": 1,
+   "seconds": 29.7,
+   "summary": "1 failed, 195 passed, 15 deselected in 28.54s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_scripts.py:55: AssertionError: {'code': 'the config is not what was signed', 'status': 'CAPACITY_STARTUP_REFUSED'}",
+   "killed": true,
+   "mutant": "S21_load_code_of_any_text",
+   "returncode": 1,
+   "seconds": 30.8,
+   "summary": "1 failed, 196 passed, 15 deselected in 29.72s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_scripts.py::test_load_script_every_branch_with_a_stub_application[ok-CAPACITY_STARTUP_OK-None]",
+   "killed": true,
+   "mutant": "S22_load_identities_of_documents",
+   "returncode": 1,
+   "seconds": 28.4,
+   "summary": "1 failed, 191 passed, 15 deselected in 27.55s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_scripts.py::test_load_script_every_branch_with_a_stub_application[broken_roots-CAPACITY_STARTUP_REFUSED-AttributeError]",
+   "killed": true,
+   "mutant": "S23_load_second_refusal_not_closed",
+   "returncode": 1,
+   "seconds": 31.0,
+   "summary": "1 failed, 199 passed, 15 deselected in 29.94s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:247: AssertionError: assert '34296202fcf7...94e52aa32d69f' == '5a6066ae2925...e8843fe582b5f'",
+   "killed": true,
+   "mutant": "S24_calendar_status_renamed",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 65 passed, 15 deselected in 4.29s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:247: AssertionError: assert 'c79c21572239...206bef55f9cdd' == '5a6066ae2925...e8843fe582b5f'",
+   "killed": true,
+   "mutant": "S25_calendar_refusal_exits_zero",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 65 passed, 15 deselected in 4.54s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:247: AssertionError: assert 'e8d072449bd8...fe40c53b309d6' == '5a6066ae2925...e8843fe582b5f'",
+   "killed": true,
+   "mutant": "S26_calendar_without_app_root",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 65 passed, 15 deselected in 4.69s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W01_mount_under_the_target_accepted",
+   "returncode": 1,
+   "seconds": 18.2,
+   "summary": "1 failed, 178 passed, 15 deselected in 16.55s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W02_mount_reaching_the_tree_accepted",
+   "returncode": 1,
+   "seconds": 17.3,
+   "summary": "1 failed, 178 passed, 15 deselected in 15.66s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W03_ancestor_mount_accepted",
+   "returncode": 1,
+   "seconds": 17.6,
+   "summary": "1 failed, 178 passed, 15 deselected in 15.79s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W04_mount_below_the_root_accepted",
+   "returncode": 1,
+   "seconds": 16.9,
+   "summary": "1 failed, 178 passed, 15 deselected in 15.69s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:822: AssertionError: {'Destination': '/tmp', 'Driver': '', 'Mode': '', 'Name': '', ...}",
+   "killed": true,
+   "mutant": "W05_source_without_a_path_judged",
+   "returncode": 1,
+   "seconds": 15.1,
+   "summary": "1 failed, 178 passed, 15 deselected in 13.14s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "W06_the_capacity_mount_judged_as_another",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 63 passed, 15 deselected in 3.78s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W07_release_pin_present_only",
+   "returncode": 1,
+   "seconds": 14.4,
+   "summary": "1 failed, 179 passed, 15 deselected in 13.39s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W08_release_pin_may_be_absent",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 179 passed, 15 deselected in 13.15s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W09_mount_source_not_checked",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 179 passed, 15 deselected in 13.01s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:846: AssertionError: ['C3PO_R2D2_V2_CAPACITY_CONFIG_FILE']",
+   "killed": true,
+   "mutant": "W10_settings_must_be_absent",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 179 passed, 15 deselected in 13.05s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W11_settings_any",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 179 passed, 15 deselected in 12.79s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W12_required_capitalised",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 179 passed, 15 deselected in 13.41s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:846: AssertionError: ['C3PO_R2D2_V2_CAPACITY_CONFIG_FILE']",
+   "killed": true,
+   "mutant": "W13_config_file_compared_with_the_hash",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 179 passed, 15 deselected in 12.74s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "W14_settings_without_the_veto",
+   "returncode": 1,
+   "seconds": 14.5,
+   "summary": "1 failed, 179 passed, 15 deselected in 12.49s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:352: AssertionError: assert (['image', 'wo...n', 'ps', ...] == ['image', 'wo...', 'run', ...]",
+   "killed": true,
+   "mutant": "W15_settings_not_read",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 72 passed, 15 deselected in 3.47s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: WORKER_RELEASE_SHA_NOT_AS_SIGNED",
+   "killed": true,
+   "mutant": "W16_environment_failure_said_otherwise",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 179 passed, 15 deselected in 13.93s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:217: AssertionError: assert [] == [['run', '--r...--init', ...]]",
+   "killed": true,
+   "mutant": "W17_mount_source_of_the_config",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 63 passed, 15 deselected in 3.04s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "T01_root_entries_not_judged",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 182 passed, 15 deselected in 13.72s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "T02_root_entries_unbounded",
+   "returncode": 1,
+   "seconds": 15.3,
+   "summary": "1 failed, 182 passed, 15 deselected in 14.02s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:888: TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "T03_root_entries_63",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 182 passed, 15 deselected in 13.84s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:390: AssertionError: None",
+   "killed": true,
+   "mutant": "T04_root_entry_links_accepted",
+   "returncode": 1,
+   "seconds": 14.3,
+   "summary": "1 failed, 182 passed, 15 deselected in 13.30s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:882: AssertionError: assert ('ROOT_IDENTIT...L_TO_THE_HOST' == 'ROOT_IDENTIT...L_TO_THE_HOST'",
+   "killed": true,
+   "mutant": "T05_other_directories_not_counted",
+   "returncode": 1,
+   "seconds": 14.6,
+   "summary": "1 failed, 182 passed, 15 deselected in 13.61s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_probe.py::test_a_root_changed_after_the_worker_started_is_reported_not_judged",
+   "killed": true,
+   "mutant": "K01_change_at_the_start_counted",
+   "returncode": 1,
+   "seconds": 13.9,
+   "summary": "1 failed, 181 passed, 15 deselected in 12.73s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:864: AssertionError: assert 1791232800000000005 == ((1791232800 * (10 ** 9)) + 500000000)",
+   "killed": true,
+   "mutant": "K02_fraction_not_padded",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 181 passed, 15 deselected in 11.65s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:355: AssertionError: assert {'capacity_mo...unts': 2, ...} == {'capacity_mo...unts': 2, ...}",
+   "killed": true,
+   "mutant": "K03_change_not_reported",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 72 passed, 15 deselected in 3.33s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:866: AssertionError: 2026-10-05T20:40:00+00:00",
+   "killed": true,
+   "mutant": "K04_started_at_of_any_zone",
+   "returncode": 1,
+   "seconds": 13.3,
+   "summary": "1 failed, 181 passed, 15 deselected in 12.40s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:863: AssertionError: assert (1791232800000000000 == ((1791232800 * (10 ** 9)) + 1))",
+   "killed": true,
+   "mutant": "K05_started_at_seconds_only",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 181 passed, 15 deselected in 11.95s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_probe.py:351: AssertionError: assert ('PARTIAL_MET...HA_NOT_EQUAL') == ('METADATA_ON...R_BIND', None)",
+   "killed": true,
+   "mutant": "X34_load_config_sha_never_signed",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 72 passed, 15 deselected in 3.39s",
+   "tests": [
+    "test_probe.py",
+    "test_scripts.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

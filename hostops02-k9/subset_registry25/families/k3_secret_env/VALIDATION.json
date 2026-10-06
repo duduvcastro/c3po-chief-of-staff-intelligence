@@ -1,0 +1,142 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "core_sha256": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+  "date_class": "WRITE_EPOCH",
+  "dates": [
+   "2026-10-03",
+   "2026-10-04",
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07",
+   "2026-10-08",
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "dispatcher_sha256": "af2e304b9cb61b6560fe182fd9e1a9a3eee2fd0832924659b4165f03fc5b2063",
+  "final_payload_bytes": 191759,
+  "final_payload_sha256": "d1ac0157620e65bfa3156b979a8cc3c76de8ee277c2def90dc6db7295d7aae48",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "0410b0601c670c68bbaf0cb0c30575ea2d6a4decd00e3cc7c3da4e552b33da00",
+  "parts": [
+   "core",
+   "runner",
+   "docker",
+   "parents",
+   "files"
+  ],
+  "scope_sha256": "896baecf8756dcc468bac2ea348d61c1aaf857f0da6126ed20b0402f414eec45",
+  "source_bytes": 127305,
+  "source_sha256": "f5385766ccd688949ae4fb0d9095610877eec64e9125dfdbe69f7fc918b378c0",
+  "spec_sha256": "ee5381bdbb83640144fa142968ee3f9de57f1ce02f12b86d099eff7b548af6a9",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 11571,
+  "writes_allowed": true
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "core": {
+  "assemble_core": "GENERATION_OK",
+  "core_sha256sums": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd",
+  "directory": "../core_k3 (byte copy of the secrets family's revision, made 2026-10-04 21:15Z; never written)",
+  "files_listed_and_equal": "every file of CORE_SHA256SUMS but ",
+  "generation_sha256_of_assemble_py": "232f4180a940186e86d7599c10c4fac143fcfe3950baa8e853a3910f84f5c1e6",
+  "note": "the core's own seal.py check answers SEAL_BROKEN on the copy because of the two files above (upstream was mid-run)",
+  "unsealed_at_the_copy": {}
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "gate": "the core_k3 linux_root job run with this directory as its argument, suite passing as real root",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_RUN.json": {
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 179,
+    "redundant_survivors": 0,
+    "single": 179,
+    "survivors": 0
+   },
+   "errors": [],
+   "killed_by_the_time_limit": [],
+   "present": true,
+   "problems": [],
+   "python": "Python 3.9.6",
+   "sha256": "502b67cdd89c11e32ed442fb87848febf3983545cf3c98c760a9135bb911243c",
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 179,
+    "redundant_survivors": 0,
+    "single": 179,
+    "survivors": 0
+   },
+   "errors": [],
+   "killed_by_the_time_limit": [],
+   "present": true,
+   "problems": [],
+   "python": "Python 3.12.14",
+   "sha256": "b822d8db2929c2f5ca7214bfa47bdcea48e97de9bd0b8ff845e87e412af30327",
+   "survivors": []
+  }
+ },
+ "operation": "GO_WRITE_HOSTOPS02_K3_SECRET_ENV_01",
+ "owner_sentence": {
+  "status": "PROPOSED_NOT_SIGNED",
+  "where": "DESIGN.md section 11"
+ },
+ "review": {
+  "status": "NOT_REVIEWED"
+ },
+ "schema": "HOSTOPS02_K3_SECRET_ENV_VALIDATION_V1",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 296,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k3_secret_env": 157,
+    "test_native": 13,
+    "test_static_pins": 5
+   },
+   "python": "Python 3.9.6",
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 296
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 296,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k3_secret_env": 157,
+    "test_native": 13,
+    "test_static_pins": 5
+   },
+   "python": "Python 3.12.14",
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 296
+  }
+ ],
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "cbe55595dace281a38eed764803e8144fc5c99338b31ffb353771f121f7c63f2",
+  "DISPATCH.UNBOUND.json": "a81cf89b90dc88add783bae7a18d2c46beaca10e699b266694ca0b221c9525f3",
+  "FINAL_PAYLOAD.UNBOUND.py": "d1ac0157620e65bfa3156b979a8cc3c76de8ee277c2def90dc6db7295d7aae48",
+  "GO.UNBOUND.json": "68847cbe6b50dfea037bb243da054a1da2e4da01f688e2f604fcd316f012c809",
+  "PUBLICATION_PROOF.UNBOUND.json": "c348a593793b127b4e21989e7bb6e25b7da84d43efdca469ee219f958143f59a",
+  "REQUEST.UNBOUND.json": "cefddf8278ca33d9d6e9958b850523331a146ac2eaa23f43885381d3f3660e3e"
+ }
+}

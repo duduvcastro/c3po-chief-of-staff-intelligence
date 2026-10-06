@@ -1,0 +1,87 @@
+{
+  "earlier_packaged_receipt_sha256": "e57d312536f40af5cf666f435d8671a4de548555c1996ee697cf71d36e65671d",
+  "full_PASS": false,
+  "historical_first_receipt_sha256": "bb6263715ca0d15ad351310f39b4273985a869f04e75d39ecc930bd74a43d187",
+  "independent_in_sandbox_probe": {
+    "classification": "SEPARATE_REPRODUCTION_NOT_THE_ORIGINAL_CHILD_STREAM",
+    "receipt_sha256": "457cf222f5deba4708c1c4122abc933350b99620a054b7a7dbec7a090fc086fd",
+    "stderr_exact": "python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\n",
+    "stdout_code": "REQUEST_OR_EXECUTOR_UNBOUND",
+    "transport_status": "UNCERTAIN"
+  },
+  "integral_layers": [
+    {
+      "cases": 539,
+      "child_w1_junit_sha256": "6841747c53292755e532fe93a071c14a9c4839eb629413a437ef924fd16e506a",
+      "errors": 0,
+      "failed_names": [
+        "test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder"
+      ],
+      "failures": 1,
+      "junit_sha256": "de654758f5a59ffb62fac87345685aee946ac62cef488f91ed0578b99b05828f",
+      "layer": "py39",
+      "new_controls_passed": 24,
+      "outer_python_version": "3.9.6",
+      "passed": 526,
+      "skipped": 12,
+      "skipped_names": [
+        "test_the_binder_and_its_documents_hold_no_value_of_the_executed_bound_sets",
+        "test_rehearsal_driver_precheck_stops_before_resume",
+        "test_w1_same_inputs_same_bytes_and_each_revision_reproduces_the_other",
+        "test_hostops01_precheck_and_provision_same_inputs_same_bytes",
+        "test_the_real_w1_set_of_today_reads_the_same_with_both_revisions",
+        "test_w1_and_hostops01_same_inputs_same_bytes",
+        "test_hostops02_same_inputs_same_bytes[catalog]",
+        "test_hostops02_same_inputs_same_bytes[readback]",
+        "test_hostops02_same_inputs_same_bytes[release]",
+        "test_hostops02_same_inputs_same_bytes[activate]",
+        "test_the_rehearsal_sets_recorded_by_revision_3_read_the_same_with_both_revisions",
+        "test_the_recorded_rehearsal_sets_are_bound_again_by_revision_4_to_the_same_bytes"
+      ],
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "8dbd18739c6f6e67006a0fe92ccfaa5b90d779ad4b26a28e634220f1ad7b4c8e"
+    },
+    {
+      "cases": 539,
+      "child_w1_junit_sha256": "7636f4ecf0c487c0e2b4c1d61a8e718c069fa465194d93e50ac26d2509ec212c",
+      "errors": 0,
+      "failed_names": [
+        "test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder"
+      ],
+      "failures": 1,
+      "junit_sha256": "f1feeeabb0dbac73c499bd17dc10b3743f2ec29788630679f280fd9dec7de689",
+      "layer": "py312",
+      "new_controls_passed": 24,
+      "outer_python_version": "3.12.14",
+      "passed": 526,
+      "skipped": 12,
+      "skipped_names": [
+        "test_the_binder_and_its_documents_hold_no_value_of_the_executed_bound_sets",
+        "test_rehearsal_driver_precheck_stops_before_resume",
+        "test_w1_same_inputs_same_bytes_and_each_revision_reproduces_the_other",
+        "test_hostops01_precheck_and_provision_same_inputs_same_bytes",
+        "test_the_real_w1_set_of_today_reads_the_same_with_both_revisions",
+        "test_w1_and_hostops01_same_inputs_same_bytes",
+        "test_hostops02_same_inputs_same_bytes[catalog]",
+        "test_hostops02_same_inputs_same_bytes[readback]",
+        "test_hostops02_same_inputs_same_bytes[release]",
+        "test_hostops02_same_inputs_same_bytes[activate]",
+        "test_the_rehearsal_sets_recorded_by_revision_3_read_the_same_with_both_revisions",
+        "test_the_recorded_rehearsal_sets_are_bound_again_by_revision_4_to_the_same_bytes"
+      ],
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "2b4546649a2720e6dfd3d21580896cc0a23c6c53a6e8714b22e26f28e47807e2"
+    }
+  ],
+  "operational_steps": 0,
+  "original_child_expected_transport_status": "KNOWN_REFUSAL",
+  "original_child_observed_transport_status": "UNCERTAIN",
+  "original_child_raw_stderr": "UNAVAILABLE_NOT_RETAINED_BY_ASSERTION_OR_JUNIT",
+  "original_child_raw_stdout": "UNAVAILABLE_NOT_RETAINED_BY_ASSERTION_OR_JUNIT",
+  "original_integral_cause": "UNCONFIRMED_FROM_ORIGINAL_STREAMS",
+  "outside_sandbox": "AUTO_REVIEW_REJECTED_NOT_EXECUTED_NO_BYPASS",
+  "previous_unqualified_causal_fields_superseded_by_this_separation": true,
+  "schema": "A7_FULL539_ORIGINAL_VERSUS_SEPARATE_DIAGNOSTIC_V1",
+  "source_sha256": "c5730380bae38027be58f1b34c49eca072611d03d1ebc2837f2604a0ee2cf3d2",
+  "status": "HOLD_ORIGINAL_CHILD_RAW_UNAVAILABLE"
+}

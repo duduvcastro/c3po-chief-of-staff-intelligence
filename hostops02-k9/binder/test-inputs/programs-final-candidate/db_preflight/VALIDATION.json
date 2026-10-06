@@ -1,0 +1,38 @@
+{
+ "core_generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "core_seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+ "files": {},
+ "operation_directory": "db_preflight",
+ "schema": "HOSTOPS02_K5_DBR_VALIDATION_V1",
+ "scope": "SEPARATE_PROGRAM_NEW_SCOPED_MATRIX_NOT_HISTORICAL_MATRIX",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "last_line": "295 passed, 1 skipped in 4.23s",
+   "passed": 295,
+   "python": "Python 3.9.6",
+   "release_tree_given": false,
+   "returncode": 0,
+   "skipped": 1,
+   "skipped_tests": [
+    "release authority unavailable locally"
+   ],
+   "tests": 296
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "last_line": "295 passed, 1 skipped in 2.91s",
+   "passed": 295,
+   "python": "Python 3.12.14",
+   "release_tree_given": false,
+   "returncode": 0,
+   "skipped": 1,
+   "skipped_tests": [
+    "release authority unavailable locally"
+   ],
+   "tests": 296
+  }
+ ]
+}

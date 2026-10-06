@@ -1,0 +1,184 @@
+# BOOT candidate proof: the configured steps run only on one disposable GitHub-hosted Linux runner.
+# This configuration runs non-root binder regression, mandatory BOOT tests, literal Go text/template,
+# actual sealed TREE in a memory host, and three-family real-registry selection/assembly.
+# It does not run production host operations, Docker operational dispatch, or the full25 sealed-copy proof.
+# Each skipped historical case is named as omitted; every new BOOT/conformance case is mandatory.
+# One branch, push trigger only, read-only token, no secret, environment or deployment.
+
+name: hostops02-k9-proof
+on:
+  push:
+    branches: [ops/hostops02-morning-proof-20261006]
+permissions:
+  contents: read
+concurrency:
+  group: ops-hostops02-morning-proof-20261006
+  cancel-in-progress: false
+jobs:
+  seals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: every seal (strict, with each directory's own seal.py check), the links, proof/ and this file
+        run: /usr/bin/python3 -I -B hostops02-k9/proof/seals.py
+      - name: public-safety scan of hostops02-k9/ and of this workflow
+        if: always()
+        run: /usr/bin/python3 -I -B hostops02-k9/proof/public_safety.py
+      - name: the seal report as an artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hostops02-k9-proof-seals
+          if-no-files-found: warn
+          retention-days: 30
+          path: hostops02-k9/proof/out/
+  linux-root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        group: [binder]
+    env:
+      HOSTOPS_THROWAWAY_RUNNER: "yes"
+      PROOF_GROUP: ${{ matrix.group }}
+    steps:
+      - name: checkout (full history, so that the release commit is at hand for git archive and git show)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: every seal before the run (strict)
+        run: /usr/bin/python3 -I -B hostops02-k9/proof/seals.py
+      - name: exact binder Python 3.9
+        if: ${{ contains(fromJSON('["binder"]'), matrix.group) }}
+        id: binder-py39
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.9'
+          check-latest: false
+      - name: exact binder Python 3.12
+        if: ${{ contains(fromJSON('["binder"]'), matrix.group) }}
+        id: binder-py312
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12'
+          check-latest: false
+      - name: binder literal rehearsal prerequisites (throwaway runner only)
+        if: ${{ contains(fromJSON('["binder"]'), matrix.group) }}
+        run: |
+          /usr/bin/python3 -I -B - <<'PY'
+          """Runner prerequisites for the candidate's literal local rehearsal commands."""
+          import hashlib
+          import json
+          import os
+          import platform
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+          
+          PRODUCTION_PATHS=('/var/lib/c3po','/var/lib/c3po-capacity','/mnt/day-d-data','/opt/chief-of-staff-digital','/etc/c3po-bar','/var/lib/c3po-bar',
+                            '/etc/c3po-reader','/var/lib/c3po-reader','/run/c3po-security')
+          SYSTEM_PROBE="""import json,os,platform,sys,pytest
+          print(json.dumps({'python_version':platform.python_version(),'executable':sys.executable,'uid':os.getuid(),'euid':os.geteuid(),
+           'pytest_version':pytest.__version__,'pytest_module':pytest.__file__},sort_keys=True))
+          """
+          
+          def guard(allowed_groups):
+              if not sys.platform.startswith('linux'):raise ValueError('Linux only')
+              if os.environ.get('GITHUB_ACTIONS')!='true':raise ValueError('a GitHub Actions job is required')
+              if os.environ.get('RUNNER_ENVIRONMENT')!='github-hosted':raise ValueError('a GitHub-hosted runner is required')
+              if os.environ.get('HOSTOPS_THROWAWAY_RUNNER')!='yes':raise ValueError('HOSTOPS_THROWAWAY_RUNNER=yes is required')
+              if os.getuid()==0 or os.geteuid()==0 or os.getuid()!=os.geteuid():raise ValueError('the ordinary runner user is required')
+              group=os.environ.get('PROOF_GROUP')
+              if group not in allowed_groups:raise ValueError('this is not a binder group')
+              for path in PRODUCTION_PATHS:
+                  if os.path.lexists(path):raise ValueError('%s exists: this is not a throwaway runner'%path)
+              done=subprocess.run(['sudo','-n','true'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+              if done.returncode!=0:raise ValueError('sudo -n is not available')
+              return group
+          
+          def file_metadata(path):
+              source=Path(path)
+              info=source.stat()
+              if not stat.S_ISREG(info.st_mode):raise ValueError('%s is not a regular file'%path)
+              return {'path':str(source),'realpath':str(source.resolve()),'is_symlink':source.is_symlink(),
+                      'uid':info.st_uid,'gid':info.st_gid,'mode':format(stat.S_IMODE(info.st_mode),'04o'),'bytes':info.st_size,
+                      'sha256':hashlib.sha256(source.read_bytes()).hexdigest()}
+          
+          def main(allowed_groups):
+              try:group=guard(allowed_groups)
+              except (OSError,ValueError,subprocess.TimeoutExpired) as error:
+                  sys.stderr.write('REHEARSAL_PREREQUISITES_REFUSED: %s\n'%error)
+                  return 1
+              output=Path('hostops02-k9/proof/out')/group
+              output.mkdir(parents=True,exist_ok=True)
+              log=output/'BINDER.REHEARSAL_PREREQUISITES.txt'
+              report=output/'BINDER.REHEARSAL_PREREQUISITES.json'
+              detail={'schema':'HOSTOPS02_BINDER_REHEARSAL_PREREQUISITES_V1','group':group,'complete':False,
+                      'runner':{'platform':platform.platform(),'uid':os.getuid(),'euid':os.geteuid()},'commands':[],
+                      'scope':'System Python, pytest and zsh prerequisites for literal local rehearsals; separate from the pinned outer 3.9/3.12 suites'}
+              transcript=[]
+              def command(name,argv,timeout):
+                  row={'stage':name,'argv':argv,'returncode':'NOT_STARTED'}
+                  detail['commands'].append(row)
+                  try:done=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+                  except (OSError,subprocess.TimeoutExpired) as error:
+                      if isinstance(error,subprocess.TimeoutExpired):row['returncode']='TIMEOUT'
+                      def partial(value):return value.decode('utf-8','replace') if isinstance(value,bytes) else value or ''
+                      transcript.append('$ %s\nexit=%s\nstdout:\n%sstderr:\n%serror: %s\n'%(' '.join(argv),row['returncode'],
+                                        partial(getattr(error,'stdout',None)),partial(getattr(error,'stderr',None)),error))
+                      raise
+                  stdout=done.stdout.decode('utf-8','replace');stderr=done.stderr.decode('utf-8','replace')
+                  row['returncode']=done.returncode
+                  transcript.append('$ %s\nexit=%d\nstdout:\n%sstderr:\n%s'%(' '.join(argv),done.returncode,stdout,stderr))
+                  if done.returncode!=0:raise ValueError('%s failed with exit %d'%(name,done.returncode))
+                  return stdout
+              try:
+                  command('apt-update',['sudo','-n','apt-get','update'],1200)
+                  command('apt-install',['sudo','-n','env','DEBIAN_FRONTEND=noninteractive','apt-get','install','-y','--no-install-recommends','zsh','python3-pytest'],1200)
+                  shell=command('zsh-version',['/bin/zsh','-f','-c','print -r -- "$ZSH_VERSION"'],30).strip()
+                  if not shell:raise ValueError('zsh did not report its version')
+                  system=json.loads(command('system-python-pytest',['/usr/bin/python3','-I','-B','-c',SYSTEM_PROBE],60))
+                  if not isinstance(system,dict) or not all(system.get(key) for key in ('python_version','executable','pytest_version','pytest_module')):
+                      raise ValueError('system Python/pytest version report is incomplete')
+                  if system.get('uid')!=os.getuid() or system.get('euid')!=os.geteuid():
+                      raise ValueError('system Python execution identity differs')
+                  detail['system_python_pytest']=system
+                  detail['zsh_version']=shell
+                  detail['files']={name:file_metadata(path) for name,path in
+                                   (('system_python','/usr/bin/python3'),('zsh','/bin/zsh'),('pytest_module',system['pytest_module']))}
+                  detail['complete']=True
+              except (OSError,ValueError,TypeError,subprocess.TimeoutExpired) as error:
+                  detail['failure']=str(error)
+              finally:
+                  log.write_text('\n'.join(transcript)+'\n',encoding='utf-8')
+                  detail['log']={'file':log.name,'sha256':hashlib.sha256(log.read_bytes()).hexdigest()}
+                  report.write_text(json.dumps(detail,indent=1,sort_keys=True)+'\n',encoding='utf-8')
+                  print(json.dumps(detail,sort_keys=True))
+              return 0 if detail['complete'] else 1
+          
+          raise SystemExit(main(['binder']))
+          PY
+      - name: the group (its steps run whatever the earlier ones did; exit 0 only when every step is green)
+        env:
+          HOSTOPS_BINDER_PYTHON39: ${{ steps['binder-py39'].outputs['python-path'] }}
+          HOSTOPS_BINDER_PYTHON312: ${{ steps['binder-py312'].outputs['python-path'] }}
+        run: /usr/bin/python3 -I -B hostops02-k9/proof/run_group.py "$PROOF_GROUP"
+      - name: every seal after the run (outputs of the job allowed and listed)
+        if: always()
+        run: /usr/bin/python3 -I -B hostops02-k9/proof/seals.py --after --out "hostops02-k9/proof/out/$PROOF_GROUP/SEALS.after.json"
+      - name: the outputs as one artifact per group
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hostops02-k9-proof-${{ matrix.group }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: hostops02-k9/proof/out/

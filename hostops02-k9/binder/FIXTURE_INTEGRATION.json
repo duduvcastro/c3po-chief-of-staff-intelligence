@@ -1,0 +1,932 @@
+{
+  "additional_date_guard": {
+    "count": 1,
+    "not_waiver_of_required_realtool_or_new_cohort": true,
+    "reason": "Original realtime guard: date2026-10-06 is outside that family date set.",
+    "test": "test_rehearsal_driver_precheck_stops_before_resume"
+  },
+  "binder_source_sha256": "9fec60db32ac9a275876d6a421b95521aaf19f79ba05c0a088af07f6c26758ee",
+  "changes_before_metadata_seal": [
+    {
+      "file": "bind/tests/test_bootstrap_identity_binding.py",
+      "new_sha256": "f3f6a568ffabb14dea1788af066793648621951e710a345c0a885f5c135c885d",
+      "old_sha256": "08665cbabea5e5627918e539905304df2c0d959f7ae0754e211c2fc77d721c7f",
+      "state": "CHANGED"
+    },
+    {
+      "file": "bind/tests/test_k9.py",
+      "new_sha256": "1a3474dae6a8ed9c47715a423215d31c0d917cf05cba0a26dd96a57b5e58d696",
+      "old_sha256": "b24693486cfdf704b7a4323ab5eddeee9020d3da8d87643e71b1bc40564a17ad",
+      "state": "CHANGED"
+    },
+    {
+      "file": "bind/tests/test_programs.py",
+      "new_sha256": "1e9741f8dbced41d653838e560a7bf89de1256422aa550eba3c8966aa8d26b8b",
+      "old_sha256": "f8772482375065d761ce9d61008c9244f90922fec4f020058deb43c331f2a7b9",
+      "state": "CHANGED"
+    },
+    {
+      "file": "bind/tests/test_reader_install_binding.py",
+      "new_sha256": "b0b2aa1857823911c5a2a6fb78b22be420a375731b76fcb5b9fc69d3346cc150",
+      "old_sha256": "950248188ffabf8b15b8a40856826a672f22e78208d80c20c38cad53d51c4d56",
+      "state": "CHANGED"
+    },
+    {
+      "file": "run_candidate_tests.py",
+      "new_sha256": "77184568e9e0e666dfe7312cda62971908ba4bd63511d18a57c1026f694f69bf",
+      "old_sha256": "18d6b8162bee72df9582265e6ed8577dc5684982149e0eb132df4e4bc45a442b",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/SHA256SUMS",
+      "new_sha256": "987ab4708e9a9d94c0c1a96f5fbbe160409c933376f3c099e7d0ce66ff25de58",
+      "old_sha256": "0ab8a11beec4ca4c5e120600b5994cb22d168e30092ff0b61943292fac95135c",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/ASSEMBLY.json",
+      "new_sha256": "6e0b608b609b7738598779d9834b168d442f372181d9e5fed97e933c663753f2",
+      "old_sha256": "fa73e7dbeb0586297cdbc45fc0519a1665113791511293863f348ade3c3c4f86",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/AUTHORITY.UNBOUND.json",
+      "new_sha256": "931e823ce9a191266da201e7d816e19f691b456bf5e1d2ac0b655c74af639a2b",
+      "old_sha256": "9ea59c9fbb995560e07e70c9dd529a10f47bacb8c607eed48439e2b9b75e42f9",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/DISPATCH.UNBOUND.json",
+      "new_sha256": "0dd7245f852c0f02fb45e2723e788d6af2f7d697ab606ba74a8562668eb01f9d",
+      "old_sha256": "f40c6d4c6cc16285543f248b6d1c0d4df9a9324755c822590c768e2ee4e0cce3",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/FINAL_PAYLOAD.UNBOUND.py",
+      "new_sha256": "31fc1fdab05e04b52b2c4f8818320c5567203ea973cea6cde2a21e0b2690868f",
+      "old_sha256": "6b125abe14cd23024b2fda85bb789895746cd6e5c0c61ea85f23dfdd9818c230",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/GO.UNBOUND.json",
+      "new_sha256": "2b73deeb9f76b3fa69b5d7a3c4ac37b51b8f04d7237bd479e69cc18a156f1b4e",
+      "old_sha256": "8a7faf8710681a912ac6c46e3fe91f969305aad167318e274cc51aa4854cf3ee",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/PUBLICATION_PROOF.UNBOUND.json",
+      "new_sha256": "baaba431331c61f83311a6a65b2084953f560049e1530170768104feacd37d94",
+      "old_sha256": "f29b8c3378e7630b2375298f1ee7516c61e1116ddea6caa85cf96cb211e0e518",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/REQUEST.UNBOUND.json",
+      "new_sha256": "a551cd087b63d157c201b7208901f109f5c3f7ba36b277481c3d57d0a89f28cf",
+      "old_sha256": "585d57145caab7c63bc0bb2faca44cf11537ba2a908f646e4267147f6af47a9f",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/build/capacity_probe.py",
+      "new_sha256": "659a4313a5cf5c4cee9814b64027c467cbeebc09ea0295d06c755894b9ad4a81",
+      "old_sha256": "a7ff494d0c67234e6b865dd86d079059401ff8681882fb60241b3ec3fe8e2220",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/mutation/MUTATION_RUN.json",
+      "new_sha256": "f291f85ee639f58d1f5dd513ecf3846744b3c1d6ee2d70b71438a4b83f768c25",
+      "old_sha256": "8f080cf20850ffa026b2b0d592139fca999164fac4fc748386f0b1a73c80fce8",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/mutation/MUTATION_RUN.py312.json",
+      "new_sha256": "e63493d96e1145798872890db5ac966a70769ccb828e33c516b27a72b493daa2",
+      "old_sha256": "c7bd8e1149240de7dfdc4c155300ddf133be35f3e484736a7103689ec1955a50",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/mutation/mutants.py",
+      "new_sha256": "774a779853bcc9f8d7960e5e7ba06dfbd48de3bacea4ab283cb7d5df8cec33c0",
+      "old_sha256": "1459fbdb872a3b113b9160486abaf50de845690cb248fd4081f682b4041e5433",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/mutation/mutate.py",
+      "new_sha256": "d7edc7e9f84206cf46e0008bebeba6d570cf8c26b13e57ca6b0ce73515eeea2e",
+      "old_sha256": "605a32e4fbadddab4efe5fb9330b2a0e8c91729bc1b77bfdc20d69cbffa6f952",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/op.py",
+      "new_sha256": "c9a0022f02a51440a44a424197b37c628741d153ebbbb3afa87ae489407407b1",
+      "old_sha256": "a9d0b498c43af80f4530d5ea1d610a0e2c6d99606a4ab16a8df74cf19f3638ef",
+      "state": "CHANGED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/tests/test_probe.py",
+      "new_sha256": "b41fc805db80562cfe6b697a239596a266fbf08ddc72bf83802a878cadb2dafd",
+      "old_sha256": "571d019ba20317a8b48f7b950f7b39b25de0afc7ada2353208db1719358d2c00",
+      "state": "CHANGED"
+    },
+    {
+      "file": "FIXTURE_QA_REDACTION.json",
+      "new_sha256": "a3ec46cef84c90db95dce8229e308215cc3b964604fa1971a11b36dfbc2aae4f",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_CASE_INVENTORY.json",
+      "new_sha256": "f7b178a042826c0442eaddf70e2d40319ff3803adf445552d075c6e40500aa60",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/CANDIDATE_CONTRACT.pt.md",
+      "new_sha256": "62cc86138c49d87342044e4fdd9b703d261bad937520dbbc554c542335763b3c",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe/tests/test_morning_additional_band.py",
+      "new_sha256": "45deb88c582d7f9a1e1e970f5604fd237af1072cccd3e11027e70e30c87202f0",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/seal.py",
+      "new_sha256": "b0738a495ab6ee3fc29843799dbaca2ab9aaab3389146a09dcbf39ce2840c5e6",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/spec.py",
+      "new_sha256": "90a74d0b513ca2816076bcb35c1a4a9d3d87c45a3bd095d82ac08268fef249dd",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/op.py",
+      "new_sha256": "a9d0b498c43af80f4530d5ea1d610a0e2c6d99606a4ab16a8df74cf19f3638ef",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/CONTRACT.txt",
+      "new_sha256": "ca1f07d2bb37449358503163babb6ca3803551ca4475820577565ce372021d25",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/DESIGN.md",
+      "new_sha256": "66f630c8a1f0aeb4eda401b5eceb7085571349faaf964610ae617d550f29c00d",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/SHA256SUMS",
+      "new_sha256": "0ab8a11beec4ca4c5e120600b5994cb22d168e30092ff0b61943292fac95135c",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/linux_root/probe_shape.py",
+      "new_sha256": "b9221a48d33ba855f598cd9a9563e32093e0044278f71dcbd0eb39968f65709e",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/linux_root/run.sh",
+      "new_sha256": "a8eee4e1c7dc2e7227b2de15b776b35fa8a776e53205887218d9d0a84d76af07",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/mutation/MUTATION_RUN.json",
+      "new_sha256": "8f080cf20850ffa026b2b0d592139fca999164fac4fc748386f0b1a73c80fce8",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/mutation/mutants.py",
+      "new_sha256": "1459fbdb872a3b113b9160486abaf50de845690cb248fd4081f682b4041e5433",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/mutation/mutate.py",
+      "new_sha256": "605a32e4fbadddab4efe5fb9330b2a0e8c91729bc1b77bfdc20d69cbffa6f952",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/mutation/MUTATION_RUN.py312.json",
+      "new_sha256": "c7bd8e1149240de7dfdc4c155300ddf133be35f3e484736a7103689ec1955a50",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/kprobe.py",
+      "new_sha256": "51d268c8237bc88321c24fb1c48d541ffeb4d7c9ea1220483557af4f3f3f6815",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/conftest.py",
+      "new_sha256": "71beecaae8add036e987aeb8461d1dcd2fd0e85579b2dd2c8987374a2235e0d1",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/test_probe.py",
+      "new_sha256": "571d019ba20317a8b48f7b950f7b39b25de0afc7ada2353208db1719358d2c00",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/test_static_pins.py",
+      "new_sha256": "58a4ba6a2b17f785eb759def9f60dda51b5e9c8c98ff23e5619a194deb62e847",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/test_linux_root.py",
+      "new_sha256": "b1efe341961acdc80b1956de983ec5937c171a8525365bef86a9790e4a7c1669",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/test_scripts.py",
+      "new_sha256": "77da13849b6f767ace8b6ba70b2dda704a7288261ddc0bc1acd1b902d40e7aa2",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/test_native.py",
+      "new_sha256": "09c30fead8a0567b83d45b5fb75a8642da4f0e4edf106ca5a36852d416aff965",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/tests/test_conformance.py",
+      "new_sha256": "f94685cc020229c3a612ba706832d042f85717805c9769f29bf2189d694716c7",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/ASSEMBLY.json",
+      "new_sha256": "fa73e7dbeb0586297cdbc45fc0519a1665113791511293863f348ade3c3c4f86",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/transport_once.py",
+      "new_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/capacity_probe.py",
+      "new_sha256": "a7ff494d0c67234e6b865dd86d079059401ff8681882fb60241b3ec3fe8e2220",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/PUBLICATION_PROOF.UNBOUND.json",
+      "new_sha256": "f29b8c3378e7630b2375298f1ee7516c61e1116ddea6caa85cf96cb211e0e518",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/FINAL_PAYLOAD.UNBOUND.py",
+      "new_sha256": "6b125abe14cd23024b2fda85bb789895746cd6e5c0c61ea85f23dfdd9818c230",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/launcher_stdin.py",
+      "new_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/LAUNCHER_DELTA.diff",
+      "new_sha256": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/GO.UNBOUND.json",
+      "new_sha256": "8a7faf8710681a912ac6c46e3fe91f969305aad167318e274cc51aa4854cf3ee",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/AUTHORITY.UNBOUND.json",
+      "new_sha256": "9ea59c9fbb995560e07e70c9dd529a10f47bacb8c607eed48439e2b9b75e42f9",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/DISPATCH_SCOPE_DELTA.diff",
+      "new_sha256": "a0e7bf900aab296a6ba4e694a3bc5ef334f947370183cb5fc11fc1f4b8650268",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/REQUEST.UNBOUND.json",
+      "new_sha256": "585d57145caab7c63bc0bb2faca44cf11537ba2a908f646e4267147f6af47a9f",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/dispatch_once.py",
+      "new_sha256": "6dda9535fcfb808d26cb66a4af16c49edcfab3d34ff1b6b3501ac355b9750563",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/programs-final-candidate/capacity_probe-historical/build/DISPATCH.UNBOUND.json",
+      "new_sha256": "f40c6d4c6cc16285543f248b6d1c0d4df9a9324755c822590c768e2ee4e0cce3",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/PROVENANCE.json",
+      "new_sha256": "c2019c7a996c1c30753078926eda2a1c1bceb6d040256e6f370c8c14ee9a6a5b",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/seal.py",
+      "new_sha256": "79c3f671c509009e09a1c19a21a699ed27d12447b036cd58af70016394676040",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/spec.py",
+      "new_sha256": "afef384bb7295e2158bc61b3129099ce1f9b26c083de19cd9b4731dbb9cf973b",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/README.md",
+      "new_sha256": "db9fee2497ddb5f62c8c9880940d39a4a205807e796e43f0ed193adfedac1e67",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/op.py",
+      "new_sha256": "3c33b4767df864ba1b20891c20a9fe25565e73debc9d971877c881397e3aa677",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/CONTRACT.txt",
+      "new_sha256": "76184497ae74c95b71b8233f09f5fe75976fbd5e2171e2bb7377df61664f9015",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/VALIDATION.json",
+      "new_sha256": "8d2dea07219b9677c7efa8d7495cc7dd72d9f7bb836fd872ab6ed9e4e84f4404",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/INTERFACE.json",
+      "new_sha256": "b3e0cf6efefb8be4787b07200606ea70412847e14408bb83eed98b0ea01c9416",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/SHA256SUMS",
+      "new_sha256": "7068c24fb3a771a5250e1070e46b6f98abb244d963809a668c331337493cf149",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/tests/test_authentication.py",
+      "new_sha256": "d82cab6449cc8f4ea908e4db19ca427e4104d1dd99c41378b782654c0a8b8813",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/tests/test_bootstrap.py",
+      "new_sha256": "b5b9d6b77ff999259ecb3d17be75cc989db04ec8e012af199c11e2c7f861c46e",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/tests/test_dry_gate.py",
+      "new_sha256": "076c803f5067cac34d14da55c43359c58df249992a7f48884a77c966d80e002c",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/tests/fixtures.py",
+      "new_sha256": "fc6064988d657c9486eda500a7a1172207dda7bbd467cb21cd533813faf9cb99",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/ASSEMBLY.json",
+      "new_sha256": "e16d156be189089cd202c69dc43957d73e6c40623312028b62df452b66236067",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/transport_once.py",
+      "new_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/PUBLICATION_PROOF.UNBOUND.json",
+      "new_sha256": "b6c02dafe9dd5ed912bff45687118fab1a24176df9873019bcfcf325910cbb87",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/FINAL_PAYLOAD.UNBOUND.py",
+      "new_sha256": "287030b870729c13a16db223a4762bda85e66b01cabf7b231037ac8fe6d19d56",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/launcher_stdin.py",
+      "new_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/LAUNCHER_DELTA.diff",
+      "new_sha256": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/GO.UNBOUND.json",
+      "new_sha256": "f4a70e0a691eb5bdd5d6ddda6be6ca0fe6f840b28db5a779b4ba40d642496aef",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/AUTHORITY.UNBOUND.json",
+      "new_sha256": "a2ef2973c0b753dc2ebfd7bcd24e3d634dc6d51745166f4ed5e0c5187add4b58",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/bootstrap_identity.py",
+      "new_sha256": "c55fe9dc56d845d8fb4d463e27c360138dbe1d372238cc632e72bfb34106f4c2",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/DISPATCH_SCOPE_DELTA.diff",
+      "new_sha256": "b807cc032249e9668abc90530928f3fb80247577389edfeb47a76c8ce7b70848",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/REQUEST.UNBOUND.json",
+      "new_sha256": "19fd7043d4965dda6640ccd225191c645fb66eb10a734d71abe9acfe4ea73924",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/dispatch_once.py",
+      "new_sha256": "b11eb94c76770c4feefd33d8c7450dcccd0f89135ad4c2ace250d2dcb4503197",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/build/DISPATCH.UNBOUND.json",
+      "new_sha256": "221133fc7f7119c3524d7c5c75df10af12958bdca537ef2298d6d87f3082ef08",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/validation/TESTS.local.py312.xml",
+      "new_sha256": "7f9b4158ff87f01f5ade3cfa574c77d6b03ea8a80d0bf26f483b285c93f2e808",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/validation/TESTS.local.py39.txt",
+      "new_sha256": "97c1f0b4847fd78ad8ff94d2abe3a82306d6993ae80620e6fed784e80a3499d1",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/validation/TESTS.local.py312.txt",
+      "new_sha256": "815882c60829334a27d4ea621b42e41cad668718218de5d4e2916d8dc1d96e2f",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/validation/TESTS.local.py39.xml",
+      "new_sha256": "fe7e4e79d849b8ae425b481619a683c188f209323ba196335f57adcbfc6bb90f",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/bootstrap_identity/validation/TEST_INVENTORY.json",
+      "new_sha256": "7b40bc2a579f58227c03d34cab316abf9182ead3327beb91fe9b166e9b497648",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/PROVENANCE.json",
+      "new_sha256": "14e29f16032058a5351c880f4b3e24f9d51cf4d93153a04802f36a536cd04436",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/seal.py",
+      "new_sha256": "9b9564d14c93860b5848a5e4a782036cf26ad72defa70353bea5c0fb5b44a842",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/assemble.py",
+      "new_sha256": "5c39111b58ed47cbac4420d94db7ddaf8e4e145f150c30e62ab4352633382a25",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/CORE_SHA256SUMS",
+      "new_sha256": "4e3aecd1826404b3d03425aaf866a0f8fe1152a0d99ba9b5c4a38613f14c110d",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/CORE.md",
+      "new_sha256": "a4f7469cb3e8c62e76ff6c1469bd998d0bd08bbb41cdbd8baa9e448966049d58",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/reviewed_base/transport_once.py",
+      "new_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/reviewed_base/launcher_stdin.py",
+      "new_sha256": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/reviewed_base/dispatch_once.py",
+      "new_sha256": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/tests/hostemu.py",
+      "new_sha256": "aa4ba46eb0c984708e6d504e65743cefbb42d2128e9573a7a94bea83ec1e34f7",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/tests/family.py",
+      "new_sha256": "f291fcf0885597bc6222780f9f0c67743db3218f1539d2b41d6db3ba208a4dc4",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/tests/conformance.py",
+      "new_sha256": "0389343929e0d6cf4374a08b45e8eb3661fbf4b93f039920463a2ef7b8a302dd",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/parts/runner.py",
+      "new_sha256": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/parts/core.py",
+      "new_sha256": "958c28f1fb3dd88d8c608101a87688cce136544b95df31b4f2df7a7c51e29fa7",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/parts/docker.py",
+      "new_sha256": "3d22e8ad6577b3391bff6a43e815fb7bdb9487dafb07733eb2bb8eaa8b910ccb",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/parts/parents.py",
+      "new_sha256": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b",
+      "state": "ADDED"
+    },
+    {
+      "file": "test-inputs/current-bootstrap/core_bootstrap_identity/parts/claim.py",
+      "new_sha256": "c98e36f93acde05e6426737eac0a9a10204c7b5743b0539203bc812000347147",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-portable-binder-485-py312.stdout.txt",
+      "new_sha256": "11d09d5f4ce0d384c25d7c4a12b0365bd8c2a08dd4777a71ff7cdc31ecc835d0",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r1-py39.stdout.txt",
+      "new_sha256": "faed205136b5af8c5a0985444f0689864cedcf7a1094c7f5211c02f3622924d6",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r1-py39.stdout.txt",
+      "new_sha256": "2d316b00ae5b527215f0e3127f8f83b8b0b8a6e07de5c2f9e0d4ecbb4cd15114",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r1-py312.xml",
+      "new_sha256": "eeaedc0060b596fd4d1ea4b956aa4aee3720c702457e9bc858eadb88678548b8",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r2-py39.xml",
+      "new_sha256": "f0a48cec868cbe270c1792b8aedbfdd21d859b40d6ac640922a6ca3921ebc383",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r2-py312.stdout.txt",
+      "new_sha256": "62edff37d16dc65798fb791755e055ba398fec483a9ee070e90faad8f5b08adf",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r1-py312.stdout.txt",
+      "new_sha256": "fbe27d79e6a5577a08aebf834f0469897b1ddf21a39282cbd53e39f739a8e43e",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r1-py312.xml",
+      "new_sha256": "8a990649b3ae48add4254939aac78b7ba3f48ec5c596d937151a81f2506e833d",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r1-py39.xml",
+      "new_sha256": "1c8f0382f5d02003a4172d381c9f84928729e2ab523bdcb472bcf7cbb325a227",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r2-py39.stdout.txt",
+      "new_sha256": "43390058a6b1ad332c0fd569c300372643bd2a3dde10c086041195541a12c60b",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r2-py312.xml",
+      "new_sha256": "a9fd7ed1f89283bc008a0bad6bf69492f997180d9c7dee70ededf8d321bbba4b",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r2-py39.stdout.txt",
+      "new_sha256": "eb8b98118eb0bd1fabdfa037a37c391ee9e29b9ccd0fb16e52e5cb81fcdadf24",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r2-py312.stdout.txt",
+      "new_sha256": "1952c63738a5a8cdf6cbf24bf58c3a37b4bb0cf8a41be60f5a7c426d9459b75b",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r1-py312.stdout.txt",
+      "new_sha256": "05f403d36185f8698621afdd521277a812985405bdb5dbe673bcb34f4a021100",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r2-py312.xml",
+      "new_sha256": "77c36a4caacb43653d4ad2c54f9f00c8af9feed49c38fc451375c953d5dd0fdf",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-portable-binder-485-py39.xml",
+      "new_sha256": "a47657531c2f6e1000c9b8820c8a2953c3120a5ad7df11eec38cf4f9f0c7998f",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-portable-binder-485-py39.stdout.txt",
+      "new_sha256": "0b14f69e2579a0c448dbf6431ab63bfd5853a71f4f59f8075e9fbc05d1a79fa2",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-portable-binder-485-py312.xml",
+      "new_sha256": "2d44b0df674512a2e547b79a589af21b3ea6111f323a2152320d7ba35ce99695",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-full-r2-py39.xml",
+      "new_sha256": "d8db5f9d88dd521a7a256bf6c3451d7ff4b0ab870980037dc0f1ac020e07c87b",
+      "state": "ADDED"
+    },
+    {
+      "file": "FIXTURE_QA/morning-fixture-target-r1-py39.xml",
+      "new_sha256": "65c56e6130fd1f44087cc20c83ec7fd608b7731dfab57dc80de0845227857260",
+      "state": "ADDED"
+    },
+    {
+      "file": "bind/tests/test_current_identity_projection_binding.py",
+      "new_sha256": "08b9f23a9c8661760257fd4ffbe77bef76910e1136ca3b12020cdbc8c0a403bc",
+      "state": "ADDED"
+    }
+  ],
+  "extra_snapshot_exercises": "Original K9/programs contexts preserve their explicit synthetic test seals.",
+  "fixture_projection_scope": "FIXTURE_REGRESSION_NOT_OPERATIVE25_REGISTRY_ACCEPTANCE",
+  "fixture_trial_base_families": 6,
+  "genuine_projection_producers": "M1/M3/L6 receipts freshly emitted by unmodified sealed FakeHost sources, not station raw receipts; inert provenance facts do not prove BOUND loader.",
+  "historical_skips": 11,
+  "historical_w1_warning": "First adaptation kept systemPython stderr/UNCERTAIN assertion failure; final execution outside sandbox used the same production bytes and empty-stderr assertion, never suppressing warning.",
+  "metadata_public_projection": {
+    "lossless_split_prefix_diff_file": "FIXTURE_INTEGRATION.diff.json",
+    "new_test_and_source_buffers_unchanged": true,
+    "previous_manifest_sha256": "55a4ce2c48543755ff7f97c58053ea7d519f11406aa24c26f8115774a2b8bc28",
+    "raw_diff_sha256": "4edc38b54381ee5bbc3ec910d800009334943d97adcc71be62e870189ba5ff19"
+  },
+  "operations": "Only synthetic local suites and sealed-copy/assembly APIs in test scratch. No operational prepare/sign/GO/host/network/Docker/push.",
+  "operative_registry_sha256": "78eb4ab25db448d677b5c54bb2f91346c194427fee88028260d1ba2f7be50d72",
+  "real_registry25_scope": "LOCAL_ONLY_26PASS_EACH_23FAMILIES_5CORES_NOT_LINUX_OR_HOST",
+  "real_registry25_separate_receipt_sha256": "7d22e2dcef8b21707e1ea385d789b226232d8a292a704e17041da47607756c2d",
+  "runs": [
+    {
+      "counts": {
+        "ERROR": 180,
+        "FAIL": 32,
+        "PASS": 265,
+        "SKIP": 8
+      },
+      "layer": "py39",
+      "raw_junit_sha256": "a3a735ad75faf947b2ea77ceb50ada02fb8cd3f719150729b3f7d42ef24b73b2",
+      "role": "HISTORICAL_UNADAPTED_485",
+      "total": 485
+    },
+    {
+      "counts": {
+        "FAIL": 4,
+        "PASS": 469,
+        "SKIP": 12
+      },
+      "layer": "py39",
+      "raw_junit_sha256": "dc7e06f0547c7f25c171acad1f7b8d60c6e0d6aa3746d8d86a6d51ef84fd1a14",
+      "role": "HISTORICAL_FIRST_ADAPTATION_485",
+      "total": 485
+    },
+    {
+      "counts": {
+        "PASS": 503,
+        "SKIP": 12
+      },
+      "layer": "py39",
+      "raw_junit_sha256": "99f262146aee939df6526064f8370de898b6c3b7a02d9533f9f37b4d258cf225",
+      "required_new_cohort_all_passed": true,
+      "required_new_cohort_count": 171,
+      "role": "CURRENT_FULL_515",
+      "skips": [
+        {
+          "class": "test_bind_once",
+          "name": "test_the_binder_and_its_documents_hold_no_value_of_the_executed_bound_sets",
+          "outcome": "SKIP",
+          "reason": "no executed bound set on this machine"
+        },
+        {
+          "class": "test_rehearsals_in_real_time",
+          "name": "test_rehearsal_driver_precheck_stops_before_resume",
+          "outcome": "SKIP",
+          "reason": "today is outside the date set of the family, or too close to midnight UTC"
+        },
+        {
+          "class": "test_rev1_equivalence",
+          "name": "test_w1_same_inputs_same_bytes_and_each_revision_reproduces_the_other",
+          "outcome": "SKIP",
+          "reason": "revision 1 of the binder is not at hand"
+        },
+        {
+          "class": "test_rev1_equivalence",
+          "name": "test_hostops01_precheck_and_provision_same_inputs_same_bytes",
+          "outcome": "SKIP",
+          "reason": "revision 1 of the binder is not at hand"
+        },
+        {
+          "class": "test_rev1_equivalence",
+          "name": "test_the_real_w1_set_of_today_reads_the_same_with_both_revisions",
+          "outcome": "SKIP",
+          "reason": "revision 1 of the binder is not at hand"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_w1_and_hostops01_same_inputs_same_bytes",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[catalog]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[readback]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[release]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[activate]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_the_rehearsal_sets_recorded_by_revision_3_read_the_same_with_both_revisions",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_the_recorded_rehearsal_sets_are_bound_again_by_revision_4_to_the_same_bytes",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        }
+      ],
+      "total": 515
+    },
+    {
+      "counts": {
+        "PASS": 144
+      },
+      "layer": "py39",
+      "raw_junit_sha256": "7b0ad7e864d51ef190d00e6f69f1fcd7f6e7c2b27559876aea2b16ee8e2ee700",
+      "role": "TARGET_BOOT_MORNING144",
+      "total": 144
+    },
+    {
+      "counts": {
+        "PASS": 32
+      },
+      "layer": "py39",
+      "raw_junit_sha256": "878fbeed713006934d4e494d46057e1e71aa3be42c3ae6d3be35923828615026",
+      "role": "TARGET_PROJECTION32",
+      "total": 32
+    },
+    {
+      "counts": {
+        "ERROR": 180,
+        "FAIL": 32,
+        "PASS": 265,
+        "SKIP": 8
+      },
+      "layer": "py312",
+      "raw_junit_sha256": "2efdfcc5c0b876a3a335b4794bbf5c9ccdd2e45cc30b60ccf2edf542417b1deb",
+      "role": "HISTORICAL_UNADAPTED_485",
+      "total": 485
+    },
+    {
+      "counts": {
+        "FAIL": 4,
+        "PASS": 469,
+        "SKIP": 12
+      },
+      "layer": "py312",
+      "raw_junit_sha256": "70539f34cae6cb9c680a42d593153e9979afc4c453a02a8db609f7bbc7826612",
+      "role": "HISTORICAL_FIRST_ADAPTATION_485",
+      "total": 485
+    },
+    {
+      "counts": {
+        "PASS": 503,
+        "SKIP": 12
+      },
+      "layer": "py312",
+      "raw_junit_sha256": "28b003a74ac0a9bde205042e56942ba1a3af1ada089550b589a1a7eed0c30273",
+      "required_new_cohort_all_passed": true,
+      "required_new_cohort_count": 171,
+      "role": "CURRENT_FULL_515",
+      "skips": [
+        {
+          "class": "test_bind_once",
+          "name": "test_the_binder_and_its_documents_hold_no_value_of_the_executed_bound_sets",
+          "outcome": "SKIP",
+          "reason": "no executed bound set on this machine"
+        },
+        {
+          "class": "test_rehearsals_in_real_time",
+          "name": "test_rehearsal_driver_precheck_stops_before_resume",
+          "outcome": "SKIP",
+          "reason": "today is outside the date set of the family, or too close to midnight UTC"
+        },
+        {
+          "class": "test_rev1_equivalence",
+          "name": "test_w1_same_inputs_same_bytes_and_each_revision_reproduces_the_other",
+          "outcome": "SKIP",
+          "reason": "revision 1 of the binder is not at hand"
+        },
+        {
+          "class": "test_rev1_equivalence",
+          "name": "test_hostops01_precheck_and_provision_same_inputs_same_bytes",
+          "outcome": "SKIP",
+          "reason": "revision 1 of the binder is not at hand"
+        },
+        {
+          "class": "test_rev1_equivalence",
+          "name": "test_the_real_w1_set_of_today_reads_the_same_with_both_revisions",
+          "outcome": "SKIP",
+          "reason": "revision 1 of the binder is not at hand"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_w1_and_hostops01_same_inputs_same_bytes",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[catalog]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[readback]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[release]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_hostops02_same_inputs_same_bytes[activate]",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_the_rehearsal_sets_recorded_by_revision_3_read_the_same_with_both_revisions",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        },
+        {
+          "class": "test_rev3_equivalence",
+          "name": "test_the_recorded_rehearsal_sets_are_bound_again_by_revision_4_to_the_same_bytes",
+          "outcome": "SKIP",
+          "reason": "revision 3 of the binder is not at hand (BIND_TEST_REV3)"
+        }
+      ],
+      "total": 515
+    },
+    {
+      "counts": {
+        "PASS": 144
+      },
+      "layer": "py312",
+      "raw_junit_sha256": "4fc5c3b2eec37462bc75d6e69858766bb46b6b8e8d0cd45e9d10e2af439c1222",
+      "role": "TARGET_BOOT_MORNING144",
+      "total": 144
+    },
+    {
+      "counts": {
+        "PASS": 32
+      },
+      "layer": "py312",
+      "raw_junit_sha256": "2935d765bd639e7f2be516c9527b25cecef0bf72801276a37c2814e876f950ab",
+      "role": "TARGET_PROJECTION32",
+      "total": 32
+    }
+  ],
+  "schema": "CODEX_MORNING_BINDER_FIXTURE_INTEGRATION_V1",
+  "source_original_buffers_and_modes_unchanged": true,
+  "status": "LOCAL_FULL_REGRESSION_PASS_WITH_DECLARED_OMISSIONS_NOT_LINUX_OR_OPERATIVE_ACCEPTANCE",
+  "whole_suite_global_refusal_checker": "UNMODIFIED_PASSED_ALL_CURRENT_CODES"
+}

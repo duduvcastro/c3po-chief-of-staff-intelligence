@@ -1,0 +1,49 @@
+{
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "groups": {
+  "binder": {
+   "app_python": true,
+   "env": {},
+   "steps": [
+    {
+     "args": [
+      "binder"
+     ],
+     "kind": "binder-tests"
+    },
+    {
+     "args": [
+      "bootstrap_identity",
+      "core_bootstrap_identity"
+     ],
+     "kind": "bootstrap-tests"
+    },
+    {
+     "args": [
+      "subset_registry25"
+     ],
+     "kind": "offline-conformance-tests"
+    },
+    {
+     "args": [
+      "tree_conformance"
+     ],
+     "kind": "offline-conformance-tests"
+    },
+    {
+     "args": [
+      "capacity_probe",
+      "probe_core",
+      "probe_documents"
+     ],
+     "kind": "probe-tests"
+    }
+   ],
+   "timeout_minutes": 350
+  }
+ },
+ "order": [
+  "binder"
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_GROUPS_V1"
+}

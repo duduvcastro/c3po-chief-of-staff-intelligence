@@ -1,0 +1,76 @@
+{
+  "Linux_operative_runtime_host_authority_inferred": false,
+  "Py39_HOLD_review_sha256": "66f34bb2d41009ae17c8a8bdc57f5cdb25c9f1a0d27bb57a3d8b798058192f6f",
+  "concrete_blockers": [],
+  "controls_code_scope": "Two genuine r12 layer fixtures are exercised under each exterior. Context facts and sheet projection are explicitly inert helper scaffolding; the helpers do not independently load a full BOUND set. Original signed REQUEST and receipts remain unchanged even in negatives.",
+  "coverage": {
+    "all_case_names_and_ZERO_errors_failures_skips_reconciled": true,
+    "context_negative_cases": 16,
+    "genuine_Z_chain_positives": 2,
+    "negatives": [
+      "Request byte digest mismatch",
+      "Bootstrap link role mismatch",
+      "Required signed copy omitted",
+      "BOUND stderr nonempty",
+      "Worker changed",
+      "Boot changed",
+      "Out-of-band window",
+      "Predecessor not finished",
+      "Fractional seconds",
+      "Non-UTC offset",
+      "Missing UTC suffix",
+      "Non-string input"
+    ],
+    "real_bind_request_exact_Z_byte_reemission_positives": 2,
+    "strict_parser_negative_cases": 4,
+    "total_per_exterior": 24
+  },
+  "fixture_files": 10,
+  "fixture_provenance_sha256": "01740982bfbfb8281d16df80020619566674d9f38e5883e77e264b06a109fccb",
+  "focal_receipt_sha256": "0536b55e9a5edc17170223b89cbda27124bef2e12c313abd976f46f3e0e974b9",
+  "four_original_exit_stdout_stderr_REQUEST_hash_links_reconciled": true,
+  "full_L2_pass": false,
+  "full_regression_reviewed": false,
+  "genuine_REQUEST_and_BOOT_K3_stdout_buffers_byte_equal_original_r12": true,
+  "limits": [
+    "24 focal cases per CPython3.9.6 and3.12.14 are local helper evidence only.",
+    "Full539 collection/regression and full BOUND/load_evidence/new rehearsal remain separate proof gates.",
+    "A true physical runtime and Linux evidence require their own exact measured source/registry/package.",
+    "No operational signature, GO, host, network, Docker, dispatch or publication was executed by this reviewer."
+  ],
+  "local_focal_layers": [
+    {
+      "errors": 0,
+      "failures": 0,
+      "junit_sha256": "a62b3be1c33ea7d84f03c70c0e85280a46c1eae21b6fd65f0630f9277ee6a82a",
+      "layer": "py39",
+      "outer_python_version": "3.9.6",
+      "passed": 24,
+      "skipped": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "9eeefdb49b236eea2675306bc8a2c71d066175c13a218c82fbd0660fb709858c",
+      "tests": 24
+    },
+    {
+      "errors": 0,
+      "failures": 0,
+      "junit_sha256": "b9281ea249f9704ce465a97b25d9da9a8bfa4831fe51de6f7bcd64c290eab83d",
+      "layer": "py312",
+      "outer_python_version": "3.12.14",
+      "passed": 24,
+      "skipped": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "cafad75a79093740238130e07207fe460b41db8a4f60deb3955765fccd7138fc",
+      "tests": 24
+    }
+  ],
+  "new_execution_by_reviewer": 0,
+  "prior_static_review_sha256": "da30a09bae063ddad1ea67a00e6dcbecb1e89ecbec825ed7e2b0c6829f693229",
+  "producer_K3_source_and_unbound_request_equal_authenticated_family": true,
+  "schema": "MORNING_A7_Z_REQUEST_CONTROLS_INDEPENDENT_REVIEW_V2",
+  "sheet_projection_equal_exact_declared_original_fields": true,
+  "source_sha256": "c5730380bae38027be58f1b34c49eca072611d03d1ebc2837f2604a0ee2cf3d2",
+  "status": "RECONCILED_FOCAL_PROOF_NO_CONCRETE_BLOCKER_OBSERVED",
+  "test_sha256": "416d512cf5d303c1f871a3f601167fa0dc1bfe7dc72de44c1bb250d450701939",
+  "unchanged_during_review": true
+}

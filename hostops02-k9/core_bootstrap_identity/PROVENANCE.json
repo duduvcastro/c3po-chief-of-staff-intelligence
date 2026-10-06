@@ -1,0 +1,119 @@
+{
+  "base_controls": {
+    "binder/bind/ACCEPTED_SEALS.K9-TEMPLATE.json": "ab606a07002f2d9ed0b528bcb14ba67c649d9c916562f6ab7a5fb90904753f6e",
+    "binder/bind/ACCEPTED_SEALS.json": "8280d4c75124e9bed91e45c181dbe9b27d9ee7e0337aace1d184f01d4589fbe8",
+    "binder/bind/bind_once.py": "337e70dc1568ba8b279b9eec01603b3a5aa8276f52cba1a35c8dc264d63cd4fd"
+  },
+  "base_core_seals": [
+    {
+      "listed_files": 75,
+      "manifest_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+      "mismatches": [],
+      "reference": "families/core/CORE_SHA256SUMS"
+    },
+    {
+      "listed_files": 76,
+      "manifest_sha256": "979e8c8389396ca0c09b014f9852f340ce0f1d6bdf8e05f8c6e4f1643b7d244c",
+      "mismatches": [],
+      "reference": "families/core-k6b/CORE_SHA256SUMS"
+    },
+    {
+      "listed_files": 76,
+      "manifest_sha256": "8dc081ddc7132cc716bebe988c4e8ab66c2b21c06b6e11e27c21b2b1900f29fd",
+      "mismatches": [],
+      "reference": "families/core_k3/CORE_SHA256SUMS"
+    },
+    {
+      "listed_files": 76,
+      "manifest_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d",
+      "mismatches": [],
+      "reference": "families/core_k3k9/CORE_SHA256SUMS"
+    }
+  ],
+  "base_manifest_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "files": [
+    {
+      "base_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+      "file": "assemble.py",
+      "relation": "DERIVED_OWN_ASSEMBLER_FINAL_GENERATION_IN_ASSEMBLY_JSON"
+    },
+    {
+      "base_sha256": null,
+      "candidate_sha256": "c98e36f93acde05e6426737eac0a9a10204c7b5743b0539203bc812000347147",
+      "file": "parts/claim.py",
+      "relation": "OWN_NEW_OR_MODIFIED"
+    },
+    {
+      "base_sha256": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a",
+      "candidate_sha256": "958c28f1fb3dd88d8c608101a87688cce136544b95df31b4f2df7a7c51e29fa7",
+      "file": "parts/core.py",
+      "relation": "OWN_NEW_OR_MODIFIED"
+    },
+    {
+      "base_sha256": "4602f6f07a4502a3decec99cd415737efb429e3b1a188b368939a090bc3b3aa5",
+      "candidate_sha256": "3d22e8ad6577b3391bff6a43e815fb7bdb9487dafb07733eb2bb8eaa8b910ccb",
+      "file": "parts/docker.py",
+      "relation": "OWN_NEW_OR_MODIFIED"
+    },
+    {
+      "base_sha256": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b",
+      "candidate_sha256": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b",
+      "file": "parts/parents.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7",
+      "candidate_sha256": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7",
+      "file": "parts/runner.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409",
+      "candidate_sha256": "8415e357e48e5662c959b4105acea19bc280cda10112b8370bafd27f7920c409",
+      "file": "reviewed_base/dispatch_once.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e",
+      "candidate_sha256": "2842444ec6e46f5e47cad87265927ea3a1a853f21fe72ec2459cf7ac31c3a08e",
+      "file": "reviewed_base/launcher_stdin.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+      "candidate_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+      "file": "reviewed_base/transport_once.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "9b9564d14c93860b5848a5e4a782036cf26ad72defa70353bea5c0fb5b44a842",
+      "candidate_sha256": "9b9564d14c93860b5848a5e4a782036cf26ad72defa70353bea5c0fb5b44a842",
+      "file": "seal.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "0389343929e0d6cf4374a08b45e8eb3661fbf4b93f039920463a2ef7b8a302dd",
+      "candidate_sha256": "0389343929e0d6cf4374a08b45e8eb3661fbf4b93f039920463a2ef7b8a302dd",
+      "file": "tests/conformance.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "f291fcf0885597bc6222780f9f0c67743db3218f1539d2b41d6db3ba208a4dc4",
+      "candidate_sha256": "f291fcf0885597bc6222780f9f0c67743db3218f1539d2b41d6db3ba208a4dc4",
+      "file": "tests/family.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    },
+    {
+      "base_sha256": "aa4ba46eb0c984708e6d504e65743cefbb42d2128e9573a7a94bea83ec1e34f7",
+      "candidate_sha256": "aa4ba46eb0c984708e6d504e65743cefbb42d2128e9573a7a94bea83ec1e34f7",
+      "file": "tests/hostemu.py",
+      "relation": "BYTE_IDENTICAL_BASE"
+    }
+  ],
+  "removed_from_own_core": [
+    "parts/files.py",
+    "parts/lock.py"
+  ],
+  "schema": "BOOTSTRAP_OWN_CORE_PROVENANCE_V1",
+  "scope": "NEW_SEPARATE_CORE_NOT_SHARED_CORE_UPDATE"
+}

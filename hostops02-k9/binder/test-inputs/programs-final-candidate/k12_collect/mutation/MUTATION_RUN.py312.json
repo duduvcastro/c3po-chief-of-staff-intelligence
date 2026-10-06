@@ -1,0 +1,2311 @@
+{
+ "by_target": {
+  "dispatcher": 12,
+  "dispatcher_read": 2,
+  "launcher": 4,
+  "op": 158
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 176,
+  "redundant_survivors": 0,
+  "single": 176,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "own",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "14d6215af5107b18aa9e2ea58e1ae995143987b13adff38151ce511b03985c66",
+  "build/AUTHORITY.UNBOUND.json": "b762eb24fc1bdbe5e961870066f7afb3be83dbeef8196969e73bd91805019357",
+  "build/DISPATCH.UNBOUND.json": "ca7773925be441382ab9408ff560c79e277be97e8fed638787a6c94cf1a378a7",
+  "build/DISPATCH_SCOPE_DELTA.diff": "8f4ae6ef4bb4f4e5dba296ee6e5942d5c48c2030522809d17b9907bd4e82ecf6",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "7fef7369d8d2b2f79d64831d59ed887ce208e12c5c0dc00e3bada858bdae5690",
+  "build/GO.UNBOUND.json": "0ca21d6968880088772e099129852a6d2ed08bfe4d3a548b44adb086a069a310",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "fd77ca8e3c78b82854f4bd35576eb0f482ac1cee12b692b6d60d4bc53fd59036",
+  "build/REQUEST.UNBOUND.json": "a389d94946a07015772e167098d60191923de61dea99dcb8bd382b96ce370e8b",
+  "build/dispatch_once.py": "df85fc2f7b8c3df0f2a79f540bba2eba23585adbeac995a92d2115f91d1672e1",
+  "build/k12_collect.py": "362041cdda3b1d96c639bc9a8c087a67d4f2d2a04e2245b8cb47835594a3bc38",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "eb896db2f62cd45d4514594c06e11ceccfe81090b77a14964c9066c6a5bbf4a3",
+  "op.py": "5a14b5ebf27d2e29262a58a2ae1a72c53c98a61227af0044fae65a2911f6e68a",
+  "spec.py": "83a06db141d74b4898bb16a23326b117115b69f3a22b91ce204934bbe9ebe052",
+  "tests/conftest.py": "46432f9211e7d2b71bcdc6d746183f56cd2e49073376fd2fb4c3d4575dc5bb57",
+  "tests/k12emu.py": "dd0cc4becf853117452e0389c959f72a20df10f62983f8960490d0148134f130",
+  "tests/k12r.py": "7c2578cc73c02ae6d0f68966741fae591518d697d2c115edb77036465589fce4",
+  "tests/native_k12.py": "bf005fb881ec076a5172b7513e19ea9b7ab0e2d6c1095d4e3a055421c16cb907",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/request_document.py": "2342d5655c0da57790ea5701e802c946d11df6fc98c12ea47c394a33778c5616",
+  "tests/test_collect.py": "af8f5ee13ca02a5a4aa9bf6bd780d0498bfc031a02d708bd21403be1b8091fc5",
+  "tests/test_conformance.py": "ad55493dea2f1cd7d328839d2595eacee906995a6b897db7cd4bcfde7b9da5ad",
+  "tests/test_native.py": "fd3e0bf80a534142fe0fbb42a623565310d8cd826a532addc2c6b1b8b62238a8"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'CONTAINER_NOT_SETTLED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status'...'ours': True, 'id': '66a0b1dfcbdcfa42a167a3e64939ed2341b08ddb8697ba87df2f576763af1fb0', 'state': 'unknown', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_inspect_need_K12_INSPECT_INVALID_1",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 63 passed, 10 deselected in 1.64s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '4b1d28d7196422696f860ee365046681510583a570ebd9a8f10d41ec43ccb8e5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_inspect_need_K12_INSPECT_INVALID_2",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 60 passed, 10 deselected in 2.16s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_LINE_INVALID', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': ... 'ours': True, 'id': 'ad939e6472d399777f63523dd8f635ac978d670c52008016e5fad453d94242bc', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_writer_line_need_WRITER_LINE_NOT_ONE_LINE_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 24 passed, 10 deselected in 1.16s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_LINE_NOT_ASCII_MUTANT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'... 'ours': True, 'id': '7652c28a0da6509527b6099094f251969f4ca0cf73528ca810ce6ec11ca5baff', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_writer_line_Refused_WRITER_LINE_NOT_ASCII_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 25 passed, 10 deselected in 1.04s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_LINE_INVALID_MUTANT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'st... 'ours': True, 'id': '67ec29248b0382ef9ca535bad16eebb095afdce00924e33e94d0fd5d6b7cbc23', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_writer_line_Refused_WRITER_LINE_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 24 passed, 10 deselected in 1.10s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'window_verdict'",
+   "killed": true,
+   "mutant": "G_k12_writer_line_need_WRITER_LINE_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 10 deselected in 0.97s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'ef4f3e316d914e067e449d4dc5bf0cf872e903626851548f7b532f4f15032ee9', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_writer_line_need_WRITER_LINE_INVALID_2",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 26 passed, 10 deselected in 1.16s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_RECEIPT_INCONSISTENT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'s... 'ours': True, 'id': '1c56898d359c6197ee7865ad83ac68281a412a061cb64033a651e9a57df5b798', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_writer_line_need_WRITER_LINE_INVALID_3",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 30 passed, 10 deselected in 1.11s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'LINE_PINS_NOT_THE_SIGNED_ONES', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {... 'ours': True, 'id': '04f2c404877255699294c6cae24c4de427885c784e55212e6cb86cf4173be0dc', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_writer_line_need_WRITER_LINE_INVALID_4",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 32 passed, 10 deselected in 1.22s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'LINE_PINS_NOT_THE_SIGNED_ONES', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {... 'ours': True, 'id': '25f196f139664fbc29d4fd81a46fc5cd60c738ba37de1623e5e791ec3520fb7c', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_writer_line_need_WRITER_LINE_INVALID_5",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 36 passed, 10 deselected in 1.25s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PERSISTED_RE...NVALID_MUTANT' == 'PERSISTED_RECEIPT_INVALID'",
+   "killed": true,
+   "mutant": "G_k12_persisted_Refused_PERSISTED_RECEIPT_INVALID_1",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 58 passed, 10 deselected in 1.91s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'window_verdict'",
+   "killed": true,
+   "mutant": "G_k12_persisted_need_PERSISTED_RECEIPT_INVALID_1",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.61s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'PERSISTED_RECEIPT_NOT_OF_THIS_CONTAINER', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:re... 'ours': True, 'id': 'a4714b00cab8026126083f8b13aa78eed156567f01f21bbbeaec5d889d5ca4c7', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_persisted_need_PERSISTED_RECEIPT_INVALID_2",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.42s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PERSISTED_RE...NVALID_MUTANT' == 'PERSISTED_RECEIPT_INVALID'",
+   "killed": true,
+   "mutant": "G_k12_persisted_Refused_PERSISTED_RECEIPT_INVALID_2",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 58 passed, 10 deselected in 1.70s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'b35aff7ee76a3650ae3e21ecba3f3f832383d442ca458f942a6b00960f66ff42', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "G_k12_persisted_need_PERSISTED_RECEIPT_INVALID_3",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.38s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_collect_plan[change0-MODE_INVALID] - Faile...",
+   "killed": true,
+   "mutant": "G_c_derived_need_MODE_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 10 deselected in 0.40s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_tree_plan[change0-MODE_MEMBERS_INVALID] - ...",
+   "killed": true,
+   "mutant": "G_c_derived_need_MODE_MEMBERS_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 9 passed, 10 deselected in 0.68s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'TREE_BINDS_INVALID_MUTANT' == 'TREE_BINDS_INVALID'",
+   "killed": true,
+   "mutant": "G_c_derived_Refused_TREE_BINDS_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 13 passed, 10 deselected in 0.62s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_collect_plan[change1-MODE_MEMBERS_INVALID]",
+   "killed": true,
+   "mutant": "G_c_derived_need_MODE_MEMBERS_INVALID_2",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 10 deselected in 0.50s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_collect_plan[change4-EVIDENCE_BOOT_UNBOUND]",
+   "killed": true,
+   "mutant": "G_c_derived_need_EVIDENCE_BOOT_UNBOUND_1",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 4 passed, 10 deselected in 0.45s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'manifests'",
+   "killed": true,
+   "mutant": "G_c_derived_need_PARENT_ROWS_INVALID_1",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 passed, 10 deselected in 0.53s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_collect_chains - Failed: DID NOT RAISE Val...",
+   "killed": true,
+   "mutant": "G_c_derived_need_DIRECTORY_NOT_ROOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 8 passed, 10 deselected in 0.45s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'MANIFEST_PRESENT_WITHOUT_THIS_WINDOW', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:recei...data': {'status': 'COMPLETE'}, 'container': {'present': False, 'code': 'CONTAINER_ABSENT', 'status': 'COMPLETE'}, ...})",
+   "killed": true,
+   "mutant": "G_c_container_need_CONTAINER_UNREADABLE_1",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.09s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == 'RUN_NOT_ON_THE_DAY_OF_THE_WINDOW'",
+   "killed": true,
+   "mutant": "G_c_window_need_RUN_NOT_ON_THE_DAY_OF_THE_WINDOW_1",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.67s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '...AND_A_MINUTE')",
+   "killed": true,
+   "mutant": "G_c_window_need_COLLECT_BEFORE_THE_VIEW_AND_A_MINUTE_1",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.55s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_effective_uid_and_gid_must_be_root_before_anything_is_looked_at",
+   "killed": true,
+   "mutant": "G_perform_need_EXECUTOR_IDENTITY_1",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 199 passed, 10 deselected in 5.89s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...'OBSERVATION') == ('REFUSED', '..._OBSERVATION')",
+   "killed": true,
+   "mutant": "G_perform_need_EVIDENCE_FROM_EARLIER_BOOT_1",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.68s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_LINE_INVALID', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': ... 'ours': True, 'id': 'f61784f51027c9bbbaf284f9e50ae9f9ee0d9e108f8d1e888044b4eb31e5e292', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C01_writer_schema",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.50s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '0621b6efe0eaf4d7e7c814598b5065a26aba45155caa98e59e724aec8b4234f5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C02_published_exit_three",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.71s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'WRITER_REFUSED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': 'C... 'ours': True, 'id': '7d1b9c9eb0af2c2411562b3a4c616d42197dd512cc9ea802c5da8abaa9f45aad', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C03_refused_exit_zero",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.79s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'WRITER_UNVERIFIED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status':... 'ours': True, 'id': 'a36c6f325574f89fc7c330b13f717149828674b2187066a2ffe50c9efb79e646', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C04_unverified_exit_three",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.80s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'WRITER_ALREADY_PUBLISHED_VERIFIED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:recei... 'ours': True, 'id': '7a1f1fb8a2f69495d0343814708e22e8addf4455804c155deba482c0843cc0b1', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C06_published_set_without_already",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.64s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('TERMINAL_EMPTY_LIST', 'MANIFEST_SYMBOLS_EMPTY', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts'... 'ours': True, 'id': 'f4a1bd136f7ee090c6bc758b819739b5fb62a2f8fed12a2d530d771d32fdad26', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C07_committed_with_attempted",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.74s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'WRITER_REFUSED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': 'C... 'ours': True, 'id': '5b9813d26ea5915c0eeed85452a3d37eda3f7fb722c7d1904d6f4687d480c815', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C08_committed_without_precommitted",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.59s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'WRITER_REFUSED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': 'C... 'ours': True, 'id': '0703b0a1137e7a5dd52ee10e222107fd0e579d2fc539920c4e4898ca30b2524b', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C09_writer_code_without_underscore",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.43s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-06T1...+00:00 + 59 s' == '2026-10-06T1...+00:00 + 60 s'",
+   "killed": true,
+   "mutant": "C10_collect_after_view",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.61s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'config': '/...journal', ...} == {'capacity_ro...-reader', ...}",
+   "killed": true,
+   "mutant": "C11_tree_without_the_capacity_root",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.47s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('receipts', {'mode': 488})",
+   "killed": true,
+   "mutant": "C12_collect_chains",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 10 deselected in 0.47s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'MANIFEST_NOT_AS_THE_LINE_SAYS', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {... 'ours': True, 'id': 'a1b2caced72e71830e17938767119b431a91c03204349570fa467195ed9620c0', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C13_manifest_limit",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 62 passed, 10 deselected in 1.96s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'PERSISTED_RECEIPT_UNAVAILABLE', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {... 'ours': True, 'id': 'f61784f51027c9bbbaf284f9e50ae9f9ee0d9e108f8d1e888044b4eb31e5e292', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C14_persisted_limit",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.58s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'PERSISTED_RECEIPT_NOT_OF_THIS_CONTAINER', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:re... 'ours': True, 'id': '71d933a5fdc1c731f04cefa9028638f70ba95a81b755c93eac8a382d13565be5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C15_inspect_reads_another_exit",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.68s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'PERSISTED_RECEIPT_NOT_OF_THIS_CONTAINER', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:re... 'ours': True, 'id': 'f61784f51027c9bbbaf284f9e50ae9f9ee0d9e108f8d1e888044b4eb31e5e292', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C16_inspect_format_finished",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.64s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'CONTAINER_UNAVAILABLE', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status'... 'directory:data': {'status': 'COMPLETE'}, 'container': {'status': 'UNAVAILABLE', 'code': 'K12_INSPECT_INVALID'}, ...})",
+   "killed": true,
+   "mutant": "C17_mount_keys_without_mode",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.58s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'PERSISTED_RECEIPT_INVALID', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'sta... 'ours': True, 'id': 'f61784f51027c9bbbaf284f9e50ae9f9ee0d9e108f8d1e888044b4eb31e5e292', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "C18_persisted_keys_lose_one",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.59s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'CONTAINER_NOT_SETTLED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status'...'ours': True, 'id': 'e047ce36152b5a8ed9140661f9bfaa3d86a64b4734e4fb0148933ae45be22ef7', 'state': 'created', ...}, ...})",
+   "killed": true,
+   "mutant": "C19_never_started",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 63 passed, 10 deselected in 1.92s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_LINE_INVALID', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': ... 'ours': True, 'id': 'ad939e6472d399777f63523dd8f635ac978d670c52008016e5fad453d94242bc', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L01_line_two_lines",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.88s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '8d5bd6f0a2a3858082d3e07d91295cea1d5a35a294985541c5def46df78ae03d', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L02_line_without_newline",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.43s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'MANIFEST_NOT_AS_THE_LINE_SAYS', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {... 'ours': True, 'id': '7a0ea91c1af86fa8f312450995e8eeccebd5d13b13678f6c601254350ee6a767', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L03_line_unknown_keys",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 25 passed, 10 deselected in 0.97s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'ef4f3e316d914e067e449d4dc5bf0cf872e903626851548f7b532f4f15032ee9', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L04_line_code_on_success",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 26 passed, 10 deselected in 0.96s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_RECEIPT_INCONSISTENT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'s... 'ours': True, 'id': '1c56898d359c6197ee7865ad83ac68281a412a061cb64033a651e9a57df5b798', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L05_line_session_any",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 30 passed, 10 deselected in 1.21s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'LINE_PINS_NOT_THE_SIGNED_ONES', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {... 'ours': True, 'id': 'b81aaabef85f74418ea958697d0a44f3efd41c07834e343165e9bdc2f22adaff', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L06_line_hash_member_unchecked",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 33 passed, 10 deselected in 1.14s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '26e2fa53bcfd01d2b2ca7045dbb8175d14a2466b7fcc9065518e400a2e957e52', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L07_line_symbol_count_unbounded",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 41 passed, 10 deselected in 1.29s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_collect_window_and_boot - assert (True and...",
+   "killed": true,
+   "mutant": "L08_public_keeps_the_manifest_hash",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.61s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_collect_window_and_boot - assert ('stdout_...",
+   "killed": true,
+   "mutant": "L09_public_keeps_the_count",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.52s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_more_of_the_lines_grammar_and_its_public_part",
+   "killed": true,
+   "mutant": "L10_public_presence_flags",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.35s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'binding_sha256'",
+   "killed": true,
+   "mutant": "L11_public_drops_the_binding",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 23 passed, 10 deselected in 0.67s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('TERMINAL_EMPTY_LIST', 'MANIFEST_SYMBOLS_EMPTY', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts'... 'ours': True, 'id': 'f4a1bd136f7ee090c6bc758b819739b5fb62a2f8fed12a2d530d771d32fdad26', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L13_terminal_empty_without_commit",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.70s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'de3d7f2386225e82d873bb811cfdd8c1e1eeb8ba9ac8d9158acdcee6b4373793', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L15_persisted_ignores_expected",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.04s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'd0dcc8b63b16c466afde0b7f3ac68972f073a5a172883cbc932115376cec3b22', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L16_persisted_stdout_size",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.18s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'b35aff7ee76a3650ae3e21ecba3f3f832383d442ca458f942a6b00960f66ff42', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L17_persisted_stdout_hash",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.21s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '8c746d1e8cf2c7381a83ca66cc8eac59d46adbbf2555ce8cebde4dc1e3b2be0a', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L18_private_any_mode",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 62 passed, 10 deselected in 1.60s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'e462e37eb56c5d03d36a20657f1374b353e2d01473fe88bd040972e60e8dafa5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L19_private_any_links",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 62 passed, 10 deselected in 1.89s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('FILE_NOT_ROOT_PRIVATE:secret.env' in [])",
+   "killed": true,
+   "mutant": "L20_private_any_type",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 84 passed, 10 deselected in 2.76s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'CONTAINER_NOT_OF_THIS_WINDOW', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'...'ours': False, 'id': 'f61784f51027c9bbbaf284f9e50ae9f9ee0d9e108f8d1e888044b4eb31e5e292', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L21_inspect_mounts_unsorted",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.52s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'CONTAINER_NOT_OF_THIS_WINDOW', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'...'ours': False, 'id': 'f61784f51027c9bbbaf284f9e50ae9f9ee0d9e108f8d1e888044b4eb31e5e292', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L22_inspect_mount_rw_from_type",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.52s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '8d5bd6f0a2a3858082d3e07d91295cea1d5a35a294985541c5def46df78ae03d', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "L23_line_with_text_after_its_newline_ok",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.32s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_LINE_NOT_ONE_LINE', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'stat... 'ours': True, 'id': '16cff8a5d8c884b6e847ebe4ba171eeebaf8c9b72162ce3df8bf2bf940ad3066', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "K05_unknown_code_for_no_output",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.83s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('c812e1edb644...2fecfb2797c6a' == 'c812e1edb644...2fecfb2797c6a'",
+   "killed": true,
+   "mutant": "E01_operation",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.42s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('/proc/sys/ke...andom/boot_id' == '/proc/sys/ke...andom/boot_id'",
+   "killed": true,
+   "mutant": "E02_mode",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.53s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('c812e1edb644...2fecfb2797c6a' == 'c812e1edb644...2fecfb2797c6a'",
+   "killed": true,
+   "mutant": "E03_epoch",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.49s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_effects_literal - assert (1, 0, 0, False) ...",
+   "killed": true,
+   "mutant": "E04_writes",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.51s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_effects_literal - assert (0, 1, 0, False) ...",
+   "killed": true,
+   "mutant": "E05_containers",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.49s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_effects_literal - assert (0, 0, 1, False) ...",
+   "killed": true,
+   "mutant": "E06_secret_files",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.45s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_effects_literal - assert (0, 0, 0, None) =...",
+   "killed": true,
+   "mutant": "E07_activation",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.45s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['/etc/c3po-r...RTIFIED.json'] == ['/etc/c3po-r...RTIFIED.json']",
+   "killed": true,
+   "mutant": "E08_tree_reads_metadata",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.59s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'c812e1edb64417d6090dcfbaf16c21cd8e8665c04396e1edb472fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E09_boot",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.54s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('COLLECT', '...5e5e5e5e5e5e') == ('COLLECT', '...5e5e5e5e5e5e')",
+   "killed": true,
+   "mutant": "E10_capacity_sha",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.45s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('COLLECT', N...5e5e5e5e5e5e') == ('COLLECT', '...5e5e5e5e5e5e')",
+   "killed": true,
+   "mutant": "E11_day",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.55s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('COLLECT', '...5e5e5e5e5e5e') == ('COLLECT', '...5e5e5e5e5e5e')",
+   "killed": true,
+   "mutant": "E12_window",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.56s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('COLLECT', '...5e5e5e5e5e5e') == ('COLLECT', '...5e5e5e5e5e5e')",
+   "killed": true,
+   "mutant": "E13_window_slot",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.58s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('COLLECT', '...3199bc', None) == ('COLLECT', '...5e5e5e5e5e5e')",
+   "killed": true,
+   "mutant": "E14_launch_sha",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.49s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-06T1...+00:00 + 60 s' == '2026-10-06T1...+00:00 + 60 s'",
+   "killed": true,
+   "mutant": "E15_chains",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.60s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'container':....writer.json'} == {'container':...6-10-06.json'}",
+   "killed": true,
+   "mutant": "E16_reads_container",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.52s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-06T10:45:00+00:00' == '2026-10-06T1...+00:00 + 60 s'",
+   "killed": true,
+   "mutant": "E17_not_before",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.51s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'container':....writer.json'} == {'container':...6-10-06.json'}",
+   "killed": true,
+   "mutant": "E18_reads_manifest",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.60s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'capacity_ro...-reader', ...}",
+   "killed": true,
+   "mutant": "E19_tree_directories",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.62s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'ROOT' == 'ROOT_CONTROL...ETGID_NO_LINK'",
+   "killed": true,
+   "mutant": "E19b_tree_chain_rule",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.87s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'CONTAINER_ABSENT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': ... 'directory:data': {'status': 'COMPLETE'}, 'container': {'status': 'UNAVAILABLE', 'code': 'K12_INSPECT_INVALID'}, ...})",
+   "killed": true,
+   "mutant": "V01_unavailable_container_absent",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 60 passed, 10 deselected in 2.93s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'CONTAINER_ABSENT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': ...data': {'status': 'COMPLETE'}, 'container': {'present': False, 'code': 'CONTAINER_ABSENT', 'status': 'COMPLETE'}, ...})",
+   "killed": true,
+   "mutant": "V02_absent_not_a_window",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.30s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status...'ours': False, 'id': 'b740d8704df21d22756d04be91ec459a229dad184c83a8de1f9353b762794af5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V03_not_ours_accepted",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.40s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '7ca82bbc77050d34ff14f810cc74691c4a68b75542e590435c750f6a24e31d62', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V04_running_accepted",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.47s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'MANIFEST_PRESENT_WITHOUT_THIS_WINDOW', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:recei...'ours': True, 'id': '70a7cfbfa719ac9d6887e87ab1c0b1e60f25328264fba5817d99d3cb86e3f437', 'state': 'created', ...}, ...})",
+   "killed": true,
+   "mutant": "V05_created_started",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.47s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'window_verdict'",
+   "killed": true,
+   "mutant": "V06_persisted_unavailable",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.67s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'LINE_NOT_YET_PERSISTED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'sta... 'ours': True, 'id': '0dd95f8bf9f8cb33291fc488726a390a6282da7ea38827bfc21047e98a9f65d7', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V07_pending_as_not_verified",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 63 passed, 10 deselected in 5.08s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'window_verdict'",
+   "killed": true,
+   "mutant": "V08_invalid_accepted",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 58 passed, 10 deselected in 1.89s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'c2b9ad1afc92de835a067653ee6eeddeec8b1c0e5843cf5cd871d467448c36fa', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V09_not_private_accepted",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 64 passed, 10 deselected in 3.01s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '033c9da8e0a1cc3d2dbe7c4ddfa7b3cbe471a1863244bc02fc2e72f6ba4ee21d', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V10_other_container_accepted",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 64 passed, 10 deselected in 3.02s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'WRITER_RECEIPT_INCONSISTENT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': ... 'ours': True, 'id': '0621b6efe0eaf4d7e7c814598b5065a26aba45155caa98e59e724aec8b4234f5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V11_unknown_end_as_not_verified",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.86s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'STOPPED_WITHOUT_A_LINE', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'sta... 'ours': True, 'id': '13e8618709b0968ae12d2ff1a7ae02044ac614cb509b2fcd959d5dd649508c47', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V46_stopped_as_not_verified",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 65 passed, 10 deselected in 3.08s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'CONTAINER_ABSENT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': ...data': {'status': 'COMPLETE'}, 'container': {'present': False, 'code': 'CONTAINER_ABSENT', 'status': 'COMPLETE'}, ...})",
+   "killed": true,
+   "mutant": "V47_published_without_this_window",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.82s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'window_verdict'",
+   "killed": true,
+   "mutant": "V48_unpublished_manifest_unavailable",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.92s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('TERMINAL_EMPTY_LIST', 'MANIFEST_SYMBOLS_EMPTY', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts'... 'ours': True, 'id': '879a537875bfc4869524d0efb3491d2a289b2fe1973d04f7c373ed8656d86e61', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V49_empty_list_with_a_manifest",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 67 passed, 10 deselected in 3.01s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('TERMINAL_EMPTY_LIST', 'MANIFEST_SYMBOLS_EMPTY', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts'... 'ours': True, 'id': 'c0d56ad17504b59be9458bd4724d9b22eb4fdf209e2db066ee1adf9d4c05f49d', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V50_early_pins_ignored",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 67 passed, 10 deselected in 3.29s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('TERMINAL_EMPTY_LIST', 'MANIFEST_SYMBOLS_EMPTY', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts'... 'ours': True, 'id': '369c962092d5d5cd4a49cbc4a399b7ed7d7623613277878455aaabc4fa2a2609', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V51_early_owner_ignored",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 67 passed, 10 deselected in 3.77s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'MANIFEST_PRESENT_WITHOUT_THIS_WINDOW', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:recei...data': {'status': 'COMPLETE'}, 'container': {'present': False, 'code': 'CONTAINER_ABSENT', 'status': 'COMPLETE'}, ...})",
+   "killed": true,
+   "mutant": "V52_listing_not_asked",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.29s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'window_verdict'",
+   "killed": true,
+   "mutant": "V53_ended_detail_lost",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.89s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_more_of_the_lines_grammar_and_its_public_part",
+   "killed": true,
+   "mutant": "V54_stdout_bytes_fact",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.68s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PENDING_PERSIST', 'LINE_NOT_YET_PERSISTED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'... 'ours': True, 'id': '0b9b5bf572382fa2acef9824cf252b5686aa3973eefbe4f5668e859bc6695188', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V47_stop_from_the_container_ignored",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.34s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('STOPPED_BEFORE_THE_VIEW', 'STOPPED_BEFORE_ITS_VIEW', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:rece... 'ours': True, 'id': '13e8618709b0968ae12d2ff1a7ae02044ac614cb509b2fcd959d5dd649508c47', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V48_stop_from_the_container_over_a_receipt",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 65 passed, 10 deselected in 2.79s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'STOPPED_BEFORE_ITS_VIEW', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'st... 'ours': True, 'id': '0b9b5bf572382fa2acef9824cf252b5686aa3973eefbe4f5668e859bc6695188', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V49_stop_from_the_container_not_verified",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.18s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PENDING_PERSIST', 'LINE_NOT_YET_PERSISTED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'... 'ours': True, 'id': 'deaf64b74f0b7ac09a75998a5c8e69cb68e26c557fe18bb0873c701f11413f03', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V50_stop_judged_at_the_primary_view",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 66 passed, 10 deselected in 3.17s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('manifests', {'gid': 5})",
+   "killed": true,
+   "mutant": "V52_collect_chains_not_root_controlled",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 8 passed, 10 deselected in 0.61s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('NOT_VERIFIED', 'WRITER_REFUSED', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status': 'C... 'ours': True, 'id': '71d933a5fdc1c731f04cefa9028638f70ba95a81b755c93eac8a382d13565be5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V15_empty_list_not_terminal",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.74s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'MANIFEST_NOT_AS_THE_LINE_SAYS', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {... 'ours': True, 'id': 'f4a1bd136f7ee090c6bc758b819739b5fb62a2f8fed12a2d530d771d32fdad26', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V16_any_status_published",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.74s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'window_verdict'",
+   "killed": true,
+   "mutant": "V17_manifest_unavailable_ignored",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 62 passed, 10 deselected in 2.24s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '73a78a20c4779479712f0dc408997cbc28c0bbe3fea1a1da06e1ef6ab8bc13a3', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V18_manifest_hash_ignored",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 24 passed, 10 deselected in 1.23s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'e462e37eb56c5d03d36a20657f1374b353e2d01473fe88bd040972e60e8dafa5', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V19_manifest_privacy_ignored",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 62 passed, 10 deselected in 2.34s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '9228d28584c034958dcec78e4c429f8dd6e94af1f4a67e4d5c2385ebbd356b47', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V20_owner_ignored",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 57 passed, 10 deselected in 2.04s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '618ddf7988ad68c9a606a33e525716bf4c8fa293ab31a2b99551698d42054510', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V21_config_ignored",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.96s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'a4d45923422959766fb5d2c049b0e9aabd3e97e6860998645c0f9751e2b42808', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V22_release_ignored",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.82s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '69f9abf4726e12ce89aeaef993285928c86bcf3b274e5aa5ab0acc13787d1690', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V23_package_ignored",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 57 passed, 10 deselected in 2.15s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'afa21a7d74f3e68122639ab8deac4681ba8e4be25b6fd4de1f6a8e5c949c688a', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V24_build_ignored",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.79s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '8e466fede30cce5e75d62263775ef6dec8492a8ccfa263acd8578000466d3dfa', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V25_go_mode_ignored",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 24 passed, 10 deselected in 0.94s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'GO_MODE_NOT_THE_AUTHORISED_ONE', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': ... 'ours': True, 'id': 'f8a50329fb438a8c3ae9505819b76c7a490fd23c67d7e7698b925b01ea3a1ac0', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V26_go_mode_checked_on_already",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 61 passed, 10 deselected in 2.09s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (True is ('PENDING_PERSIST' == 'NOT_VERIFIED'",
+   "killed": true,
+   "mutant": "V27_contingency_flag",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.92s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (False is ('STOPPED_BEFORE_THE_VIEW' == 'NOT_VERIFIED'",
+   "killed": true,
+   "mutant": "V28_day_decided",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.40s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_the_manifest_on_the_host - assert True is ...",
+   "killed": true,
+   "mutant": "V29_equal_flag",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 62 passed, 10 deselected in 1.97s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_more_of_the_lines_grammar_and_its_public_part",
+   "killed": true,
+   "mutant": "V30_binding_flag",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 57 passed, 10 deselected in 1.85s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['DIRECTORIES_NOT_STABLE'] == ['DIRECTORIES_NOT_STABLE']",
+   "killed": true,
+   "mutant": "V31_complete_without_stability",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 69 passed, 10 deselected in 3.37s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == ['DIRECTORIES_NOT_STABLE']",
+   "killed": true,
+   "mutant": "V32_stable_not_checked",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 69 passed, 10 deselected in 3.27s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_collect_window_and_boot - assert (True and...",
+   "killed": true,
+   "mutant": "V33_public_keeps_private_keys",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.75s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': '4db02fc24daf8ea478db74aea6b3caf2ace223f99d2055e7c3ee135825c38c8b', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V34_of_this_container_ignores_the_finish",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 64 passed, 10 deselected in 3.23s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'WRITER_RECEIPT_INCONSISTENT', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'s... 'ours': True, 'id': '7c54c7a5fb4b382313793fbd66669c7b630f9b500a9b91720aa957e3e4096760', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V35_of_this_container_ignores_the_exit",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 64 passed, 10 deselected in 2.95s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_the_manifest_on_the_host - assert 3 == 1",
+   "killed": true,
+   "mutant": "V36_manifest_temporary_pattern",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 62 passed, 10 deselected in 2.23s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('UNCERTAIN', 'MANIFEST_UNAVAILABLE', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status':... 'ours': True, 'id': '226655677c7d35d58c84c4efcd9352a85a5947857571cb26f044365fe08e75da', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "V37_manifest_read_through_a_link",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 62 passed, 10 deselected in 2.50s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_collect.py::test_verdicts_from_the_container - assert (None...",
+   "killed": true,
+   "mutant": "V38_exit_code_fact",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.34s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (143 == 143 and {'present': F...e_link': True} == {'present': F..._link': False}",
+   "killed": true,
+   "mutant": "V39_manifest_fact",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 63 passed, 10 deselected in 2.49s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...REVIEW', None) == ('REFUSED', '...AND_A_MINUTE')",
+   "killed": true,
+   "mutant": "V40_window_before_the_view",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.90s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...'OBSERVATION') == ('REFUSED', '..._OBSERVATION')",
+   "killed": true,
+   "mutant": "V41_boot_not_compared",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.78s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON..., 'UNCERTAIN') == ('PARTIAL_MET..., 'UNCERTAIN')",
+   "killed": true,
+   "mutant": "V42_run_stopped_complete",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 69 passed, 10 deselected in 3.07s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'CONTAINER_UNREADABLE' == 'K12_INSPECT_INVALID'",
+   "killed": true,
+   "mutant": "V43_container_absent_any_failure",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 60 passed, 10 deselected in 2.08s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET..., 'UNCERTAIN') == ('PARTIAL_MET..., 'UNCERTAIN')",
+   "killed": true,
+   "mutant": "V44_observe_swallows_expiry",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 69 passed, 10 deselected in 3.25s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'c812e1edb64417d6090dcfbaf16c21cd8e8665c04396e1edb472fecfb2797c6a')",
+   "killed": true,
+   "mutant": "V45_tree_boot_not_reported",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 70 passed, 10 deselected in 3.45s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DIRECTORY_NOT_ROOT_PRIVATE:config' in [])",
+   "killed": true,
+   "mutant": "T01_tree_private_not_checked",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 71 passed, 10 deselected in 3.48s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('CHAIN_ROW_UNSAFE:receipts' in [])",
+   "killed": true,
+   "mutant": "T02_tree_rows_not_validated",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 73 passed, 10 deselected in 3.22s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('CHAIN_NOT_ROOT_CONTROLLED:receipts' in [])",
+   "killed": true,
+   "mutant": "T02b_tree_rows_not_root_controlled",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 75 passed, 10 deselected in 3.14s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_META...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "T02c_tree_data_as_root_chain",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.72s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('FILE_NOT_ROOT_PRIVATE:release.CERTIFIED.json' in [])",
+   "killed": true,
+   "mutant": "T02d_tree_release_file_privacy_not_judged",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 92 passed, 10 deselected in 3.57s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'reads'",
+   "killed": true,
+   "mutant": "R01_collect_data_as_root_chain",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 21 passed, 10 deselected in 0.64s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'items'",
+   "killed": true,
+   "mutant": "R02_release_unavailable_ignored",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 94 passed, 10 deselected in 3.54s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'b81999f1b393cd925635321464e13f86ccdaa01c04e063e46bc7306881e50019', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "R03_release_change_ignored",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 94 passed, 10 deselected in 3.79s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('VERIFIED', 'PUBLISHED_AND_READ_BACK', {'directory:manifests': {'status': 'COMPLETE'}, 'directory:receipts': {'status... 'ours': True, 'id': 'b81999f1b393cd925635321464e13f86ccdaa01c04e063e46bc7306881e50019', 'state': 'exited', ...}, ...})",
+   "killed": true,
+   "mutant": "R04_release_failure_as_signed",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 94 passed, 10 deselected in 3.47s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('FILE_NOT_ROOT_PRIVATE:secret.env' in [])",
+   "killed": true,
+   "mutant": "T05_tree_file_privacy_not_checked",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 79 passed, 10 deselected in 3.13s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DOCKER_CLI_DIRECTORY_NOT_EMPTY' in [])",
+   "killed": true,
+   "mutant": "T06_tree_docker_cli_not_checked",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 83 passed, 10 deselected in 3.69s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DIRECTORY_NOT_ROOT_PRIVATE:config' in [])",
+   "killed": true,
+   "mutant": "T07_tree_private_mode",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 71 passed, 10 deselected in 3.52s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'capacity_root'",
+   "killed": true,
+   "mutant": "T08_tree_rows_reported",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 70 passed, 10 deselected in 2.86s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DIRECTORY_NOT_ROOT_PRIVATE:config' in ['DIRECTORY_NOT_ROOT_PRIVATE:config'] and ('METADATA_ON..._AS_REQUIRED') == ('PARTIAL_MET...IONS_NOT_MET')",
+   "killed": true,
+   "mutant": "T09_tree_complete_with_findings",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 71 passed, 10 deselected in 3.43s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_META...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "T10_tree_secret_name",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 22 passed, 10 deselected in 0.78s",
+   "tests": [
+    "test_collect.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D02_dispatcher_one_day_rule_dropped",
+   "returncode": 1,
+   "seconds": 10.9,
+   "summary": "1 failed, 109 passed, 10 deselected in 10.23s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D03_dispatcher_signed_date_not_tied_to_the_config_day",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 109 passed, 10 deselected in 11.03s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path",
+   "killed": true,
+   "mutant": "D04_dispatcher_config_schema_dropped",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 10 deselected in 0.21s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_dispatcher_unsigned_go_accepted",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 108 passed, 10 deselected in 10.38s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D06_dispatcher_unsigned_authority_accepted",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 108 passed, 10 deselected in 9.95s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D07_dispatcher_claim_root_binding_dropped",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 108 passed, 10 deselected in 9.63s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D08_dispatcher_transport_binding_dropped",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 108 passed, 10 deselected in 9.70s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D09_dispatcher_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 108 passed, 10 deselected in 9.82s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_names_of_every_earlier_operation_are_refused_at_both_layers[READONLY_POSTDEPLOY01_GO_V1-GO_READONLY_POSTDEPLOY_01-READONLY_POSTDEPLOY]",
+   "killed": true,
+   "mutant": "D10_dispatcher_local_authentication_dropped",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 91 passed, 10 deselected in 2.01s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_receipt_of_another_operation_is_filed_uncertain",
+   "killed": true,
+   "mutant": "D11_dispatcher_receipt_schema_not_checked",
+   "returncode": 1,
+   "seconds": 10.9,
+   "summary": "1 failed, 113 passed, 10 deselected in 10.34s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D12_dispatcher_late_start_accepted",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 109 passed, 10 deselected in 9.70s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_prepare_does_not_spawn_then_resume_once_and_the_go_is_single_use",
+   "killed": true,
+   "mutant": "D13_dispatcher_claim_not_exclusive",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 107 passed, 10 deselected in 9.34s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[raise_value-UNCERTAIN-3]",
+   "killed": true,
+   "mutant": "X01_launcher_enters_the_payload_with_the_refusal_exit_code",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 7 passed, 10 deselected in 0.65s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[refused-KNOWN_REFUSAL-1]",
+   "killed": true,
+   "mutant": "X02_launcher_maps_a_refusal_to_partial",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 4 passed, 10 deselected in 0.49s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[partial-KNOWN_PARTIAL-2]",
+   "killed": true,
+   "mutant": "X03_launcher_maps_everything_to_complete",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 passed, 10 deselected in 0.50s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_launcher_refuses_wrong_pins_at_build_and_on_stdin",
+   "killed": true,
+   "mutant": "X04_launcher_document_pins_not_checked",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 11 passed, 10 deselected in 0.84s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D70_read_dispatcher_date_set_dropped",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 102 passed, 10 deselected in 3.13s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestCollect::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D73_read_dispatcher_accepts_the_day_after_the_epoch",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 102 passed, 10 deselected in 3.60s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

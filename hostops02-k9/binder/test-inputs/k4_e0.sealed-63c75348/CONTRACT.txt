@@ -1,0 +1,73 @@
+HOSTOPS02 / K4 mode E0 - k4_e0 - GO_WRITE_HOSTOPS02_K4_E0_01 - REVISION 4
+Epoch R2D2-V2-SHADOW-2026-10-05. ONCE per epoch, before the first daily phases (A2 row E0: Mon 05/10 to Thu 08/10,
+17:38-20:30 BRT). Revision 4, 2026-10-04: Codex decision 6 (#429 comment 5985748037) - both roots under /var/lib/c3po
+on one root-only chain; nothing on the data volume. Earlier revisions ../k4_e0.rev1-0da395b3, ../k4_e0.rev2-394f1b27,
+../k4_e0.rev3-b53772e6 are unchanged.
+
+Offline work only. Nothing in this directory was run on the host, pushed, bound or reviewed by anyone but its author.
+Every hash and count is in VALIDATION.json and SHA256SUMS, written by seal.py. DESIGN.md is the design; this file is
+what a reviewer signs against and what a binder does.
+
+1. STATUS
+
+  Built and tested by its author (Fable). NOT REVIEWED. NOT BOUND: the runner bytes do not exist yet; they are a
+  bind-time input, never invented here (the tests use synthetic bytes that say they are not the runner).
+  Placement: decided by Codex (N-8 and decision 6) - location decisions, not a GO of these bytes.
+  Core: generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6, read, never edited.
+  Parts carried: core, parents, files. This source starts no process.
+  THE LINUX-ROOT JOB HAS NOT RUN (set 3, not the author's).
+  Before any GO: (a) the Linux-root job with this directory; (b) Codex's written review of these bytes; (c) the
+  runner's bytes reviewed by hash and no larger than 40,960 bytes; (d) an authorized read of the same boot showing the
+  rows of /, /var, /var/lib, the state of /var/lib/c3po, no unprivileged ACL on the chain, the absence of both root
+  names and the space of that filesystem (DESIGN.md section 10, Q-1).
+
+2. SPECIFICATION
+
+  Under /var/lib (signed chain / -> /var -> /var/lib, NO open root: every component uid 0, gid 0, not writable by
+  group or other, not setgid, opened without following a link):
+    /var/lib/c3po        IF ABSENT: created first, directory root:root 0700, two entries
+                         IF PRESENT: must be a directory (not a link), uid 0, gid 0, not writable by group or other,
+                         not setgid, ON THE DEVICE OF /var/lib; opened O_NOFOLLOW, held, used unchanged; its state
+                         (ABSENT/PRESENT) and identity recorded in the receipt
+    /var/lib/c3po/r2d2-v2-source-20261005                      directory root:root 0700, empty
+    /var/lib/c3po/r2d2-v2-k9-20261005                          directory root:root 0700, four entries
+    /var/lib/c3po/r2d2-v2-k9-20261005/tools                    directory root:root 0700, one entry
+    /var/lib/c3po/r2d2-v2-k9-20261005/days                     directory root:root 0700, empty
+    /var/lib/c3po/r2d2-v2-k9-20261005/claims                   directory root:root 0700, empty
+    /var/lib/c3po/r2d2-v2-k9-20261005/secrets                  directory root:root 0700, empty
+    /var/lib/c3po/r2d2-v2-k9-20261005/tools/k9_runner-<sha256>.py   file root:root 0600, one link, the signed bytes
+  in that order, by mkdir / exclusive temporary + link through held descriptors, each fsynced; then the runner's bytes,
+  every created directory, the existing /var/lib/c3po (if any) and the chain are read back inside the run. Inside K9
+  containers the runner is /c3po-k9-tools/k9_runner-<sha256>.py. Nothing on /mnt/day-d-data is looked at or written.
+  Never: overwrite, chmod, chown, rename, truncate, removal of anything but its own temporary, a process, docker,
+  systemctl, a shell, a network connection, a secret, activation, a container, a second attempt.
+  Refuses before any effect if: the executor is not 0:0; the boot is not the evidence's; any signed row differs;
+  /var/lib/c3po exists and is not as required, or changes between its lstat and its open; either root name exists in
+  it; less than 214748364800 bytes (200 GiB) are available (f_bavail*f_frsize) on /var/lib/c3po if present, else on
+  /var/lib - one floor for both roots and days/; less than 15 s is left.
+  Date class WRITE_SESSIONS (2026-10-05 ... 2026-10-10 UTC); window at most 900 s on one UTC day.
+  Success: METADATA_ONLY_REQUIRES_REVIEW / EPOCH_ROOTS_CREATED_RUNNER_DELIVERED_READ_BACK, exit 0.
+
+3. WHAT A RECEIPT MEANS
+
+  KNOWN_COMPLETE (exit 0): the objects exist as specified and were read back; receipt.delivered names them, the
+    identity of /var/lib/c3po and whether this run created it.
+  KNOWN_REFUSAL (exit 1): nothing was created. The same bytes may be signed again once the cause is gone.
+  KNOWN_PARTIAL (exit 2) or UNCERTAIN (exit 3): something may exist. If only /var/lib/c3po exists (root:root 0700), a
+    new request with the same bytes completes using it unchanged. If either root exists, there is no second attempt
+    with these bytes and no removal in the family: E0 is redone under new names (new payload, new review).
+
+4. WHERE EACH BOUND VALUE COMES FROM
+
+  parent                   rows of /, /var, /var/lib from an authorized read of the same boot
+  evidence_boot_id_sha256  that read's boot hash
+  evidence                 at least one GO_READONLY_HOSTOPS_PRECHECK_01 receipt (Q-1: whether it shows /var/lib)
+  runner.content_b64       strict base64 of the reviewed runner bytes
+  runner.sha256 / .bytes   by command from those bytes; equal to the K9 runner_sha256 constant (binder rev 4, Q-5)
+  runner.path              /var/lib/c3po/r2d2-v2-k9-20261005/tools/k9_runner-<runner.sha256>.py
+
+5. TESTS: 238 per interpreter (conformance 121; test_k4_e0 98; test_native 19), both states of /var/lib/c3po, every
+   refusal, death at every host call, expiry at every look at the clock, real system calls and races.
+6. MUTATION: own list, zero survivors on both interpreters (MUTATION_RUN.json, MUTATION_RUN.py312.json);
+   MUTATION_CARRIED.json is information only (DESIGN.md section 12). Equivalent mutants are named in mutants.py.
+7. REPRODUCE: DESIGN.md section 11.

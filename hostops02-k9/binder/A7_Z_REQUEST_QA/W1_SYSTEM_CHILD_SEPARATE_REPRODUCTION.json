@@ -1,0 +1,30 @@
+{
+  "command": [
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "-"
+  ],
+  "operational_steps": 0,
+  "outside_sandbox_probe": "AUTO_REVIEW_REJECTED_NOT_EXECUTED",
+  "payload_sha256": "ae54b399ff357aeb43a27c1a23a7196ea9dfe9466bc80db034829c75b5dd1bb5",
+  "schema": "W1_UNBOUND_LITERAL_SYSTEM_CHILD_LOCAL_PROBE_V1",
+  "scope": "NONROOT_UNBOUND_IN_SANDBOX_NOT_OPERATIONAL_HOST",
+  "stderr": "python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\n",
+  "stderr_sha256": "2a13af67601624cb4924e88c89583b6d14c362a01c585716097d241c0a47bd61",
+  "stdout": "{\"code\":\"REQUEST_OR_EXECUTOR_UNBOUND\",\"schema\":\"READONLY_SUPERVISOR_HOSTFACTS_STDIN_RESULT_V1\",\"source_mutation\":false,\"status\":\"REFUSED\"}\n",
+  "stdout_sha256": "aa430c8bf3feba8aed77828666e2c36a64eb3eb9b952eac3c2c1e452bba7cd73",
+  "transport": {
+    "attempts": 1,
+    "code": "RESULT_INVALID",
+    "command_sha256": "ca7d21775aac98da86516c33bdf7e053f0a484b7689477d9f8765f8535d115d5",
+    "payload_sha256": "ae54b399ff357aeb43a27c1a23a7196ea9dfe9466bc80db034829c75b5dd1bb5",
+    "retry_allowed": false,
+    "returncode": 1,
+    "schema": "POSTDEPLOY01_TRANSPORT_RESULT_V1",
+    "status": "UNCERTAIN",
+    "stderr_sha256": "2a13af67601624cb4924e88c89583b6d14c362a01c585716097d241c0a47bd61",
+    "stdout_sha256": "aa430c8bf3feba8aed77828666e2c36a64eb3eb9b952eac3c2c1e452bba7cd73"
+  },
+  "uid_is_root": false
+}

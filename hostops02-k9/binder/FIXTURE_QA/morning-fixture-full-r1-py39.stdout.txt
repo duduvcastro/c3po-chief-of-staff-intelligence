@@ -1,0 +1,85 @@
+..............s......................................................... [ 14%]
+..................................................................F..... [ 29%]
+........................................................................ [ 44%]
+...............F........................................................ [ 59%]
+....................................F................................... [ 74%]
+........................................................................ [ 89%]
+....................................s.....ssssssssssF                    [100%]
+=================================== FAILURES ===================================
+___ test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder ___
+${TMPDIR}:32: in test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder
+    assert done.returncode == 0, tail
+E   AssertionError: ........................................................................ [ 13%]
+E     ......................................sssssss........................... [ 27%]
+E     ........................................................F............... [ 41%]
+E     ........................................................................ [ 55%]
+E     ........................................................................ [ 69%]
+E     ........................................................................ [ 83%]
+E     ........................................................................ [ 97%]
+E     ...........ss                                                            [100%]
+E     =================================== FAILURES ===================================
+E     _ test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr _
+E     
+E         @pytest.mark.skipif(os.geteuid()==0,reason='as root the payload would start observing this machine')
+E         def test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr():
+E             """The file that would be sent, byte for byte, run as python3 -I -B - by a non-root user: it compiles, imports and refuses."""
+E             payload=(ROOT/'FINAL_PAYLOAD.UNBOUND.py').read_bytes();command=['/usr/bin/python3','-I','-B','-']
+E             result,out,err=t.once(payload,payload_sha256=p.sha(payload),command=command,command_sha256=t.command_pin(command),
+E                                   authorize=lambda a,b:True,seconds=30)
+E     >       assert result['status']=='KNOWN_REFUSAL' and err==b'' and json.loads(out)['code']=='REQUEST_OR_EXECUTOR_UNBOUND'
+E     E       AssertionError: assert ('UNCERTAIN' == 'KNOWN_REFUSAL'
+E     E         
+E     E         - KNOWN_REFUSAL
+E     E         + UNCERTAIN)
+E     
+E     test_w1_preflight_once.py:1284: AssertionError
+E     - generated xml file: ${PRIVATE_TMP}/morning-fixture-full-r1-py39-work/test_the_w1_candidates_own_sui0/junit.xml -
+E     =========================== short test summary info ============================
+E     FAILED test_w1_preflight_once.py::test_shipped_unbound_final_payload_refuses_under_the_system_python_with_an_empty_stderr
+E     1 failed, 507 passed, 9 skipped in 61.34s (0:01:01)
+E     
+E   assert 1 == 0
+E    +  where 1 = CompletedProcess(args=['${PRIVATE_TMP}/binder-rev2-py39-37339608047/venv/bin/python', '-B', '-m', 'pytest', '-q', '-p', ...l_payload_refuses_under_the_system_python_with_an_empty_stderr\n1 failed, 507 passed, 9 skipped in 61.34s (0:01:01)\n').returncode
+__ test_rev4_leaves_the_accepted_seals_file_as_it_was_and_ships_the_template ___
+${TMPDIR}:678: in test_rev4_leaves_the_accepted_seals_file_as_it_was_and_ships_the_template
+    assert b.sha(Path(os.environ['BIND_TEST_OPERATIONAL_SEALS']).read_bytes()) == 'fdab49c6251ce4aa411d2c81b8aa0c2bbd76169ec7705aaf0eae114482ddd6d2'
+E   AssertionError: assert '78eb4ab25db4...1ba2f7be50d72' == 'fdab49c6251c...e114482ddd6d2'
+E     
+E     - fdab49c6251ce4aa411d2c81b8aa0c2bbd76169ec7705aaf0eae114482ddd6d2
+E     + 78eb4ab25db448d677b5c54bb2f91346c194427fee88028260d1ba2f7be50d72
+________________________ test_the_common_rule_refusals _________________________
+${TMPDIR}:198: in test_the_common_rule_refusals
+    b.sealed_program_rules(ctx_of(programs, 'GO_WRITE_HOSTOPS02_K4_FILES_01', mode=b.REAL, params={'linux_job': {}}))
+${TMPDIR}:4329: in sealed_program_rules
+    extra = globals()[item['extra']](ctx) if item.get('extra') else {}
+${TMPDIR}:4263: in reader_install_rules
+    raw=ctx['rt']['source'].signed_bytes(delivery.get(kind),2097152,'K4_INPUT_BYTES_INVALID')
+${PRIVATE_TMP}/morning-fixture-full-r1-py39-work/programs2/tier/k4_files/build/k4_files.py:2133: in signed_bytes
+    need(type(item) is dict and set(item)==set(K4_BYTES_KEYS) and hexpin(item['sha256']) and integer(item['bytes'],1,limit)
+${PRIVATE_TMP}/morning-fixture-full-r1-py39-work/programs2/tier/k4_files/build/k4_files.py:40: in need
+    if not ok:raise Refused(code)
+E   k4_files.Refused: K4_INPUT_BYTES_INVALID
+_____ test_zz_every_refusal_code_of_the_binder_is_exercised_by_these_tests _____
+${TMPDIR}:1798: in test_zz_every_refusal_code_of_the_binder_is_exercised_by_these_tests
+    assert missing == [], 'refusal codes of bind_once.py that no test exercised: %s' % missing
+E   AssertionError: refusal codes of bind_once.py that no test exercised: ['CREATED_DIRECTORY_CHAIN_BOOT_UNKNOWN', 'CREATED_DIRECTORY_CHAIN_CLOCK_INVALID', 'CREATED_DIRECTORY_CHAIN_INVALID', 'CREATED_DIRECTORY_CHAIN_NOT_BOUND_COMPLETE', 'CREATED_DIRECTORY_CHAIN_PREDECESSOR_NOT_FINISHED', 'CREATED_DIRECTORY_CHAIN_RECEIPT_SEAL', 'SEALED_PROGRAM_MODE_ENUM_INVALID', 'SEALED_PROGRAM_MODE_SOURCE_MISMATCH', 'SUPERVISOR_UNIT_RECORD_BOOT_UNKNOWN', 'SUPERVISOR_UNIT_RECORD_CLOCK_INVALID', 'SUPERVISOR_UNIT_RECORD_INVALID', 'SUPERVISOR_UNIT_RECORD_NOT_BOUND_COMPLETE', 'SUPERVISOR_UNIT_RECORD_PREDECESSOR_NOT_FINISHED', 'SUPERVISOR_UNIT_RECORD_RECEIPT_SEAL']
+E   assert ['CREATED_DIR...PT_SEAL', ...] == []
+E     
+E     Left contains 14 more items, first extra item: 'CREATED_DIRECTORY_CHAIN_BOOT_UNKNOWN'
+E     Use -v to get more diff
+------ generated xml file: ${PRIVATE_TMP}/morning-fixture-full-r1-py39.xml -------
+=========================== short test summary info ============================
+FAILED ../../../../../..${TMPDIR}::test_the_w1_candidates_own_suite_passes_on_documents_bound_by_the_binder
+FAILED ../../../../../..${TMPDIR}::test_rev4_leaves_the_accepted_seals_file_as_it_was_and_ships_the_template
+FAILED ../../../../../..${TMPDIR}::test_the_common_rule_refusals
+FAILED ../../../../../..${TMPDIR}::test_zz_every_refusal_code_of_the_binder_is_exercised_by_these_tests
+SKIPPED [1] ../../../../../..${TMPDIR}:785: no executed bound set on this machine
+SKIPPED [1] ../../../../../..${TMPDIR}:18: today is outside the date set of the family, or too close to midnight UTC
+SKIPPED [1] ../../../../../..${TMPDIR}:84: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:99: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:128: revision 1 of the binder is not at hand
+SKIPPED [1] ../../../../../..${TMPDIR}:95: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [4] ../../../../../..${TMPDIR}:116: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TMPDIR}:137: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+SKIPPED [1] ../../../../../..${TMPDIR}:171: revision 3 of the binder is not at hand (BIND_TEST_REV3)
+4 failed, 469 passed, 12 skipped in 261.03s (0:04:21)
