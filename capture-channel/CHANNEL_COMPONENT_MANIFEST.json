@@ -1,0 +1,12 @@
+{
+  "Linux": "PENDING",
+  "files": {
+    "binder/bind/bind_once.py": "615b3f8d56e18648c093e3460c359cfc1655850f363a2063c4a838ac01e9eacd",
+    "binder/bind/capture_owner_response.py": "1ab00fb69e6e8aa72020ec8c677e0459f85c45639a6f3e0d6827329e679bc9a7",
+    "test_capture_channel.py": "7d12788f2cdd46e61d10a7e68f8430a346e902ac8b3641e20117eaf7956e83ff"
+  },
+  "full_binder_or_host_proof": false,
+  "operational_READY": false,
+  "runtime": "NOT_ACCEPTED_REQUIRES_OWN_MEASUREMENT_AND_REVIEW",
+  "schema": "CAPTURE_BINDER_CHANNEL_COMPONENT_MANIFEST_V1"
+}

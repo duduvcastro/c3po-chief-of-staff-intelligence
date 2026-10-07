@@ -1,0 +1,29 @@
+{
+  "component_only": true,
+  "files": {
+    "owner-response-proof.yml": "f2f91b8659e8944b76d1d03429b3ed81e0a7a2f55810ba25af097726528d5a36",
+    "owner_response.py": "1ab00fb69e6e8aa72020ec8c677e0459f85c45639a6f3e0d6827329e679bc9a7",
+    "run_offline_tests.py": "cc8723593684b9c329ddec3ea12a711879060c09a0ea8d8a21446bb926110cb5",
+    "test_owner_response.py": "4cc33b97b151dae7bd0191876f2ddd7f70f870429aee1a00255c9dc588f4c4d9"
+  },
+  "full_capture_workflow_delivered": false,
+  "local_test": {
+    "audit_denials": 0,
+    "code_sha256": "1ab00fb69e6e8aa72020ec8c677e0459f85c45639a6f3e0d6827329e679bc9a7",
+    "errors": 0,
+    "expected_refusals": 31,
+    "failures": 0,
+    "host_calls": 0,
+    "methods": 9,
+    "operational_READY": false,
+    "positive_match_not_signature": 1,
+    "python": "3.12.14",
+    "scenarios": 32,
+    "schema": "CAPTURE_OWNER_RESPONSE_COMPONENT_TEST_V1",
+    "signatures": 0,
+    "tests_sha256": "4cc33b97b151dae7bd0191876f2ddd7f70f870429aee1a00255c9dc588f4c4d9"
+  },
+  "new_binder_runtime_proof_pending": true,
+  "real_signature_dispatch_calls": 0,
+  "schema": "CAPTURE_OWNER_RESPONSE_COMPONENT_SEAL_V1"
+}
