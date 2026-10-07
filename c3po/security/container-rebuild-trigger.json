@@ -1,36 +1,48 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-33587089986",
+  "artifact_name": "c3po-production-container-vulnerabilities-37605670408",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 2,
+  "finding_total": 3,
   "findings": [
     {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
-      "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-66046"
+      "fixed_version": "1.3.2-r1",
+      "image": "backend",
+      "installed_version": "1.3.2-r0",
+      "package": "zlib",
+      "severity": "medium",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-85091"
     },
     {
-      "fixed_version": "2.8.4-r0",
+      "fixed_version": "1.3.2-r1",
+      "image": "database",
+      "installed_version": "1.3.2-r0",
+      "package": "zlib",
+      "severity": "medium",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-85091"
+    },
+    {
+      "fixed_version": "1.3.2-r1",
       "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
-      "severity": "high",
+      "installed_version": "1.3.2-r0",
+      "package": "zlib",
+      "severity": "medium",
       "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-76641"
+      "vulnerability_id": "CVE-2026-85091"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 2
+    "high": 0,
+    "low": 0,
+    "medium": 3,
+    "unknown": 0
   },
-  "generated_at": "2026-09-02T03:28:47.063426+00:00",
-  "remediation_key": "614ce1e7b4892afaa29a0e98735dc8f7772936198517505365c7abd17a34312a",
-  "report_sha256": "1d07350e1caeaede55611698158eabffefe731f8753ea95c2f1b06251c40c58c",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/33587089986",
+  "generated_at": "2026-10-07T10:12:06.457957+00:00",
+  "remediation_key": "2d611c7263b6b0438ccc78a9f53a818dd69c991621a69903db579c2ba87b0cd1",
+  "report_sha256": "008df75aa97f0ed035cdecfe921bb57967d6b664840c5f3c6c20f4faeb3c8402",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/37605670408",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
-  "source_revision": "7bc70899db6088afcd303b4c490f08d88a2758ce"
+  "source_revision": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858"
 }
