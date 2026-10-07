@@ -1,0 +1,33 @@
+{
+  "LINUX": "PENDING_FABLE",
+  "channel": "REGISTRO_PELA_FABLE AskUserQuestion; not direct human GitHub or independent human crypto",
+  "exact_question": "OWNER_QUESTION.txt plus canonical per-sheet context; private question hash named in public request and matched by record",
+  "files": {
+    "binder/bind/bind_once.py": "4bb08ef6f78fd626a09af9eca2a042e5489631421e2ed878514c87a0dedc0971",
+    "binder/bind/capture_owner_response.py": "9a3a6605176215b22be0613f7e0be1f8b0093ca147ca2bf63e0f16e7a962c814",
+    "github_readback.py": "108af6c6014cf92e8e18dd5e8e70a47644d90295472c2f9712e7502aacd42dcf",
+    "owner_response.py": "9a3a6605176215b22be0613f7e0be1f8b0093ca147ca2bf63e0f16e7a962c814",
+    "test_api_binder_bridge.py": "b94c68b9fa597c2e2cd05b55ae179e3ac5b0ab78f16726b04638bbe264acb9e6",
+    "test_capture_channel.py": "491a55666ee87646bd978bb99345635602c0ab78e610cc50c463b7a0b5102698",
+    "test_github_readback.py": "29b5ec47c2af9fdcb1d4df2589db86fe7d6eddb16acf5ba3f6901616a0a49216"
+  },
+  "full_capture_rehearsal": "NOT_PROVED",
+  "local_errors": 0,
+  "local_failures": 0,
+  "local_methods": 13,
+  "local_scenarios": 60,
+  "operational_READY": false,
+  "outside_Mac_authority": "REQUIRES_OWN_DATED_BYTES_AND_OWNER_SIGNATURE",
+  "preserve": [
+    "delivered Mac rev8 bf9cd86c",
+    "candidate1 direct-owner source",
+    "candidate2 615b3f8d proof scopes",
+    "actual signed sets and claims"
+  ],
+  "runtime_record": "NOT_CREATED_FOR_THIS_SOURCE",
+  "schema": "CAPTURE_FABLE_CHANNEL_COMPONENT_MANIFEST_V2",
+  "scopes": [
+    "08/10 PRIMARY PRE policy_read",
+    "08/10 PRIMARY PRE capture_launch/capture_result/capture_cleanup"
+  ]
+}
