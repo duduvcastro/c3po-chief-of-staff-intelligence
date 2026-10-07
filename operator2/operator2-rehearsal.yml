@@ -1,0 +1,64 @@
+# New-tools proof and synthetic operator channel only. No deployment secrets or SSH.
+name: capture-operator2-rehearsal
+on:
+  push:
+    branches: [ops/capture-operator2-rehearsal-20261007]
+permissions:
+  contents: read
+  issues: write
+jobs:
+  synthetic:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Verify complement bytes and exercise new data producers only
+        run: |
+          set -eu
+          umask 077
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(date -u +%F)" = 2026-10-07
+          python -I -S -B operator2/verify_complement.py
+          python -I -S -B operator2/test_capsule_data.py
+          python -I -S -B operator2/test_rehearsal_channel.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: OPERATOR2_NEW_DATA_PROOF
+          path: |
+            operator2/RESULT.public.json
+            operator2/REHEARSAL_RESULT.public.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Pinned local crypto for harmless synthetic exchange
+        run: |
+          set -eu
+          umask 077
+          mkdir /tmp/operator2-crypto
+          curl -fsSL -o /tmp/operator2-crypto/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo 'cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  /tmp/operator2-crypto/age.tgz' | sha256sum -c -
+          tar xzf /tmp/operator2-crypto/age.tgz -C /tmp/operator2-crypto --strip-components=1
+          echo 'eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c  /tmp/operator2-crypto/age' | sha256sum -c -
+          echo '0a0009db842259d6717f7eeb30acb6b90d2a2eb924c6acd0a0db0ca1f1537899  /tmp/operator2-crypto/age-keygen' | sha256sum -c -
+          chmod 700 /tmp/operator2-crypto/age /tmp/operator2-crypto/age-keygen
+      - name: Synthetic bot recipient, two Fable controls, three cipher blobs
+        env:
+          REHEARSAL_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          umask 077
+          python -I -S -B operator2/rehearsal_channel.py worker --age /tmp/operator2-crypto/age --keygen /tmp/operator2-crypto/age-keygen --home /tmp/operator2-synthetic-private
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: OPERATOR2_SYNTHETIC_CHANNEL_RESULT
+          path: operator2/CHANNEL_RESULT.public.json
+          if-no-files-found: error
+          retention-days: 1
+      - if: failure()
+        run: echo 'SYNTHETIC_OPERATOR2_REFUSED_NO_HOST_NO_RETRY'
