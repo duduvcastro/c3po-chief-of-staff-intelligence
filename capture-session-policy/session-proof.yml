@@ -1,0 +1,80 @@
+# Disposable proofs only; no operation/signature/SSH/SQL/Docker.
+name: capture-session-policy-runtime-proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/capture-session-policy-runtime-proof-20261007]
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - working-directory: capture-session-policy
+        run: python -I -B test_session_policy.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: capture-session-policy-offline-proof
+          path: capture-session-policy/POLICY_TEST_RESULT.json
+          if-no-files-found: error
+          retention-days: 30
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          path: overlay
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          ref: 199b2464b009bf52473b7cf2add8ba1c7f02d3bd
+          path: base
+      - id: py
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Exact archived source plus own capture overlay and isolated dependencies
+        run: |
+          umask 077
+          mkdir -p /tmp/capture-runtime-proof /tmp/capture-runtime-output
+          echo '9f5fc99c44fa0e605398f6e6f93ad1ac1d7d3dddfbeab0f11e2dfd1fbc2e3a19  base/proof/BINDER_REV8_LINUX_CANDIDATE.tar.gz' | sha256sum -c -
+          tar xzf base/proof/BINDER_REV8_LINUX_CANDIDATE.tar.gz -C /tmp/capture-runtime-proof
+          cp overlay/capture-session-policy/binder/bind/*.py /tmp/capture-runtime-proof/binder/bind/
+          '${{ steps.py.outputs.python-path }}' -m venv --without-pip /tmp/capture-runtime-proof/venv
+          '${{ steps.py.outputs.python-path }}' -m pip install --disable-pip-version-check --no-compile --only-binary=:all: --target /tmp/capture-runtime-proof/venv/lib/python3.12/site-packages -r overlay/capture-session-policy/requirements-runtime.txt
+          mkdir /tmp/capture-runtime-cache-measure /tmp/capture-runtime-cache-check
+      - name: New Linux measurement then fresh same-process comparison; never acceptance
+        run: |
+          /tmp/capture-runtime-proof/venv/bin/python -I -S -B -X pycache_prefix=/tmp/capture-runtime-cache-measure overlay/capture-session-policy/runtime_component.py measure --root /tmp/capture-runtime-proof --measurement /tmp/capture-runtime-output/RUNTIME_IDENTITY.private.json > /tmp/capture-runtime-output/MEASUREMENT.public.json
+          PIN=$(python -c 'import json;print(json.load(open("/tmp/capture-runtime-output/MEASUREMENT.public.json"))["measurement_sha256"])')
+          /tmp/capture-runtime-proof/venv/bin/python -I -S -B -X pycache_prefix=/tmp/capture-runtime-cache-check overlay/capture-session-policy/runtime_component.py check --root /tmp/capture-runtime-proof --measurement /tmp/capture-runtime-output/RUNTIME_IDENTITY.private.json --measurement-sha256 "$PIN" > /tmp/capture-runtime-output/CHECK.public.json
+      - name: Cipher only the runtime measurement for existing Mac recipient
+        run: |
+          umask 077
+          curl -fsSL -o /tmp/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo 'cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  /tmp/age.tgz' | sha256sum -c -
+          tar xzf /tmp/age.tgz -C /tmp
+          echo 'eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c  /tmp/age/age' | sha256sum -c -
+          /tmp/age/age -r age1knekenhrh79x9xm0ghvhltwg075d33mljhu4y6u9zyz3cweszens2vr8x0 -o /tmp/capture-runtime-output/RUNTIME_IDENTITY.json.age /tmp/capture-runtime-output/RUNTIME_IDENTITY.private.json
+          rm /tmp/capture-runtime-output/RUNTIME_IDENTITY.private.json
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: capture-session-runtime-component-proof
+          path: |
+            /tmp/capture-runtime-output/MEASUREMENT.public.json
+            /tmp/capture-runtime-output/CHECK.public.json
+            /tmp/capture-runtime-output/RUNTIME_IDENTITY.json.age
+          if-no-files-found: warn
+          retention-days: 30
