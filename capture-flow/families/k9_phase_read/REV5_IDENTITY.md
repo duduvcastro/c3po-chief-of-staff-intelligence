@@ -1,0 +1,5 @@
+K9R revisão 5: no modo POLICY, items.worker.container_id publica o ID observado e boot_id_sha256 publica o hash de boot observado pelo mesmo processo. A leitura permanece sem efeitos; os modos, comandos, validações e comparações de imagem/environment permanecem os mesmos. Uma leitura incompleta ou divergente continua sem crédito positivo.
+
+Regressão local: 889 PASS/5 SKIP em Python 3.9 e 3.12. Matriz completa: 318 mutações simples e 1 combinação, 317 mortas, 2 sobreviventes redundantes declaradas e cobertas pela combinação morta; 0 sobreviventes não redundantes e 0 erros nas duas versões. As duas novas mutações verificam a ausência do ID e a ausência do boot em POLICY.
+
+Candidata entregue para revisão independente e prova Linux da Fable. Não há prova do worker ou boot de produção nem autorização de leitura/host. A regra do binder deve copiar os dois campos do mesmo recibo POLICY completo, após TREE, sob a identidade revista destes bytes; ainda é uma alteração separada pendente. Não reutilizar a ponte por estimativa temporal rejeitada.

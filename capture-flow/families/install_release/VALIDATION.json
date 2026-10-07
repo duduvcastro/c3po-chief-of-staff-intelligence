@@ -1,0 +1,437 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "date_class": "WRITE_FIRST_SESSION",
+  "dates": [
+   "2026-10-05"
+  ],
+  "dispatcher_sha256": "49233a0dcab1670a9166e525cb06b362bd9c512d624c7911d8c00452f6794be0",
+  "final_payload_bytes": 97975,
+  "final_payload_sha256": "54450b106bbdc3c9b108304b6ade092164069b266d5705abc68f505e1b26ea8c",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "0317fde20c9083887588ae2bda3d58a8371b5fe5d4451c4addfa62a1422984e1",
+  "parts": [
+   "core",
+   "parents",
+   "files"
+  ],
+  "scope_sha256": "41043cafe76d8ccabddaca9095039bd7400a088571ff45631d717620fa97f2d4",
+  "source_bytes": 65842,
+  "source_sha256": "e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae",
+  "spec_sha256": "f0f2e58f0de24e54aa538c7891a0d6100ffc9533726ec99de52bca829e28fbff",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 3850,
+  "writes_allowed": true
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "core": {
+  "core_sha256sums": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f",
+  "generation_sha256_of_assemble_py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "fixture": {
+  "m0_receipt_sha256": "f514aecaff28a2cf5ce81f0c97bd920a6614d658260cb2a5ef693937353142ac",
+  "m0_request_sha256": "399ed2190c657ca66a82d4f9b3735285ee852d7b5960f2dea1c2be548665bf5d",
+  "m0_w1_source_sha256": "7d1df28da31d3f3bd6c9dab7d9de3a98bef8291730a2bed7c28e8b1f1fa979f8",
+  "record_sha256": "4e7fce26ae35058c61b8028eb7a8d8a053278332ad48fe3d727ce0f2e1531041",
+  "release_sha256": "b110f364d7d7eeeb884a7038668a4fb7f158dbdd86200c772116eebad14c05f1"
+ },
+ "gates": {
+  "binding/linux_proof.py": "f24307db09f1744188e1574c5b4bf05798870f88c9ec2b8f0ed074288a7abdcf",
+  "binding/predispatch.py": "2945e9884e57738aade4e4a35acbde33d25e214bea4a74550684b819516959f5",
+  "binding/release_fields.py": "81c9a119ce127fe7a2e4e39d3968af5a7d0fdad47b5c4009d58c0449b100a95d"
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "gate": "binding/linux_proof.py must answer LINUX_PROOF_ACCEPTED for the two junit files of the job run on this seal",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_CARRIED.json": {
+   "by_target": {
+    "core": 157,
+    "files": 146,
+    "parents": 15
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 280,
+    "redundant_survivors": 0,
+    "single": 318,
+    "survivors": 38
+   },
+   "killed_by_the_time_limit": [],
+   "list": "carried",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": false,
+   "sha256": "b9b85b3150917575d2cda9200d820ae89b697eefdb3f0db04865ef9aa4ae3e75",
+   "stale_pins": [],
+   "survivors": [
+    "E11_probe_follows_nothing_but_reports_a_symlink_component_absent",
+    "E12_descend_without_nofollow",
+    "E13_descend_enters_a_symlink_component",
+    "E15_file_size_limit_ignored",
+    "I51_removal_errno_overwrites_the_errno_of_the_failure",
+    "T09_escape_with_a_pending_call_not_looked_at",
+    "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+    "K03_request_activation_flag_must_be_false_as_in_hostops01",
+    "K09_authority_activation_flag_must_be_false",
+    "K12_go_activation_flag_must_be_false",
+    "K14_one_required_evidence_operation_is_enough",
+    "K15_epoch_ends_one_day_earlier",
+    "K16_epoch_goes_on_one_more_day",
+    "K18_weekend_writes_reach_the_first_session_day",
+    "K21_session_writes_start_on_sunday",
+    "K22_epoch_writes_include_friday_the_second",
+    "K23_read_class_stops_before_the_last_day",
+    "K25_document_limit_argument_ignored",
+    "K27_escape_of_a_switching_source_says_false",
+    "K28_minimum_receipt_loses_the_core_hash",
+    "K29_timing_raises_when_a_clock_fails",
+    "P06_setgid_refused_even_when_nothing_is_created_there",
+    "P07_open_root_unchecked",
+    "P08_open_root_may_be_the_whole_tree",
+    "P13_signature_without_the_content_change_instants",
+    "P14_signature_without_identity",
+    "P15_signature_without_owner_and_mode",
+    "F01_directory_mode_unchecked_before_the_mkdir",
+    "F02_directory_path_not_tied_to_the_pinned_parent",
+    "F03_file_mode_unchecked_before_the_creation",
+    "F04_file_size_unbounded",
+    "F05_empty_file_accepted",
+    "F06_file_name_unchecked",
+    "F07_go_prefix_unchecked",
+    "F08_name_grammar_unchecked",
+    "F09_path_need_not_lie_in_the_pinned_parent",
+    "F10_same_temporary_name_for_every_file",
+    "F26_file_request_accepts_any_mode"
+   ]
+  },
+  "MUTATION_REVIEW.json": {
+   "by_target": {
+    "dispatcher": 16,
+    "launcher": 2,
+    "op": 42
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 58,
+    "redundant_survivors": 2,
+    "single": 60,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "review",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "def10e197a26a2d382d6a2b71c853da9137d58db9819aca3036cee882714dad2",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_REVIEW.py312.json": {
+   "by_target": {
+    "dispatcher": 16,
+    "launcher": 2,
+    "op": 42
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 58,
+    "redundant_survivors": 2,
+    "single": 60,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "review",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "5037a410eaa28b50d4b438c224279a84957bc5789f1342dba4dcc1dd6ae04add",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 169
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 188,
+    "redundant_survivors": 0,
+    "single": 188,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "581f2aee36bca6f9040100393bd9226f6fe0e2328b53142317bcb74d91dd34fe",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 169
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 188,
+    "redundant_survivors": 0,
+    "single": 188,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "780d1d3dbf03387f22e19b14cc763ce1a23816c011c24ef14465311d59e8b780",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_SWEEP.json": {
+   "by_target": {
+    "op": 99
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 98,
+    "redundant_survivors": 0,
+    "single": 99,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "sweep",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "575b867bfbeca337690d60bcb6e7da6f7ed65acf8f4c3eb849eb528dd0b0e5cd",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_TOOLS.json": {
+   "by_target": {
+    "linux_proof": 41,
+    "predispatch": 72,
+    "release_fields": 19
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 132,
+    "redundant_survivors": 0,
+    "single": 132,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "tools",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "2a2875314dcd890fd801cb4e8260a9180ed858fa4f4d49f8285a2a75f82750e1",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_TOOLS.py312.json": {
+   "by_target": {
+    "linux_proof": 41,
+    "predispatch": 72,
+    "release_fields": 19
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 132,
+    "redundant_survivors": 0,
+    "single": 132,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "tools",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "131b569ff6652e9452dc9ccf2010556a1bec7b81de4a0d284eeb082cfac762d4",
+   "stale_pins": [],
+   "survivors": []
+  }
+ },
+ "operation": "GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01",
+ "schema": "HOSTOPS02_INSTALL_RELEASE_VALIDATION_V2",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 329,
+   "per_file": {
+    "test_binding": 4,
+    "test_conformance": 121,
+    "test_dispatch_guards": 9,
+    "test_effects_guards": 22,
+    "test_install_release": 105,
+    "test_linux_proof": 24,
+    "test_native": 15,
+    "test_predispatch": 8,
+    "test_purity": 25
+   },
+   "python": "Python 3.9.6",
+   "release_repository_given": true,
+   "returncode": 0,
+   "skipped": 4,
+   "skipped_tests": [
+    "test_k10_documents_are_refused_by_the_dispatcher_of_each_sibling_built_here",
+    "test_native_the_file_written_is_read_by_the_workers_own_reader_and_verified_by_the_applications_release_verify",
+    "test_native_the_fixture_record_is_the_fixture_and_the_release_package_of_the_checkout",
+    "test_real_bound_documents_of_postdeploy_rev5_are_refused_by_k10_at_both_layers"
+   ],
+   "tests": 333
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 331,
+   "per_file": {
+    "test_binding": 4,
+    "test_conformance": 121,
+    "test_dispatch_guards": 9,
+    "test_effects_guards": 22,
+    "test_install_release": 105,
+    "test_linux_proof": 24,
+    "test_native": 15,
+    "test_predispatch": 8,
+    "test_purity": 25
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": true,
+   "returncode": 0,
+   "skipped": 2,
+   "skipped_tests": [
+    "test_k10_documents_are_refused_by_the_dispatcher_of_each_sibling_built_here",
+    "test_real_bound_documents_of_postdeploy_rev5_are_refused_by_k10_at_both_layers"
+   ],
+   "tests": 333
+  }
+ ],
+ "suites_with_other_operations": {
+  "bound_postdeploy_given": true,
+  "meaning": "what these directories were when this was sealed; they are sealed on their own and may change afterwards",
+  "named": [
+   {
+    "name": "hostops02/activate",
+    "sealed": true,
+    "sha256sums_sha256": "931229ea0618e0b9045efe2e7cadfafcffd694a2dfb3a5cff2e26fe9ba903fb8",
+    "unbound_request_sha256": "f041ee2e502dd28749fc82dbaff5a3a66d9a04dc89c9371dcbab1a1e7ddeec00"
+   },
+   {
+    "name": "hostops02/catalog_init",
+    "sealed": true,
+    "sha256sums_sha256": "b27983113e3ab78b8dddc33dba1f10db8a2f201affbd0780278adc40779d2a95",
+    "unbound_request_sha256": "3a25d9f1851f58997e5e9eee8590971bf6dd1c07b45e51eb920596de616ddf0b"
+   },
+   {
+    "name": "hostops02/epoch_readback",
+    "sealed": true,
+    "sha256sums_sha256": "7c698e723bccb8c8eb1c0c386f25c4472027027508719b6ff1bc01f359ac247c",
+    "unbound_request_sha256": "817ef385d89fd69aa7dfa8261fe97e70de24911190cb5dc9f6e218250a544b15"
+   },
+   {
+    "name": "w1preflight/candidate",
+    "sealed": true,
+    "sha256sums_sha256": "108b74ca92c0ad32c37d462c7d4cea77074f874022e8e18b89d116f696783347",
+    "unbound_request_sha256": "9d6405c1e7a2a10d1073e08f52756edc26a2af1a37b14f6ebbf5d15462c134a6"
+   },
+   {
+    "name": "hostfacts01/candidate",
+    "sealed": true,
+    "sha256sums_sha256": "daa4edac3abd433888b11f6c5bca8e4211c912c77ea3d2ebd0b6a970636a2780",
+    "unbound_request_sha256": "4ae0eb2d260d8938939afe01db47366e8be10cbc547520cecb0fbb146129d617"
+   },
+   {
+    "name": "candidate/precheck",
+    "sealed": false,
+    "sha256sums_sha256": null,
+    "unbound_request_sha256": "a5b2c2cafc65a0efb5ebc8b63de5a8028d60bedbcdcf53b12d75c1dc53415f53"
+   },
+   {
+    "name": "candidate/provision",
+    "sealed": false,
+    "sha256sums_sha256": null,
+    "unbound_request_sha256": "9ae37b9f42413a55f662390f3cfc959f5db6d983a6ef2835b90471c4f38b186a"
+   },
+   {
+    "name": "candidate/install_units",
+    "sealed": false,
+    "sha256sums_sha256": null,
+    "unbound_request_sha256": "036598edb6c5f29132b5a32472c122f3b9c9e6d3ef6d5ce8e935020a11ee5f87"
+   },
+   {
+    "name": "candidate/readback",
+    "sealed": false,
+    "sha256sums_sha256": null,
+    "unbound_request_sha256": "95ddeb13a5eef20c1f487f1074d0111087809fc52f24fa56ba0a12118bf3abca"
+   }
+  ],
+  "run": {
+   "errors": 0,
+   "failures": 0,
+   "passed": 342,
+   "per_file": {
+    "test_binding": 4,
+    "test_conformance": 121,
+    "test_dispatch_guards": 9,
+    "test_effects_guards": 22,
+    "test_install_release": 105,
+    "test_linux_proof": 24,
+    "test_native": 15,
+    "test_predispatch": 8,
+    "test_purity": 34
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": true,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 342
+  }
+ },
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "fa4d6ef5d9d6c467f8d62263b4845afaed2d75cfd1b883899dcbf43ab8b27b29",
+  "DISPATCH.UNBOUND.json": "0224cc3e9a7f2a83ae0bf6f09f185eb53e5fb8cfc9a6f918e2856963c07a9bd0",
+  "FINAL_PAYLOAD.UNBOUND.py": "54450b106bbdc3c9b108304b6ade092164069b266d5705abc68f505e1b26ea8c",
+  "GO.UNBOUND.json": "f8046c1c8ca00c3f9457e964fcd2db84ae6b549d464b962cbcc348882d61db5b",
+  "PUBLICATION_PROOF.UNBOUND.json": "9f6e558195e35d6bcb68c91b5c7141acd8553f3d4f9eaa37cb976844c70b537b",
+  "REQUEST.UNBOUND.json": "3d01270706f42d22962a570385093734ffdefda97a76ee479fc8bc5fcbe976e5"
+ }
+}

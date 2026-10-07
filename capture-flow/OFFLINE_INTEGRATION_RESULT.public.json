@@ -1,0 +1,26 @@
+{
+  "actual_prepare_sign_dispatch": 0,
+  "audit_denials": 0,
+  "errors": 0,
+  "failures": 0,
+  "full_physical_job_proof": false,
+  "host_calls": 0,
+  "methods": 34,
+  "operational_READY": false,
+  "schema": "CAPTURE_STAGED_FLOW_SYNTHETIC_PROOF_V1",
+  "source_sha256": {
+    "bootstrap_job.py": "7717d814ae4dc5fecb94a8ad57cf91174e6c450fe973bfe3e4dd6d7012cbdd2d",
+    "checked_program.py": "405ff228d2f2880e74c4da727c5e2ef51e40eb4c2d6108a81c69440a9758ce80",
+    "crypto_input.py": "ee6e714f9304b93607df4e2440431d5d2552ca654448f2604f3b4a5192a674e4",
+    "entry_job.py": "325ced6e9ac4dee2311d6c3124da18f29cf59bea1ce0b18d2c6c1da23b2f3c5d",
+    "inspect_bound.py": "4e364a925aac82a401effe18ffc358a0423928e932cf9d4923b94e3a1571e897",
+    "job_channel.py": "5111e6dd46041f363ed6725fb3e2cd049a38c16b0e1d530233a86d720194b342",
+    "job_files.py": "44d29d8b81a8343ca0c54e9342c02c79c2ef01f2c5d66ac84c4d8bea9245461e",
+    "live_adapter.py": "d4dbb3a9d541570551b8817c86a4ce52ea480e15acf211b77351795a65ae47df",
+    "measure_job.py": "760bd774fa5b6ad888674a455ddd3c27a13669b06baf687ada14548fb2757e7c",
+    "night_bundle.py": "8cca3c5775db941b754ba14503c03bd8bdb367379546c816a6632d2ae41001fa",
+    "parameter_render.py": "e8a17e0dd369507d80a3dd05af92ba9ab2b866dd7d97f6565f4f0d389846f8df",
+    "session_policy.py": "d3a3f3737e3f88056494cfca74e115c09ed356ee9c4de6f9efced5c31a8a3592",
+    "test_integrated_flow.py": "5ffb8290e23267545b33fc1394c40bd71ca23ed86f0a9fcd8a822894d9d0ebb0"
+  }
+}

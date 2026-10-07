@@ -1,0 +1,22 @@
+{
+  "capture_cleanup": {
+    "config_sha256": "38f90d6ed8f79855a0de12cff42927290c953b3be76fa278489d09fc5d179e64",
+    "go_sha256": "0143a4eb96618aff71c5d97fb7595369c2df49b9478c9a9589f41c218a8403dd",
+    "sheet_sha256": "9947af8b8dfae26d15adab3e89eaf5b2779ded1af68a7426e66da0886d19298c"
+  },
+  "capture_launch": {
+    "config_sha256": "3995f8a6483c702ec142d9da5f44acfb5b45a35346ad51effa73cca1f114bd40",
+    "go_sha256": "a24425ba3faf7454dce0c5e472c2db61ec194dbd784d443190d76091eaaf7b12",
+    "sheet_sha256": "d18fa79b8180d03eeb78245f80bb7a4235fadcb17800ecf76c21a3c64f6181d5"
+  },
+  "capture_result": {
+    "config_sha256": "9e2a55ca3aa8a9d99a6d602e5ec6a240546e5a31d660d3ee91ce2b3fbfdd2254",
+    "go_sha256": "79517c124f10e33e6ec84f58c85ca68d998ba723bc3963eb32a5b2940c5eb6b5",
+    "sheet_sha256": "e0c70fabf828ae95bcdc932943a3e5067a594fb2665152ec632cb4cf0ea52621"
+  },
+  "policy_read": {
+    "config_sha256": "00485fcc66681afc6b1ed8f3da62ff69f13103dbb9d03bad77671576cb605a22",
+    "go_sha256": "20fc20045746494a99359b6636fbc1266fca5ce51a64312b99db6217bb661dcb",
+    "sheet_sha256": "3cbba6513c8a5910cc0cc08b804e05cff0cbd79b3eb8b501f5ff4b27b48e5d28"
+  }
+}

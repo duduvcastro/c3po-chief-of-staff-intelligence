@@ -1,0 +1,8 @@
+Python 3.12.14
+HOSTOPS02_TEST_RELEASE_REPOSITORY=<checkout that holds dd4ec4bb> python3.12 -B -m pytest -p no:cacheprovider -q -rs tests
+........................................................................ [ 89%]
+........................................................................ [ 99%]
+.....                                                                    [100%]
+725 passed in 30.73s
+without the checkout:
+720 passed, 5 skipped in 21.16s

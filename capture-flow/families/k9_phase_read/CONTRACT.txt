@@ -1,0 +1,85 @@
+HOSTOPS02 / K9R - THE READ PROGRAM OF THE DELEGATED DAILY PHASES (GO_READONLY_HOSTOPS02_K9_PHASE_READ_01)
+CONTRACT: binding steps, and what a receipt means for the Act B chain
+
+Offline work only. Nothing in this directory was run on the host, pushed, bound or dispatched. The hashes of this
+directory are in SHA256SUMS (seal.py) and in ../SUMMARY.md, all taken by command; none is repeated here by hand.
+
+1. STATUS
+
+  Candidate revision 4 (answers to the adversarial review of revision 3, the September secret sources in TREE and
+  Codex's decision 6 (#429 5985748037: source_root under /var/lib/c3po); revision 3 32e3ebf3... kept sealed in
+  ../k9_phase_read.rev3-32e3ebf3), after revision 3 (Codex #429 comment 5984327121: ACL mode-mask accepted, 200 GiB floor on days/; revision 2
+  acb151d3... kept sealed in ../k9_phase_read.rev2-acb151d3) after revision 2 (placement per Codex's N-8 decision, codex-n8-placement-20261004.txt d30f7f90...2c53; revision 1
+  af879843... kept sealed in ../k9_phase_read.rev1-af879843), built and tested by its author (Fable) on 2026-10-04. Nobody else has reviewed these bytes.
+  The Linux-root job and real-Docker shapes of this family do not exist yet (set 3). The core it is assembled from
+  (generation 4c24c5cf...d0d6, CORE_SHA256SUMS 73fb546b...c9b1 by command) says of itself that its Linux job has never run. No request of
+  this operation may be dispatched before the co-auditor has reviewed op.py, the assembled source, the pinned snippet
+  and this contract. The placement (DESIGN.md section 0) is compiled in; Codex's N-8 is a location decision, not a GO.
+  ACLs are not read by the core: DESIGN.md 0.1.
+
+2. WHERE EACH BOUND VALUE COMES FROM (the binder, rev 4, fills them; nothing is typed from memory)
+
+  request.date, window      the grid of K9_INTERFACE_NOTE.md section 5 for the operation and slot; one UTC day; the
+                            window must lie in [20:00Z of D-1, 15:00Z of D] (a probe ends by 04:00Z of D, a policy
+                            read starts on D, a result starts at or after its launch's run_not_after). K9R refuses
+                            any other window only on the host, after the claim (DESIGN.md 7.2): the binder checks it.
+  plan.mode/k9_phase/k9_operation/slot   the operation's row of K9_OPERATIONS.json and its slot (TREE: null)
+  plan.day                  D, one of 2026-10-06 ... 2026-10-09 (TREE: null)
+  plan.attempt_key          sha256(canonical([epoch, D, phase, operation])), actb03_lib.attempt_key; recomputed
+  plan.run_not_after        RESULT: the run_not_after of the launch it collects (window end + ceiling; capture 14:03:00Z)
+  plan.constants            the week's constants, the same bytes in every K9R request of the week:
+                            k9_interface_note_sha256 (ab5159be...), act_b_sha256, package_sha256 (b5ce527a...),
+                            code_revision (dd4ec4bb...), release_sha256, policy_sha256 (the Act B policy_sha),
+                            image_id (the backend image ID of the W1 receipt), runner_sha256, probe_snippet_sha256
+                            (K9R's own, SCOPE.probe.snippet_sha256), networks, step_table_sha256,
+                            risk_source_pins_sha256, risk_limits, readiness_rule {95, 100, minimum_eligible 4000}, disk_floor_bytes (214748364800), placement
+                            (= K9R's compiled K9_PLACEMENT)
+  plan.parent_rows          from the TREE receipt of the same boot: items directory:{DAYS,SOURCE_ROOT,SECRETS,TOOLS,CLAIMS}
+                            .observed_rows; open_root null for all five (no open root in the K9 tree nor, since
+                            Codex's decision 6, for source_root /var/lib/c3po/r2d2-v2-source-20261005) (TREE: null)
+  plan.evidence_boot_id_sha256   the TREE receipt's boot_id_sha256 (TREE: null)
+  plan.policy_read          POLICY only: the rows of the live policy directory and of the release directory from the
+                            K11 POST / activate receipts of the same boot, their file names, the worker container name,
+                            data_source /mnt/day-d-data, data_target /app/day-d-data
+  request.evidence          at least one receipt (TREE: the E0 and K3-K9 receipts; others: the TREE receipt)
+  go.success_criterion      the outcome of the mode (DESIGN.md section 1)
+
+3. ORDER OF USE
+
+  1  E0 (K4) creates the K9 tree and delivers the runner; K3-K9 writes the env files and the emitter password.
+  2  TREE (K9R): its receipt must be KNOWN_COMPLETE (K9_TREE_AS_REQUIRED_ALL_OBSERVED). Its rows and boot are bound
+     into every K9 request of the week. A reboot invalidates them: a new TREE read, new sheets.
+  3  Each eve: readiness_probe (PROBE) -> the chain of NOTE 5.7, each *_result (RESULT) read at or after its
+     launch's run_not_after; each morning: policy_read (POLICY), capture_result (RESULT).
+
+4. WHAT A RECEIPT MEANS FOR THE CHAIN
+
+  exit 0, KNOWN_COMPLETE      RESULT: phase_result COMPLETE: the step's receipt is valid, its container exited 0, its
+                              outputs are on the host as the receipt says. PROBE: readiness READY. POLICY: the
+                              installed files and the worker are as signed, now inside the policy window. TREE: the
+                              tree as required.
+  exit 2, MISMATCH outcome    RESULT: read phase_result: FAILED or UNCERTAIN ends the phase for D (ORD:33); COMPLETE
+                              with a metadata finding is for the reviewer to judge (DESIGN.md 2.1). PROBE: readiness
+                              NOT_READY -> readiness_recheck (NOTE 5.7 rule 2); any other finding -> UNKNOWN, treat as
+                              not ready. POLICY, TREE: a finding holds the operations that depend on them.
+  exit 2, PARTIAL             something could not be observed: RESULT phase_result UNCERTAIN; PROBE readiness UNKNOWN.
+  exit 1, REFUSED             nothing was observed; nothing was touched.
+  exit 3 / no receipt         UNCERTAIN. A PROBE may have left its container to the engine for at most 36 s.
+
+  K9R writes no claim and removes no container. Single use of a READ request is the dispatcher's spawn.claim plus the
+  SPARE rule (NOTE 4.1, 10.1).
+
+5. WHAT K9W AND k9_runner.py MUST WRITE FOR RESULT TO READ IT: DESIGN.md section 5 (proposed; neither exists).
+
+6. REPRODUCE (offline; nothing here contacts a host)
+
+  cd <this directory>/..                                  (it must hold the link core -> the sealed core)
+  /usr/bin/python3 -B core/assemble.py --check k9_phase_read                      BUILD_EQUAL
+  cd k9_phase_read && /usr/bin/python3 -B seal.py check                            SEAL_OK
+  /usr/bin/python3 -B -m pytest -p no:cacheprovider -q -rs tests                  (and with a 3.12 interpreter
+                                                                                   that has the release's libraries)
+  HOSTOPS_MUTATION_WORK=<scratch> /usr/bin/python3 -B mutation/mutate.py run     (HOSTOPS_MUTATION_PYTHON for 3.12,
+                                                                                   HOSTOPS_MUTATION_RECORD=MUTATION_RUN.py312.json)
+  The release-module tests read the export of dd4ec4bb at HOSTOPS02_TEST_RELEASE_EXPORT ($S/docs03/recert03/export) and skip without it.
+
+7. OPEN DECISIONS: DESIGN.md sections 0 and 10.

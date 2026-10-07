@@ -1,0 +1,15 @@
+{
+  "AST_parsed": 31,
+  "actual_prepare_sign_dispatch": 0,
+  "app_imports": 0,
+  "divergences": 0,
+  "family_files": 309,
+  "family_seals": 7,
+  "host_calls": 0,
+  "operational_READY": false,
+  "programs": 31,
+  "schema": "CAPTURE_STAGED_SOURCE_ASSEMBLY_PROOF_V1",
+  "source_layout_sha256": "b106708d7e72d3c6b529021a1a35fa85d1076a52eb01883cd7b28597334eeac0",
+  "status": "EXACT_SOURCE_ASSEMBLY_ONLY",
+  "templates": 4
+}

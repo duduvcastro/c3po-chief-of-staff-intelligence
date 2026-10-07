@@ -1,0 +1,355 @@
+HOSTOPS02 / K11 - EPOCH READBACK (GO_READONLY_HOSTOPS02_EPOCH_READBACK_01), modes PRE and POST
+CONTRACT: specification, binding steps, and what a receipt means for the gates
+
+Offline work only. Nothing in this directory was run on the host, pushed or bound. Every hash named here was taken
+by command at 2026-10-02T21:19:36Z and is repeated in SHA256SUMS.
+
+1. STATUS
+
+  REVISION 2: repaired on 02/10 after two reviews of revision 1 (host fidelity, purity). Sixteen findings, sixteen
+  accepted; DESIGN.md section 13 says what each changed. The bytes of revision 1 are kept sealed beside this directory
+  in epoch_readback.pre-repair-7c698e72 (the first eight hex of its SHA256SUMS). The payload hash, the scope hash and
+  the snippet hash below are NEW: nothing bound to revision 1 is valid for these bytes.
+  Built and tested by its author (Fable). The repaired bytes have not been reviewed by anyone else. The Linux job has never run (no Linux
+  and no docker offline). The core this source is assembled from says of itself that nobody but its author and one
+  verifier has reviewed it and that its Linux job has never run. No source of this directory may be dispatched before
+  the co-auditor has reviewed op.py, the assembled source and this contract.
+
+  core generation (CORE_SHA256 in the source, the scope and every receipt)   4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
+  core seal (CORE_SHA256SUMS)                                                 c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f
+  op.py                                                                       cee4564cc7750f29f19b0c1b154e4d175ac6aade912adade577f0c3b82a75365
+  spec.py                                                                     673525c08b09a4b9479f1b3407c5f468124ca8cd3ad8959f20c09cda03c5de48
+  build/epoch_readback.py  (the ONE payload source, 152359 bytes)            cabc95a04bed751de1824fa8151c58b81e736bc7ea037df3baca01759aa556d4
+  build/FINAL_PAYLOAD.UNBOUND.py (228371 bytes)                             93655c352f5b2ef418968220e73fe9787bfaf9911005044fe6c004f709ebd031
+  build/dispatch_once.py                                                      18a5f7caf9eb3951b89c33470e894caaba6b5123f53753d838855f9493cf5bff
+  build/launcher_stdin.py   (the HOSTOPS01 launcher, byte for byte)           ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa
+  build/transport_once.py   (the reviewed transport, byte for byte)           5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918
+  scope (SCOPE_SHA256, signed by every request)                               395ada5f02f0ae83c85a50e3813c298ad35771fd1b94a829b7e0e71ee3774d30
+  pinned snippet (VERIFY_SNIPPET, 67 lines)                                     590c1e1fc21c3d3fb294e662ae748e7663f4f619647c5e14e64d129aae70a6a4
+  tests       720 passed, 5 skipped in 28.60s on /usr/bin/python3 3.9.6; 725 passed in 30.73s on 3.12.14 with the release checkout
+              (with the three sibling operations beside this directory as they stood at that instant: section 10)
+  mutation    551 single and 1 combined mutants, 551 killed, 0 survivors, 0 errors, 1 redundant alone and killed in its combined mutant, none by the time limit (Python 3.9.6);
+              551 single and 1 combined mutants, 551 killed, 0 survivors, 0 errors, 1 redundant alone and killed in its combined mutant, none by the time limit (Python 3.12.14)
+
+2. WHAT IS IN THIS DIRECTORY
+
+  DESIGN.md             the design: order of the observations, what the two writes refuse on and where it is found
+                        here, refusals, findings, crash points, budget, what is signed, what the run proves, command
+                        shapes with their precedents, UNPROVEN shapes, open decisions, the repair, the runbook
+  CONTRACT.txt          this file
+  spec.py  op.py        the two files the author writes; everything in build/ is a function of them and of the core
+  build/                written by <core>/assemble.py, never edited: epoch_readback.py, dispatch_once.py,
+                        launcher_stdin.py, transport_once.py, REQUEST|AUTHORITY|GO|DISPATCH|PUBLICATION_PROOF.UNBOUND.json,
+                        FINAL_PAYLOAD.UNBOUND.py, DISPATCH_SCOPE_DELTA.diff, LAUNCHER_DELTA.diff, ASSEMBLY.json
+  tests/                conftest.py; k11.py (fixtures, the stand-in application package, the emulated container that
+                        executes the real snippet bytes); test_conformance.py (the core's suite for both modes, with
+                        the sibling operations among the documents to refuse); test_plan.py; test_readback.py;
+                        test_snippet.py; test_native.py with native_child_k11.py; test_linux_root.py;
+                        test_siblings.py (this source against install_release and activate as they stand beside it);
+                        real_documents.py (documents the release's own code accepts)
+  mutation/             mutate.py (the core's, three tables and the copy changed), mutants.py, MUTATION_RUN.json (3.9),
+                        MUTATION_RUN.py312.json (3.12)
+  linux_root/           shapes_k11.py: this operation's shapes for a throwaway Linux runner (NOT RUN)
+  TESTS.py39.txt  TESTS.py312.txt   the last lines of the two suite runs
+  SIBLINGS.txt          the hashes of the sibling sources the suite was run against, by command
+  SHA256SUMS            every file above, by command
+  Not part of the seal: work/ (the author's tools and logs; work/repair holds the edit scripts of the repair and the
+  files as they were before it), review-host/ and review-purity/ (the two reviewers' own files, about revision 1).
+
+3. THE FAMILY DISCIPLINE, AS THIS SOURCE CARRIES IT
+
+  Everything of sections 2 to 8 of the core's CORE.md applies unchanged: documents decoded from canonical bytes, the
+  four pins, the hash chain request -> authority -> GO, effects recomputed from the plan and compared with what the
+  authority and the GO carry literally, the transport and claim-root bindings, executor uid 0, one UTC day, the gate
+  as the latest start and the earliest end of the three documents, a 60 s monotonic deadline, the dispatcher running
+  the source's own authenticate() locally before any claim, single use by a claim keyed by the GO hash.
+  This source fixes: WRITES_ALLOWED False; ACTIVATION_ALLOWED False; DATE_CLASS READ (2026-10-02 .. 2026-10-10 UTC);
+  MAX_GATE_SPAN_SECONDS 3600; EVIDENCE_REQUIRED True with no operation name imposed; parts core, runner, docker,
+  parents, lock (no files part: there is no creating call in the source); SUCCESS_IN_TEMPLATE False.
+  It carries no EFFECT row. Its one CONTAINER row is started only through container_run(), which refuses a bind that
+  is not read-only. Its Native is NativeRead + NativeRunner + NativeLock.
+
+4. THE OPERATION
+
+4.1 Modes and profiles. request.plan.mode is signed and is one of:
+      PRE   dry run. The release bytes travel in the request (base64, at most 24576 bytes) and are verified on standard
+            input of the container. The directory install_release will create must not exist. The compose render with
+            the override is required. request.plan.dry_run is signed and is one of:
+              FULL     the rehearsal of Monday. Refused from the bytes unless the plan signs the policy, bind_probe,
+                       live, limits and worker.environment true, no docker_config, the places of install_release
+                       (/mnt/day-d-data bound at /app/day-d-data, r2d2-v2-release-20261005/release.CERTIFIED.json in
+                       the root of the volume, signed rows that show the volume as a mount point), the layout of
+                       activate (<tree>/.env, <tree>/<project>/compose.yml, .deploy-version,
+                       runtime/security/deployment.lock, container <project>-r2d2-worker-1) and the override bytes
+                       activate writes. Success outcome: EPOCH_DRY_RUN_PRE_ALL_OBSERVED_ALL_EXPECTATIONS_MET.
+              REDUCED  anything less (a diagnostic run). Success outcome:
+                       EPOCH_DRY_RUN_PRE_REDUCED_PROFILE_ALL_OBSERVED_ALL_EXPECTATIONS_MET. Never the rehearsal.
+      POST  the readback of the first session. The installed release file is read on the host and verified in the
+            container through one read-only bind of its directory. The policy candidate is required. dry_run is null.
+            Success outcome: EPOCH_READBACK_POST_ALL_OBSERVED_ALL_EXPECTATIONS_MET.
+    The GO's success_criterion must be the outcome of the signed mode and profile (GO_CRITERION otherwise, refused
+    locally). Only the POST outcome is the readback of ORD:7; a PRE receipt never is, whatever it says. Only the FULL
+    outcome says anything about M1 and M3.
+
+4.2 Plan (18 own members; unknown or missing members: PLAN_KEYS).
+      mode                      PRE | POST
+      dry_run                   FULL | REDUCED (PRE); null (POST)
+      evidence_boot_id_sha256   hash of the boot identifier of the receipt the rows were copied from
+      revision                  40 hex: the code revision of the release and of the deployed worker
+      package_sha256            the implementation package hash
+      image                     {reference (not beginning with "-"), image_id}
+      worker                    {container, environment (bool: read the worker's environment as booleans), data_source,
+                                 data_target}: the worker container name and the bind of the data volume
+      release                   {sha256, bytes, content_b64 (PRE) | null (POST), parent {path, rows | null, open_root},
+                                 directory_name, file_name, container_target (POST) | null, directory_entries (POST) | null}
+      live                      null | {parent {path, rows | null, open_root}, directory_name}: where activate creates
+      policy                    null (reduced PRE only) | {sha256, bytes, content_b64, valid_at [1..4 UTC instants as
+                                 isoformat()]}; the bytes are the canonical JSON form of their content
+      render                    null (POST only) | {project, env_file, files, override_b64, override_sha256, override_bytes}
+      limits                    null | {render_ms 1..60000, quick_ms 1..60000, data_volume_free_bytes 0..2^50,
+                                 data_volume_free_inodes 0..2^50}
+      deploy                    {tree {path, rows | null, open_root}, lock_directory {...}, lock_name | null, version_name}
+      units                     [0..8 x {name (*.service | *.timer), expected: null | {LoadState, ActiveState, SubState,
+                                 UnitFileState: value}}]
+      journal                   null | {path, floor_bytes | null}
+      docker_config             null | (reduced PRE only) absolute path of an existing root:root 0700 empty directory
+      rows_in_receipt           bool: whether the private receipt carries the observed six-key rows
+      bind_probe                null | (PRE only) {directory {path, rows | null, open_root}, file_name, container_target}
+    Rows are the family's six-key rows (path, device, inode, uid, gid, mode), one per component from "/", validated by
+    the core's validate_chain with the signed open_root; for the release parent and the live parent with
+    receives_entry (no setgid directory), as install_release and activate validate theirs. rows null means: walk,
+    record, compare with nothing.
+    Checked from the bytes, before any claim (every code in DESIGN.md 5.1): the release bytes are the signed hash and
+    size, one JSON object, schema R2D2_V2_RELEASE_V3, mode CERTIFIED, this epoch, this first session, this revision,
+    this package (PRE); the policy bytes are canonical, name this epoch, the plan's release hash, revision and package
+    and the compiled order hash, and every valid_at instant lies in [valid_from, valid_until); the override is exactly
+    {"services":{"r2d2-worker":{"environment":{<the four live names>}}}} as JSON, its release hash and path are the
+    plan's (the path as the worker sees it), its policy path lies inside the worker's data bind and, when live is
+    signed, directly in the live directory, and its policy hash is the plan's policy; the release place and the live
+    place lie inside the data volume and apart from each other; the lock directory and every compose file lie inside
+    the deploy tree; the full profile (4.1); the container arguments and the frame are valid and fit standard input.
+
+4.3 Effects (literal in authority and GO; recomputed by effects_of(plan) and compared). 28 members: operation, mode,
+    gates_first_session_readback, dry_run, rehearses_install_release_and_activate, epoch, first_session, revision,
+    package_sha256, image, worker, release{sha256, bytes, path, path_in_the_worker, source, expected_on_the_host,
+    directory_entries, parent}, live{path, expected_on_the_host, parent}, verify{snippet_sha256, image_id, binds,
+    network, command, alarm_seconds}, policy, render{project, env_file, files, override_sha256, service, environment},
+    limits, deploy{tree, lock_directory, lock, version_file}, maintenance_pin, bind_probe, units, journal,
+    docker_config, rows_in_receipt, evidence_boot_id_sha256, writes 0, containers_run 1, activation false.
+
+4.4 What the run does, in order, and what it never does: DESIGN.md sections 2 to 4b. In one line: executor uid and gid;
+    boot; the directories walked and held; the place of the release; the place of activate's directory; the docker
+    configuration directory; THE CONTAINER
+    (first command; class RUN, 40 s; the snippet's own alarm at 30 s); the container listing; image; worker; worker
+    environment as booleans; two compose renders compared in memory; deployed revision and compose inputs; the pin;
+    units; journal; lock probe; reboot markers; the configuration directory again; the held directories again.
+    Never: a file opened for writing, mkdir, chmod, chown, rename, removal, docker exec, compose up, a bind a
+    container can write through, a container with a network, a shell, a pull, a systemctl verb other than show,
+    daemon-reload, a network connection, a wait, a retry.
+
+4.5 The commands (the table is in the signed scope; argv word for word in tests/test_readback.py and test_plan.py):
+      image, container, container_list, container_environment   the core's proven templates
+      verify             docker run --rm -i --pull never --init --user 0:0 --network none --read-only --cap-drop ALL
+                         --security-opt no-new-privileges --name hostops02-k11-<go16> [--mount type=bind,source=S,
+                         target=T,readonly] <image ID> python -I -B -          standard input: the frame
+      render_base        docker compose --project-name P --env-file E -f F... config --format json
+      render_override    the same with "-f -" after the files and the override on standard input
+      unit               systemctl show <unit> -p Id -p LoadState -p ActiveState -p SubState -p UnitFileState
+                         -p FragmentPath -p DropInPaths -p WantedBy -p RequiredBy -p TriggeredBy
+    Environment of every command: PATH=/usr/bin:/bin LANG=C LC_ALL=C, plus C3PO_BUILD_SHA=<revision> for compose and
+    DOCKER_CONFIG only when the request signs docker_config. Working directory "/". stderr never read.
+
+5. THE RECEIPT
+
+  Envelope of the core (schema READONLY_HOSTOPS02_EPOCH_READBACK_RECEIPT_V1; status, outcome, code; the five hashes;
+  scope_sha256; core_sha256; activation_performed false; daemon_reload_performed false; metadata_sha256), and:
+    mode, dry_run, effects, observed_at, clock, commands_started {READ, CONTAINER, EFFECT: 0}, mutating_calls (all
+    zero), items {name: {status COMPLETE | UNAVAILABLE, findings [...], matches, elapsed_ms, facts...}},
+    findings (sorted union), items_not_complete, fact_items_not_observed, items_omitted_by_the_plan, expectations_met,
+    gates_first_session_readback, facts_reported_not_gated, writes 0, containers_run, phase_reached.
+    fact_items_not_observed: items without any signed expectation (reboot_required; a unit without an expectation; the
+    journal without a floor) that could not be observed. They are also in items_not_complete and do not decide the
+    outcome. A receipt reduced for size has expectations_met false, gates_first_session_readback false and, when it
+    had no code, the code RECEIPT_REDUCED_FOR_SIZE.
+
+    exit  status                               outcome                                        verdict
+    0     METADATA_ONLY_REQUIRES_REVIEW        the success outcome of the signed mode and     KNOWN_COMPLETE
+                                               profile
+    2     PARTIAL_METADATA_REQUIRES_REVIEW     OBSERVED_ALL_EXPECTATIONS_NOT_MET              KNOWN_PARTIAL  every signed item observed, at least one finding
+    2     PARTIAL_METADATA_REQUIRES_REVIEW     PARTIAL_OBSERVED                               KNOWN_PARTIAL  an observation failed, the run expired, the receipt was reduced, or the run escaped
+    1     REFUSED                              REFUSED_NOTHING_OBSERVED                       KNOWN_REFUSAL  nothing was observed
+    3     -                                    -                                              UNCERTAIN      no receipt, or one the dispatcher cannot bind
+
+  What never is in a receipt: a value of an environment; a byte, size or digest of the environment file; a byte of the
+  release, of the policy, of the override or of a render; an exception message; a name of the journal root other
+  than the two catalog names; an observed device or inode number, a container ID or an image ID unless the request
+  signs rows_in_receipt (rows only). The effects repeat what the request signs, the leaf rows included.
+
+6. WHAT A RECEIPT MEANS FOR THE GATES
+
+  M2p (Sunday, PRE FULL). KNOWN_COMPLETE with the outcome EPOCH_DRY_RUN_PRE_ALL_OBSERVED_ALL_EXPECTATIONS_MET (receipt
+  member dry_run FULL, effects member rehearses_install_release_and_activate true) means, for the instant of the run
+  and this boot: the release bytes that M1 will install are accepted by the deployed code in the deployed image with
+  the revision the worker runs; the policy bytes M3 will deliver are canonical and accepted by both validators at
+  every signed instant; a read-only bind of a private directory is readable by the worker's reader; nothing stands
+  where M1 and M3 will create, their parents are the signed directories with rows those writes accept, and their
+  filesystems have the signed free bytes and inodes; no container is left by an interrupted recreate of the worker;
+  the override M3 will write, in M3's bytes, renders to exactly the four intended
+  values, changes nothing else and leaves both files reachable through the one signed read-write bind; the running
+  worker carries none of the four names; docker answered within the signed milliseconds; image, worker and deployed
+  revision are as signed; the pin is there and is root's; the lock file exists; no reboot is pending.
+  It does NOT mean that M1, M2 or M3 will complete: it is a read on another day, and it says nothing of a host that
+  was changed after it (a second full PRE follows any such change). It is never the readback of ORD:7.
+  A PRE REDUCED receipt, whatever its outcome, is a diagnosis and nothing M1 or M3 may stand on.
+  A finding on Sunday is a state of the host to correct, or a parameter to correct, before Monday; a failed
+  observation is a shape to look at with the receipt in hand (the item says which command, with which constant code
+  and after how many milliseconds).
+  When the container ended with docker's own status 125, 126 or 127 (VERIFY_ENGINE_FAILURE) the receipt carries the
+  status only: the frozen runner discards standard error. What the same receipt still tells: the image item says
+  whether the signed reference resolves to the signed ID (an image that is not present by that ID is 125); the
+  containers item says whether a container of this run's name is listed (a name in use is 125; it is derived from the
+  single-use GO, so only a leftover of this very run can hold it); items.verify.binds says whether a bind was asked
+  for (0 in a reduced PRE without probe: then the cause is not the mount); directory:BIND_PROBE or release_target
+  says whether the bind source was the signed directory. 126 and 127: the command could not be started in the
+  container (python not found by that name, or not executable). What is left after that elimination is the engine
+  itself (the init binary, the daemon).
+
+  M2 (Monday, POST). KNOWN_COMPLETE with the POST outcome (receipt member gates_first_session_readback true) is the
+  readback of the first session: the installed file is the signed release byte for byte, private as the worker's
+  reader requires, verified by the deployed code through the bind, and the policy candidate is accepted. M3 does not
+  depend on this receipt by hash (its request was signed before): it reads the installed release again by itself.
+  M3 IS DISPATCHED ONLY WITH THIS RECEIPT IN HAND: it carries items.containers.verify_container_present false, and
+  activate refuses nothing but ends PARTIAL after the recreate if a container it listed disappears under it.
+  KNOWN_PARTIAL: the readback is not complete. Which it is, a finding (OBSERVED_ALL_EXPECTATIONS_NOT_MET: the host is
+  not as signed) or an observation that failed (PARTIAL_OBSERVED: the run could not see), is in outcome and code; the
+  signed order decides what follows, not this source. KNOWN_REFUSAL: nothing was looked at; the GO is spent.
+  UNCERTAIN: nothing can be said; the source changed nothing on the filesystem in any case, and a container of this
+  run, if one is left, is named hostops02-k11-<first 16 hex of the GO hash>: one read that shows no container of
+  that name comes before M3.
+  The residual the signers of M2 accept in writing: these items gate and cannot be left out of a POST request, so an
+  observation of any of them that fails (a docker read that times out, a listing the source cannot parse) makes M2
+  KNOWN_PARTIAL though nothing is wrong with the release: boot, the three directories, release_target, verify,
+  containers, image, worker, deploy_files, maintenance_pin, reboot_pending, directories_stable. Items that are facts
+  only (reboot_required, units without expectation, the journal without a floor) no longer do.
+
+  What the signers choose by the plan is what gates: an omitted item gates nothing and the receipt lists it.
+
+7. WHERE EACH BOUND VALUE COMES FROM
+
+  revision, package_sha256            the release (code_revision, implementation_package_sha), by command
+  image.reference, image.image_id     the post-deploy readback receipt (image of c3po-r2d2-worker-1)
+  worker.container                    c3po-r2d2-worker-1; data_source / data_target: the worker's bind of the data
+                                      volume as the post-deploy family read it (/app/day-d-data in compose.yml:165)
+  release.sha256/bytes/content_b64    the signed release file, by command (PRE)
+  release.parent, directory_name,     K10's constants (its SCOPE: paths) and the SAME parent rows as K10's request
+    file_name
+  release.container_target            a new single component below "/", proposed /c3po-epoch-release
+  release.directory_entries           what K10 leaves in its directory (1: the release file)
+  live.parent, live.directory_name    K6a's request: its live_parent rows (as {path, rows, open_root: its data_root})
+                                      and its directory_name
+  policy.*                            the signed policy file, by command, in its canonical form; valid_at: the starts
+                                      of M3's two gates, the first open and one second before the last close
+  render.*                            the SAME project and files as K6a's request; override bytes = K6a's override_of
+                                      for K6a's request, by command (not typed, not re-serialised)
+  limits.render_ms, quick_ms          3000 and 1500 (DESIGN.md 4b), or figures recomputed with activate's arithmetic
+  limits.data_volume_free_bytes       K10's and K6a's FREE_BYTES_FLOOR (their SCOPE: limits.free_bytes_floor), 1048576
+  limits.data_volume_free_inodes      K6a's FREE_INODES_FLOOR (its SCOPE: limits.free_inodes_floor), 8
+  deploy.tree, lock_directory         rows of a read-only receipt of the same boot (or null: observed)
+  units, journal                      the signers' choice
+  docker_config                       null
+  bind_probe                          Sunday: a private directory with one 0600 regular file, from a receipt of this
+                                      boot: an earlier release directory on the data volume, else the journal root
+                                      after operation 4b with epoch.json (DESIGN.md section 3)
+  evidence_boot_id_sha256, evidence   the receipt(s) the rows come from, same boot
+
+  Proposed requests. Sunday (M2p): mode PRE, dry_run FULL, rows_in_receipt true, everything above signed. activate,
+  as repaired beside this directory, requires evidence of THIS operation (its EVIDENCE_OPERATIONS names
+  GO_READONLY_HOSTOPS02_EPOCH_READBACK_01): the KNOWN_COMPLETE receipt of the full PRE, of the boot of Monday, with its
+  observed rows of the live parent, the release parent, the deploy tree and the lock directory, is that evidence.
+  Monday (M2): mode POST, dry_run null, policy signed, live signed, render null, limits null, units [] (or without
+  expectation), journal null or without floor, docker_config null, bind_probe null.
+
+8. BINDING PROCEDURE (each step by command; nothing typed from memory)
+
+   1. Reviewer accepts these bytes: shasum -a 256 -c SHA256SUMS; <core>/assemble.py --check <this directory> prints
+      BUILD_EQUAL; shasum -a 256 -c CORE_SHA256SUMS in the core. The dispatcher refuses the template as it is.
+   2. Receipts on record, each with its hash; every row copied from a receipt named in evidence, of the boot named by
+      evidence_boot_id_sha256.
+   3. Fill the plan (section 7). Compute every hash and size by command. Write every instant with isoformat().
+      PRE: content_b64 of the release; POST: null. Check by command that the override bytes are K6a's override_of for
+      K6a's request, that release.parent rows are byte-equal to K10's and live.parent rows to K6a's live_parent.
+      With K10 and K6a sealed: run tests/test_siblings.py and tests/test_conformance.py again, by command, and write
+      the three sibling payload hashes they ran against next to the request (SIBLINGS.txt is that record for the seal).
+   4. request: status BOUND, date, windows, host binding, executor_uid 0, evidence; canonical bytes; hash. The bound
+      request must stay below 65536 bytes (the plan refuses a release above 24576 bytes).
+   5. effects: compute once with the source's effects_of(plan) offline and READ it: it is what the owner and the GO
+      sign. authority and GO carry it literally.
+   6. authority (owner, SIGNED, APPROVED, request and payload hashes) -> hash -> GO (SIGNED, GO, three hashes,
+      transport_binding with the four runtime pins and the command pin, claim_root_identity, the constant
+      scope_statement, success_criterion = success_of(plan): the outcome of the signed mode).
+   7. Six instants non-null, on request.date, gate span at most 3600 s; config window inside both;
+      latest_start = not_after - 80 s. Avoid HH:05-07, HH:10-25 and HH:35-37 (the lock probe and the engine).
+   8. Final payload with launcher_stdin.build; config with its pins and the paths of the five bound blobs;
+      publication proof.
+   9. Dry validation: the source's authenticate() on the bound bytes with the target uid injected, and perform() with
+      a gate that raises - nothing may be touched (tests: a host object that fails on any use).
+  10. Publish the hashes of the final payload and of the config. Prepare -> publication -> resume, once.
+  11. Order. The full PRE is dispatched as soon as the release, the policy and the reviewed K10 and K6a bytes exist,
+      and before the sitting at which M1 and M3 are countersigned. After anything that changes the host (a recreate
+      of the worker, an edit of the environment file) a second full PRE is bound and run. A container this run may
+      have left (hostops02-k11-<go16>, also one in the state created, which no alarm ever ends) is removed by the
+      owner by that exact name before Monday's M0.
+  12. Monday. M2 is dispatched after M1's KNOWN_COMPLETE receipt. M3 is dispatched only with M2's KNOWN_COMPLETE
+      receipt in hand; after an UNCERTAIN or timed-out M2, only after one read that shows no hostops02-k11-*
+      container. The gate of M2 is best bound to end before the gate of M3 begins.
+  A request signed before the co-auditor's review is void if the review changes these bytes.
+
+9. PROVEN, EMULATED, UNPROVEN
+
+  Proven on the host by earlier receipts (not by these bytes): the launcher and transport; the walk by dir_fd; the
+  image, container and ps templates; the compose render with the override on standard input (28/09, with the
+  environment that process inherited); the framed standard input to python -I -B - (02/10, through docker exec).
+  Real on the workstation: the source's own Native with real system calls on a temporary tree (read-only opens,
+  O_NOFOLLOW, by dir_fd, the real flock, nothing changed); the snippet's exact bytes run by a real interpreter in
+  isolated mode, against a stand-in package (3.9 and 3.12) and against the application modules of dd4ec4bb with the
+  real calendar library (3.12): the package hash the release code computes from its own 48 files is b5ce527a...db84.
+  Emulated only: the Docker CLI, compose, systemctl, device numbers, uid 0, errno injection, process death.
+  Compared with the sibling sources as they stand beside this directory (tests/test_siblings.py): constants, the
+  override bytes, the verdict of the bind rule on 24 renders, the acceptability of rows, the same host states on the
+  sibling's own fixture and on this one, activate's budget at the proposed limits, and the inventory of every
+  constant code of both writes (a code this source has no stand on fails the suite). The siblings were themselves
+  under repair when this was sealed (activate added three refusals during this repair, mirrored here): SIBLINGS.txt
+  names the bytes compared, and step 3 of section 8 repeats the comparison.
+  UNPROVEN - never executed anywhere:
+    core U2   docker run with RUN_PREFIX on this host (stdin, --init, --read-only)
+    core U3   the container_environment template as composed
+    core U4   docker compose with the fixed environment (no HOME)
+    core U5   flock on deployment.lock opened read-only as root
+    core U6   size and duration of the render
+    K11-U1    --name on the attached run
+    K11-U2    a read-only bind of a private directory with --read-only, read by the worker's reader
+    K11-U3    signal.alarm ending the interpreter under --init
+    K11-U4    import of the release's modules and of the calendar library in a fresh container with a read-only root,
+              no network, no environment, python -I -B
+    K11-U5    systemctl show with these ten properties (the hostops01 readback runs the same argv on Sunday 10:00)
+    K11-U6    the shape of a service's volumes in docker compose config --format json. Now a gate, with the rule
+              and the names of activate: another shape is a finding on Sunday, as it would be a refusal on Monday
+  The Sunday PRE run in the full profile exercises all of them on the host except the firing of the alarm.
+  linux_root/shapes_k11.py exercises K11-U1, U2 (as POST and as the container of the full dry run), U3, U5 on a
+  throwaway runner. NOT RUN, and neither was the core's Linux job: no docker offline, and no server may be contacted
+  from this work. Both should run before the Sunday request is bound (DESIGN.md section 14).
+
+10. REPRODUCE (offline; nothing here contacts a host)
+
+  cd <this directory>
+  shasum -a 256 -c SHA256SUMS
+  /usr/bin/python3 -B ../core/assemble.py --check .                         # BUILD_EQUAL
+  /usr/bin/python3 -B -m pytest -p no:cacheprovider -q tests               # 3.9: 5 skipped (the release's modules need 3.12 and the calendar library)
+                                                                           # test_siblings.py and the OTHERS of test_conformance.py use ../install_release,
+                                                                           # ../catalog_init, ../activate as they stand; without them 10 more tests skip
+  HOSTOPS02_TEST_RELEASE_REPOSITORY=<checkout that holds dd4ec4bb> <python 3.12 with exchange_calendars> -B -m pytest -p no:cacheprovider -q tests
+  /usr/bin/python3 -B mutation/mutate.py check                             # every anchor exactly once
+  /usr/bin/python3 -B mutation/mutate.py run                               # copies under work/mut-*; writes mutation/MUTATION_RUN.json
+  /usr/bin/python3 -B linux_root/shapes_k11.py --self-test
+
+11. OPEN DECISIONS: DESIGN.md section 11.

@@ -1,0 +1,49 @@
+# New integration proof only: no operational job, secrets, SSH or real signatures.
+name: capture-staged-integration-proof
+on:
+  push:
+    branches: [ops/capture-staged-integration-proof-20261007]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          path: overlay
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          ref: 199b2464b009bf52473b7cf2add8ba1c7f02d3bd
+          path: base
+      - id: py
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Exact source assembly, no dependency/app/host execution
+        run: |
+          set -eu
+          umask 077
+          mkdir /tmp/capture-flow-proof-root
+          echo '9f5fc99c44fa0e605398f6e6f93ad1ac1d7d3dddfbeab0f11e2dfd1fbc2e3a19  base/proof/BINDER_REV8_LINUX_CANDIDATE.tar.gz' | sha256sum -c -
+          tar xzf base/proof/BINDER_REV8_LINUX_CANDIDATE.tar.gz -C /tmp/capture-flow-proof-root
+          cp -R overlay/capture-flow/capture_job /tmp/capture-flow-proof-root/capture_job
+          cp -R overlay/capture-flow/families /tmp/capture-flow-proof-root/families
+          cp overlay/capture-flow/binder/bind/*.py /tmp/capture-flow-proof-root/binder/bind/
+          '${{ steps.py.outputs.python-path }}' -I -S -B overlay/capture-flow/verify_source_assembly.py --root /tmp/capture-flow-proof-root --layout overlay/capture-flow/SOURCE_LAYOUT.json --layout-sha256 b106708d7e72d3c6b529021a1a35fa85d1076a52eb01883cd7b28597334eeac0 --out overlay/capture-flow/SOURCE_ASSEMBLY_RESULT.public.json
+      - name: New synthetic staged integration only; audit denies network/children/host
+        run: |
+          '${{ steps.py.outputs.python-path }}' -I -S -B overlay/capture-flow/proof/test_integrated_flow.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: capture-staged-integration-only
+          path: |
+            overlay/capture-flow/SOURCE_ASSEMBLY_RESULT.public.json
+            overlay/capture-flow/proof/INTEGRATION_RESULT.public.json
+          if-no-files-found: error
+          retention-days: 30

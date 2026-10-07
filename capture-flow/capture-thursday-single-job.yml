@@ -1,0 +1,131 @@
+# Dated operator-only job. Fable pushes once on 08/10 after E5 and Mac retirement.
+name: capture-thursday-single-job
+on:
+  push:
+    branches: [ops/capture-thursday-single-job-20261008]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: capture-thursday-single-job-20261008
+  cancel-in-progress: false
+jobs:
+  capture:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CAPTURE_GITHUB_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          path: overlay
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          ref: 199b2464b009bf52473b7cf2add8ba1c7f02d3bd
+          path: base
+      - id: py
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Install sealed sources and own isolated dependencies
+        env:
+          CAPTURE_LAYOUT_SHA256: b106708d7e72d3c6b529021a1a35fa85d1076a52eb01883cd7b28597334eeac0
+        run: |
+          set -eu
+          umask 077
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(date -u +%F)" = 2026-10-08
+          test ! -e /tmp/capture-runtime
+          mkdir /tmp/capture-runtime
+          echo '9f5fc99c44fa0e605398f6e6f93ad1ac1d7d3dddfbeab0f11e2dfd1fbc2e3a19  base/proof/BINDER_REV8_LINUX_CANDIDATE.tar.gz' | sha256sum -c -
+          tar xzf base/proof/BINDER_REV8_LINUX_CANDIDATE.tar.gz -C /tmp/capture-runtime
+          cp -R overlay/capture-flow/capture_job /tmp/capture-runtime/capture_job
+          cp -R overlay/capture-flow/families /tmp/capture-runtime/families
+          cp overlay/capture-flow/binder/bind/*.py /tmp/capture-runtime/binder/bind/
+          echo "$CAPTURE_LAYOUT_SHA256  overlay/capture-flow/SOURCE_LAYOUT.json" | sha256sum -c -
+          '${{ steps.py.outputs.python-path }}' -m venv --without-pip /tmp/capture-runtime/venv
+          '${{ steps.py.outputs.python-path }}' -m pip --python /tmp/capture-runtime/venv/bin/python install --disable-pip-version-check --no-compile --only-binary=:all: -r overlay/capture-flow/requirements-runtime.txt
+          '${{ steps.py.outputs.python-path }}' -I -S -B -c 'import os,pathlib; p=pathlib.Path("/tmp/capture-runtime/venv/lib64"); assert p.is_symlink() and os.readlink(p)=="lib"; assert (p.parent/"lib").is_dir() and not (p.parent/"lib").is_symlink(); p.unlink()'
+          curl -fsSL -o /tmp/capture-age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo 'cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  /tmp/capture-age.tgz' | sha256sum -c -
+          mkdir /tmp/capture-age
+          tar xzf /tmp/capture-age.tgz -C /tmp/capture-age --strip-components=1
+          echo 'eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c  /tmp/capture-age/age' | sha256sum -c -
+          echo '0a0009db842259d6717f7eeb30acb6b90d2a2eb924c6acd0a0db0ca1f1537899  /tmp/capture-age/age-keygen' | sha256sum -c -
+          chmod 700 /tmp/capture-age/age /tmp/capture-age/age-keygen
+          install -m 600 overlay/capture-authority/DATED_AUTHORITY.json /tmp/capture-dated-authority.json
+      - name: Bootstrap only after exact E5 and election; measure, never self-accept
+        env:
+          C3PO_AWS_HOST: ${{ secrets.C3PO_AWS_HOST }}
+          C3PO_AWS_USER: ${{ secrets.C3PO_AWS_USER }}
+          C3PO_AWS_SSH_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          C3PO_AWS_KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+          CAPTURE_LAYOUT_SHA256: b106708d7e72d3c6b529021a1a35fa85d1076a52eb01883cd7b28597334eeac0
+        run: |
+          set -eu
+          umask 077
+          AUTHORITY_PIN=$(sha256sum /tmp/capture-dated-authority.json | cut -d ' ' -f 1)
+          /tmp/capture-runtime/venv/bin/python -I -S -B /tmp/capture-runtime/capture_job/bootstrap_job.py --root /tmp/capture-runtime --layout overlay/capture-flow/SOURCE_LAYOUT.json --layout-sha256 "$CAPTURE_LAYOUT_SHA256" --authority /tmp/capture-dated-authority.json --authority-sha256 "$AUTHORITY_PIN" --private /tmp/capture-private --age /tmp/capture-age/age --keygen /tmp/capture-age/age-keygen
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CAPTURE_RUNTIME_IDENTITY
+          path: /tmp/capture-private/cipher/RUNTIME_IDENTITY.json.age
+          if-no-files-found: error
+          retention-days: 7
+      - name: Guarded challenge-sheet once; no retry
+        run: |
+          set -eu
+          umask 077
+          /tmp/capture-runtime/venv/bin/python -I -S -B /tmp/capture-runtime/capture_job/entry_job.py challenge-sheet --state /tmp/capture-private/STATE.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CAPTURE_CHALLENGE_QUESTION
+          path: /tmp/capture-private/cipher/CHALLENGE_QUESTION.age
+          if-no-files-found: error
+          retention-days: 7
+      - name: Guarded challenge-execute once; no retry
+        run: |
+          set -eu
+          umask 077
+          /tmp/capture-runtime/venv/bin/python -I -S -B /tmp/capture-runtime/capture_job/entry_job.py challenge-execute --state /tmp/capture-private/STATE.json
+      - name: Guarded prepare-four once; no retry
+        run: |
+          set -eu
+          umask 077
+          /tmp/capture-runtime/venv/bin/python -I -S -B /tmp/capture-runtime/capture_job/entry_job.py prepare-four --state /tmp/capture-private/STATE.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CAPTURE_FOUR_PRE_QUESTIONS
+          path: /tmp/capture-private/cipher/FOUR_PRE_QUESTIONS.age
+          if-no-files-found: error
+          retention-days: 7
+      - name: Guarded sign-four once; no retry
+        run: |
+          set -eu
+          umask 077
+          /tmp/capture-runtime/venv/bin/python -I -S -B /tmp/capture-runtime/capture_job/entry_job.py sign-four --state /tmp/capture-private/STATE.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CAPTURE_FOUR_SIGNED_BOUND
+          path: /tmp/capture-private/cipher/FOUR_SIGNED_BOUND.age
+          if-no-files-found: error
+          retention-days: 7
+      - name: Guarded run once; no retry
+        run: |
+          set -eu
+          umask 077
+          /tmp/capture-runtime/venv/bin/python -I -S -B /tmp/capture-runtime/capture_job/entry_job.py run --state /tmp/capture-private/STATE.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CAPTURE_FLOW_RESULTS
+          path: /tmp/capture-private/cipher/FLOW_RESULTS.age
+          if-no-files-found: error
+          retention-days: 7
+      - if: failure()
+        name: Fixed refusal only; never prints plaintext or launches a fallback
+        run: |
+          echo 'CAPTURE_JOB_REFUSED_OR_UNCERTAIN_NO_RETRY'
