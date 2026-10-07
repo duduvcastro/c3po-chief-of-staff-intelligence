@@ -1,0 +1,58 @@
+{
+ "activation_allowed": false,
+ "core_parts": {
+  "core": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a"
+ },
+ "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "date_class": "READ",
+ "dates": [
+  "2026-10-02",
+  "2026-10-03",
+  "2026-10-04",
+  "2026-10-05",
+  "2026-10-06",
+  "2026-10-07",
+  "2026-10-08",
+  "2026-10-09",
+  "2026-10-10"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "543a3b18bda2a2b19e4b7c0b2477f2a0bc00c1a57bee704596e7171d9792044e",
+ "final_payload_bytes": 55111,
+ "final_payload_sha256": "fa09e765f6556d4f5b5e06b0d0ea51f842a55623019e2c1ff2210dc6e5a54e21",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "capture_transport_challenge",
+ "name": "capture_transport_challenge",
+ "operation": "GO_READONLY_HOSTOPS02_CAPTURE_TRANSPORT_CHALLENGE_01",
+ "operation_part_sha256": "7a51e821478823acd61d80d5cb482e9ada27b718ff945a9f63f2e0ca122f502c",
+ "parts": [
+  "core"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "65f76e6a0cfd1ee67de1337be1810c5a7869bc208419db90c2a41c9bb00a85f2",
+ "source_bytes": 35525,
+ "source_sha256": "8c07c42459fd0f9f1dcdb7d2701f0c96fbb5246f8148b3b668ff690438b11fca",
+ "spec_sha256": "eb45cd137319a164125e6f7d1945efa461faadb95a08810d4700b64771238267",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 2043,
+ "writes_allowed": false
+}

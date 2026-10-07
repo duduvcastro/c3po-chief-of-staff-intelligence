@@ -1,0 +1,40 @@
+{
+  "LINUX": "PENDING_FABLE",
+  "actual_reference_executed": false,
+  "author_review": "Author tests only, not independent review or host PASS",
+  "bootstrap_constructor": "NOT_IMPLEMENTED",
+  "core_generation": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "errors": 0,
+  "failures": 0,
+  "files": {
+    "test_transport_challenge.py": "53927dcffdb685191e3e5ea93ab99e33d7aca0c4b35491d3946fa746a7358fc6",
+    "transport_challenge/build/ASSEMBLY.json": "e3e8bccc91f18f4b5a5cf3224843c9539cd125e981c4deb0e997f193ce71905f",
+    "transport_challenge/build/AUTHORITY.UNBOUND.json": "f9a36ff7840413eef2d9f073347b9a65787df34bbf3979f3f210951a00b234a1",
+    "transport_challenge/build/DISPATCH.UNBOUND.json": "ff92e71d2ea2fdb27ab55492def35abe83d06273ad4499c2ed7b8e8392d26a82",
+    "transport_challenge/build/DISPATCH_SCOPE_DELTA.diff": "535882590ce69a974bb4a54371681a855356f5230233cb21edcf0183809525c1",
+    "transport_challenge/build/FINAL_PAYLOAD.UNBOUND.py": "fa09e765f6556d4f5b5e06b0d0ea51f842a55623019e2c1ff2210dc6e5a54e21",
+    "transport_challenge/build/GO.UNBOUND.json": "5b1a801121b38fc8c21ec1b69e276e53d72eace95d06f004218f3a380e0ab5f7",
+    "transport_challenge/build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+    "transport_challenge/build/PUBLICATION_PROOF.UNBOUND.json": "87c46ada4a4ee3e684325c5312403156df111c6e7f86c23566eb171e3a73c897",
+    "transport_challenge/build/REQUEST.UNBOUND.json": "030df2b493d5057953469c9f313df7ecaeaba50cd17f16ca077791ac5b8c67f0",
+    "transport_challenge/build/capture_transport_challenge.py": "8c07c42459fd0f9f1dcdb7d2701f0c96fbb5246f8148b3b668ff690438b11fca",
+    "transport_challenge/build/dispatch_once.py": "543a3b18bda2a2b19e4b7c0b2477f2a0bc00c1a57bee704596e7171d9792044e",
+    "transport_challenge/build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+    "transport_challenge/build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+    "transport_challenge/op.py": "7a51e821478823acd61d80d5cb482e9ada27b718ff945a9f63f2e0ca122f502c",
+    "transport_challenge/spec.py": "eb45cd137319a164125e6f7d1945efa461faadb95a08810d4700b64771238267"
+  },
+  "methods": 7,
+  "operational_READY": false,
+  "requires": [
+    "exact dated owner authority and answer",
+    "Linux/review of this own source",
+    "actual same-job executed-reference observation before captures",
+    "new private root identities and operational runtime"
+  ],
+  "scenarios": 12,
+  "schema": "CAPTURE_DATED_TRANSPORT_CHALLENGE_COMPONENT_V1",
+  "source": "build",
+  "status": "OFFLINE_UNBOUND_CANDIDATE",
+  "transport_scope": "One new dated 08/10 challenge only, same Thursday runner, not repeated BOOT or legacy hostfacts. No host file read/write, SQL, Docker, app. Source gates fixed11:52\u201312:02UTC. UID0 was synthetic in tests."
+}

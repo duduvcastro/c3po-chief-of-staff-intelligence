@@ -1,0 +1,28 @@
+# Prova Linux do componente da sonda de transporte (bfb0e930). Sem segredos, sem host.
+name: capture-transport-probe-proof
+on:
+  push:
+    branches: [ops/capture-transport-probe-proof-20261007]
+permissions:
+  contents: read
+jobs:
+  component:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: sonda de transporte, testes sintéticos
+        working-directory: capture-transport-challenge
+        run: python -I -B test_transport_challenge.py 2>&1 | tee transport-test.log; exit ${PIPESTATUS[0]}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: transport-probe-proof
+          path: capture-transport-challenge/transport-test.log
+          retention-days: 30
