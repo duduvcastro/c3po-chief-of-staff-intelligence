@@ -1,0 +1,28 @@
+name: capture-private-export-proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/capture-private-export-proof-20261007]
+permissions:
+  contents: read
+jobs:
+  component:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Guards only, fake cipher process, no secrets or host
+        working-directory: capture-private-export
+        run: python -I -B test_private_export.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: capture-private-export-offline-proof
+          path: capture-private-export/EXPORT_TEST_RESULT.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,37 @@
+{
+  "Linux_proof": "PENDING",
+  "actual_crypto": "PENDING_FABLE_DISPOSABLE_FIXTURE",
+  "age_linux_amd64_archive_sha256": "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10",
+  "age_release": "1.3.2",
+  "files": {
+    "private-export-proof.yml": "74244fb74342da31b7a99d211a4a2988699dc13a21eea4ff7eb23c3e56a88e82",
+    "private_export.py": "6f3cbe89b305e9f1e062ba1cdd066ba84031f52b57ecb4b37ead474fff733ea6",
+    "test_private_export.py": "d37b0c1632a465031680e127495f4d876aafaec2ebc1b00626d5db25e773718d"
+  },
+  "limitations": [
+    "export confidentiality only; no signature or authority",
+    "exact extracted age executable SHA still needs Linux runtime measurement",
+    "workflow must allowlist only own receipt/question packets, never SSH keys/tokens",
+    "Mac recipient does not provide inbound runner decryption"
+  ],
+  "local_proof": {
+    "actual_crypto_processes": 0,
+    "actual_network_calls": 0,
+    "actual_private_exports": 0,
+    "audit_denials": 0,
+    "errors": 0,
+    "failures": 0,
+    "host_calls": 0,
+    "methods": 12,
+    "operational_READY": false,
+    "scenarios": 13,
+    "schema": "CAPTURE_PRIVATE_EXPORT_SYNTHETIC_TEST_V1",
+    "source_sha256": "6f3cbe89b305e9f1e062ba1cdd066ba84031f52b57ecb4b37ead474fff733ea6",
+    "test_sha256": "d37b0c1632a465031680e127495f4d876aafaec2ebc1b00626d5db25e773718d"
+  },
+  "operational_READY": false,
+  "recipient": "age1knekenhrh79x9xm0ghvhltwg075d33mljhu4y6u9zyz3cweszens2vr8x0",
+  "schema": "CAPTURE_PRIVATE_EXPORT_COMPONENT_MANIFEST_V1",
+  "source_comment": 6038229951,
+  "source_comment_sha256": "5413892f10eba50b91aab0ae9ecceaf674c2487e39686726af5f09a6448bdc35"
+}

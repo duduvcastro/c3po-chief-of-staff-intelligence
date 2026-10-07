@@ -1,0 +1,50 @@
+name: capture-private-export-proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/capture-private-export-proof-20261007]
+permissions:
+  contents: read
+jobs:
+  component:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Guards only, fake cipher process, no secrets or host
+        working-directory: capture-private-export
+        run: python -I -B test_private_export.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: capture-private-export-offline-proof
+          path: capture-private-export/EXPORT_TEST_RESULT.json
+          if-no-files-found: error
+          retention-days: 30
+  age-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: age oficial v1.3.2 linux-amd64 (sha cbe24006), cifra de fixture descartável para o destinatário da Fable
+        run: |
+          curl -fsSL -o age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  age.tgz" | sha256sum -c -
+          tar xzf age.tgz
+          sha256sum age/age | tee age-binary.sha256
+          printf 'fixture descartavel %s\n' "$GITHUB_RUN_ID" > fixture.txt
+          sha256sum fixture.txt | tee fixture.sha256
+          ./age/age -r age1knekenhrh79x9xm0ghvhltwg075d33mljhu4y6u9zyz3cweszens2vr8x0 -o fixture.txt.age fixture.txt
+          rm fixture.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: age-roundtrip
+          path: |
+            fixture.txt.age
+            fixture.sha256
+            age-binary.sha256
+          retention-days: 30
