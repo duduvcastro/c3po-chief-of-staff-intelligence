@@ -1,0 +1,35 @@
+# OFFLINE component proof only. No secrets, host or actual binder prepare/sign.
+name: capture-history-channel-proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/capture-history-channel-proof-20261007]
+permissions:
+  contents: read
+jobs:
+  component:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: New channel and API packet component proofs only
+        working-directory: capture-history-channel
+        run: |
+          python -I -B test_capture_channel.py
+          python -I -B test_api_binder_bridge.py
+          python -I -B test_history_channel.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: capture-history-channel-offline-proof
+          path: |
+            capture-history-channel/CHANNEL_TEST_RESULT.json
+            capture-history-channel/API_BINDER_TEST_RESULT.json
+            capture-history-channel/HISTORY_SCOPE_TEST_RESULT.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,64 @@
+{
+  "Linux": "PENDING_NEW_BYTES",
+  "changed_from": "4bb08ef6",
+  "files": {
+    "binder/bind/bind_once.py": "9dbff222a3f815573d0cf89686f16a841260831400da40c5055999d7c71af133",
+    "binder/bind/capture_owner_response.py": "9a3a6605176215b22be0613f7e0be1f8b0093ca147ca2bf63e0f16e7a962c814",
+    "fable-channel-proof.yml": "b96da39bfe2934f70518783c9539954a205de097cb0acc2a20d6a3577d11fcf7",
+    "github_readback.py": "108af6c6014cf92e8e18dd5e8e70a47644d90295472c2f9712e7502aacd42dcf",
+    "owner_response.py": "9a3a6605176215b22be0613f7e0be1f8b0093ca147ca2bf63e0f16e7a962c814",
+    "test_api_binder_bridge.py": "b94c68b9fa597c2e2cd05b55ae179e3ac5b0ab78f16726b04638bbe264acb9e6",
+    "test_capture_channel.py": "5da39e4ee6c66c8dd169d981faf88ad0e031b6ff4a3ae8cfcd885273530f8fcb",
+    "test_history_channel.py": "a5f78a528b85c089bde1da678456e7ca6a755500b6b534260a66fa67e3e7bdb1"
+  },
+  "full_runtime_and_flow_proofs": "PENDING",
+  "historical_private_compatibility": "five stored complete sets reconstructed and receipts verified with history-reading functions; no operational execution, same functions after sole check guard repair",
+  "legacy_signed_set_mutations": 0,
+  "local_reports": {
+    "API_BINDER_TEST_RESULT.json": {
+      "actual_network_calls": 0,
+      "audit_denials": 0,
+      "binder_source_sha256": "39210ff11f0d36136b913840b7673a030590fc2ae1f9d6e74fbb4b37f48f5f37",
+      "bridge_sha256": "108af6c6014cf92e8e18dd5e8e70a47644d90295472c2f9712e7502aacd42dcf",
+      "errors": 0,
+      "failures": 0,
+      "methods": 1,
+      "operational_READY": false,
+      "real_prepare_sign_dispatch": 0,
+      "scenarios": 2,
+      "schema": "CAPTURE_FABLE_RECORD_API_BINDER_ABI_PROOF_V2"
+    },
+    "CHANNEL_TEST_RESULT.json": {
+      "audit_denials": 0,
+      "binder_imports": 0,
+      "errors": 0,
+      "failures": 0,
+      "host_calls": 0,
+      "methods": 5,
+      "operational_READY": false,
+      "python": "3.9.6",
+      "real_prepare_calls": 0,
+      "real_sign_calls": 0,
+      "scenarios": 37,
+      "schema": "CAPTURE_BINDER_FABLE_RECORD_COMPONENT_TEST_V2",
+      "source_sha256": "39210ff11f0d36136b913840b7673a030590fc2ae1f9d6e74fbb4b37f48f5f37",
+      "test_sha256": "5da39e4ee6c66c8dd169d981faf88ad0e031b6ff4a3ae8cfcd885273530f8fcb"
+    },
+    "HISTORY_SCOPE_TEST_RESULT.json": {
+      "audit_denials": 0,
+      "errors": 0,
+      "failures": 0,
+      "host_calls": 0,
+      "methods": 6,
+      "operational_READY": false,
+      "real_prepare_sign_dispatch": 0,
+      "scenarios": 13,
+      "schema": "CAPTURE_HISTORICAL_CHANNEL_SCOPE_REGRESSION_V1",
+      "source_sha256": "9dbff222a3f815573d0cf89686f16a841260831400da40c5055999d7c71af133",
+      "test_sha256": "a5f78a528b85c089bde1da678456e7ca6a755500b6b534260a66fa67e3e7bdb1"
+    }
+  },
+  "operational_READY": false,
+  "schema": "CAPTURE_HISTORY_CHANNEL_CANDIDATE_MANIFEST_V1",
+  "unsigned_unknown_history_refused": true
+}
