@@ -1,0 +1,40 @@
+# Prova Linux descartável do binder rev8 (branch que nunca entra na main). Sem segredos, sem host, sem deploy.
+name: binder-rev8-proof
+on:
+  push:
+    branches: [ops/hostops02-binder-rev8-proof-20261007]
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - py: '3.9'
+            reqs: 'pytest==8.4.2 exchange_calendars==4.2.8 numpy==1.26.4 pandas==2.2.3'
+          - py: '3.12'
+            reqs: 'pytest==9.1.1 exchange_calendars==4.13.2 numpy==2.3.5 pandas==2.2.3'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - id: py
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ matrix.py }}
+          check-latest: false
+      - name: venv com dependências exatas
+        run: |
+          ${{ steps.py.outputs.python-path }} -m venv /tmp/venv
+          /tmp/venv/bin/pip install --disable-pip-version-check -q ${{ matrix.reqs }}
+      - name: recorte rev8
+        run: bash proof/run.sh /tmp/venv/bin/python py${{ matrix.py }}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: binder-rev8-proof-py${{ matrix.py }}
+          path: out/
+          retention-days: 30
