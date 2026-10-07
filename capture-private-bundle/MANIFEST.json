@@ -1,0 +1,33 @@
+{
+  "Linux": "PENDING_NEW_BYTES",
+  "embedded_manifest_sha256": "bda2bfc372e15410221de69ae1b9de11eb38d1aab71455c4e033af349da45c5f",
+  "files": {
+    "bundle-proof.yml": "e99942e59e6ecdd57424c306fb63c98f4981cfe7948d696ca3e4aa2d5e580755",
+    "private_bundle.py": "0c5db58a51705231fb247b4c243cabc7a4f60e052bca42bebe89581c5af7fae4",
+    "test_private_bundle.py": "aadc68501a369f92e39a03b2d336ddc36ab31266ad7219d7494cbe02213ce5c0"
+  },
+  "format": "USTAR 148 listed regular files + exact BUNDLE_MANIFEST.json",
+  "limitations": [
+    "component only",
+    "ciphertext job recipient and dated authority verified separately",
+    "no private data in public archive",
+    "historical BOUND evidence copies never executable"
+  ],
+  "local_proof": {
+    "actual_decrypt_calls": 0,
+    "audit_denials": 0,
+    "errors": 0,
+    "expected_private_manifest_sha256": "8671e15a46627734dbcc133d59b42b574ffea134548d0cec408bec2177bb5e69",
+    "failures": 0,
+    "host_calls": 0,
+    "methods": 14,
+    "operational_READY": false,
+    "scenarios": 32,
+    "schema": "CAPTURE_PRIVATE_BUNDLE_TEST_V2",
+    "source_sha256": "0c5db58a51705231fb247b4c243cabc7a4f60e052bca42bebe89581c5af7fae4",
+    "test_sha256": "aadc68501a369f92e39a03b2d336ddc36ab31266ad7219d7494cbe02213ce5c0"
+  },
+  "operational_READY": false,
+  "private_inventory_sha256": "8671e15a46627734dbcc133d59b42b574ffea134548d0cec408bec2177bb5e69",
+  "schema": "CAPTURE_PRIVATE_BUNDLE_CANDIDATE_MANIFEST_V2"
+}
