@@ -1,0 +1,55 @@
+{
+  "Linux": "PENDING_NEW_BYTES",
+  "changed": [
+    "new constructor",
+    "dispatcher refuses resume before publication+120sec",
+    "own templates pin new dispatcher"
+  ],
+  "files": {
+    "constructor-proof.yml": "c53f4b803ac74c16a5d05bd45dc6312c4141fea89f76ea4b5cbdc144dac1489e",
+    "constructor.py": "c94b823f8f070ad2373d8116f3eb67127f1e146df27f72af1b7f824762b0d42b",
+    "owner_response.py": "9a3a6605176215b22be0613f7e0be1f8b0093ca147ca2bf63e0f16e7a962c814",
+    "test_constructor.py": "9e1884455229d79ae87e2f80b4227193a83ac97c4bb92b99b3cc174ecc73a484",
+    "transport_challenge/AUTHORITY.UNBOUND.json": "f9a36ff7840413eef2d9f073347b9a65787df34bbf3979f3f210951a00b234a1",
+    "transport_challenge/DISPATCH.UNBOUND.json": "6c28be24bd304a1dd1962636730e0a77d6a46c46d24345209484ac822edef417",
+    "transport_challenge/GO.UNBOUND.json": "5b1a801121b38fc8c21ec1b69e276e53d72eace95d06f004218f3a380e0ab5f7",
+    "transport_challenge/REQUEST.UNBOUND.json": "030df2b493d5057953469c9f313df7ecaeaba50cd17f16ca077791ac5b8c67f0",
+    "transport_challenge/capture_transport_challenge.py": "8c07c42459fd0f9f1dcdb7d2701f0c96fbb5246f8148b3b668ff690438b11fca",
+    "transport_challenge/dispatch_once.py": "4a0d3db181df0812d6247ec17d91212cf9c7bf635e48ba534f1c88a3ce2a8e38",
+    "transport_challenge/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+    "transport_challenge/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918"
+  },
+  "limitations": [
+    "synthetic authentication and once-file proof; no SSH/root host",
+    "runtime approval is trusted external reviewed input, not self-attested PASS",
+    "full Python dependency/runtime measurement must be reviewed independently; binary checks alone do not close it",
+    "policy/capture integration and no-host flow rehearsal still required"
+  ],
+  "local_proof": {
+    "actual_SSH_spawns": 0,
+    "actual_owner_API_calls": 0,
+    "audit_denials": 0,
+    "constructor_sha256": "c94b823f8f070ad2373d8116f3eb67127f1e146df27f72af1b7f824762b0d42b",
+    "dispatcher_sha256": "4a0d3db181df0812d6247ec17d91212cf9c7bf635e48ba534f1c88a3ce2a8e38",
+    "errors": 0,
+    "failures": 0,
+    "host_calls": 0,
+    "methods": 10,
+    "operational_READY": false,
+    "python": "3.9.6",
+    "scenarios": 30,
+    "schema": "CAPTURE_TRANSPORT_CONSTRUCTOR_SYNTHETIC_PROOF_V1",
+    "synthetic_inner_UID_only": true,
+    "test_sha256": "9e1884455229d79ae87e2f80b4227193a83ac97c4bb92b99b3cc174ecc73a484"
+  },
+  "operational_READY": false,
+  "schema": "CAPTURE_TRANSPORT_CONSTRUCTOR_CANDIDATE_MANIFEST_V1",
+  "source_base_archive_sha256": "bfb0e930cc1cd0429fd39e1d1011f584b5895955ff7bc12ec35d812a71c24f34",
+  "trust_prerequisites": [
+    "owner exact dated authority outside Mac naming these program bytes, no inference from E4",
+    "external exact SHA of dated authority and physical runtime approval",
+    "same actual Thursday job run/attempt 1, actual Linux runtime reviewed",
+    "own actual response to challenge sheet before08:52BRT, API bridge four GETs",
+    "no signed file edits/recreated claims/BOOT reference/retry"
+  ]
+}
