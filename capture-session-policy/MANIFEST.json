@@ -1,0 +1,27 @@
+{
+  "Linux": "PENDING_REPAIR_PROOF",
+  "changed": [
+    "installation scheme uses pip --python same venv; no --target relocating console scripts",
+    "only runtime job, no repeat of policy component tests"
+  ],
+  "files": {
+    "binder/bind/bind_once.py": "9dbff222a3f815573d0cf89686f16a841260831400da40c5055999d7c71af133",
+    "binder/bind/capture_checked_binder.py": "69242b73481ca2444aa2c15aaecd3969944bea80c9ea3a797c18a007b36da0e9",
+    "binder/bind/capture_owner_response.py": "9a3a6605176215b22be0613f7e0be1f8b0093ca147ca2bf63e0f16e7a962c814",
+    "binder/bind/measure_runtime_identity.py": "cdc1d6ef5444a31510b952048062ac4b08184abf24d9a31c750b9b5c6f2bfff0",
+    "binder/bind/runtime_identity.py": "796ec07043f628b96bfdab20e5103567a70cc62c15f3ee63ce74ea36f6a0e2d6",
+    "capture_checked_binder.py": "69242b73481ca2444aa2c15aaecd3969944bea80c9ea3a797c18a007b36da0e9",
+    "measure_runtime_identity.py": "cdc1d6ef5444a31510b952048062ac4b08184abf24d9a31c750b9b5c6f2bfff0",
+    "requirements-runtime.txt": "e60af22817b3ba55c73a2e6d751c703e3a0692861de90c132f991dfaa55001a0",
+    "runtime_component.py": "07d4f54ecea83b1e83d7cccb45e88683e7bdc77528d0c74a7c48dd07778c9702",
+    "runtime_identity.py": "796ec07043f628b96bfdab20e5103567a70cc62c15f3ee63ce74ea36f6a0e2d6",
+    "session-runtime-proof-r2.yml": "299289e8014ef0bafe3993926c428dcb09c4166625ad0cb4c560c294fee7e2a8",
+    "session_policy.py": "45638680e6e77cf7ce7d0bf74cced7314eca43b454423377f9f8863a6d41357e",
+    "test_session_policy.py": "7981659fccfb9db7a48bf8587de8fb0bc05657cbf78fe962d62fc23488ad94e8"
+  },
+  "guard_or_runtime_source_changes": 0,
+  "operational_READY": false,
+  "previous_candidate_archive_sha256": "e91546d58156e25c1edaa068470d56afb179e2183f42edecbb9e9fcaf7bc49c3",
+  "previous_failure_run": 37633930957,
+  "schema": "CAPTURE_RUNTIME_COMPONENT_INSTALL_REPAIR_V2"
+}
