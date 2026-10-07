@@ -1,0 +1,38 @@
+# Missing-proof rehearsal only. No operational app, deploy credentials or owner asks.
+name: capture-operator-channel-rehearsal
+on:
+  push:
+    branches: [ops/capture-operator-channel-rehearsal-20261007]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ciphertext:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Fixed public fixture encrypted only for the established recipient
+        run: |
+          set -eu
+          umask 077
+          test "$(date -u +%F)" = 2026-10-07
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          mkdir /tmp/operator-channel-rehearsal
+          curl -fsSL -o /tmp/operator-channel-rehearsal/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo 'cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  /tmp/operator-channel-rehearsal/age.tgz' | sha256sum -c -
+          tar xzf /tmp/operator-channel-rehearsal/age.tgz -C /tmp/operator-channel-rehearsal --strip-components=1
+          echo 'eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c  /tmp/operator-channel-rehearsal/age' | sha256sum -c -
+          printf '%s' '{"schema":"CAPTURE_OPERATOR_CHANNEL_REHEARSAL_V1","status":"SYNTHETIC_NOT_OWNER_ANSWER_OR_RUNTIME_PASS","host_calls":0}' > /tmp/operator-channel-rehearsal/FIXTURE.public.json
+          /tmp/operator-channel-rehearsal/age -r age1knekenhrh79x9xm0ghvhltwg075d33mljhu4y6u9zyz3cweszens2vr8x0 -o /tmp/operator-channel-rehearsal/QUESTION_FIXTURE.age /tmp/operator-channel-rehearsal/FIXTURE.public.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CAPTURE_OPERATOR_CHANNEL_REHEARSAL
+          path: /tmp/operator-channel-rehearsal/QUESTION_FIXTURE.age
+          if-no-files-found: error
+          retention-days: 1
+      - name: Bounded observation interval while the run remains in progress
+        run: |
+          date -u +%Y-%m-%dT%H:%M:%SZ
+          sleep 45
+          date -u +%Y-%m-%dT%H:%M:%SZ
+          echo 'SYNTHETIC_CHANNEL_ONLY_NO_HOST_NO_GO'
