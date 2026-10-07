@@ -1,0 +1,23 @@
+{
+  "Linux": "PENDING_FABLE",
+  "actual_host_calls": 0,
+  "actual_prepare_sign_dispatch": 0,
+  "files": {
+    "channel/job_channel.py": "98ac56b91ba0b469de17129fce79b990ebe965e01b27972579b8cda7ec980abe",
+    "channel/test_job_channel.py": "a60456c3c5ab1ed8d12a2dbcf3dfa5c1602e2b24b0939d96984cf2d20a740cbf",
+    "foundation-proof.yml": "b0706c9dc7753b18d8d161a0187626eef8e3c24bc0f6d1b859ad9834f5c7bcd8",
+    "program/checked_program.py": "f04c73d6b372e9722234f09320dce94a83a4d4699ce2fe79b2eb59fa28f94068",
+    "program/parameter_render.py": "e8a17e0dd369507d80a3dd05af92ba9ab2b866dd7d97f6565f4f0d389846f8df",
+    "program/test_checked_program.py": "89e253628aaf142c1a42a89d9798bd76294ae5b9384eb8dda110768f12073c90",
+    "program/test_parameter_render.py": "aa0bb2e6641f614148208ccb0d01ede6e027c2bb294f4666ed3ca4423c06c53a",
+    "proof.py": "fd5a5db70f2a338f45800d58cd12dbb7d15e5e1d35e8e832b48086a962d6f457"
+  },
+  "full_live_adapter_implemented": false,
+  "operational_READY": false,
+  "schema": "CAPTURE_FLOW_FOUNDATION_CANDIDATE_V1",
+  "scope": [
+    "typed fixed #429 hashes/ciphertexts only",
+    "unsigned local parameter relocation, historical signed bytes never changed",
+    "same-process physical wrapper, synthetic validation only"
+  ]
+}
