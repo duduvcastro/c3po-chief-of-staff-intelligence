@@ -74,18 +74,30 @@ def test_closed_period_uses_historical_holdings_and_dated_fx():
     assert dates==[date(2026,9,15)]
 
 
-def test_position_restatement_after_a_flow_makes_period_unknown():
-    from datetime import date
-    from app.portfolio_accounting import period_result
-    events=[event(day='2026-08-31'),event(day='2026-09-01',sequence=2),event(kind='position',day='2026-09-02',sequence=3)]
-    result=period_result(events,date(2026,9,1),date(2026,9,30),None,None)
-    assert result['profit_usd'] is None and 'correção' in result['reason']
-
-
 def _flat_value(price):
     def value_at(positions, day):
         return sum(p.quantity * price(day) for p in positions.values())
     return value_at
+
+
+def test_position_restatement_after_a_flow_measures_from_the_restatement():
+    from datetime import date
+    from app.portfolio_accounting import period_result
+    events=[event(day='2026-08-31'),event(day='2026-09-01',sequence=2),event(kind='position',day='2026-09-02',sequence=3)]
+    price=lambda day: Decimal(10) if day < date(2026,9,2) else Decimal(11)
+    result=period_result(events,date(2026,9,1),date(2026,9,30),_flat_value(price),lambda market,day:Decimal(1))
+    # holdings informed on 09/02 (10 shares) valued at the previous close; flows before it are already in them
+    assert result['start']=='2026-09-02' and '02/09/2026' in result['reason']
+    assert Decimal(result['profit_usd'])==Decimal(10)
+
+
+def test_flow_on_the_same_day_as_the_position_stays_unknown():
+    from datetime import date
+    from app.portfolio_accounting import period_result
+    events=[event(kind='position',quantity='10',total='50',day='2026-10-01'),
+            event(quantity='5',total='60',day='2026-10-01',sequence=2)]
+    result=period_result(events,date(2026,1,1),date(2026,10,6),None,None)
+    assert result['profit_usd'] is None and 'correção' in result['reason']
 
 
 def test_positions_informed_on_the_first_day_measure_the_whole_month():
@@ -110,13 +122,17 @@ def test_positions_informed_inside_the_year_measure_from_their_date():
     assert Decimal(result['profit_usd'])==Decimal(20)
 
 
-def test_flow_before_a_later_position_in_the_period_stays_unknown():
+def test_flow_before_a_later_position_in_the_year_measures_from_the_position():
     from datetime import date
     from app.portfolio_accounting import period_result
-    events=[event(day='2026-09-30'),event(quantity='1',total='10',day='2026-10-02',sequence=2),
-            event(kind='position',quantity='5',total='50',day='2026-10-03',sequence=3)]
-    result=period_result(events,date(2026,10,1),date(2026,10,6),None,None)
-    assert result['profit_usd'] is None and 'correção' in result['reason']
+    # caso do dono: compras com datas anteriores e posições cadastradas depois, no mesmo ano
+    events=[event(day='2026-03-10'),event(quantity='1',total='10',day='2026-06-02',sequence=2),
+            event(kind='position',quantity='5',total='50',day='2026-10-01',sequence=3)]
+    price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(13)
+    result=period_result(events,date(2026,1,1),date(2026,10,6),_flat_value(price),lambda market,day:Decimal(1))
+    holdings=sum(p.quantity for p in replay(events, date(2026,10,1)).values())
+    assert result['start']=='2026-10-01' and '01/10/2026' in result['reason']
+    assert Decimal(result['profit_usd'])==holdings*3
 
 
 def test_missing_history_does_not_return_zero_profit():
