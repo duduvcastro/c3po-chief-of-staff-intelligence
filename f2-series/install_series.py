@@ -55,7 +55,7 @@ def slot_command(slot):
             "--on-calendar=" + calendar(slot), "--timer-property=AccuracySec=1s",
             "--property=Type=oneshot", "--property=TimeoutStartSec=170", "--property=UMask=0077",
             "--property=NoNewPrivileges=yes", "--property=PrivateTmp=yes",
-            "--property=WorkingDirectory=" + s.CAMPAIGN_ROOT,
+            "--property=WorkingDirectory=" + s.CAMPAIGN_ROOT, "--property=LimitCORE=0",
             PYTHON, "-I", "-S", "-B", runtime, "run", "--bound", s.SOURCE_ROOT + "/BOUND.json", "--slot", slot]
 
 
@@ -171,6 +171,8 @@ def install(stage, bound_sha256, *, probe=None, runner=None, now=None, clock=Non
     raws = {k: s.canonical(v) for k, v in bound["documents"].items()}
     values = s.validate_documents(raws)
     q, owner = values["request"], values["owner"]
+    # No retroactivity: the owner's Assino precedes the first effect of phase B (BOUND copy, timers).
+    s.need(clock() > s.stamp(owner["recorded_at_utc"]), "INSTALL_BEFORE_OWNER_RECORD")
     s.need(os.path.isdir(s.SOURCE_ROOT) and os.path.isdir(s.CAMPAIGN_ROOT), "ROOTS_NOT_PREPARED")
     s.need(not os.path.lexists(s.SOURCE_ROOT + "/BOUND.json"), "BOUND_ALREADY_INSTALLED")
     write_new(s.SOURCE_ROOT + "/BOUND.json", raw, 0o400)
@@ -197,13 +199,21 @@ def install(stage, bound_sha256, *, probe=None, runner=None, now=None, clock=Non
         if (s.stamp(row["utc"]) - clock()).total_seconds() < MARGIN_SECONDS:
             out.append({"slot": row["slot"], "installed": False, "reason": "MARGIN_LOST"})
             continue
-        rc = (runner or _runner)(row["argv"])
+        try:
+            rc = (runner or _runner)(row["argv"])
+        except BaseException as error:
+            # Timeout or OS error: this unit may or may not exist. Stop here; readback decides.
+            out.append({"slot": row["slot"], "utc": row["utc"], "unit": unit(row["slot"]), "installed": "UNCERTAIN",
+                        "reason": s.safe_code(error)})
+            break
         out.append({"slot": row["slot"], "utc": row["utc"], "unit": unit(row["slot"]), "installed": rc == 0, "rc": rc})
     result = {"schema": "F2_INSTALL_RESULT_V2", "bound_sha256": bound_sha256, "eligible_set_sha256": q["eligible_set_sha256"],
               "source_sha256": q["source_sha256"], "seal_sha256": q["seal_sha256"], "runtime_sha256": q["runtime_sha256"],
               "election_sha256": q["election_sha256"], "timers": out, "remeasure": "EQUAL", "preflight": "PASS",
               "skipped_slots": sorted(set(s.SLOTS) - {r["slot"] for r in rows})}
-    if any(r.get("installed") is False and r.get("reason") != "MARGIN_LOST" for r in out) or not any(r.get("installed") for r in out):
+    if any(r.get("installed") == "UNCERTAIN" for r in out):
+        result["code"] = "TIMER_INSTALL_UNCERTAIN"  # exit 2: stopped at an uncertain unit; timers listed above
+    elif any(r.get("installed") is False and r.get("reason") != "MARGIN_LOST" for r in out) or not any(r.get("installed") is True for r in out):
         result["code"] = "TIMER_NOT_INSTALLED"  # exit 2: some timer failed, or none installed
     return result
 
@@ -275,7 +285,7 @@ def main(argv=None):
             result = revoke()
     except BaseException as error:
         # A partial install is reported, never cleaned up automatically. Timers are created only
-        # after every guard, so any HOLD raised here left zero timers.
+        # after every guard, and runner failures are caught per unit, so a HOLD here left zero timers.
         result = {"schema": "F2_INSTALL_HOLD_V1", "command": a.command, "code": s.safe_code(error),
                   "source_root_exists": os.path.lexists(s.SOURCE_ROOT), "campaign_root_exists": os.path.lexists(s.CAMPAIGN_ROOT),
                   "bound_installed": os.path.lexists(s.SOURCE_ROOT + "/BOUND.json")}

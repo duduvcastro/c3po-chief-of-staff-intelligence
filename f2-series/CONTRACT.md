@@ -58,3 +58,6 @@ Rev 2 selada e intocada (`fable-f2-series-20261008`, SHA256SUMS `e33335b1…`). 
 Mantido da rev 2: B1, `WorkingDirectory`, códigos de saída 0/2/3, `sha256sum -c` antes do sudo, régua, slots, orçamentos, um GET por slot.
 
 Testes: 66 (stdlib, sintéticos). Prova Linux nova necessária (workflow sem mudança de forma).
+
+## Revisão 3.1
+Fecha o achado bloqueante da revisão adversarial da rev 3 (B2 no `install`: Assino precisa preceder a cópia do BOUND e os timers) e quatro não bloqueantes (falha por slot do `systemd-run` relatada como UNCERTAIN sem esconder timers; ordem Emenda 7 ≤ medição verificada no `bind request`; `LimitCORE=0`; política escrita para `prepare`/`install` parciais). 69 testes; os três novos e o de argv falham na rev 3 e passam na 3.1.

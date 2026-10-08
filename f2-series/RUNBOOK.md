@@ -59,7 +59,7 @@ Entregar `runtime.json`/`election.json` (por hash; conteúdo por canal privado s
 
 ## 8. `bind request` e pergunta
 ```
-mkdir -m 700 $PRIV/in-request && cp $PRIV/config.json $PRIV/review.json $PRIV/measure-out/runtime.json $PRIV/measure-out/election.json $PRIV/amendment-out/amendment_signature.json $PRIV/ELIGIBLE_SET.json $PRIV/in-request/
+mkdir -m 700 $PRIV/in-request && cp $PRIV/config.json $PRIV/review.json $PRIV/measure-out/measurement.json $PRIV/measure-out/runtime.json $PRIV/measure-out/election.json $PRIV/amendment-out/amendment_signature.json $PRIV/ELIGIBLE_SET.json $PRIV/in-request/
 python3 -I -S -B $F2/bind_series.py request --inputs $PRIV/in-request --out $PRIV/request-out
 ```
 Imprime o SHA256 do REQUEST; gera `OWNER_QUESTION.txt`. A Fable carimba `question_published_at_utc` (`date -u +%Y-%m-%dT%H:%M:%SZ`) ao publicar a pergunta exata ao dono.
@@ -84,7 +84,7 @@ Copia só o BOUND (0400), re-mede, exige igualdade total com runtime/election as
 ```
 /usr/bin/systemd-run --unit=f2s-20261008-2126 "--description=F2 series slot 2126 (BRT)" "--on-calendar=2026-10-09 00:26:00 UTC" --timer-property=AccuracySec=1s --property=Type=oneshot --property=TimeoutStartSec=170 --property=UMask=0077 --property=NoNewPrivileges=yes --property=PrivateTmp=yes --property=WorkingDirectory=/var/lib/c3po/f2-series-20261008 /usr/bin/python3 -I -S -B /var/lib/c3po/f2-series-src-20261008/f2-series/series_runtime.py run --bound /var/lib/c3po/f2-series-src-20261008/BOUND.json --slot 2126
 ```
-Qualquer diferença: `F2_INSTALL_HOLD_V1`, zero timers. Instalação parcial é consumida: sem repetição automática; o BOUND já copiado impede segundo `install` (`BOUND_ALREADY_INSTALLED`). Não há mais o caminho de recuperação da rev 2 (§10 antigo): nada é removido.
+O `install` recusa sem nenhum efeito (`INSTALL_BEFORE_OWNER_RECORD`) se o relógio não for posterior ao registro do Assino. Qualquer diferença: `F2_INSTALL_HOLD_V1`, zero timers. Se o `systemd-run` estourar o tempo ou der erro de SO num slot, o laço para ali e o recibo lista os timers já criados e o slot `UNCERTAIN` (`TIMER_INSTALL_UNCERTAIN`, saída 2); os timers criados **ficam** (cada um é um slot legítimo e assinado) e o readback (§12) decide o estado real; nenhum timer é recriado. Se houver qualquer dúvida sobre um timer não listado, `revoke` (§13). Instalação parcial é consumida: sem repetição automática; o BOUND já copiado impede segundo `install` (`BOUND_ALREADY_INSTALLED`). Não há mais o caminho de recuperação da rev 2 (§10 antigo): nada é removido.
 
 ## 12. Readback (só leitura)
 `ssh $H 'sudo -n /usr/bin/python3 -I -S -B /var/lib/c3po/f2-series-src-20261008/f2-series/install_series.py readback'` → um timer por slot instalado e nenhum outro; AccuracyUSec=1s, Persistent=no, Restart=no; `revoked_marker: false`.
@@ -97,3 +97,10 @@ Readback + `campaign.ledger` + `<slot>/RESULT.public.json` + `journalctl -u 'f2s
 
 ## Códigos de saída do slot
 0 observado (PASS/FAIL); 3 recusa sem efeito (`SLOT_REFUSED_NO_EFFECT`, só `Refusal`); 2 HOLD (inclui exceção inesperada: `slot_consumed: "UNKNOWN"`).
+
+## Revisão 3.1 (após revisão adversarial da rev 3)
+- `install` exige relógio posterior ao registro do Assino antes de qualquer efeito (`INSTALL_BEFORE_OWNER_RECORD`).
+- Falha do `systemd-run` por slot: laço para, recibo lista timers criados e o `UNCERTAIN`; timers criados ficam; nada recriado.
+- `bind request` exige `measurement.json` e recusa se a Emenda 7 foi assinada depois da medição (`MEASUREMENT_BEFORE_AMENDMENT7`).
+- Unidades com `LimitCORE=0`.
+- `prepare` parcial (falha depois de criar alguma raiz): nada é removido e não há segunda tentativa nesta noite; a série de hoje termina sem leitura e a Fable avisa o dono.

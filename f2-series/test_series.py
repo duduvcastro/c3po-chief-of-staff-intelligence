@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -816,6 +817,42 @@ class Install(unittest.TestCase):
                     self.install(digest)
                 self.assertEqual(self.argv, [])
 
+    def test_install_before_owner_record_refuses_without_effect(self):
+        self.prepare()
+        measured = ins.measure(self.probe, utc("2026-10-08T22:40:00Z"), physical=False)
+        digest = self.bound(measured)                      # owner recorded at OWNER_AT = 23:00Z
+        with self.assertRaises(s.Hold) as e:
+            self.install(digest, now="2026-10-08T22:59:59Z")
+        self.assertEqual(str(e.exception), "INSTALL_BEFORE_OWNER_RECORD")
+        self.assertFalse((self.src / "BOUND.json").exists())
+        self.assertEqual(self.argv, [])
+
+    def test_runner_failure_mid_loop_is_uncertain_and_lists_created_timers(self):
+        self.prepare()
+        measured = ins.measure(self.probe, utc("2026-10-08T22:40:00Z"), physical=False)
+        digest = self.bound(measured)
+        calls = []
+        def runner(argv):
+            calls.append(argv)
+            if len(calls) == 3:
+                raise subprocess.TimeoutExpired(argv, 30)
+            return 0
+        out = ins.install(self.stage, digest, probe=self.probe, runner=runner, clock=lambda: utc("2026-10-08T23:10:00Z"),
+                          require_root=False, token_check=lambda: "present", physical=False)
+        self.assertEqual(out["code"], "TIMER_INSTALL_UNCERTAIN")
+        self.assertEqual([t["installed"] for t in out["timers"]], [True, True, "UNCERTAIN"])
+        self.assertEqual(len(calls), 3)
+
+    def test_bind_request_refuses_measurement_before_amendment7(self):
+        self.prepare()
+        measured = ins.measure(self.probe, utc("2026-10-08T20:59:00Z"), physical=False)   # Emenda 7 signed 21:00Z
+        sig = s.canonical(s.amendment_wrapper(amendment_original()))
+        with self.assertRaises(s.Hold) as e:
+            b.measured_before_signature(s.canonical(measured["measurement"]), s.canonical(measured["runtime"]), sig)
+        self.assertEqual(str(e.exception), "MEASUREMENT_BEFORE_AMENDMENT7")
+        later = ins.measure(self.probe, utc("2026-10-08T21:01:00Z"), physical=False)
+        b.measured_before_signature(s.canonical(later["measurement"]), s.canonical(later["runtime"]), sig)
+
     def test_install_refuses_wrong_bound_hash_without_copy(self):
         self.prepare()
         measured = ins.measure(self.probe, utc("2026-10-08T22:40:00Z"), physical=False)
@@ -851,6 +888,7 @@ class Systemd(unittest.TestCase):
         self.assertIn("--timer-property=AccuracySec=1s", argv)
         self.assertIn("--unit=f2s-20261008-2126", argv)
         self.assertIn("--property=WorkingDirectory=" + s.CAMPAIGN_ROOT, argv)
+        self.assertIn("--property=LimitCORE=0", argv)
         joined = " ".join(argv)
         for banned in ("Persistent", "Restart", "TOKEN", "api_token", "--setenv", "-E"):
             self.assertNotIn(banned, joined)

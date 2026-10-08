@@ -75,6 +75,17 @@ def amendment_from_original(original_raw, config_raw):
     return s.canonical(wrapper)
 
 
+def measured_before_signature(measurement_raw, runtime_raw, signature_raw):
+    """Emenda 7 (authority of phase A) must be signed before the measurement it authorizes."""
+    m, runtime = s.strict(measurement_raw), s.strict(runtime_raw)
+    s.need(runtime["measurement_record_sha256"] == s.sha(s.canonical(m)), "MEASUREMENT_PIN_INVALID")
+    wrapper = s.strict(signature_raw)
+    import base64
+    import json
+    original = json.loads(base64.b64decode(wrapper["original_record_base64"]).decode("utf-8"))   # opaque bytes, not canonical
+    s.need(s.stamp(original["signed_at_utc"]) <= s.stamp(m["measured_at_utc"]), "MEASUREMENT_BEFORE_AMENDMENT7")
+
+
 def parse_config(config_raw):
     config = s.strict(config_raw)
     s.need(set(config) == {"schema", "amendment7_sha256", "amendment7_signature_sha256"} and
@@ -147,7 +158,8 @@ def main():
         print(s.sha(raw))
     elif a.command == "request":
         raw = {k: read(inp / (k + ".json")) for k in
-               ("config", "review", "runtime", "election", "amendment_signature", "ELIGIBLE_SET")}
+               ("config", "review", "runtime", "election", "amendment_signature", "ELIGIBLE_SET", "measurement")}
+        measured_before_signature(raw["measurement"], raw["runtime"], raw["amendment_signature"])
         request = request_from_inputs(raw["config"], raw["review"], raw["runtime"], raw["election"],
                                       raw["amendment_signature"], raw["ELIGIBLE_SET"],
                                       (here / "series_runtime.py").read_bytes(), (here / "SHA256SUMS").read_bytes())
