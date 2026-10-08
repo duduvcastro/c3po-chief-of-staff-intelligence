@@ -198,6 +198,25 @@ def test_dividend_on_the_day_of_the_informed_position_is_not_ambiguous():
     assert result['reason'] is None and Decimal(result['profit_usd'])==Decimal(7)
 
 
+@pytest.mark.parametrize('events', [
+    [event(kind='position',quantity='10',total='100',day='2026-10-01'),
+     event(quantity='5',total='50',day='2026-10-01',sequence=2),
+     event(kind='position',quantity='15',total='150',day='2026-10-01',sequence=3)],
+    [event(kind='position',quantity='10',total='100',day='2026-03-01'),
+     event(quantity='5',total='50',day='2026-04-15',sequence=2),
+     event(kind='position',quantity='15',total='150',day='2026-10-01',sequence=3)],
+    [event(kind='position',quantity='10',total='100',day='2026-03-01'),
+     event(kind='split',quantity='2',total='0',day='2026-06-01',sequence=2),
+     event(kind='position',quantity='20',total='100',day='2026-10-01',sequence=3)],
+])
+def test_consistent_informed_positions_are_not_corrections(events):
+    from datetime import date
+    from app.portfolio_accounting import restatements
+    assert restatements(events)==[]
+    result=_period(events,date(2026,1,1),date(2026,10,6),lambda day: Decimal(10))
+    assert result['reason'] is None or 'corrigida' not in result['reason']
+
+
 def test_missing_history_does_not_return_zero_profit():
     from datetime import date
     from app.portfolio_accounting import period_result

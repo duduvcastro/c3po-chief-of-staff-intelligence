@@ -141,9 +141,9 @@ def restatements(events: list[dict]) -> list[tuple[str, str]]:
                 continue
             if kind != 'dividend':
                 moved = True
-            elif quantity is None:
+            if quantity is None:
                 continue
-            elif kind == 'buy':
+            if kind == 'buy':
                 quantity += amount(e['quantity'])
             elif kind == 'sell':
                 quantity -= amount(e['quantity'])
