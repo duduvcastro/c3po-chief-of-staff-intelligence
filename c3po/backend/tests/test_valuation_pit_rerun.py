@@ -10,6 +10,7 @@ import json
 import os
 import stat
 import threading
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -178,6 +179,76 @@ def test_availability_is_provider_evidence_for_us_and_a_labelled_hypothesis_for_
     early = pit.pit_fundamentals(_payload("AAA"), market="NASDAQ", economic_date=date(2024, 5, 14))  # the day before 2024Q1 was filed
     assert early["fundamentals_as_of"] == "2023-12-31" and early["excluded"]["Income_Statement.quarterly:not_available_at_T"] == 1
     assert pit.AVAILABILITY_RULE.startswith("as available per evidence")
+
+
+def _quarterly_income(rows: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    return {"Financials": {"Income_Statement": {"quarterly": rows}}}
+
+
+def _eligible_quarters(payload: dict[str, Any], market: str, economic_date: date) -> tuple[list[tuple[str, str]], dict[str, int]]:
+    excluded: Counter[str] = Counter()
+    rows = pit.eligible_statements(payload, market=market, economic_date=economic_date, excluded=excluded)["Income_Statement"]["quarterly"]
+    return [(row["period_end"].isoformat(), row["availability"]["available_at"]) for row in rows], dict(excluded)
+
+
+def test_a_period_after_t_and_a_us_filing_before_the_period_end_are_refused_and_counted() -> None:
+    at = date(2026, 9, 25)
+    rows, excluded = _eligible_quarters(_quarterly_income({
+        "2026-12-31": {"date": "2026-12-31", "filing_date": "2026-09-01", "totalRevenue": 999},  # a FUTURE period "filed" before T
+        "2026-06-30": {"date": "2026-06-30", "filing_date": "2026-08-01", "totalRevenue": 100},  # the only sound one
+        "2026-03-31": {"date": "2026-03-31", "filing_date": "2026-01-15", "totalRevenue": 50},   # filed before its own period end
+        "2025-12-31": {"date": "2025-12-31", "totalRevenue": 40}}), "NASDAQ", at)                # no filing date: unchanged rule, not eligible
+    assert rows == [("2026-06-30", "2026-08-01")]
+    assert excluded == {"Income_Statement.quarterly:period_after_T": 1, "Income_Statement.quarterly:filing_before_period_end": 1,
+                        "Income_Statement.quarterly:filing_date_missing": 1}
+
+
+def test_the_boundaries_period_end_equal_to_t_and_filing_equal_to_period_end_are_accepted() -> None:
+    at = date(2024, 6, 14)
+    rows, excluded = _eligible_quarters(_quarterly_income({
+        "2024-06-14": {"date": "2024-06-14", "filing_date": "2024-06-14", "totalRevenue": 10},   # period_end == T == filing_date
+        "2024-03-31": {"date": "2024-03-31", "filing_date": "2024-03-31", "totalRevenue": 9}}), "NYSE", at)  # filing == period end
+    assert rows == [("2024-06-14", "2024-06-14"), ("2024-03-31", "2024-03-31")] and excluded == {}
+
+
+def test_b3_eligibility_is_unchanged_by_the_date_sanity_rules() -> None:
+    at = date(2024, 6, 14)
+    payload = _quarterly_income({
+        "2024-09-30": {"date": "2024-09-30", "filing_date": "2024-06-01", "totalRevenue": 999},  # future: excluded before as well (lag), now named period_after_T
+        "2024-03-31": {"date": "2024-03-31", "filing_date": "2024-03-31", "totalRevenue": 9},    # +90 d = 2024-06-29 > T: not available
+        "2024-03-15": {"date": "2024-03-15", "filing_date": "2024-01-01", "totalRevenue": 8},    # B3 filing_date is not evidence: never checked
+        "2023-12-31": {"date": "2023-12-31", "totalRevenue": 7}})                                 # B3 ignores a missing filing_date
+    rows, excluded = _eligible_quarters(payload, "B3", at)
+    assert rows == [("2024-03-15", "2024-06-13"), ("2023-12-31", "2024-03-30")]
+    assert excluded == {"Income_Statement.quarterly:period_after_T": 1, "Income_Statement.quarterly:not_available_at_T": 1}
+    # the B3 fixture used by the rest of the suite: the eligible set at every T is exactly {period_end + 90 d ≤ T}
+    for economic_date in (date(2024, 3, 29), date(2024, 3, 30), date(2024, 6, 29), date(2024, 12, 31)):
+        statements = pit.eligible_statements(_payload("PETR", b3=True), market="B3", economic_date=economic_date, excluded=Counter())
+        for by_frequency in statements.values():
+            for frequency, eligible in by_frequency.items():
+                periods = {date.fromisoformat(key) for key in _payload("PETR", b3=True)["Financials"]["Income_Statement"][frequency]}
+                assert [row["period_end"] for row in eligible] == sorted((p for p in periods if p + timedelta(days=90) <= economic_date), reverse=True)
+
+
+def test_the_ttm_and_the_balance_sheet_never_use_a_future_quarter_or_a_filing_before_its_period() -> None:
+    at = date(2024, 6, 14)
+    clean = pit.pit_fundamentals(_payload("AAA"), market="NASDAQ", economic_date=at)
+    contaminated = _payload("AAA")
+    for statement, absurd in (("Income_Statement", {"totalRevenue": 1e15, "netIncome": 1e14, "ebitda": 1e14, "operatingIncome": 1e14}),
+                              ("Balance_Sheet", {"totalStockholderEquity": 1e15, "shortTermDebt": 1e14, "longTermDebt": 1e14, "cashAndEquivalents": 1.0,
+                                                 "commonStockSharesOutstanding": 1.0}),
+                              ("Cash_Flow", {"dividendsPaid": -1e14, "freeCashFlow": 1e14, "totalCashFromOperatingActivities": 1e14})):
+        for frequency in ("quarterly", "yearly"):
+            contaminated["Financials"][statement][frequency]["2024-09-30"] = {"date": "2024-09-30", "filing_date": "2024-06-01", **absurd}  # period after T
+            contaminated["Financials"][statement][frequency]["2024-06-14"] = {"date": "2024-06-14", "filing_date": "2024-05-01", **absurd}  # filed before its end
+    result = pit.pit_fundamentals(contaminated, market="NASDAQ", economic_date=at)
+    for key in ("ttm", "cash_flow_ttm", "balance", "shares", "shares_availability", "revenue_growth", "fiscal_years", "fundamentals_as_of", "eligible_periods"):
+        assert result[key] == clean[key], key
+    assert result["balance"]["period_end"] == "2024-03-31" and result["fundamentals_as_of"] == "2024-03-31"
+    for statement in ("Income_Statement", "Balance_Sheet", "Cash_Flow"):
+        for frequency in ("quarterly", "yearly"):
+            assert result["excluded"][f"{statement}.{frequency}:period_after_T"] == 1
+            assert result["excluded"][f"{statement}.{frequency}:filing_before_period_end"] == 1
 
 
 class _Poisoned(dict):

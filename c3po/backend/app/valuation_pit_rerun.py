@@ -253,7 +253,14 @@ def availability_of(market: str, period_end: date, filing_date: date | None) -> 
 
 def eligible_statements(payload: Mapping[str, Any], *, market: str, economic_date: date, excluded: Counter[str]) -> dict[str, dict[str, list[dict[str, Any]]]]:
     """The statements of the payload eligible at ``economic_date``, per statement and frequency, newest first. Reads ONLY
-    ``Financials`` (the closed list of §3): a forbidden block is never touched, whatever the payload carries."""
+    ``Financials`` (the closed list of §3): a forbidden block is never touched, whatever the payload carries.
+
+    Date sanity, before availability (a statement that fails it would otherwise become the newest quarter and feed the
+    TTM and the balance sheet): a period ending AFTER ``economic_date`` is refused (``period_after_T``, every market —
+    for B3 the ``+90 d`` lag already kept it out, only the counter's name changes); outside B3, a ``filing_date`` BEFORE
+    the period end is refused (``filing_before_period_end``: a filing cannot precede the period it reports; B3's
+    ``filing_date`` is not read as evidence, so it is not checked). A missing ``filing_date`` keeps the existing rule:
+    outside B3 the period is not eligible (``filing_date_missing``); B3 ignores the field."""
     financials = _mapping(payload.get("Financials"))
     output: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for statement in ("Income_Statement", "Balance_Sheet", "Cash_Flow"):
@@ -268,9 +275,16 @@ def eligible_statements(payload: Mapping[str, Any], *, market: str, economic_dat
                 if period_end is None or period_end in seen:
                     excluded[f"{statement}.{frequency}:unparseable_or_duplicate_period"] += 1
                     continue
-                availability = availability_of(market, period_end, _parse_date(data.get("filing_date")))
+                if period_end > economic_date:
+                    excluded[f"{statement}.{frequency}:period_after_T"] += 1
+                    continue
+                filing_date = _parse_date(data.get("filing_date"))
+                availability = availability_of(market, period_end, filing_date)
                 if availability is None:
                     excluded[f"{statement}.{frequency}:filing_date_missing"] += 1
+                    continue
+                if market != "B3" and filing_date is not None and filing_date < period_end:
+                    excluded[f"{statement}.{frequency}:filing_before_period_end"] += 1
                     continue
                 if date.fromisoformat(availability["available_at"]) > economic_date:
                     excluded[f"{statement}.{frequency}:not_available_at_T"] += 1
