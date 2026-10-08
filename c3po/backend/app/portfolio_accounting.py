@@ -123,16 +123,28 @@ def period_result(events: list[dict], start: date, end: date, value_at: Any, rat
     before = start - timedelta(days=1)
     result = {'start': start.isoformat(), 'end': end.isoformat(),
               'profit_usd': None, 'return_percent': None, 'reason': None}
-    first = min(events, key=lambda e:(str(e['effective_date']),e['sequence'])) if events else None
-    if first is None or (str(first['effective_date']) > before.isoformat() and first['kind'] != 'buy'):
-        result['reason'] = 'Sem posição comprovada no início do período'
-        return result
     selected = [e for e in events if start.isoformat() <= str(e['effective_date']) <= end.isoformat()]
-    if any(e['kind'] == 'position' for e in selected):
-        result['reason'] = 'Período contém cadastro ou correção de posição; informe as movimentações'
-        return result
+    snapshots = [e for e in selected if e['kind'] == 'position']
+    opening_through, note = before, None
+    if snapshots:
+        # Informed positions are holdings as of their date: the period is measured from
+        # the latest snapshot, valued at the previous close, when no flow precedes it.
+        anchor = max(date.fromisoformat(str(e['effective_date'])) for e in snapshots)
+        if any(e['kind'] != 'position' and str(e['effective_date']) <= anchor.isoformat() for e in selected):
+            result['reason'] = 'Período contém cadastro ou correção de posição; informe as movimentações'
+            return result
+        before, opening_through = anchor - timedelta(days=1), anchor
+        selected = [e for e in selected if str(e['effective_date']) > anchor.isoformat()]
+        if anchor > start:
+            result['start'] = anchor.isoformat()
+            note = f"Desde {anchor.strftime('%d/%m/%Y')}, data do cadastro das posições"
+    else:
+        first = min(events, key=lambda e:(str(e['effective_date']),e['sequence'])) if events else None
+        if first is None or (str(first['effective_date']) > before.isoformat() and first['kind'] != 'buy'):
+            result['reason'] = 'Sem posição comprovada no início do período'
+            return result
     try:
-        opening = value_at(replay(events, before), before)
+        opening = value_at(replay(events, opening_through), before)
         closing = value_at(replay(events, end), end)
         flows = weighted = ZERO
         days = Decimal((end - before).days)
@@ -147,7 +159,7 @@ def period_result(events: list[dict], start: date, end: date, value_at: Any, rat
                 weighted += flow * Decimal((end-day).days) / days
         profit = closing-opening-flows
         capital = opening+weighted
-        result.update(profit_usd=str(profit), return_percent=str(profit/capital*100) if capital>0 else None)
+        result.update(profit_usd=str(profit), return_percent=str(profit/capital*100) if capital>0 else None, reason=note)
         if capital <= 0:
             result['reason'] = 'Base de capital insuficiente para percentual'
     except (ValueError, KeyError):
