@@ -1,0 +1,14 @@
+{
+  "Linux_proof": "PENDING_FABLE",
+  "errors": 0,
+  "failures": 0,
+  "family": "F3",
+  "host_operated": false,
+  "operational_GO": false,
+  "platform": "Darwin",
+  "python": "3.9.6",
+  "runtime_accepted": false,
+  "schema": "NEW_FAMILY_LOCAL_RESULT_V1",
+  "source": "OBSERVED_LOCAL_UNITTEST_THIS_HUMAN_TURN",
+  "tests": 11
+}
