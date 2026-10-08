@@ -40,14 +40,16 @@ Imprime `BOUND_SHA`. REQUEST/BOUND imutáveis após Assino.
 ssh $H 'umask 077; mkdir /var/tmp/f2-stage-20261008'
 scp -r $F2 $H:/var/tmp/f2-stage-20261008/f2-series            # só os 13 arquivos do selo (sem __pycache__)
 scp $PRIV/bound-out/BOUND.json $PRIV/ELIGIBLE_SET.json $H:/var/tmp/f2-stage-20261008/
+# conferência do staging ANTES de qualquer sudo (o root só executa bytes do selo)
+ssh $H 'cd /var/tmp/f2-stage-20261008/f2-series && find . -type l | wc -l && sha256sum -c --strict SHA256SUMS && sha256sum ../BOUND.json ../ELIGIBLE_SET.json'
 # prévia sem efeito
 ssh $H 'sudo -n /usr/bin/python3 -I -S -B /var/tmp/f2-stage-20261008/f2-series/install_series.py plan'
 # instalação única
 ssh $H 'sudo -n /usr/bin/python3 -I -S -B /var/tmp/f2-stage-20261008/f2-series/install_series.py install --stage /var/tmp/f2-stage-20261008 --bound-sha256 <BOUND_SHA>'
 ```
-O `install` recusa se: não for root/Linux; selo, BOUND, fonte, selo do REQUEST, elegíveis ou `age` da F1 (`/var/lib/c3po/f1-diagnostic-20261008/age`) divergirem; `/var/lib/c3po/f2-series-src-20261008` ou `/var/lib/c3po/f2-series-20261008` já existirem. Cria as duas raízes 0700, copia (0400) família/BOUND/elegíveis, copia `age` (0500) para a raiz da campanha, reconfere e então roda **um** `systemd-run` por slot futuro com margem ≥ 180 s, por exemplo:
+O `install` recusa se: não for root/Linux; selo, BOUND, fonte, selo do REQUEST, elegíveis ou `age` da F1 (`/var/lib/c3po/f1-diagnostic-20261008/age`) divergirem; `/var/lib/c3po/f2-series-src-20261008` ou `/var/lib/c3po/f2-series-20261008` já existirem. Cria as duas raízes 0700, copia (0400) família/BOUND/elegíveis, copia `age` (0500) para a raiz da campanha, reconfere, **faz a prévia com as guardas do próprio runtime** (raiz da campanha exclusiva 0700, `age` pela `open_age`, `provider.env` pela `read_token`: arquivo root 0600 nlink 1 com a chave presente; o valor é descartado, nunca impresso) e então roda **um** `systemd-run` por slot futuro com margem ≥ 180 s (`WorkingDirectory` = raiz da campanha). Sai com código 2 (`TIMER_NOT_INSTALLED`) se algum timer falhar ou nenhum for instalado. Por exemplo:
 ```
-/usr/bin/systemd-run --unit=f2s-20261008-2126 "--description=F2 series slot 2126 (BRT)" "--on-calendar=2026-10-09 00:26:00 UTC" --timer-property=AccuracySec=1s --property=Type=oneshot --property=TimeoutStartSec=170 --property=UMask=0077 --property=NoNewPrivileges=yes --property=PrivateTmp=yes /usr/bin/python3 -I -S -B /var/lib/c3po/f2-series-src-20261008/f2-series/series_runtime.py run --bound /var/lib/c3po/f2-series-src-20261008/BOUND.json --slot 2126
+/usr/bin/systemd-run --unit=f2s-20261008-2126 "--description=F2 series slot 2126 (BRT)" "--on-calendar=2026-10-09 00:26:00 UTC" --timer-property=AccuracySec=1s --property=Type=oneshot --property=TimeoutStartSec=170 --property=UMask=0077 --property=NoNewPrivileges=yes --property=PrivateTmp=yes --property=WorkingDirectory=/var/lib/c3po/f2-series-20261008 /usr/bin/python3 -I -S -B /var/lib/c3po/f2-series-src-20261008/f2-series/series_runtime.py run --bound /var/lib/c3po/f2-series-src-20261008/BOUND.json --slot 2126
 ```
 (idem 2156→00:56Z, 2226→01:26Z, 2256→01:56Z, 2326→02:26Z, 2356→02:56Z, 0026→03:26Z, 0056→03:56Z). Sem `Restart`, sem `Persistent` (padrão false), sem `--setenv`; o token não passa por argv/env: o runtime lê `C3PO_EODHD_API_TOKEN` do `provider.env` do K9 diretamente.
 
@@ -62,3 +64,6 @@ O `install` recusa se: não for root/Linux; selo, BOUND, fonte, selo do REQUEST,
 2. Copiar `<slot>/bulk-series.age` de cada slot para `$PRIV/` e decifrar privadamente pela Fable. Conferir `cipher_sha256`/`inventory_sha256` contra o recibo público.
 3. `python3 -I -S -B $F2/series_analyze.py RESULT_2126.json RESULT_2156.json …` → primeiro PASS, último FAIL anterior, lacunas, regressões, tempos. Publicar só o JSON do analisador + hashes (sem símbolos).
 4. Nenhum resultado (PASS inclusive) é prontidão, capacidade, E6 ou GO. Remoção dos diretórios só por decisão própria posterior.
+
+## 10. Recuperação de instalação parcial (rev 2)
+Se o `install` sair com `F2_INSTALL_HOLD_V1` depois de criar as raízes e **nenhum** timer `f2s-20261008-*` existir (conferir pelo readback), a Fable pode, sob a mesma Emenda 7 e registrando no canal, remover só as duas raízes próprias (`/var/lib/c3po/f2-series-src-20261008` e `/var/lib/c3po/f2-series-20261008`, que não contêm dado de slot) e repetir o `install` uma vez. Com qualquer timer instalado, nada é removido: usa-se `revoke`.

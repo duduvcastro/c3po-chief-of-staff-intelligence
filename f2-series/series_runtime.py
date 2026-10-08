@@ -80,6 +80,10 @@ class Refusal(Hold):
     """Refused before any write, claim, child or provider access."""
 
 
+class ClaimUncertain(Hold):
+    """The slot directory may exist but no descriptor to it is held: nothing more is written."""
+
+
 class QuietParser(argparse.ArgumentParser):
     def error(self, _message):
         raise Refusal("CLI_ARGUMENTS_INVALID")
@@ -488,17 +492,24 @@ def claim_slot(root_fd, slot, request_hash, now):
             os.mkdir(slot, 0o700, dir_fd=root_fd)
         except FileExistsError:
             raise Refusal("SLOT_ALREADY_CLAIMED") from None
-        # From here the slot is consumed: no path back to unclaimed.
-        line = canonical({"schema": "F2_SLOT_CLAIM_V1", "slot": slot, "scheduled_at": SLOTS[slot],
-                          "request_sha256": request_hash, "claimed_at": iso(now), "automatic_retry": False})
-        os.write(lfd, line + b"\n")
-        os.fsync(lfd)
-        os.fsync(root_fd)
+        # From here the slot is consumed: no path back to unclaimed. Any failure below is
+        # ClaimUncertain, and nothing is ever written outside a held slot descriptor.
+        sfd = None
+        try:
+            sfd = os.open(slot, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+            line = canonical({"schema": "F2_SLOT_CLAIM_V1", "slot": slot, "scheduled_at": SLOTS[slot],
+                              "request_sha256": request_hash, "claimed_at": iso(now), "automatic_retry": False})
+            os.write(lfd, line + b"\n")
+            os.fsync(lfd)
+            os.fsync(root_fd)
+            write_new(sfd, CLAIM_NAME, line)
+            os.fsync(sfd)
+        except BaseException:
+            if sfd is not None:
+                os.close(sfd)
+            raise ClaimUncertain("SLOT_CLAIM_UNCERTAIN") from None
     finally:
         os.close(lfd)
-    sfd = os.open(slot, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
-    write_new(sfd, CLAIM_NAME, line)
-    os.fsync(sfd)
     return sfd
 
 
@@ -546,11 +557,14 @@ def run(raws, slot, eligible_raw, token_reader, *, clock=lambda: datetime.now(ti
             need(monotonic() - mark < 10 and clock() <= stamp(SLOTS[slot]) + timedelta(seconds=LATE_SECONDS),
                  "START_LATE_FOR_SLOT", Refusal)
             slot_fd = claim_slot(root, slot, request_hash, clock())
-        except BaseException:
+        except BaseException as error:
             if age_fd is not None:
                 os.close(age_fd)
                 age_fd = None
-            raise
+            if isinstance(error, (Refusal, ClaimUncertain)):
+                raise
+            # Any other failure before mkdir (age unreadable, ledger I/O) had no slot effect.
+            raise Refusal(safe_code(error)) from None
         result["slot_consumed"] = True
         if physical:
             prior = signal.getsignal(signal.SIGALRM)
@@ -615,6 +629,8 @@ def run(raws, slot, eligible_raw, token_reader, *, clock=lambda: datetime.now(ti
         else:
             os.close(root)
             raise
+    except ClaimUncertain:
+        result["status"], result["code"], result["slot_consumed"] = "SLOT_HOLD", "SLOT_CLAIM_UNCERTAIN", True
     except BaseException as error:
         result["status"], result["code"] = "SLOT_HOLD", safe_code(error)
     finally:
@@ -627,6 +643,10 @@ def run(raws, slot, eligible_raw, token_reader, *, clock=lambda: datetime.now(ti
         result["pass"] = None
     result["logical_fetch_calls"] = provider.calls
     result["completed_at"] = iso(clock())
+    if slot_fd is None:
+        # No held slot descriptor: never write by name (that would land in the working directory).
+        os.close(root)
+        return result
     try:
         write_new(slot_fd, RECEIPT_NAME, canonical(result) + b"\n")
         os.fsync(slot_fd)

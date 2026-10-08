@@ -180,6 +180,41 @@ class Ledger(Base):
         self.assertEqual(len(lines), 1)
         self.assertEqual(sum(p.calls for p in FakeProvider.instances), 1)
 
+    def test_age_missing_refused_and_nothing_written_anywhere(self):
+        (self.root / "age").unlink()
+        cwd = Path(self.tmp.name) / "cwd"
+        cwd.mkdir()
+        old = os.getcwd()
+        os.chdir(cwd)
+        try:
+            with self.assertRaises(s.Refusal):
+                self.go("2126", "2026-10-09T00:26:00Z")
+        finally:
+            os.chdir(old)
+        self.assertEqual(list(cwd.iterdir()), [])
+        self.assertNotIn("2126", self.entries())
+        self.assertEqual(sum(p.calls for p in FakeProvider.instances), 0)
+
+    def test_claim_failure_after_mkdir_is_uncertain_and_writes_nothing_by_name(self):
+        cwd = Path(self.tmp.name) / "cwd"
+        cwd.mkdir()
+        real = s.write_new
+        def failing(dir_fd, name, raw):
+            if name == s.CLAIM_NAME:
+                raise OSError(28, "No space left on device")
+            return real(dir_fd, name, raw)
+        old = os.getcwd()
+        os.chdir(cwd)
+        try:
+            with patch.object(s, "write_new", failing):
+                r = self.go("2156", "2026-10-09T00:56:00Z")
+        finally:
+            os.chdir(old)
+        self.assertEqual((r["status"], r["code"], r["slot_consumed"]), ("SLOT_HOLD", "SLOT_CLAIM_UNCERTAIN", True))
+        self.assertEqual(list(cwd.iterdir()), [])
+        self.assertEqual(list((self.root / "2156").iterdir()), [])
+        self.assertEqual(sum(p.calls for p in FakeProvider.instances), 0)
+
     def test_existing_slot_directory_refused(self):
         os.mkdir(self.root / "2256", 0o700)
         with self.assertRaises(s.Refusal) as e:
@@ -305,6 +340,7 @@ class Systemd(unittest.TestCase):
         self.assertIn("--on-calendar=2026-10-09 00:26:00 UTC", argv)
         self.assertIn("--timer-property=AccuracySec=1s", argv)
         self.assertIn("--unit=f2s-20261008-2126", argv)
+        self.assertIn("--property=WorkingDirectory=" + s.CAMPAIGN_ROOT, argv)
         joined = " ".join(argv)
         for banned in ("Persistent", "Restart", "TOKEN", "api_token", "--setenv", "-E"):
             self.assertNotIn(banned, joined)

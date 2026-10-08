@@ -47,6 +47,7 @@ def slot_command(slot):
             "--on-calendar=" + calendar(slot), "--timer-property=AccuracySec=1s",
             "--property=Type=oneshot", "--property=TimeoutStartSec=170", "--property=UMask=0077",
             "--property=NoNewPrivileges=yes", "--property=PrivateTmp=yes",
+            "--property=WorkingDirectory=" + s.CAMPAIGN_ROOT,
             PYTHON, "-I", "-S", "-B", runtime, "run", "--bound", s.SOURCE_ROOT + "/BOUND.json", "--slot", slot]
 
 
@@ -102,6 +103,15 @@ def install(stage, bound_sha256, now=None):
            _sha_file(s.CAMPAIGN_ROOT + "/age") == s.AGE_SHA256 and
            _sha_file(s.SOURCE_ROOT + "/" + FAMILY_DIR + "/series_runtime.py") == q["source_sha256"] and
            _sha_file(s.SOURCE_ROOT + "/" + FAMILY_DIR + "/SHA256SUMS") == q["seal_sha256"], "INSTALLED_COPY_MISMATCH")
+    # Preflight with the runtime's own guards, as the slots will meet them: the campaign root
+    # (exclusive 0700), the age file in it, and the provider env file (root only, key present).
+    # The token value is checked for presence and discarded; never printed or stored.
+    root_fd = s.open_dir(s.CAMPAIGN_ROOT, exclusive=True)
+    try:
+        os.close(s.open_age(root_fd))
+    finally:
+        os.close(root_fd)
+    s.need(bool(s.read_token(q["provider_env_path"], q["provider_env_key"])), "PROVIDER_TOKEN_UNAVAILABLE")
     rows = plan(now or datetime.now(timezone.utc))
     out = []
     for row in rows:
@@ -113,9 +123,12 @@ def install(stage, bound_sha256, now=None):
                               env={"PATH": "/usr/bin:/bin", "LANG": "C"})
         out.append({"slot": row["slot"], "utc": row["utc"], "unit": unit(row["slot"]), "installed": proc.returncode == 0,
                     "rc": proc.returncode})
-    return {"schema": "F2_INSTALL_RESULT_V1", "bound_sha256": bound_sha256, "eligible_set_sha256": q["eligible_set_sha256"],
-            "source_sha256": q["source_sha256"], "seal_sha256": q["seal_sha256"], "timers": out,
-            "skipped_slots": sorted(set(s.SLOTS) - {r["slot"] for r in rows})}
+    result = {"schema": "F2_INSTALL_RESULT_V1", "bound_sha256": bound_sha256, "eligible_set_sha256": q["eligible_set_sha256"],
+              "source_sha256": q["source_sha256"], "seal_sha256": q["seal_sha256"], "timers": out,
+              "skipped_slots": sorted(set(s.SLOTS) - {r["slot"] for r in rows}), "preflight": "PASS"}
+    if any(r.get("installed") is False and r.get("reason") != "MARGIN_LOST" for r in out) or not any(r.get("installed") for r in out):
+        result["code"] = "TIMER_NOT_INSTALLED"  # exit 2: some timer failed, or none installed
+    return result
 
 
 def readback():
