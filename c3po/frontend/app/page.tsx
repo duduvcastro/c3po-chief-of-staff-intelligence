@@ -5204,7 +5204,6 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
             <div className="realtime-universe"><span>Universo analisado</span><strong>{snapshot.universe_size.toLocaleString("pt-BR")}</strong><small>ações válidas</small></div>
           </div>
         )}
-        {snapshot && activeMarket !== "PORTFOLIO" && <p className="muted">Ações: {snapshot.source} · atraso informado: {snapshot.delay_minutes} min</p>}
         {snapshot && !snapshot.index && activeMarket !== "PORTFOLIO" && <div className="screen-error">Índice de referência indisponível. Cotações das ações mantidas.</div>}
         {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span></div>}
       </section>
@@ -5240,6 +5239,7 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
               : "Ranking amplo T-15; preços visíveis usam WebSocket quando marcados LIVE."}</small>
         </div>
       )}
+      {snapshot && activeMarket !== "PORTFOLIO" && <p className="realtime-source-note">Ações: {snapshot.source} · atraso informado: {snapshot.delay_minutes} min</p>}
     </div>
   );
 }
