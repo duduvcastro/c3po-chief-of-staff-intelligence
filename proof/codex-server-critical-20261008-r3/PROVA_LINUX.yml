@@ -1,0 +1,44 @@
+name: F6 new native adapters and coherent night fixtures
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  own-new-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Own new source and fixture cases only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          src=proof/codex-server-critical-20261008-r3
+          chmod 444 "$src"/*
+          chmod 555 "$src"
+          python -I -S -B "$src/PROVA.py" "$RUNNER_TEMP/F6_NATIVE_RESULT.json"
+          curl --fail --silent --show-error --location --max-time 120 \
+            https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz \
+            -o "$RUNNER_TEMP/f6-own-age.tar.gz"
+          printf '%s  %s\n' cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10 "$RUNNER_TEMP/f6-own-age.tar.gz" | sha256sum -c -
+          mkdir -m 700 "$RUNNER_TEMP/f6-own-crypto"
+          tar -xzf "$RUNNER_TEMP/f6-own-age.tar.gz" -C "$RUNNER_TEMP/f6-own-crypto" age/age age/age-keygen
+          chmod 700 "$RUNNER_TEMP/f6-own-crypto/age"
+          chmod 500 "$RUNNER_TEMP/f6-own-crypto/age/age" "$RUNNER_TEMP/f6-own-crypto/age/age-keygen"
+          python -I -S -B "$src/test_crypto_fixture.py" \
+            "$RUNNER_TEMP/f6-own-crypto/age/age" "$RUNNER_TEMP/f6-own-crypto/age/age-keygen" \
+            > "$RUNNER_TEMP/F6_CRYPTO_RESULT.json"
+          python -I -S -B -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("ownproof",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.verify())' "$src/PROVA.py"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: F6-own-new-native-and-crypto-fixtures
+          path: |
+            ${{ runner.temp }}/F6_NATIVE_RESULT.json
+            ${{ runner.temp }}/F6_CRYPTO_RESULT.json
+          if-no-files-found: error
+          retention-days: 7
