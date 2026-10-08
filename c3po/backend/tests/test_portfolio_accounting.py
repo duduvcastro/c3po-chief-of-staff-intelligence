@@ -138,11 +138,35 @@ def test_movements_inconsistent_with_the_informed_position_stay_unknown():
     assert result['profit_usd'] is None and 'incompatíveis' in result['reason']
 
 
-def test_restatement_that_contradicts_prior_history_stays_unknown():
+def test_informed_position_prevails_over_incomplete_earlier_history():
     from datetime import date
-    events=[event(day='2026-08-31'),event(day='2026-09-01',sequence=2),event(kind='position',day='2026-09-02',sequence=3)]
+    # revisão #444: 10 AAPL compradas em março; posição de 50 informada em 01/10
+    events=[event(quantity='10',total='100',day='2026-03-10'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(12)
+    month=_period(events,date(2026,10,1),date(2026,10,6),price)
+    assert month['reason'] is None and Decimal(month['profit_usd'])==Decimal(50*12-50*10)
+    year=_period(events,date(2026,1,1),date(2026,10,6),price)
+    # 40 em 31/12 a 10; compra de 100; 50 a 12 hoje
+    assert year['reason'] is None and Decimal(year['profit_usd'])==Decimal(600-400-100)
+
+
+def test_past_month_is_reconstructed_from_a_later_informed_position():
+    from datetime import date
+    events=[event(quantity='10',total='100',day='2026-03-10'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(10) if day <= date(2026,8,31) else Decimal(11)
+    september=_period(events,date(2026,9,1),date(2026,9,30),price)
+    # 50 ações em 31/08 e em 30/09 (reconstruídas da posição de 01/10): 50*(11-10)
+    assert september['reason'] is None and Decimal(september['profit_usd'])==Decimal(50)
+
+
+def test_movement_on_the_day_of_the_informed_position_is_ambiguous():
+    from datetime import date
+    events=[event(kind='position',quantity='10',total='100',day='2026-10-01'),
+            event(quantity='5',total='60',day='2026-10-01',sequence=2)]
     result=_period(events,date(2026,9,1),date(2026,9,30),lambda day: Decimal(10))
-    assert result['profit_usd'] is None and 'incompatíveis' in result['reason']
+    assert result['profit_usd'] is None and 'mesmo dia' in result['reason']
 
 
 def test_missing_history_does_not_return_zero_profit():

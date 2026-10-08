@@ -113,41 +113,41 @@ def current_values(events: list[dict], quotes: dict[str, dict], brl_per_usd: Dec
             'profit_percent': str((total_value/total_basis-1)*100) if complete and total_basis else None}
 
 
-def holdings_at_period_start(events: list[dict], start: date, end: date) -> dict[str, Position]:
-    """Holdings at the close before `start`.
+class AmbiguousDay(ValueError):
+    pass
 
-    A symbol without an informed position inside [start, end] is replayed forward.
-    A symbol with one is reconstructed backwards from its latest informed position in
-    the period, undoing that symbol's buys, sells and splits dated inside the period and
-    ordered before it: the informed position already reflects them. Earlier informed
-    positions inside the period are superseded by the latest one.
+
+def holdings_at(events: list[dict], day: date) -> dict[str, Position]:
+    """Holdings at the close of `day`.
+
+    For a symbol with an informed position dated after `day`, the earliest such position
+    is the reference: the holdings are reconstructed backwards from it, undoing that
+    symbol's buys, sells and splits dated after `day` and before it. Otherwise the ledger
+    is replayed forward. An informed position prevails over an incomplete earlier history.
+    A movement on the same day as the reference position is ambiguous (before or after it?).
     """
-    from datetime import timedelta
-    before = start - timedelta(days=1)
     key = lambda e: (str(e['effective_date']), e['sequence'])
     ordered = sorted(events, key=key)
-    inside = [e for e in ordered if start.isoformat() <= str(e['effective_date']) <= end.isoformat()]
-    last_snapshot: dict[str, dict] = {}
-    for e in inside:
-        if e['kind'] == 'position':
-            last_snapshot[e['symbol']] = e
-    positions = replay(events, before)
-    for symbol, snap in last_snapshot.items():
+    positions = replay(events, day)
+    later_snapshot: dict[str, dict] = {}
+    for e in ordered:
+        if e['kind'] == 'position' and str(e['effective_date']) > day.isoformat():
+            later_snapshot.setdefault(e['symbol'], e)
+    for symbol, snap in later_snapshot.items():
+        moves = [e for e in ordered if e['symbol'] == symbol and e['kind'] != 'position'
+                 and day.isoformat() < str(e['effective_date']) <= str(snap['effective_date'])]
+        if any(str(e['effective_date']) == str(snap['effective_date']) for e in moves):
+            raise AmbiguousDay(symbol)
         quantity = amount(snap['quantity'])
-        for e in reversed([e for e in inside if e['symbol'] == symbol and key(e) < key(snap)]):
-            kind = e['kind']
-            if kind == 'buy':
+        for e in reversed(moves):
+            if e['kind'] == 'buy':
                 quantity -= amount(e['quantity'])
-            elif kind == 'sell':
+            elif e['kind'] == 'sell':
                 quantity += amount(e['quantity'])
-            elif kind == 'split':
+            elif e['kind'] == 'split':
                 quantity = quantity * amount(e.get('split_denominator', '1')) / amount(e['quantity'])
             if quantity < 0:
-                raise ValueError('Movimentações do período incompatíveis com a posição informada')
-        prior = positions.get(symbol)
-        if prior is not None and prior.quantity and prior.quantity != quantity:
-            # History before the period disagrees with the informed position: ambiguous restatement.
-            raise ValueError('Movimentações do período incompatíveis com a posição informada')
+                raise ValueError('Movimentações incompatíveis com a posição informada')
         positions.setdefault(symbol, Position()).quantity = quantity
     return positions
 
@@ -155,33 +155,31 @@ def holdings_at_period_start(events: list[dict], start: date, end: date) -> dict
 def period_result(events: list[dict], start: date, end: date, value_at: Any, rate_at: Any) -> dict:
     """Modified Dietz on the securities sleeve; dated flows assumed at day end.
 
-    Proceeds/dividends leave this sleeve. Purchases enter it. No cash balance is
-    implicitly retained. A position correction cannot supply a historical flow.
+    The period always starts on `start`. Holdings at the previous close and at `end` come
+    from holdings_at (informed positions prevail and are reconstructed backwards). Buys,
+    sells and dividends inside the period are the flows. No cash balance is retained.
     """
     from datetime import timedelta
     before = start - timedelta(days=1)
     result = {'start': start.isoformat(), 'end': end.isoformat(),
               'profit_usd': None, 'return_percent': None, 'reason': None}
     selected = [e for e in events if start.isoformat() <= str(e['effective_date']) <= end.isoformat()]
-    snapshots = [e for e in selected if e['kind'] == 'position']
-    if snapshots:
-        # Informed positions are holdings as of their date. The period still starts on
-        # `start`: holdings at the previous close are reconstructed from the latest
-        # informed position by undoing the movements of the period recorded before it.
-        try:
-            opening_positions = holdings_at_period_start(events, start, end)
-        except ValueError:
-            result['reason'] = 'Movimentações do período incompatíveis com a posição informada'
-            return result
-    else:
+    if not any(e['kind'] == 'position' for e in events):
         first = min(events, key=lambda e:(str(e['effective_date']),e['sequence'])) if events else None
         if first is None or (str(first['effective_date']) > before.isoformat() and first['kind'] != 'buy'):
             result['reason'] = 'Sem posição comprovada no início do período'
             return result
-        opening_positions = replay(events, before)
+    try:
+        opening_positions, closing_positions = holdings_at(events, before), holdings_at(events, end)
+    except AmbiguousDay as exc:
+        result['reason'] = f'Movimentação de {exc.args[0]} no mesmo dia da posição informada; não se sabe se veio antes ou depois'
+        return result
+    except ValueError:
+        result['reason'] = 'Movimentações incompatíveis com a posição informada'
+        return result
     try:
         opening = value_at(opening_positions, before)
-        closing = value_at(replay(events, end), end)
+        closing = value_at(closing_positions, end)
         flows = weighted = ZERO
         days = Decimal((end - before).days)
         for e in selected:
