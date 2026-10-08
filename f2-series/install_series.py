@@ -1,10 +1,18 @@
-"""F2 host installer, readback and revocation. Run on the host as root by Fable, after the
-owner's Assino. No shell: every command is an argv list. No token is read here.
+"""F2 host installer in two phases, measurement, readback and revocation. Run on the host as root
+by Fable. No shell: every command is an argv list. The provider token file is opened only to check
+that the key is present (value discarded, never printed, stored or passed on).
 
 plan     --now <UTC>         print the systemd-run argv of the slots that would be installed (no effect)
+prepare  --stage <dir>       phase A (Emenda 7 authority, no BOUND): guards first (staged seal, fixed
+                             ELIGIBLE_SET hash, F1 age hash, token key presence, roots absent), then
+                             SOURCE_ROOT 0700 (family + ELIGIBLE_SET 0400) and CAMPAIGN_ROOT 0700
+                             (age 0500 + EMPTY ledger 0600 created O_EXCL). No timer.
+measure                      read-only; prints the PRIVATE canonical measurement/runtime/election JSON
 install  --stage <dir> --bound-sha256 <hex>
-                             verify staged bytes, create the two private roots, copy family/BOUND/eligible
-                             set/age, then ONE transient timer per future slot (margin >= 180 s)
+                             phase B (after the owner's Assino): copy ONLY BOUND.json (0400), re-measure,
+                             require runtime+election equal to the signed pins, preview the runtime's
+                             own guards, then ONE transient timer per future slot (margin >= 180 s and
+                             owner record strictly before the slot). Any difference: zero timers, HOLD.
 readback                     list the f2s-20261008-* timers and their properties (read-only)
 revoke                       write REVOKED in the campaign root (runtime refuses), then stop every timer
 """
@@ -13,7 +21,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import shutil
+import stat
 import subprocess
 import sys
 
@@ -25,7 +33,7 @@ SYSTEMCTL = "/usr/bin/systemctl"
 PYTHON = "/usr/bin/python3"
 F1_AGE = "/var/lib/c3po/f1-diagnostic-20261008/age"
 MARGIN_SECONDS = 180
-FAMILY_DIR = "f2-series"
+FAMILY_DIR = s.FAMILY_DIR
 FAMILY_FILES = ("CONTRACT.md", "REFERENCE_PROVENANCE.json", "RUNBOOK.md", "SHA256SUMS", "bind_series.py",
                 "install_series.py", "linux-proof.yml", "reference_extract.py", "series_analyze.py",
                 "series_runtime.py", "test_linux_crypto.py", "test_series.py", "verify_family.py")
@@ -51,81 +59,150 @@ def slot_command(slot):
             PYTHON, "-I", "-S", "-B", runtime, "run", "--bound", s.SOURCE_ROOT + "/BOUND.json", "--slot", slot]
 
 
-def plan(now):
-    """Only future slots with at least MARGIN_SECONDS of margin, in time order."""
+def plan(now, owner_recorded=None):
+    """Only future slots with at least MARGIN_SECONDS of margin (and, when given, strictly after the
+    owner's record), in time order."""
     rows = []
     for slot, at in sorted(s.SLOTS.items(), key=lambda x: x[1]):
         margin = (s.stamp(at) - now).total_seconds()
-        if margin >= MARGIN_SECONDS:
+        if margin >= MARGIN_SECONDS and (owner_recorded is None or owner_recorded < s.stamp(at)):
             rows.append({"slot": slot, "utc": at, "brt": s.brt_label(slot), "margin_seconds": int(margin),
                          "argv": slot_command(slot)})
     return rows
 
 
-def _sha_file(path):
-    return s.sha(Path(path).read_bytes())
+def read_regular(path, limit):
+    """No symlink, regular, nlink 1 (staging and F1 age)."""
+    fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(fd)
+        s.need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= limit, "STAGE_FILE_INVALID")
+        raw = b""
+        while True:
+            part = os.read(fd, 65536)
+            if not part:
+                break
+            raw += part
+            s.need(len(raw) <= limit, "STAGE_FILE_INVALID")
+        return raw
+    finally:
+        os.close(fd)
 
 
-def install(stage, bound_sha256, now=None):
-    s.need(sys.platform == "linux" and os.geteuid() == 0, "INSTALL_REQUIRES_LINUX_ROOT")
+def write_new(path, raw, mode):
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        os.write(fd, raw)
+        os.fchmod(fd, mode)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def need_root(require_root, code):
+    if require_root:
+        s.need(sys.platform == "linux" and os.geteuid() == 0, code)
+
+
+def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None):
+    """Phase A. Every guard that does not depend on the roots runs BEFORE any root is created."""
+    need_root(require_root, "PREPARE_REQUIRES_LINUX_ROOT")
     stage = Path(stage)
     fam = stage / FAMILY_DIR
     import verify_family  # the staged copy is verified, not this file's directory
     verify_family.verify(fam)
+    family = {}
     for name in FAMILY_FILES:
-        s.need((fam / name).is_file() and not (fam / name).is_symlink(), "STAGE_FAMILY_INCOMPLETE")
-    s.need(_sha_file(stage / "BOUND.json") == bound_sha256, "STAGE_BOUND_MISMATCH")
-    bound = s.strict((stage / "BOUND.json").read_bytes())
-    raws = {k: s.canonical(v) for k, v in bound["documents"].items()}
-    q = s.validate_documents(raws)["request"]
-    s.need(_sha_file(fam / "series_runtime.py") == q["source_sha256"], "STAGE_SOURCE_MISMATCH")
-    s.need(_sha_file(fam / "SHA256SUMS") == q["seal_sha256"], "STAGE_SEAL_MISMATCH")
-    eligible_raw = (stage / "ELIGIBLE_SET.json").read_bytes()
-    s.validate_eligible(eligible_raw, q)
-    s.need(_sha_file(F1_AGE) == s.AGE_SHA256, "F1_AGE_MISMATCH")
+        family[name] = read_regular(fam / name, 4 * 1024 * 1024)
+    s.need(s.sha(family["reference_extract.py"]) == s.REFERENCE, "STAGE_REFERENCE_MISMATCH")
+    eligible_raw = read_regular(stage / "ELIGIBLE_SET.json", s.ELIGIBLE_LIMIT)
+    s.need(s.sha(eligible_raw) == s.ELIGIBLE_SET_PIN, "STAGE_ELIGIBLE_SET_NOT_FIXED")
+    s.validate_eligible(eligible_raw, {"eligible_set_sha256": s.ELIGIBLE_SET_PIN, "eligible_count": s.ELIGIBLE_COUNT})
+    age_raw = read_regular(f1_age, 32 * 1024 * 1024)
+    s.need(s.sha(age_raw) == s.AGE_SHA256, "F1_AGE_MISMATCH")
+    (token_check or (lambda: s.read_token(s.PROVIDER_ENV_PATH, s.PROVIDER_ENV_KEY)))()  # presence only
     s.need(not os.path.lexists(s.SOURCE_ROOT) and not os.path.lexists(s.CAMPAIGN_ROOT), "ROOTS_ALREADY_EXIST")
     os.umask(0o077)
     os.mkdir(s.SOURCE_ROOT, 0o700)
+    os.chmod(s.SOURCE_ROOT, 0o700)
     os.mkdir(s.SOURCE_ROOT + "/" + FAMILY_DIR, 0o700)
-    for name in FAMILY_FILES:
-        shutil.copyfile(fam / name, s.SOURCE_ROOT + "/" + FAMILY_DIR + "/" + name)
-        os.chmod(s.SOURCE_ROOT + "/" + FAMILY_DIR + "/" + name, 0o400)
-    for name in ("BOUND.json", "ELIGIBLE_SET.json"):
-        shutil.copyfile(stage / name, s.SOURCE_ROOT + "/" + name)
-        os.chmod(s.SOURCE_ROOT + "/" + name, 0o400)
+    os.chmod(s.SOURCE_ROOT + "/" + FAMILY_DIR, 0o700)
+    for name, raw in family.items():
+        write_new(s.SOURCE_ROOT + "/" + FAMILY_DIR + "/" + name, raw, 0o400)
+    write_new(s.SOURCE_ROOT + "/ELIGIBLE_SET.json", eligible_raw, 0o400)
     os.mkdir(s.CAMPAIGN_ROOT, 0o700)
-    shutil.copyfile(F1_AGE, s.CAMPAIGN_ROOT + "/age")
-    os.chmod(s.CAMPAIGN_ROOT + "/age", 0o500)
-    # Re-verify installed copies byte for byte.
-    verify_family.verify(Path(s.SOURCE_ROOT + "/" + FAMILY_DIR))
-    s.need(_sha_file(s.SOURCE_ROOT + "/BOUND.json") == bound_sha256 and
-           _sha_file(s.SOURCE_ROOT + "/ELIGIBLE_SET.json") == q["eligible_set_sha256"] and
-           _sha_file(s.CAMPAIGN_ROOT + "/age") == s.AGE_SHA256 and
-           _sha_file(s.SOURCE_ROOT + "/" + FAMILY_DIR + "/series_runtime.py") == q["source_sha256"] and
-           _sha_file(s.SOURCE_ROOT + "/" + FAMILY_DIR + "/SHA256SUMS") == q["seal_sha256"], "INSTALLED_COPY_MISMATCH")
-    # Preflight with the runtime's own guards, as the slots will meet them: the campaign root
-    # (exclusive 0700), the age file in it, and the provider env file (root only, key present).
-    # The token value is checked for presence and discarded; never printed or stored.
-    root_fd = s.open_dir(s.CAMPAIGN_ROOT, exclusive=True)
+    os.chmod(s.CAMPAIGN_ROOT, 0o700)
+    write_new(s.CAMPAIGN_ROOT + "/" + s.AGE_NAME, age_raw, 0o500)
+    write_new(s.CAMPAIGN_ROOT + "/" + s.LEDGER_NAME, b"", 0o600)   # EMPTY ledger, O_EXCL, pinned by measure
+    fd = os.open(s.CAMPAIGN_ROOT, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        os.close(s.open_age(root_fd))
+        os.fsync(fd)
     finally:
-        os.close(root_fd)
-    s.need(bool(s.read_token(q["provider_env_path"], q["provider_env_key"])), "PROVIDER_TOKEN_UNAVAILABLE")
-    rows = plan(now or datetime.now(timezone.utc))
+        os.close(fd)
+    verify_family.verify(Path(s.SOURCE_ROOT + "/" + FAMILY_DIR))
+    return {"schema": "F2_PREPARE_RESULT_V1", "status": "PREPARED_NO_TIMER", "timers": 0,
+            "eligible_set_sha256": s.ELIGIBLE_SET_PIN, "age_sha256": s.AGE_SHA256,
+            "source_sha256": s.sha(family["series_runtime.py"]), "seal_sha256": s.sha(family["SHA256SUMS"]),
+            "ledger_bytes": 0}
+
+
+def measure(probe=None, now=None, physical=True):
+    if physical:
+        s.need(sys.platform == "linux", "MEASUREMENT_REQUIRES_LINUX")
+        s.need(os.path.realpath(sys.executable) == os.path.realpath(PYTHON), "MEASUREMENT_PYTHON_NOT_HOST")
+    return s.measure(probe or s.HostProbe(), now or datetime.now(timezone.utc))
+
+
+def _runner(argv):
+    proc = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=30,
+                          env={"PATH": "/usr/bin:/bin", "LANG": "C"})
+    return proc.returncode
+
+
+def install(stage, bound_sha256, *, probe=None, runner=None, now=None, clock=None, require_root=True,
+            token_check=None, physical=True):
+    """Phase B. Zero timers unless the re-measurement equals the signed pins exactly."""
+    need_root(require_root, "INSTALL_REQUIRES_LINUX_ROOT")
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    raw = read_regular(Path(stage) / "BOUND.json", 2 * 1024 * 1024)
+    s.need(s.sha(raw) == bound_sha256, "STAGE_BOUND_MISMATCH")
+    bound = s.strict(raw, 2 * 1024 * 1024)
+    s.need(set(bound) == {"schema", "documents"} and bound["schema"] == "F2_BOUND_V2", "BOUND_SCHEMA_INVALID")
+    raws = {k: s.canonical(v) for k, v in bound["documents"].items()}
+    values = s.validate_documents(raws)
+    q, owner = values["request"], values["owner"]
+    s.need(os.path.isdir(s.SOURCE_ROOT) and os.path.isdir(s.CAMPAIGN_ROOT), "ROOTS_NOT_PREPARED")
+    s.need(not os.path.lexists(s.SOURCE_ROOT + "/BOUND.json"), "BOUND_ALREADY_INSTALLED")
+    write_new(s.SOURCE_ROOT + "/BOUND.json", raw, 0o400)
+    s.need(s.sha(read_regular(s.SOURCE_ROOT + "/BOUND.json", 2 * 1024 * 1024)) == bound_sha256, "INSTALLED_BOUND_MISMATCH")
+    # Re-measure and require total equality with the signed pins (measured_at/record hash excluded).
+    seen = measure(probe, clock(), physical)
+    signed_runtime = {k: v for k, v in values["runtime"].items() if k != "measurement_record_sha256"}
+    s.need({k: v for k, v in seen["runtime"].items() if k != "measurement_record_sha256"} == signed_runtime,
+           "REMEASURE_RUNTIME_DIVERGED")
+    s.need(seen["election"] == values["election"], "REMEASURE_ELECTION_DIVERGED")
+    # Preview with the runtime's own guards (held identities, all pins, ledger empty, not revoked, token key).
+    held = s.Held(q["source_root"], q["campaign_root"], values["election"])
+    try:
+        held.check(q, values["runtime"], probe or s.HostProbe())
+        s.need(os.fstat(held.ledger).st_size == 0, "LEDGER_NOT_EMPTY")
+        s.need(not s._exists(held.campaign_fd, s.REVOKED_NAME), "CAMPAIGN_REVOKED")
+    finally:
+        held.close()
+    (token_check or (lambda: s.read_token(q["provider_env_path"], q["provider_env_key"])))()
+    rows = plan(now or clock(), s.stamp(owner["recorded_at_utc"]))
     out = []
     for row in rows:
         # Re-check margin immediately before each unit: never install a slot with < 180 s left.
-        if (s.stamp(row["utc"]) - datetime.now(timezone.utc)).total_seconds() < MARGIN_SECONDS:
+        if (s.stamp(row["utc"]) - clock()).total_seconds() < MARGIN_SECONDS:
             out.append({"slot": row["slot"], "installed": False, "reason": "MARGIN_LOST"})
             continue
-        proc = subprocess.run(row["argv"], stdin=subprocess.DEVNULL, capture_output=True, timeout=30,
-                              env={"PATH": "/usr/bin:/bin", "LANG": "C"})
-        out.append({"slot": row["slot"], "utc": row["utc"], "unit": unit(row["slot"]), "installed": proc.returncode == 0,
-                    "rc": proc.returncode})
-    result = {"schema": "F2_INSTALL_RESULT_V1", "bound_sha256": bound_sha256, "eligible_set_sha256": q["eligible_set_sha256"],
-              "source_sha256": q["source_sha256"], "seal_sha256": q["seal_sha256"], "timers": out,
-              "skipped_slots": sorted(set(s.SLOTS) - {r["slot"] for r in rows}), "preflight": "PASS"}
+        rc = (runner or _runner)(row["argv"])
+        out.append({"slot": row["slot"], "utc": row["utc"], "unit": unit(row["slot"]), "installed": rc == 0, "rc": rc})
+    result = {"schema": "F2_INSTALL_RESULT_V2", "bound_sha256": bound_sha256, "eligible_set_sha256": q["eligible_set_sha256"],
+              "source_sha256": q["source_sha256"], "seal_sha256": q["seal_sha256"], "runtime_sha256": q["runtime_sha256"],
+              "election_sha256": q["election_sha256"], "timers": out, "remeasure": "EQUAL", "preflight": "PASS",
+              "skipped_slots": sorted(set(s.SLOTS) - {r["slot"] for r in rows})}
     if any(r.get("installed") is False and r.get("reason") != "MARGIN_LOST" for r in out) or not any(r.get("installed") for r in out):
         result["code"] = "TIMER_NOT_INSTALLED"  # exit 2: some timer failed, or none installed
     return result
@@ -165,7 +242,7 @@ def revoke(now=None):
             marker = "already_present"
     rows = []
     for slot in sorted(s.SLOTS, key=lambda k: s.SLOTS[k]):
-        # Stops the timer only. A service already running finishes its single bounded GET (<= 120 s).
+        # Stops the timer only. A service already running rechecks REVOKED immediately before its GET.
         proc = subprocess.run([SYSTEMCTL, "stop", unit(slot) + ".timer"], capture_output=True, timeout=30,
                               env={"PATH": "/usr/bin:/bin", "LANG": "C"})
         rows.append({"slot": slot, "stop_rc": proc.returncode})
@@ -174,7 +251,7 @@ def revoke(now=None):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=("plan", "install", "readback", "revoke"))
+    p.add_argument("command", choices=("plan", "prepare", "measure", "install", "readback", "revoke"))
     p.add_argument("--now")
     p.add_argument("--stage")
     p.add_argument("--bound-sha256")
@@ -182,6 +259,13 @@ def main(argv=None):
     try:
         if a.command == "plan":
             result = {"schema": "F2_PLAN_V1", "slots": plan(s.stamp(a.now) if a.now else datetime.now(timezone.utc))}
+        elif a.command == "prepare":
+            s.need(bool(a.stage), "PREPARE_ARGUMENTS_INVALID")
+            result = prepare(a.stage)
+        elif a.command == "measure":
+            # PRIVATE canonical JSON on stdout, no LF (as F1 measure_runtime). Redirect under umask 077.
+            os.write(1, s.canonical(measure()))
+            return 0
         elif a.command == "install":
             s.need(a.stage and a.bound_sha256 and s.pin(a.bound_sha256), "INSTALL_ARGUMENTS_INVALID")
             result = install(a.stage, a.bound_sha256)
@@ -190,9 +274,11 @@ def main(argv=None):
         else:
             result = revoke()
     except BaseException as error:
-        # A partial install (roots created, some timers) is reported, never cleaned up automatically.
-        result = {"schema": "F2_INSTALL_HOLD_V1", "code": s.safe_code(error),
-                  "source_root_exists": os.path.lexists(s.SOURCE_ROOT), "campaign_root_exists": os.path.lexists(s.CAMPAIGN_ROOT)}
+        # A partial install is reported, never cleaned up automatically. Timers are created only
+        # after every guard, so any HOLD raised here left zero timers.
+        result = {"schema": "F2_INSTALL_HOLD_V1", "command": a.command, "code": s.safe_code(error),
+                  "source_root_exists": os.path.lexists(s.SOURCE_ROOT), "campaign_root_exists": os.path.lexists(s.CAMPAIGN_ROOT),
+                  "bound_installed": os.path.lexists(s.SOURCE_ROOT + "/BOUND.json")}
     print(json.dumps(result, sort_keys=True, indent=1))
     return 2 if "code" in result else 0
 
