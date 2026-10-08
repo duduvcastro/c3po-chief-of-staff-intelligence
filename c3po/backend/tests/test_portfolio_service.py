@@ -13,8 +13,9 @@ class Clock(datetime):
     def now(cls,tz=None):return NOW
 
 class Provider:
-    def __init__(self):self.calls=[];self.bad_fx=False
+    def __init__(self):self.calls=[];self.bad_fx=False;self.fx_age=None
     def quotes(self,symbols):
+        if self.fx_age is not None:return [SimpleNamespace(price=6,as_of=NOW-self.fx_age)]
         return [SimpleNamespace(price=6,as_of=NOW.replace(year=2025) if self.bad_fx else NOW)]
     def daily_bars(self,symbol,**kwargs):
         self.calls.append(symbol)
@@ -52,6 +53,22 @@ def test_stale_fx_blocks_aggregate_but_preserves_native_profit():
     assert result['summary']['positions']['TEST3']['profit']=='20'
     assert result['summary']['profit_usd'] is None
     assert result['periods'][0]['profit_usd'] is None
+
+
+def test_evening_fx_an_hour_old_is_used_and_flagged_not_blank():
+    from datetime import timedelta
+    service,provider=setup();provider.fx_age=timedelta(minutes=65)   # Thursday-like weekday, FX open
+    with patch('app.portfolio_service.datetime',Clock):result=service.snapshot()
+    assert result['summary']['complete'] is True and result['summary']['value_usd']=='20'
+    assert result['fx']['stale'] is True and result['fx']['age_minutes']==65
+    assert result['periods'][0]['profit_usd'] is not None
+
+
+def test_fx_older_than_twelve_hours_on_a_weekday_is_unavailable():
+    from datetime import timedelta
+    service,provider=setup();provider.fx_age=timedelta(hours=12,minutes=1)
+    with patch('app.portfolio_service.datetime',Clock):result=service.snapshot()
+    assert result['summary']['profit_usd'] is None and result['fx'] is None
 
 
 def test_quote_outage_retains_saved_quantity_and_cost():
