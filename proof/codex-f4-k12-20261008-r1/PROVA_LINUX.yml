@@ -1,0 +1,20 @@
+name: codex-f4-k12-20261008-r1
+on:
+  workflow_dispatch:
+jobs:
+  own-new-family:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -I -B proof/codex-f4-k12-20261008-r1/PROVA.py "$RUNNER_TEMP/RESULT.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-f4-k12-20261008-r1-new-result
+          path: ${{ runner.temp }}/RESULT.json
+          if-no-files-found: error
