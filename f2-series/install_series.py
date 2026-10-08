@@ -20,6 +20,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -120,8 +121,10 @@ def amendment_gate(stage, seal_sha256, now):
            s.pin(config["amendment7_signature_sha256"]), "LEAF_CONFIG_INVALID")
     document = read_regular(stage / AMENDMENT_DOCUMENT, 65536)
     s.need(s.sha(document) == config["amendment7_sha256"], "AMENDMENT7_DOCUMENT_MISMATCH")
-    # The signed document must name this family's own seal (no other revision can run under it).
-    s.need(seal_sha256.encode("ascii") in document, "AMENDMENT7_DOES_NOT_NAME_THIS_SEAL")
+    # The signed document must name exactly one seal, in its labelled form, and it must be this
+    # family's own (a document of another revision that merely mentions this seal is refused).
+    seals = re.findall(rb"selo `([0-9a-f]{64})`", document)
+    s.need(seals == [seal_sha256.encode("ascii")], "AMENDMENT7_DOES_NOT_NAME_THIS_SEAL")
     original = read_regular(stage / AMENDMENT_ORIGINAL, 65536)
     _, signed = s.validate_amendment(s.amendment_wrapper(original), config)
     s.need(now > signed, "PREPARE_BEFORE_AMENDMENT7_SIGNATURE")
@@ -141,7 +144,8 @@ def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None, clock=
     for name in FAMILY_FILES:
         family[name] = read_regular(fam / name, 4 * 1024 * 1024)
     s.need(s.sha(family["reference_extract.py"]) == s.REFERENCE, "STAGE_REFERENCE_MISMATCH")
-    config, config_raw, document, original, signed = amendment_gate(stage, s.sha(family["SHA256SUMS"]), clock())
+    gate_checked_at = clock()
+    config, config_raw, document, original, signed = amendment_gate(stage, s.sha(family["SHA256SUMS"]), gate_checked_at)
     eligible_raw = read_regular(stage / "ELIGIBLE_SET.json", s.ELIGIBLE_LIMIT)
     s.need(s.sha(eligible_raw) == s.ELIGIBLE_SET_PIN, "STAGE_ELIGIBLE_SET_NOT_FIXED")
     s.validate_eligible(eligible_raw, {"eligible_set_sha256": s.ELIGIBLE_SET_PIN, "eligible_count": s.ELIGIBLE_COUNT})
@@ -171,7 +175,8 @@ def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None, clock=
         os.close(fd)
     verify_family.verify(Path(s.SOURCE_ROOT + "/" + FAMILY_DIR))
     receipt = {"schema": "F2_PREPARE_RECEIPT_V1", "status": "PREPARED_NO_TIMER", "timers": 0,
-               "prepared_at_utc": s.iso(clock()), "amendment7_sha256": config["amendment7_sha256"],
+               "gate_checked_at_utc": s.iso(gate_checked_at), "prepared_at_utc": s.iso(clock()),
+               "amendment7_sha256": config["amendment7_sha256"],
                "amendment7_signature_sha256": config["amendment7_signature_sha256"],
                "amendment7_signed_at_utc": s.iso(signed),
                "eligible_set_sha256": s.ELIGIBLE_SET_PIN, "age_sha256": s.AGE_SHA256,

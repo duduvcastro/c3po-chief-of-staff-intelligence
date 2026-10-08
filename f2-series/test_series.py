@@ -771,11 +771,38 @@ class Install(unittest.TestCase):
                     self.prepare()
                 self.assertEqual(str(e.exception), code)
                 self.assertFalse(self.src.exists() or self.root.exists())
+        # Another revision's document that merely mentions this seal is refused (one labelled seal only).
+        seal = s.sha((self.stage / s.FAMILY_DIR / "SHA256SUMS").read_bytes())
+        other = ("# Emenda 7 rev X\nselo `" + "1" * 64 + "`\nsubstitui a rev 3.2 (selo `" + seal + "`), revogada\n").encode()
+        orig = amendment_original()
+        globals()["AMENDMENT_DOC"] = s.sha(other)
+        orig = amendment_original()
+        (self.stage / ins.AMENDMENT_DOCUMENT).write_bytes(other)
+        (self.stage / ins.AMENDMENT_ORIGINAL).write_bytes(orig)
+        (self.stage / ins.LEAF_CONFIG).write_bytes(s.canonical({"schema": "F2_LEAF_CONFIG_V1", "amendment7_sha256": s.sha(other),
+                                                                "amendment7_signature_sha256": s.sha(orig)}))
+        with self.assertRaises(s.Hold) as e:
+            self.prepare()
+        self.assertEqual(str(e.exception), "AMENDMENT7_DOES_NOT_NAME_THIS_SEAL")
+        self.assertFalse(self.src.exists() or self.root.exists())
+        # Original that differs from the config pin is refused.
+        self.stage_amendment()
+        (self.stage / ins.AMENDMENT_ORIGINAL).write_bytes(amendment_original(channel="other"))
+        with self.assertRaises(s.Hold):
+            self.prepare()
+        self.assertFalse(self.src.exists() or self.root.exists())
         self.stage_amendment()
         (self.stage / ins.AMENDMENT_DOCUMENT).write_bytes(b"other document")
         with self.assertRaises(s.Hold) as e:
             self.prepare()
         self.assertEqual(str(e.exception), "AMENDMENT7_DOCUMENT_MISMATCH")
+
+    def test_measure_without_prepare_receipt_fails(self):
+        self.prepare()
+        os.chmod(self.src, 0o700)
+        os.unlink(self.src / ins.PREPARE_RECEIPT)
+        with self.assertRaises(BaseException):
+            ins.measure(self.probe, utc("2026-10-08T21:40:00Z"), physical=False)
 
     def test_measurement_carries_prepare_receipt_bound_to_amendment(self):
         r = self.prepare()

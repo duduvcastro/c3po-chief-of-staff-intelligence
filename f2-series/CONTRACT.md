@@ -64,3 +64,6 @@ Fecha o achado bloqueante da revisão adversarial da rev 3 (B2 no `install`: Ass
 
 ## Revisão 3.2
 Fecha B4 (6070281169): a autoridade da fase A é conferida pelo próprio `prepare` antes do primeiro efeito (original opaco da Emenda 7, documento com o selo desta família, config, assinatura anterior ao relógio), com recibo original de preparação vinculado à medição e conferido no `bind request`. 72 testes.
+
+## Revisão 3.3
+Fecha o bloqueante da revisão adversarial da 3.2 (selo da família conferido por ocorrência única rotulada, não por substring) e três melhorias (gate_checked_at no recibo; recibo × runtime no bind; testes de measure sem recibo e de original divergente). 73 testes.

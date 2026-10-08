@@ -111,3 +111,7 @@ Readback + `campaign.ledger` + `<slot>/RESULT.public.json` + `journalctl -u 'f2s
 - `prepare` copia os três (0400) para a raiz-fonte e grava `PREPARE_RECEIPT.json` original (0400, O_EXCL) com prepared_at, hashes e signed_at da Emenda 7.
 - `measure` inclui o recibo e seu hash na medição (logo no `measurement_record_sha256` do runtime); `bind request` exige Assino < prepare ≤ medição e o mesmo hash do original (`PREPARE_RECEIPT_UNBOUND`).
 - Prepare parcial/incerto continua consumido: sem remoção, sem repetição.
+
+## Revisão 3.3 (revisão adversarial da 3.2)
+- O documento da Emenda 7 precisa ter **exatamente um** selo no formato rotulado ``selo `<64 hex>` `` e ele precisa ser o desta família; um documento de outra revisão que apenas cite este selo é recusado.
+- O recibo de preparação grava também `gate_checked_at_utc` (hora da conferência da assinatura, antes de qualquer efeito); o `bind request` exige signed_at < gate_checked_at ≤ prepared_at ≤ measured_at e confere selo/fonte/elegíveis/age do recibo contra o runtime medido.

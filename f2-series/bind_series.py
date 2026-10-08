@@ -88,9 +88,13 @@ def measured_before_signature(measurement_raw, runtime_raw, signature_raw):
     receipt = m.get("prepare_receipt")
     s.need(type(receipt) is dict and m.get("prepare_receipt_sha256") == s.sha(s.canonical(receipt)) and
            receipt.get("schema") == "F2_PREPARE_RECEIPT_V1" and
+           type(receipt.get("gate_checked_at_utc")) is str and type(receipt.get("prepared_at_utc")) is str and
            receipt.get("amendment7_signature_sha256") == wrapper["original_record_sha256"] and
            receipt.get("amendment7_signed_at_utc") == s.iso(s.stamp(original["signed_at_utc"])) and
-           s.stamp(original["signed_at_utc"]) < s.stamp(receipt["prepared_at_utc"]) <= s.stamp(m["measured_at_utc"]),
+           all(receipt.get(k) == runtime.get(k) for k in ("seal_sha256", "source_sha256", "eligible_set_sha256", "age_sha256")),
+           "PREPARE_RECEIPT_UNBOUND")
+    signed = s.stamp(original["signed_at_utc"])
+    s.need(signed < s.stamp(receipt["gate_checked_at_utc"]) <= s.stamp(receipt["prepared_at_utc"]) <= s.stamp(m["measured_at_utc"]),
            "PREPARE_RECEIPT_UNBOUND")
 
 
