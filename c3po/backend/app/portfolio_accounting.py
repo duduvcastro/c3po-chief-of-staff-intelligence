@@ -1,6 +1,6 @@
 """Native-currency position accounting. No provider calls or implied historical holdings."""
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -152,7 +152,7 @@ def restatements(events: list[dict]) -> list[tuple[str, str]]:
     return found
 
 
-def holdings_at(events: list[dict], day: date) -> dict[str, Position]:
+def holdings_at(events: list[dict], day: date, closing: bool = False) -> dict[str, Position]:
     """Holdings at the close of `day`.
 
     For a symbol with no informed position up to `day` but one dated after it, the earliest
@@ -160,6 +160,8 @@ def holdings_at(events: list[dict], day: date) -> dict[str, Position]:
     symbol's buys, sells and splits dated after `day` and before it. Otherwise the ledger
     is replayed forward. An informed position prevails over an incomplete earlier history.
     A movement on the same day as the reference position is ambiguous (before or after it?).
+    An informed position reaches back at most to 31/12 of the prior year, and with `closing`
+    (the end of a period) not even to that day.
     """
     key = lambda e: (str(e['effective_date']), e['sequence'])
     ordered = sorted(events, key=key)
@@ -175,6 +177,12 @@ def holdings_at(events: list[dict], day: date) -> dict[str, Position]:
     for symbol, snap in later_snapshot.items():
         if symbol in anchored:
             # an informed position at or before `day` already anchors the forward replay
+            continue
+        cutoff = date(date.fromisoformat(str(snap['effective_date'])).year, 1, 1) - timedelta(days=1)
+        if day < cutoff or (closing and day == cutoff):
+            # An informed position is projected back at most to the close before its own year
+            # (31/12), and only as the opening of a period: a period ending on that 31/12 is
+            # measured from recorded movements, so the switch between the two bases is never profit.
             continue
         moves = [e for e in ordered if e['symbol'] == symbol and e['kind'] not in ('position', 'dividend')
                  and day.isoformat() < str(e['effective_date']) <= str(snap['effective_date'])]
@@ -216,8 +224,16 @@ def period_result(events: list[dict], start: date, end: date, value_at: Any, rat
         symbol, day = sorted(crossed, key=lambda x: x[1])[0]
         result['reason'] = f"Posição de {symbol} corrigida em {date.fromisoformat(day).strftime('%d/%m/%Y')}; a correção não é resultado"
         return result
+    cutoffs = {date(int(str(e['effective_date'])[:4]), 1, 1) - timedelta(days=1) for e in events if e['kind'] == 'position'}
     try:
-        opening_positions, closing_positions = holdings_at(events, before), holdings_at(events, end)
+        for cutoff in sorted(c for c in cutoffs if before < c < end):
+            # a period spanning the switch from recorded movements to the informed position
+            # would count the difference between the two bases as profit
+            if {s: p.quantity for s, p in holdings_at(events, cutoff, closing=True).items() if p.quantity} != \
+               {s: p.quantity for s, p in holdings_at(events, cutoff).items() if p.quantity}:
+                result['reason'] = f'Posições informadas em {cutoff.year + 1} não são projetadas antes de {cutoff.year + 1}'
+                return result
+        opening_positions, closing_positions = holdings_at(events, before), holdings_at(events, end, closing=True)
     except AmbiguousDay as exc:
         result['reason'] = f'Movimentação de {exc.args[0]} no mesmo dia da posição informada; não se sabe se veio antes ou depois'
         return result
