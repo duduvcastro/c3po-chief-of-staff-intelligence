@@ -235,6 +235,27 @@ def test_informed_position_is_not_projected_before_its_own_year():
     assert old_month['reason'] is None and Decimal(old_month['profit_usd'])==0
 
 
+def test_switch_to_informed_positions_at_year_boundary_is_not_profit():
+    from datetime import date
+    events=[event('LOGG3',quantity='1',total='100',day='2018-03-01'),
+            event('AAPL',quantity='10',total='1000',day='2026-03-10',sequence=2),
+            event('AAPL',kind='position',quantity='50',total='5000',day='2026-10-01',sequence=3),
+            event('LOGG3',kind='position',quantity='20',total='2000',day='2026-10-01',sequence=4)]
+    flat=lambda day: Decimal(100)
+    for start,end in [(date(2025,1,1),date(2025,12,31)),(date(2025,12,1),date(2025,12,31)),
+                      (date(2026,1,1),date(2026,1,31)),(date(2026,1,1),date(2026,10,6))]:
+        r=_period(events,start,end,flat)
+        assert r['reason'] is None and Decimal(r['profit_usd'])==0, (start,end,r)
+
+
+def test_period_spanning_the_switch_to_informed_positions_is_unavailable():
+    from datetime import date
+    events=[event('LOGG3',quantity='1',total='100',day='2018-03-01'),
+            event('LOGG3',kind='position',quantity='20',total='2000',day='2026-10-01',sequence=2)]
+    r=_period(events,date(2025,6,1),date(2026,3,31),lambda day: Decimal(100))
+    assert r['profit_usd'] is None and '2026' in r['reason']
+
+
 def test_missing_history_does_not_return_zero_profit():
     from datetime import date
     from app.portfolio_accounting import period_result
