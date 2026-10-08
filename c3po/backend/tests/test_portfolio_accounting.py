@@ -169,6 +169,35 @@ def test_movement_on_the_day_of_the_informed_position_is_ambiguous():
     assert result['profit_usd'] is None and 'mesmo dia' in result['reason']
 
 
+def test_same_day_typo_fix_of_an_informed_position_is_not_profit():
+    from datetime import date
+    events=[event(kind='position',quantity='5',total='50',day='2026-10-01'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(12)
+    result=_period(events,date(2026,1,1),date(2026,10,6),price)
+    # vale a última posição do dia (50): 50*(12-10), sem lucro fictício da correção
+    assert result['reason'] is None and Decimal(result['profit_usd'])==Decimal(100)
+
+
+def test_correction_on_a_later_date_is_not_profit():
+    from datetime import date
+    events=[event(kind='position',quantity='10',total='100',day='2026-03-01'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(10) if day <= date(2026,3,31) else Decimal(12)
+    assert 'corrigida' in _period(events,date(2026,1,1),date(2026,10,6),price)['reason']
+    # períodos que não atravessam a correção usam a posição vigente (10 ações em abril)
+    april=_period(events,date(2026,4,1),date(2026,4,30),price)
+    assert april['reason'] is None and Decimal(april['profit_usd'])==Decimal(10*2)
+
+
+def test_dividend_on_the_day_of_the_informed_position_is_not_ambiguous():
+    from datetime import date
+    events=[event(kind='position',quantity='10',total='100',day='2026-10-01'),
+            event(kind='dividend',quantity='0',total='7',day='2026-10-01',sequence=2)]
+    result=_period(events,date(2026,1,1),date(2026,10,6),lambda day: Decimal(10))
+    assert result['reason'] is None and Decimal(result['profit_usd'])==Decimal(7)
+
+
 def test_missing_history_does_not_return_zero_profit():
     from datetime import date
     from app.portfolio_accounting import period_result

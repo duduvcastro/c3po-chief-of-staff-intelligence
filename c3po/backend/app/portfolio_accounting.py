@@ -117,11 +117,46 @@ class AmbiguousDay(ValueError):
     pass
 
 
+class Restatement(ValueError):
+    pass
+
+
+def restatements(events: list[dict]) -> list[tuple[str, str]]:
+    """(symbol, date) of informed positions that disagree with the previous informed
+    position of the same symbol plus the movements between them: a correction, not a trade."""
+    key = lambda e: (str(e['effective_date']), e['sequence'])
+    found = []
+    for symbol in {e['symbol'] for e in events}:
+        quantity, informed_day, moved = None, None, False
+        for e in sorted((e for e in events if e['symbol'] == symbol), key=key):
+            kind = e['kind']
+            if kind == 'position':
+                informed = amount(e['quantity'])
+                # a second informed position on the same day, with no movement between them,
+                # fixes a typing error: the last one is the informed position of that day
+                same_day_fix = informed_day == str(e['effective_date']) and not moved
+                if quantity is not None and informed != quantity and not same_day_fix:
+                    found.append((symbol, str(e['effective_date'])))
+                quantity, informed_day, moved = informed, str(e['effective_date']), False
+                continue
+            if kind != 'dividend':
+                moved = True
+            elif quantity is None:
+                continue
+            elif kind == 'buy':
+                quantity += amount(e['quantity'])
+            elif kind == 'sell':
+                quantity -= amount(e['quantity'])
+            elif kind == 'split':
+                quantity = quantity * amount(e['quantity']) / amount(e.get('split_denominator', '1'))
+    return found
+
+
 def holdings_at(events: list[dict], day: date) -> dict[str, Position]:
     """Holdings at the close of `day`.
 
-    For a symbol with an informed position dated after `day`, the earliest such position
-    is the reference: the holdings are reconstructed backwards from it, undoing that
+    For a symbol with no informed position up to `day` but one dated after it, the earliest
+    such position (the last one on that date) is the reference: the holdings are reconstructed backwards from it, undoing that
     symbol's buys, sells and splits dated after `day` and before it. Otherwise the ledger
     is replayed forward. An informed position prevails over an incomplete earlier history.
     A movement on the same day as the reference position is ambiguous (before or after it?).
@@ -132,9 +167,16 @@ def holdings_at(events: list[dict], day: date) -> dict[str, Position]:
     later_snapshot: dict[str, dict] = {}
     for e in ordered:
         if e['kind'] == 'position' and str(e['effective_date']) > day.isoformat():
-            later_snapshot.setdefault(e['symbol'], e)
+            first = later_snapshot.get(e['symbol'])
+            # earliest date after `day`; on that date, the last informed position wins
+            if first is None or str(e['effective_date']) == str(first['effective_date']):
+                later_snapshot[e['symbol']] = e
+    anchored = {e['symbol'] for e in ordered if e['kind'] == 'position' and str(e['effective_date']) <= day.isoformat()}
     for symbol, snap in later_snapshot.items():
-        moves = [e for e in ordered if e['symbol'] == symbol and e['kind'] != 'position'
+        if symbol in anchored:
+            # an informed position at or before `day` already anchors the forward replay
+            continue
+        moves = [e for e in ordered if e['symbol'] == symbol and e['kind'] not in ('position', 'dividend')
                  and day.isoformat() < str(e['effective_date']) <= str(snap['effective_date'])]
         if any(str(e['effective_date']) == str(snap['effective_date']) for e in moves):
             raise AmbiguousDay(symbol)
@@ -169,6 +211,11 @@ def period_result(events: list[dict], start: date, end: date, value_at: Any, rat
         if first is None or (str(first['effective_date']) > before.isoformat() and first['kind'] != 'buy'):
             result['reason'] = 'Sem posição comprovada no início do período'
             return result
+    crossed = [(symbol, day) for symbol, day in restatements(events) if before.isoformat() < day <= end.isoformat()]
+    if crossed:
+        symbol, day = sorted(crossed, key=lambda x: x[1])[0]
+        result['reason'] = f"Posição de {symbol} corrigida em {date.fromisoformat(day).strftime('%d/%m/%Y')}; a correção não é resultado"
+        return result
     try:
         opening_positions, closing_positions = holdings_at(events, before), holdings_at(events, end)
     except AmbiguousDay as exc:
