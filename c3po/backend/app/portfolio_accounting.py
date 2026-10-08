@@ -113,6 +113,45 @@ def current_values(events: list[dict], quotes: dict[str, dict], brl_per_usd: Dec
             'profit_percent': str((total_value/total_basis-1)*100) if complete and total_basis else None}
 
 
+def holdings_at_period_start(events: list[dict], start: date, end: date) -> dict[str, Position]:
+    """Holdings at the close before `start`.
+
+    A symbol without an informed position inside [start, end] is replayed forward.
+    A symbol with one is reconstructed backwards from its latest informed position in
+    the period, undoing that symbol's buys, sells and splits dated inside the period and
+    ordered before it: the informed position already reflects them. Earlier informed
+    positions inside the period are superseded by the latest one.
+    """
+    from datetime import timedelta
+    before = start - timedelta(days=1)
+    key = lambda e: (str(e['effective_date']), e['sequence'])
+    ordered = sorted(events, key=key)
+    inside = [e for e in ordered if start.isoformat() <= str(e['effective_date']) <= end.isoformat()]
+    last_snapshot: dict[str, dict] = {}
+    for e in inside:
+        if e['kind'] == 'position':
+            last_snapshot[e['symbol']] = e
+    positions = replay(events, before)
+    for symbol, snap in last_snapshot.items():
+        quantity = amount(snap['quantity'])
+        for e in reversed([e for e in inside if e['symbol'] == symbol and key(e) < key(snap)]):
+            kind = e['kind']
+            if kind == 'buy':
+                quantity -= amount(e['quantity'])
+            elif kind == 'sell':
+                quantity += amount(e['quantity'])
+            elif kind == 'split':
+                quantity = quantity * amount(e.get('split_denominator', '1')) / amount(e['quantity'])
+            if quantity < 0:
+                raise ValueError('Movimentações do período incompatíveis com a posição informada')
+        prior = positions.get(symbol)
+        if prior is not None and prior.quantity and prior.quantity != quantity:
+            # History before the period disagrees with the informed position: ambiguous restatement.
+            raise ValueError('Movimentações do período incompatíveis com a posição informada')
+        positions.setdefault(symbol, Position()).quantity = quantity
+    return positions
+
+
 def period_result(events: list[dict], start: date, end: date, value_at: Any, rate_at: Any) -> dict:
     """Modified Dietz on the securities sleeve; dated flows assumed at day end.
 
@@ -125,28 +164,23 @@ def period_result(events: list[dict], start: date, end: date, value_at: Any, rat
               'profit_usd': None, 'return_percent': None, 'reason': None}
     selected = [e for e in events if start.isoformat() <= str(e['effective_date']) <= end.isoformat()]
     snapshots = [e for e in selected if e['kind'] == 'position']
-    opening_through, note = before, None
     if snapshots:
-        # Informed positions are holdings as of their date: the period is measured from
-        # the latest snapshot, valued at the previous close. Flows dated before the
-        # snapshot are already reflected in the informed holdings; a flow on the same
-        # day is ambiguous (before or after the snapshot?), so the period stays unknown.
-        anchor = max(date.fromisoformat(str(e['effective_date'])) for e in snapshots)
-        if any(e['kind'] != 'position' and str(e['effective_date']) == anchor.isoformat() for e in selected):
-            result['reason'] = 'Período contém cadastro ou correção de posição; informe as movimentações'
+        # Informed positions are holdings as of their date. The period still starts on
+        # `start`: holdings at the previous close are reconstructed from the latest
+        # informed position by undoing the movements of the period recorded before it.
+        try:
+            opening_positions = holdings_at_period_start(events, start, end)
+        except ValueError:
+            result['reason'] = 'Movimentações do período incompatíveis com a posição informada'
             return result
-        before, opening_through = anchor - timedelta(days=1), anchor
-        selected = [e for e in selected if str(e['effective_date']) > anchor.isoformat()]
-        if anchor > start:
-            result['start'] = anchor.isoformat()
-            note = f"Desde {anchor.strftime('%d/%m/%Y')}, data do cadastro das posições"
     else:
         first = min(events, key=lambda e:(str(e['effective_date']),e['sequence'])) if events else None
         if first is None or (str(first['effective_date']) > before.isoformat() and first['kind'] != 'buy'):
             result['reason'] = 'Sem posição comprovada no início do período'
             return result
+        opening_positions = replay(events, before)
     try:
-        opening = value_at(replay(events, opening_through), before)
+        opening = value_at(opening_positions, before)
         closing = value_at(replay(events, end), end)
         flows = weighted = ZERO
         days = Decimal((end - before).days)
@@ -161,7 +195,7 @@ def period_result(events: list[dict], start: date, end: date, value_at: Any, rat
                 weighted += flow * Decimal((end-day).days) / days
         profit = closing-opening-flows
         capital = opening+weighted
-        result.update(profit_usd=str(profit), return_percent=str(profit/capital*100) if capital>0 else None, reason=note)
+        result.update(profit_usd=str(profit), return_percent=str(profit/capital*100) if capital>0 else None)
         if capital <= 0:
             result['reason'] = 'Base de capital insuficiente para percentual'
     except (ValueError, KeyError):
