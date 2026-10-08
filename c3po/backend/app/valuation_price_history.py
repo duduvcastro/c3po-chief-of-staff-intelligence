@@ -108,7 +108,7 @@ import copy
 import hashlib
 import json
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time as wall_time, timedelta, timezone
 from typing import Any, Callable, Iterable, Mapping
@@ -119,6 +119,7 @@ import exchange_calendars as xcals
 from exchange_calendars.errors import RequestedSessionOutOfBounds
 
 from .config import Settings, get_settings
+from .price_coverage import PriceCoverageCatalog
 from .database import AlreadyCapturedError, AlreadyPublishedError, Database
 from .market_data.eodhd import EodhdClient
 from .market_data.http import JsonHttpClient
@@ -315,11 +316,17 @@ class PriceHistoryService:
         self.settings = settings
         self.database = database
         self.eodhd = eodhd or EodhdClient(settings.eodhd_base_url, settings.eodhd_api_token, http)
+        self.coverage_catalog = PriceCoverageCatalog(settings, http)
         self._series_cache: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
 
     # ------------------------------------------------------------------ coverage
     def coverage_symbols(self, market: str) -> list[str]:
-        """Current universe rows ∪ every symbol with V3 shadow evaluations (labels still to come) — never fewer (§2.2)."""
+        return self.coverage_plan(market)[0]
+
+    def coverage_plan(self, market: str) -> tuple[list[str], dict[str, Any] | None]:
+        """Monitored: universe ∪ V3 evaluations (§2.2). Expanded: classified catalog
+        plus previously published stock/ETF identities. Catalog reads precede the
+        three bar-run clocks; failures cannot silently publish smaller coverage."""
         symbols: set[str] = set()
         universe = self.database.latest_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE")
         raw_rows = _mapping((universe or {}).get("outputs")).get("rows")
@@ -328,7 +335,17 @@ class PriceHistoryService:
             if isinstance(row, dict) and row.get("symbol"):
                 symbols.add(str(row["symbol"]).strip().upper())
         symbols.update(self.database.v3_shadow_symbols(market))
-        return sorted(symbols)
+        if self.settings.valuation_price_history_scope == "monitored":
+            return sorted(symbols), None
+        # Only a published coverage decision can be carried into the next night.
+        publication = self.database.latest_analysis_snapshot(PUBLICATION_TYPE, market)
+        snapshot_id = _mapping((publication or {}).get("inputs")).get("price_snapshot_id")
+        previous = self.database.analysis_snapshot_by_id(str(snapshot_id)) if snapshot_id else None
+        outputs = _mapping((previous or {}).get("outputs"))
+        symbols.update(_mapping(outputs.get("series_sha256")))
+        selected = _mapping(_mapping(outputs.get("coverage")).get("selected"))
+        coverage = self.coverage_catalog.plan(market, previous=selected, legacy=sorted(symbols))
+        return list(coverage["selected"]), coverage
 
     def window_months(self) -> int:
         return int(getattr(self.settings, "valuation_price_history_backfill_months", DEFAULT_BACKFILL_MONTHS))
@@ -370,7 +387,8 @@ class PriceHistoryService:
         return bars, sorted((row for row in rejected if row["session"] not in usable), key=lambda row: str(row["session"]))
 
     def persist_run(self, market: str, *, start: date, end: date, symbols: Iterable[str], now: datetime | None = None, workers: int = 8,
-                    mode: str = "nightly", clock: Callable[[], datetime] | None = None, due: datetime | None = None) -> dict[str, Any]:
+                    mode: str = "nightly", clock: Callable[[], datetime] | None = None, due: datetime | None = None,
+                    coverage: dict[str, Any] | None = None) -> dict[str, Any]:
         """Fetch the whole window for ``symbols`` and persist ONE vintage in two facts: the CAPTURE (manifest + changed bars in
         a single transaction, ``fetched_at`` read AFTER the last provider answer) and, once that transaction committed, the
         PUBLICATION (``available_at`` read immediately before its insert — the clock every reader compares with its cut).
@@ -389,6 +407,11 @@ class PriceHistoryService:
         check runs first, so a published vintage always says "already published"). Like every clock of the run API, a
         naive ``due`` is UTC (``_utc``); ``run_all`` converts the worker's reading first."""
         wanted = self._wanted(market, symbols)
+        if coverage is not None:
+            coverage = copy.deepcopy(coverage)
+            if sorted(wanted) != sorted(coverage["selected"]):
+                raise ValueError("coverage manifest does not match requested symbols")
+            coverage["allowance"] = self.coverage_catalog.allowance(len(wanted))
         due = None if due is None else _utc(due)
         tick: Callable[[], datetime] = clock or ((lambda: now) if now is not None else (lambda: datetime.now(timezone.utc)))  # type: ignore[return-value]
         started_at = _utc(tick())
@@ -399,6 +422,8 @@ class PriceHistoryService:
 
         def fetch(symbol: str) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], str | None]:
             try:
+                if coverage is not None:
+                    self.coverage_catalog.throttle()
                 rows, incomplete = self.fetch_bars(market, symbol, start=start, end=end)
                 return symbol, rows, incomplete, None
             except Exception as error:  # the provider's failure is evidence, never a silent gap
@@ -424,11 +449,11 @@ class PriceHistoryService:
                              f"{len(empty)} empty answers): an empty vintage is refused, the previous one stays the one every cut sees")
         with self.database.price_history_lock(market):  # C394-9: due re-check, clock re-check, dedupe read, manifest + bars and publication — one section per market
             return self._persist_vintage(market, mode=mode, start=start, end=end, wanted=wanted, fetched=fetched, missing=missing, errors=errors,
-                                         rejected=rejected, started_at=started_at, fetched_at=fetched_at, tick=tick, due=due)
+                                         rejected=rejected, started_at=started_at, fetched_at=fetched_at, tick=tick, due=due, coverage=coverage)
 
     def _persist_vintage(self, market: str, *, mode: str, start: date, end: date, wanted: list[str], fetched: dict[str, list[dict[str, Any]]],
                          missing: list[str], errors: dict[str, str], rejected: dict[str, list[dict[str, Any]]], started_at: datetime, fetched_at: datetime,
-                         tick: Callable[[], datetime], due: datetime | None) -> dict[str, Any]:
+                         tick: Callable[[], datetime], due: datetime | None, coverage: dict[str, Any] | None = None) -> dict[str, Any]:
         snapshot_id = str(uuid4())
         manifest_outputs: dict[str, Any] = {}
         publication_outputs: dict[str, Any] = {}
@@ -445,6 +470,12 @@ class PriceHistoryService:
             series_bars: dict[str, int] = {}
             unreproducible: dict[str, list[str]] = {}
             duplicates: dict[str, int] = {}
+            # Index once; scanning all stored keys for each symbol is quadratic.
+            latest_sessions: dict[str, set[str]] = defaultdict(set)
+            start_text, end_text = start.isoformat(), end.isoformat()
+            for sym, session in latest:
+                if start_text <= session <= end_text:
+                    latest_sessions[sym].add(session)
             for symbol, rows in fetched.items():
                 by_session: dict[str, dict[str, Any]] = {}
                 for bar in rows:  # a duplicate session in one provider answer: the first row wins (same rule as ON CONFLICT DO NOTHING) — counted, never silent (C394-10)
@@ -453,8 +484,7 @@ class PriceHistoryService:
                     else:
                         by_session[bar["session_date"]] = bar
                 refused = {str(row["session"]) for row in rejected.get(symbol, ()) if row.get("session")}
-                stale = sorted(session for (sym, session) in latest if sym == symbol and start.isoformat() <= session <= end.isoformat()
-                               and session not in by_session and session not in refused)
+                stale = sorted(latest_sessions[symbol] - by_session.keys() - refused)
                 if stale:
                     unreproducible[symbol] = stale
                 for session, bar in by_session.items():
@@ -482,6 +512,8 @@ class PriceHistoryService:
                                      "first_session": sessions[0] if sessions else None, "last_session": sessions[-1] if sessions else None,
                                      "series_sha256": dict(sorted(series_hashes.items())), "series_bars": dict(sorted(series_bars.items())),
                                      "bars_sha256": bars_sha256})
+            if coverage is not None:
+                manifest_outputs["coverage"] = coverage
             publication_outputs.update({"schema_version": SCHEMA_VERSION, "bars_sha256": bars_sha256, "price_snapshot_id": snapshot_id})
             return manifest_inputs, manifest_outputs, fetched_at, snapshot_id, to_insert
 
@@ -525,18 +557,20 @@ class PriceHistoryService:
         is the run's first clock tick (``started_at``), and a scripted ``clock`` is read exactly three times in total. An
         empty symbol set (``--symbols`` empty, or no coverage) is refused BEFORE the first tick, any request and any write."""
         months = int(months if months is not None else self.window_months())
-        wanted = self._wanted(market, symbols if symbols is not None else self.coverage_symbols(market))  # S2: before the first tick
+        chosen, coverage = (list(symbols), None) if symbols is not None else self.coverage_plan(market)
+        wanted = self._wanted(market, chosen)  # S2: before the first tick
         end, tick = self._window_clock(now, clock)
-        return self.persist_run(market, start=window_start(end, months), end=end, symbols=wanted, mode="backfill", clock=tick)
+        return self.persist_run(market, start=window_start(end, months), end=end, symbols=wanted, mode="backfill", clock=tick, coverage=coverage)
 
     def nightly(self, market: str, *, now: datetime | None = None, clock: Callable[[], datetime] | None = None, due: datetime | None = None) -> dict[str, Any]:
         """The nightly vintage: the WHOLE window again (one provider call per symbol, as the backfill), so that every cut has
         one self-contained vintage; unchanged bars cost no storage. The clock is read as in ``backfill`` (three ticks), and
         an empty coverage set is refused BEFORE the first tick, any request and any write. ``due`` travels to ``persist_run``
         (T5, A2): the phase's due instant, re-checked inside the market's lock before the capture write."""
-        wanted = self._wanted(market, self.coverage_symbols(market))  # S2: before the first tick
+        chosen, coverage = self.coverage_plan(market)
+        wanted = self._wanted(market, chosen)  # S2: before the first tick
         end, tick = self._window_clock(now, clock)
-        return self.persist_run(market, start=window_start(end, self.window_months()), end=end, symbols=wanted, mode="nightly", clock=tick, due=due)
+        return self.persist_run(market, start=window_start(end, self.window_months()), end=end, symbols=wanted, mode="nightly", clock=tick, due=due, coverage=coverage)
 
     def run_all(self, now: datetime | None = None, *, due_at: datetime | None = None) -> dict[str, dict[str, Any]]:
         """The nightly vintage of EVERY market, each on its own (R9) and each AT MOST ONCE per phase (S1). A market whose
