@@ -1,0 +1,18 @@
+name: F3 own result schema correction only
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  metadata-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python PROVA_METADATA.py RESULT.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: F3-own-new-metadata-only
+          path: RESULT.json
