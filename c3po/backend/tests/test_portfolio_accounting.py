@@ -80,26 +80,6 @@ def _flat_value(price):
     return value_at
 
 
-def test_position_restatement_after_a_flow_measures_from_the_restatement():
-    from datetime import date
-    from app.portfolio_accounting import period_result
-    events=[event(day='2026-08-31'),event(day='2026-09-01',sequence=2),event(kind='position',day='2026-09-02',sequence=3)]
-    price=lambda day: Decimal(10) if day < date(2026,9,2) else Decimal(11)
-    result=period_result(events,date(2026,9,1),date(2026,9,30),_flat_value(price),lambda market,day:Decimal(1))
-    # holdings informed on 09/02 (10 shares) valued at the previous close; flows before it are already in them
-    assert result['start']=='2026-09-02' and '02/09/2026' in result['reason']
-    assert Decimal(result['profit_usd'])==Decimal(10)
-
-
-def test_flow_on_the_same_day_as_the_position_stays_unknown():
-    from datetime import date
-    from app.portfolio_accounting import period_result
-    events=[event(kind='position',quantity='10',total='50',day='2026-10-01'),
-            event(quantity='5',total='60',day='2026-10-01',sequence=2)]
-    result=period_result(events,date(2026,1,1),date(2026,10,6),None,None)
-    assert result['profit_usd'] is None and 'correção' in result['reason']
-
-
 def test_positions_informed_on_the_first_day_measure_the_whole_month():
     from datetime import date
     from app.portfolio_accounting import period_result
@@ -110,29 +90,131 @@ def test_positions_informed_on_the_first_day_measure_the_whole_month():
     assert Decimal(result['profit_usd'])==Decimal(20) and Decimal(result['return_percent'])==Decimal(20)
 
 
-def test_positions_informed_inside_the_year_measure_from_their_date():
-    from datetime import date
+def _period(events, start, end, price):
     from app.portfolio_accounting import period_result
-    events=[event(kind='position',quantity='10',total='50',day='2026-10-01'),
-            event(quantity='5',total='60',day='2026-10-03',sequence=2)]
+    return period_result(events, start, end, _flat_value(price), lambda market, day: Decimal(1))
+
+
+def test_year_starts_on_january_first_with_positions_informed_later():
+    from datetime import date
+    # caso do dono: compra em março lançada, posição informada em 01/10 com 15 ações
+    events=[event(quantity='10',total='100',day='2026-03-10'),
+            event(kind='position',quantity='15',total='150',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(8) if day < date(2026,3,10) else Decimal(10) if day < date(2026,10,1) else Decimal(12)
+    result=_period(events,date(2026,1,1),date(2026,10,6),price)
+    # 5 ações em 31/12 a 8 = 40; compra de 100 em 10/03; 15 ações a 12 = 180 hoje
+    assert result['start']=='2026-01-01' and result['reason'] is None
+    assert Decimal(result['profit_usd'])==Decimal(180-40-100)
+
+
+def test_buy_sell_and_split_before_the_informed_position_are_undone():
+    from datetime import date
+    # 8 ações em 31/12 (posição anterior ao ano), compra 12, venda 5, split 2:1, posição informada 30
+    events=[event(quantity='8',total='80',day='2025-11-03'),
+            event(quantity='12',total='120',day='2026-04-01',sequence=2),
+            event(kind='sell',quantity='5',total='60',day='2026-05-02',sequence=3),
+            event(kind='split',quantity='2',total='0',day='2026-06-01',sequence=4),
+            event(kind='position',quantity='30',total='150',day='2026-10-01',sequence=5)]
+    price=lambda day: Decimal(10) if day < date(2026,6,1) else Decimal(5)
+    result=_period(events,date(2026,1,1),date(2026,10,6),price)
+    # abertura 8*10=80; fechamento 30*5=150; fluxos +120 -60
+    assert result['reason'] is None
+    assert Decimal(result['profit_usd'])==Decimal(150-80-120+60)
+
+
+def test_dividend_in_the_year_is_returned_to_the_owner():
+    from datetime import date
+    events=[event(kind='position',quantity='10',total='100',day='2026-10-01'),
+            event(kind='dividend',quantity='0',total='7',day='2026-10-02',sequence=2)]
+    result=_period(events,date(2026,1,1),date(2026,10,6),lambda day: Decimal(10))
+    assert Decimal(result['profit_usd'])==Decimal(7)
+
+
+def test_movements_inconsistent_with_the_informed_position_stay_unknown():
+    from datetime import date
+    events=[event(quantity='10',total='100',day='2026-03-10'),
+            event(kind='position',quantity='4',total='40',day='2026-10-01',sequence=2)]
+    result=_period(events,date(2026,1,1),date(2026,10,6),lambda day: Decimal(10))
+    assert result['profit_usd'] is None and 'incompatíveis' in result['reason']
+
+
+def test_informed_position_prevails_over_incomplete_earlier_history():
+    from datetime import date
+    # revisão #444: 10 AAPL compradas em março; posição de 50 informada em 01/10
+    events=[event(quantity='10',total='100',day='2026-03-10'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
     price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(12)
-    result=period_result(events,date(2026,1,1),date(2026,10,6),_flat_value(price),lambda market,day:Decimal(1))
-    assert result['start']=='2026-10-01' and '01/10/2026' in result['reason']
-    # opening 100, closing 180, purchase 60 on 10/03: profit 20
-    assert Decimal(result['profit_usd'])==Decimal(20)
+    month=_period(events,date(2026,10,1),date(2026,10,6),price)
+    assert month['reason'] is None and Decimal(month['profit_usd'])==Decimal(50*12-50*10)
+    year=_period(events,date(2026,1,1),date(2026,10,6),price)
+    # 40 em 31/12 a 10; compra de 100; 50 a 12 hoje
+    assert year['reason'] is None and Decimal(year['profit_usd'])==Decimal(600-400-100)
 
 
-def test_flow_before_a_later_position_in_the_year_measures_from_the_position():
+def test_past_month_is_reconstructed_from_a_later_informed_position():
     from datetime import date
-    from app.portfolio_accounting import period_result
-    # caso do dono: compras com datas anteriores e posições cadastradas depois, no mesmo ano
-    events=[event(day='2026-03-10'),event(quantity='1',total='10',day='2026-06-02',sequence=2),
-            event(kind='position',quantity='5',total='50',day='2026-10-01',sequence=3)]
-    price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(13)
-    result=period_result(events,date(2026,1,1),date(2026,10,6),_flat_value(price),lambda market,day:Decimal(1))
-    holdings=sum(p.quantity for p in replay(events, date(2026,10,1)).values())
-    assert result['start']=='2026-10-01' and '01/10/2026' in result['reason']
-    assert Decimal(result['profit_usd'])==holdings*3
+    events=[event(quantity='10',total='100',day='2026-03-10'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(10) if day <= date(2026,8,31) else Decimal(11)
+    september=_period(events,date(2026,9,1),date(2026,9,30),price)
+    # 50 ações em 31/08 e em 30/09 (reconstruídas da posição de 01/10): 50*(11-10)
+    assert september['reason'] is None and Decimal(september['profit_usd'])==Decimal(50)
+
+
+def test_movement_on_the_day_of_the_informed_position_is_ambiguous():
+    from datetime import date
+    events=[event(kind='position',quantity='10',total='100',day='2026-10-01'),
+            event(quantity='5',total='60',day='2026-10-01',sequence=2)]
+    result=_period(events,date(2026,9,1),date(2026,9,30),lambda day: Decimal(10))
+    assert result['profit_usd'] is None and 'mesmo dia' in result['reason']
+
+
+def test_same_day_typo_fix_of_an_informed_position_is_not_profit():
+    from datetime import date
+    events=[event(kind='position',quantity='5',total='50',day='2026-10-01'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(10) if day < date(2026,10,1) else Decimal(12)
+    result=_period(events,date(2026,1,1),date(2026,10,6),price)
+    # vale a última posição do dia (50): 50*(12-10), sem lucro fictício da correção
+    assert result['reason'] is None and Decimal(result['profit_usd'])==Decimal(100)
+
+
+def test_correction_on_a_later_date_is_not_profit():
+    from datetime import date
+    events=[event(kind='position',quantity='10',total='100',day='2026-03-01'),
+            event(kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    price=lambda day: Decimal(10) if day <= date(2026,3,31) else Decimal(12)
+    assert 'corrigida' in _period(events,date(2026,1,1),date(2026,10,6),price)['reason']
+    # períodos que não atravessam a correção usam a posição vigente (10 ações em abril)
+    april=_period(events,date(2026,4,1),date(2026,4,30),price)
+    assert april['reason'] is None and Decimal(april['profit_usd'])==Decimal(10*2)
+
+
+def test_dividend_on_the_day_of_the_informed_position_is_not_ambiguous():
+    from datetime import date
+    events=[event(kind='position',quantity='10',total='100',day='2026-10-01'),
+            event(kind='dividend',quantity='0',total='7',day='2026-10-01',sequence=2)]
+    result=_period(events,date(2026,1,1),date(2026,10,6),lambda day: Decimal(10))
+    assert result['reason'] is None and Decimal(result['profit_usd'])==Decimal(7)
+
+
+@pytest.mark.parametrize('events', [
+    [event(kind='position',quantity='10',total='100',day='2026-10-01'),
+     event(quantity='5',total='50',day='2026-10-01',sequence=2),
+     event(kind='position',quantity='15',total='150',day='2026-10-01',sequence=3)],
+    [event(kind='position',quantity='10',total='100',day='2026-03-01'),
+     event(quantity='5',total='50',day='2026-04-15',sequence=2),
+     event(kind='position',quantity='15',total='150',day='2026-10-01',sequence=3)],
+    [event(kind='position',quantity='10',total='100',day='2026-03-01'),
+     event(kind='split',quantity='2',total='0',day='2026-06-01',sequence=2),
+     event(kind='position',quantity='20',total='100',day='2026-10-01',sequence=3)],
+])
+def test_consistent_informed_positions_are_not_corrections(events):
+    from datetime import date
+    from app.portfolio_accounting import restatements
+    assert restatements(events)==[]
+    result=_period(events,date(2026,1,1),date(2026,10,6),lambda day: Decimal(10))
+    assert result['reason'] is None or 'corrigida' not in result['reason']
 
 
 def test_missing_history_does_not_return_zero_profit():
