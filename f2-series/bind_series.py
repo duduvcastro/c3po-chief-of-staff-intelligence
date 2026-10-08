@@ -84,6 +84,14 @@ def measured_before_signature(measurement_raw, runtime_raw, signature_raw):
     import json
     original = json.loads(base64.b64decode(wrapper["original_record_base64"]).decode("utf-8"))   # opaque bytes, not canonical
     s.need(s.stamp(original["signed_at_utc"]) <= s.stamp(m["measured_at_utc"]), "MEASUREMENT_BEFORE_AMENDMENT7")
+    # The measurement carries the original preparation receipt: Assino < prepare <= measure, same pins.
+    receipt = m.get("prepare_receipt")
+    s.need(type(receipt) is dict and m.get("prepare_receipt_sha256") == s.sha(s.canonical(receipt)) and
+           receipt.get("schema") == "F2_PREPARE_RECEIPT_V1" and
+           receipt.get("amendment7_signature_sha256") == wrapper["original_record_sha256"] and
+           receipt.get("amendment7_signed_at_utc") == s.iso(s.stamp(original["signed_at_utc"])) and
+           s.stamp(original["signed_at_utc"]) < s.stamp(receipt["prepared_at_utc"]) <= s.stamp(m["measured_at_utc"]),
+           "PREPARE_RECEIPT_UNBOUND")
 
 
 def parse_config(config_raw):

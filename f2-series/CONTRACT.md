@@ -61,3 +61,6 @@ Testes: 66 (stdlib, sintéticos). Prova Linux nova necessária (workflow sem mud
 
 ## Revisão 3.1
 Fecha o achado bloqueante da revisão adversarial da rev 3 (B2 no `install`: Assino precisa preceder a cópia do BOUND e os timers) e quatro não bloqueantes (falha por slot do `systemd-run` relatada como UNCERTAIN sem esconder timers; ordem Emenda 7 ≤ medição verificada no `bind request`; `LimitCORE=0`; política escrita para `prepare`/`install` parciais). 69 testes; os três novos e o de argv falham na rev 3 e passam na 3.1.
+
+## Revisão 3.2
+Fecha B4 (6070281169): a autoridade da fase A é conferida pelo próprio `prepare` antes do primeiro efeito (original opaco da Emenda 7, documento com o selo desta família, config, assinatura anterior ao relógio), com recibo original de preparação vinculado à medição e conferido no `bind request`. 72 testes.

@@ -732,6 +732,18 @@ class Install(unittest.TestCase):
         self.f1_age.write_bytes(FAKE_AGE)
         self.probe = FakeProbe()
         self.argv = []
+        self.stage_amendment()
+
+    def stage_amendment(self, seal=None, signed_at="2026-10-08T21:00:00Z", answer="Assino a emenda 7 da A2"):
+        """Emenda 7 document naming this family's seal, its ORIGINAL Assino and the leaf config, staged."""
+        seal = seal or s.sha((self.stage / s.FAMILY_DIR / "SHA256SUMS").read_bytes())
+        doc = ("# A2 - EMENDA 7 (fixture)\nselo `" + seal + "`\nResposta: Assino a emenda 7 da A2\n").encode()
+        globals()["AMENDMENT_DOC"] = s.sha(doc)
+        original = amendment_original(signed_at_utc=signed_at, answer=answer)
+        (self.stage / ins.AMENDMENT_DOCUMENT).write_bytes(doc)
+        (self.stage / ins.AMENDMENT_ORIGINAL).write_bytes(original)
+        (self.stage / ins.LEAF_CONFIG).write_bytes(s.canonical({"schema": "F2_LEAF_CONFIG_V1", "amendment7_sha256": s.sha(doc),
+                                                                "amendment7_signature_sha256": s.sha(original)}))
 
     def tearDown(self):
         for p in self.patches:
@@ -741,8 +753,43 @@ class Install(unittest.TestCase):
                 os.chmod(path, 0o700)
         self.tmp.cleanup()
 
-    def prepare(self, token=lambda: "present"):
-        return ins.prepare(self.stage, f1_age=self.f1_age, require_root=False, token_check=token)
+    def prepare(self, token=lambda: "present", now="2026-10-08T21:30:00Z"):
+        return ins.prepare(self.stage, f1_age=self.f1_age, require_root=False, token_check=token, clock=lambda: utc(now))
+
+    def test_prepare_refuses_before_amendment7_signature_without_effect(self):
+        with self.assertRaises(s.Hold) as e:
+            self.prepare(now="2026-10-08T20:59:59Z")          # Emenda 7 signed at 21:00:00Z
+        self.assertEqual(str(e.exception), "PREPARE_BEFORE_AMENDMENT7_SIGNATURE")
+        self.assertFalse(self.src.exists() or self.root.exists())
+
+    def test_prepare_refuses_amendment_naming_another_seal_or_wrong_literal(self):
+        for kw, code in (({"seal": "0" * 64}, "AMENDMENT7_DOES_NOT_NAME_THIS_SEAL"),
+                         ({"answer": "Assino"}, "AMENDMENT_NOT_SIGNED")):
+            with self.subTest(**{k: str(v)[:8] for k, v in kw.items()}):
+                self.stage_amendment(**kw)
+                with self.assertRaises(s.Hold) as e:
+                    self.prepare()
+                self.assertEqual(str(e.exception), code)
+                self.assertFalse(self.src.exists() or self.root.exists())
+        self.stage_amendment()
+        (self.stage / ins.AMENDMENT_DOCUMENT).write_bytes(b"other document")
+        with self.assertRaises(s.Hold) as e:
+            self.prepare()
+        self.assertEqual(str(e.exception), "AMENDMENT7_DOCUMENT_MISMATCH")
+
+    def test_measurement_carries_prepare_receipt_bound_to_amendment(self):
+        r = self.prepare()
+        self.assertEqual(r["amendment7_signed_at_utc"], "2026-10-08T21:00:00Z")
+        measured = ins.measure(self.probe, utc("2026-10-08T21:40:00Z"), physical=False)
+        m = measured["measurement"]
+        self.assertEqual(m["prepare_receipt_sha256"], r["prepare_receipt_sha256"])
+        self.assertEqual(measured["runtime"]["measurement_record_sha256"], s.sha(s.canonical(m)))
+        sig = s.canonical(s.amendment_wrapper((self.stage / ins.AMENDMENT_ORIGINAL).read_bytes()))
+        b.measured_before_signature(s.canonical(m), s.canonical(measured["runtime"]), sig)
+        other = s.canonical(s.amendment_wrapper(amendment_original(signed_at_utc="2026-10-08T20:00:00Z")))
+        with self.assertRaises(s.Hold) as e:
+            b.measured_before_signature(s.canonical(m), s.canonical(measured["runtime"]), other)
+        self.assertEqual(str(e.exception), "PREPARE_RECEIPT_UNBOUND")
 
     def bound(self, measured, **kw):
         raws = build(measured, **kw)
@@ -845,13 +892,11 @@ class Install(unittest.TestCase):
 
     def test_bind_request_refuses_measurement_before_amendment7(self):
         self.prepare()
-        measured = ins.measure(self.probe, utc("2026-10-08T20:59:00Z"), physical=False)   # Emenda 7 signed 21:00Z
-        sig = s.canonical(s.amendment_wrapper(amendment_original()))
+        measured = ins.measure(self.probe, utc("2026-10-08T21:40:00Z"), physical=False)
+        late_sig = s.canonical(s.amendment_wrapper(amendment_original(signed_at_utc="2026-10-08T21:45:00Z")))
         with self.assertRaises(s.Hold) as e:
-            b.measured_before_signature(s.canonical(measured["measurement"]), s.canonical(measured["runtime"]), sig)
+            b.measured_before_signature(s.canonical(measured["measurement"]), s.canonical(measured["runtime"]), late_sig)
         self.assertEqual(str(e.exception), "MEASUREMENT_BEFORE_AMENDMENT7")
-        later = ins.measure(self.probe, utc("2026-10-08T21:01:00Z"), physical=False)
-        b.measured_before_signature(s.canonical(later["measurement"]), s.canonical(later["runtime"]), sig)
 
     def test_install_refuses_wrong_bound_hash_without_copy(self):
         self.prepare()

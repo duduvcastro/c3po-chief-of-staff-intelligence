@@ -104,9 +104,35 @@ def need_root(require_root, code):
         s.need(sys.platform == "linux" and os.geteuid() == 0, code)
 
 
-def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None):
-    """Phase A. Every guard that does not depend on the roots runs BEFORE any root is created."""
+PREPARE_RECEIPT = "PREPARE_RECEIPT.json"
+AMENDMENT_ORIGINAL = "AMENDMENT7_ORIGINAL.json"
+AMENDMENT_DOCUMENT = "A2_EMENDA_07.md"
+LEAF_CONFIG = "config.json"
+
+
+def amendment_gate(stage, seal_sha256, now):
+    """Emenda 7 is the authority of phase A: its ORIGINAL Assino (opaque bytes), its document and the
+    leaf config are staged and checked here, and the signature precedes the first effect."""
+    config_raw = read_regular(stage / LEAF_CONFIG, 4096)
+    config = s.strict(config_raw)
+    s.need(set(config) == {"schema", "amendment7_sha256", "amendment7_signature_sha256"} and
+           config["schema"] == "F2_LEAF_CONFIG_V1" and s.pin(config["amendment7_sha256"]) and
+           s.pin(config["amendment7_signature_sha256"]), "LEAF_CONFIG_INVALID")
+    document = read_regular(stage / AMENDMENT_DOCUMENT, 65536)
+    s.need(s.sha(document) == config["amendment7_sha256"], "AMENDMENT7_DOCUMENT_MISMATCH")
+    # The signed document must name this family's own seal (no other revision can run under it).
+    s.need(seal_sha256.encode("ascii") in document, "AMENDMENT7_DOES_NOT_NAME_THIS_SEAL")
+    original = read_regular(stage / AMENDMENT_ORIGINAL, 65536)
+    _, signed = s.validate_amendment(s.amendment_wrapper(original), config)
+    s.need(now > signed, "PREPARE_BEFORE_AMENDMENT7_SIGNATURE")
+    return config, config_raw, document, original, signed
+
+
+def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None, clock=None):
+    """Phase A. Every guard that does not depend on the roots runs BEFORE any root is created,
+    including the Emenda 7 gate (original Assino before the first effect)."""
     need_root(require_root, "PREPARE_REQUIRES_LINUX_ROOT")
+    clock = clock or (lambda: datetime.now(timezone.utc))
     stage = Path(stage)
     fam = stage / FAMILY_DIR
     import verify_family  # the staged copy is verified, not this file's directory
@@ -115,6 +141,7 @@ def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None):
     for name in FAMILY_FILES:
         family[name] = read_regular(fam / name, 4 * 1024 * 1024)
     s.need(s.sha(family["reference_extract.py"]) == s.REFERENCE, "STAGE_REFERENCE_MISMATCH")
+    config, config_raw, document, original, signed = amendment_gate(stage, s.sha(family["SHA256SUMS"]), clock())
     eligible_raw = read_regular(stage / "ELIGIBLE_SET.json", s.ELIGIBLE_LIMIT)
     s.need(s.sha(eligible_raw) == s.ELIGIBLE_SET_PIN, "STAGE_ELIGIBLE_SET_NOT_FIXED")
     s.validate_eligible(eligible_raw, {"eligible_set_sha256": s.ELIGIBLE_SET_PIN, "eligible_count": s.ELIGIBLE_COUNT})
@@ -130,6 +157,9 @@ def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None):
     for name, raw in family.items():
         write_new(s.SOURCE_ROOT + "/" + FAMILY_DIR + "/" + name, raw, 0o400)
     write_new(s.SOURCE_ROOT + "/ELIGIBLE_SET.json", eligible_raw, 0o400)
+    write_new(s.SOURCE_ROOT + "/" + LEAF_CONFIG, config_raw, 0o400)
+    write_new(s.SOURCE_ROOT + "/" + AMENDMENT_DOCUMENT, document, 0o400)
+    write_new(s.SOURCE_ROOT + "/" + AMENDMENT_ORIGINAL, original, 0o400)
     os.mkdir(s.CAMPAIGN_ROOT, 0o700)
     os.chmod(s.CAMPAIGN_ROOT, 0o700)
     write_new(s.CAMPAIGN_ROOT + "/" + s.AGE_NAME, age_raw, 0o500)
@@ -140,17 +170,30 @@ def prepare(stage, *, f1_age=F1_AGE, require_root=True, token_check=None):
     finally:
         os.close(fd)
     verify_family.verify(Path(s.SOURCE_ROOT + "/" + FAMILY_DIR))
-    return {"schema": "F2_PREPARE_RESULT_V1", "status": "PREPARED_NO_TIMER", "timers": 0,
-            "eligible_set_sha256": s.ELIGIBLE_SET_PIN, "age_sha256": s.AGE_SHA256,
-            "source_sha256": s.sha(family["series_runtime.py"]), "seal_sha256": s.sha(family["SHA256SUMS"]),
-            "ledger_bytes": 0}
+    receipt = {"schema": "F2_PREPARE_RECEIPT_V1", "status": "PREPARED_NO_TIMER", "timers": 0,
+               "prepared_at_utc": s.iso(clock()), "amendment7_sha256": config["amendment7_sha256"],
+               "amendment7_signature_sha256": config["amendment7_signature_sha256"],
+               "amendment7_signed_at_utc": s.iso(signed),
+               "eligible_set_sha256": s.ELIGIBLE_SET_PIN, "age_sha256": s.AGE_SHA256,
+               "source_sha256": s.sha(family["series_runtime.py"]), "seal_sha256": s.sha(family["SHA256SUMS"]),
+               "ledger_bytes": 0}
+    raw = s.canonical(receipt)
+    write_new(s.SOURCE_ROOT + "/" + PREPARE_RECEIPT, raw, 0o400)
+    return dict(receipt, prepare_receipt_sha256=s.sha(raw))
 
 
 def measure(probe=None, now=None, physical=True):
     if physical:
         s.need(sys.platform == "linux", "MEASUREMENT_REQUIRES_LINUX")
         s.need(os.path.realpath(sys.executable) == os.path.realpath(PYTHON), "MEASUREMENT_PYTHON_NOT_HOST")
-    return s.measure(probe or s.HostProbe(), now or datetime.now(timezone.utc))
+    out = s.measure(probe or s.HostProbe(), now or datetime.now(timezone.utc))
+    # Bind the measurement to the original preparation receipt (and through it to the Emenda 7 Assino).
+    raw = read_regular(Path(s.SOURCE_ROOT) / PREPARE_RECEIPT, 4096)
+    receipt = s.strict(raw)
+    s.need(receipt.get("schema") == "F2_PREPARE_RECEIPT_V1", "PREPARE_RECEIPT_INVALID")
+    m = dict(out["measurement"], prepare_receipt=receipt, prepare_receipt_sha256=s.sha(raw))
+    runtime = dict(out["runtime"], measurement_record_sha256=s.sha(s.canonical(m)))
+    return {"measurement": m, "runtime": runtime, "election": out["election"]}
 
 
 def _runner(argv):

@@ -34,7 +34,8 @@ O dono assina o documento da Emenda 7; a Fable grava o **arquivo original** do r
 ```
 ssh $H 'umask 077; mkdir /var/tmp/f2-stage-20261008'
 scp -r $F2 $H:/var/tmp/f2-stage-20261008/f2-series            # só os arquivos do selo
-scp $PRIV/ELIGIBLE_SET.json $H:/var/tmp/f2-stage-20261008/
+scp $PRIV/ELIGIBLE_SET.json $PRIV/in-amendment/amendment-original.json $PRIV/config.json $H:/var/tmp/f2-stage-20261008/   # rev 3.2: + Emenda 7 (abaixo)
+scp <A2_EMENDA_07.rev1.md assinado> $H:/var/tmp/f2-stage-20261008/A2_EMENDA_07.md && ssh $H 'mv /var/tmp/f2-stage-20261008/amendment-original.json /var/tmp/f2-stage-20261008/AMENDMENT7_ORIGINAL.json'
 ssh $H 'cd /var/tmp/f2-stage-20261008/f2-series && test -z "$(find . -type l -o -name "*.pyc" -o -name __pycache__)" && sha256sum -c --strict SHA256SUMS && sha256sum ../ELIGIBLE_SET.json'
 ssh $H 'sudo -n /usr/bin/python3 -I -S -B /var/tmp/f2-stage-20261008/f2-series/install_series.py prepare --stage /var/tmp/f2-stage-20261008'
 ```
@@ -104,3 +105,9 @@ Readback + `campaign.ledger` + `<slot>/RESULT.public.json` + `journalctl -u 'f2s
 - `bind request` exige `measurement.json` e recusa se a Emenda 7 foi assinada depois da medição (`MEASUREMENT_BEFORE_AMENDMENT7`).
 - Unidades com `LimitCORE=0`.
 - `prepare` parcial (falha depois de criar alguma raiz): nada é removido e não há segunda tentativa nesta noite; a série de hoje termina sem leitura e a Fable avisa o dono.
+
+## Revisão 3.2 (B4 do Codex, 6070281169)
+- `prepare` passa a exigir no staging: `config.json` (F2_LEAF_CONFIG_V1), `A2_EMENDA_07.md` (sha = amendment7_sha256 e **contendo o selo desta família**) e `AMENDMENT7_ORIGINAL.json` (bytes opacos do Assino; sha = amendment7_signature_sha256; literal "Assino a emenda 7 da A2"; signed_at ≤ 21:45 BRT) e recusa **antes de qualquer raiz** se o relógio não for posterior à assinatura (`PREPARE_BEFORE_AMENDMENT7_SIGNATURE`).
+- `prepare` copia os três (0400) para a raiz-fonte e grava `PREPARE_RECEIPT.json` original (0400, O_EXCL) com prepared_at, hashes e signed_at da Emenda 7.
+- `measure` inclui o recibo e seu hash na medição (logo no `measurement_record_sha256` do runtime); `bind request` exige Assino < prepare ≤ medição e o mesmo hash do original (`PREPARE_RECEIPT_UNBOUND`).
+- Prepare parcial/incerto continua consumido: sem remoção, sem repetição.
