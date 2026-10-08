@@ -1,0 +1,44 @@
+PRIORIDADES DO DONO — SEGUNDA12/10, EXECUÇÃO NO SERVIDOR — 08/10/2026
+
+Esta instrução humana substitui os prazos históricos incompatíveis: o ponto de decisão é sábado10/10 às12:00BRT. C34/C35 completos e provados, leitor sem dependência do dono22–07 e ensaio completo do controlador integram esse ponto. F4às18h não sustenta GOàs12h. O alvo é condicionado a evidência; não é entrada garantida nem autorização de execução de domingo.
+
+Responsabilidades: Codex constrói/revisa offline; Fable entrega/prova/mede/instala/opera no servidor sob os atos próprios; dono assina os conjuntos próprios. Heartbeats continuam somente leitura/reconciliação/publicações autorizadas, sem construção ou operação. Fonte, ACCEPTED_SEALS, raízes, REQUEST/BOUND e provas históricas permanecem intactos. Nenhuma autoridade/BOOT/job/janela de08/09é transferida para11/12.
+
+Item | Existe nesta conferência | Quando / condição verificável | Responsável / evidência
+F1 originais novos | Inventário/corpos/contagens/pins conferidos; 17 critérios/zero divergências, opção consumida | Entregue08/10; não repetir | Fableoriginais6068434333; Codexregistroprivadoab3d54af
+F2 proposta horário | Proposta21:26prova/21:29coleta e método de medição, ainda sem série intranoturna | Proposta e evidências até10/10 12h; faixa só certificada depois da série | Codexcontrato/modelo; Fableamostras sob autoridade nova
+F2 campanha própria | Não há campanha assinada/medida conferida | Antes de medir; assinatura anterior à execução, nenhuma amostra posterior01h | Fableprograma/pins/runtime/folha; dono resposta literal
+F3 época/grade/calendário | A2 termina09/10; documentos11→12ausentes | Antes do ensaio de aceitação e de qualquer vínculo de domingo | Dono/Fable/Codexoriginais próprios
+F3 release/recertificação | Deploy é relato; conjunto final próprioM1/M2/M3não conferido para segunda | Após último deploy, antes de folhas afetadas | FableSHA/tree/imagem/build/runtime/recibos e Codexrevisão
+F3 sete originais da cadeia | Bases históricas existem; cadeia nova não entregue | Próprios11→12 antesCAPACITY_DAY/E6/K12 | CODEX,FABLE,DUDU,ACT_B,B_CODEX,B_FABLE,B_DUDU
+F3 treze inputsE6 | Nomes/contratos do produtor existem; valores reais do dia novo ausentes | Inventário e prova até sábado12h; valores reais antesE6 | CONTRACT + doze arquivos raw abaixo
+F3 três conjuntos | primary,contingency_1,contingency_2não entregues para12/10 | CAPACITY_DAY VERIFIED/documentary_authority VERIFIED e sete docs próprios; antesE6/K12 | Fableprodutor + LinuxK8próprio + revisãoCodex
+F3 E6 após resultados | Regra atual exige commit_result+publish_launch reais COMPLETE; modelo após22h conflita com disponibilidade humana | Resolver antes do GO de sábado ou NO-GO; não preencher EVE antecipada | Nova autoridade/modelo/binder e prova próprios
+F4 C34 | Correção estática histórica remove ciclo; prova integrada própria pendente | Bytes + integraçãoPENDING_PERSIST→PERSIST→COLLECT verificado antes sábado12h | Codex/Fableoriginais e provaLinux
+F4 C35 | PredecessorLAUNCH e janelaSTOP antigos têm fronteira inviável | Janela distinta com orçamento positivo, predecessor real e prova antes sábado12h | Codexmodelo/guardas; FableLinux/runtime/recibos
+F5 H16 | ModeloINDhistórico exige resposta de madrugada; solução nova ainda não aceita | Contrato/envelope prévio completo e ramoHOLD testado antes sábado12h; dono nunca22–07 | Codexnovo modelo; dono assinatura própria; Fableprova/runtime
+F6 desenho | rev1 presente e fechado documentalmente | Entregue08/10; base da construção | Documento37164020
+F6 implementação integrada | Em construção neste turno humano; nenhum serviço operacional novo aceito | Fonte/selo/registry/adapters próprios e ensaio completo antes sábado12h | Codexoffline; FableLinux; Codexreconciliação
+F6 runtime/estado/ledger | RuntimeF1não transfere; medição/eleição própriaF6ausente | Antes instalação/vínculo; raiz persistente/identidade/revogações/concorrência e ledgerconferidos | Fableoriginais sob autoridade própria
+F6 ensaio semMac | T01–T18 ainda sem conjunto integradoLinux/aceitação física próprios | Antes sábado12h; qualquer caso ausente é NO-GO | FableLinux/run/head/tree/attempt/ZIP/digests; revisãoCodex
+Domingo disponibilidade do dono | Intervalo ainda não confirmado nesta conferência | Confirmar antes do GO; nenhuma dependência22–07 | Resposta humana própria
+Domingo originais/noturno | Não existem ainda | Só depois dos efeitos próprios completos, antes dos gates dependentes | Fableexecutores próprios; Codexreadbacks
+Segunda entradas | Sem prontidão/capacidade/E6/K12/H16/serviço físicos conferidos | Só com todos os gates próprios; não há ETA operacional comprovado | NO-GO atual
+
+F3 — entradas da E6, sem placeholders operacionais:
+CONTRACT.json; template.raw; go_admission_record.raw; go_bar_manifest_record.raw; publication_bar_manifest.raw; go_admission.raw; go_bar_manifest.raw; capacity_config-primary.raw; capacity_config-contingency_1.raw; capacity_config-contingency_2.raw; veto_view-primary.raw; veto_view-contingency_1.raw; veto_view-contingency_2.raw.
+Cada um terá bytes/hash/origem próprios. O contrato, os nomes e os modelos existentes não são os inputs reais. A documentação do produtor define também três conjuntos, o diretório da cadeia, epoch/session inputs, D11, vistas com instantes/validade, publication_bar_manifest real e dispatch. Conferir o significado dos13inputs e os sete documentos de cada conjunto na fonte antes de selar a entrega; nomes nesta tabela não concedem GO.
+
+Domingo11/10 — janelas propostas, NÃO folhas autorizadas:
+Até19h: época/calendário/grade, release final, M1/M2/M3, runtimeF6 e armazenamento, cadeia/documentos de capacidade, secret scopes e disponibilidade humana precisam estar fechados. Se faltarem, cancelar a noite candidata; não ativar horário por intenção.
+Antes21:45 e sempre antes22h: somente perguntas próprias com fontes/runtime/revisões e modelos compatíveis. Os recibos ainda futuros não podem ser substituídos por fixtures. H16e eventual autorização condicionada da E6 precisam de contrato próprio aceito, não de alteração do nome de um campo.
+21:26: prova candidata da F2, uma invocação própria. NãoREADY/ausente/incerto mantémHOLD e não libera coleta. F2 decide outro horário apenas antes da noite real, pelos dados; não é retry da mesma autoridade.
+21:29: coleta candidata se READYatual e demais gates; teto e término próprios serão pinados após ensaio. Commit/publicação seguem somente recibos completos; a grade completa será validada com tempos positivos, margens e minutos vedados.
+Após recibos reais COMPLETE: E6 própria + capacidadeVERIFIED, sem dependência humana22–07. Esta é uma lacuna bloqueante até o modelo novo ser aceito/provado. Sem solução, NO-GO.
+Até01:00 de12/10: encerramento causal da aquisição/coleta exigida pelo contrato; atraso não move corte ou datas. Timer perdido não executa fila antiga.
+06h de12/10: leitor apenas pela autorização prévia própria válida, pins atuais e rechecks exatos; sem resposta humana nova. Falta/diferença/incerteza mantémHOLD.
+Manhã12/10: K12próprio somente comCAPACITY_DAY/E6/cadeia atuais, C34/C35fechados, vistas/predecessores e margem efetiva. Calendário/grade próximos ainda precisam de aprovação; não transporJ1/J2/J3históricos.
+
+Decisão10/10 12:00BRT:
+GO de preparação para segunda exige tabela com artefato/hash/produtor/revisão/prova de cada item, ensaio integrado completo, janelas viáveis e assinatura/autoridade/modelos compatíveis. Resultados reais de domingo são futuros: um GO de preparação permanece condicionado aos gates reais e pode terminarHOLD.
+NO-GO se qualquer item crítico estiver ausente, só em desenho, só em relato, com prova parcial, sem revisão, sem horário de assinatura viável ou sem margem antes do corte. Registrar item→existe→quando; quando desconhecido permanece SEM_ETA_COMPROVADO. Não usar o sábado18h antigo para completar depois um GOde12h.

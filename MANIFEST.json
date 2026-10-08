@@ -1,0 +1,48 @@
+{
+  "files": {
+    "CONTRATO_E_LIMITES.rev1.txt": {
+      "bytes": 8200,
+      "sha256": "db3de78f4ad88cb192e1998c28ce6d2a494c19a2ade03ab523b651f642d871f4"
+    },
+    "DEPENDENCIAS_F2_F6.rev3.json": {
+      "bytes": 52635,
+      "sha256": "3d8927570e380f1a655ea415baf228d3ee93706b24e55970d762f35bfe76fe7d"
+    },
+    "F2_HORARIO_PROPOSTA.rev1.txt": {
+      "bytes": 5122,
+      "sha256": "2fd105aea548c85c7c4504837c4a822587f2674081d6cebaa9160d32455187ee"
+    },
+    "PRIORIDADES_DECISAO.rev3.txt": {
+      "bytes": 8161,
+      "sha256": "43236cd71000c5ce967e821b58e7c3f3e277e21073226bc1534158bb687e5558"
+    },
+    "PROOF_COVERAGE.json": {
+      "bytes": 1702,
+      "sha256": "a71d93acda6483f117666e1eaf2b7a6fb6946c48b294d604e7d8efe2a707ca47"
+    },
+    "PROVA_CANDIDATO.py": {
+      "bytes": 1821,
+      "sha256": "4eff97ac411d5d8efad11a21042a4298cdbb992b45d851e9ec22cc57ec1ece69"
+    },
+    "PROVA_LINUX_CANDIDATO.yml": {
+      "bytes": 840,
+      "sha256": "a4ae6b1948a4f998f4bebf20c6ed42defdeb30295f4a80ddb3bd6d226ec6c9c0"
+    },
+    "decision_contracts.py": {
+      "bytes": 11829,
+      "sha256": "1885da9a1c719047d8f131ff20fbfe34ace355f661ad8aef4dc1c96c62969ec7"
+    },
+    "server_controller.py": {
+      "bytes": 12462,
+      "sha256": "993698255cb721afec63c8ab1c584acbce32bacc96df37204aaaae7c7f65d386"
+    },
+    "test_candidates.py": {
+      "bytes": 19931,
+      "sha256": "fe114eb0c230a24fb2b4d389be7afcdd20c8a48856480545a4c932dc407ad03b"
+    }
+  },
+  "full_rev1_complete": false,
+  "production_adapters": false,
+  "schema": "F2_F6_CANDIDATE_SOURCE_MANIFEST_V1",
+  "scope": "NEW_LOCAL_CONTROL_PLANE_ONLY"
+}

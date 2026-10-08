@@ -1,0 +1,61 @@
+{
+  "cases": {
+    "T01": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T02": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T03": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T04": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T05": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T06": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T07": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T08": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T09": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T10": {
+      "status": "C34_C35_PREDICATES_LOCAL_PASS_EXACT_FAMILY_INTEGRATION_PENDING"
+    },
+    "T11": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T12": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T13": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T14": {
+      "status": "NOT_RUN_NEW_F6_FIXTURE_CRYPTO_PENDING"
+    },
+    "T15": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T16": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T17": {
+      "status": "PARTIAL_NEW_LOCAL_FIXTURES_INTEGRATION_PENDING"
+    },
+    "T18": {
+      "status": "NOT_RUN_ACTUAL_K8_K12_H16_INTEGRATION_PENDING"
+    }
+  },
+  "full_rev1_integration": false,
+  "schema": "F6_REV1_PROOF_COVERAGE_CANDIDATE_V1",
+  "scope": "LOCAL_CONTROL_PLANE_AND_CONTRACT_FIXTURES_ONLY"
+}

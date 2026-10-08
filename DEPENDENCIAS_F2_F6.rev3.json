@@ -1,0 +1,1047 @@
+{
+  "checked_survey_sha256": "c5a1aeaf45b29dc1d3ea1e1081417ba2e0246bc95dccbfadce53951018c999a2",
+  "closed_deadlines": {
+    "F1_source": "2026-10-08T17:08:54Z",
+    "emenda6_review": "2026-10-08T16:32:24Z"
+  },
+  "count": 114,
+  "date_transfers_authorized": false,
+  "historical_rows": 92,
+  "human_decision_deadline_BRT": "2026-10-10T12:00:00-03:00",
+  "new_rows": 22,
+  "night_target": "2026-10-11",
+  "operational_acceptance": "MONDAY_NO_GO",
+  "revision": 3,
+  "rows": [
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C01",
+      "item": "decisão da época, A2 e emendas 1–4",
+      "producer": "Dono/Fable/Codex: decisão, autoridade de nova época, emendas e política próprias",
+      "when": "Antes do ensaio completo/qualquer vínculo; nova release e rota efetivamente aceitas"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C02",
+      "item": "rota de execução e runtime",
+      "producer": "Fable; fonte, selo, registry, runtime medido e revisão",
+      "when": "Antes do ensaio completo/qualquer vínculo; nova release e rota efetivamente aceitas"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C03",
+      "item": "raízes, calendário e identidade A5",
+      "producer": "Fable, família capacity_probe, depois da criação E2 já histórica",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C04",
+      "item": "sete originais da cadeia",
+      "producer": "Dono/Fable/Codex: CODEX, FABLE, DUDU, ACT_B, B_CODEX, B_FABLE, B_DUDU",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C05",
+      "item": "entrega estática B5",
+      "producer": "Fable; Ato B/cadeia/release/A5",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C06",
+      "item": "epoch input",
+      "producer": "capacity_day_documents; policy/order/release/package, calendário, raízes, sete documentos, D11, dispatch e faixas",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C07",
+      "item": "session input",
+      "producer": "Fable; day=09/10, causal_scope real, view_evidence_sha e instante fixado da publicação bar_manifest",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C08",
+      "item": "D11 e ações quote_refresh/quote_capture",
+      "producer": "Fable; recibos originais de recertificação/wind-down/inputs e derivação aprovada",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F3",
+      "id": "C09",
+      "item": "três janelas e vistas de veto",
+      "producer": "Fable; principal, contingência 1 e 2, origem/instantes/validade das vistas",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C10",
+      "item": "template.raw",
+      "producer": "capacity_day_documents, com modelo assinado do dia",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C11",
+      "item": "go_admission_record.raw",
+      "producer": "Mesmo produtor, cadeia documental",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C12",
+      "item": "go_bar_manifest_record.raw",
+      "producer": "Mesmo produtor, cadeia documental",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C13",
+      "item": "publication_bar_manifest.raw",
+      "producer": "Fable + produtor; publicação real no canal em instante pinado",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C14",
+      "item": "go_admission.raw",
+      "producer": "Produtor, objeto GO com os pins da cadeia",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C15",
+      "item": "go_bar_manifest.raw",
+      "producer": "Produtor, objeto GO com os pins da cadeia",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C16",
+      "item": "capacity_config-primary.raw",
+      "producer": "Produtor, raízes/release/package/chain/vista principal",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C17",
+      "item": "capacity_config-contingency_1.raw",
+      "producer": "Produtor, mesmas bases + vista J2",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C18",
+      "item": "capacity_config-contingency_2.raw",
+      "producer": "Produtor, mesmas bases + vista J3",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C19",
+      "item": "veto_view-primary.raw",
+      "producer": "Produtor, evidência e regra de vista principal",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C20",
+      "item": "veto_view-contingency_1.raw",
+      "producer": "Produtor, evidência e regra de vista J2",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C21",
+      "item": "veto_view-contingency_2.raw",
+      "producer": "Produtor, evidência e regra de vista J3",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C22",
+      "item": "CONTRACT.json",
+      "producer": "Produtor; policy/order/modelo/causal_scope/D11/GOs",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C23",
+      "item": "três diretórios CAPACITY_DAY",
+      "producer": "Produtor build/verify; C04–C22",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C24",
+      "item": "três verificações CAPACITY_DAY",
+      "producer": "Verifier pinado, revisão Codex dos bytes originais",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C25",
+      "item": "registro Linux e revisão K8",
+      "producer": "Fable produz prova da família/pins; Codex reconcilia e revê",
+      "when": "Antes da E6/K12; dados de dia/época reais, cadeia completa, proof/review próprios"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C26",
+      "item": "PARAMETERS/L1 E6 P e S",
+      "producer": "Codex/Fable; C02/C23–C25 + TREE e commit da trilha usada",
+      "when": "Só após commit_result e publish_launch reais COMPLETE da mesma trilha; disponibilidade humana própria"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Não entregue nos conjuntos E6 conferidos; modelo antigo não certifica segunda",
+      "front": "F3",
+      "id": "C27",
+      "item": "Assino e E6 executada",
+      "producer": "Dono assina REQUEST próprio; Fable prepara/despacha/coleta sob folha válida",
+      "when": "Só após commit_result e publish_launch reais COMPLETE da mesma trilha; disponibilidade humana própria"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F4",
+      "id": "C28",
+      "item": "escritor instalado e TREE K12",
+      "producer": "Fable; programa/revisão, raízes reais e E6 mesma sessão/BOOT",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F4",
+      "id": "C29",
+      "item": "PARAMETERS/L1 D0 e K12",
+      "producer": "Codex/Fable; C23–C28 e solução das lacunas temporais abaixo",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F4",
+      "id": "C30",
+      "item": "J1 LAUNCH",
+      "producer": "Fable, K12; D0, E6, contratos, vista, roots, GO próprios",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F4",
+      "id": "C31",
+      "item": "J2 LAUNCH condicional",
+      "producer": "Fable, K12; leitura que estabeleça o estado de J1",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F4",
+      "id": "C32",
+      "item": "J3 LAUNCH condicional",
+      "producer": "Fable, K12; estado conhecido de J2",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F4",
+      "id": "C33",
+      "item": "D2 COLLECT de J1/J2/J3",
+      "producer": "Fable, k12_collect; LAUNCH real da própria janela",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Somente candidato estático histórico; integração e recibo próprio pendentes",
+      "front": "F4",
+      "id": "C34",
+      "item": "D3 PERSIST de J1/J2/J3",
+      "producer": "Fable, k12_window; estado real da janela e bytes privados",
+      "when": "Bytes próprios + integração + Linux + revisão antes de sábado10/10 12h; prazo18h anterior substituído pelo dono"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Viabilidade física de predecessor/tempo ainda não demonstrada",
+      "front": "F4",
+      "id": "C35",
+      "item": "D4 STOP de J1/J2/J3",
+      "producer": "Fable, k12_window; três pedidos pré-vinculados e assinados",
+      "when": "Bytes próprios + integração + Linux + revisão antes de sábado10/10 12h; prazo18h anterior substituído pelo dono"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F4",
+      "id": "C36",
+      "item": "admissão, bar_manifest e aceite físico",
+      "producer": "K12 + escritor + produtor/supervisor; C03–C35 e host abaixo",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H01",
+      "item": "TREE_POST/E0, roots, tools e fonte",
+      "producer": "Fable; árvores e fontes seladas já criadas",
+      "when": "Antes do ensaio completo/qualquer vínculo; nova release e rota efetivamente aceitas"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H02",
+      "item": "release M1, readback M2, ativação M3",
+      "producer": "Fable: novo SHA final/release/imagem → M1 install → M2 readback → M3 activation próprios",
+      "when": "Antes do ensaio completo/qualquer vínculo; nova release e rota efetivamente aceitas"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H03",
+      "item": "policy instalada e validade",
+      "producer": "Fable, policy_read; H01/H02",
+      "when": "Antes do ensaio completo/qualquer vínculo; nova release e rota efetivamente aceitas"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H04",
+      "item": "release instalada",
+      "producer": "Fable, policy_read; M1 e readback M2",
+      "when": "Antes do ensaio completo/qualquer vínculo; nova release e rota efetivamente aceitas"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H05",
+      "item": "worker do compose",
+      "producer": "Fable, policy_read; M3",
+      "when": "Antes do ensaio completo/qualquer vínculo; nova release e rota efetivamente aceitas"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H06",
+      "item": "provider env, rede e espaço K9",
+      "producer": "Fable, guardas K9; H01",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H07",
+      "item": "policy_read sexta",
+      "producer": "Codex/Fable; H01–H06 + folha própria",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H08",
+      "item": "publish_launch causal da sessão 09",
+      "producer": "Fable, trilha P/S própria da noite 08",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H09",
+      "item": "capture_launch/capture_result/cleanup",
+      "producer": "Fable, K9; H08 e ferramentas/dados/GO próprios",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H10",
+      "item": "B4 montagem capacidade",
+      "producer": "Fable, capacity_mount; B5/H02",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H11",
+      "item": "B4c LOAD, M4 ENABLE, C4 rápido",
+      "producer": "Fable, capacity_probe/activation; B4/B5",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H12",
+      "item": "supervisor B11 e produtor de barras",
+      "producer": "Fable; units/journal/token e ensaio real ou dispensa nominal assinada",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F6",
+      "id": "H13",
+      "item": "token/credenciais, permissões e GRANT",
+      "producer": "Fable; atos próprios já consumidos e recibos, sem ler valores públicos",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F5",
+      "id": "H14",
+      "item": "leitor A8/B2/A7/B6",
+      "producer": "Fable; A5→B5, lançador e units, credencial e pins",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "F5",
+      "id": "H15",
+      "item": "DBR e partida do leitor",
+      "producer": "Fable; H14/DBR, PARAMETERS e Assino próprios",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Conflito IND madrugada ainda aberto; nenhuma assinatura futura presumida",
+      "front": "F5",
+      "id": "H16",
+      "item": "conflito da assinatura de madrugada do leitor",
+      "producer": "Dono + Fable + Codex; modelo IND das linhas H15",
+      "when": "Modelo/emenda resolvidos antes de qualquer assinatura; zero dependência do dono22–07"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O01",
+      "item": "assinatura literal e readback de cada folha",
+      "producer": "Dono assina; Fable registra; Codex reconcilia bytes",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O02",
+      "item": "disponibilidade do executor e canal",
+      "producer": "Dono/Fable; rota efetivamente autorizada",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O03",
+      "item": "limite de escrita, rotina e exclusão mútua",
+      "producer": "Fable + binder/fontes exatos; R1/R2, claims, halts e guards",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O04",
+      "item": "provas de instalação e efeitos, continuidade do BOOT",
+      "producer": "Fable produz originais; Codex revê",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O05",
+      "item": "envelope GO de cada janela e E7",
+      "producer": "Fable; autoridade própria e publicação exata",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O06",
+      "item": "correções C34/C35 e integração",
+      "producer": "Fable/Codex em bytes próprios e revisão pertinente",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O07",
+      "item": "P0/P1/P2/P3 e reservas",
+      "producer": "Fable, observe/folhas próprias",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O08",
+      "item": "falha do provedor/terminal vazio/corte",
+      "producer": "Fable reporta resultado real; dono informado",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O09",
+      "item": "leitor RST/CF se necessário",
+      "producer": "Fable; leitura do mesmo dia, insumos exatos e GO/Assino próprio",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "Base histórica; conjunto/folha/efeito de segunda ainda não conferido",
+      "front": "TRANSVERSAL",
+      "id": "O10",
+      "item": "encerramento CF/X1/X2/X3/X4/X5/X6",
+      "producer": "Fable; recibos originais e folhas próprias",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "PINNED_HISTORICAL_REQUIREMENT_NOT_TRANSFERRED",
+      "exists": "F1 entregue; diagnóstico real/último pregão/causas permanecem pendentes",
+      "front": "TRANSVERSAL",
+      "id": "O11",
+      "item": "novas observações do diagnóstico",
+      "producer": "Fable; implementação/pins/janela/Assino do desenho 6049208136",
+      "when": "Depois dos predecessores próprios e da revisão; sem ETA físico comprovado"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G01",
+      "item": "readiness_probe / P / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor nenhum predecessor declarado nesta linha; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G02",
+      "item": "collect_launch / P / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor readiness_probe; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G03",
+      "item": "collect_result / P / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor collect_launch; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G04",
+      "item": "commit_launch / P / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor collect_result; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G05",
+      "item": "commit_result / P / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor commit_launch; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G06",
+      "item": "publish_launch / P / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor commit_result; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G07",
+      "item": "publish_result / P / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor publish_launch; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G08",
+      "item": "readiness_recheck / S / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor nenhum predecessor declarado nesta linha; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G09",
+      "item": "collect_launch / S / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor readiness_recheck; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G10",
+      "item": "collect_result / S / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor collect_launch; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G11",
+      "item": "commit_launch / S / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor collect_result; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G12",
+      "item": "commit_result / S / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor commit_launch; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G13",
+      "item": "publish_launch / S / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor commit_result; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G14",
+      "item": "publish_result / S / causal_list",
+      "producer": "Grade nova assinada + família própria/binder; predecessor publish_launch; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G15",
+      "item": "components_launch / POST / components",
+      "producer": "Grade nova assinada + família própria/binder; predecessor publish_result; citações commit_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G16",
+      "item": "components_result / POST / components",
+      "producer": "Grade nova assinada + família própria/binder; predecessor components_launch; citações commit_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G17",
+      "item": "sources_launch / POST / sources",
+      "producer": "Grade nova assinada + família própria/binder; predecessor components_result; citações commit_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G18",
+      "item": "sources_result / POST / sources",
+      "producer": "Grade nova assinada + família própria/binder; predecessor sources_launch; citações commit_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G19",
+      "item": "bind / POST / risk",
+      "producer": "Grade nova assinada + família própria/binder; predecessor sources_result; citações publish_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G20",
+      "item": "preflight / POST / risk",
+      "producer": "Grade nova assinada + família própria/binder; predecessor bind; citações publish_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G21",
+      "item": "acquire_launch / POST / risk",
+      "producer": "Grade nova assinada + família própria/binder; predecessor preflight; citações publish_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G22",
+      "item": "acquire_result / POST / risk",
+      "producer": "Grade nova assinada + família própria/binder; predecessor acquire_launch; citações publish_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G23",
+      "item": "execute_launch / POST / risk",
+      "producer": "Grade nova assinada + família própria/binder; predecessor acquire_result; citações publish_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G24",
+      "item": "execute_result / POST / risk",
+      "producer": "Grade nova assinada + família própria/binder; predecessor execute_launch; citações publish_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G25",
+      "item": "stage / POST / risk",
+      "producer": "Grade nova assinada + família própria/binder; predecessor execute_result; citações publish_result",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G26",
+      "item": "policy_read / AM / policy_readonly",
+      "producer": "Grade nova assinada + família própria/binder; predecessor nenhum predecessor declarado nesta linha; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G27",
+      "item": "capture_launch / AM / capture",
+      "producer": "Grade nova assinada + família própria/binder; predecessor nenhum predecessor declarado nesta linha; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G28",
+      "item": "capture_result / AM / capture",
+      "producer": "Grade nova assinada + família própria/binder; predecessor capture_launch; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "G19_HISTORICAL_NOT_AUTHORITY_FOR_MONDAY",
+      "exists": "Somente linha histórica de 09/10; não há linha válida de 12/10 nesta conferência",
+      "front": "F3/F6",
+      "id": "G29",
+      "item": "capture_cleanup / AM / capture",
+      "producer": "Grade nova assinada + família própria/binder; predecessor capture_result; citações nenhuma citação declarada",
+      "when": "Após nova autoridade/grade/rota/pins; não transpor horários da quinta/sexta para domingo/segunda"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "evidence_sha256": "ab3d54af4f524273e5adaa45d31eae665df321dcf15f6b0e7768c9047d2f18f9",
+      "exists": "Originais novos conferidos:17critérios/0divergências; somente inventário/contexto/contagens/documentos próprios; opçãoF1consumida",
+      "front": "F2",
+      "id": "F2a",
+      "item": "Corpos, cifra, inventário e listas novos da F1",
+      "producer": "Fable: leitura única → cifra/readback/decifra privada autorizada → Codex",
+      "when": "Entregue08/10; resultado não recupera corpos antigos ou prova primeiro horário de passagem"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Razões técnicas possíveis; causa comercial e último pregão UNKNOWN",
+      "front": "F2",
+      "id": "F2b",
+      "item": "Causa técnica versus causa comercial/último pregão",
+      "producer": "Codex/Fable: campos originais + semântica/documentação necessária",
+      "when": "Após F2a e evidência suficiente; não inferir universo errado ou filtrar para passar"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Proposta21:26prova/21:29coleta + analisador de série candidato; campanha real ausente",
+      "front": "F2",
+      "id": "F2c",
+      "item": "Correção da prontidão, contrato e testes próprios",
+      "producer": "Codex: resultado F2a/F2b → proposta preservando régua ou emenda própria",
+      "when": "Meta documental sábado12h; depende dos originais, sem prontidão futura prometida"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Linux futuro/aceite operacional não entregues",
+      "front": "F2",
+      "id": "F2d",
+      "item": "Nova release, prova Linux e revisão da correção",
+      "producer": "Fable prova/pins → Codex reconcilia; dono assina alteração concreta",
+      "when": "Depois de F2c; antes do ensaio integrado e da noite real"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Só meta humana de segunda; sem autoridade nova conferida",
+      "front": "F3",
+      "id": "F3a",
+      "item": "Nova época/autoridade/calendário 11→12/10",
+      "producer": "Dono/Fable/Codex: A2 atual expira09/10; nova grade/folhas/ordem próprias",
+      "when": "Primeiro gate do plano de segunda, antes de qualquer operação ou PRE"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Deploy e sequência são relatos; SHA final não certificado aqui",
+      "front": "F3",
+      "id": "F3b",
+      "item": "Recertificação pós-deploy SHA/imagem/build",
+      "producer": "Fable: release final dos merges → identidades reais → M1/M2/M3 e guards K9/K8/K12/policy",
+      "when": "Após último deploy e antes de folhas/provas afetadas; não usar dd4ec4bb como release futura"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Mapa conferido; 19 entradas antigas continuam ausentes; nenhum conjunto futuro",
+      "front": "F3",
+      "id": "F3c",
+      "item": "Inventário próprio cadeia/13inputs/3sets/CAPACITY_DAY",
+      "producer": "Codex/Fable: C04–C25 e dados atuais pinados",
+      "when": "Meta de documentos/prova sábado12h; resultados reais só após sua produção própria"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Candidato estático não prova persistência integrada",
+      "front": "F4",
+      "id": "F4a",
+      "item": "Desfazer ciclo COLLECT_COMPLETE→PERSIST",
+      "producer": "Codex/Fable: estados, contrato, recibos e integração C34",
+      "when": "Bytes próprios + integração + Linux + revisão antes de sábado10/10 12h; prazo18h anterior substituído pelo dono"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Fronteira de duração zero não é viabilidade demonstrada",
+      "front": "F4",
+      "id": "F4b",
+      "item": "STOP executável após predecessor e dentro de janela",
+      "producer": "Codex/Fable: C35 e orçamento/assinatura/predecessor real",
+      "when": "Bytes próprios + integração + Linux + revisão antes de sábado10/10 12h; prazo18h anterior substituído pelo dono"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "IND às06h incompatível com dono22–07; solução ainda não assinada",
+      "front": "F5",
+      "id": "F5a",
+      "item": "H16: assinatura antes da madrugada sem inventar modelo",
+      "producer": "Dono/Fable/Codex: contrato próprio para DBR-s/M6-s/V-s ou ramo HOLD",
+      "when": "Meta de solução documental/testada sábado12h; emenda/Assino próprios antes do uso"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Desenho rev1 entregue; núcleo candidato local com contrato/ledger novos; nenhum runtime/serviço aceito",
+      "front": "F6",
+      "id": "F6a",
+      "item": "Rota de servidor, usuário, raiz e mapa de operações",
+      "producer": "Codex desenho; Fable fornece medição/implementa sob autoridade própria",
+      "when": "Pedido Fable desenho hoje18h; pacote/ensaio até sábado12h, condicionado às dependências"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Núcleo persistente candidato e fixtures locais; adaptadores reais/binder/canal/âncora independente pendentes",
+      "front": "F6",
+      "id": "F6b",
+      "item": "Binder/REQUEST/BOUND/claim/recibos no servidor",
+      "producer": "Codex novos adaptadores + Fable executor/ledger próprios",
+      "when": "Após F6a e autoridade/grade; não copiar raízes/BOOT/nonce Mac"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Canal documental existe; respostas futuras e disponibilidade domingo não existem",
+      "front": "F6",
+      "id": "F6c",
+      "item": "Canal Fable de pergunta/resposta literal e byte readbacks",
+      "producer": "Fable + dono: registros aceitos; Codex fecha prepared/POST/GET1/GET2",
+      "when": "Pergunta exata depois de pins/review reais; nenhuma assinatura noturna22–07"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Nenhum token/credencial nova será fabricado ou publicizado",
+      "front": "F6",
+      "id": "F6d",
+      "item": "Credenciais/segredos privados e artefatos de prova",
+      "producer": "Fable: credenciais próprias server; Codex contrato de divulgação",
+      "when": "Antes do primeiro ensaio real; nada plaintext em GitHub/logs/repo, cifra não é GO"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Bases históricas intactas; sem aceitação automática de cópias modificadas",
+      "front": "F6",
+      "id": "F6e",
+      "item": "ACCEPTED_SEALS/registry e autoridades de execução novas",
+      "producer": "Codex novos selos/mapa → Fable prova → dono autoridade própria",
+      "when": "Somente novos bytes/pins/provas por escopo; não editar diretórios selados/REQUEST assinados"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Prova local do núcleo/contratos; T01–T18 completos ainda pendentes, sobretudoT10/T14/T18",
+      "front": "F6",
+      "id": "F6f",
+      "item": "Ensaio completo sem host de produção",
+      "producer": "Codex fixtures/adversários novos; Fable Linux; revisão exata",
+      "when": "Ensaio completo comC34/C35/H16/K8 antes de sábado10/10 12h; prova parcialNO-GO"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Não existe resultado real; disponibilidade do dono domingo não certificada",
+      "front": "F6",
+      "id": "F6g",
+      "item": "Noite real de domingo + capacidade e gates de segunda",
+      "producer": "Fable opera; dono assina; Codex revisa originais no canal",
+      "when": "Só se todos os gates anteriores e janelas/autoridades próprias estiverem fechados; senão HOLD"
+    },
+    {
+      "basis": "NEW_REQUIREMENT_20261008",
+      "exists": "Pedido Fable registrado; nenhuma consulta Codex ao host",
+      "front": "F6",
+      "id": "F6h",
+      "item": "Pós-deploy workers/entries_paused/journal e continuidade",
+      "producer": "Fable devolve recibos originais pela operação realmente autorizada",
+      "when": "Depois do deploy final, antes de qualquer recertificação/vínculo; incerteza HOLD"
+    },
+    {
+      "basis": "HUMAN_PRIORITY_20261008_1734_BRT",
+      "exists": "Modelo/analisador candidato; novos originais e autoridade próprios ausentes",
+      "front": "F2",
+      "id": "N01",
+      "item": "Campanha intranoturna finita para primeiroPASSobservado",
+      "producer": "Codexfonte/contrato próprios; Fableprova/mede; donoAssinoanterior",
+      "when": "Até sábado12h para fechar horário; antes de medir e estritamente antes do corte01h"
+    },
+    {
+      "basis": "HUMAN_PRIORITY_20261008_1734_BRT",
+      "exists": "Lacuna bloqueante do modelo atual; envelopeH16não resolveE6",
+      "front": "F3",
+      "id": "N02",
+      "item": "E6apóscommit/publicação sem assinatura22–07",
+      "producer": "Codexnovo modelo/binder e FableLinux; donoautoridadeprópria",
+      "when": "Resolver antes GOsábado12h ouNO-GO; recibos reais continuam gates"
+    },
+    {
+      "basis": "HUMAN_PRIORITY_20261008_1734_BRT",
+      "exists": "Tabela e regraNO_GO candidatas, sem evidência suficiente paraGO",
+      "front": "F6",
+      "id": "N03",
+      "item": "Ponto decisão sábado12h item→existe→quando",
+      "producer": "Codexreconcilia originais/provas; dono decisão",
+      "when": "10/10 12h; desconhecidoSEM_ETA_COMPROVADO; domingo mantémgates reais"
+    },
+    {
+      "basis": "HUMAN_PRIORITY_20261008_1734_BRT",
+      "exists": "Interface e witness emulado; armazenamento físico/adaptador realausentes",
+      "front": "F6",
+      "id": "N04",
+      "item": "Testemunha persistente fora do domínio de rollback",
+      "producer": "Codexadaptador; Fablemedição/ensaio/eleição própria",
+      "when": "Antes ensaio completo/instalação/despacho; mismatch/lossHOLD semreset"
+    }
+  ],
+  "schema": "F2_F6_DEPENDENCY_TABLE_V1",
+  "source_rev2_sha256": "3771669593421910f9d6170da2df08dc69b13b3e2be1cee7ea48921915c1e264",
+  "target": "2026-10-12"
+}
