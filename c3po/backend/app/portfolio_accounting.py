@@ -128,9 +128,11 @@ def period_result(events: list[dict], start: date, end: date, value_at: Any, rat
     opening_through, note = before, None
     if snapshots:
         # Informed positions are holdings as of their date: the period is measured from
-        # the latest snapshot, valued at the previous close, when no flow precedes it.
+        # the latest snapshot, valued at the previous close. Flows dated before the
+        # snapshot are already reflected in the informed holdings; a flow on the same
+        # day is ambiguous (before or after the snapshot?), so the period stays unknown.
         anchor = max(date.fromisoformat(str(e['effective_date'])) for e in snapshots)
-        if any(e['kind'] != 'position' and str(e['effective_date']) <= anchor.isoformat() for e in selected):
+        if any(e['kind'] != 'position' and str(e['effective_date']) == anchor.isoformat() for e in selected):
             result['reason'] = 'Período contém cadastro ou correção de posição; informe as movimentações'
             return result
         before, opening_through = anchor - timedelta(days=1), anchor
