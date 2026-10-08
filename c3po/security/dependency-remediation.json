@@ -1,0 +1,45 @@
+{
+  "applied": [
+    {
+      "advisory": "GHSA-4jqv-mc3x-m676",
+      "ecosystem": "npm",
+      "fixed": "15.5.27",
+      "manifest": "c3po/frontend/pnpm-lock.yaml",
+      "number": "npm:GHSA-4jqv-mc3x-m676",
+      "package": "next",
+      "severity": "moderate"
+    },
+    {
+      "advisory": "GHSA-mcj8-r9mp-w47p",
+      "ecosystem": "npm",
+      "fixed": "15.5.27",
+      "manifest": "c3po/frontend/pnpm-lock.yaml",
+      "number": "npm:GHSA-mcj8-r9mp-w47p",
+      "package": "next",
+      "severity": "moderate"
+    },
+    {
+      "advisory": "GHSA-wq5f-xc86-pv6w",
+      "ecosystem": "npm",
+      "fixed": "0.35.5",
+      "manifest": "c3po/frontend/pnpm-lock.yaml",
+      "number": "npm:GHSA-wq5f-xc86-pv6w",
+      "package": "sharp",
+      "severity": "high"
+    }
+  ],
+  "base_sha": "df4017b145cbbbbc8af637b07ac8e1e93cc91e0b",
+  "blocked": [
+    {
+      "advisory": "GHSA-68fv-2mgg-jv7q",
+      "ecosystem": "npm",
+      "fixed": "1.2.2",
+      "manifest": "c3po/frontend/pnpm-lock.yaml",
+      "number": "npm:GHSA-68fv-2mgg-jv7q",
+      "package": "source-map-js",
+      "reason": "transitive_dependency_requires_parent_update",
+      "severity": "high"
+    }
+  ],
+  "schema": "C3PO_DEPENDENCY_REMEDIATION-v1"
+}
