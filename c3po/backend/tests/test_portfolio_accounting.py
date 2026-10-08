@@ -217,6 +217,24 @@ def test_consistent_informed_positions_are_not_corrections(events):
     assert result['reason'] is None or 'corrigida' not in result['reason']
 
 
+def test_informed_position_is_not_projected_before_its_own_year():
+    from datetime import date
+    from app.portfolio_accounting import holdings_at
+    # LOGG3-like: listed in 2020, informed in 01/10/2026, no recorded buys
+    events=[event('OLD',quantity='10',total='100',day='2018-02-02'),
+            event('NEW',kind='position',quantity='50',total='500',day='2026-10-01',sequence=2)]
+    assert 'NEW' not in holdings_at(events,date(2019,6,30)) or holdings_at(events,date(2019,6,30))['NEW'].quantity==0
+    assert holdings_at(events,date(2025,12,31))['NEW'].quantity==50
+    price=lambda day: Decimal(10)
+    def value_at(positions, day):
+        if day < date(2020,1,1) and any(s=='NEW' and p.quantity for s,p in positions.items()):
+            raise ValueError('Missing history')
+        return sum(p.quantity*price(day) for p in positions.values())
+    from app.portfolio_accounting import period_result
+    old_month=period_result(events,date(2019,6,1),date(2019,6,30),value_at,lambda m,d:Decimal(1))
+    assert old_month['reason'] is None and Decimal(old_month['profit_usd'])==0
+
+
 def test_missing_history_does_not_return_zero_profit():
     from datetime import date
     from app.portfolio_accounting import period_result

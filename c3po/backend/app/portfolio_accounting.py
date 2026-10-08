@@ -1,6 +1,6 @@
 """Native-currency position accounting. No provider calls or implied historical holdings."""
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -175,6 +175,10 @@ def holdings_at(events: list[dict], day: date) -> dict[str, Position]:
     for symbol, snap in later_snapshot.items():
         if symbol in anchored:
             # an informed position at or before `day` already anchors the forward replay
+            continue
+        if day < date(date.fromisoformat(str(snap['effective_date'])).year, 1, 1) - timedelta(days=1):
+            # an informed position is projected back at most to the close before its own
+            # year (31/12): earlier holdings of that symbol come only from recorded movements
             continue
         moves = [e for e in ordered if e['symbol'] == symbol and e['kind'] not in ('position', 'dividend')
                  and day.isoformat() < str(e['effective_date']) <= str(snap['effective_date'])]
