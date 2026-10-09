@@ -1,0 +1,18 @@
+{
+  "base_archive_sha256": "b318aad2f4e61e7e1f7fadee6eae529ad76e3b96514a0eaf5f691012879b82f9",
+  "base_source_sha256": "a1a58f95b0aec7005bba8a35c0a5ee64f81b31cb9251ceae74a4538bab10cc61",
+  "changed_ast_members": [
+    "strict_json",
+    "Scope",
+    "invoke_once"
+  ],
+  "errors": 0,
+  "failures": 0,
+  "new_delta_methods": 11,
+  "operational_status": "OPERATION_HOLD",
+  "prior_methods_not_repeated": 23,
+  "schema": "CODEX_IMAGE_ADAPTER_R2_LINEAGE_V1",
+  "source_sha256": "fbcb11dde975ee15434a14a12a3b6afa9977ba3b325695b5e826756c616b858e",
+  "status": "CANDIDATE_DELTA_ONLY",
+  "writer_source_sha256": "aeda5b12d34a406b0d61e1e4696e3c535e89fa3dc680ce0d3b14bb4d60b1d387"
+}

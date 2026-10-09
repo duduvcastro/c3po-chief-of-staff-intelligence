@@ -1,0 +1,48 @@
+test_new_authority_boolean_is_not_attestation (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_bound_mutated_by_callback_refuses (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_busy_ledger_refusal_retains_the_consumed_marker (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_clock_rollback_refuses (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_clock_unavailable_after_identification_still_consumes (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_cross_context_receipt_refuses (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_downstream_chain_with_pre_and_post_first_reader (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_executor_deadline_violation_never_complete (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_executor_throw_consumed_uncertain_no_retry (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_final_authority_exhausts_budget_before_executor (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_final_identity_exhausts_budget_before_executor (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_future_dependency_selector_before_predecessor_not_accepted (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_future_initial_receipt_rejected_before_owner (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_invalid_declared_time_consumes_identifiable_operation (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_late_window_refusal_consumes (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_ledger_replacement_refuses (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_ledger_rollback_orphan_marker_holds_all (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_missing_executor_refusal_still_consumes (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_missing_first_cycle_binding_is_uncertain_after_effect (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_mixed_generic_lane_not_accepted (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_partial_ledger_tail_is_not_recoverable_by_retry (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_pending_publish_is_not_complete (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_placeholder_authority_pin_rejected (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_plan_changed_does_not_reopen_logical_operation (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_reader_gate_runs_after_last_identity_changes_world (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_receipt_normalization_cannot_lie (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_reopen_persisted_ledger_preserves_consume (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_slow_final_capacity_gate_cannot_start_reader_outside_budget (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_slow_post_cycle_gate_never_marks_complete_after_deadline (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_stale_veto_refuses_without_effect (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_torn_claim_marker_is_uncertain_and_never_reset (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_upstream_four_real_original_callbacks (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_new_veto_expiring_during_last_identity_refuses (test_finite_batch.TestFiniteBatchCandidate) ... ok
+test_after_first_cycle_requires_exact_persisted_copy (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_before_first_reader_does_not_create_binding_cycle (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_changed_authority_scope_is_not_delegated (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_core_uses_pure_bridge_on_each_side_of_first_reader_effect (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_delayed_snapshot_is_not_fresh (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_manifest_inode_tamper_is_not_the_original_receipt_file (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_missing_real_snapshot_verifier_is_closed (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_real_db_shape_is_not_limited_to_manifest_64k (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_slow_snapshot_callback_cannot_cross_open_minus_ten (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+test_snapshot_verification_delay_is_checked_after_callback (test_image_capacity_gate.TestNewImageCapacityBridge) ... ok
+
+----------------------------------------------------------------------
+Ran 43 tests in 0.082s
+
+OK

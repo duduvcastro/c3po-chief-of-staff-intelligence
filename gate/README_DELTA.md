@@ -1,0 +1,19 @@
+# Adapter r2: correções encontradas na revisão do lote finito
+
+R1 permanece selado e preservado. Esta nova cópia altera apenas `Scope.scope_sha256`, `strict_json` e `invoke_once`; os gates de binding/manifesto/ready e suas verificações de identidade permanecem byte equivalentes por AST. São **11 métodos novos de delta PASS**, zero falhas/erros. Os 23 métodos históricos do R1 não foram importados nem repetidos, e não são anunciados como uma suíte completa executada do R2.
+
+## Correções concretas
+
+- O verificador externo `BEFORE_WRITER` podia consumir tempo e retornar depois da janela; R1 chamava o transporte sem uma nova verificação temporal pura. R2 verifica novamente fonte/escopo/data/janela com relógio novo após esse callback e antes de executar. Retorno tardio do transporte ou do callback de readback é recusado; a tentativa continua consumida e não vira COMPLETE.
+- R1 aplicava alguns gates antes de reservar a tentativa. R2 reserva a operação identificável antes dos gates de relógio, fonte, argv, autoridade e executor ausente. A fase `BEFORE_CLAIM` deixa de existir: passa a ser `AFTER_CLAIM`. A chave lógica fixa por época/data/operação permanece; o hash registra os inputs fornecidos, inclusive timestamp inválido, sem validá-los antes do consumo. Scope deve ser serializável; contexto sem época/data identificáveis ou allocator ausente não pode registrar uma tentativa.
+- O decoder JSON tinha o limite de 64 KiB dos manifestos. Isso não é limite da ABI do snapshot DB/journal completo. R2 permite um limite explicitamente declarado de até 16 MiB para transporte de DB; default de 64 KiB e parsing estrito continuam para manifesto/ready/receipt. Esse teto é candidato de recursos e precisa estar coberto pelo budget/contrato real; não é prova de viabilidade física.
+
+## Integração do lote e revisão independente
+
+Foi encontrada uma segunda janela de corrida no lote: `BEFORE_FIRST_READER` ocorria antes de releitura de dependências, veto e callbacks de autoridade/identidade. Estes podiam consumir a margem até abertura−10s ou alterar o manifesto/ready/raiz. O agente do lote moveu o gate de capacidade para depois desses callbacks e acrescentou guardas puros de inputs, ledger, relógios, janela/deadline e frescor do veto imediatamente antes do efeito; após verificação do recibo/capacidade, faz nova verificação pura antes de anunciar o original observado.
+
+O bridge `ImageCapacityGate` mede o relógio novamente depois do callback que valida o snapshot e recusa frescor vencido/abertura−10s ultrapassada. Antes do reader exige daily_capacity/journal/manifesto/ready/catálogo; depois do primeiro ciclo exige também a cópia exata `sessions[D].capacity_binding`. Continua sem circularidade: a cópia só é obrigatória depois da primeira passagem do reader. Não há marker de ready fabricado pelo adapter.
+
+O bridge deve decodificar `row_raw` e `records_raw` com `image.strict_json(..., limit=image.DB_READBACK_LIMIT)`. O receipt e os arquivos privados mantêm default 64 KiB. APIs restantes de `reader_gate`, `check_capacity_manifest`, `Scope` e `FileEvidence` não mudam. O callback `reserve(attempt_key, scope_sha256)` e todos os gates retornam None apenas depois da verificação real ou levantam recusa. O transporte deve respeitar os deadlines recebidos do lote; o núcleo não é watchdog físico nem fornece transporte operacional.
+
+As guardas finais do lote foram verificadas na fonte corrente; isso não certifica bytes futuros ou callbacks ainda não entregues. O gerador/montador e os originais reais da Fable continuam necessários. Veto real, finalização/configuração, autoridade/runtime, topologia, fonte `/app`, proteções de diretório do escritor, captura segura do stdout, instalação e prova física continuam externos e pendentes. Nenhum app, DB, produtor, transporte real, host, assinatura ou lançamento foi executado nesta revisão.
