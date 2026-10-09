@@ -1,0 +1,28 @@
+test_activation_before_j_cannot_be_after_j_proof (__main__.CapacityDelta) ... ok
+test_boolean_checkers_are_never_attestations (__main__.CapacityDelta) ... ok
+test_cross_bound_m3_j_and_activation_actual_read_with_rule_not_future_receipt_pin (__main__.CapacityDelta) ... ok
+test_downstream_capacity_never_activated_refuses_before_capture_effect (__main__.CapacityDelta) ... ok
+test_foreign_source_request_or_bound_is_not_same_dependency (__main__.CapacityDelta) ... ok
+test_m3_must_be_complete_before_j (__main__.CapacityDelta) ... ok
+test_native_clock_after_original_verifier_cannot_run_past_window (__main__.CapacityDelta) ... ok
+test_worker_final_config_must_be_same_exact_j_original_hash (__main__.CapacityDelta) ... ok
+test_ast_annassign_if_subscript_augassign_and_update_refuse (__main__.DecoderDelta) ... ok
+test_explicit_external_rule_and_four_original_pin_mapping_preserve_raw_receipt (__main__.DecoderDelta) ... ok
+test_invocation_request_and_bound_must_match_independent_rule (__main__.DecoderDelta) ... ok
+test_k9_original_go_mapping_cannot_be_caller_only (__main__.DecoderDelta) ... ok
+test_monotonic_deadline_rechecked_after_provenance_callback (__main__.DecoderDelta) ... ok
+test_native_now_cannot_decode_future_monday_receipt_on_sunday (__main__.DecoderDelta) ... ok
+test_real_bare_checker_cannot_impersonate_loaded_approved_provenance (__main__.DecoderDelta) ... ok
+test_supplied_clock_is_refused (__main__.DecoderDelta) ... ok
+test_two_edits_to_historical_runner_do_not_self_approve_source (__main__.DecoderDelta) ... ok
+test_absence_hits_finite_limit_and_never_creates_effect (__main__.ReadyDelta) ... ok
+test_absent_then_ready_after_open32_inside_same_finite_call (__main__.ReadyDelta) ... ok
+test_late_namespace_verifier_cannot_freeze_utc (__main__.ReadyDelta) ... ok
+test_present_wrong_day_is_fatal_without_wait_retry (__main__.ReadyDelta) ... ok
+test_real_bare_callback_without_loaded_approved_module_refuses (__main__.ReadyDelta) ... ok
+test_rule_and_bound_actual_original_are_not_self_reported (__main__.ReadyDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.011s
+
+OK

@@ -1,0 +1,57 @@
+test_new_busy_refusal_diagnosis_does_not_claim_retry_authority (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_current_outer_executes_once_then_refuses_durable_terminal (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_finish_waits_own_budget_after_worker_cleanup (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_injected_clock_is_never_called_by_supervised_dispatch (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_injected_stale_clock_cannot_make_old_veto_current (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_invocation_deadlines_are_inside_outer_hard_deadline (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_legacy_pending_claim_without_nonce_cannot_dispatch (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_nonce_hash_is_committed_but_nonce_not_on_disk (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_private_entry_requires_typed_permit (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_public_resume_pending_claim_never_effects_or_finalizes (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_torn_global_hold_remains_unmodified_and_requires_recovery (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_zero_byte_consume_proof_remains_global_hold (test_worker_capability_delta.CapabilityDelta) ... ok
+test_new_descendant_cannot_use_leader_permit (test_supervised_reentry_delta.SupervisionDelta) ... ok
+test_new_inherited_inner_child_is_not_a_core_dispatcher (test_supervised_reentry_delta.SupervisionDelta) ... ok
+test_new_one_use_permit_refuses_second_entry_inside_worker (test_supervised_reentry_delta.SupervisionDelta) ... ok
+test_new_parent_loss_after_effect_never_allows_public_second_effect (test_supervised_reentry_delta.SupervisionDelta) ... ok
+test_new_parent_loss_lifeline_kills_before_remaining_budget_effect (test_supervised_reentry_delta.SupervisionDelta) ... ok
+test_new_public_resume_parallel_with_outer_cannot_duplicate_effect (test_supervised_reentry_delta.SupervisionDelta) ... ok
+test_new_public_pending_key_is_unverified_not_closed (test_capability_boundary_delta.PeerBoundary) ... ok
+test_new_public_unknown_key_does_not_claim_consumed_or_durable (test_capability_boundary_delta.PeerBoundary) ... ok
+test_new_reserved_commit_reread_must_match_exact_claim (test_capability_boundary_delta.PeerBoundary) ... ok
+test_new_worker_thread_reentry_is_refused_before_any_callback (test_capability_boundary_delta.PeerBoundary) ... ok
+test_new_external_observation_is_read_only_and_cannot_authorize_core_effect (test_dispatch_observation_delta.DispatchObservation) ... ok
+test_new_external_observation_rejects_changed_request_or_bound (test_dispatch_observation_delta.DispatchObservation) ... ok
+test_new_external_observation_requires_commit_and_complete_chain (test_dispatch_observation_delta.DispatchObservation) ... ok
+test_new_new_permit_with_same_nonce_cannot_dispatch_twice (test_dispatch_observation_delta.DispatchObservation) ... ok
+test_new_parallel_workers_with_same_nonce_are_durably_single_dispatch (test_dispatch_observation_delta.DispatchObservation) ... ok
+test_new_zero_byte_dispatch_proof_remains_hold_without_effect_or_repair (test_dispatch_observation_delta.DispatchObservation) ... ok
+test_new_crosslane_ready_and_decoder_share_current_core_and_external_verifier (test_current_dependency_delta.FinalDependency) ... ok
+test_new_no_public_reserved_dispatch_path_remains_in_supervisor (test_current_dependency_delta.FinalDependency) ... ok
+test_new_r5b_bridge_refuses_operational_injected_clock_before_callbacks (test_current_dependency_delta.FinalDependency) ... ok
+test_new_r5b_gate_dependency_is_exact_and_phase_task_api_unchanged (test_current_dependency_delta.FinalDependency) ... ok
+test_new_finish_failure_retains_claim_effect_once_and_requires_recovery (test_terminal_recovery_delta.TerminalRecoveryDelta) ... ok
+test_new_current_outer_parent_commits_only_own_complete_once (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_current_owned_outer_complete_is_dependency_with_exact_original (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_durable_uncertain_after_worker_loss_remains_uncertain_on_second_call (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_foreign_request_or_bound_is_consumed_unresolved_not_exact_closed (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_j_family_terminal_has_no_core_complete_dependency_authority (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_legacy_claim_without_terminal_owner_cannot_be_promoted (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_legacy_forged_complete_is_consumed_readonly_but_not_dependency (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_owner_does_not_accept_wrong_terminal_schema_or_status (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_parent_terminal_permit_cannot_be_used_in_fork_child (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_proof_permissions_are_exact_0600_under_umask_0277 (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_public_finish_without_owner_cannot_forge_complete_or_append (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_terminal_permit_is_one_use_even_for_same_refusal (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_wrong_private_parent_nonce_cannot_close_existing_claim (test_terminal_owner_r6_delta.TerminalOwnerDelta) ... ok
+test_new_capacity_cross_proof_future_cannot_reach_effect (test_capacity_lane_r6_delta.CapacityLaneDelta) ... ok
+test_new_capacity_cross_proof_wrong_context_cannot_reach_effect (test_capacity_lane_r6_delta.CapacityLaneDelta) ... ok
+test_new_capacity_monday_lane_allows_only_actual_cross_bound_gate_not_initial_future_hash (test_capacity_lane_r6_delta.CapacityLaneDelta) ... ok
+test_new_capacity_monday_missing_actual_proof_callback_refuses_without_effect (test_capacity_lane_r6_delta.CapacityLaneDelta) ... ok
+test_new_missing_ready_wait_callback_prevents_first_session_effect (test_capacity_lane_r6_delta.ReadySequenceDelta) ... ok
+test_new_ready_wait_occurs_under_same_claim_before_fresh_dependencies_and_veto (test_capacity_lane_r6_delta.ReadySequenceDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 52 tests in 1.867s
+
+OK

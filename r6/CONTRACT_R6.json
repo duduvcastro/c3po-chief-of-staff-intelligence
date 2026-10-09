@@ -1,0 +1,128 @@
+{
+  "base": {
+    "c6_r4_core_sha256": "3ca239ec117614c7b2fa394be5ad16a66c66ace2338ee39d35c7a8cef546be69",
+    "package": "Unsealed R5 over preserved C6 R4",
+    "r5_core_sha256": "879d3abba179b18df6c0d497fc7bce45f4d86e52fa8992c7b9161735969bbb52",
+    "r5_outer_sha256": "9441eb5122b33d31db1609b67c46ebc9fe360d73be0abc4a87b439bb5ebc2de3"
+  },
+  "capability_protocol": {
+    "automatic_retry": false,
+    "minimum_terminal_owner": "native creator PID, native creator thread, single thread and exact CLAIM commitment",
+    "nonce_publicly_returned": false,
+    "proof_file_mode": "0600",
+    "terminal_finish_budget_default_seconds": 5,
+    "terminal_finish_budget_max_seconds": 30,
+    "terminal_nonce_bytes": 32,
+    "terminal_owner_mode": [
+      "OUTER",
+      "LOCAL_REFUSAL",
+      "J_FAMILY"
+    ],
+    "worker_nonce_bytes": 32
+  },
+  "capacity_monday": {
+    "hook_consumers": [
+      "capacity_activate",
+      "reader_bound",
+      "reader_cycle",
+      "policy_read",
+      "capture_launch",
+      "capture_result",
+      "capture_cleanup"
+    ],
+    "initial_receipt_legacy_rule_unchanged": true,
+    "initial_receipts": {},
+    "mandatory_hook": "capacity_dependencies(bundle,q,task,now)->None or raise",
+    "operations": [
+      "capacity_activate"
+    ],
+    "owner_deadline_not_after": "2026-10-12T00:45:00+00:00",
+    "source_selectors": "Separate Sunday rule authority pins source/context/operation/REQUEST/BOUND and derivation; actual Monday raw M3/J/config/activation observed before effect, different BOUND allowed only through this explicit gate.",
+    "track": "P"
+  },
+  "entrypoints": {
+    "DurableLedger.check_reserved": "Private worker nonce guard reconciles full CLAIM/reserved commitment; O_EXCL dispatch marker under same lock consumes dispatch before callback. Nonce linked to native PID/thread/PG/SID/parent/deadline permit.",
+    "DurableLedger.dependency": "Requires current owner/worker nonce hashes and OUTER CLAIM, owner PID/thread, exact durable dispatch, OUTER terminal schema and original receipt. Legacy forged COMPLETE or J_FAMILY never promotes.",
+    "DurableLedger.finish": "Private original-parent _TerminalPermit required, native PID/thread/one-use, exact OUTER or LOCAL_REFUSAL schema and CLAIM nonce/mode owner binding. No public terminal minting.",
+    "DurableLedger.finish_family": "Separate private J_FAMILY capability and exact J envelope; cannot issue core operational COMPLETE or dependency.",
+    "DurableLedger.observe_reservation": "Read-only J-family API, full pending CLAIM/proof/REQUEST/BOUND and chain; no nonce, dispatch or execution permission.",
+    "FiniteBatch.run": "Native logical consume then OUTER_LIMITER_REQUIRED local refusal; no effect.",
+    "FiniteBatch.run_reserved": "Public resume is refused, no effect/claim/dispatch/terminal mutation. No confirmed reservation means no claimed durable consumption.",
+    "OuterLimiter.run": "Only core dispatcher candidate: source-pinned parent native CLAIM with separate private worker and terminal nonces before fork/callback; one supervised session/group operation and native absolute UTC/monotonic hard budget. Inner runner must inherit outer group."
+  },
+  "findings": {
+    "C6-B1": "New CAPACITY_MONDAY lane and mandatory independent selector/real-original verification hooks; actual M3/J/config then actual capacity activation cross-lane before dependent effects. No future SHA or weakened old initial receipt chronology.",
+    "C6_K9": "Exact separately approved K9 module requires Approval original source/REQUEST/GO/BOUND/phase and native clock checks; no legacy relabel or default proof.",
+    "C6_READY": "Mandatory finite READY absence wait within CLAIM before fresh dependencies/runtime/veto; final ready check remains after veto. Actual SESSION transition interposition is still separately required.",
+    "R3C-1": "Public resumption closed. Current worker-only dispatch is durable and one-use across workers/new permit instances; trusted interpreter protocol boundary explicit.",
+    "R3C-2": "LOCK_BUSY with no marker is not invented durable consumption; existing consumed marker without lock remains uncertain. Real D1 shell/installer must enforce no retry. No unsafe prelock marker.",
+    "R3C-3": "Zero/torn proofs and truncated chain remain global HOLD; no erase/adoption/reset. Valid fully proven orphan may be conservatively committed UNCERTAIN only, never effect repair.",
+    "R3C-4": "Separate bounded finish lock budget default5s maximum30s after group cleanup; neither hard effect deadline nor owner window is extended. Finalization error preserves inner_code and recovery_required=true.",
+    "R3C-5_and_10": "Native operational UTC/monotonic, same source guards before/after all callbacks and at final effect, worker lifeline and watchdog at actual hard cutoff; no arbitrarily injected operational clocks.",
+    "XA3-1": "Private native parent nonce/PID/thread/mode capability and strict terminal schema now required. Wrong owner/fork/schema rejects no mutation. Core dependency additionally rejects retained legacy forged COMPLETE even when hash chain is intact.",
+    "XA3-2": "Foreign REQUEST or BOUND gets ATTEMPT_CONSUMED_BY_OTHER_BOUND with unresolved recovery; never exact closed replay.",
+    "XA3-3": "Prior UNCERTAIN remains UNCERTAIN_CONSUMED/recovery_required=true even when terminal bytes are durable; previous code and effect_calls preserved. No retry/effect repair.",
+    "XA3-5": "Native proof creates use exact fchmod0600, tested umask0277."
+  },
+  "independent_source_review": {
+    "peer": "image-capacity agent",
+    "scope": "Current core809/outerb845, reading/AST/hash only; no tests. Parent source review accepted same current sources and RESULT52.",
+    "sha256": "5fdd3f882c0c17e0205d21d07d6d2acfee27af44cedbdb57e93d1c26e4f6a8ad"
+  },
+  "observed_at": "2026-10-09T18:15:29.362824+00:00",
+  "pending_operational": [
+    "Real L12-HOST casca/registry/installer calling OuterLimiter with current sources and inherited inner containment",
+    "Real authority/runtime/identity/receipt/provenance/veto/namespace/DB callbacks and Sunday final factual before_effect hook at physical transport",
+    "Own actual rule/documents/Assinos/act/GO/REQUEST/BOUND and semantic verifiers, actual M3/J/config/activation original receipts",
+    "Actual AfterJ capacity activation program, worker configuration and installation/readback authority",
+    "Actual approved epoch04 K9 runner/source/receipt ABI and registry",
+    "Actual OPS internal SESSION transition interposition and READY proof",
+    "Own current Linux52 fixture proof, physical kernel/group/daemon/Docker confinement and storage/timer margins",
+    "If recovery needed: exact authorized runbook; no automatic erase/adoption/retry"
+  ],
+  "proof": {
+    "current_log_sha256": "d500f5c255a47e674135a27905529bfc0d30ab3a2a8cfeac79c843f673c158ff",
+    "current_required_methods": 52,
+    "current_result_sha256": "b9f124f83053a3f2a663fd9e7ee35bfab2865c703b3a97134dd7bf6b6762338f",
+    "historical_closed_suites_repeated": false,
+    "new_linux_pending": true,
+    "old50_preserved_as_intermediate": true,
+    "result_observed_at": "2026-10-09T18:11:41.901225+00:00"
+  },
+  "ready_wait": {
+    "hook": "ready_wait(bundle,q,task,now)->None or raise",
+    "mandatory_for": "reader_cycle",
+    "placement": "Inside CLAIM after initial operation gate, before fresh dependency rereads/runtime/veto; current image readiness checked again before SESSION effect. Only absent READY can wait; present divergent file is fatal. No effect retry."
+  },
+  "review_originals": {
+    "R3C": {
+      "bytes": 34842,
+      "sha256": "a59c519b2ba3cb2f3289828718eecdbf8b6c9fcfa58a9c98bff76fe234cb7f76"
+    },
+    "XA3": {
+      "bytes": 16336,
+      "sha256": "b22b39cb87d9dea6612686482eb26eb315f72190356c807b1c25238854301ba6"
+    }
+  },
+  "schema": "L12_R6_TERMINAL_CAPABILITY_CAPACITY_CANDIDATE_V1",
+  "source_sha256": {
+    "bounded_runner.py": "f06a4b697336ded17264ee2178b27ee02c26b4689bccf1795eac16645a18fda3",
+    "capacity_monday_gate.py": "ebe04ca62c8b75ba0b2ed3444a14503e9f44c4b6937de3cf544d55f76142fc53",
+    "finite_batch.py": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec",
+    "image_capacity_gate.py": "58a6104e8d1efcab2199d388ffe17e602abf315304449dd1be5178f57f7c12ec",
+    "image_path_adapter.py": "78282c7e932f8082f7108eb5d22413c7580a4393ea9e3171f465d5b48ba35096",
+    "k9_receipt_adapter.py": "ed89a0718b40dadc154af5d2eb268815dcd580de8e3daa8457e1ac662d977509",
+    "outer_limiter.py": "b845f824e1986a9101015016f94caa2eabcc91ec5c4e3fc77d728a9b4cac9b6e",
+    "ready_wait_gate.py": "5bbef9a6db2e9e714bcee3cc72ee1836e66bb303a3a67c5ff3aea8274c93262b",
+    "verification_binding.py": "78f4309d9713ea1c718d5635e5eed0dc71335c9b7cb7c82149185e868fc23c86"
+  },
+  "trust_boundary": [
+    "Private nonce/method access is a protocol within pinned trusted Python, not a sandbox against hostile same-interpreter code or privileged same-UID actors.",
+    "Loaded module/callback and leaf source hash do not attest physical namespace/runtime or semantic correctness of verifier; own authority and provenance remain required.",
+    "killpg covers only descendants retained in the outer group; native daemon/container/systemd effects need own authorized confinement/absolute-budget/cleanup.",
+    "Native OS-blocked filesystem primitives are not hard realtime by Python guards.",
+    "Same-disk commitment detects retained proof mismatch, not complete rollback of elected disk; external witness is not reimposed after D1.",
+    "All fixture records and altered test clocks are SYNTHETIC and never real authority, signature, host proof or GO."
+  ],
+  "verdict": "OFFLINE_CANDIDATE_OPERATION_HOLD"
+}

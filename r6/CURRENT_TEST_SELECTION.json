@@ -1,0 +1,75 @@
+{
+  "argv": [
+    "python3",
+    "-I",
+    "-B",
+    "run_required_tests.py"
+  ],
+  "command": "python3 -I -B run_required_tests.py",
+  "cwd": "writable extracted PACKAGE root",
+  "historical_not_required": [
+    "Closed R3/R3b/R3c old Hold API suites including Fable49",
+    "Closed R3d1 boundary/prior-result suites",
+    "Closed C6 R4 old35 fixtures",
+    "Gate R5 own22 and R5b own9",
+    "C6 integration R1 own27 module fixtures",
+    "Prior unsealed R5 and R6/50 intermediate logs"
+  ],
+  "local_log_sha256": "d500f5c255a47e674135a27905529bfc0d30ab3a2a8cfeac79c843f673c158ff",
+  "local_result_sha256": "b9f124f83053a3f2a663fd9e7ee35bfab2865c703b3a97134dd7bf6b6762338f",
+  "module_counts": {
+    "test_capability_boundary_delta": 4,
+    "test_capacity_lane_r6_delta": 6,
+    "test_current_dependency_delta": 4,
+    "test_dispatch_observation_delta": 6,
+    "test_supervised_reentry_delta": 6,
+    "test_terminal_owner_r6_delta": 13,
+    "test_terminal_recovery_delta": 1,
+    "test_worker_capability_delta": 12
+  },
+  "proof_coverage": "Synthetic POSIX fork/filesystem fixtures of the current core/outer; no application, host, SQL, Docker, actual timers, operational authority/GO, physical runtime or new Linux proof.",
+  "required_methods": 52,
+  "required_source_sha256": {
+    "bounded_runner.py": "f06a4b697336ded17264ee2178b27ee02c26b4689bccf1795eac16645a18fda3",
+    "capacity_monday_gate.py": "ebe04ca62c8b75ba0b2ed3444a14503e9f44c4b6937de3cf544d55f76142fc53",
+    "finite_batch.py": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec",
+    "image_capacity_gate.py": "58a6104e8d1efcab2199d388ffe17e602abf315304449dd1be5178f57f7c12ec",
+    "image_path_adapter.py": "78282c7e932f8082f7108eb5d22413c7580a4393ea9e3171f465d5b48ba35096",
+    "k9_receipt_adapter.py": "ed89a0718b40dadc154af5d2eb268815dcd580de8e3daa8457e1ac662d977509",
+    "outer_limiter.py": "b845f824e1986a9101015016f94caa2eabcc91ec5c4e3fc77d728a9b4cac9b6e",
+    "ready_wait_gate.py": "5bbef9a6db2e9e714bcee3cc72ee1836e66bb303a3a67c5ff3aea8274c93262b",
+    "synthetic_image_go_fixture.py": "75f516cefa79de475215d78c5f3a047ecf24338eb746ccf196e74174f2718b55",
+    "synthetic_outer_fixture.py": "bff835debe34b795af429d27cd4ab21788fb1bcac0e2c311630013a7a5868b57",
+    "test_capability_boundary_delta.py": "06e7f07537555ba2ef0321326117bb174bf61ddbf46a591c4ea6129392f5930c",
+    "test_capacity_lane_r6_delta.py": "78c676537a8470bf6032314d6c450d861270d5a20752e6a2f4f49902a14e8dfe",
+    "test_current_dependency_delta.py": "a4de1d349e0f01cf15cf905fb0558c864a125f4f1168eb9d2ac94c647589e76c",
+    "test_dispatch_observation_delta.py": "7200e4b110c321ad079d31f06bc09ebdad98657db71caf1ab5c9aa8ffafe25f7",
+    "test_supervised_reentry_delta.py": "9fe59290aa2cd7ecbe51048e52be538d5358ce59ae8c6449fc614e5f43401305",
+    "test_terminal_owner_r6_delta.py": "72806b9756e23dbef50447b19b37813486ab53a0b382ee19aff78f7a22cfc4b3",
+    "test_terminal_recovery_delta.py": "0975aedd1ea9bdb6892751d825f17df7ad13293b373d6de6fdd6d7b4786a9e2d",
+    "test_worker_capability_delta.py": "2621b9c17fe9d66a674d9b4c29a1f796d7731ebea52e419746309a79c67fee6a",
+    "verification_binding.py": "78f4309d9713ea1c718d5635e5eed0dc71335c9b7cb7c82149185e868fc23c86"
+  },
+  "required_test_modules": [
+    "test_worker_capability_delta",
+    "test_supervised_reentry_delta",
+    "test_capability_boundary_delta",
+    "test_dispatch_observation_delta",
+    "test_current_dependency_delta",
+    "test_terminal_recovery_delta",
+    "test_terminal_owner_r6_delta",
+    "test_capacity_lane_r6_delta"
+  ],
+  "schema": "L12_R6_CURRENT_TEST_SELECTION_V1",
+  "selection_lineage": {
+    "current_selection_rechecked_after_source_change": true,
+    "final_current_core_sha256": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec",
+    "final_current_methods": 52,
+    "new_r6_methods": 20,
+    "r5_owned_affected_methods": 32,
+    "r6_pre_dependency_core_sha256": "d709587ae55b7c86b8364f867b8d7b4075f58a4a4bd06678614b06ef2a4789b6",
+    "r6_pre_dependency_intermediate_methods": 50,
+    "r6_pre_dependency_result_sha256": "e0e6dbc7c6dad349da52a6920ee4b329d69a95d4179db38ff59028086651cf3f",
+    "reason": "Rechecked owned current fixtures after CLAIM/terminal capability and Services API changes, then dependency source change requiring an owned OUTER terminal. Two final new vectors cover legacy forged COMPLETE rejection and current exact-original OUTER dependency."
+  }
+}

@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-c6-integration-20261009-r1/test_new_integration_delta.py", line 10, in <module>
+    import capacity_monday_gate as m
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-c6-integration-20261009-r1/capacity_monday_gate.py", line 28, in <module>
+    class CapacityMondayProof:
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-c6-integration-20261009-r1/capacity_monday_gate.py", line 34, in CapacityMondayProof
+    activation:LinkedReceipt|None=None
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
