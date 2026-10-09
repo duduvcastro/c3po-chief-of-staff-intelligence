@@ -1,0 +1,31 @@
+test_new_busy_lock_returns_no_reservation_without_orphan (test_ledger_delta.LedgerDelta) ... ok
+test_new_claim_timestamp_native_utc_ignores_supplied_future (test_ledger_delta.LedgerDelta) ... ok
+test_new_claim_without_commit_proof_cannot_effect_and_is_adopted (test_ledger_delta.LedgerDelta) ... ok
+test_new_committed_claim_retained_marker_detects_ledger_truncation (test_ledger_delta.LedgerDelta) ... ok
+test_new_committed_terminal_detects_terminal_history_truncation (test_ledger_delta.LedgerDelta) ... ok
+test_new_dependency_completion_time_must_match_original_terminal (test_ledger_delta.LedgerDelta) ... ok
+test_new_dependency_from_before_bound_refuses_without_effect (test_ledger_delta.LedgerDelta) ... ok
+test_new_dependency_replaced_bytes_refused_against_terminal_hash (test_ledger_delta.LedgerDelta) ... ok
+test_new_different_scope_concurrent_claims_preserve_marker_equality (test_ledger_delta.LedgerDelta) ... ok
+test_new_direct_run_claim_failure_returns_data_without_callbacks (test_ledger_delta.LedgerDelta) ... ok
+test_new_durable_complete_dependency_advances_one_next_effect (test_ledger_delta.LedgerDelta) ... ok
+test_new_finish_waits_bounded_lock_release_then_commits (test_ledger_delta.LedgerDelta) ... ok
+test_new_inherited_flock_description_cannot_bypass_parent_lock (test_ledger_delta.LedgerDelta) ... ok
+test_new_orphan_before_claim_adopted_uncertain_and_next_scope_lives (test_ledger_delta.LedgerDelta) ... ok
+test_new_orphan_wrong_anchor_refuses_without_silent_superset (test_ledger_delta.LedgerDelta) ... ok
+test_new_partial_marker_refuses_recovery_and_next_effect (test_ledger_delta.LedgerDelta) ... ok
+test_new_partial_terminal_keeps_explicit_global_hold (test_ledger_delta.LedgerDelta) ... ok
+test_new_refused_predecessor_cannot_be_replaced_by_fresh_fixture (test_ledger_delta.LedgerDelta) ... ok
+test_new_same_scope_concurrency_has_one_durable_claim (test_ledger_delta.LedgerDelta) ... ok
+test_new_sigkill_after_claim_commit_preserves_consume_without_global_brick (test_ledger_delta.LedgerDelta) ... ok
+test_new_sigkill_after_durable_marker_recovers_only_uncertain (test_ledger_delta.LedgerDelta) ... ok
+test_new_sigkill_terminal_before_commit_recovers_uncertain_proof (test_ledger_delta.LedgerDelta) ... ok
+test_new_sigkill_torn_claim_tail_is_explicit_hold_without_new_markers (test_ledger_delta.LedgerDelta) ... ok
+test_new_terminal_error_preserves_internal_refusal_code (test_ledger_delta.LedgerDelta) ... ok
+test_new_terminal_not_committed_before_crash_cannot_certify_dependency (test_ledger_delta.LedgerDelta) ... ok
+test_new_unanchored_fresh_dependency_is_refused (test_ledger_delta.LedgerDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 0.608s
+
+OK

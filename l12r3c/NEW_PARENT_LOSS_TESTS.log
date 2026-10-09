@@ -1,0 +1,6 @@
+test_new_parent_loss_stops_callback_at_hard_deadline_before_cleanup_gap (test_parent_loss_delta.ParentLossDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.712s
+
+OK

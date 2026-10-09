@@ -1,0 +1,27 @@
+test_new_authority_callback_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_changed_source_pin_consumed_before_fork (test_outer_delta.TestOuterDelta) ... ok
+test_new_child_failure_consumed_no_effect (test_outer_delta.TestOuterDelta) ... ok
+test_new_clock_callback_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_direct_core_run_refuses_without_any_callback (test_outer_delta.TestOuterDelta) ... ok
+test_new_forged_reservation_cannot_call_adapter (test_outer_delta.TestOuterDelta) ... ok
+test_new_fork_failure_consumed_no_callback (test_outer_delta.TestOuterDelta) ... ok
+test_new_identity_callback_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_image_go_reader_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_image_go_verifier_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_inherited_inner_runner_completes_in_outer_session (test_outer_delta.TestOuterDelta) ... ok
+test_new_late_callback_cannot_continue_after_outer_timeout (test_outer_delta.TestOuterDelta) ... ok
+test_new_late_cleanup_downgrades_after_effect (test_outer_delta.TestOuterDelta) ... ok
+test_new_operation_gate_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_receipt_reader_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_receipt_verifier_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_same_group_descendant_cannot_write_after_timeout (test_outer_delta.TestOuterDelta) ... ok
+test_new_terminal_ledger_torn_remains_hold_consumed (test_outer_delta.TestOuterDelta) ... ok
+test_new_uncertain_effect_once_then_hang_consumed (test_outer_delta.TestOuterDelta) ... ok
+test_new_veto_reader_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_veto_verifier_hang_bounded (test_outer_delta.TestOuterDelta) ... ok
+test_new_whole_invocation_exactly_once_after_parent_claim (test_outer_delta.TestOuterDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 5.397s
+
+OK
