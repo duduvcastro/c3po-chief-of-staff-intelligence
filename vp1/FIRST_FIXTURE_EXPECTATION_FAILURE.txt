@@ -1,0 +1,29 @@
+.F..........F...
+======================================================================
+FAIL: test_derivation_caller_changes_static_authority_refuses (test_process_defect_delta.ProcessDefectDelta)
+----------------------------------------------------------------------
+veto_emitter.Refused: VETO_REQUIRED_SCOPE
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-veto-process-20261009-r1/test_process_defect_delta.py", line 67, in test_derivation_caller_changes_static_authority_refuses
+    self.emit(spec_raw=raw,spec_sha256=v.digest(raw))
+AssertionError: "VETO_DERIVATION_STATIC_MISMATCH" does not match "VETO_REQUIRED_SCOPE"
+
+======================================================================
+FAIL: test_noncapacity_template_refuses_even_if_document_dict_present (test_process_defect_delta.ProcessDefectDelta)
+----------------------------------------------------------------------
+veto_emitter.Refused: VETO_CONSUMER_REVOCATION_SCOPE
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-veto-process-20261009-r1/test_process_defect_delta.py", line 78, in test_noncapacity_template_refuses_even_if_document_dict_present
+    self.emit(spec_raw=sr,spec_sha256=v.digest(sr),consumer_template_raw=raw,derivation_rule_raw=rr,derivation_rule_sha=v.digest(rr))
+AssertionError: "VETO_CONSUMER_DOCUMENT_FIELDS" does not match "VETO_CONSUMER_REVOCATION_SCOPE"
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.503s
+
+FAILED (failures=2)
