@@ -1,0 +1,27 @@
+name: l12host-v31-diag
+on:
+  push:
+    branches: ['ops/fable-l12host-v31-diag-20261009']
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: stat interpreters and suite on the host-equivalent /usr/bin/python3.12
+        run: |
+          set +e
+          mkdir -p /tmp/diag
+          ls -la /usr/bin/python3 /usr/bin/python3.12 > /tmp/diag/stat.txt 2>&1
+          stat -c '%n %a %u %g %h' /usr/bin/python3.12 >> /tmp/diag/stat.txt
+          python3 -c "import sys;print(sys.executable)" >> /tmp/diag/stat.txt
+          L12_TEST_TMP="$RUNNER_TEMP" /usr/bin/python3.12 -I -S -B l12host/tests/test_l12host.py > /tmp/diag/TEST_RESULT_SYS312.json 2> /tmp/diag/TEST_NAMES_SYS312.txt; echo "exit=$?" >> /tmp/diag/stat.txt
+          sudo -n --preserve-env=GITHUB_ACTIONS /usr/bin/python3.12 -I -S -B l12host/linux_systemd_proof.py > /tmp/diag/SYSTEMD_RESULT.json 2> /tmp/diag/SYSTEMD_STDERR.txt; echo "systemd_exit=$?" >> /tmp/diag/stat.txt
+          sudo -n chown -R "$(id -u):$(id -g)" /tmp/diag
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag
+          path: /tmp/diag/
