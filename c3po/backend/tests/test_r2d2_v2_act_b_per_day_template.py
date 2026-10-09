@@ -21,8 +21,8 @@ ORDER = {'owner_sha': OWNER, 'epoch': EPOCH, 'authorized_sessions': list(SESSION
 POLICY = {'schema': 'R2D2_V2_LIVE_POLICY_V1', 'mode': 'LIVE', 'epoch': EPOCH, 'capacity': 550,
           'order_sha': RUNTIME_ORDER_SHA, 'release_sha': '1' * 64, 'package_sha': '2' * 64, 'code_revision': 'c' * 40,
           'c8_receipt_sha': '3' * 64, 'head_go_sha': '4' * 64,
-          'valid_from': '2026-10-05T13:00:00+00:00', 'valid_until': '2026-10-09T21:00:00+00:00'}
-OUTSIDE = ('2026-10-02', '2026-10-12')  # XNYS sessions adjacent to the epoch, never authorized by it
+          'valid_from': '2026-10-12T13:00:00+00:00', 'valid_until': '2026-10-16T21:00:00+00:00'}
+OUTSIDE = ('2026-10-09', '2026-10-19')  # XNYS sessions adjacent to the epoch, never authorized by it
 
 
 def template(day):

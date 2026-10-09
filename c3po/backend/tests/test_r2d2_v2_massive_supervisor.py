@@ -40,8 +40,8 @@ RECEIPT_DATA_VOLUME_AVAILABLE=54070542336;RECEIPT_ROOT_FILESYSTEM_AVAILABLE=5952
 # top-level directory, none of these. The README's own list is read from the document and compared with this one.
 PROVIDED_TOP_LEVEL=frozenset('app bin boot dev etc home lib lib64 media mnt opt proc root run sbin srv sys tmp usr var'.split())
 # The owner's decision record for placement A in this epoch, as the README cites it. Not hashed by any test.
-DECISION_RECORD='DUDU_DECISION_BAR_JOURNAL_ON_MAIN_DISK.json'
-DECISION_SHA256='76dcff838b5bb9feb54bbc3ee3f4de0567012571bcc6469d5c2b3cf326df64a0'
+DECISION_RECORD='DUDU_DECISION_BAR_JOURNAL_MAIN_DISK_EPOCH04.json'
+DECISION_SHA256='b0b69f816a608fc15bec73f554d1ec8521959e31b4a183db26f22ee435550f68'
 
 
 def unit_text():return (UNIT_ROOT/'c3po-massive.service').read_text()
@@ -829,7 +829,7 @@ def test_readme_describes_both_journal_placements_and_what_is_checked_above_the_
         'host      <C3PO_DAY_D_DATA_MOUNT_SOURCE>/<leaf>      (for example '+b_host+')\n'
         'container /app/day-d-data/<leaf>                     (producer --journal-root; reader journal directory)\n```\n') in readme
     # The epoch named in the document is the one the code assembles; placement A is the owner's decision for it.
-    assert signed_epoch=='R2D2-V2-SHADOW-2026-10-05'
+    assert signed_epoch=='R2D2-V2-SHADOW-2026-10-12'
     assert ('**Epoch `'+signed_epoch+'` uses placement A, by decision of the owner.** The decision is on record as `'+DECISION_RECORD
         +'`, SHA-256 `'+DECISION_SHA256+'` (name and hash as relayed for this revision; the record\'s bytes prevail).') in readme
     assert readme.count(DECISION_RECORD)==readme.count(DECISION_SHA256)==1 and DECISION_SHA256!=RECEIPT_STDOUT_SHA256
