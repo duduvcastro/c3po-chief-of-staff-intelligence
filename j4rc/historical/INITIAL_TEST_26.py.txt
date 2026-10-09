@@ -1,0 +1,200 @@
+"""New pure decoder fixtures only; no hot child/app/host/SQL/old suites."""
+import base64
+import copy
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import time
+import unittest
+from unittest.mock import patch
+import j4_receipt_adapter as d
+import finite_batch as c
+from verification_binding import Verifier
+
+
+def hash_name(s): return c.sha(s.encode('ascii'))
+def encoded(raw): return base64.b64encode(raw).decode('ascii')
+
+
+class Fixture:
+    def __init__(self):
+        self.now = datetime(2026, 10, 12, 10, 45, 9, tzinfo=timezone.utc)
+        self.before, self.after = '2026-10-12T10:45:00Z', '2026-10-12T10:46:00Z'
+        self.config = c.canonical({'schema': 'SYNTHETIC_CONFIG_NOT_REAL', 'value': 1}) + b'\n'
+        self.derivation = c.canonical({'schema': 'SYNTHETIC_DERIVATION_NOT_AUTHORITY'})
+        self.q = {'epoch': c.EPOCH, 'session': c.DAY, 'previous_session': c.PREVIOUS, 'track': 'P',
+                  'lane': 'DOWNSTREAM_AFTER_E6', 'authority_sha256': hash_name('authority'),
+                  'tasks': [{'operation': 'admission_manifest', 'not_before': self.before,
+                             'not_after': self.after}]}
+        self.request = c.canonical(self.q)
+        self.bound = c.canonical({'schema': 'SYNTHETIC_BOUND_NOT_SIGNED', 'request': c.sha(self.request)})
+        self.sources = tuple((n, (Path(__file__).parent / 'sources' / (n + '.py')).read_bytes()) for n in d.SOURCE_PINS)
+        def record(h): return {'path': '/explicit-fixture/' + h, 'sha256': h, 'ancestors': []}
+        self.registry = {'schema': 'R2D2_HOT_IMAGE10_REGISTRY_CANDIDATE_V1', 'mode': 'FIXTURE',
+            'protocol': 'WARM_IMAGE10_ACTUAL_OBSERVATION', 'epoch': c.EPOCH, 'day': c.DAY,
+            'programs': {n: record(d.SOURCE_PINS.get(n, hash_name('program/' + n))) for n in d.PROGRAMS},
+            'originals': {n: record(hash_name('original/' + n)) for n in d.ORIGINALS},
+            'bridge': {'bootstrap': 'bootstrap', 'authorize': 'authorize', 'general_read': 'general_read', 'general_verify': 'general_verify'},
+            'ledger': {'root': '/explicit-fixture/ledger', 'pins': []},
+            'outer_scope': list(c.context(self.q)) + ['admission_manifest'], 'authority_sha256': self.q['authority_sha256'],
+            'general_authority_sha256': hash_name('general-authority'), 'general_source_identity': 'FIXTURE_GENERAL',
+            'not_before': self.before, 'not_after': self.after}
+        self.registry['originals']['request']['sha256'] = c.sha(self.request)
+        self.registry['originals']['bound']['sha256'] = c.sha(self.bound)
+        self.registry['originals']['rule']['sha256'] = c.sha(self.derivation)
+        self.registry_raw = c.canonical(self.registry)
+        self.rule = {'schema': 'J4_APPROVED_DECODER_RULE_CANDIDATE_V1', 'mode': 'FIXTURE', 'epoch': c.EPOCH, 'day': c.DAY,
+            'source_pins': dict(d.SOURCE_PINS), 'linked_source_sha256': d.SOURCE_PINS['hot_worker'],
+            'invocation_request_sha256': c.sha(self.request), 'invocation_bound_sha256': c.sha(self.bound),
+            'registry_derivation_sha256': c.sha(self.derivation), 'phase_not_before': self.before, 'phase_not_after': self.after,
+            'verifiers': {n: {'identity': n, 'source_sha256': hash_name('fixture-verifier-' + n)} for n in ('approval', 'original')}}
+        self.writer = {'schema': 'R2D2_V2_BAR_MANIFEST_WRITER_RECEIPT_V1', 'status': 'PUBLISHED_VERIFIED', 'code': None,
+            'session': c.DAY, 'mode': 'PUBLISH', 'epoch': c.EPOCH, 'owner_uid': 501,
+            'release_sha256': hash_name('release'), 'capacity_config_sha256': c.sha(self.config),
+            'package_sha256': hash_name('package'), 'build_sha': 'a' * 40,
+            'capacity_veto_mode': 'DISPATCH_AND_DERIVATION_ONLY', 'massive_bars_enabled': True,
+            'cutoff_at': '2026-10-12T13:29:50+00:00', 'stale_temporaries': 0, 'repaired_temporaries': 0,
+            'prepare_status': 'COMMITTED', 'waited_seconds': 0.0,
+            'view': {'observed_at': '2026-10-12T10:45:01+00:00', 'valid_until': '2026-10-12T10:45:11+00:00'},
+            'go_sha256': hash_name('individual-go'), 'go_mode': 'INDIVIDUAL', 'template_sha256': hash_name('template'),
+            'window': {'not_before': self.before, 'not_after': self.after}, 'published_at': '2026-10-12T10:45:05+00:00',
+            'binding_sha256': hash_name('binding'), 'symbol_count': 10, 'manifest_sha256': hash_name('manifest'),
+            'file': {'uid': 501, 'gid': 20, 'mode': '0600', 'nlink': 1, 'device': 1, 'inode': 45, 'size_within_limit': True}}
+        self.general = {'schema': 'R2D2_HOT_GENERAL_FACTUAL_ENVELOPE_V1', 'mode': 'FIXTURE', 'epoch': c.EPOCH, 'day': c.DAY,
+            'purpose': 'J_ADMISSION_WARM_IMAGE10', 'source_identity': 'FIXTURE_GENERAL',
+            'authority_sha256': self.registry['general_authority_sha256'], 'registry_sha256': c.sha(self.registry_raw),
+            'observed_at': '2026-10-12T10:45:01Z', 'valid_until': '2026-10-12T10:45:06Z',
+            'status': 'ALLOW', 'owner_veto': False, 'required_pins': sorted({c.sha(self.registry_raw), self.q['authority_sha256'],
+                self.registry['general_authority_sha256']} | {x['sha256'] for kind in ('programs', 'originals') for x in self.registry[kind].values()}),
+            'revoked_shas': []}
+        self.slot = {'status': 'COMPLETE', 'code': 'J_IMAGE_MANIFEST_COMPLETE',
+            'attempt_key': c.sha(c.canonical([c.EPOCH, c.DAY, 'J_ADMISSION_FAMILY_V1'])),
+            'observation_sha256': hash_name('folder-observation'), 'veto_sha256': hash_name('veto-view'),
+            'config_sha256': c.sha(self.config), 'manifest_sha256': self.writer['manifest_sha256'],
+            'operational_GO': False, 'writer_receipt_base64': None, 'writer_receipt_sha256': None,
+            'writer_exit_code': 0, 'mode': 'FIXTURE'}
+        self.process = {'schema': 'R2D2_HOT_IMAGE10_PROCESS_RECEIPT_CANDIDATE_V1', 'mode': 'FIXTURE',
+            'protocol': self.registry['protocol'], 'registry_sha256': c.sha(self.registry_raw),
+            'request_sha256': c.sha(self.request), 'bound_sha256': c.sha(self.bound),
+            'outer_attempt_key': c.sha(c.canonical(self.registry['outer_scope'])), 'pid': 12, 'parent_pid': 11, 'process_group': 10,
+            'warm_at': self.before, 'image_observed_at': '2026-10-12T10:45:01Z', 'image_valid_until': '2026-10-12T10:45:11Z',
+            'general_observation_base64': encoded(c.canonical(self.general)), 'slot_result': self.slot,
+            'actual_installation_certified': False, 'operational_GO': False}
+        self.calls = []
+        self.approval_callback = lambda *args: self.calls.append('approval')
+        self.original_callback = lambda *args: self.calls.append('original')
+        self.invocation = c.Invocation('admission_manifest', c.context(self.q), c.sha(self.request), c.sha(self.bound),
+                                        self.now + timedelta(seconds=30), time.monotonic() + 30, ())
+    def stdout(self):
+        raw = c.canonical(self.writer) + b'\n'
+        self.slot['writer_receipt_base64'], self.slot['writer_receipt_sha256'] = encoded(raw), c.sha(raw)
+        return c.canonical(self.process) + b'\n'
+    def adapter(self):
+        rule_raw = c.canonical(self.rule)
+        return d.J4ReceiptAdapter(d.Binding(self.registry_raw, self.request, self.bound, self.sources),
+            approval=d.Approval(rule_raw, c.sha(rule_raw), self.derivation),
+            verify_approval=Verifier('FIXTURE', 'approval', self.rule['verifiers']['approval']['source_sha256'], self.approval_callback),
+            verify_original=Verifier('FIXTURE', 'original', self.rule['verifiers']['original']['source_sha256'], self.original_callback))
+    def decode(self, **kwargs):
+        with patch.object(d, 'native_utc', return_value=self.now):
+            return self.adapter().decode(self.stdout(), self.invocation, config_raw=self.config, **kwargs)
+
+
+class NewJ4Decoder(unittest.TestCase):
+    def test_exact_original_bytes_and_published_time_preserved(self):
+        f = Fixture();out = f.decode()
+        self.assertEqual(out.writer_raw, c.canonical(f.writer) + b'\n')
+        self.assertEqual(out.linked_receipt.raw, out.writer_raw)
+        self.assertEqual(out.core_receipt.raw, f.stdout())
+        self.assertEqual(out.linked_receipt.completed_at, d.instant(f.writer['published_at']))
+        self.assertEqual(out.linked_receipt.request_raw, f.request)
+        self.assertEqual(f.calls, ['approval', 'original'])
+        self.assertFalse(f.process['operational_GO'])
+    def test_explicit_j_source_selector_is_conserved(self):
+        f = Fixture();f.rule['linked_source_sha256'] = d.SOURCE_PINS['j_slot']
+        self.assertEqual(f.decode().linked_receipt.source_sha256, d.SOURCE_PINS['j_slot'])
+    def test_unknown_source_selector_refused(self):
+        f=Fixture();f.rule['linked_source_sha256']=hash_name('unknown')
+        with self.assertRaisesRegex(c.Hold, 'J4_APPROVAL_ABI'):f.adapter()
+    def test_source_byte_mutation_refused_before_callbacks(self):
+        f=Fixture();f.sources=((f.sources[0][0],f.sources[0][1]+b'\n'),)+f.sources[1:]
+        with self.assertRaisesRegex(c.Hold,'J4_APPROVED_SOURCE_CHANGED'):f.adapter()
+        self.assertEqual(f.calls,[])
+    def test_missing_independent_original_verifier_refused(self):
+        f=Fixture();raw=c.canonical(f.rule)
+        with self.assertRaisesRegex(c.Hold,'J4_INDEPENDENT_VERIFIERS_REQUIRED'):
+            d.J4ReceiptAdapter(d.Binding(f.registry_raw,f.request,f.bound,f.sources),approval=d.Approval(raw,c.sha(raw),f.derivation),verify_approval=None,verify_original=None)
+    def test_real_cannot_promote_fixture_verifier(self):
+        f=Fixture();f.rule['mode']='REAL'
+        with self.assertRaisesRegex(c.Hold,'EXTERNAL_VERIFIER_UNBOUND'):f.adapter()
+    def test_boolean_is_not_original_attestation(self):
+        f=Fixture();f.original_callback=lambda *args:True
+        with self.assertRaisesRegex(c.Hold,'EXTERNAL_VERIFIER_BOOLEAN_IS_NOT_ATTESTATION'):f.decode()
+    def test_independent_origin_rejection_refuses_self_consistent_fields(self):
+        f=Fixture()
+        def reject(*args):raise c.Hold('FIXTURE_ORIGIN_NOT_PROVEN')
+        f.original_callback=reject
+        with self.assertRaisesRegex(c.Hold,'FIXTURE_ORIGIN_NOT_PROVEN'):f.decode()
+    def test_foreign_invocation_bound_refused(self):
+        f=Fixture();f.invocation=c.Invocation('admission_manifest',c.context(f.q),c.sha(f.request),hash_name('foreign'),f.now+timedelta(seconds=30),time.monotonic()+30,())
+        with self.assertRaisesRegex(c.Hold,'J4_INVOCATION_UNBOUND'):f.decode()
+    def test_request_registry_selector_change_refused(self):
+        f=Fixture();f.registry['originals']['request']['sha256']=hash_name('foreign');f.registry_raw=c.canonical(f.registry)
+        with self.assertRaisesRegex(c.Hold,'J4_REGISTRY_PIN_CHANGED'):f.adapter()
+    def test_family_key_cannot_be_outer_operation_key(self):
+        f=Fixture();f.slot['attempt_key']=f.process['outer_attempt_key']
+        with self.assertRaisesRegex(c.Hold,'J4_SLOT_NOT_COMPLETE'):f.decode()
+    def test_uncertain_terminal_never_yields_linked_complete(self):
+        f=Fixture();f.slot['status']='UNCERTAIN'
+        with self.assertRaisesRegex(c.Hold,'J4_SLOT_NOT_COMPLETE'):f.decode()
+    def test_already_published_is_not_new_j_complete(self):
+        f=Fixture();f.writer['status']='ALREADY_PUBLISHED_VERIFIED'
+        with self.assertRaisesRegex(c.Hold,'J4_WRITER_NOT_EXACT_PUBLISHED'):f.decode()
+    def test_historical_epoch03_writer_refused(self):
+        f=Fixture();f.writer['epoch']='R2D2-V2-SHADOW-2026-10-05'
+        with self.assertRaisesRegex(c.Hold,'J4_WRITER_NOT_EXACT_PUBLISHED'):f.decode()
+    def test_actual_config_hash_must_match_embedded_original(self):
+        f=Fixture();f.config=c.canonical({'value':'newconfig'})
+        with self.assertRaisesRegex(c.Hold,'J4_WRITER_FINAL_CONFIG_UNBOUND'):f.decode()
+    def test_missing_raw_original_cannot_use_aggregate_hash(self):
+        f=Fixture();adapter=f.adapter();raw=f.stdout();f.slot['writer_receipt_base64']=None
+        with patch.object(d,'native_utc',return_value=f.now):
+            with self.assertRaisesRegex(c.Hold,'J4_WRITER_ORIGINAL_INVALID'):adapter.decode(c.canonical(f.process),f.invocation,config_raw=f.config)
+    def test_duplicate_stdout_key_is_fatal(self):
+        f=Fixture();raw=f.stdout();raw=b'{"mode":"FIXTURE",'+raw[1:]
+        with patch.object(d,'native_utc',return_value=f.now):
+            with self.assertRaisesRegex(c.Hold,'JSON_DUPLICATE_KEY'):f.adapter().decode(raw,f.invocation,config_raw=f.config)
+    def test_published_after_native_now_refused(self):
+        f=Fixture();f.writer['published_at']='2026-10-12T10:45:10Z'
+        with self.assertRaisesRegex(c.Hold,'J4_WRITER_ORIGINAL_CLOCK_UNBOUND'):f.decode()
+    def test_image_view_over_ten_seconds_refused(self):
+        f=Fixture();f.process['image_valid_until']='2026-10-12T10:45:12Z';f.writer['view']['valid_until']='2026-10-12T10:45:12Z'
+        with self.assertRaisesRegex(c.Hold,'J4_WRITER_ORIGINAL_CLOCK_UNBOUND'):f.decode()
+    def test_published_outside_image_view_refused(self):
+        f=Fixture();f.writer['published_at']='2026-10-12T10:45:11Z';f.now+=timedelta(seconds=10)
+        with self.assertRaisesRegex(c.Hold,'J4_WRITER_ORIGINAL_CLOCK_UNBOUND'):f.decode()
+    def test_nonutc_original_time_refused(self):
+        f=Fixture();f.writer['published_at']='2026-10-12T07:45:05-03:00'
+        with self.assertRaisesRegex(c.Hold,'J4_ORIGINAL_UTC_REQUIRED'):f.decode()
+    def test_caller_clock_injection_refused(self):
+        f=Fixture()
+        with self.assertRaisesRegex(c.Hold,'J4_CLOCK_INJECTION_FORBIDDEN'):f.decode(now=f.now)
+    def test_late_callback_parse_is_not_complete(self):
+        f=Fixture()
+        def late(*args):f.now+=timedelta(minutes=1)
+        f.original_callback=late
+        with patch.object(d,'native_utc',side_effect=lambda:f.now):
+            with self.assertRaisesRegex(c.Hold,'J4_DECODE_AFTER_DEADLINE'):f.adapter().decode(f.stdout(),f.invocation,config_raw=f.config)
+    def test_monotonic_expired_even_with_fixed_wall_refused(self):
+        f=Fixture();f.invocation=c.Invocation('admission_manifest',c.context(f.q),c.sha(f.request),c.sha(f.bound),f.now+timedelta(minutes=1),time.monotonic()-1,())
+        with self.assertRaisesRegex(c.Hold,'J4_DECODE_AFTER_DEADLINE'):f.decode()
+    def test_general_revoked_origin_refused(self):
+        f=Fixture();f.general['revoked_shas']=[f.general['required_pins'][0]]
+        f.process['general_observation_base64']=encoded(c.canonical(f.general))
+        with self.assertRaisesRegex(c.Hold,'J4_GENERAL_ORIGINAL_UNBOUND'):f.decode()
+    def test_transport_stdout_limit_is_finite(self):
+        f=Fixture()
+        with patch.object(d,'native_utc',return_value=f.now):
+            with self.assertRaisesRegex(c.Hold,'J4_PROCESS_STDOUT_INVALID'):f.adapter().decode(b'x'*(d.LIMIT+1),f.invocation,config_raw=f.config)
+
+
+if __name__ == '__main__':unittest.main()

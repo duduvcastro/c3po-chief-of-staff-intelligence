@@ -1,0 +1,18 @@
+{
+  "actual_installation_certified": false,
+  "capacity_gate_sha256": "ebe04ca62c8b75ba0b2ed3444a14503e9f44c4b6937de3cf544d55f76142fc53",
+  "core_sha256": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec",
+  "errors": 0,
+  "failures": 0,
+  "log_sha256": "8aca92120bec5eb1d612683721f8b9190a248ecd888fd74804324a093a074dbe",
+  "operational_GO": false,
+  "pass": true,
+  "recorded_at": "2026-10-09T19:07:11.550887+00:00",
+  "schema": "J4_RECEIPT_CODEC_FIXTURE_RESULT_V1",
+  "scope": "NEW_PURE_CODEC_FIXTURES_ONLY",
+  "skipped": 0,
+  "source_sha256": "72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a",
+  "test_execution_record_sha256": "3314f86c773d146ff720ff5e936ab9e862ff5ce288dfd55b3105d122677ec58e",
+  "tests": 41,
+  "verification_binding_sha256": "78f4309d9713ea1c718d5635e5eed0dc71335c9b7cb7c82149185e868fc23c86"
+}

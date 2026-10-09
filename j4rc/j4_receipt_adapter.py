@@ -1,0 +1,302 @@
+"""Pure decoder of the exact J4 child stdout and embedded original writer.
+
+No process is launched and no receipt or authority is issued. Normalized views
+are returned only after independently approved, mandatory verifiers reconcile
+the original transport, registry derivation, owner/authority, process/dispatch,
+actual config and writer bytes. Hashes and JSON self-consistency alone cannot
+attest these facts. REAL uses the separately pinned trusted supervisor protocol;
+Verifier is not an isolation boundary against hostile Python or root.
+"""
+from __future__ import annotations
+import base64
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+import re
+import time
+import finite_batch as c
+from capacity_monday_gate import LinkedReceipt
+from verification_binding import Verifier
+
+SOURCE_PINS = {
+    'hot_worker': '0edb64f45b8a4e31e64aa274e778566106e3549d7e8fe2ab8d746dd1b751d8fa',
+    'hot_runtime': '55e2cc2c97c73d0b7ae9ad8289b9cf7ff28dfb26321690b5ea40cb21438921bc',
+    'j_slot': 'd4c029cabf895276e81dec38f38b387be9c85f03d4e26926846d3c8c8505db04',
+    'manifest_writer': 'aeda5b12d34a406b0d61e1e4696e3c535e89fa3dc680ce0d3b14bb4d60b1d387',
+}
+PROGRAMS = {'hot_runtime', 'hot_worker', 'hot_watchdog', 'finite_batch', 'folder_veto',
+            'veto_emitter', 'config_finalizer', 'consumer_codec', 'j_slot', 'authority_bridge'}
+ORIGINALS = {'request', 'bound', 'owner', 'authority', 'runtime', 'rule', 'folder_spec',
+             'folder_authority', 'decision', 'folder_owner', 'config_base', 'template',
+             'veto_base', 'config_authority', 'act_b', 'machine_order'}
+PROCESS_KEYS = {'schema', 'mode', 'protocol', 'registry_sha256', 'request_sha256', 'bound_sha256',
+                'outer_attempt_key', 'pid', 'parent_pid', 'process_group', 'warm_at',
+                'image_observed_at', 'image_valid_until', 'general_observation_base64',
+                'slot_result', 'actual_installation_certified', 'operational_GO'}
+SLOT_KEYS = {'status', 'code', 'attempt_key', 'observation_sha256', 'veto_sha256',
+             'config_sha256', 'manifest_sha256', 'operational_GO', 'writer_receipt_base64',
+             'writer_receipt_sha256', 'writer_exit_code', 'mode'}
+WRITER_KEYS = {'schema', 'status', 'code', 'session', 'mode', 'epoch', 'owner_uid',
+               'release_sha256', 'capacity_config_sha256', 'package_sha256', 'build_sha',
+               'capacity_veto_mode', 'massive_bars_enabled', 'cutoff_at', 'stale_temporaries',
+               'repaired_temporaries', 'prepare_status', 'waited_seconds', 'view',
+               'go_sha256', 'go_mode', 'template_sha256', 'window', 'published_at',
+               'binding_sha256', 'symbol_count', 'manifest_sha256', 'file'}
+GENERAL_KEYS = {'schema', 'mode', 'epoch', 'day', 'purpose', 'source_identity', 'authority_sha256',
+                'registry_sha256', 'observed_at', 'valid_until', 'status', 'owner_veto',
+                'required_pins', 'revoked_shas'}
+REGISTRY_KEYS = {'schema', 'mode', 'protocol', 'epoch', 'day', 'programs', 'originals', 'bridge',
+                 'ledger', 'outer_scope', 'authority_sha256', 'general_authority_sha256',
+                 'general_source_identity', 'not_before', 'not_after'}
+RULE_KEYS = {'schema', 'mode', 'epoch', 'day', 'source_pins', 'linked_source_sha256',
+             'invocation_request_sha256', 'invocation_bound_sha256', 'registry_derivation_sha256',
+             'phase_not_before', 'phase_not_after', 'verifiers'}
+GIT = re.compile(r'[0-9a-f]{40}\Z')
+LIMIT = 1024 * 1024  # Same document/output cap as the original J4 trusted child.
+
+
+@dataclass(frozen=True)
+class Binding:
+    registry_raw: bytes
+    request_raw: bytes
+    bound_raw: bytes
+    sources: tuple[tuple[str, bytes], ...]
+
+
+@dataclass(frozen=True)
+class Approval:
+    rule_raw: bytes
+    rule_sha256: str
+    registry_derivation_raw: bytes
+
+
+@dataclass(frozen=True)
+class DecodedJ:
+    """Views of conserved originals; not an issued COMPLETE or physical proof."""
+    writer_raw: bytes
+    linked_receipt: LinkedReceipt
+    core_receipt: c.Receipt
+    stdout_sha256: str
+    writer_sha256: str
+    config_sha256: str
+
+
+def native_utc():
+    return datetime.now(timezone.utc)
+
+
+def original_json(raw, code):
+    c.need(type(raw) is bytes and 0 < len(raw) <= LIMIT, code)
+    return c.strict(raw[:-1] if raw.endswith(b'\n') else raw)
+
+
+def instant(value):
+    c.need(type(value) is str and 0 < len(value) <= 40, 'J4_ORIGINAL_UTC_REQUIRED')
+    try:
+        out = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        c.need(out.utcoffset() == timedelta(0), 'J4_ORIGINAL_UTC_REQUIRED')
+    except (ValueError, TypeError):
+        raise c.Hold('J4_ORIGINAL_UTC_REQUIRED') from None
+    return out.astimezone(timezone.utc)
+
+
+def base64_original(text, code):
+    c.need(type(text) is str and 0 < len(text) <= (LIMIT * 4 // 3 + 4), code)
+    try:
+        raw = base64.b64decode(text, validate=True)
+    except (ValueError, TypeError):
+        raise c.Hold(code) from None
+    c.need(0 < len(raw) <= LIMIT and base64.b64encode(raw).decode('ascii') == text, code)
+    return raw
+
+
+def rows_pins(rows):
+    return type(rows) is list and all(c.pin(x) for x in rows) and rows == sorted(set(rows))
+
+
+class J4ReceiptAdapter:
+    def __init__(self, binding, *, approval, verify_approval, verify_original):
+        c.need(type(binding) is Binding and type(approval) is Approval
+               and c.pin(approval.rule_sha256) and c.sha(approval.rule_raw) == approval.rule_sha256,
+               'J4_EXTERNAL_APPROVAL_REQUIRED')
+        r = original_json(approval.rule_raw, 'J4_APPROVAL_BYTES')
+        c.need(set(r) == RULE_KEYS and r['schema'] == 'J4_APPROVED_DECODER_RULE_CANDIDATE_V1'
+               and r['mode'] in {'REAL', 'FIXTURE'} and r['epoch'] == c.EPOCH and r['day'] == c.DAY
+               and r['source_pins'] == SOURCE_PINS
+               and r['linked_source_sha256'] in (SOURCE_PINS['hot_worker'], SOURCE_PINS['j_slot'])
+               and all(c.pin(r[k]) for k in ('invocation_request_sha256', 'invocation_bound_sha256',
+                                             'registry_derivation_sha256')), 'J4_APPROVAL_ABI')
+        c.need(instant(r['phase_not_before']) < instant(r['phase_not_after']), 'J4_APPROVED_PHASE_WINDOW')
+        c.need(type(approval.registry_derivation_raw) is bytes
+               and c.sha(approval.registry_derivation_raw) == r['registry_derivation_sha256'],
+               'J4_APPROVED_DERIVATION_CHANGED')
+        c.need(type(binding.sources) is tuple and len(binding.sources) == len(SOURCE_PINS)
+               and all(type(x) is tuple and len(x) == 2 and type(x[0]) is str and type(x[1]) is bytes
+                       and 0 < len(x[1]) <= LIMIT for x in binding.sources), 'J4_EXACT_SOURCE_SET_REQUIRED')
+        source = dict(binding.sources)
+        c.need(len(source) == len(binding.sources) and set(source) == set(SOURCE_PINS)
+               and all(c.sha(raw) == SOURCE_PINS[name] for name, raw in source.items()),
+               'J4_APPROVED_SOURCE_CHANGED')
+        c.need(type(r['verifiers']) is dict and set(r['verifiers']) == {'approval', 'original'}
+               and type(verify_approval) is Verifier and type(verify_original) is Verifier,
+               'J4_INDEPENDENT_VERIFIERS_REQUIRED')
+        for name, verifier in (('approval', verify_approval), ('original', verify_original)):
+            verifier.validate(r['verifiers'][name], r['mode'])
+        registry = original_json(binding.registry_raw, 'J4_REGISTRY_BYTES')
+        q = original_json(binding.request_raw, 'J4_REQUEST_BYTES')
+        original_json(binding.bound_raw, 'J4_BOUND_BYTES')
+        c.need(set(registry) == REGISTRY_KEYS and registry['schema'] == 'R2D2_HOT_IMAGE10_REGISTRY_CANDIDATE_V1'
+               and registry['mode'] == r['mode'] and registry['protocol'] == 'WARM_IMAGE10_ACTUAL_OBSERVATION'
+               and registry['epoch'] == c.EPOCH and registry['day'] == c.DAY
+               and c.context(q) == (c.EPOCH, c.DAY, c.PREVIOUS, 'P')
+               and q['lane'] == 'DOWNSTREAM_AFTER_E6'
+               and c.sha(binding.request_raw) == r['invocation_request_sha256']
+               and c.sha(binding.bound_raw) == r['invocation_bound_sha256']
+               and registry['authority_sha256'] == q['authority_sha256']
+               and registry['outer_scope'] == list(c.context(q)) + ['admission_manifest'], 'J4_CONTEXT_UNBOUND')
+        c.need(type(registry['programs']) is dict and set(registry['programs']) == PROGRAMS
+               and type(registry['originals']) is dict and set(registry['originals']) == ORIGINALS,
+               'J4_REGISTRY_SET_CHANGED')
+        for kind in ('programs', 'originals'):
+            for record in registry[kind].values():
+                c.need(type(record) is dict and set(record) == {'path', 'sha256', 'ancestors'}
+                       and c.pin(record['sha256']) and type(record['path']) is str
+                       and record['path'].startswith('/') and type(record['ancestors']) is list,
+                       'J4_REGISTRY_RECORD_UNBOUND')
+        c.need(all(registry['programs'][name]['sha256'] == SOURCE_PINS[name]
+                   for name in ('hot_worker', 'hot_runtime', 'j_slot'))
+               and registry['originals']['request']['sha256'] == c.sha(binding.request_raw)
+               and registry['originals']['bound']['sha256'] == c.sha(binding.bound_raw)
+               and registry['originals']['rule']['sha256'] == r['registry_derivation_sha256'],
+               'J4_REGISTRY_PIN_CHANGED')
+        c.need(type(q['tasks']) is list and all(type(t) is dict for t in q['tasks']), 'J4_TASK_REQUIRED')
+        tasks = [t for t in q['tasks'] if t.get('operation') == 'admission_manifest']
+        c.need(len(tasks) == 1 and tasks[0]['not_before'] == registry['not_before'] == r['phase_not_before']
+               and tasks[0]['not_after'] == registry['not_after'] == r['phase_not_after'], 'J4_TASK_WINDOW_UNBOUND')
+        self.binding, self.approval, self.rule, self.registry, self.q = binding, approval, r, registry, q
+        self.verify_approval, self.verify_original = verify_approval, verify_original
+        self.fingerprint = self._fingerprint()
+
+    def _fingerprint(self):
+        b, a = self.binding, self.approval
+        return (c.sha(a.rule_raw), c.sha(a.registry_derivation_raw), c.sha(b.registry_raw),
+                c.sha(b.request_raw), c.sha(b.bound_raw), tuple((n, c.sha(raw)) for n, raw in b.sources))
+
+    def decode(self, stdout_raw, invocation, *, config_raw, now=None):
+        c.need(now is None, 'J4_CLOCK_INJECTION_FORBIDDEN')
+        c.need(type(invocation) is c.Invocation and invocation.operation == 'admission_manifest'
+               and invocation.context == (c.EPOCH, c.DAY, c.PREVIOUS, 'P')
+               and invocation.request_sha256 == self.rule['invocation_request_sha256']
+               and invocation.bound_sha256 == self.rule['invocation_bound_sha256'], 'J4_INVOCATION_UNBOUND')
+        c.need(type(config_raw) is bytes and 0 < len(config_raw) <= LIMIT, 'J4_ACTUAL_CONFIG_REQUIRED')
+        original_json(config_raw, 'J4_ACTUAL_CONFIG_REQUIRED')
+        current, mono = native_utc(), time.monotonic()
+        def guard():
+            nonlocal current, mono
+            wall, tick = native_utc(), time.monotonic()
+            c.need(wall >= current and tick >= mono, 'J4_CLOCK_REGRESSION')
+            current, mono = wall, tick
+            c.need(current < invocation.deadline_utc and tick < invocation.deadline_monotonic,
+                   'J4_DECODE_AFTER_DEADLINE')
+            c.need(instant(self.rule['phase_not_before']) <= current < instant(self.rule['phase_not_after']),
+                   'J4_DECODE_OUTSIDE_PHASE')
+            c.need(self._fingerprint() == self.fingerprint
+                   and original_json(self.approval.rule_raw, 'J4_APPROVAL_BYTES') == self.rule
+                   and original_json(self.binding.registry_raw, 'J4_REGISTRY_BYTES') == self.registry,
+                   'J4_DECODER_BINDING_CHANGED')
+            return current
+        guard()
+        self.verify_approval.invoke(self.rule['verifiers']['approval'], self.rule['mode'],
+                                   self.approval, self.binding, invocation, current)
+        guard()
+        c.need(type(stdout_raw) is bytes and stdout_raw.endswith(b'\n'), 'J4_PROCESS_STDOUT_INVALID')
+        process = original_json(stdout_raw, 'J4_PROCESS_STDOUT_INVALID')
+        slot = process.get('slot_result')
+        c.need(set(process) == PROCESS_KEYS and process['schema'] == 'R2D2_HOT_IMAGE10_PROCESS_RECEIPT_CANDIDATE_V1'
+               and process['mode'] == self.rule['mode'] and process['protocol'] == self.registry['protocol']
+               and process['registry_sha256'] == c.sha(self.binding.registry_raw)
+               and process['request_sha256'] == invocation.request_sha256
+               and process['bound_sha256'] == invocation.bound_sha256
+               and process['outer_attempt_key'] == c.sha(c.canonical(self.registry['outer_scope']))
+               and process['actual_installation_certified'] is False and process['operational_GO'] is False,
+               'J4_PROCESS_ORIGINAL_UNBOUND')
+        c.need(all(type(process[k]) is int and process[k] > 0 for k in ('pid', 'parent_pid', 'process_group'))
+               and (self.rule['mode'] != 'REAL' or process['pid'] != process['process_group']), 'J4_PROCESS_IDENTITY_INVALID')
+        c.need(type(slot) is dict and set(slot) == SLOT_KEYS and slot['mode'] == self.rule['mode']
+               and slot['status'] == 'COMPLETE' and slot['code'] == 'J_IMAGE_MANIFEST_COMPLETE'
+               and slot['operational_GO'] is False and type(slot['writer_exit_code']) is int
+               and slot['writer_exit_code'] == 0
+               and slot['attempt_key'] == c.sha(c.canonical([c.EPOCH, c.DAY, 'J_ADMISSION_FAMILY_V1']))
+               and all(c.pin(slot[k]) for k in ('observation_sha256', 'veto_sha256', 'config_sha256',
+                                               'manifest_sha256', 'writer_receipt_sha256')),
+               'J4_SLOT_NOT_COMPLETE')
+        writer_raw = base64_original(slot['writer_receipt_base64'], 'J4_WRITER_ORIGINAL_INVALID')
+        writer = original_json(writer_raw, 'J4_WRITER_ORIGINAL_INVALID')
+        c.need(writer_raw.endswith(b'\n') and c.sha(writer_raw) == slot['writer_receipt_sha256']
+               and set(writer) == WRITER_KEYS and writer['schema'] == 'R2D2_V2_BAR_MANIFEST_WRITER_RECEIPT_V1'
+               and writer['status'] == 'PUBLISHED_VERIFIED' and writer['mode'] == 'PUBLISH'
+               and writer['code'] is None and writer['epoch'] == c.EPOCH and writer['session'] == c.DAY,
+               'J4_WRITER_NOT_EXACT_PUBLISHED')
+        c.need(writer['go_mode'] == 'INDIVIDUAL' and writer['massive_bars_enabled'] is True
+               and writer['capacity_veto_mode'] == 'DISPATCH_AND_DERIVATION_ONLY'
+               and all(c.pin(writer[k]) for k in ('release_sha256', 'package_sha256', 'binding_sha256',
+                   'manifest_sha256', 'capacity_config_sha256', 'go_sha256', 'template_sha256'))
+               and type(writer['build_sha']) is str and GIT.fullmatch(writer['build_sha'])
+               and writer['capacity_config_sha256'] == slot['config_sha256'] == c.sha(config_raw)
+               and writer['manifest_sha256'] == slot['manifest_sha256'], 'J4_WRITER_FINAL_CONFIG_UNBOUND')
+        c.need(type(writer['symbol_count']) is int and 0 < writer['symbol_count'] <= 550
+               and writer['prepare_status'] in ('COMMITTED', 'ALREADY_COMMITTED', 'PRECOMMITTED')
+               and type(writer['stale_temporaries']) is int and writer['stale_temporaries'] >= 0
+               and type(writer['repaired_temporaries']) is int and writer['repaired_temporaries'] == 0
+               and type(writer['waited_seconds']) in (int, float) and writer['waited_seconds'] == 0,
+               'J4_WRITER_COUNTS_UNVERIFIED')
+        file = writer['file']
+        c.need(type(file) is dict and set(file) == {'uid', 'gid', 'mode', 'nlink', 'device', 'inode', 'size_within_limit'}
+               and all(type(file[k]) is int and file[k] >= 0 for k in ('uid', 'gid', 'device', 'inode'))
+               and file['inode'] > 0 and type(writer['owner_uid']) is int and writer['owner_uid'] == file['uid']
+               and (self.rule['mode'] != 'REAL' or file['uid'] == 0)
+               and file['mode'] == '0600' and type(file['nlink']) is int and file['nlink'] == 1
+               and file['size_within_limit'] is True, 'J4_WRITER_FILE_UNVERIFIED')
+        view, window = writer['view'], writer['window']
+        c.need(type(view) is dict and set(view) == {'observed_at', 'valid_until'}
+               and type(window) is dict and set(window) == {'not_before', 'not_after'}, 'J4_WRITER_WINDOW_ABI')
+        warm, observed, until, published = map(instant, (process['warm_at'], process['image_observed_at'],
+                                                        process['image_valid_until'], writer['published_at']))
+        c.need(instant('2026-10-12T04:00:00Z') <= warm
+               and instant(self.rule['phase_not_before']) <= warm <= observed <= published < until
+               and until <= instant(self.rule['phase_not_after']) and published <= current
+               and 0 < (until - observed).total_seconds() <= 10
+               and observed == instant(view['observed_at']) and until == instant(view['valid_until'])
+               and instant(window['not_before']) <= observed < until <= instant(window['not_after'])
+               and published < instant(writer['cutoff_at']), 'J4_WRITER_ORIGINAL_CLOCK_UNBOUND')
+        general_raw = base64_original(process['general_observation_base64'], 'J4_GENERAL_ORIGINAL_REQUIRED')
+        general = original_json(general_raw, 'J4_GENERAL_ORIGINAL_REQUIRED')
+        minimum = {c.sha(self.binding.registry_raw), self.registry['authority_sha256'],
+                   self.registry['general_authority_sha256']} | {x['sha256'] for kind in ('programs', 'originals')
+                                                                for x in self.registry[kind].values()}
+        c.need(set(general) == GENERAL_KEYS and general['schema'] == 'R2D2_HOT_GENERAL_FACTUAL_ENVELOPE_V1'
+               and general['mode'] == self.rule['mode'] and general['epoch'] == c.EPOCH and general['day'] == c.DAY
+               and general['purpose'] == 'J_ADMISSION_WARM_IMAGE10' and general['status'] == 'ALLOW'
+               and general['owner_veto'] is False and general['registry_sha256'] == c.sha(self.binding.registry_raw)
+               and general['authority_sha256'] == self.registry['general_authority_sha256']
+               and general['source_identity'] == self.registry['general_source_identity']
+               and rows_pins(general['required_pins']) and minimum <= set(general['required_pins'])
+               and rows_pins(general['revoked_shas'])
+               and not set(general['required_pins']) & set(general['revoked_shas'])
+               and warm <= instant(general['observed_at']) <= current
+               and instant(general['observed_at']) < instant(general['valid_until']),
+               'J4_GENERAL_ORIGINAL_UNBOUND')
+        # General may have been refreshed after link during the final readback;
+        # original semantic verifier must establish each actual pre-effect view.
+        guard()
+        self.verify_original.invoke(self.rule['verifiers']['original'], self.rule['mode'],
+                                    stdout_raw, self.binding, self.approval, invocation, config_raw,
+                                    current, process, writer, general_raw)
+        guard()
+        c.need(original_json(stdout_raw, 'J4_PROCESS_STDOUT_INVALID') == process
+               and original_json(writer_raw, 'J4_WRITER_ORIGINAL_INVALID') == writer
+               and writer['capacity_config_sha256'] == c.sha(config_raw), 'J4_VERIFIER_CHANGED_ORIGINALS')
+        linked = LinkedReceipt(writer_raw, self.rule['linked_source_sha256'], 'admission_manifest',
+                               invocation.context, 'COMPLETE', published, self.binding.request_raw, self.binding.bound_raw)
+        return DecodedJ(writer_raw, linked, c.Receipt(stdout_raw, 'admission_manifest', invocation.context,
+                                                    'COMPLETE', published), c.sha(stdout_raw),
+                        c.sha(writer_raw), c.sha(config_raw))

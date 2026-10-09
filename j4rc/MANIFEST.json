@@ -1,0 +1,129 @@
+{
+  "actual_installation_certified": false,
+  "ast_count": 13,
+  "files": [
+    {
+      "bytes": 4261,
+      "file": "NEW_FINAL_TESTS.log",
+      "sha256": "8aca92120bec5eb1d612683721f8b9190a248ecd888fd74804324a093a074dbe"
+    },
+    {
+      "bytes": 7230,
+      "file": "README.md",
+      "sha256": "82443b50d8617d47ac100d7609d6fdc9962f9e1a71b52301c67070bb5a26fd2a"
+    },
+    {
+      "bytes": 850,
+      "file": "RESULT_FINAL_41.json",
+      "sha256": "4d77dce815627f3a0e5b345cbd3b9b29b8451a8d7a6d16ca3b6eefed3ccd5517"
+    },
+    {
+      "bytes": 6204,
+      "file": "TEST_EXECUTION_RECORD.json",
+      "sha256": "3314f86c773d146ff720ff5e936ab9e862ff5ce288dfd55b3105d122677ec58e"
+    },
+    {
+      "ast": true,
+      "bytes": 8445,
+      "file": "capacity_monday_gate.py",
+      "sha256": "ebe04ca62c8b75ba0b2ed3444a14503e9f44c4b6937de3cf544d55f76142fc53"
+    },
+    {
+      "ast": true,
+      "bytes": 67696,
+      "file": "finite_batch.py",
+      "sha256": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec"
+    },
+    {
+      "bytes": 20203,
+      "file": "historical/CLOCK_SOURCE_4.py.txt",
+      "sha256": "5ebb37015e7e7b477a93f49f8549ed05899d481fd7fef54b0b3703a9419c1bdd"
+    },
+    {
+      "bytes": 20305,
+      "file": "historical/FRAMING_SOURCE_4.py.txt",
+      "sha256": "d56b1d08528ecaeed76000cae7abf8e4bbc646149277fe2ece57701b8b207a45"
+    },
+    {
+      "bytes": 20049,
+      "file": "historical/INITIAL_SOURCE_26.py.txt",
+      "sha256": "fd88a9e0a16d21edaa53ccafbfb0c0eede0ff8b64ef558bcfcab122d8932ea06"
+    },
+    {
+      "bytes": 14981,
+      "file": "historical/INITIAL_TEST_26.py.txt",
+      "sha256": "52f17e92a2d239fd5c1a433fd6d47b9a1945cba9f9757817da6e7a5aa378f63e"
+    },
+    {
+      "ast": true,
+      "bytes": 20364,
+      "file": "j4_receipt_adapter.py",
+      "sha256": "72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a"
+    },
+    {
+      "ast": true,
+      "bytes": 1198,
+      "file": "run_required.py",
+      "sha256": "01521f9ba0b7e1ba438fb9902d40b35ff35444d5530a5fcdd1cbb0458eb789ba"
+    },
+    {
+      "ast": true,
+      "bytes": 18564,
+      "file": "sources/hot_runtime.py",
+      "sha256": "55e2cc2c97c73d0b7ae9ad8289b9cf7ff28dfb26321690b5ea40cb21438921bc"
+    },
+    {
+      "ast": true,
+      "bytes": 11289,
+      "file": "sources/hot_worker.py",
+      "sha256": "0edb64f45b8a4e31e64aa274e778566106e3549d7e8fe2ab8d746dd1b751d8fa"
+    },
+    {
+      "ast": true,
+      "bytes": 26729,
+      "file": "sources/j_slot.py",
+      "sha256": "d4c029cabf895276e81dec38f38b387be9c85f03d4e26926846d3c8c8505db04"
+    },
+    {
+      "ast": true,
+      "bytes": 46977,
+      "file": "sources/manifest_writer.py",
+      "sha256": "aeda5b12d34a406b0d61e1e4696e3c535e89fa3dc680ce0d3b14bb4d60b1d387"
+    },
+    {
+      "ast": true,
+      "bytes": 1604,
+      "file": "test_j4_receipt_clock_delta.py",
+      "sha256": "b878603395f0a64882521f1fdaaaf5827df2ab90bb1c8c714e1faed130e641ba"
+    },
+    {
+      "ast": true,
+      "bytes": 14987,
+      "file": "test_j4_receipt_codec.py",
+      "sha256": "b9f8e10b4cc2c0d852ae185b58dee705c49667b8cf49bc6439ebdaf62cf0ca9c"
+    },
+    {
+      "ast": true,
+      "bytes": 3677,
+      "file": "test_j4_receipt_mode_delta.py",
+      "sha256": "7abbbd7d1d1fbc9c9eebe04e54b83a3db8b3d97249836779f39750686bd95656"
+    },
+    {
+      "ast": true,
+      "bytes": 1757,
+      "file": "test_j4_receipt_stdout_delta.py",
+      "sha256": "941f47f743b7b11c35647f10cc2e5727de583f8cd71b52a1b9eb4eb9e1175583"
+    },
+    {
+      "ast": true,
+      "bytes": 1870,
+      "file": "verification_binding.py",
+      "sha256": "78f4309d9713ea1c718d5635e5eed0dc71335c9b7cb7c82149185e868fc23c86"
+    }
+  ],
+  "files_count": 21,
+  "operational_GO": false,
+  "private_excluded": true,
+  "schema": "CODEX_J4_RECEIPT_CODEC_PUBLIC_MANIFEST_V1",
+  "source_sha256": "72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a"
+}

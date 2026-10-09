@@ -1,0 +1,47 @@
+test_actual_config_hash_must_match_embedded_original (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_already_published_is_not_new_j_complete (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_boolean_is_not_original_attestation (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_caller_clock_injection_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_duplicate_stdout_key_is_fatal (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_exact_original_bytes_and_published_time_preserved (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_explicit_j_source_selector_is_conserved (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_family_key_cannot_be_outer_operation_key (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_foreign_invocation_bound_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_general_revoked_origin_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_historical_epoch03_writer_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_image_view_over_ten_seconds_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_independent_origin_rejection_refuses_self_consistent_fields (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_late_callback_parse_is_not_complete (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_missing_independent_original_verifier_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_missing_raw_original_cannot_use_aggregate_hash (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_monotonic_expired_even_with_fixed_wall_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_nonutc_original_time_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_published_after_native_now_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_published_outside_image_view_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_real_cannot_promote_fixture_verifier (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_request_registry_selector_change_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_source_byte_mutation_refused_before_callbacks (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_transport_stdout_limit_is_finite (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_uncertain_terminal_never_yields_linked_complete (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_unknown_source_selector_refused (test_j4_receipt_codec.NewJ4Decoder) ... ok
+test_above_original_image_symbol_cap_refused (test_j4_receipt_clock_delta.NewFinalDelta) ... ok
+test_callback_crossing_phase_refused_before_linked_receipt (test_j4_receipt_clock_delta.NewFinalDelta) ... ok
+test_decoder_beyond_phase_rejects_wide_invocation_deadline (test_j4_receipt_clock_delta.NewFinalDelta) ... ok
+test_original_image_symbol_cap_550_accepted (test_j4_receipt_clock_delta.NewFinalDelta) ... ok
+test_child_print_exact_single_lf_is_preserved (test_j4_receipt_stdout_delta.NewStdoutDelta) ... ok
+test_duplicate_writer_json_key_is_refused (test_j4_receipt_stdout_delta.NewStdoutDelta) ... ok
+test_missing_writer_raw_has_no_hash_only_fallback (test_j4_receipt_stdout_delta.NewStdoutDelta) ... ok
+test_truncated_stdout_without_print_lf_is_refused (test_j4_receipt_stdout_delta.NewStdoutDelta) ... ok
+test_bool_false_is_not_writer_exit_int_zero (test_j4_receipt_mode_delta.NewExactModeDelta) ... ok
+test_claim_of_operational_go_is_not_source_protocol (test_j4_receipt_mode_delta.NewExactModeDelta) ... ok
+test_monday_original_published_time_survives_general_refresh_after_link (test_j4_receipt_mode_delta.NewExactModeDelta) ... ok
+test_original_verifier_cannot_rewrite_parsed_config_pin (test_j4_receipt_mode_delta.NewExactModeDelta) ... ok
+test_slot_fixture_mode_cannot_be_relabelled_real (test_j4_receipt_mode_delta.NewExactModeDelta) ... ok
+test_sunday_clock_cannot_be_relabelled_monday_j (test_j4_receipt_mode_delta.NewExactModeDelta) ... ok
+test_uncommitted_family_terminal_cannot_supply_published_writer (test_j4_receipt_mode_delta.NewExactModeDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 41 tests in 0.032s
+
+OK
+{"actual_installation_certified":false,"errors":0,"failures":0,"operational_GO":false,"pass":true,"schema":"J4_RECEIPT_CODEC_FIXTURE_RESULT_V1","scope":"NEW_PURE_CODEC_FIXTURES_ONLY","skipped":0,"source_sha256":"72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a","tests":41}

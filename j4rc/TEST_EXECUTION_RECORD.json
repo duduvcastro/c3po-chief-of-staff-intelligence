@@ -1,0 +1,143 @@
+{
+  "SQL": 0,
+  "actual_installation_certified": false,
+  "app_imports": 0,
+  "children": 0,
+  "current_complete_selection_rerun": true,
+  "current_required_selection": 41,
+  "current_source_sha256": "72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a",
+  "final_errors": 0,
+  "final_failures": 0,
+  "final_selected_tests": 41,
+  "final_selection_authorization": "ROOT explicitly authorized one current41 run after new Monday guard and peer before delivery",
+  "final_skipped": 0,
+  "final_source_sha256": "72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a",
+  "methods_distinct": 41,
+  "old_suites_run": false,
+  "operational_GO": false,
+  "physical_host_queries": 0,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.9.6",
+  "recorded_at": "2026-10-09T19:04:33.161093+00:00",
+  "required_final_selection_pending_linux": true,
+  "schema": "CODEX_J4_RECEIPT_CODEC_NEW_LOCAL_EXECUTION_RECORD_V1",
+  "selections": [
+    {
+      "errors": 0,
+      "failures": 0,
+      "scope": "INITIAL_NEW_SOURCE_ONLY",
+      "selection": "test_j4_receipt_codec.NewJ4Decoder",
+      "skipped": 0,
+      "source_sha256": "fd88a9e0a16d21edaa53ccafbfb0c0eede0ff8b64ef558bcfcab122d8932ea06",
+      "tests": 26
+    },
+    {
+      "errors": 0,
+      "failures": 0,
+      "scope": "NEW_CLOCK_SYMBOL_DELTA_ONLY",
+      "selection": "test_j4_receipt_clock_delta.NewFinalDelta",
+      "skipped": 0,
+      "source_sha256": "5ebb37015e7e7b477a93f49f8549ed05899d481fd7fef54b0b3703a9419c1bdd",
+      "tests": 4
+    },
+    {
+      "errors": 0,
+      "failures": 0,
+      "scope": "NEW_STDOUT_FRAMING_DELTA_ONLY",
+      "selection": "test_j4_receipt_stdout_delta.NewStdoutDelta",
+      "skipped": 0,
+      "source_sha256": "d56b1d08528ecaeed76000cae7abf8e4bbc646149277fe2ece57701b8b207a45",
+      "tests": 4
+    },
+    {
+      "errors": 0,
+      "failures": 0,
+      "scope": "ONE_FIXTURE_LF_AFFECTED_BY_GUARD_REPAIR",
+      "selection": "test_j4_receipt_codec.NewJ4Decoder.test_missing_raw_original_cannot_use_aggregate_hash",
+      "skipped": 0,
+      "source_sha256": "d56b1d08528ecaeed76000cae7abf8e4bbc646149277fe2ece57701b8b207a45",
+      "tests": 1
+    },
+    {
+      "errors": 0,
+      "failures": 0,
+      "scope": "NEW_EXACT_MODE_TERMINAL_MONDAY_CLOCK_DELTA",
+      "selection": "test_j4_receipt_mode_delta.NewExactModeDelta (first6 only)",
+      "skipped": 0,
+      "source_sha256": "72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a",
+      "tests": 6
+    },
+    {
+      "errors": 0,
+      "failures": 0,
+      "scope": "NEW_MONDAY_GENERAL_REFRESH_POSITIVE",
+      "selection": "test_j4_receipt_mode_delta.NewExactModeDelta.test_monday_original_published_time_survives_general_refresh_after_link",
+      "skipped": 0,
+      "source_sha256": "72f7dcaaf95fa0ce1db64f4828f0d70d233092898558415ee707f2cd25548b4a",
+      "tests": 1
+    }
+  ],
+  "test_inventory": [
+    {
+      "file": "test_j4_receipt_codec.py",
+      "methods": [
+        "NewJ4Decoder.test_exact_original_bytes_and_published_time_preserved",
+        "NewJ4Decoder.test_explicit_j_source_selector_is_conserved",
+        "NewJ4Decoder.test_unknown_source_selector_refused",
+        "NewJ4Decoder.test_source_byte_mutation_refused_before_callbacks",
+        "NewJ4Decoder.test_missing_independent_original_verifier_refused",
+        "NewJ4Decoder.test_real_cannot_promote_fixture_verifier",
+        "NewJ4Decoder.test_boolean_is_not_original_attestation",
+        "NewJ4Decoder.test_independent_origin_rejection_refuses_self_consistent_fields",
+        "NewJ4Decoder.test_foreign_invocation_bound_refused",
+        "NewJ4Decoder.test_request_registry_selector_change_refused",
+        "NewJ4Decoder.test_family_key_cannot_be_outer_operation_key",
+        "NewJ4Decoder.test_uncertain_terminal_never_yields_linked_complete",
+        "NewJ4Decoder.test_already_published_is_not_new_j_complete",
+        "NewJ4Decoder.test_historical_epoch03_writer_refused",
+        "NewJ4Decoder.test_actual_config_hash_must_match_embedded_original",
+        "NewJ4Decoder.test_missing_raw_original_cannot_use_aggregate_hash",
+        "NewJ4Decoder.test_duplicate_stdout_key_is_fatal",
+        "NewJ4Decoder.test_published_after_native_now_refused",
+        "NewJ4Decoder.test_image_view_over_ten_seconds_refused",
+        "NewJ4Decoder.test_published_outside_image_view_refused",
+        "NewJ4Decoder.test_nonutc_original_time_refused",
+        "NewJ4Decoder.test_caller_clock_injection_refused",
+        "NewJ4Decoder.test_late_callback_parse_is_not_complete",
+        "NewJ4Decoder.test_monotonic_expired_even_with_fixed_wall_refused",
+        "NewJ4Decoder.test_general_revoked_origin_refused",
+        "NewJ4Decoder.test_transport_stdout_limit_is_finite"
+      ]
+    },
+    {
+      "file": "test_j4_receipt_clock_delta.py",
+      "methods": [
+        "NewFinalDelta.test_original_image_symbol_cap_550_accepted",
+        "NewFinalDelta.test_above_original_image_symbol_cap_refused",
+        "NewFinalDelta.test_decoder_beyond_phase_rejects_wide_invocation_deadline",
+        "NewFinalDelta.test_callback_crossing_phase_refused_before_linked_receipt"
+      ]
+    },
+    {
+      "file": "test_j4_receipt_stdout_delta.py",
+      "methods": [
+        "NewStdoutDelta.test_child_print_exact_single_lf_is_preserved",
+        "NewStdoutDelta.test_truncated_stdout_without_print_lf_is_refused",
+        "NewStdoutDelta.test_missing_writer_raw_has_no_hash_only_fallback",
+        "NewStdoutDelta.test_duplicate_writer_json_key_is_refused"
+      ]
+    },
+    {
+      "file": "test_j4_receipt_mode_delta.py",
+      "methods": [
+        "NewExactModeDelta.test_monday_original_published_time_survives_general_refresh_after_link",
+        "NewExactModeDelta.test_bool_false_is_not_writer_exit_int_zero",
+        "NewExactModeDelta.test_claim_of_operational_go_is_not_source_protocol",
+        "NewExactModeDelta.test_uncommitted_family_terminal_cannot_supply_published_writer",
+        "NewExactModeDelta.test_slot_fixture_mode_cannot_be_relabelled_real",
+        "NewExactModeDelta.test_original_verifier_cannot_rewrite_parsed_config_pin",
+        "NewExactModeDelta.test_sunday_clock_cannot_be_relabelled_monday_j"
+      ]
+    }
+  ]
+}

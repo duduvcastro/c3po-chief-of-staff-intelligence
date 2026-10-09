@@ -1,0 +1,38 @@
+name: e04-codex-linux-proof10
+on:
+  push:
+    branches: ['ops/codex-epoch04-proof10-20261009']
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: run suites
+        run: |
+          set +e
+          python3 --version | tee py.txt
+          find j4rc -type f -name '*.py' -print0 | sort -z | xargs -0 sha256sum > SOURCES.sha256
+          (cd j4rc && python3 -I -B run_required.py) > j4rc.log 2>&1; e1=$?
+          python3 - "$e1" <<'PY'
+          import json,sys,hashlib,platform,re
+          t=open('j4rc.log').read(); m=re.findall(r'^Ran (\d+) tests?',t,re.M)
+          r={'schema':'FABLE_E04_CODEX_LINUX_PROOF_V10','python':platform.python_version(),'platform':platform.platform(),
+             'sources_sha256':hashlib.sha256(open('SOURCES.sha256','rb').read()).hexdigest(),
+             'j4rc':{'exit':int(sys.argv[1]),'ran':sum(map(int,m)) if m else None,'sha256':hashlib.sha256(t.encode()).hexdigest()}}
+          r['pass']=r['j4rc']['exit']==0
+          open('RESULT.json','w').write(json.dumps(r,sort_keys=True,indent=1)); print(json.dumps(r,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e04-proof10
+          path: |
+            RESULT.json
+            SOURCES.sha256
+            py.txt
+            *.log
+      - name: fail if required suites failed
+        run: python3 -c "import json,sys; sys.exit(0 if json.load(open('RESULT.json'))['pass'] else 1)"
