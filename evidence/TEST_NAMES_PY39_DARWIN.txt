@@ -1,0 +1,81 @@
+test_down_e6_j_alternatives_post_chain (__main__.EndToEnd) ... ok
+test_j4_registry_is_derived_and_checked_through_the_runtime (__main__.EndToEnd) ... ok
+test_up_core_chain_enters_only_through_outer_limiter_with_k9_abi (__main__.EndToEnd) ... ok
+test_up_runner_steps_run_under_the_closed_table_with_k9_ext_decoder (__main__.EndToEnd) ... ok
+test_no_reader_or_unit_start_anywhere_else (__main__.SessionStart) ... ok
+test_one_claim_supervisor_ready_recheck_reader_held (__main__.SessionStart) ... ok
+test_ready_absent_holds_after_the_supervisor_and_never_starts_the_reader (__main__.SessionStart) ... ok
+test_ready_divergent_fails_at_once (__main__.SessionStart) ... ok
+test_ready_removed_before_the_reader_start_is_refused_by_the_engine (__main__.SessionStart) ... ok
+test_ready_still_present_is_exact (__main__.SessionStart) ... ok
+test_refuses_before_any_effect_without_the_capacity_chain (__main__.SessionStart) ... ok
+test_veto_after_ready_blocks_the_reader (__main__.SessionStart) ... ok
+test_bootstrap_lane_installs_with_image_go_and_consumes_without_effect_off_monday (__main__.MondayLanes) ... ok
+test_capacity_chain_goes_for_the_actual_m3_original (__main__.MondayLanes) ... ok
+test_s4_capacity_source_is_the_producing_lot_effect_source (__main__.MondayLanes) ... ok
+test_c1_busy_lock_keeps_classification_and_burns_the_alternative (__main__.Corrections) ... ok
+test_c1_direct_core_run_is_never_called (__main__.Corrections) ... ok
+test_c2_crash_after_start_marker_leaves_a_consumed_option_and_no_claim (__main__.Corrections) ... ok
+test_c2_no_skip_a_complete_operation_is_never_rerun_or_skipped (__main__.Corrections) ... ok
+test_c2_torn_dependency_envelope_is_a_hold (__main__.Corrections) ... ok
+test_c2_torn_ledger_is_a_hold_and_is_never_truncated (__main__.Corrections) ... ok
+test_c3_import_needs_the_source_lot_bound_and_its_ledger_terminal (__main__.Corrections) ... ok
+test_c3_k9_original_is_decoded_status_label_is_not_evidence (__main__.Corrections) ... ok
+test_c3_prove_receipt_must_be_the_actual_presence_complete (__main__.Corrections) ... ok
+test_c4_engine_rechecks_folder_and_allow_at_transport (__main__.Corrections) ... ok
+test_c4_the_same_allow_is_never_renewed (__main__.Corrections) ... ok
+test_c4_veto_created_after_verify_is_seen_at_before_effect (__main__.Corrections) ... ok
+test_b1_boot_id_on_real_linux_procfs (__main__.Blockers) ... skipped 'Linux procfs only'
+test_b1_boot_id_reader_ignores_the_procfs_size_zero (__main__.Blockers) ... ok
+test_b2_installer_judges_the_host_only_through_the_installed_runtime (__main__.Blockers) ... ok
+test_b2_refusal_after_the_copy_is_a_hold_without_timers (__main__.Blockers) ... ok
+test_b4_unit_copies_never_restart (__main__.Blockers) ... ok
+test_b4_unit_grammar_holes_are_closed (__main__.Blockers) ... ok
+test_budget_floor_and_remaining_budget_before_the_effect (__main__.ShouldFix) ... ok
+test_j1_started_late_consumes_the_logical_attempt (__main__.ShouldFix) ... ok
+test_k9_host_bytes_must_equal_the_signed_runner_and_plan (__main__.ShouldFix) ... ok
+test_k9_rows_are_fixed_by_their_signed_plan (__main__.ShouldFix) ... ok
+test_s1_extended_table_is_closed (__main__.ShouldFix) ... ok
+test_s2_cross_lot_order_is_refused_before_any_write (__main__.ShouldFix) ... ok
+test_s3_mount_policy_denylist_and_epoch04_allowlist (__main__.ShouldFix) ... ok
+test_s5_j4_finite_batch_must_pin_the_ledger_core (__main__.ShouldFix) ... ok
+test_s6_epoch04_path_guards_for_gate_capacity_ready (__main__.ShouldFix) ... ok
+test_core_ledger_two_process_race_never_poisons (__main__.Review) ... ok
+test_cross_lot_spacing_is_checked_at_install_before_any_write (__main__.Review) ... ok
+test_docker_config_must_be_pinned_empty (__main__.Review) ... ok
+test_extended_ceiling_cap_and_floor (__main__.Review) ... ok
+test_extended_ceiling_kills_the_group_and_is_uncertain (__main__.Review) ... ok
+test_extended_container_is_bounded_by_its_inner_timeout (__main__.Review) ... ok
+test_family_seal_and_vendor_pins (__main__.Review) ... ok
+test_fixture_refused_on_host_and_no_clock_injection (__main__.Review) ... ok
+test_installer_never_skips_a_signed_slot (__main__.Review) ... ok
+test_kill_during_effect_consumes_and_never_runs_twice (__main__.Review) ... ok
+test_kill_during_extended_step_holds_its_dependents (__main__.Review) ... ok
+test_owner_signature_window_0700_2145_brt (__main__.Review) ... ok
+test_secret_env_file_policy (__main__.Review) ... ok
+test_slot_spacing_dependency_order_and_minutes_are_checked (__main__.Review)
+v3.1 (finding 3): FIXED instants (Saturday 10/10 11:38:00 BRT and later), never the wall clock, so the ... ok
+test_start_minute_rules_table (__main__.Review) ... ok
+test_timer_properties_and_exact_timeout (__main__.Review) ... ok
+test_two_processes_on_two_alternatives_run_exactly_once (__main__.Review) ... ok
+test_down_spec_draft_passes_every_v3_rule_with_fill_ins (__main__.Specs) ... ok
+test_up_spec_real_values_pass_every_v3_rule_with_fill_ins (__main__.Specs) ... ok
+test_f10_staged_w_seal_is_the_family_seal (__main__.V31) ... ok
+test_f11_image_timeout_readback (__main__.V31) ... ok
+test_f1_session_start_unit_rows_are_pinned_whole (__main__.V31)
+The reviewer's probe: a DOWN spec whose supervisor copy Wants/Requires c3po-reader.service bound in physical ... ok
+test_f1_unit_dependencies_and_environment_are_the_reference_ones (__main__.V31) ... ok
+test_f2_engine_refuses_the_supervisor_while_a_ready_file_exists (__main__.V31) ... ok
+test_f2_leftover_ready_is_a_hold_before_the_supervisor (__main__.V31) ... ok
+test_f4_parents_of_protected_folders_and_the_reader_secret_folder (__main__.V31) ... ok
+test_f4_physical_root_is_pinned (__main__.V31) ... ok
+test_f5_supervisor_dead_before_the_reader_holds_without_the_reader (__main__.V31) ... ok
+test_f5_supervisor_dead_during_the_hold_is_not_a_complete (__main__.V31) ... ok
+test_f6_session_start_window_starts_at_or_after_open_minus_90s (__main__.V31) ... ok
+test_f7_k9_request_must_name_the_image (__main__.V31) ... ok
+test_f7_unit_env_file_identity_is_pinned_in_the_claim (__main__.V31) ... ok
+
+----------------------------------------------------------------------
+Ran 74 tests in 426.739s
+
+OK (skipped=1)

@@ -1,0 +1,73 @@
+{"probe_unit_mount_grammar": {
+ "After+Wants=c3po-massive.service": "REFUSED:UNIT_DEPENDENCY_INVALID",
+ "Environment=DOCKER_CONTEXT=other": "REFUSED:UNIT_ENVIRONMENT_INVALID",
+ "Environment=DOCKER_HOST=tcp://10.0.0.9:2375": "REFUSED:UNIT_ENVIRONMENT_INVALID",
+ "Environment=LD_PRELOAD=/var/lib/c3po-bar/journal-e04/x.so": "REFUSED:UNIT_ENVIRONMENT_INVALID",
+ "OnFailure=x.service": "REFUSED:UNIT_PROPERTIES_INVALID",
+ "Requires=c3po-reader.service": "REFUSED:UNIT_DEPENDENCY_INVALID",
+ "Restart=always": "REFUSED:UNIT_RESTART_MUST_BE_NO",
+ "RestartSec=1s": "REFUSED:UNIT_PROPERTIES_INVALID",
+ "StartLimitBurst=9": "REFUSED:UNIT_PROPERTIES_INVALID",
+ "Wants=c3po-reader.service": "REFUSED:UNIT_DEPENDENCY_INVALID",
+ "ancestor_of_root_rw_mount_denylist": "MOUNT_PARENT_OF_PROTECTED_FORBIDDEN",
+ "ancestor_of_root_rw_mount_physical": "MOUNT_PARENT_OF_PROTECTED_FORBIDDEN",
+ "baseline_supervisor": "ACCEPTED",
+ "mounts": {
+  "/etc/c3po-reader-e04 ro": {
+   "denylist": "MOUNT_SOURCE_FORBIDDEN",
+   "physical_allowlist": "MOUNT_PARENT_OF_PROTECTED_FORBIDDEN"
+  },
+  "/etc/shadow ro": {
+   "denylist": "MOUNT_SOURCE_FORBIDDEN",
+   "physical_allowlist": "MOUNT_SOURCE_NOT_ALLOWLISTED"
+  },
+  "/var/lib/c3po-bar/journal ro": {
+   "denylist": "pass",
+   "physical_allowlist": "EPOCH03_JOURNAL_ROOT_FORBIDDEN"
+  },
+  "/var/lib/c3po-bar/journal-e04 rw": {
+   "denylist": "pass",
+   "physical_allowlist": "pass"
+  },
+  "/var/lib/c3po-l12host-e04 ro": {
+   "denylist": "MOUNT_L12_ROOT_FORBIDDEN",
+   "physical_allowlist": "MOUNT_L12_ROOT_FORBIDDEN"
+  },
+  "/var/lib/c3po-l12host-e04/ledger rw": {
+   "denylist": "MOUNT_L12_ROOT_FORBIDDEN",
+   "physical_allowlist": "MOUNT_L12_ROOT_FORBIDDEN"
+  },
+  "/var/lib/c3po-veto-e04 ro": {
+   "denylist": "pass",
+   "physical_allowlist": "pass"
+  },
+  "/var/lib/c3po-veto-e04 rw": {
+   "denylist": "MOUNT_VETO_WRITABLE_FORBIDDEN",
+   "physical_allowlist": "MOUNT_VETO_WRITABLE_FORBIDDEN"
+  },
+  "/var/lib/c3po/r2d2-v2-k9-20261005/secrets ro": {
+   "denylist": "pass",
+   "physical_allowlist": "pass"
+  },
+  "/var/lib/c3po/r2d2-v2-k9-20261005/secrets rw": {
+   "denylist": "pass",
+   "physical_allowlist": "EPOCH03_K9_ROOT_FORBIDDEN"
+  },
+  "/var/lib/containerd rw": {
+   "denylist": "MOUNT_SOURCE_FORBIDDEN",
+   "physical_allowlist": "MOUNT_SOURCE_NOT_ALLOWLISTED"
+  },
+  "/var/lib/postgresql rw": {
+   "denylist": "MOUNT_SOURCE_FORBIDDEN",
+   "physical_allowlist": "MOUNT_SOURCE_NOT_ALLOWLISTED"
+  }
+ }
+}
+, "probe_down_spec_escapes": {
+ "Environment=DOCKER_HOST": "REFUSED:UNIT_ENVIRONMENT_INVALID",
+ "Environment=LD_PRELOAD": "REFUSED:UNIT_ENVIRONMENT_INVALID",
+ "Requires=c3po-reader.service": "REFUSED:UNIT_DEPENDENCY_INVALID",
+ "Wants=c3po-reader.service": "REFUSED:UNIT_DEPENDENCY_INVALID",
+ "baseline": "BINDS_IN_PHYSICAL_MODE"
+}
+, "source": "v3 reviewer probes (fable-l12host-v3-20261009/review-tmp/adv) run unchanged against a copy of the v3.1 l12host/"}
