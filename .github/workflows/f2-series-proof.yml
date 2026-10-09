@@ -1,0 +1,56 @@
+# Fable installs this file in .github/workflows and this family at f2-series/.
+# Offline synthetic and harmless cipher proof. No production credentials, SSH,
+# provider, SQL, Docker, owner question, signed real leaf or operational job.
+name: f2-series-proof
+on:
+  push:
+    branches: [ops/f2-series-proof-20261009]
+permissions:
+  contents: read
+concurrency:
+  group: f2-series-proof-20261009
+  cancel-in-progress: false
+jobs:
+  proof:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.14'
+          check-latest: false
+      - name: Check exact family and new tests
+        run: |
+          set -eu
+          umask 077
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          mkdir /tmp/f2-proof-results
+          python -I -S -B f2-series/verify_family.py > /tmp/f2-proof-results/SEAL_RESULT.json
+          python -I -S -B f2-series/test_series.py > /tmp/f2-proof-results/TEST_RESULT.json 2> /tmp/f2-proof-results/TEST_NAMES.txt
+      - name: Pinned age for fixture only
+        run: |
+          set -eu
+          umask 077
+          mkdir /tmp/f2-proof-age
+          curl -fsSL -o /tmp/f2-proof-age/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo 'cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  /tmp/f2-proof-age/age.tgz' | sha256sum -c -
+          tar xzf /tmp/f2-proof-age/age.tgz -C /tmp/f2-proof-age --strip-components=1
+          echo 'eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c  /tmp/f2-proof-age/age' | sha256sum -c -
+          echo '0a0009db842259d6717f7eeb30acb6b90d2a2eb924c6acd0a0db0ca1f1537899  /tmp/f2-proof-age/age-keygen' | sha256sum -c -
+          chmod 500 /tmp/f2-proof-age/age /tmp/f2-proof-age/age-keygen
+      - name: Linux guards and actual crypto of synthetic evidence
+        run: |
+          set -eu
+          umask 077
+          python -I -S -B f2-series/test_linux_crypto.py /tmp/f2-proof-age/age /tmp/f2-proof-age/age-keygen > /tmp/f2-proof-results/CRYPTO_RESULT.json
+          python -I -S -B f2-series/verify_family.py > /tmp/f2-proof-results/SEAL_RESULT_AFTER.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: F2_OWN_LINUX_FIXTURE_PROOF
+          path: /tmp/f2-proof-results/
+          if-no-files-found: error
+          retention-days: 7
