@@ -1,0 +1,8 @@
+test_entrypoint_running_code_matches_the_actual_program (test_hot_protocol_delta.ProcessDelta) ... ok
+test_entrypoint_changed_running_code_is_not_a_source_pin (test_hot_protocol_delta.ProcessDelta) ... ok
+test_another_bound_cannot_reset_the_consumed_shared_family (test_hot_protocol_delta.FamilyDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.079s
+
+OK

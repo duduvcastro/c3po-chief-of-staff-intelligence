@@ -1,0 +1,8 @@
+test_fixed_isolated_subprocess_loads_only_registry_files_and_refuses_invalid_original (test_hot_protocol_delta.ProcessDelta) ... ok
+test_finalizer_permits_only_exact_veto_entry (test_hot_protocol_delta.ProcessDelta) ... ok
+test_finalizer_document_pin_change_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.248s
+
+OK

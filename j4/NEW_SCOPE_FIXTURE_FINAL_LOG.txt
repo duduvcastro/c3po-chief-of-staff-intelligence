@@ -1,0 +1,7 @@
+test_outer_operation_other_than_admission_cannot_supply_the_reservation (test_hot_protocol_delta.WatchdogAndBudgetDelta) ... ok
+test_full_writer_original_survives_private_family_terminal (test_hot_protocol_delta.J4ReceiptDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.087s
+
+OK

@@ -1,0 +1,6 @@
+test_full_writer_original_survives_private_family_terminal (test_hot_protocol_delta.J4ReceiptDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.016s
+
+OK

@@ -1,0 +1,39 @@
+test_another_bound_cannot_reset_the_consumed_shared_family (__main__.FamilyDelta) ... ok
+test_family_cannot_issue_core_original_complete (__main__.FamilyDelta) ... ok
+test_family_terminal_requires_private_owner_and_exact_schema (__main__.FamilyDelta) ... ok
+test_last_folder_recheck_refuses_veto_added_after_authority_before_file_creation (__main__.FamilyDelta) ... ok
+test_private_terminal_owner_cannot_be_reused (__main__.FamilyDelta) ... ok
+test_full_writer_original_survives_private_family_terminal (__main__.J4ReceiptDelta) ... ok
+test_boolean_authority_is_not_attestation (__main__.ProcessDelta) ... ok
+test_entrypoint_changed_running_code_is_not_a_source_pin (__main__.ProcessDelta) ... ok
+test_entrypoint_running_code_matches_the_actual_program (__main__.ProcessDelta) ... ok
+test_expired_image_cannot_be_saved_by_fresh_general_fact (__main__.ProcessDelta) ... ok
+test_finalizer_document_pin_change_refused (__main__.ProcessDelta) ... ok
+test_finalizer_permits_only_exact_veto_entry (__main__.ProcessDelta) ... ok
+test_fixed_isolated_subprocess_loads_only_registry_files_and_refuses_invalid_original (__main__.ProcessDelta) ... ok
+test_fixture_session_cannot_authorize_real_emitter (__main__.ProcessDelta) ... ok
+test_general_boolean_verifier_refused (__main__.ProcessDelta) ... ok
+test_general_expired_refused (__main__.ProcessDelta) ... ok
+test_general_future_refused (__main__.ProcessDelta) ... ok
+test_general_missing_critical_pin_refused (__main__.ProcessDelta) ... ok
+test_general_old_refused (__main__.ProcessDelta) ... ok
+test_general_owner_veto_refused (__main__.ProcessDelta) ... ok
+test_general_revoked_required_pin_refused (__main__.ProcessDelta) ... ok
+test_general_wrong_target_day_refused (__main__.ProcessDelta) ... ok
+test_image_instant_cannot_be_observed_before_warmup (__main__.ProcessDelta) ... ok
+test_image_ten_seconds_cannot_be_renewed (__main__.ProcessDelta) ... ok
+test_parent_cannot_supply_python_callback_via_transport (__main__.ProcessDelta) ... {"actual_installation_certified":false,"automatic_retry":false,"code":"HOT_FIXED_ARGV","operational_GO":false,"schema":"R2D2_HOT_IMAGE10_PROCESS_FAILURE_CANDIDATE_V1","status":"HOLD"}
+ok
+test_preload_and_general_observation_use_native_distinct_instant (__main__.ProcessDelta) ... ok
+test_real_emitter_without_private_child_session_refused (__main__.ProcessDelta) ... ok
+test_runtime_loaded_function_code_change_is_detected (__main__.ProcessDelta) ... ok
+test_source_file_change_is_refused_before_authority_callback (__main__.ProcessDelta) ... ok
+test_general_age_checked_at_each_file_effect_without_callback (__main__.WatchdogAndBudgetDelta) ... ok
+test_independent_watchdog_kills_own_fixture_group_while_parent_blocked_in_native_code (__main__.WatchdogAndBudgetDelta) ... ok
+test_outer_operation_other_than_admission_cannot_supply_the_reservation (__main__.WatchdogAndBudgetDelta) ... ok
+test_post_observation_work_is_included_in_projected_mark (__main__.WatchdogAndBudgetDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 33 tests in 1.968s
+
+OK

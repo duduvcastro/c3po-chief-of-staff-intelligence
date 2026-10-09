@@ -1,0 +1,52 @@
+test_family_cannot_issue_core_original_complete (test_hot_protocol_delta.FamilyDelta) ... ok
+test_family_terminal_requires_private_owner_and_exact_schema (test_hot_protocol_delta.FamilyDelta) ... ok
+test_invalid_identified_rule_consumes_shared_family_before_callbacks (test_hot_protocol_delta.FamilyDelta) ... FAIL
+test_private_terminal_owner_cannot_be_reused (test_hot_protocol_delta.FamilyDelta) ... ok
+test_boolean_authority_is_not_attestation (test_hot_protocol_delta.ProcessDelta) ... ok
+test_entrypoint_running_code_matches_the_actual_program (test_hot_protocol_delta.ProcessDelta) ... ERROR
+test_expired_image_cannot_be_saved_by_fresh_general_fact (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_boolean_verifier_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_expired_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_future_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_missing_critical_pin_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_old_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_owner_veto_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_revoked_required_pin_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_general_wrong_target_day_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_image_instant_cannot_be_observed_before_warmup (test_hot_protocol_delta.ProcessDelta) ... ok
+test_image_ten_seconds_cannot_be_renewed (test_hot_protocol_delta.ProcessDelta) ... ok
+test_parent_cannot_supply_python_callback_via_transport (test_hot_protocol_delta.ProcessDelta) ... {"actual_installation_certified":false,"automatic_retry":false,"code":"HOT_FIXED_ARGV","operational_GO":false,"schema":"R2D2_HOT_IMAGE10_PROCESS_FAILURE_CANDIDATE_V1","status":"HOLD"}
+ok
+test_preload_and_general_observation_use_native_distinct_instant (test_hot_protocol_delta.ProcessDelta) ... ok
+test_real_emitter_without_private_child_session_refused (test_hot_protocol_delta.ProcessDelta) ... ok
+test_runtime_loaded_function_code_change_is_detected (test_hot_protocol_delta.ProcessDelta) ... ok
+test_source_file_change_is_refused_before_authority_callback (test_hot_protocol_delta.ProcessDelta) ... ok
+
+======================================================================
+ERROR: test_entrypoint_running_code_matches_the_actual_program (test_hot_protocol_delta.ProcessDelta)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/test_hot_protocol_delta.py", line 79, in test_entrypoint_running_code_matches_the_actual_program
+    def test_entrypoint_running_code_matches_the_actual_program(self):worker.verify_running_code((HERE/'hot_worker.py').read_bytes())
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/hot_worker.py", line 63, in verify_running_code
+    need(name in codes and marshal.dumps(fn.__code__)==marshal.dumps(codes[name]),'HOT_RUNNING_SOURCE_CHANGED')
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/hot_worker.py", line 22, in need
+    if not ok:raise ValueError(code)
+ValueError: HOT_RUNNING_SOURCE_CHANGED
+
+======================================================================
+FAIL: test_invalid_identified_rule_consumes_shared_family_before_callbacks (test_hot_protocol_delta.FamilyDelta)
+----------------------------------------------------------------------
+finite_batch.ReservationFailure: ATTEMPT_CONSUMED_BY_OTHER_BOUND
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/test_hot_protocol_delta.py", line 117, in test_invalid_identified_rule_consumes_shared_family_before_callbacks
+    with self.assertRaisesRegex(self.batch.ReservationFailure,'ATTEMPT_ALREADY_CONSUMED'):self.j.claim_family(self.ledger,'c'*64,'d'*64)
+AssertionError: "ATTEMPT_ALREADY_CONSUMED" does not match "ATTEMPT_CONSUMED_BY_OTHER_BOUND"
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.789s
+
+FAILED (failures=1, errors=1)

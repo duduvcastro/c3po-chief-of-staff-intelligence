@@ -1,0 +1,8 @@
+test_general_age_checked_at_each_file_effect_without_callback (test_hot_protocol_delta.WatchdogAndBudgetDelta) ... ok
+test_independent_watchdog_kills_own_fixture_group_while_parent_blocked_in_native_code (test_hot_protocol_delta.WatchdogAndBudgetDelta) ... ok
+test_post_observation_work_is_included_in_projected_mark (test_hot_protocol_delta.WatchdogAndBudgetDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.772s
+
+OK

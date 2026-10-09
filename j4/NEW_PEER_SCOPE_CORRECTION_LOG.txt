@@ -1,0 +1,43 @@
+test_outer_operation_other_than_admission_cannot_supply_the_reservation (test_hot_protocol_delta.WatchdogAndBudgetDelta) ... FAIL
+test_full_writer_original_survives_private_family_terminal (test_hot_protocol_delta.J4ReceiptDelta) ... ERROR
+test_fixed_isolated_subprocess_loads_only_registry_files_and_refuses_invalid_original (test_hot_protocol_delta.ProcessDelta) ... /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/tempfile.py:817: ResourceWarning: Implicitly cleaning up <TemporaryDirectory '/var/folders/8b/ctmk_v6j0kgc6bqzptvrxzfw0000gn/T/tmp12l_g9nn'>
+  _warnings.warn(warn_message, ResourceWarning)
+ok
+
+======================================================================
+ERROR: test_full_writer_original_survives_private_family_terminal (test_hot_protocol_delta.J4ReceiptDelta)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/test_hot_protocol_delta.py", line 152, in test_full_writer_original_survives_private_family_terminal
+    helper=support.PeerDelta('runTest');helper.setUp();f=helper.f
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/fixture_support_j3.py", line 15, in setUp
+    self.f=fixture.JFixtures('runTest');self.f.setUp();self.mode='normal';self.receipt=None;self.returned=False
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/fixture_builder_j1.py", line 39, in setUp
+    impl={n:j.module_pin(n)for n in ('folder_veto','veto_emitter','config_finalizer','finite_batch','j_slot')}
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/fixture_builder_j1.py", line 39, in <dictcomp>
+    impl={n:j.module_pin(n)for n in ('folder_veto','veto_emitter','config_finalizer','finite_batch','j_slot')}
+  File "/private/var/folders/8b/ctmk_v6j0kgc6bqzptvrxzfw0000gn/T/tmp9kbnxpqm/j_slot.py", line 176, in module_pin
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1249, in read_bytes
+    with self.open(mode='rb') as f:
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1242, in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1110, in _opener
+    return self._accessor.open(self, flags, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/8b/ctmk_v6j0kgc6bqzptvrxzfw0000gn/T/tmp9kbnxpqm/folder_veto.py'
+
+======================================================================
+FAIL: test_outer_operation_other_than_admission_cannot_supply_the_reservation (test_hot_protocol_delta.WatchdogAndBudgetDelta)
+----------------------------------------------------------------------
+finite_batch.Hold: BOUND_PIN_CHANGED
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-hot-image10-20261009-r1/test_hot_protocol_delta.py", line 206, in test_outer_operation_other_than_admission_cannot_supply_the_reservation
+    with self.assertRaisesRegex(ValueError,'HOT_OUTER_OPERATION_SCOPE'):worker.run_loaded(fixture.loaded)
+AssertionError: "HOT_OUTER_OPERATION_SCOPE" does not match "BOUND_PIN_CHANGED"
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.225s
+
+FAILED (failures=1, errors=1)
