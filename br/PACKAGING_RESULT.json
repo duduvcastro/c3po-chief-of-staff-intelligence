@@ -1,0 +1,14 @@
+{
+  "AST_count": 12,
+  "archive_bytes": 48952,
+  "archive_sha256": "d438bc4211cc809776f4c07362e03208a9850360cab41fb3f2b8eb4a4d542119",
+  "fixture_bodies_reexecuted": 0,
+  "fresh_extraction_imports_isolated_unrelated_cwd": true,
+  "hash_divergences": 0,
+  "manifest_sha256": "91fbff5f4e5c54688d76b0b23222049afa4f6549b686605437f3912cb9787986",
+  "members": 21,
+  "observed_at": "2026-10-09T19:40:50.044634+00:00",
+  "operational_app_imports": 0,
+  "public_files": 20,
+  "schema": "CODEX_BOUNDED_READBACK_PACKAGE_CHECK_V1"
+}

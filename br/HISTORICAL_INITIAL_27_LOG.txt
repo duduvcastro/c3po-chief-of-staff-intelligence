@@ -1,0 +1,32 @@
+test_absence_field_must_be_explicit (test_bounded_readback.BoundedTests.test_absence_field_must_be_explicit) ... ok
+test_absent_universe_is_verified_absence_and_not_capture (test_bounded_readback.BoundedTests.test_absent_universe_is_verified_absence_and_not_capture) ... ok
+test_after_capture_keeps_original_universe_and_copy (test_bounded_readback.BoundedTests.test_after_capture_keeps_original_universe_and_copy) ... ok
+test_boolean_callback_is_not_attestation (test_bounded_readback.BoundedTests.test_boolean_callback_is_not_attestation) ... ok
+test_boolean_version_rejected (test_bounded_readback.BoundedTests.test_boolean_version_rejected) ... ok
+test_bounded_bridge_checks_real_phase_and_native_clocks (test_bounded_readback.BoundedTests.test_bounded_bridge_checks_real_phase_and_native_clocks) ... ok
+test_cross_request_bound_phase_scope_rejected (test_bounded_readback.BoundedTests.test_cross_request_bound_phase_scope_rejected) ... ok
+test_duplicate_json_rejected (test_bounded_readback.BoundedTests.test_duplicate_json_rejected) ... ok
+test_duplicate_native_key_not_hidden (test_bounded_readback.BoundedTests.test_duplicate_native_key_not_hidden) ... ok
+test_fixture_cannot_promote_to_real (test_bounded_readback.BoundedTests.test_fixture_cannot_promote_to_real) ... ok
+test_full_journal_hash_byte_count_and_anchor_exact (test_bounded_readback.BoundedTests.test_full_journal_hash_byte_count_and_anchor_exact) ... ok
+test_head_changed_requires_origin_verifier (test_bounded_readback.BoundedTests.test_head_changed_requires_origin_verifier) ... ok
+test_large_twenty_megabyte_journal_becomes_limited_readback (test_bounded_readback.BoundedTests.test_large_twenty_megabyte_journal_becomes_limited_readback) ... ok
+test_missing_verifier_is_not_fallback (test_bounded_readback.BoundedTests.test_missing_verifier_is_not_fallback) ... ok
+test_native_integral_source_definitions_exact (test_bounded_readback.BoundedTests.test_native_integral_source_definitions_exact) ... ok
+test_partial_full_chain_not_projected (test_bounded_readback.BoundedTests.test_partial_full_chain_not_projected) ... ok
+test_plain_selected_hashes_are_not_origin_proof (test_bounded_readback.BoundedTests.test_plain_selected_hashes_are_not_origin_proof) ... ok
+test_rehashed_record_does_not_prove_membership (test_bounded_readback.BoundedTests.test_rehashed_record_does_not_prove_membership) ... ok
+test_stale_or_future_observation_rejected (test_bounded_readback.BoundedTests.test_stale_or_future_observation_rejected) ... ok
+test_state_hash_corruption_not_projected (test_bounded_readback.BoundedTests.test_state_hash_corruption_not_projected) ... ok
+test_state_projection_rehash_does_not_replace_original (test_bounded_readback.BoundedTests.test_state_projection_rehash_does_not_replace_original) ... ok
+test_suffix_only_not_projected (test_bounded_readback.BoundedTests.test_suffix_only_not_projected) ... ok
+test_unknown_projection_key_rejected (test_bounded_readback.BoundedTests.test_unknown_projection_key_rejected) ... ok
+test_unselected_record_corruption_not_hidden (test_bounded_readback.BoundedTests.test_unselected_record_corruption_not_hidden) ... ok
+test_verified_projection_and_selected_mutations_rejected (test_bounded_readback.BoundedTests.test_verified_projection_and_selected_mutations_rejected) ... ok
+test_version_changed_requires_origin_verifier (test_bounded_readback.BoundedTests.test_version_changed_requires_origin_verifier) ... ok
+test_wire_oversize_rejected_before_json (test_bounded_readback.BoundedTests.test_wire_oversize_rejected_before_json) ... ok
+
+----------------------------------------------------------------------
+Ran 27 tests in 0.187s
+
+OK

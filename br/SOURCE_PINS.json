@@ -1,0 +1,20 @@
+{
+  "imports_app": 0,
+  "revision": "de96aee90a26e9587663ba7a1f6e55a592afcd20",
+  "source_records": [
+    {
+      "bytes": 11458,
+      "git_blob_sha": "cb776abd60ee87f72238c2bc2a94b83326402a0c",
+      "path": "c3po/backend/app/r2d2_v2_store.py",
+      "sha256": "9f9887c267af10c5494ec1a4dd2628b05f74f40dd2bae34e340bf81f00575254"
+    },
+    {
+      "bytes": 21379,
+      "git_blob_sha": "f5262331779165b62b4c3b59ef92f4a22f87b937",
+      "path": "c3po/backend/app/r2d2_v2_live_controller.py",
+      "sha256": "325d405b9c96a4f1c786d5115be8e92bb2816edc5fc7565806016166375c5768"
+    }
+  ],
+  "sql_execution": 0,
+  "tree": "4dde27a7dc9a328662f9635c5c114ef646d52344"
+}

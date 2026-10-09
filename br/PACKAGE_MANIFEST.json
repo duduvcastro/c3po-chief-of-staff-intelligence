@@ -1,0 +1,111 @@
+{
+  "AST_count": 12,
+  "current_required_fixture_methods": 34,
+  "files": [
+    {
+      "bytes": 275,
+      "file": "FINAL_DELTA_LOG.txt",
+      "sha256": "cc90a09f9e228df7c5c9a4f2ef5da1b9033b649070c227c12df7fcd344e8c2a4"
+    },
+    {
+      "bytes": 1531,
+      "file": "FINAL_RESULT.json",
+      "sha256": "41b91614fc60e0ea21905468c916efd2c994586bbbc63c61d5d7975467ed8f8d"
+    },
+    {
+      "bytes": 3657,
+      "file": "HISTORICAL_INITIAL_27_LOG.txt",
+      "sha256": "503729acf3741a08db25f47d24f0890e9ee6c3a71bc93170248a18f7fcbf5fdb"
+    },
+    {
+      "bytes": 5797,
+      "file": "HISTORICAL_INITIAL_34_LOG.txt",
+      "sha256": "587a20751d763c1c844d4780d6ed2026e9ebd4b42cc8b5b56c633a6eff57d877"
+    },
+    {
+      "bytes": 1089,
+      "file": "HISTORICAL_INITIAL_34_RESULT.json",
+      "sha256": "c1dc551495e6a8a9473ab9f910e9a0f499fb814a63e241852f1e666d88f61aae"
+    },
+    {
+      "bytes": 17780,
+      "file": "HISTORICAL_TEST_BEFORE_FIXTURE.py.txt",
+      "sha256": "74e69c36e7b12fae38d4e50bac940453388e19233dc5cfce0d374344d97903a6"
+    },
+    {
+      "bytes": 8554,
+      "file": "README.md",
+      "sha256": "adf7e848fa0a3ccbfba972a60d9c00e213e4a1d6ae62a8a8d2c315a9c6a373a8"
+    },
+    {
+      "bytes": 663,
+      "file": "SOURCE_PINS.json",
+      "sha256": "65c328ddb94aafb138e988455a76ff76067b6c9cc537ca25ed82e1992dfb85b7"
+    },
+    {
+      "bytes": 5434,
+      "file": "bounded_image_capacity_gate.py",
+      "sha256": "ade4c4b00bda8bed20c241ad6b97391c0b8d1764daa8f964b22705af8ea4415c"
+    },
+    {
+      "bytes": 18707,
+      "file": "bounded_readback.py",
+      "sha256": "2a3c1ca90f233332b8579125238d4787c72694915ab81d4dbf85d9c288a7450e"
+    },
+    {
+      "bytes": 67696,
+      "file": "finite_batch.py",
+      "sha256": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec"
+    },
+    {
+      "bytes": 8004,
+      "file": "image_capacity_gate.py",
+      "sha256": "58a6104e8d1efcab2199d388ffe17e602abf315304449dd1be5178f57f7c12ec"
+    },
+    {
+      "bytes": 38509,
+      "file": "image_path_adapter.py",
+      "sha256": "99148f808ea4049c631b57dffb5f0f7b02c668d880ed6826077b70336efc0934"
+    },
+    {
+      "bytes": 1497,
+      "file": "run_required.py",
+      "sha256": "1e230ae05001428859e8b29d51f9770f95559e056115b70bd9b854270dbd1aa6"
+    },
+    {
+      "bytes": 21379,
+      "file": "sources/r2d2_v2_live_controller.py",
+      "sha256": "325d405b9c96a4f1c786d5115be8e92bb2816edc5fc7565806016166375c5768"
+    },
+    {
+      "bytes": 11458,
+      "file": "sources/r2d2_v2_store.py",
+      "sha256": "9f9887c267af10c5494ec1a4dd2628b05f74f40dd2bae34e340bf81f00575254"
+    },
+    {
+      "bytes": 2649,
+      "file": "synthetic_bridge_plan.py",
+      "sha256": "8480f7d328a25c890cc475cd4b26f21ad30a8cc52fb69e98c6a19ec3ba60cdc8"
+    },
+    {
+      "bytes": 3449,
+      "file": "synthetic_gate_fixture.py",
+      "sha256": "88a8309df46c0aea831ad836a7434ca7ed5fc0ddcffb6151aca76585f56b71f2"
+    },
+    {
+      "bytes": 18028,
+      "file": "test_bounded_readback.py",
+      "sha256": "cd8d4ed1fe5c1ff33d76f17534338090ad56eb7a04755a7a1babf1e8f34065fe"
+    },
+    {
+      "bytes": 1870,
+      "file": "verification_binding.py",
+      "sha256": "78f4309d9713ea1c718d5635e5eed0dc71335c9b7cb7c82149185e868fc23c86"
+    }
+  ],
+  "mode": "OFFLINE_SOURCE_AND_SYNTHETIC_PROOFS_ONLY",
+  "operational_GO": false,
+  "own_SQL": 0,
+  "own_app_imports": 0,
+  "schema": "CODEX_BOUNDED_READBACK_PACKAGE_MANIFEST_V1"
+}

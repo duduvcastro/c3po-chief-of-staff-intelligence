@@ -1,0 +1,37 @@
+{
+  "authority_created": false,
+  "current_errors": 0,
+  "current_failures": 0,
+  "current_passes": 34,
+  "current_required_methods": 34,
+  "current_skips": 0,
+  "execution_current_source": {
+    "affected_selection_methods": 1,
+    "changed_fixture_method": [
+      "test_parser_complexity_or_nonfinite_input_fails_with_constant_code"
+    ],
+    "initial_fixture_assertion_failures": 1,
+    "initial_passes": 33,
+    "initial_selection_methods": 34,
+    "unaffected_method_AST_exact": 33,
+    "unaffected_methods_not_repeated": 33
+  },
+  "linux_own_proof": "PENDING",
+  "mode": "SYNTHETIC_ONLY",
+  "observed_at": "2026-10-09T19:39:25.121964+00:00",
+  "own_app_imports": 0,
+  "own_host": 0,
+  "own_sql": 0,
+  "platform": "darwin",
+  "python": "3.12.14",
+  "schema": "CODEX_CURRENT_BOUNDED_READBACK_REQUIRED_RESULT_V1",
+  "source_sha256": {
+    "bounded_image_capacity_gate.py": "ade4c4b00bda8bed20c241ad6b97391c0b8d1764daa8f964b22705af8ea4415c",
+    "bounded_readback.py": "2a3c1ca90f233332b8579125238d4787c72694915ab81d4dbf85d9c288a7450e",
+    "finite_batch.py": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec",
+    "image_capacity_gate.py": "58a6104e8d1efcab2199d388ffe17e602abf315304449dd1be5178f57f7c12ec",
+    "image_path_adapter.py": "99148f808ea4049c631b57dffb5f0f7b02c668d880ed6826077b70336efc0934",
+    "test_bounded_readback.py": "cd8d4ed1fe5c1ff33d76f17534338090ad56eb7a04755a7a1babf1e8f34065fe",
+    "verification_binding.py": "78f4309d9713ea1c718d5635e5eed0dc71335c9b7cb7c82149185e868fc23c86"
+  }
+}

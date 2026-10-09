@@ -1,0 +1,296 @@
+"""NEW synthetic contract tests, never DB/runtime/authority attestation."""
+import base64
+from copy import deepcopy
+from dataclasses import replace
+from datetime import timedelta
+import json
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+import bounded_readback as b
+import bounded_image_capacity_gate as g
+import image_capacity_gate as old_bridge
+import image_path_adapter as a
+import finite_batch as core
+from verification_binding import Verifier
+from synthetic_gate_fixture import fixture,OPEN,PREPARED,CAPTURE_OPEN
+from synthetic_bridge_plan import DownFixture
+
+
+class Fixture:
+    def __init__(self,*,phase='BEFORE_CAPTURE_LAUNCH',captured=False,padding_records=0):
+        self.scope,self.receipt,self.row,self.records,self.manifest,self.ready,self.catalog,self.root=fixture()
+        self.authority=a.canonical({'fixture':'SYNTHETIC_NOT_READ_AUTHORITY'})
+        self.scope=replace(self.scope,finite_authority_sha256=a.sha(self.authority))
+        self.phase=phase
+        self.at=CAPTURE_OPEN+timedelta(seconds=1) if captured else CAPTURE_OPEN-timedelta(minutes=1)
+        self.row['version']=1
+        self.row['manifest_sha']='e'*64
+        self.row['state']['ledger']={'processed_events':{'unused':'x'*100_000}}
+        for i in range(padding_records):
+            self.append({'journal_key':f'padding:{i}','type':'SYNTHETIC_PADDING','padding':'x'*50_000},PREPARED)
+        if captured:
+            causal={'status':'AVAILABLE','symbols':['FIXA','FIXB'],'n_cut':550,
+                    'list_sha256':'b'*64,'commitment_sha256':'c'*64}
+            self.row['state']['sessions'][self.scope.day]={
+                'capacity_binding':deepcopy(self.row['state']['daily_capacity'][self.scope.day]),
+                'universe':['US:FIXA','US:FIXB'],'universe_sha':causal['list_sha256'],'causal_list':causal}
+            self.append({'journal_key':'universe:'+self.scope.day,'type':'CAUSAL_UNIVERSE',
+                         'session':self.scope.day,'causal_list':causal},CAPTURE_OPEN+timedelta(milliseconds=600))
+        self.row['state_sha']=a.digest(self.row['state'])
+        self.request='d'*64;self.bound='f'*64
+        self.origin=a.canonical({'fixture':'SYNTHETIC_NOT_DB_ATTESTATION','row_state_sha':self.row['state_sha']})
+        self.raw=self.produce()
+        self.expected=self.raw
+        self.rule=a.canonical({'schema':b.RULE_SCHEMA,'mode':'FIXTURE','epoch':self.scope.epoch,
+            'session':self.scope.day,'native_store_source_sha256':b.STORE_SHA,
+            'producer_source_sha256':a.sha(Path(b.__file__).read_bytes()),
+            'state_fields':list(b.STATE_FIELDS),'session_fields':list(b.SESSION_FIELDS),
+            'selected_key_templates':['capacity-prepared:D','universe:D'],'wire_limit':b.WIRE_LIMIT,
+            'verifiers':{'rule':{'identity':'fixture_rule','source_sha256':'1'*64},
+                         'readback':{'identity':'fixture_readback','source_sha256':'2'*64}}})
+        self.rule_verifier=Verifier('FIXTURE','fixture_rule','1'*64,self.verify_rule)
+        self.readback_verifier=Verifier('FIXTURE','fixture_readback','2'*64,self.verify_readback)
+
+    def append(self,payload,at):
+        record={'epoch':self.scope.epoch,'sequence':len(self.records)+1,'journal_key':payload['journal_key'],
+                'recorded_at':at.isoformat(),'payload':payload,'previous_sha':self.row['journal_head']}
+        record['record_sha']=a.digest(record)
+        self.records.append(record);self.row['journal_head']=record['record_sha'];self.row['version']+=1
+
+    def produce(self):
+        return b.build_readback(self.row,self.records,scope=self.scope,phase=self.phase,mode='FIXTURE',
+            observed_at=self.at,request_sha256=self.request,bound_sha256=self.bound,origin_statement_raw=self.origin,
+            state_pg_text_bytes=len(a.canonical(self.row['state'])))
+
+    def verify_rule(self,rule_raw,rule_sha,*args):
+        core.need(rule_raw==self.rule and rule_sha==a.sha(self.rule),'FIXTURE_RULE_CHANGED')
+
+    def verify_readback(self,raw,origin,*args):
+        # An explicit synthetic trusted original; no actual DB is present.
+        core.need(raw==self.expected and origin==self.origin,'FIXTURE_ORIGINAL_CHANGED')
+
+    def decoder(self,**kwargs):
+        return b.BoundedReadbackDecoder(self.rule,a.sha(self.rule),self.rule_verifier,
+            kwargs.get('readback_verifier',self.readback_verifier),request_sha256=self.request,
+            bound_sha256=self.bound,read_authority_raw=self.authority,mode=kwargs.get('mode','FIXTURE'))
+
+    def decode(self,raw=None,**kwargs):
+        return self.decoder().decode(raw or self.raw,self.scope,self.phase,
+                                    now=kwargs.get('now',self.at),plan={'authority_sha256':a.sha(self.authority)},task={})
+
+
+class BoundedTests(unittest.TestCase):
+    def mutated(self,f,mutation):
+        value=json.loads(f.raw);mutation(value);return a.canonical(value)
+    def reject(self,call,code=None):
+        with self.assertRaises((a.Hold,core.Hold)) as error:call()
+        if code:self.assertEqual(str(error.exception),code)
+
+    def test_large_twenty_megabyte_journal_becomes_limited_readback(self):
+        f=Fixture(padding_records=420)
+        self.assertGreater(len(a.canonical(f.records)),20*1024*1024)
+        self.assertLess(len(f.raw),12_000)
+        decoded=f.decode()
+        result=a.check_capacity_manifest(f.scope,f.receipt,decoded.row,decoded.journal,f.manifest)
+        self.assertEqual(result['state_sha256'],f.row['state_sha'])
+        self.assertNotEqual(a.digest(decoded.row['state']),f.row['state_sha'])
+        self.assertNotIn('ledger',decoded.row['state'])
+        self.assertEqual(decoded.journal.count,421)
+
+    def test_native_integral_source_definitions_exact(self):
+        self.assertEqual(a.sha((Path(b.__file__).parent/'sources/r2d2_v2_store.py').read_bytes()),b.STORE_SHA)
+        self.assertIn('verify_journal',b._native_verifier())
+
+    def test_after_capture_keeps_original_universe_and_copy(self):
+        f=Fixture(phase='AFTER_CAPTURE',captured=True);d=f.decode()
+        result=a.after_capture_gate(f.scope,f.receipt,d.row,d.journal,f.manifest,now=f.at)
+        self.assertTrue(result['causal_universe_committed'])
+        self.assertFalse(result['physical_retry_authorized'])
+
+    def test_absent_universe_is_verified_absence_and_not_capture(self):
+        f=Fixture(phase='AFTER_CAPTURE');f.at=CAPTURE_OPEN+timedelta(seconds=1);f.raw=f.expected=f.produce();d=f.decode()
+        self.reject(lambda:a.after_capture_gate(f.scope,f.receipt,d.row,d.journal,f.manifest,now=f.at),'CAPTURE_NOT_YET_COMMITTED')
+
+    def test_partial_full_chain_not_projected(self):
+        f=Fixture(padding_records=2);f.records.pop()
+        self.reject(f.produce,'BOUNDED_NATIVE_CHAIN_INVALID')
+
+    def test_suffix_only_not_projected(self):
+        f=Fixture(padding_records=2);f.records=f.records[1:]
+        self.reject(f.produce,'BOUNDED_NATIVE_CHAIN_INVALID')
+
+    def test_state_hash_corruption_not_projected(self):
+        f=Fixture();f.row['state']['epoch']='wrong'
+        self.reject(f.produce,'BOUNDED_NATIVE_CHAIN_INVALID')
+
+    def test_unselected_record_corruption_not_hidden(self):
+        f=Fixture(padding_records=2);f.records[-1]['payload']['padding']='changed'
+        self.reject(f.produce,'BOUNDED_NATIVE_CHAIN_INVALID')
+
+    def test_duplicate_native_key_not_hidden(self):
+        f=Fixture();f.append(deepcopy(f.records[0]['payload']),PREPARED)
+        self.reject(f.produce,'BOUNDED_NATIVE_CHAIN_INVALID')
+
+    def test_boolean_version_rejected(self):
+        f=Fixture();f.row['version']=True
+        self.reject(f.produce,'BOUNDED_NATIVE_ANCHOR_INVALID')
+
+    def test_native_live_size_measurement_and_canonical_limit_precede_verifier(self):
+        f=Fixture()
+        for size in (True,0,b.NATIVE_STATE_LIMIT+1):
+            with self.subTest(size=size),patch.object(b,'_native_verifier',side_effect=AssertionError('must_not_verify')):
+                self.reject(lambda:b.build_readback(f.row,f.records,scope=f.scope,phase=f.phase,mode='FIXTURE',
+                    observed_at=f.at,request_sha256=f.request,bound_sha256=f.bound,origin_statement_raw=f.origin,
+                    state_pg_text_bytes=size),'BOUNDED_NATIVE_STATE_SIZE')
+        f.row['state']['ledger']['processed_events']['unused']='x'*(b.NATIVE_STATE_LIMIT+1)
+        with patch.object(b,'_native_verifier',side_effect=AssertionError('must_not_verify')):
+            self.reject(lambda:b.build_readback(f.row,f.records,scope=f.scope,phase=f.phase,mode='FIXTURE',
+                observed_at=f.at,request_sha256=f.request,bound_sha256=f.bound,origin_statement_raw=f.origin,
+                state_pg_text_bytes=100),'BOUNDED_NATIVE_STATE_SIZE')
+
+    def test_record_limit_precedes_integral_verifier(self):
+        f=Fixture();f.records[0]['payload']['oversize']='x'*(b.PRODUCER_RECORD_LIMIT+1)
+        with patch.object(b,'_native_verifier',side_effect=AssertionError('must_not_verify')):
+            self.reject(f.produce,'BOUNDED_NATIVE_RECORD_LIMIT')
+
+    def test_native_null_session_cannot_be_erased_as_absence(self):
+        f=Fixture();f.row['state']['sessions'][f.scope.day]=None;f.row['state_sha']=a.digest(f.row['state'])
+        self.reject(f.produce,'BOUNDED_SESSION_SHAPE')
+
+    def test_consumer_does_not_bypass_native_live_state_limit(self):
+        f=Fixture();raw=self.mutated(f,lambda v:v['anchor'].__setitem__('state_pg_text_bytes',b.NATIVE_STATE_LIMIT+1))
+        self.reject(lambda:f.decode(raw),'BOUNDED_NATIVE_STATE_SIZE')
+
+    def test_real_rule_does_not_accept_fixture_verifier(self):
+        f=Fixture();rule=json.loads(f.rule);rule['mode']='REAL';raw=a.canonical(rule)
+        decoder=b.BoundedReadbackDecoder(raw,a.sha(raw),f.rule_verifier,f.readback_verifier,
+                 request_sha256=f.request,bound_sha256=f.bound,read_authority_raw=f.authority,mode='REAL')
+        self.reject(lambda:decoder.decode(f.raw,f.scope,f.phase,now=f.at,plan={'authority_sha256':a.sha(f.authority)},task={}),
+                    'EXTERNAL_VERIFIER_UNBOUND')
+
+    def test_parser_complexity_or_nonfinite_input_fails_with_constant_code(self):
+        f=Fixture()
+        for raw in (b'{"x":1e400}',b'{"x":'+b'['*2000+b']'*2000+b'}'):
+            self.reject(lambda:f.decode(raw),'BOUNDED_JSON_INVALID')
+
+    def test_full_journal_hash_byte_count_and_anchor_exact(self):
+        f=Fixture(padding_records=2);value=json.loads(f.raw)
+        self.assertEqual(value['anchor']['journal_original_sha256'],a.sha(a.canonical(f.records)))
+        self.assertEqual(value['anchor']['journal_original_bytes'],len(a.canonical(f.records)))
+        self.assertEqual(value['anchor']['version'],f.row['version'])
+        self.assertEqual(value['anchor']['journal_head_sha256'],f.row['journal_head'])
+
+    def test_plain_selected_hashes_are_not_origin_proof(self):
+        f=Fixture();raw=self.mutated(f,lambda v:v['selected_records'].__setitem__('capacity-prepared:'+f.scope.day,None))
+        self.reject(lambda:f.decode(raw),'FIXTURE_ORIGINAL_CHANGED')
+
+    def test_version_changed_requires_origin_verifier(self):
+        f=Fixture();raw=self.mutated(f,lambda v:v['anchor'].__setitem__('version',999))
+        self.reject(lambda:f.decode(raw),'FIXTURE_ORIGINAL_CHANGED')
+
+    def test_head_changed_requires_origin_verifier(self):
+        f=Fixture(padding_records=1);raw=self.mutated(f,lambda v:v['anchor'].__setitem__('journal_head_sha256','a'*64))
+        self.reject(lambda:f.decode(raw),'FIXTURE_ORIGINAL_CHANGED')
+
+    def test_state_projection_rehash_does_not_replace_original(self):
+        f=Fixture()
+        def changed(v):
+            v['state_projection']['sessions'][f.scope.day]={'capacity_admission_blocked':False}
+            v['state_projection_sha256']=a.digest(v['state_projection'])
+        self.reject(lambda:f.decode(self.mutated(f,changed)),'FIXTURE_ORIGINAL_CHANGED')
+
+    def test_rehashed_record_does_not_prove_membership(self):
+        f=Fixture(padding_records=1)
+        def changed(v):
+            record=v['selected_records']['capacity-prepared:'+f.scope.day]
+            record['payload']['plan_sha']='7'*64
+            record['record_sha']=a.digest({k:x for k,x in record.items() if k!='record_sha'})
+        self.reject(lambda:f.decode(self.mutated(f,changed)),'FIXTURE_ORIGINAL_CHANGED')
+
+    def test_absence_field_must_be_explicit(self):
+        f=Fixture();raw=self.mutated(f,lambda v:v['selected_records'].pop('universe:'+f.scope.day))
+        self.reject(lambda:f.decode(raw),'BOUNDED_SELECTION_SHAPE')
+
+    def test_boolean_callback_is_not_attestation(self):
+        f=Fixture();verifier=Verifier('FIXTURE','fixture_readback','2'*64,lambda *_:True)
+        self.reject(lambda:f.decoder(readback_verifier=verifier).decode(f.raw,f.scope,f.phase,
+                    now=f.at,plan={'authority_sha256':a.sha(f.authority)},task={}),'EXTERNAL_VERIFIER_BOOLEAN_IS_NOT_ATTESTATION')
+
+    def test_fixture_cannot_promote_to_real(self):
+        f=Fixture();self.reject(lambda:f.decoder(mode='REAL'),'BOUNDED_RULE_UNAPPROVED')
+
+    def test_missing_verifier_is_not_fallback(self):
+        f=Fixture();self.reject(lambda:f.decoder(readback_verifier=None),'BOUNDED_VERIFIER_REQUIRED')
+
+    def test_wire_oversize_rejected_before_json(self):
+        f=Fixture();self.reject(lambda:f.decode(b' '* (b.WIRE_LIMIT+1)),'JSON_BYTES_INVALID')
+
+    def test_duplicate_json_rejected(self):
+        f=Fixture();raw=f.raw[:-1]+b',"mode":"FIXTURE"}'
+        self.reject(lambda:f.decode(raw),'JSON_DUPLICATE_KEY')
+
+    def test_unknown_projection_key_rejected(self):
+        f=Fixture()
+        def changed(v):
+            v['state_projection']['ledger']={};v['state_projection_sha256']=a.digest(v['state_projection'])
+        self.reject(lambda:f.decode(self.mutated(f,changed)),'BOUNDED_PROJECTION_CHANGED')
+
+    def test_cross_request_bound_phase_scope_rejected(self):
+        for key,new in [('request_sha256','a'*64),('bound_sha256','a'*64),('phase','AFTER_CAPTURE'),('scope_sha256','a'*64)]:
+            with self.subTest(key=key):
+                f=Fixture();raw=self.mutated(f,lambda v:v.__setitem__(key,new))
+                self.reject(lambda:f.decode(raw),'BOUNDED_READBACK_CONTEXT')
+
+    def test_stale_or_future_observation_rejected(self):
+        f=Fixture()
+        for offset in (-1,6):
+            with self.subTest(offset=offset):
+                self.reject(lambda:f.decode(now=f.at+timedelta(seconds=offset)),'BOUNDED_READBACK_STALE')
+
+    def test_verified_projection_and_selected_mutations_rejected(self):
+        f=Fixture();d=f.decode();d.row['state']['sessions']['bad']={}
+        self.reject(lambda:a.check_capacity_manifest(f.scope,f.receipt,d.row,d.journal,f.manifest),'BOUNDED_PROOF_CHANGED')
+        d=f.decode();d.journal.selected['capacity-prepared:'+f.scope.day]['payload']['plan_sha']='a'*64
+        self.reject(lambda:a.check_capacity_manifest(f.scope,f.receipt,d.row,d.journal,f.manifest),'BOUNDED_PROOF_CHANGED')
+
+    def test_bounded_bridge_checks_real_phase_and_native_clocks(self):
+        f=Fixture();down=DownFixture();task=down.task('capture_launch')
+        f.scope=replace(f.scope,finite_authority_sha256=down.q['authority_sha256'])
+        f.authority=down.authority
+        f.at=core.instant(task['not_before'])+timedelta(seconds=1)
+        f.request=a.sha(core.canonical(down.q));f.bound=a.sha(down.bundle.bound)
+        f.raw=f.expected=f.produce()
+        directory='/fixture-private-journal'
+        # Exact actual epoch catalog schema, independent of the DB projection.
+        catalog=a.FileEvidence(a.canonical({'schema':'MASSIVE_SESSION_ROOT_V1','epoch':f.scope.epoch,
+                     'device':1,'inode':44}),1,9,0,0,0o600,1)
+        snapshot=g.BoundedSnapshot(a.canonical(f.receipt),f.raw,f.manifest,f.at,catalog,f.root,directory)
+        gate=g.BoundedImageCapacityGate(f.scope,lambda *_:snapshot,lambda *_:None,journal_directory=directory,
+            readback_rule_raw=f.rule,readback_rule_sha256=a.sha(f.rule),rule_verifier=f.rule_verifier,
+            readback_verifier=f.readback_verifier,request_sha256=f.request,bound_sha256=f.bound,
+            read_authority_raw=f.authority,mode='FIXTURE')
+        with patch.object(old_bridge,'_native_utc',lambda:f.at):
+            self.assertIsNone(gate(down.q,f.phase,f.at,task))
+        with patch.object(old_bridge,'_native_utc',lambda:f.at+timedelta(seconds=6)):
+            self.reject(lambda:gate(down.q,f.phase,f.at,task),'IMAGE_SNAPSHOT_NOT_FRESH')
+
+    def test_read_approval_and_actual_authority_precede_supplier(self):
+        f=Fixture();down=DownFixture();task=down.task('capture_launch')
+        f.scope=replace(f.scope,finite_authority_sha256=down.q['authority_sha256'])
+        f.authority=down.authority;f.request=a.sha(core.canonical(down.q));f.bound=a.sha(down.bundle.bound)
+        f.at=core.instant(task['not_before'])+timedelta(seconds=1)
+        reads=[]
+        rule_verifier=Verifier('FIXTURE','fixture_rule','1'*64,lambda *_:True)
+        gate=g.BoundedImageCapacityGate(f.scope,lambda *_:reads.append('would_read'),lambda *_:None,
+            journal_directory='/fixture-private-journal',readback_rule_raw=f.rule,readback_rule_sha256=a.sha(f.rule),
+            rule_verifier=rule_verifier,readback_verifier=f.readback_verifier,request_sha256=f.request,
+            bound_sha256=f.bound,read_authority_raw=f.authority,mode='FIXTURE')
+        with patch.object(old_bridge,'_native_utc',lambda:f.at):
+            self.reject(lambda:gate(down.q,f.phase,f.at,task),'EXTERNAL_VERIFIER_BOOLEAN_IS_NOT_ATTESTATION')
+            gate.decoder.read_authority_raw=b'SYNTHETIC_CHANGED_NOT_AUTHORITY'
+            self.reject(lambda:gate(down.q,f.phase,f.at,task),'BOUNDED_READ_AUTHORITY_ORIGINAL_CHANGED')
+        self.assertEqual(reads,[])
+
+
+if __name__=='__main__':unittest.main()

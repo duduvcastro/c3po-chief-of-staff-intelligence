@@ -1,0 +1,6 @@
+test_parser_complexity_or_nonfinite_input_fails_with_constant_code (test_bounded_readback.BoundedTests.test_parser_complexity_or_nonfinite_input_fails_with_constant_code) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK

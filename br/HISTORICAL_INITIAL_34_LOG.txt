@@ -1,0 +1,53 @@
+test_absence_field_must_be_explicit (test_bounded_readback.BoundedTests.test_absence_field_must_be_explicit) ... ok
+test_absent_universe_is_verified_absence_and_not_capture (test_bounded_readback.BoundedTests.test_absent_universe_is_verified_absence_and_not_capture) ... ok
+test_after_capture_keeps_original_universe_and_copy (test_bounded_readback.BoundedTests.test_after_capture_keeps_original_universe_and_copy) ... ok
+test_boolean_callback_is_not_attestation (test_bounded_readback.BoundedTests.test_boolean_callback_is_not_attestation) ... ok
+test_boolean_version_rejected (test_bounded_readback.BoundedTests.test_boolean_version_rejected) ... ok
+test_bounded_bridge_checks_real_phase_and_native_clocks (test_bounded_readback.BoundedTests.test_bounded_bridge_checks_real_phase_and_native_clocks) ... ok
+test_consumer_does_not_bypass_native_live_state_limit (test_bounded_readback.BoundedTests.test_consumer_does_not_bypass_native_live_state_limit) ... ok
+test_cross_request_bound_phase_scope_rejected (test_bounded_readback.BoundedTests.test_cross_request_bound_phase_scope_rejected) ... ok
+test_duplicate_json_rejected (test_bounded_readback.BoundedTests.test_duplicate_json_rejected) ... ok
+test_duplicate_native_key_not_hidden (test_bounded_readback.BoundedTests.test_duplicate_native_key_not_hidden) ... ok
+test_fixture_cannot_promote_to_real (test_bounded_readback.BoundedTests.test_fixture_cannot_promote_to_real) ... ok
+test_full_journal_hash_byte_count_and_anchor_exact (test_bounded_readback.BoundedTests.test_full_journal_hash_byte_count_and_anchor_exact) ... ok
+test_head_changed_requires_origin_verifier (test_bounded_readback.BoundedTests.test_head_changed_requires_origin_verifier) ... ok
+test_large_twenty_megabyte_journal_becomes_limited_readback (test_bounded_readback.BoundedTests.test_large_twenty_megabyte_journal_becomes_limited_readback) ... ok
+test_missing_verifier_is_not_fallback (test_bounded_readback.BoundedTests.test_missing_verifier_is_not_fallback) ... ok
+test_native_integral_source_definitions_exact (test_bounded_readback.BoundedTests.test_native_integral_source_definitions_exact) ... ok
+test_native_live_size_measurement_and_canonical_limit_precede_verifier (test_bounded_readback.BoundedTests.test_native_live_size_measurement_and_canonical_limit_precede_verifier) ... ok
+test_native_null_session_cannot_be_erased_as_absence (test_bounded_readback.BoundedTests.test_native_null_session_cannot_be_erased_as_absence) ... ok
+test_parser_complexity_or_nonfinite_input_fails_with_constant_code (test_bounded_readback.BoundedTests.test_parser_complexity_or_nonfinite_input_fails_with_constant_code) ... FAIL
+test_partial_full_chain_not_projected (test_bounded_readback.BoundedTests.test_partial_full_chain_not_projected) ... ok
+test_plain_selected_hashes_are_not_origin_proof (test_bounded_readback.BoundedTests.test_plain_selected_hashes_are_not_origin_proof) ... ok
+test_read_approval_and_actual_authority_precede_supplier (test_bounded_readback.BoundedTests.test_read_approval_and_actual_authority_precede_supplier) ... ok
+test_real_rule_does_not_accept_fixture_verifier (test_bounded_readback.BoundedTests.test_real_rule_does_not_accept_fixture_verifier) ... ok
+test_record_limit_precedes_integral_verifier (test_bounded_readback.BoundedTests.test_record_limit_precedes_integral_verifier) ... ok
+test_rehashed_record_does_not_prove_membership (test_bounded_readback.BoundedTests.test_rehashed_record_does_not_prove_membership) ... ok
+test_stale_or_future_observation_rejected (test_bounded_readback.BoundedTests.test_stale_or_future_observation_rejected) ... ok
+test_state_hash_corruption_not_projected (test_bounded_readback.BoundedTests.test_state_hash_corruption_not_projected) ... ok
+test_state_projection_rehash_does_not_replace_original (test_bounded_readback.BoundedTests.test_state_projection_rehash_does_not_replace_original) ... ok
+test_suffix_only_not_projected (test_bounded_readback.BoundedTests.test_suffix_only_not_projected) ... ok
+test_unknown_projection_key_rejected (test_bounded_readback.BoundedTests.test_unknown_projection_key_rejected) ... ok
+test_unselected_record_corruption_not_hidden (test_bounded_readback.BoundedTests.test_unselected_record_corruption_not_hidden) ... ok
+test_verified_projection_and_selected_mutations_rejected (test_bounded_readback.BoundedTests.test_verified_projection_and_selected_mutations_rejected) ... ok
+test_version_changed_requires_origin_verifier (test_bounded_readback.BoundedTests.test_version_changed_requires_origin_verifier) ... ok
+test_wire_oversize_rejected_before_json (test_bounded_readback.BoundedTests.test_wire_oversize_rejected_before_json) ... ok
+
+======================================================================
+FAIL: test_parser_complexity_or_nonfinite_input_fails_with_constant_code (test_bounded_readback.BoundedTests.test_parser_complexity_or_nonfinite_input_fails_with_constant_code)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-image-bounded-readback-20261009-r1/test_bounded_readback.py", line 175, in test_parser_complexity_or_nonfinite_input_fails_with_constant_code
+    self.reject(lambda:f.decode(raw),'BOUNDED_JSON_INVALID')
+  File "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/codex-epoch04-image-bounded-readback-20261009-r1/test_bounded_readback.py", line 88, in reject
+    if code:self.assertEqual(str(error.exception),code)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'BOUNDED_READBACK_SHAPE' != 'BOUNDED_JSON_INVALID'
+- BOUNDED_READBACK_SHAPE
++ BOUNDED_JSON_INVALID
+
+
+----------------------------------------------------------------------
+Ran 34 tests in 0.192s
+
+FAILED (failures=1)
