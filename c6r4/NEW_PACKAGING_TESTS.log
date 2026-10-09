@@ -1,0 +1,6 @@
+test_new_extracted_historical_input_resolves_from_file_not_cwd (test_packaging_delta.PackagingDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+OK

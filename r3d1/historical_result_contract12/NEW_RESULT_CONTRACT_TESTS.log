@@ -1,0 +1,17 @@
+test_new_busy_lock_returns_not_reserved_but_no_retry_permission (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_complete_terminal_remains_original_without_second_effect (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_direct_run_uses_same_reservation_result_contract (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_exact_uncertain_terminal_is_closed_without_ledger_recovery (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_legacy_v1_terminal_proof_is_explicitly_read_only_compatible (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_lost_commit_of_uncertain_terminal_stays_recovered_uncertain (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_orphan_marker_adopts_uncertain_result_not_complete (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_outer_source_failure_commits_then_second_has_no_fork (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_outer_worker_failure_commits_then_second_is_final_refusal (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_pending_claim_is_uncertain_and_never_retried (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_refused_terminal_is_closed_and_no_callback_repeated (test_reservation_result_delta.ReservationResultDelta) ... ok
+test_new_torn_same_key_history_preserves_consumed_unknown (test_reservation_result_delta.ReservationResultDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.081s
+
+OK

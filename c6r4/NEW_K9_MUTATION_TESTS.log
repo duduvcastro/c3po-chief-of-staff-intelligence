@@ -1,0 +1,7 @@
+test_new_compiled_state_changed_between_binding_and_decode_refuses (test_c6_delta.NewK9MutationDelta) ... ok
+test_new_verifier_cannot_mutate_compiled_source_metadata (test_c6_delta.NewK9MutationDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK

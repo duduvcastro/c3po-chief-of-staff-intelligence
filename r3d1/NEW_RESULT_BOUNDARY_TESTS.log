@@ -1,0 +1,9 @@
+test_new_busy_existing_pending_marker_requires_recovery_without_proof_read (test_result_boundary_delta.BoundaryDelta) ... ok
+test_new_busy_existing_terminal_does_not_infer_closed_without_lock (test_result_boundary_delta.BoundaryDelta) ... ok
+test_new_v1_nonuncertain_exact_terminal_is_read_only_closed (test_result_boundary_delta.BoundaryDelta) ... ok
+test_new_v1_uncertain_proof_cannot_claim_closed_ledger_history (test_result_boundary_delta.BoundaryDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.087s
+
+OK

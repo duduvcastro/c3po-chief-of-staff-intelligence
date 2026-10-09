@@ -1,0 +1,41 @@
+name: e04-codex-linux-proof4
+on:
+  push:
+    branches: ['ops/codex-epoch04-proof4-20261009']
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: run suites
+        run: |
+          set +e
+          python3 --version | tee py.txt
+          find r3d1 c6r4 -type f -name '*.py' -print0 | sort -z | xargs -0 sha256sum > SOURCES.sha256
+          (cd r3d1 && python3 -B -s -m unittest -v test_result_boundary_delta) > r3d1.log 2>&1; e1=$?
+          (cd c6r4 && python3 -B -s -m unittest -v test_c6_delta test_packaging_delta) > c6r4.log 2>&1; e2=$?
+          python3 - "$e1" "$e2" <<'PY'
+          import json,sys,hashlib,platform,re
+          def tail(p):
+              t=open(p).read(); m=re.findall(r'^Ran (\d+) tests?',t,re.M); return {'ran':int(m[-1]) if m else None,'ok':t.rstrip().endswith('OK'),'sha256':hashlib.sha256(open(p,'rb').read()).hexdigest()}
+          e=list(map(int,sys.argv[1:])); names=['r3d1','c6r4']
+          r={'schema':'FABLE_E04_CODEX_LINUX_PROOF_V4','python':platform.python_version(),'platform':platform.platform(),
+             'sources_sha256':hashlib.sha256(open('SOURCES.sha256','rb').read()).hexdigest()}
+          for n,x in zip(names,e): r[n]={'exit':x,**tail(n+'.log')}
+          r['pass']=all(r[n]['exit']==0 for n in names)
+          open('RESULT.json','w').write(json.dumps(r,sort_keys=True,indent=1)); print(json.dumps(r,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e04-proof4
+          path: |
+            RESULT.json
+            SOURCES.sha256
+            py.txt
+            *.log
+      - name: fail if required suites failed
+        run: python3 -c "import json,sys; sys.exit(0 if json.load(open('RESULT.json'))['pass'] else 1)"
