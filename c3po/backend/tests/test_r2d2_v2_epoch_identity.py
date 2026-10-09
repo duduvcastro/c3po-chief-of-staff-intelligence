@@ -46,7 +46,7 @@ def test_runtime_order_is_the_controller_order_and_document_order_is_a_digest():
 
 
 def test_document_order_is_the_signed_order_not_the_placeholder():
-    # Until the epoch order is signed the constant is a placeholder that is_sha accepts; this keeps the branch red.
+    # The constant is the SHA-256 of the signed epoch order (ORDEM_EPOCA_04 rev M3); the placeholder is refused.
     assert DOCUMENT_ORDER_SHA != '0f' + '0' * 62
 
 

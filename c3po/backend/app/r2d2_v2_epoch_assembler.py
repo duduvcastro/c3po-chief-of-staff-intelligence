@@ -9,7 +9,7 @@ from typing import Any, Callable, cast
 EPOCH = 'R2D2-V2-SHADOW-2026-10-12'
 FIRST_SESSION = '2026-10-12'
 SESSIONS = ('2026-10-12','2026-10-13','2026-10-14','2026-10-15','2026-10-16')
-DOCUMENT_ORDER_SHA = '0f00000000000000000000000000000000000000000000000000000000000000'
+DOCUMENT_ORDER_SHA = '70cb947fc5276949ca3f08d53cfaf79873463a83f36a64859056d7616fcdf9d3'
 RUNTIME_ORDER_SHA = '1ad8b90cfab651823eb677b830a0078d10c17447575c8d813c3883a718579d8e'
 DELEGABLE = frozenset(('sources','causal_list','components','risk','bar_manifest','capture','policy_readonly'))
 INDIVIDUAL = frozenset(('bar_merge_deploy_recertify','install_release','readback','activate','supervisor_install_activate','wind_down_28','admission','quote_refresh','quote_capture'))

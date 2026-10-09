@@ -833,7 +833,7 @@ def test_readme_describes_both_journal_placements_and_what_is_checked_above_the_
     assert ('**Epoch `'+signed_epoch+'` uses placement A, by decision of the owner.** The decision is on record as `'+DECISION_RECORD
         +'`, SHA-256 `'+DECISION_SHA256+'` (name and hash as relayed for this revision; the record\'s bytes prevail).') in readme
     assert readme.count(DECISION_RECORD)==readme.count(DECISION_SHA256)==1 and DECISION_SHA256!=RECEIPT_STDOUT_SHA256
-    assert all(value in readme for value in ('ORDEM_EPOCA_03, revision 2','and that **nothing is deleted or moved**',
+    assert all(value in readme for value in ('ORDEM_EPOCA_04, revision M3','and that **nothing is deleted or moved**',
         'on a filesystem **chosen in the authorisation**','The placement and the pair (host path, container path) are signed in the authorisation',
         '| `@HOST_JOURNAL_ROOT@` | 2 | Host path of the dedicated journal root, in the placement signed in the authorisation. | `'+a_host+'` |',
         '| `@CONTAINER_JOURNAL_ROOT@` | 2 | The same directory as seen inside every container that is given it. | `'+a_container+'` |',
