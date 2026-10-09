@@ -1,0 +1,16 @@
+{
+  "errors": 0,
+  "failures": 0,
+  "go": false,
+  "log_sha256": "76ffeca34f3a93d1937625a9bc9944d03cb0ee4d935b830a7beffc2973a47244",
+  "methods": 20,
+  "physical_host": false,
+  "platform": "darwin",
+  "python": "3.9.6",
+  "real_receipts": false,
+  "repeated_closed_r1_methods": 0,
+  "repeated_f2_methods": 0,
+  "schema": "L12_R2_NEW_DELTA_TEST_RESULT_V1",
+  "scope": "NEW_SYNTHETIC_BOOTSTRAP_ONLY",
+  "source_sha256": "2c46e933016a01f95d538ac214f6211a2da5da356ea332cad71ec04d8c31d92d"
+}

@@ -1,0 +1,46 @@
+name: e04-codex-linux-proof2
+on:
+  push:
+    branches: ['ops/codex-epoch04-proof2-20261009']
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: run suites
+        run: |
+          set +e
+          python3 --version | tee py.txt
+          find l12r2 l12r2_r1reg gate3 fin3 br2 -type f \( -name '*.py' -o -name '*.service' \) -print0 | sort -z | xargs -0 sha256sum > SOURCES.sha256
+          (cd l12r2 && python3 -B -s -m unittest -v test_bootstrap_delta.py) > l12r2.log 2>&1; e1=$?
+          (cd gate3 && python3 -B -s -m unittest -v test_delta_r2.py test_package_selfcontained.py) > gate3.log 2>&1; e2=$?
+          (cd fin3 && python3 -B -s -m unittest -v test_machine_order_no_lf_delta.py) > fin3.log 2>&1; e3=$?
+          (cd br2 && python3 -B -s -m unittest -v test_delta_r2.py) > br2.log 2>&1; e4=$?
+          (cd l12r2_r1reg && python3 -B -s -m unittest -v test_finite_batch.py test_image_capacity_gate.py) > l12r2_r1reg.log 2>&1; e5=$?
+          python3 - "$e1" "$e2" "$e3" "$e4" "$e5" <<'PY'
+          import json,sys,hashlib,platform,re
+          def tail(p):
+              t=open(p).read(); m=re.findall(r'^Ran (\d+) tests?',t,re.M); return {'ran':int(m[-1]) if m else None,'ok':t.rstrip().endswith('OK'),'sha256':hashlib.sha256(open(p,'rb').read()).hexdigest()}
+          e=list(map(int,sys.argv[1:]))
+          names=['l12r2','gate3','fin3','br2','l12r2_r1reg']
+          r={'schema':'FABLE_E04_CODEX_LINUX_PROOF_V2','python':platform.python_version(),'platform':platform.platform(),
+             'sources_sha256':hashlib.sha256(open('SOURCES.sha256','rb').read()).hexdigest(),
+             'informative_only':['l12r2_r1reg']}
+          for n,x in zip(names,e): r[n]={'exit':x,**tail(n+'.log')}
+          r['pass']=all(r[n]['exit']==0 for n in names[:4])
+          open('RESULT.json','w').write(json.dumps(r,sort_keys=True,indent=1)); print(json.dumps(r,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e04-proof2
+          path: |
+            RESULT.json
+            SOURCES.sha256
+            py.txt
+            *.log
+      - name: fail if required suites failed
+        run: python3 -c "import json,sys; sys.exit(0 if json.load(open('RESULT.json'))['pass'] else 1)"

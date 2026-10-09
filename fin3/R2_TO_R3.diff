@@ -1,0 +1,55 @@
+--- R2/config_finalizer.py
++++ R3/config_finalizer.py
+@@ -15,7 +15,7 @@
+ import consumer_codec
+ 
+ 
+-SPEC_SCHEMA = 'R2D2_IMAGE_CAPACITY_CONFIG_FINALIZER_SPEC_V2'
++SPEC_SCHEMA = 'R2D2_IMAGE_CAPACITY_CONFIG_FINALIZER_SPEC_V3'
+ CONFIG_SCHEMA = 'R2D2_CAPACITY_BOOTSTRAP_V3'
+ MODE = 'DISPATCH_AND_DERIVATION_ONLY'
+ EPOCH = 'R2D2-V2-SHADOW-2026-10-12'
+@@ -70,6 +70,34 @@
+ 
+ def pin(raw, expected, code):
+     need(type(raw) is bytes and is_sha(expected) and veto.digest(raw) == expected, code)
++
++
++def parse_machine_order(raw):
++    """Original machine-order ABI: canonical ASCII JSON without an appended LF.
++
++    Raw bytes are pinned separately before this parser. The structured digest
++    uses the same no-LF canonical serialization as DocumentAuthority.digest.
++    Do not rewrite an original to satisfy this contract.
++    """
++    code = 'CONFIG_MACHINE_ORDER'
++    need(type(raw) is bytes and 0 < len(raw) <= MAX_BYTES, code + '_BYTES')
++    def pairs(items):
++        out = {}
++        for key, value in items:
++            need(key not in out, code + '_DUPLICATE')
++            out[key] = value
++        return out
++    try:
++        value = json.loads(raw, object_pairs_hook=pairs,
++                           parse_constant=lambda value: (_ for _ in ()).throw(ValueError()))
++        encoded = json.dumps(value, sort_keys=True, separators=(',', ':'),
++                             ensure_ascii=True, allow_nan=False).encode('ascii')
++        need(type(value) is dict and encoded == raw, code + '_CANONICAL')
++        return value
++    except Refused:
++        raise
++    except Exception:
++        raise Refused(code + '_INVALID') from None
+ 
+ 
+ def check_template(template):
+@@ -229,7 +257,7 @@
+         pin(machine_order_raw,spec['machine_order_original_sha256'],'CONFIG_MACHINE_ORDER_ORIGINAL_HASH')
+         try:act_b=consumer_codec.normalize_document('ACT_B',act_b_raw)
+         except consumer_codec.ShadowIntegrityError:raise Refused('CONFIG_ACT_B_DOCUMENT_INVALID')from None
+-        machine_order=parse(machine_order_raw,'CONFIG_MACHINE_ORDER')
++        machine_order=parse_machine_order(machine_order_raw)
+         need(json.dumps(machine_order,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode('ascii')
+              ==veto.canonical(machine_order),'CONFIG_MACHINE_ORDER_DIGEST_NAMESPACE')
+         machine_sha=veto.digest(veto.canonical(machine_order))

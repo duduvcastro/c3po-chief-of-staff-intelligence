@@ -1,0 +1,54 @@
+{
+  "errors": 0,
+  "failures": 0,
+  "files": [
+    {
+      "bytes": 2664,
+      "path": "DESIGN_DELTA.json",
+      "sha256": "2f33536f626f279b5e4bb162d5ce4c9c7dede4280bd0d5318a8952f9e5f2a054"
+    },
+    {
+      "bytes": 488,
+      "path": "NEW_DELTA_RESULT.json",
+      "sha256": "3f26d9510f2c27c4fb0bf37d11c4db62f59e0e78295e405f48898599d7543451"
+    },
+    {
+      "bytes": 1787,
+      "path": "NEW_DELTA_TESTS.log",
+      "sha256": "76ffeca34f3a93d1937625a9bc9944d03cb0ee4d935b830a7beffc2973a47244"
+    },
+    {
+      "bytes": 6621,
+      "path": "SOURCE_REVIEW.private.json",
+      "sha256": "729d616f8161da2467126a807f94f1e6761255dcedb924af63c38296bbfa7872"
+    },
+    {
+      "bytes": 5241,
+      "path": "bootstrap_fixtures.py",
+      "sha256": "27d288882d7776e8f7dd19585b8cab218b97dd7435c959eb7a39bdca6dba4126"
+    },
+    {
+      "bytes": 35252,
+      "path": "finite_batch.py",
+      "sha256": "2c46e933016a01f95d538ac214f6211a2da5da356ea332cad71ec04d8c31d92d"
+    },
+    {
+      "bytes": 3503,
+      "path": "image_capacity_gate.py",
+      "sha256": "44847f9f07a1f09df764bf6e260389eccef9256d1e9e042dcbbb3bcc71cfddac"
+    },
+    {
+      "bytes": 22403,
+      "path": "image_path_adapter.py",
+      "sha256": "fbcb11dde975ee15434a14a12a3b6afa9977ba3b325695b5e826756c616b858e"
+    },
+    {
+      "bytes": 11183,
+      "path": "test_bootstrap_delta.py",
+      "sha256": "3689485efb6fdbd11f601dee1d2041d3e7ad5a73445cb5a0fac9b62036e2a70c"
+    }
+  ],
+  "methods_new": 20,
+  "schema": "L12_R2_BOOTSTRAP_SOURCE_MANIFEST_V1",
+  "scope": "SYNTHETIC_DELTA_ONLY_NOT_GO"
+}

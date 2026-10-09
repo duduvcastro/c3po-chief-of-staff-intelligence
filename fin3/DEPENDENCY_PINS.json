@@ -1,0 +1,37 @@
+{
+  "historical_machine_order_original": {
+    "accepted_epoch04_authority": false,
+    "bytes": 220,
+    "path": "originals/ORDER.RUNTIME.epoch03.HISTORICAL.json",
+    "sha256": "518627919754f795ff551c9d833a3b1000fb930b555df647e7e00e2b19e775fe"
+  },
+  "manifest_writer.py": {
+    "bytes": 46977,
+    "sha256": "aeda5b12d34a406b0d61e1e4696e3c535e89fa3dc680ce0d3b14bb4d60b1d387"
+  },
+  "r2d2_v2_capacity_authority.py": {
+    "bytes": 4447,
+    "sha256": "555fe5a165f0e073b71e3458ba20477fef0281ce5bcd5d9b002e95a78d22d1e6"
+  },
+  "r2d2_v2_capacity_bootstrap.py": {
+    "bytes": 9135,
+    "sha256": "8f7a21dc13ba40d2bca26583ffa8598d40ffd4a8fc0a64ae0331c94b1d11e482"
+  },
+  "r2d2_v2_document_authority.py": {
+    "bytes": 9874,
+    "sha256": "c75b855da928b9d7b090a26058640db7f19ef81fec07c0f9df49ee4a7a81fe3e"
+  },
+  "r2d2_v2_document_format.py": {
+    "bytes": 14053,
+    "sha256": "e7c1758e985d27e4a0bf15f911eba176eefc5154e7929c5f5aba472f9e28c0da"
+  },
+  "r2d2_v2_epoch_assembler.py": {
+    "bytes": 9842,
+    "sha256": "8ef584e2dd5d0b41d33f06a00926877573c65b5540f450236910e07ba51ee37c"
+  },
+  "veto_emitter.py": {
+    "bytes": 11215,
+    "dependency": "BYTE_EXACT_OWN_EMITTER_R1",
+    "sha256": "6e84d13e50da23aef4b822e63b1372062e108f0760ac06992ae680a6c392ba03"
+  }
+}

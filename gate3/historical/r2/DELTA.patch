@@ -1,0 +1,93 @@
+--- r1/image_path_adapter.py
++++ r2/image_path_adapter.py
+@@ -28,6 +28,7 @@
+ SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9.-]{0,19}\Z")
+ PLACEHOLDER = "0f" + "0" * 62
+ LIMIT = 65536
++DB_READBACK_LIMIT = 16 * 1024 * 1024  # Candidate transport ceiling, not an image ABI claim.
+ SUCCESS = {"PUBLISHED_VERIFIED", "ALREADY_PUBLISHED_VERIFIED"}
+ 
+ 
+@@ -62,7 +63,7 @@
+         raise Hold("CLOCK_UNBOUND") from None
+ 
+ 
+-def strict_json(raw):
++def strict_json(raw, *, limit=LIMIT):
+     def pairs(items):
+         obj = {}
+         for key, value in items:
+@@ -70,7 +71,8 @@
+             obj[key] = value
+         return obj
+     try:
+-        need(type(raw) is bytes and 0 < len(raw) <= LIMIT, "JSON_BYTES_INVALID")
++        need(type(limit) is int and 0 < limit <= DB_READBACK_LIMIT, "JSON_LIMIT_INVALID")
++        need(type(raw) is bytes and 0 < len(raw) <= limit, "JSON_BYTES_INVALID")
+         return json.loads(raw, object_pairs_hook=pairs,
+                           parse_constant=lambda _: (_ for _ in ()).throw(Hold("JSON_NONFINITE")))
+     except (UnicodeError, json.JSONDecodeError):
+@@ -113,7 +115,15 @@
+ 
+     @property
+     def scope_sha256(self):
+-        return digest(self.document())
++        # Consume an identifiable serialized invocation before interpreting its
++        # timestamps. A malformed/naive supplied timestamp must not fail a time
++        # parser before the stable epoch/day/operation claim is recorded.
++        supplied = dict(self.__dict__)
++        for key, value in tuple(supplied.items()):
++            if isinstance(value, datetime):
++                supplied[key] = value.isoformat()
++        supplied["writer_sha256"] = WRITER_SHA
++        return digest(supplied)
+ 
+     def validate(self):
+         need(self.day == DAY and self.epoch == EPOCH, "IMAGE_SCOPE_MISMATCH")
+@@ -204,6 +214,7 @@
+                 execute: Callable[[tuple[str, ...], bytes], tuple[int, bytes]]):
+     """One transport call, with a durable consume-before-effect claim.
+ 
++    An identifiable invocation consumes before all gates, including refusals.
+     immediate_gate must raise unless the real finite authority, image/runtime,
+     calendar, config, source roots, concurrency/revocation checks are accepted.
+     reserve(attempt_key, scope_sha256) must use a persistent exclusive claim
+@@ -212,22 +223,33 @@
+     It must never erase the claim on refusal, crash or uncertainty. Callbacks
+     are mandatory; their implementation/proof remains the executor's scope.
+     """
+-    need(all(callable(value) for value in (clock, immediate_gate, reserve, execute)), "EXECUTOR_UNBOUND")
+-    # Rebuild from the pinned source: a mutated caller-supplied argv is not run.
++    need(isinstance(plan, Invocation) and isinstance(plan.scope, Scope)
++         and plan.scope.epoch == EPOCH and plan.scope.day == DAY, "IMAGE_SCOPE_MISMATCH")
++    need(callable(reserve), "EXECUTOR_CLAIM_UNBOUND")
++    # The stable logical scope is identifiable before authority/time/source
++    # checks. The exact scope hash records the supplied input; it is not the key.
++    need(reserve(ATTEMPT_KEY, plan.scope.scope_sha256) is None, "EXECUTOR_CLAIM_PROTOCOL")
++    # After this point the option is consumed even if a subsequent gate refuses.
++    need(all(callable(value) for value in (clock, immediate_gate, execute)), "EXECUTOR_UNBOUND")
+     checked = invocation(plan.scope, plan.stdin, now=clock())
+     need(plan.argv == checked.argv, "MANIFEST_INVOCATION_CHANGED")
+-    need(immediate_gate(plan.scope, "BEFORE_CLAIM", instant(clock())) is None, "EXECUTOR_GATE_PROTOCOL")
+-    need(reserve(ATTEMPT_KEY, plan.scope.scope_sha256) is None, "EXECUTOR_CLAIM_PROTOCOL")
+-    # After this point the option is consumed even if a subsequent gate refuses.
++    need(immediate_gate(plan.scope, "AFTER_CLAIM", instant(clock())) is None, "EXECUTOR_GATE_PROTOCOL")
+     invocation(plan.scope, plan.stdin, now=clock())
+     need(immediate_gate(plan.scope, "BEFORE_WRITER", instant(clock())) is None, "EXECUTOR_GATE_PROTOCOL")
++    # The external verifier may perform slow reads. Recheck pure source/scope/
++    # date/window predicates after it returns, immediately before the transport.
++    invocation(plan.scope, plan.stdin, now=clock())
+     try:
+         exit_code, raw = execute(plan.argv, plan.stdin)
+     except Exception:
+         raise Hold("MANIFEST_TRANSPORT_UNCERTAIN") from None
+     receipt = strict_json(raw)
++    need(instant(clock()) < instant(plan.scope.not_after), "MANIFEST_RESULT_AFTER_WINDOW")
+     check_receipt(plan.scope, receipt, exit_code)
+     need(immediate_gate(plan.scope, "BEFORE_READBACK", instant(clock())) is None, "EXECUTOR_GATE_PROTOCOL")
++    # A successful slow readback callback cannot turn a now-expired operation
++    # into COMPLETE. Any effects already performed remain consumed/uncertain.
++    need(instant(clock()) < instant(plan.scope.not_after), "MANIFEST_RESULT_AFTER_WINDOW")
+     return receipt
+ 
+ 

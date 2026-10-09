@@ -1,0 +1,25 @@
+test_new_before_monday_nyday_refuses (test_bootstrap_delta.TestDelta) ... ok
+test_new_bootstrap_go_cannot_be_delegated (test_bootstrap_delta.TestDelta) ... ok
+test_new_go_cannot_change_after_sunday_pin (test_bootstrap_delta.TestDelta) ... ok
+test_new_initial_pre_must_exist_before_sunday_request (test_bootstrap_delta.TestDelta) ... ok
+test_new_m2_cannot_run_before_real_m1 (test_bootstrap_delta.TestDelta) ... ok
+test_new_m2_pre_cannot_masquerade_as_post_for_m3 (test_bootstrap_delta.TestDelta) ... ok
+test_new_m3_cannot_run_before_real_m2 (test_bootstrap_delta.TestDelta) ... ok
+test_new_missing_image_verifier_consumes (test_bootstrap_delta.TestDelta) ... ok
+test_new_missing_m1_owner_original (test_bootstrap_delta.TestDelta) ... ok
+test_new_missing_m3_owner_after_dependencies (test_bootstrap_delta.TestDelta) ... ok
+test_new_overnight_veto_does_not_survive (test_bootstrap_delta.TestDelta) ... ok
+test_new_owner_change_during_other_callbacks_refuses (test_bootstrap_delta.TestDelta) ... ok
+test_new_owner_deadline_after_sunday_2145_refuses (test_bootstrap_delta.TestDelta) ... ok
+test_new_owner_original_go_digest_must_match (test_bootstrap_delta.TestDelta) ... ok
+test_new_reader_must_return_typed_originals (test_bootstrap_delta.TestDelta) ... ok
+test_new_slow_last_image_verifier_exhausts_budget (test_bootstrap_delta.TestDelta) ... ok
+test_new_sunday_invocation_future_window_refuses_consumed (test_bootstrap_delta.TestDelta) ... ok
+test_new_sunday_owner_monday_three_ops (test_bootstrap_delta.TestDelta) ... ok
+test_new_sunday_reduced_pre_is_not_full_pre (test_bootstrap_delta.TestDelta) ... ok
+test_new_uncertain_executor_consumed_once (test_bootstrap_delta.TestDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.042s
+
+OK

@@ -1,0 +1,26 @@
+{
+  "capacity_config_delivery": "EXCLUDED_FROM_THREE_OPS_PENDING_SEPARATE_ACTUAL_AUTHORIZED_PROGRAM",
+  "delta": "BOOTSTRAP_MONDAY lane; separate BOOTSTRAP context; strict install_release/readback/activate ordering; exact imageGO/proposal pinnedSunday; ownerSunday21:45; MondaydayUTC04->24; currentveto/finaldeadline; actualSundayFULLPRE and actualMondayPOST callbacks.",
+  "limits": [
+    "Actual signed epoch04 order and resulting head/release, Act A/B, all exact GO/proposals and owner originals are not supplied by this candidate.",
+    "Historical host family copies retain epoch03 constants; newly generated epoch04 copies, pins and Linux proofs still require own reconciliation.",
+    "No actual physical Sunday FULL PRE or Monday M1/M2/M3 receipt is created here; fixtures do not satisfy these gates.",
+    "Actual Monday capacity config/veto emission/delivery/settings require separate source, authority, installer/service/registry and proof. No host/env write is implicitly added.",
+    "This core does not interrupt hung callbacks. Separate bounded executor has its own pending actual registry/ABI/source/runtime proof; core authority/read callbacks also need bounded external adapters.",
+    "Outside-rollback durable witness and physical ledger roots are not elected here."
+  ],
+  "parent_r1_immutable": true,
+  "parent_r1_source_sha256": "276434e884cb7b7240f3c76a3bd9de24a52a55befe228fc261b25ded7717c9ec",
+  "proof": "20newofflinefixturemethods only; no43R1/79F2transfer or rerun",
+  "real_image_adapter_status": "NOT_SUPPLIED_NOT_CERTIFIED",
+  "schema": "L12_R2_BOOTSTRAP_CANDIDATE_DESCRIPTION_V1",
+  "status": "OFFLINE_CANDIDATE_NOT_OPERATIONAL_PACKAGE",
+  "typed_api": {
+    "ImageGo": "go_raw bytes, proposal_raw bytes using imageUTF8 canonical ABI; documents tuple(label,rawactualoriginalbytes). No signature decoder or GO issuer supplied.",
+    "Services.image_go_read": "(plan, task, now)->ImageGo from exact real originals; missing fails consumed.",
+    "Services.image_go_verify": "(ImageGo,bundle,plan,task,actualdependencyReceipts,now)->None onlyafter independent actualActA/B/OWNER_GO/GO/proposal/sourcepin/BOOT/FULLPRE/POST/VETO verification; any missing raises; booleans refused.",
+    "bootstrap_initial_receipts": "epoch_pre exact actual Sunday FULL PRE hash (completed before REQUEST); other actual supplied evidence may be added explicitly.",
+    "bootstrap_task_pins": "image_go_sha256, image_proposal_sha256 pin already-existingSundaybytes; no futureMondayM1/M2/M3receipthash.",
+    "execute": "existing Services.execute Invocation->actualReceipt from independently approved boundedregistry, actual family ABI. No default."
+  }
+}

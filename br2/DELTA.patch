@@ -1,0 +1,162 @@
+--- R1/bounded_runner.py
++++ R2/bounded_runner.py
+@@ -20,6 +20,7 @@
+ import subprocess
+ import threading
+ import time
++import types
+ from typing import Callable
+ 
+ MAX_SOURCE = 1024 * 1024
+@@ -196,10 +197,11 @@
+         # This candidate supports only Python source on stdin. No shell, Docker,
+         # SSH or historical executable ABI is guessed from an operation name.
+         need(type(self.argv) is tuple and 4 <= len(self.argv) <= 100
+-             and self.argv[:4] == (self.python.path, '-I', '-B', '-')
+-             and all(type(x) is str and '\x00' not in x and len(x) <= 4096 for x in self.argv),
++             and all(type(x) is str and '\x00' not in x and len(x) <= 4096 for x in self.argv)
++             and self.argv[:4] == (self.python.path, '-I', '-B', '-'),
+              'REGISTRY_ARGV_INVALID')
+         need(type(self.source) is bytes and 0 < len(self.source) <= MAX_SOURCE
++             and pin(self.source_sha256) and pin(self.stdin_sha256)
+              and digest(self.source) == self.source_sha256 == self.stdin_sha256,
+              'REGISTRY_SOURCE_INPUT_PIN_CHANGED')
+         need(type(self.env) is tuple and len(self.env) <= 16
+@@ -224,6 +226,7 @@
+     owner_uid: int
+     commands: tuple[Command, ...]
+     callback_pins: tuple[tuple[str, str, str], ...]
++    containment: str = 'OWN_SESSION'
+ 
+     def raw(self):
+         # Public serialization is also pure/finite: do not call an overridden
+@@ -233,9 +236,12 @@
+         for command in self.commands:
+             command.validate()
+         self._callback_shape()
++        need(type(self.owner_uid) is int and type(self.containment) is str
++             and self.containment in ('OWN_SESSION', 'INHERITED_OUTER_GROUP'), 'REGISTRY_CONTAINMENT_INVALID')
+         return canonical({'schema': 'L12_FINITE_PYTHON_REGISTRY_CANDIDATE_V1',
+                           'owner_uid': self.owner_uid,
+                           'callback_pins': self.callback_pins,
++                          'containment': self.containment,
+                           'commands': [c.body() for c in self.commands]})
+ 
+     def _callback_shape(self):
+@@ -253,9 +259,12 @@
+         need(type(self.commands) is tuple and 0 < len(self.commands) <= MAX_OPERATIONS
+              and all(type(c) is Command and type(c.cwd) is DirectoryPin and type(c.python) is ExecutablePin
+                      for c in self.commands)
+-             and len({c.operation for c in self.commands}) == len(self.commands), 'REGISTRY_NOT_FINITE_UNIQUE')
++             , 'REGISTRY_NOT_FINITE_UNIQUE')
+         for command in self.commands:
+             command.validate()
++        need(len({c.operation for c in self.commands}) == len(self.commands), 'REGISTRY_NOT_FINITE_UNIQUE')
++        need(type(self.containment) is str and self.containment in ('OWN_SESSION', 'INHERITED_OUTER_GROUP'),
++             'REGISTRY_CONTAINMENT_INVALID')
+         self._callback_shape()
+         need(pin(expected_sha256) and digest(self.raw()) == expected_sha256, 'REGISTRY_PIN_CHANGED')
+ 
+@@ -400,12 +409,23 @@
+     def _worker(self, invocation, command, started, mark, write_fd):
+         cwd_fd = bin_fd = None
+         try:
+-            os.setsid()
++            inherited = self.registry.containment == 'INHERITED_OUTER_GROUP'
++            if inherited:
++                # Only the independently reviewed one-operation outer watchdog
++                # may own this group. It must kill the group before its terminal
++                # ledger write and before any next operation.
++                need(os.getppid() == os.getpgrp() == os.getsid(0), 'OUTER_GROUP_UNAVAILABLE', uncertain=True)
++            else:
++                os.setsid()
++            expected_group, expected_session = os.getpgrp(), os.getsid(0)
+             # A separate kernel timer prevents a parked group owner from
+             # surviving indefinitely if its parent disappears during cleanup.
+             # A small cleanup margin gives the parent the first deadline verdict.
+             def emergency_group_stop(_signal, _frame):
+-                os.killpg(os.getpgrp(), signal.SIGKILL)
++                if inherited:
++                    os.kill(os.getpid(), signal.SIGKILL)
++                else:
++                    os.killpg(os.getpgrp(), signal.SIGKILL)
+             signal.signal(signal.SIGALRM, emergency_group_stop)
+             _, _, remaining = self._guard(invocation, started, mark, mark)
+             signal.setitimer(signal.ITIMER_REAL, remaining + 0.25)
+@@ -427,6 +447,8 @@
+             need(file_identity(os.fstat(bin_fd)) == command.python.identity
+                  == file_identity(os.lstat(command.python.path)), 'EXECUTABLE_IDENTITY_CHANGED')
+             now, last, _ = self._guard(invocation, started, mark, last)
++            need(os.getpgrp() == expected_group and os.getsid(0) == expected_session,
++                 'PROCESS_GROUP_CHANGED', uncertain=True)
+             need(all(instant(a.observed_at) <= now < instant(a.valid_until)
+                      and (now - instant(a.observed_at)).total_seconds() <= 5 for a in approvals),
+                  'REAL_APPROVAL_EXPIRED', uncertain=True)
+@@ -463,10 +485,13 @@
+             signal.pause()
+ 
+     @staticmethod
+-    def _cleanup(pid):
++    def _cleanup(pid, containment='OWN_SESSION'):
+         group_uncertain = False
+         try:
+-            os.killpg(pid, signal.SIGKILL)
++            if containment == 'INHERITED_OUTER_GROUP':
++                os.kill(pid, signal.SIGKILL)
++            else:
++                os.killpg(pid, signal.SIGKILL)
+         except ProcessLookupError:
+             try:
+                 os.kill(pid, signal.SIGKILL)
+@@ -494,6 +519,16 @@
+         raise RunnerError('WORKER_REAP_UNCERTAIN', uncertain=True)
+ 
+     def run(self, invocation):
++        cls = type(invocation)
++        expected_fields = ('operation', 'context', 'request_sha256', 'bound_sha256',
++                           'deadline_utc', 'deadline_monotonic', 'original_receipts')
++        need(type(cls) is type and cls.__bases__ == (object,)
++             and hasattr(cls, '__dataclass_fields__') and cls.__dataclass_params__.frozen
++             and tuple(cls.__dataclass_fields__) == expected_fields
++             and '__getattribute__' not in cls.__dict__ and '__getattr__' not in cls.__dict__
++             and type(cls.__dict__.get('__dict__')) is types.GetSetDescriptorType
++             and all(name not in cls.__dict__ or type(cls.__dict__[name]) in (tuple, str, int, float)
++                     for name in expected_fields), 'FIXED_CORE_INVOCATION_REQUIRED')
+         op, context = getattr(invocation, 'operation', None), getattr(invocation, 'context', None)
+         need(type(op) is str and type(context) is tuple and len(context) == 4
+              and all(type(x) is str and x for x in context), 'INVOCATION_SCOPE_UNIDENTIFIABLE')
+@@ -504,6 +539,8 @@
+         need(threading.active_count() == 1, 'POSIX_FORK_REQUIRES_SINGLE_THREAD')
+         need(type(self.registry) is Registry, 'REGISTRY_TYPE_INVALID')
+         self.registry.validate(self.registry_sha256)
++        if self.registry.containment == 'INHERITED_OUTER_GROUP':
++            need(os.getpid() == os.getpgrp() == os.getsid(0), 'OUTER_GROUP_UNAVAILABLE')
+         self._bindings_guard()
+         matches = [c for c in self.registry.commands if c.operation == op]
+         need(len(matches) == 1, 'OPERATION_NOT_IN_REGISTRY')
+@@ -512,6 +549,8 @@
+              and invocation.bound_sha256 == command.bound_sha256, 'INVOCATION_CONTEXT_PIN_CHANGED')
+         need(not hasattr(invocation, 'argv') and not hasattr(invocation, 'stdin')
+              and not hasattr(invocation, 'env'), 'INVOCATION_OVERRIDE_FORBIDDEN')
++        need(type(invocation.deadline_utc) is datetime and type(invocation.deadline_utc.tzinfo) is timezone
++             and type(invocation.deadline_monotonic) in (int, float), 'INVOCATION_CLOCK_PRIMITIVES_REQUIRED')
+         started, mark = datetime.now(timezone.utc), time.monotonic()
+         self._guard(invocation, started, mark, mark)
+         read_fd, write_fd = os.pipe()
+@@ -551,6 +590,7 @@
+                            'RECEIPT_PROVENANCE_UNVERIFIED', 'WORKER_UNCERTAIN', 'CWD_IDENTITY_CHANGED',
+                            'EXECUTABLE_IDENTITY_CHANGED', 'EXECUTABLE_PIN_CHANGED', 'ANCESTOR_CHANGED',
+                            'REGISTRY_PIN_CHANGED', 'REGISTRY_SOURCE_INPUT_PIN_CHANGED'}
++                allowed |= {'OUTER_GROUP_UNAVAILABLE', 'PROCESS_GROUP_CHANGED'}
+                 code = packet.get('code')
+                 raise RunnerError(code if code in allowed else 'WORKER_UNCERTAIN', uncertain=True)
+             need(set(packet) == {'status', 'raw', 'role', 'context', 'completed_at'}, 'WORKER_PACKET_INVALID', uncertain=True)
+@@ -567,7 +607,7 @@
+         finally:
+             selector.close()
+             os.close(read_fd)
+-            self._cleanup(pid)
++            self._cleanup(pid, self.registry.containment)
+         # Successful transport/ABI before the deadline is insufficient when
+         # process cleanup itself used up the remaining budget.
+         self._guard(invocation, started, mark, last)
