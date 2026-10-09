@@ -20,6 +20,7 @@ jobs:
           (cd veto2 && python3 -B -s -m unittest -v test_veto_delta_r2.py) > veto2.log 2>&1; e3=$?
           (cd reg_l12 && python3 -B -s -m unittest -v test_finite_batch.py test_image_capacity_gate.py test_bootstrap_delta.py) > reg_l12.log 2>&1; e4=$?
           (cd reg_veto && python3 -B -s -m unittest -v test_veto_emitter.py) > reg_veto.log 2>&1; e5=$?
+          (cd l12r3c && python3 -B -s diag_second_run.py) > diag_second_run.log 2>&1
           python3 - "$e1" "$e2" "$e3" "$e4" "$e5" <<'PY'
           import json,sys,hashlib,platform,re
           def tail(p):
