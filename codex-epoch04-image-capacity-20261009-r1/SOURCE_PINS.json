@@ -1,0 +1,64 @@
+{
+  "image_base": "065aa245c0bcd0423898a36162f2895bdd38b26c",
+  "ops_branch": "ops/r2d2-v2-epoch03-artifacts-20261002",
+  "ops_commit": "4a6f7675b8e418e0e7ee55a446250815f3bd5562",
+  "schema": "CODEX_IMAGE_PATH_SOURCE_PINS_V1",
+  "sources": [
+    {
+      "bytes": 8634,
+      "git_blob_sha": "8d31947659231cc0da037d14f86a88a222e7a472",
+      "name": "r2d2_v2_shadow_worker.py",
+      "origin": "image",
+      "path": "c3po/backend/app/r2d2_v2_shadow_worker.py",
+      "sha256": "d159d53ba8ab733f77803773daab595fdbed954ff577193daf691c3bb35eee23"
+    },
+    {
+      "bytes": 14053,
+      "git_blob_sha": "04b5cbe7344add61dbb375e88391e0af30a4ac25",
+      "name": "r2d2_v2_document_format.py",
+      "origin": "image",
+      "path": "c3po/backend/app/r2d2_v2_document_format.py",
+      "sha256": "e7c1758e985d27e4a0bf15f911eba176eefc5154e7929c5f5aba472f9e28c0da"
+    },
+    {
+      "bytes": 3881,
+      "git_blob_sha": "388812c0f13a21e75bdfb8385b54eac03ab0cd76",
+      "name": "r2d2_v2_calendar.py",
+      "origin": "image",
+      "path": "c3po/backend/app/r2d2_v2_calendar.py",
+      "sha256": "3d836992c5c1b0970b7da3b22f5668ab4854c3aa60e9ffb58ad4506e75b7eb93"
+    },
+    {
+      "bytes": 46977,
+      "git_blob_sha": "2e4535b50f7bf11248dcf9c6d6998dda3b51ce0c",
+      "name": "manifest_writer.py",
+      "origin": "ops",
+      "path": "c3po/deployment/capacity-day/manifest_writer.py",
+      "sha256": "aeda5b12d34a406b0d61e1e4696e3c535e89fa3dc680ce0d3b14bb4d60b1d387"
+    },
+    {
+      "bytes": 69779,
+      "git_blob_sha": "e3047f40115303e10707a70d370c4b019ca553bc",
+      "name": "capacity_day_documents.py",
+      "origin": "ops",
+      "path": "c3po/deployment/capacity-day/capacity_day_documents.py",
+      "sha256": "888a48e6654aff90e2f305b410ea6c5614485e5ac778354ba721b790bfead183"
+    },
+    {
+      "bytes": 17717,
+      "git_blob_sha": "0a08f9eb924e0be5f2cd00f516c90fb28e74af86",
+      "name": "reader_launcher.py",
+      "origin": "ops",
+      "path": "c3po/deployment/reader/reader_launcher.py",
+      "sha256": "20669fa3e06e15b40d27b635d343d61230dddf067aed84429f9480dbbd81600a"
+    },
+    {
+      "bytes": 1845,
+      "git_blob_sha": "d092faed30dadf256d97404f960def32f6ec56c4",
+      "name": "c3po-reader.service",
+      "origin": "ops",
+      "path": "c3po/deployment/reader/c3po-reader.service",
+      "sha256": "8d2ff7a91b94e39b8c7a0e91fae34b16dbc9d55f7af407b8464486a9bd064fab"
+    }
+  ]
+}

@@ -14,17 +14,18 @@ jobs:
         run: |
           set +e
           python3 --version | tee py.txt
-          sha256sum l12/*.py gate/*.py veto/*.py veto/originals/*.py > SOURCES.sha256
+          sha256sum l12/*.py gate/*.py veto/*.py veto/originals/*.py codex-epoch04-image-capacity-20261009-r1/*.py codex-epoch04-image-capacity-20261009-r1/sources/* > SOURCES.sha256
           (cd l12 && python3 -B -s -m unittest -v test_finite_batch.py test_image_capacity_gate.py) > l12.log 2>&1; e1=$?
           (cd gate && python3 -B -s -m unittest -v test_delta_r2.py) > gate.log 2>&1; e2=$?
           (cd veto && python3 -B -s -m unittest -v test_veto_emitter.py) > veto.log 2>&1; e3=$?
-          python3 - "$e1" "$e2" "$e3" <<'PY'
+          (cd codex-epoch04-image-capacity-20261009-r1 && python3 -B -s -m unittest -v test_image_path_adapter.py) > gate_r1.log 2>&1; e4=$?
+          python3 - "$e1" "$e2" "$e3" "$e4" <<'PY'
           import json,sys,hashlib,platform,re
           def tail(p):
               t=open(p).read(); m=re.findall(r'^Ran (\d+) tests?',t,re.M); return {'ran':int(m[-1]) if m else None,'ok':t.rstrip().endswith('OK'),'sha256':hashlib.sha256(open(p,'rb').read()).hexdigest()}
           e=list(map(int,sys.argv[1:]))
           r={'schema':'FABLE_E04_CODEX_LINUX_PROOF_V1','python':platform.python_version(),'platform':platform.platform(),
-             'l12':{'exit':e[0],**tail('l12.log')},'gate':{'exit':e[1],**tail('gate.log')},'veto':{'exit':e[2],**tail('veto.log')},
+             'l12':{'exit':e[0],**tail('l12.log')},'gate':{'exit':e[1],**tail('gate.log')},'veto':{'exit':e[2],**tail('veto.log')},'gate_r1':{'exit':e[3],**tail('gate_r1.log')},
              'sources_sha256':hashlib.sha256(open('SOURCES.sha256','rb').read()).hexdigest()}
           r['pass']=all(x==0 for x in e)
           open('RESULT.json','w').write(json.dumps(r,sort_keys=True,indent=1)); print(json.dumps(r,sort_keys=True))
@@ -39,3 +40,4 @@ jobs:
             l12.log
             gate.log
             veto.log
+            gate_r1.log
