@@ -15,9 +15,9 @@ jobs:
           set +e
           python3 --version | tee py.txt
           sha256sum l12/*.py gate/*.py veto/*.py veto/originals/*.py > SOURCES.sha256
-          (cd l12 && python3 -I -B -m unittest -v test_finite_batch.py test_image_capacity_gate.py) > l12.log 2>&1; e1=$?
-          (cd gate && python3 -I -B -m unittest -v test_delta_r2.py) > gate.log 2>&1; e2=$?
-          (cd veto && python3 -I -B -m unittest -v test_veto_emitter.py) > veto.log 2>&1; e3=$?
+          (cd l12 && python3 -B -s -m unittest -v test_finite_batch.py test_image_capacity_gate.py) > l12.log 2>&1; e1=$?
+          (cd gate && python3 -B -s -m unittest -v test_delta_r2.py) > gate.log 2>&1; e2=$?
+          (cd veto && python3 -B -s -m unittest -v test_veto_emitter.py) > veto.log 2>&1; e3=$?
           python3 - "$e1" "$e2" "$e3" <<'PY'
           import json,sys,hashlib,platform,re
           def tail(p):
