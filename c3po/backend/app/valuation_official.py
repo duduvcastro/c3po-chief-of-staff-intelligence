@@ -220,6 +220,10 @@ from .valuation_official_engine import OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE_IN
 logger = logging.getLogger(__name__)
 
 SOURCE_OFFICIAL = SOURCE_BLEND  # "official_blend_v1": the Passo 0 source, the default of every explicit order (a rollback target)
+SOURCE_V3_2_SHADOW = "v3_2_shadow"  # the point-in-time re-execution of the V3 engine (valuation_pit_rerun): RECORDABLE, never selectable
+# The sources a prediction RECORD may carry (rev 7 TP-B: sources coexist in `valuation_predictions`). The official SELECTION keeps
+# reading `OFFICIAL_SOURCES` only: `_selected_source`, `_new_generation` and the store's selection writer refuse `v3_2_shadow` as before.
+RECORDABLE_SOURCES: tuple[str, ...] = (*OFFICIAL_SOURCES, SOURCE_V3_2_SHADOW)
 OFFICIAL_TP_REPLACEMENT_AUTHORIZED = False  # the Passo 1 lock (spec §7-bis item 4): a switch to SOURCE_INTERNAL is refused while False; flips ONLY by a commit citing the mesa's receipt
 BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V2"  # V2 (C395-1): the aggregate binds the AFTER composition (cycles + targeted)
 P90_METHOD = "linear interpolation at (n-1)*0.9"
@@ -385,7 +389,7 @@ def consensus_block(row: Mapping[str, Any], *, market: str) -> dict[str, Any]:
 def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycle_id: str, source_version: str,
                         prediction_instant: datetime, source_manifest_sha256: str | None = None,
                         published_at: datetime | None = None, rerun_of: str | None = None,
-                        source: str = SOURCE_OFFICIAL) -> dict[str, Any] | None:
+                        source: str = SOURCE_OFFICIAL, extra_provenance: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
     """The immutable record of one canonical row. ``None`` when the row carries no usable official TP
     (no symbol, TP or buy-in) — such rows are not predictions and never become official — or when the market's
     session is unknown (``CalendarUnavailable``: an identity cannot be minted from a civil date, rev 5). Every field
@@ -402,9 +406,12 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
     ``consensus_weight_percent = 0`` (top level and ``decomposition.weights``), ``decomposition.buy_in_models`` from
     ``internal_buy_in_models`` (else the producer's), bands from ``internal_bear_tp``/``internal_bull_tp`` (null when the
     producer emits none — never rescaled) — and keeps EVERYTHING else identical: the consensus of reference with its own
-    identity (``consensus_block``, same ``payload_sha256``), methods, calibration, provenance, both clocks."""
-    if source not in OFFICIAL_SOURCES:
-        raise ValueError(f"unknown official source {source!r}; expected one of {OFFICIAL_SOURCES}")
+    identity (``consensus_block``, same ``payload_sha256``), methods, calibration, provenance, both clocks.
+    ``extra_provenance`` (the point-in-time re-execution, ``valuation_pit_rerun``): JSON-ready keys MERGED into
+    ``decomposition.provenance`` after the fixed ones (a fixed key is never overridden) — hashed with the record, stored in
+    the JSONB column, rebuilt by the PostgreSQL reader as any other provenance field. ``None`` for every producer today."""
+    if source not in RECORDABLE_SOURCES:
+        raise ValueError(f"unknown recordable source {source!r}; expected one of {RECORDABLE_SOURCES}")
     internal = source == SOURCE_INTERNAL
     symbol = str(row.get("symbol") or "").strip().upper()
     if internal:
@@ -478,6 +485,9 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
             },
         },
     }
+    if extra_provenance:
+        fixed = core["decomposition"]["provenance"]
+        core["decomposition"]["provenance"] = {**{str(k): v for k, v in extra_provenance.items() if str(k) not in fixed}, **fixed}
     return {**core, "id": str(uuid4()), "row_sha256": canonical_sha256(core)}
 
 
