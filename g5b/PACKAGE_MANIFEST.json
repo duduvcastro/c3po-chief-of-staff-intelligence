@@ -1,0 +1,89 @@
+{
+  "files": {
+    "NEW_CLOCK_RESULT.json": {
+      "bytes": 500,
+      "sha256": "bb038191a6a1734f9a00feb88ea9189c7ec3b30a56dee01ee06fa0e6f0e3b1ea"
+    },
+    "NEW_CLOCK_TEST_LOG.txt": {
+      "bytes": 913,
+      "sha256": "591fba4fa8bbe05e65c040e0731f88534c9d072c9a5694a673cdd64c0df730fa"
+    },
+    "README_R5B.md": {
+      "bytes": 3163,
+      "sha256": "5cc936b63c34baaab4d40d6dd4b346aee2bb12e7ddfde3f47f71f35aad3f3ad3"
+    },
+    "SOURCE_PINS.json": {
+      "bytes": 2963,
+      "sha256": "5e554c8206bb67bcc70ec1f8fc8740bde2db0ab40fe4cf072f929dd1c63af388"
+    },
+    "finite_batch.py": {
+      "bytes": 50211,
+      "sha256": "3ca239ec117614c7b2fa394be5ad16a66c66ace2338ee39d35c7a8cef546be69"
+    },
+    "image_capacity_gate.py": {
+      "bytes": 8004,
+      "sha256": "58a6104e8d1efcab2199d388ffe17e602abf315304449dd1be5178f57f7c12ec"
+    },
+    "image_path_adapter.py": {
+      "bytes": 37072,
+      "sha256": "78282c7e932f8082f7108eb5d22413c7580a4393ea9e3171f465d5b48ba35096"
+    },
+    "sources/c3po-reader.service": {
+      "bytes": 1845,
+      "sha256": "8d2ff7a91b94e39b8c7a0e91fae34b16dbc9d55f7af407b8464486a9bd064fab"
+    },
+    "sources/capacity_day_documents.py": {
+      "bytes": 69779,
+      "sha256": "888a48e6654aff90e2f305b410ea6c5614485e5ac778354ba721b790bfead183"
+    },
+    "sources/manifest_writer.py": {
+      "bytes": 46977,
+      "sha256": "aeda5b12d34a406b0d61e1e4696e3c535e89fa3dc680ce0d3b14bb4d60b1d387"
+    },
+    "sources/r2d2_v2_calendar.py": {
+      "bytes": 3881,
+      "sha256": "3d836992c5c1b0970b7da3b22f5668ab4854c3aa60e9ffb58ad4506e75b7eb93"
+    },
+    "sources/r2d2_v2_capacity_bound.py": {
+      "bytes": 19296,
+      "sha256": "d442b393d069a657fec33fd8c2f5bcc064b8e1a1f2c2eddfb9cc53f742ec2ed6"
+    },
+    "sources/r2d2_v2_document_format.py": {
+      "bytes": 14053,
+      "sha256": "e7c1758e985d27e4a0bf15f911eba176eefc5154e7929c5f5aba472f9e28c0da"
+    },
+    "sources/r2d2_v2_massive_sessions.py": {
+      "bytes": 18746,
+      "sha256": "c4ffe1c9095a81b0057dc2b7995198f25179015e5af963f137c7b8f7c1605312"
+    },
+    "sources/r2d2_v2_shadow.py": {
+      "bytes": 88078,
+      "sha256": "076fbc1bff2b8ebddaa94fba5f8a54e28fcd7acb39c0c75d6ee7b881f73caded"
+    },
+    "sources/r2d2_v2_shadow_worker.py": {
+      "bytes": 8634,
+      "sha256": "d159d53ba8ab733f77803773daab595fdbed954ff577193daf691c3bb35eee23"
+    },
+    "sources/r2d2_v2_store.py": {
+      "bytes": 11458,
+      "sha256": "9f9887c267af10c5494ec1a4dd2628b05f74f40dd2bae34e340bf81f00575254"
+    },
+    "sources/reader_launcher.py": {
+      "bytes": 17717,
+      "sha256": "20669fa3e06e15b40d27b635d343d61230dddf067aed84429f9480dbbd81600a"
+    },
+    "synthetic_bridge_plan.py": {
+      "bytes": 2649,
+      "sha256": "8480f7d328a25c890cc475cd4b26f21ad30a8cc52fb69e98c6a19ec3ba60cdc8"
+    },
+    "synthetic_gate_fixture.py": {
+      "bytes": 3449,
+      "sha256": "88a8309df46c0aea831ad836a7434ca7ed5fc0ddcffb6151aca76585f56b71f2"
+    },
+    "test_clock_delta.py": {
+      "bytes": 5457,
+      "sha256": "abce2f305f501a2d4548a22c2c82e843207364fbad19e8a688c9e9420cb3a807"
+    }
+  },
+  "schema": "CODEX_IMAGE_GATE_R5B_PACKAGE_MANIFEST_V1"
+}

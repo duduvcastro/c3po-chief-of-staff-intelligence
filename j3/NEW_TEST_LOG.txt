@@ -1,0 +1,4 @@
+Original local run: python3 -B -m unittest test_j3_reservation_delta -v
+Ran 10 tests in 0.111s
+OK; failures=0; errors=0.
+No previously closed suite was selected.

@@ -1,0 +1,14 @@
+test_constructor_rejects_injected_clock_before_callbacks (__main__.NativeClockDelta) ... ok
+test_monotonic_budget_blocks_frozen_wall_during_verifier (__main__.NativeClockDelta) ... ok
+test_monotonic_freshness_blocks_frozen_wall_during_full_chain_hash (__main__.NativeClockDelta) ... ok
+test_monotonic_regression_after_parser_refuses (__main__.NativeClockDelta) ... ok
+test_source_native_clock_refuses_stale_snapshot (__main__.NativeClockDelta) ... ok
+test_source_owned_native_clock_is_passed_to_reader_and_verifier (__main__.NativeClockDelta) ... ok
+test_supplied_phase_timestamp_cannot_override_native_window (__main__.NativeClockDelta) ... ok
+test_task_window_rechecked_after_reader_before_verifier (__main__.NativeClockDelta) ... ok
+test_wall_regression_after_verifier_refuses (__main__.NativeClockDelta) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.003s
+
+OK
