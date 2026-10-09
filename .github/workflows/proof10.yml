@@ -15,7 +15,7 @@ jobs:
           set +e
           python3 --version | tee py.txt
           find j4rc -type f -name '*.py' -print0 | sort -z | xargs -0 sha256sum > SOURCES.sha256
-          (cd j4rc && python3 -I -B run_required.py) > j4rc.log 2>&1; e1=$?
+          (cd j4rc && python3 -B -s run_required.py) > j4rc.log 2>&1; e1=$?
           python3 - "$e1" <<'PY'
           import json,sys,hashlib,platform,re
           t=open('j4rc.log').read(); m=re.findall(r'^Ran (\d+) tests?',t,re.M)
