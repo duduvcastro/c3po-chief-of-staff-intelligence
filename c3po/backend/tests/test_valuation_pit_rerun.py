@@ -509,6 +509,43 @@ def test_price_vintage_is_pinned_at_run_start_and_a_publication_mid_run_is_never
         service.pin_vintage("NASDAQ", as_of=datetime(2026, 9, 14, 21, 0, tzinfo=UTC), pinned_at=NOW)
 
 
+def test_a_bar_dated_off_the_exchange_calendar_is_never_read_and_is_counted() -> None:
+    """Design §2: sessions off the calendar are excluded from windows, counts and prices. The producer validates ISO dates,
+    not the calendar (inventory rev 4a §2 C: one B3 bar on Saturday 2024-03-16), so the PIT reader must drop them itself."""
+    at = datetime(2024, 6, 17, 21, 0, tzinfo=UTC)  # Monday 2024-06-17, an XNYS session (closed 20:00Z)
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    clean = {f"{symbol}.US": _bars_for(symbol, sessions, base=100.0 + 10 * i) for i, symbol in enumerate(SYMBOLS)}
+    clean["AAA.US"] = [bar for bar in clean["AAA.US"] if bar["date"] != "2024-06-17"]  # AAA has no bar on the session of T (both stores)
+    absurd = {"close": 9_999.0, "adjusted_close": 9_999.0, "volume": 1.0}
+    dirty = {key: list(rows) for key, rows in clean.items()}
+    dirty["AAA.US"] = sorted(dirty["AAA.US"] + [{"date": "2024-06-15", **absurd}], key=lambda bar: bar["date"])  # Saturday after the last AAA bar ≤ T
+    dirty["BBB.US"] = sorted(dirty["BBB.US"] + [{"date": "2024-03-16", **absurd}], key=lambda bar: bar["date"])  # Saturday inside the beta window
+    dirty["CCC.US"] = sorted(dirty["CCC.US"] + [{"date": "2024-06-22", **absurd}], key=lambda bar: bar["date"])  # Saturday after T: filtered by date
+    computations = {}
+    for name, bars in (("clean", clean), ("dirty", dirty)):
+        database = _database()
+        _publish_prices(database, bars=bars)
+        _publish_sources(database)
+        service = _service(database)
+        prices = service.pin_vintage("NASDAQ", as_of=at, pinned_at=NOW)
+        computations[name] = service.compute("NASDAQ", as_of=at, prices=prices)
+    clean_run, dirty_run = computations["clean"], computations["dirty"]
+    assert "2024-06-15" in [bar["date"] for bar in dirty["AAA.US"]]  # the store DOES hold the Saturday bars...
+    assert "2024-06-15" not in dirty_run.resolver.prices.bars("AAA") and "2024-03-16" not in dirty_run.resolver.prices.bars("BBB")  # ...never served
+    assert dirty_run.resolver.prices.off_calendar_bars == 2 and clean_run.resolver.prices.off_calendar_bars == 0  # the one after T is outside the date filter
+    assert dirty_run.resolver.excluded["price_bars:off_calendar_session"] == 2 and "price_bars:off_calendar_session" not in clean_run.resolver.excluded
+    # the price of T is the last CALENDAR session ≤ T (Friday 2024-06-14), never the Saturday bar; beta and the 90-session count unchanged
+    assert dirty_run.resolver.per_symbol["AAA"]["row"]["price"] == clean_run.resolver.per_symbol["AAA"]["row"]["price"] != absurd["close"]
+    assert dirty_run.resolver.per_symbol["AAA"]["row"]["price_session"] == "2024-06-14"
+    for symbol in SYMBOLS:
+        assert dirty_run.resolver.per_symbol[symbol] == clean_run.resolver.per_symbol[symbol], symbol
+        assert dirty_run.resolver.prices.valid_sessions(symbol) == clean_run.resolver.prices.valid_sessions(symbol)
+    assert dirty_run.results == clean_run.results  # the engine sees exactly the clean inputs
+    excluded_clean = dict(clean_run.resolver.excluded)
+    excluded_dirty = {key: value for key, value in dirty_run.resolver.excluded.items() if key != "price_bars:off_calendar_session"}
+    assert excluded_dirty == excluded_clean
+
+
 # ------------------------------------------------------------------ §4 (auditor ii): identity, idempotency, interruption, changed inputs, concurrency
 def test_run_key_is_a_canonical_sha256_and_the_lock_key_derives_from_it() -> None:
     manifest = {"b": [1, 2], "a": {"y": 1.5, "x": None}}

@@ -77,7 +77,7 @@ from .valuation_official import (
 )
 from .valuation_official_engine import official_buy_in_v1, official_entry_discount_v1
 from .valuation_panel import _NoNetworkHttp
-from .valuation_price_history import PriceHistoryService
+from .valuation_price_history import PriceHistoryService, sessions_after
 from .valuation_v3_engine import ENGINE_VERSION, ValuationV3Engine
 from .valuation_v3_macro import (
     SCHEMA_VERSION as MACRO_SCHEMA_VERSION,
@@ -472,7 +472,10 @@ class PinnedPrices:
     """The price series of ONE run: the vintage pinned at run start (``publication_id`` + ``bars_sha256``), read for every
     symbol through a cut equal to the pinned publication's availability + 1 µs — so ``series()`` resolves exactly that
     publication for the whole run, whatever is published meanwhile — and verified on every read (a mismatch is a refusal,
-    never a silent switch). Bars are filtered by ECONOMIC date (``session_date ≤ session of T``)."""
+    never a silent switch). Bars are filtered by ECONOMIC date (``session_date ≤ session of T``) and by the market's
+    exchange calendar: a bar the series holds on a date that is NOT a session (the producer validates ISO dates, not the
+    calendar — inventory rev 4a §2 C found one B3 bar on Saturday 2024-03-16) is excluded from every window, count and
+    price (design §2) and counted in ``off_calendar_bars`` (published as ``price_bars:off_calendar_session``), never served."""
 
     def __init__(self, reader: PriceHistoryService, market: str, *, as_of: datetime, pinned_at: datetime) -> None:
         self.reader = reader
@@ -497,20 +500,42 @@ class PinnedPrices:
         self._bars: dict[str, dict[str, dict[str, Any]]] = {}
         self._returns: dict[str, dict[str, float]] = {}
         self._proxy: dict[str, float] | None = None
+        self._calendar_sessions: dict[str, bool] = {}
+        self.off_calendar_bars = 0  # bars ≤ T dated off the exchange calendar, excluded (an aggregate: never a symbol)
 
     def manifest(self) -> dict[str, Any]:
         return {"publication_id": self.publication_id, "price_snapshot_id": self.price_snapshot_id, "available_at": self.available_at.isoformat(),
                 "bars_sha256": self.bars_sha256, "window": list(self.window), "historical_vintage": "N/D"}
 
+    def _is_calendar_session(self, session: str) -> bool:
+        """Whether ``session`` is a session of the market's exchange calendar (memoised per date). A date the calendar
+        cannot place is a refusal (``PitRerunInputError``), never a silent keep or drop."""
+        if session not in self._calendar_sessions:
+            try:
+                _, status = sessions_after(self.market, date.fromisoformat(session), 0)
+            except ValueError as error:  # an unparseable date, or DateOutOfBounds (a ValueError): the calendar cannot place the bar
+                raise PitRerunInputError(f"{self.market} calendar cannot place a bar dated {session!r}: {error}") from error
+            self._calendar_sessions[session] = status == "ok"
+        return self._calendar_sessions[session]
+
     def bars(self, symbol: str) -> dict[str, dict[str, Any]]:
-        """The symbol's bars with ``session_date ≤ session of T`` from the PINNED publication (empty when the vintage refuses it)."""
+        """The symbol's bars with ``session_date ≤ session of T`` from the PINNED publication (empty when the vintage refuses
+        it), sessions of the exchange calendar only: an off-calendar bar is excluded and counted (design §2)."""
         symbol = symbol.strip().upper()
         if symbol not in self._bars:
             series = self.reader.series(self.market, symbol, available_before=self._cut)
             if series["status"] not in ("ok", "symbol_not_in_vintage") or (series["status"] == "ok" and str(series["publication_id"]) != self.publication_id):
                 raise PitRerunInputError(f"pinned price vintage {self.publication_id} of {self.market} no longer resolves as pinned "
                                          f"(status {series['status']}, publication {series.get('publication_id')}): the run refuses to mix vintages")
-            self._bars[symbol] = {session: bar for session, bar in series["bars"].items() if session <= self.session_date}
+            kept: dict[str, dict[str, Any]] = {}
+            for session, bar in series["bars"].items():
+                if session > self.session_date:
+                    continue
+                if not self._is_calendar_session(session):
+                    self.off_calendar_bars += 1
+                    continue
+                kept[session] = bar
+            self._bars[symbol] = kept
         return self._bars[symbol]
 
     def valid_sessions(self, symbol: str) -> int:
@@ -814,6 +839,8 @@ class PitSourceResolver:
             loaded[("peer_quality", peer_market)] = {"entity_key": f"{peer_market}_V2_PEER_QUALITY", "outputs": {"packets": {}}}  # ABSENT: no history (§3)
         self.excluded["analyst_estimates:no_history"] += len(self.per_symbol)
         self.excluded["peer_quality:no_history"] += len(self.per_symbol)
+        if self.prices.off_calendar_bars:  # every bar of the run was read above (the proxy reads the whole catalogue): the total is final
+            self.excluded["price_bars:off_calendar_session"] = self.prices.off_calendar_bars
         return loaded
 
     def macro(self) -> MacroAtT:
