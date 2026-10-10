@@ -1,36 +1,147 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-33587089986",
+  "artifact_name": "c3po-production-container-vulnerabilities-38043153918",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 2,
+  "finding_total": 14,
   "findings": [
     {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
       "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-66046"
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-78667"
     },
     {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
       "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-76641"
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-78669"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "high",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-97031"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "medium",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-56866"
+    },
+    {
+      "fixed_version": "0.4.1",
+      "image": "database",
+      "installed_version": "v0.1.0",
+      "package": "github.com/moby/sys/user",
+      "severity": "medium",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-61801"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "medium",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-78663"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "medium",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-94439"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "medium",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-94448"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "medium",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-97032"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "low",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-56857"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "unknown",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-78659"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "unknown",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-78660"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "unknown",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-94440"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "unknown",
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-97030"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 2
+    "high": 3,
+    "low": 1,
+    "medium": 6,
+    "unknown": 4
   },
-  "generated_at": "2026-09-02T03:28:47.063426+00:00",
-  "remediation_key": "614ce1e7b4892afaa29a0e98735dc8f7772936198517505365c7abd17a34312a",
-  "report_sha256": "1d07350e1caeaede55611698158eabffefe731f8753ea95c2f1b06251c40c58c",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/33587089986",
+  "generated_at": "2026-10-10T09:57:51.430470+00:00",
+  "remediation_key": "b1f8da406a06a51ebe6707ac44a5009e4526097d85668bc612a26bc9d316e932",
+  "report_sha256": "0353243a1755db4f8f3ab141cba765e90aa9e87797d1bc11bc35cd0988f185c3",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/38043153918",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
-  "source_revision": "7bc70899db6088afcd303b4c490f08d88a2758ce"
+  "source_revision": "de96aee90a26e9587663ba7a1f6e55a592afcd20"
 }
