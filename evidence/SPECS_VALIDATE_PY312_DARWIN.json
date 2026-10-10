@@ -1,0 +1,161 @@
+{
+ "DOWN": {
+  "physical_guards": true,
+  "placeholders": [
+   "@P_APPROVED_BOUNDED_READBACK_RULE_JSON@",
+   "@P_CALENDAR_PIN_SHA256@",
+   "@P_CAPACITY_MONDAY04_PROGRAM_SHA256@",
+   "@P_CODEX_J4_RECEIPT_CODEC_PY@",
+   "@P_CODEX_REVIEWED_C6_SNAPSHOT_READER_VERIFIER_PY@",
+   "@P_CODEX_REVIEWED_CAPACITY_VERIFIERS_PY@",
+   "@P_CODEX_REVIEWED_K9_VERIFIERS04_PY@",
+   "@P_CODEX_REVIEWED_READY_VERIFIERS_PY@",
+   "@P_CODEX_REVIEWED_SESSION_START_VERIFIER_PY@",
+   "@P_E6_DOCUMENT_PATH@",
+   "@P_E6_DOCUMENT_SHA256@",
+   "@P_J4_AUTHORITY_BRIDGE_REAL_SHA256@",
+   "@P_J4_GENERAL_AUTHORITY_SHA256@",
+   "@P_J4_GENERAL_SOURCE_IDENTITY@",
+   "@P_J4_ORIGINAL_ACT_B_SHA256@",
+   "@P_J4_ORIGINAL_CONFIG_AUTHORITY_SHA256@",
+   "@P_J4_ORIGINAL_CONFIG_BASE_SHA256@",
+   "@P_J4_ORIGINAL_DECISION_SHA256@",
+   "@P_J4_ORIGINAL_FOLDER_AUTHORITY_SHA256@",
+   "@P_J4_ORIGINAL_FOLDER_OWNER_SHA256@",
+   "@P_J4_ORIGINAL_FOLDER_SPEC_SHA256@",
+   "@P_J4_ORIGINAL_MACHINE_ORDER_SHA256@",
+   "@P_J4_ORIGINAL_RULE_SHA256@",
+   "@P_J4_ORIGINAL_TEMPLATE_SHA256@",
+   "@P_J4_ORIGINAL_VETO_BASE_SHA256@",
+   "@P_M3_ACTIVATE_PROGRAM_SHA256@",
+   "@P_MANIFEST_DIRECTORY@",
+   "@P_RUNTIME_AUTHORITY_SHA256@",
+   "@P_UP_BOUND_SHA256@",
+   "@P_UP_COMMIT_RESULT_ORIGINAL_SHA256@",
+   "@P_UP_PUBLISH_LAUNCH_ORIGINAL_SHA256@",
+   "@P_UP_REQUEST_SHA256@"
+  ],
+  "ready_check_at": "2026-10-12T12:30:00Z",
+  "session_start_at": "2026-10-12T13:29:02Z",
+  "slack": [
+   {
+    "budget": 750,
+    "effect_floor": 675,
+    "kill": 655,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "capture_launch"
+   }
+  ],
+  "slots": 8,
+  "status": "DOWN_DRAFT_VALID_WITH_FILL_INS"
+ },
+ "UP": {
+  "act_b_sha256_DRAFT": "fd5c727fa4f3fb7605229f7152e3d52c9105611dacc9546dfe4d7de694d46617",
+  "code_revision": "de96aee90a26e9587663ba7a1f6e55a592afcd20",
+  "go_sha256_DRAFT": "aa4f73abdda298bc1dcded42ec371124914c9d10e5246ff7a332e1f68a5d2c3e",
+  "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+  "package_sha256": "43db2b969fe113594fafe4a9e0cabec1f80ada9f8ab9ee5852677d65e2ec716a",
+  "physical_guards": true,
+  "placeholders": [
+   "@P_CODEX_REVIEWED_K9_VERIFIERS04_PY@",
+   "ACT_B_04 (plan constants)",
+   "K9_GO_04 (plan go_sha256)"
+  ],
+  "policy_sha256": "6757e79112770f948b73770f6b6b87f209930afe8cd00f9517d378055e0d2d92",
+  "release_sha256": "5fd6eadbf8c1c899598e23c52e98599fe9cc990bd33a182cc363d2c05c5784ab",
+  "runner_sha256": "e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a",
+  "slack": [
+   {
+    "budget": 600,
+    "effect_floor": 555,
+    "kill": 535,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "prove"
+   },
+   {
+    "budget": 900,
+    "effect_floor": 855,
+    "kill": 835,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "collect"
+   },
+   {
+    "budget": 600,
+    "effect_floor": 555,
+    "kill": 535,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "commit_result"
+   },
+   {
+    "budget": 600,
+    "effect_floor": 555,
+    "kill": 535,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "publish_launch"
+   },
+   {
+    "budget": 2400,
+    "effect_floor": 2355,
+    "kill": 2335,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "components"
+   },
+   {
+    "budget": 4500,
+    "effect_floor": 4455,
+    "kill": 4435,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "sources"
+   },
+   {
+    "budget": 120,
+    "effect_floor": 55,
+    "kill": 35,
+    "max_effect_lateness": 65,
+    "slack_beyond_allowance": 50,
+    "target": "bind"
+   },
+   {
+    "budget": 300,
+    "effect_floor": 255,
+    "kill": 235,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "preflight"
+   },
+   {
+    "budget": 4200,
+    "effect_floor": 4155,
+    "kill": 4135,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "acquire"
+   },
+   {
+    "budget": 1200,
+    "effect_floor": 1155,
+    "kill": 1135,
+    "max_effect_lateness": 45,
+    "slack_beyond_allowance": 30,
+    "target": "execute"
+   },
+   {
+    "budget": 120,
+    "effect_floor": 40,
+    "kill": 20,
+    "max_effect_lateness": 80,
+    "slack_beyond_allowance": 65,
+    "target": "stage"
+   }
+  ],
+  "slots": 11,
+  "status": "UP_SPEC_VALID_WITH_FILL_INS"
+ }
+}

@@ -1,0 +1,145 @@
+{
+ "all_ok": true,
+ "command": "L12_TEST_TMP=<v3.2 dir>/suite-tmp-under-icloud-documents <python> -I -S -B l12host/tests/test_l12host.py (5 times in a row; the 3.12 and 3.9 streams ran concurrently, 22:25-23:03 BRT, i.e. at night for N1, under load for C1, and with L12_TEST_TMP under the iCloud domain for M1)",
+ "family_seal_sha256": "625d244b538e36a270c1d5136dfb87a067a9950eeb4beac35d6505e7eb3cceb7",
+ "platform": "darwin",
+ "python": "3.9.6",
+ "runs": [
+  {
+   "ended_utc": "2026-10-10T01:33:19Z",
+   "exit": 0,
+   "failing": [],
+   "run": 1,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:25:54Z",
+   "stderr_sha256": "8d38f3f877657ac693237df3eaa96f653ed9581732fd7f571873656e1e66e81d",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.9.6",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T01:40:44Z",
+   "exit": 0,
+   "failing": [],
+   "run": 2,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:33:19Z",
+   "stderr_sha256": "1ef0d29fb55442a13688fdbd8fd93fd93d825687df7a2544d242b630df2aff77",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.9.6",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T01:48:05Z",
+   "exit": 0,
+   "failing": [],
+   "run": 3,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:40:44Z",
+   "stderr_sha256": "ac37025a4f07e740010529d154d9f4aae2245c66a385c33343b7ca46804608b6",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.9.6",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T01:55:27Z",
+   "exit": 0,
+   "failing": [],
+   "run": 4,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:48:05Z",
+   "stderr_sha256": "4efb6a033ee6db9a64d8a78dad50229016477f8b6dd9802a49ca8ab2b9d229b3",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.9.6",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T02:02:48Z",
+   "exit": 0,
+   "failing": [],
+   "run": 5,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:55:27Z",
+   "stderr_sha256": "29c1ecf924fcf451bd406e19efdbab0f7b2b9c57f2af3a0d4d4d6936da0daa0f",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.9.6",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  }
+ ],
+ "schema": "L12HOST_V32_TEST_RUNS"
+}

@@ -1,0 +1,39 @@
+{
+ "command": "python3 -I -S -B evidence/probes/c1_killpg_zombie_probe.py",
+ "deterministic_reproduction": "V32.test_c1_extended_cleanup_kills_the_live_group_before_its_lifeline_closes delays the cleanup 0.3 s: with the v3.1 order it fails at once on macOS (EXTENDED_GROUP_CLEANUP_UNCERTAIN, run here), with the v3.2 order it passes on 3.12 and 3.9",
+ "observed_flake": {
+  "code": "EXTENDED_GROUP_CLEANUP_UNCERTAIN",
+  "failing_test": "SessionStart.test_ready_absent_holds_after_the_supervisor_and_never_starts_the_reader",
+  "run": "first 3.12 run of the v3.2 tree with the N1 fix, before the C1 fix (concurrent with the 3.9 stream), 22:11-22:18 BRT",
+  "slot": "UP X7 (stage)",
+  "stderr_sha256": "cb2c4368e4b4a046570ae17843ffd7bf61b6b4d91d4cc062f45fdc9afb4be722",
+  "summary": {
+   "errors": 0,
+   "failures": 1,
+   "ok": false,
+   "platform": "darwin",
+   "python": "3.12.14",
+   "schema": "L12HOST_V32_TEST_RESULT",
+   "skipped": 1,
+   "temp_parent": {
+    "file_provider_candidates_skipped": 1,
+    "source": "tempfile"
+   },
+   "tests": 80
+  },
+  "worker_cleanup": "UNCERTAIN"
+ },
+ "probe": "evidence/probes/c1_killpg_zombie_probe.py",
+ "probe_result": {
+  "kill_the_zombie_itself": "OK",
+  "killpg_after_reaping": "ProcessLookupError",
+  "killpg_group_of_one_zombie": "PermissionError",
+  "killpg_zombie_leader_with_a_live_member": "OK",
+  "platform": "darwin",
+  "python": "3.9.6",
+  "schema": "L12HOST_V32_C1_KILLPG_ZOMBIE_PROBE"
+ },
+ "probe_sha256": "945a37aa5858c2c188163d2539bda9c49008ed71f847e21419a0409658d3f842",
+ "reading": "macOS answers killpg with EPERM when every member of the group is a zombie; v3.1 closed the lifeline before its killpg, so the watchdog sometimes killed the group first. Linux delivers to zombies (answers 0), so the host never had this path.",
+ "schema": "L12HOST_V32_C1_EVIDENCE_DARWIN"
+}

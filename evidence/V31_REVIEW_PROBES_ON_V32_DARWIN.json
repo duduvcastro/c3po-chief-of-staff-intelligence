@@ -1,0 +1,68 @@
+{
+ "family_seal_sha256": "625d244b538e36a270c1d5136dfb87a067a9950eeb4beac35d6505e7eb3cceb7",
+ "not_rerun": {
+  "probe_engine_hold_check_order.py": "now the suite test V32.test_h1_engine_refuses_a_far_hold_before_its_supervisor_gate",
+  "probe_proof_hold_too_long.py, probe_proof_duration.py, probe_proof_down_lot_offline.py": "they call v3.1's proof API (safe_after, proof_down_spec(..., r0)), replaced in v3.2; superseded by PROOF_SCHEDULE_MODEL.json and PROOF_LOTS_OFFLINE_DARWIN.json"
+ },
+ "probe_real_mode_up_v31": {
+  "slots": {
+   "P1": {
+    "code": null,
+    "diagnostics": [],
+    "exit": 0,
+    "result_class": "K9_STEP_COMPLETE",
+    "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+   },
+   "P2": {
+    "code": null,
+    "diagnostics": [],
+    "exit": 0,
+    "result_class": "K9_STEP_COMPLETE",
+    "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+   },
+   "P3": {
+    "code": null,
+    "diagnostics": [],
+    "exit": 0,
+    "result_class": "K9_STEP_COMPLETE",
+    "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+   },
+   "P4": {
+    "code": null,
+    "diagnostics": [],
+    "exit": 0,
+    "result_class": "K9_STEP_COMPLETE",
+    "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+   },
+   "X1": {
+    "code": null,
+    "diagnostics": [],
+    "exit": 0,
+    "result_class": "K9_STEP_COMPLETE",
+    "status": "EXTENDED_COMPLETE"
+   }
+  },
+  "verdict": "REAL_MODE_UP_IN_PROCESS_OK"
+ },
+ "probe_v31_bind_matrix": {
+  "baseline": "BINDS_IN_PHYSICAL_MODE",
+  "reader_network_differs": "REFUSED:SESSION_UNIT_MOUNTS_NOT_PINNED",
+  "ready_absent_section": "REFUSED:EXTENDED_STEP_SHAPE_INVALID",
+  "ready_check_ceiling_44": "REFUSED:EFFECT_LATENESS_SLACK_BELOW_30S",
+  "ready_check_slot_inside_early_margin": "REFUSED:SLOT_OUTSIDE_TASK_WINDOW",
+  "ready_check_with_hold": "REFUSED:EXTENDED_STEP_SHAPE_INVALID",
+  "ready_check_with_requires": "REFUSED:EXTENDED_REQUIRES_NOT_THE_CHAIN",
+  "scope+units_image_not_capture_k9": "REFUSED:CAPTURE_IMAGE_NOT_THE_SCOPE_ONE",
+  "session_not_after_beyond_open_plus_6h50": "REFUSED:SESSION_START_WINDOW_BEFORE_OPEN_MINUS_90S",
+  "units_image_not_scope": "REFUSED:SESSION_UNIT_IMAGE_NOT_THE_SCOPE_ONE",
+  "units_journal_epoch03": "REFUSED:SESSION_UNIT_PATHS_NOT_EPOCH04",
+  "units_network_host": "REFUSED:UNIT_DOCKER_NETWORK_INVALID",
+  "units_network_none": "BINDS_IN_PHYSICAL_MODE",
+  "units_network_other_name": "BINDS_IN_PHYSICAL_MODE"
+ },
+ "source": "v3.1 reviewer probes probe_v31_bind_matrix.py (sha256 59869ba0812421a5e898aa9288a6662fa42cc63880aa921d8b8436ea3286d38d) and probe_real_mode_up_v31.py (sha256 f23cf32eeaedbde324fe5b3679091bdb1528c401bc3151f9b471be7c1bf839da) from fable-l12host-v31-20261009/review-tmp/adv, run unchanged with python 3.12.14 against a copy of the v3.2 l12host/",
+ "still_open_lows": {
+  "session_not_after_beyond_open_plus_6h50 -> SESSION_START_WINDOW_BEFORE_OPEN_MINUS_90S": "L5 (disclosed)",
+  "units_network_none / units_network_other_name bind": "L2 (disclosed, CONTRACT section 10)"
+ }
+}

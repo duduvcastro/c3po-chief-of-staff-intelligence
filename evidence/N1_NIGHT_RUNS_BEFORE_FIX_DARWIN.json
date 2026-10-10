@@ -1,0 +1,87 @@
+{
+ "reading": "every failure except test_family_seal_and_vendor_pins (stale family SHA256SUMS before resealing) is a DOWN fixture whose owner record, signed at real now, is re-validated by the runtime outside 07:00-21:45 BRT (exit 3 OWNER_SIGNED_OUTSIDE_0700_2145_BRT, or a refusal record without result_class); after the fix the same tests pass at 22:08 BRT (see TEST_RUNS_*_DARWIN.json for the full runs).",
+ "runs": {
+  "py312": {
+   "failing_tests": [
+    "test_c3_import_needs_the_source_lot_bound_and_its_ledger_terminal",
+    "test_capacity_chain_goes_for_the_actual_m3_original",
+    "test_down_e6_j_alternatives_post_chain",
+    "test_f2_engine_refuses_the_supervisor_while_a_ready_file_exists",
+    "test_f2_leftover_ready_is_a_hold_before_the_supervisor",
+    "test_f5_supervisor_dead_before_the_reader_holds_without_the_reader",
+    "test_f5_supervisor_dead_during_the_hold_is_not_a_complete",
+    "test_f7_unit_env_file_identity_is_pinned_in_the_claim",
+    "test_family_seal_and_vendor_pins",
+    "test_h1_engine_refuses_a_far_hold_before_its_supervisor_gate",
+    "test_j1_started_late_consumes_the_logical_attempt",
+    "test_j4_registry_is_derived_and_checked_through_the_runtime",
+    "test_one_claim_supervisor_ready_recheck_reader_held",
+    "test_ready_absent_holds_after_the_supervisor_and_never_starts_the_reader",
+    "test_ready_divergent_fails_at_once",
+    "test_ready_removed_before_the_reader_start_is_refused_by_the_engine",
+    "test_refuses_before_any_effect_without_the_capacity_chain",
+    "test_s4_capacity_source_is_the_producing_lot_effect_source",
+    "test_veto_after_ready_blocks_the_reader"
+   ],
+   "owner_window_code_seen": true,
+   "stale_seal_error": true,
+   "stderr_sha256": "d0e73cb8a0251e7f55e203775b77ac30706d837304ffae1e417789715a528f19",
+   "summary": {
+    "errors": 3,
+    "failures": 16,
+    "ok": false,
+    "platform": "darwin",
+    "python": "3.12.14",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 79
+   }
+  },
+  "py39": {
+   "failing_tests": [
+    "test_c3_import_needs_the_source_lot_bound_and_its_ledger_terminal",
+    "test_capacity_chain_goes_for_the_actual_m3_original",
+    "test_down_e6_j_alternatives_post_chain",
+    "test_f2_engine_refuses_the_supervisor_while_a_ready_file_exists",
+    "test_f2_leftover_ready_is_a_hold_before_the_supervisor",
+    "test_f5_supervisor_dead_before_the_reader_holds_without_the_reader",
+    "test_f5_supervisor_dead_during_the_hold_is_not_a_complete",
+    "test_f7_unit_env_file_identity_is_pinned_in_the_claim",
+    "test_family_seal_and_vendor_pins",
+    "test_h1_engine_refuses_a_far_hold_before_its_supervisor_gate",
+    "test_j1_started_late_consumes_the_logical_attempt",
+    "test_j4_registry_is_derived_and_checked_through_the_runtime",
+    "test_one_claim_supervisor_ready_recheck_reader_held",
+    "test_ready_absent_holds_after_the_supervisor_and_never_starts_the_reader",
+    "test_ready_divergent_fails_at_once",
+    "test_ready_removed_before_the_reader_start_is_refused_by_the_engine",
+    "test_refuses_before_any_effect_without_the_capacity_chain",
+    "test_s4_capacity_source_is_the_producing_lot_effect_source",
+    "test_veto_after_ready_blocks_the_reader"
+   ],
+   "owner_window_code_seen": true,
+   "stale_seal_error": true,
+   "stderr_sha256": "d7b02bc8c80551fac5a5ee9fdef66495ebd155e74786eeef43b266ee0fd46ade",
+   "summary": {
+    "errors": 3,
+    "failures": 16,
+    "ok": false,
+    "platform": "darwin",
+    "python": "3.9.6",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 79
+   }
+  }
+ },
+ "schema": "L12HOST_V32_N1_NIGHT_RUNS_BEFORE_THE_FIX_DARWIN",
+ "what": "v3.2 work tree BEFORE the N1 kit fix and before resealing (kit.sign_down bypassed the owner window only while signing), full suite started 2026-10-10T00:59:50Z = 21:59:50 BRT, i.e. after 21:45 BRT; L12_TEST_TMP pointed under ~/Documents (skipped by the kit's File Provider guard)."
+}
