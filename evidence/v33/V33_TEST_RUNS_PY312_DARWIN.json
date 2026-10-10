@@ -1,0 +1,262 @@
+{
+ "all_ok": true,
+ "family_seal_sha256": "5c3f5f4f7d121846a61d1b33528b0163be4c70b29b534118a28fa9017efd1f05",
+ "family_seal_unchanged": true,
+ "interpreter": "/private/tmp/claude-501/-Users-eduardocastro-ClaudeCode/b8e55609-7dea-462c-b8e1-0360e24c4e48/scratchpad/venv-backend/bin/python",
+ "python": "PY312",
+ "runs": [
+  {
+   "ended_utc": "2026-10-10T13:11:15Z",
+   "run": 1,
+   "started_utc": "2026-10-10T13:03:24Z",
+   "suites": [
+    {
+     "ended_utc": "2026-10-10T13:10:45Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [
+      "test_b1_boot_id_on_real_linux_procfs"
+     ],
+     "started_utc": "2026-10-10T13:03:24Z",
+     "stderr_sha256": "486ae572035dcb7e808cd8827d7444bfcc99bd74bee23cc0defd847722b9ed07",
+     "suite": "tests/test_l12host.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_V32_TEST_RESULT",
+      "skipped": 1,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 81
+     },
+     "test_names_sha256": "c4af579c4c0bfc1d89447e8eba054a5b406e8dc1800163020634e8d4c2b0c65f",
+     "tests_listed": 81
+    },
+    {
+     "ended_utc": "2026-10-10T13:10:46Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [],
+     "started_utc": "2026-10-10T13:10:45Z",
+     "stderr_sha256": "68246d2acf3489c980bd761daf00bacbbe981294aef5d90db052c7d9653438e7",
+     "suite": "tests/test_lots_patch_v34.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_LOTS_PATCH_V34_TEST_RESULT",
+      "skipped": 0,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 17
+     },
+     "test_names_sha256": "957f6ac705db56dba9d888820fdceeefff90889bc29842eb9f7a591d4cc69756",
+     "tests_listed": 17
+    },
+    {
+     "ended_utc": "2026-10-10T13:11:15Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [],
+     "started_utc": "2026-10-10T13:10:46Z",
+     "stderr_sha256": "79150a47ba7580eeddce0bc82b4dde7a0b03a8b39b5625fe68ee6116f97deb02",
+     "suite": "tests/test_v33.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_V33_TEST_RESULT",
+      "skipped": 0,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 14
+     },
+     "test_names_sha256": "b42ff7a84d1143bb91a06552d84da66260ce577f7ec6f76d02a4c6464f79e60c",
+     "tests_listed": 14
+    }
+   ]
+  },
+  {
+   "ended_utc": "2026-10-10T13:18:52Z",
+   "run": 2,
+   "started_utc": "2026-10-10T13:11:15Z",
+   "suites": [
+    {
+     "ended_utc": "2026-10-10T13:18:23Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [
+      "test_b1_boot_id_on_real_linux_procfs"
+     ],
+     "started_utc": "2026-10-10T13:11:15Z",
+     "stderr_sha256": "72e718b43ecdfad5138c82fa016d842a7c158f8ce24da1b94c1ba8e3df768daf",
+     "suite": "tests/test_l12host.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_V32_TEST_RESULT",
+      "skipped": 1,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 81
+     },
+     "test_names_sha256": "c4af579c4c0bfc1d89447e8eba054a5b406e8dc1800163020634e8d4c2b0c65f",
+     "tests_listed": 81
+    },
+    {
+     "ended_utc": "2026-10-10T13:18:24Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [],
+     "started_utc": "2026-10-10T13:18:23Z",
+     "stderr_sha256": "df2975ba2a9b434995cdbc73e597181464099b14bd19ffebd9f51a8d4a32a5ec",
+     "suite": "tests/test_lots_patch_v34.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_LOTS_PATCH_V34_TEST_RESULT",
+      "skipped": 0,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 17
+     },
+     "test_names_sha256": "957f6ac705db56dba9d888820fdceeefff90889bc29842eb9f7a591d4cc69756",
+     "tests_listed": 17
+    },
+    {
+     "ended_utc": "2026-10-10T13:18:52Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [],
+     "started_utc": "2026-10-10T13:18:24Z",
+     "stderr_sha256": "05852b141cc4a80aa04f6fb24fe909e49dc96483395e1312c311a3c7a27123f7",
+     "suite": "tests/test_v33.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_V33_TEST_RESULT",
+      "skipped": 0,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 14
+     },
+     "test_names_sha256": "b42ff7a84d1143bb91a06552d84da66260ce577f7ec6f76d02a4c6464f79e60c",
+     "tests_listed": 14
+    }
+   ]
+  },
+  {
+   "ended_utc": "2026-10-10T13:26:26Z",
+   "run": 3,
+   "started_utc": "2026-10-10T13:18:52Z",
+   "suites": [
+    {
+     "ended_utc": "2026-10-10T13:25:57Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [
+      "test_b1_boot_id_on_real_linux_procfs"
+     ],
+     "started_utc": "2026-10-10T13:18:52Z",
+     "stderr_sha256": "3e3ca581f5edde37b8df758c0e3915b53a94bd5a9a214e8cbf179b1c9695ef4b",
+     "suite": "tests/test_l12host.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_V32_TEST_RESULT",
+      "skipped": 1,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 81
+     },
+     "test_names_sha256": "c4af579c4c0bfc1d89447e8eba054a5b406e8dc1800163020634e8d4c2b0c65f",
+     "tests_listed": 81
+    },
+    {
+     "ended_utc": "2026-10-10T13:25:58Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [],
+     "started_utc": "2026-10-10T13:25:57Z",
+     "stderr_sha256": "b8ed70fb4d949967e42458f8003ff9aa57c1e11293b004dcc63e051c7ae675a1",
+     "suite": "tests/test_lots_patch_v34.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_LOTS_PATCH_V34_TEST_RESULT",
+      "skipped": 0,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 17
+     },
+     "test_names_sha256": "957f6ac705db56dba9d888820fdceeefff90889bc29842eb9f7a591d4cc69756",
+     "tests_listed": 17
+    },
+    {
+     "ended_utc": "2026-10-10T13:26:26Z",
+     "exit": 0,
+     "failing": [],
+     "skipped": [],
+     "started_utc": "2026-10-10T13:25:58Z",
+     "stderr_sha256": "074019cfd4bfa386c5809463d43370295224b03a6494abbee5a01d8014dcc544",
+     "suite": "tests/test_v33.py",
+     "summary": {
+      "errors": 0,
+      "failures": 0,
+      "ok": true,
+      "platform": "darwin",
+      "python": "3.12.14",
+      "schema": "L12HOST_V33_TEST_RESULT",
+      "skipped": 0,
+      "temp_parent": {
+       "file_provider_candidates_skipped": 0,
+       "source": "home"
+      },
+      "tests": 14
+     },
+     "test_names_sha256": "b42ff7a84d1143bb91a06552d84da66260ce577f7ec6f76d02a4c6464f79e60c",
+     "tests_listed": 14
+    }
+   ]
+  }
+ ],
+ "temp_parent": "/private/tmp/claude-501/-Users-eduardocastro-ClaudeCode/b8e55609-7dea-462c-b8e1-0360e24c4e48/scratchpad/v33-runs/tmp312"
+}

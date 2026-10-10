@@ -1,0 +1,124 @@
+{
+ "all_ok": true,
+ "family_seal_sha256": "604cf4aaad953c0911524200e077a1ea1de08951848d02c1a2e046bf7bebf3d9",
+ "family_seal_unchanged": true,
+ "issued_d_dir": "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/fable-k9go04-issued-20261010",
+ "python": "/private/tmp/claude-501/-Users-eduardocastro-ClaudeCode/b8e55609-7dea-462c-b8e1-0360e24c4e48/scratchpad/venv-backend/bin/python",
+ "schema": "L12HOST_V33G_TEST_RUNS",
+ "suites": {
+  "tests/test_grid_e.py": {
+   "errors": 0,
+   "failure_excerpt": "",
+   "failures": 0,
+   "family_seal_unchanged": true,
+   "issued_d_dir_given": false,
+   "ok": true,
+   "problems": [],
+   "python": "3.12.14",
+   "rc": 0,
+   "seconds": 0.9,
+   "skipped": 1,
+   "started_utc": "2026-10-10T15:57:39.888021Z",
+   "temp_parent": {
+    "file_provider_candidates_skipped": 0,
+    "source": "tempfile"
+   },
+   "tests": 11
+  },
+  "tests/test_grid_e.py+issued": {
+   "errors": 0,
+   "failure_excerpt": "",
+   "failures": 0,
+   "family_seal_unchanged": true,
+   "issued_d_dir_given": true,
+   "ok": true,
+   "problems": [],
+   "python": "3.12.14",
+   "rc": 0,
+   "seconds": 1.0,
+   "skipped": 0,
+   "started_utc": "2026-10-10T15:57:40.796180Z",
+   "temp_parent": {
+    "file_provider_candidates_skipped": 0,
+    "source": "tempfile"
+   },
+   "tests": 11
+  },
+  "tests/test_l12host.py": {
+   "errors": 0,
+   "failure_excerpt": "",
+   "failures": 0,
+   "family_seal_unchanged": true,
+   "issued_d_dir_given": null,
+   "ok": true,
+   "problems": [],
+   "python": "3.12.14",
+   "rc": 0,
+   "seconds": 448.5,
+   "skipped": 1,
+   "started_utc": "2026-10-10T15:49:37.065893Z",
+   "temp_parent": {
+    "file_provider_candidates_skipped": 0,
+    "source": "tempfile"
+   },
+   "tests": 81
+  },
+  "tests/test_lots_patch_v34.py": {
+   "errors": 0,
+   "failure_excerpt": "",
+   "failures": 0,
+   "family_seal_unchanged": true,
+   "issued_d_dir_given": null,
+   "ok": true,
+   "problems": [],
+   "python": "3.12.14",
+   "rc": 0,
+   "seconds": 2.2,
+   "skipped": 0,
+   "started_utc": "2026-10-10T15:57:05.568825Z",
+   "temp_parent": {
+    "file_provider_candidates_skipped": 0,
+    "source": "tempfile"
+   },
+   "tests": 17
+  },
+  "tests/test_v33.py": {
+   "errors": 0,
+   "failure_excerpt": "",
+   "failures": 0,
+   "family_seal_unchanged": true,
+   "issued_d_dir_given": null,
+   "ok": true,
+   "problems": [],
+   "python": "3.12.14",
+   "rc": 0,
+   "seconds": 30.7,
+   "skipped": 0,
+   "started_utc": "2026-10-10T15:57:07.737979Z",
+   "temp_parent": {
+    "file_provider_candidates_skipped": 0,
+    "source": "tempfile"
+   },
+   "tests": 14
+  },
+  "tests/test_v33f.py": {
+   "errors": 0,
+   "failure_excerpt": "",
+   "failures": 0,
+   "family_seal_unchanged": true,
+   "issued_d_dir_given": null,
+   "ok": true,
+   "problems": [],
+   "python": "3.12.14",
+   "rc": 0,
+   "seconds": 1.4,
+   "skipped": 0,
+   "started_utc": "2026-10-10T15:57:38.475637Z",
+   "temp_parent": {
+    "file_provider_candidates_skipped": 0,
+    "source": "tempfile"
+   },
+   "tests": 15
+  }
+ }
+}

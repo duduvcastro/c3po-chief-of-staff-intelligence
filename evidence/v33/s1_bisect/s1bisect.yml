@@ -1,0 +1,23 @@
+# Throwaway: bisect which transient-unit property real systemd 255 refuses for the L12 reader (synthetic, no secret).
+name: s1-systemd-bisect
+on:
+  push:
+    branches: [ops/fable-s1-systemd-bisect-20261010]
+permissions:
+  contents: read
+jobs:
+  bisect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: bisect
+        run: sudo -n bash ./bisect.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: S1_BISECT
+          path: /tmp/s1bisect/
+          retention-days: 7

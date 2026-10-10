@@ -1,0 +1,73 @@
+{
+ "D": {
+  "DOWN": {
+   "differing": [
+    "SHA256SUMS",
+    "records/KILL_CHANGED_ROWS.json"
+   ],
+   "files": 27,
+   "same_file_set": true,
+   "validate": [
+    {
+     "code": null,
+     "grid": "D",
+     "lot": "DOWN",
+     "rc": 0,
+     "status": "REAL_SPEC_DIR_VALID"
+    },
+    {
+     "code": null,
+     "grid": "D",
+     "lot": "DOWN",
+     "rc": 0,
+     "status": "REAL_SPEC_DIR_VALID"
+    }
+   ]
+  },
+  "UP": {
+   "differing": [
+    "SHA256SUMS",
+    "records/KILL_CHANGED_ROWS.json"
+   ],
+   "files": 31,
+   "same_file_set": true,
+   "validate": [
+    {
+     "code": null,
+     "grid": "D",
+     "lot": "UP",
+     "rc": 0,
+     "status": "REAL_SPEC_DIR_VALID"
+    },
+    {
+     "code": null,
+     "grid": "D",
+     "lot": "UP",
+     "rc": 0,
+     "status": "REAL_SPEC_DIR_VALID"
+    }
+   ]
+  },
+  "plans": {
+   "differing": [],
+   "files": 15,
+   "same_file_set": true
+  },
+  "synthetic_real_inputs": {
+   "differing": [],
+   "files": 13,
+   "same_file_set": true
+  }
+ },
+ "f": {
+  "build_specs": "78b936304637be9d8de9132ed28c46841e8e35d5f3eb80a0dd0b219dbfb765b3",
+  "family_seal": "4108eb7b8003df12ebff1a7828b204f0c58c3b26382f13a908e5d51f92071e44",
+  "generator": "66af6c9e3b85215a1d5c44c91ef588dbc7e94d04aa96300fcc979684416e51cf"
+ },
+ "g": {
+  "build_specs": "781dcf0a24a3f2fe80ec61a5e1603474e9a50b3f3adf2bddf536bf3e30dcb5b9",
+  "family_seal": "604cf4aaad953c0911524200e077a1ea1de08951848d02c1a2e046bf7bebf3d9",
+  "generator": "04379aa605f6de319b3e48bb4a312f7de037d9f1300cbfbec8810e080f962051"
+ },
+ "schema": "L12HOST_V33G_D_REAL_COMPARE"
+}

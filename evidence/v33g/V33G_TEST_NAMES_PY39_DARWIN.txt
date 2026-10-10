@@ -1,0 +1,149 @@
+tests/test_l12host.py :: test_down_e6_j_alternatives_post_chain (__main__.EndToEnd) ... ok
+tests/test_l12host.py :: test_j4_registry_is_derived_and_checked_through_the_runtime (__main__.EndToEnd) ... ok
+tests/test_l12host.py :: test_up_core_chain_enters_only_through_outer_limiter_with_k9_abi (__main__.EndToEnd) ... ok
+tests/test_l12host.py :: test_up_runner_steps_run_under_the_closed_table_with_k9_ext_decoder (__main__.EndToEnd) ... ok
+tests/test_l12host.py :: test_no_reader_or_unit_start_anywhere_else (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_one_claim_supervisor_ready_recheck_reader_held (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_ready_absent_holds_after_the_supervisor_and_never_starts_the_reader (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_ready_divergent_fails_at_once (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_ready_removed_before_the_reader_start_is_refused_by_the_engine (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_ready_still_present_is_exact (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_refuses_before_any_effect_without_the_capacity_chain (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_veto_after_ready_blocks_the_reader (__main__.SessionStart) ... ok
+tests/test_l12host.py :: test_bootstrap_lane_installs_with_image_go_and_consumes_without_effect_off_monday (__main__.MondayLanes) ... ok
+tests/test_l12host.py :: test_capacity_chain_goes_for_the_actual_m3_original (__main__.MondayLanes) ... ok
+tests/test_l12host.py :: test_s4_capacity_source_is_the_producing_lot_effect_source (__main__.MondayLanes) ... ok
+tests/test_l12host.py :: test_c1_busy_lock_keeps_classification_and_burns_the_alternative (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c1_direct_core_run_is_never_called (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c2_crash_after_start_marker_leaves_a_consumed_option_and_no_claim (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c2_no_skip_a_complete_operation_is_never_rerun_or_skipped (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c2_torn_dependency_envelope_is_a_hold (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c2_torn_ledger_is_a_hold_and_is_never_truncated (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c3_import_needs_the_source_lot_bound_and_its_ledger_terminal (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c3_k9_original_is_decoded_status_label_is_not_evidence (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c3_prove_receipt_must_be_the_actual_presence_complete (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c4_engine_rechecks_folder_and_allow_at_transport (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c4_the_same_allow_is_never_renewed (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_c4_veto_created_after_verify_is_seen_at_before_effect (__main__.Corrections) ... ok
+tests/test_l12host.py :: test_b1_boot_id_on_real_linux_procfs (__main__.Blockers) ... skipped 'Linux procfs only'
+tests/test_l12host.py :: test_b1_boot_id_reader_ignores_the_procfs_size_zero (__main__.Blockers) ... ok
+tests/test_l12host.py :: test_b2_installer_judges_the_host_only_through_the_installed_runtime (__main__.Blockers) ... ok
+tests/test_l12host.py :: test_b2_refusal_after_the_copy_is_a_hold_without_timers (__main__.Blockers) ... ok
+tests/test_l12host.py :: test_b4_unit_copies_never_restart (__main__.Blockers) ... ok
+tests/test_l12host.py :: test_b4_unit_grammar_holes_are_closed (__main__.Blockers) ... ok
+tests/test_l12host.py :: test_budget_floor_and_remaining_budget_before_the_effect (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_j1_started_late_consumes_the_logical_attempt (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_k9_host_bytes_must_equal_the_signed_runner_and_plan (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_k9_rows_are_fixed_by_their_signed_plan (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_s1_extended_table_is_closed (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_s2_cross_lot_order_is_refused_before_any_write (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_s3_mount_policy_denylist_and_epoch04_allowlist (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_s5_j4_finite_batch_must_pin_the_ledger_core (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_s6_epoch04_path_guards_for_gate_capacity_ready (__main__.ShouldFix) ... ok
+tests/test_l12host.py :: test_core_ledger_two_process_race_never_poisons (__main__.Review) ... ok
+tests/test_l12host.py :: test_cross_lot_spacing_is_checked_at_install_before_any_write (__main__.Review) ... ok
+tests/test_l12host.py :: test_docker_config_must_be_pinned_empty (__main__.Review) ... ok
+tests/test_l12host.py :: test_extended_ceiling_cap_and_floor (__main__.Review) ... ok
+tests/test_l12host.py :: test_extended_ceiling_kills_the_group_and_is_uncertain (__main__.Review) ... ok
+tests/test_l12host.py :: test_extended_container_is_bounded_by_its_inner_timeout (__main__.Review) ... ok
+tests/test_l12host.py :: test_family_seal_and_vendor_pins (__main__.Review) ... ok
+tests/test_l12host.py :: test_fixture_refused_on_host_and_no_clock_injection (__main__.Review) ... ok
+tests/test_l12host.py :: test_installer_never_skips_a_signed_slot (__main__.Review) ... ok
+tests/test_l12host.py :: test_kill_during_effect_consumes_and_never_runs_twice (__main__.Review) ... ok
+tests/test_l12host.py :: test_kill_during_extended_step_holds_its_dependents (__main__.Review) ... ok
+tests/test_l12host.py :: test_owner_signature_window_0700_2145_brt (__main__.Review) ... ok
+tests/test_l12host.py :: test_secret_env_file_policy (__main__.Review) ... ok
+tests/test_l12host.py :: test_slot_spacing_dependency_order_and_minutes_are_checked (__main__.Review) | v3.1 (finding 3): FIXED instants (Saturday 10/10 11:38:00 BRT and later), never the wall clock, so the ... ok
+tests/test_l12host.py :: test_start_minute_rules_table (__main__.Review) ... ok
+tests/test_l12host.py :: test_timer_properties_and_exact_timeout (__main__.Review) ... ok
+tests/test_l12host.py :: test_two_processes_on_two_alternatives_run_exactly_once (__main__.Review) ... ok
+tests/test_l12host.py :: test_down_spec_draft_passes_every_v3_rule_with_fill_ins (__main__.Specs) ... ok
+tests/test_l12host.py :: test_up_spec_real_values_pass_every_v3_rule_with_fill_ins (__main__.Specs) ... ok
+tests/test_l12host.py :: test_f10_staged_w_seal_is_the_family_seal (__main__.V31) ... ok
+tests/test_l12host.py :: test_f11_image_timeout_readback (__main__.V31) ... ok
+tests/test_l12host.py :: test_f1_session_start_unit_rows_are_pinned_whole (__main__.V31) | The reviewer's probe: a DOWN spec whose supervisor copy Wants/Requires c3po-reader.service bound in physical ... ok
+tests/test_l12host.py :: test_f1_unit_dependencies_and_environment_are_the_reference_ones (__main__.V31) ... ok
+tests/test_l12host.py :: test_f2_engine_refuses_the_supervisor_while_a_ready_file_exists (__main__.V31) ... ok
+tests/test_l12host.py :: test_f2_leftover_ready_is_a_hold_before_the_supervisor (__main__.V31) ... ok
+tests/test_l12host.py :: test_f4_parents_of_protected_folders_and_the_reader_secret_folder (__main__.V31) ... ok
+tests/test_l12host.py :: test_f4_physical_root_is_pinned (__main__.V31) ... ok
+tests/test_l12host.py :: test_f5_supervisor_dead_before_the_reader_holds_without_the_reader (__main__.V31) ... ok
+tests/test_l12host.py :: test_f5_supervisor_dead_during_the_hold_is_not_a_complete (__main__.V31) ... ok
+tests/test_l12host.py :: test_f6_session_start_window_starts_at_or_after_open_minus_90s (__main__.V31) ... ok
+tests/test_l12host.py :: test_f7_k9_request_must_name_the_image (__main__.V31) ... ok
+tests/test_l12host.py :: test_f7_unit_env_file_identity_is_pinned_in_the_claim (__main__.V31) ... ok
+tests/test_l12host.py :: test_c1_extended_cleanup_kills_the_live_group_before_its_lifeline_closes (__main__.V32) | The parent kills the worker's group BEFORE it closes the lifeline: the watchdog never kills the group ... ok
+tests/test_l12host.py :: test_h1_engine_refuses_a_far_hold_before_its_supervisor_gate (__main__.V32) ... ok
+tests/test_l12host.py :: test_h1_proof_schedule_keeps_the_reader_negative_inside_the_hold_window (__main__.V32) | linux_systemd_proof's own planner and model over one whole BRT day (every 97 s), with the ENGINE's ... ok
+tests/test_l12host.py :: test_m1_slot_result_names_the_changed_file (__main__.V32) ... ok
+tests/test_l12host.py :: test_m1_strict_reader_names_the_changed_file (__main__.V32) ... ok
+tests/test_l12host.py :: test_m1_test_temp_parent_is_never_a_file_provider_domain (__main__.V32) ... ok
+tests/test_l12host.py :: test_n1_only_the_registered_fixture_signature_is_exempt_from_the_owner_window (__main__.V32) ... ok
+tests/test_lots_patch_v34.py :: test_check_refuses_draft3_by_the_engine_start_window (__main__.GridChoice) ... ok
+tests/test_lots_patch_v34.py :: test_check_validates_c_and_d_with_the_family_engine (__main__.GridChoice) ... ok
+tests/test_lots_patch_v34.py :: test_every_start_window_is_allowed_by_the_engine_itself (__main__.GridChoice) | Independent of the generator's own check: kit.fx (the family's l12host_effect) on every second of ... ok
+tests/test_lots_patch_v34.py :: test_generator_rule_is_the_engine_function (__main__.GridChoice) ... ok
+tests/test_lots_patch_v34.py :: test_grid_is_explicit_and_closed (__main__.GridChoice) ... ok
+tests/test_lots_patch_v34.py :: test_grid_tables_are_the_ruled_literals (__main__.GridChoice) ... ok
+tests/test_lots_patch_v34.py :: test_plans_carry_the_grid_and_keep_every_fixed_instant (__main__.GridChoice) ... ok
+tests/test_lots_patch_v34.py :: test_plans_refuses_draft3_rejected_and_writes_nothing (__main__.GridChoice) ... ok
+tests/test_lots_patch_v34.py :: test_in_family_drafts_are_reproduced_by_write (__main__.RealSpecs) ... ok
+tests/test_lots_patch_v34.py :: test_out_dir_inside_the_family_is_refused_before_anything (__main__.RealSpecs) ... ok
+tests/test_lots_patch_v34.py :: test_real_down_is_written_outside_with_the_moved_po (__main__.RealSpecs) ... ok
+tests/test_lots_patch_v34.py :: test_real_up_grid_d_through_the_command_line (__main__.RealSpecs) ... ok
+tests/test_lots_patch_v34.py :: test_real_up_is_written_outside_validated_and_binds (__main__.RealSpecs) ... ok
+tests/test_lots_patch_v34.py :: test_real_writer_refusals_leave_nothing (__main__.RealSpecs) ... ok
+tests/test_lots_patch_v34.py :: test_po_is_off_the_40_s_edge_and_keeps_its_dependencies (__main__.DownPost) ... ok
+tests/test_lots_patch_v34.py :: test_real_writer_refuses_the_former_po_instant (__main__.DownPost) | The REAL writer refuses a slot whose [at, at + 60 s] + 45 s is not wholly allowed: the former PO 06:03:00. ... ok
+tests/test_lots_patch_v34.py :: test_up_draft_keeps_the_rejected_p4_only_as_a_record (__main__.DownPost) ... ok
+tests/test_v33.py :: test_fake_systemd_run_refuses_a_failed_mount_unit_like_systemd_255 (__main__.Mounts) ... ok
+tests/test_v33.py :: test_reader_start_fails_runner_like_and_runs_host_like_with_the_reason (__main__.Mounts) | The engine (fx.run, the bytes the slot runs) on the reviewed rows: the supervisor's paths do not reach ... ok
+tests/test_v33.py :: test_slot_result_names_why_the_reader_start_failed (__main__.Mounts) | End to end through the timer-run slot path (Shell.run_slot -> extended worker -> engine): S1 with the ... ok
+tests/test_v33.py :: test_unit_start_failure_excerpt_is_bounded_and_printable (__main__.Mounts) ... ok
+tests/test_v33.py :: test_day_d_data_unit_name_is_the_systemd_escape (__main__.ProofHarness) ... ok
+tests/test_v33.py :: test_failure_dumps_are_bounded_printable_and_name_the_units (__main__.ProofHarness) ... ok
+tests/test_v33.py :: test_fstab_mirror_removes_only_the_mnt_line (__main__.ProofHarness) ... ok
+tests/test_v33.py :: test_mirror_checks_are_red_on_the_runner_and_green_like_the_host (__main__.ProofHarness) ... ok
+tests/test_v33.py :: test_f1_another_grid_request_or_go_is_refused_before_any_write (__main__.LotsReview) ... ok
+tests/test_v33.py :: test_f1_another_runner_capture_plan_or_up_dir_is_refused_before_any_write (__main__.LotsReview) ... ok
+tests/test_v33.py :: test_f1_down_needs_the_up_real_dir_and_the_up_takes_none (__main__.LotsReview) ... ok
+tests/test_v33.py :: test_f1_down_of_the_up_plans_run_is_accepted_byte_identical (__main__.LotsReview) ... ok
+tests/test_v33.py :: test_f1_validate_binds_the_up_capture_record_to_its_request_and_go (__main__.LotsReview) ... ok
+tests/test_v33.py :: test_low6_validate_and_write_take_relative_dirs (__main__.LotsReview) ... ok
+tests/test_v33f.py :: test_dnet_constants_builder_and_drafts (__main__.Networks) ... ok
+tests/test_v33f.py :: test_physical_bind_pins_each_session_unit_network (__main__.Networks) ... ok
+tests/test_v33f.py :: test_physical_bind_pins_the_three_k9_class_networks (__main__.Networks) ... ok
+tests/test_v33f.py :: test_session_rows_differ_from_the_single_network_shape_only_in_the_network_word (__main__.Networks) ... ok
+tests/test_v33f.py :: test_in_family_validation_binds_the_synthetic_real_fill_ins (__main__.RuntimeReal) ... ok
+tests/test_v33f.py :: test_physical_bind_refuses_absent_or_unbound_real_files (__main__.RuntimeReal) ... ok
+tests/test_v33f.py :: test_runtime_refuses_real_bytes_that_differ_from_the_authority_pins (__main__.RuntimeReal) ... ok
+tests/test_v33f.py :: test_real_down_dir_and_the_extended_f1 (__main__.Writer) ... ok
+tests/test_v33f.py :: test_real_up_dir_carries_the_real_files_byte_for_byte (__main__.Writer) ... ok
+tests/test_v33f.py :: test_validate_rederives_the_records_and_refuses_tampering (__main__.Writer) ... ok
+tests/test_v33f.py :: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write (__main__.Writer) ... ok
+tests/test_v33f.py :: test_kill_record_enumerates_every_row (__main__.Kill) ... ok
+tests/test_v33f.py :: test_codex_r2_verifier_read_only_ast_and_the_sha256_flag (__main__.FormAndCodex) ... ok
+tests/test_v33f.py :: test_go_form_installed_paths (__main__.FormAndCodex) ... ok
+tests/test_v33f.py :: test_proof_lots_bind_under_the_v33f_pins (__main__.ProofLots) ... ok
+tests/test_grid_e.py :: test_c_still_validates_and_draft3_still_refused (__main__.GridE) ... ok
+tests/test_grid_e.py :: test_check_validates_e_with_the_family_engine (__main__.GridE) ... GRID_E_SLOTS_SHA256 65839e19ed2756abf96d9d68898b21f452505de07e4f006db5ca4258d20d96fb | ok
+tests/test_grid_e.py :: test_e_is_the_accepted_literal_table (__main__.GridE) ... ok
+tests/test_grid_e.py :: test_e_plans_carry_e_and_keep_every_fixed_instant (__main__.GridE) ... ok
+tests/test_grid_e.py :: test_e_plans_with_a_test_only_go (__main__.GridE) ... ok
+tests/test_grid_e.py :: test_e_start_windows_margins_and_the_critical_window (__main__.GridE) | Independent of the generator: kit.fx (the family's engine) on every second of [at, at + 60 s] + 45 s of every ... ok
+tests/test_grid_e.py :: test_real_writer_builds_and_validates_e_up_and_down_lots (__main__.GridE) | v3.3g (root decision on this patch's review, finding 2): build_specs' REAL writer elects C/D/E, so a plans ... ok
+tests/test_grid_e.py :: test_d_and_c_request_bytes_are_the_issued_ones (__main__.IssuedD) ... ok
+tests/test_grid_e.py :: test_d_originals_reproduced_from_the_issued_dir (__main__.IssuedD) ... skipped 'L12_ISSUED_D_DIR not set: the issued D run is not part of the family'
+tests/test_grid_e.py :: test_d_plans_over_the_issued_go_sha256_are_the_issued_ones (__main__.IssuedD) ... ok
+tests/test_grid_e.py :: test_e_request_differs_from_d_only_in_the_six_minutes (__main__.IssuedD) ... ok
+tests/test_grid_e.py+issued :: test_c_still_validates_and_draft3_still_refused (__main__.GridE) ... ok
+tests/test_grid_e.py+issued :: test_check_validates_e_with_the_family_engine (__main__.GridE) ... GRID_E_SLOTS_SHA256 65839e19ed2756abf96d9d68898b21f452505de07e4f006db5ca4258d20d96fb | ok
+tests/test_grid_e.py+issued :: test_e_is_the_accepted_literal_table (__main__.GridE) ... ok
+tests/test_grid_e.py+issued :: test_e_plans_carry_e_and_keep_every_fixed_instant (__main__.GridE) ... ok
+tests/test_grid_e.py+issued :: test_e_plans_with_a_test_only_go (__main__.GridE) ... ok
+tests/test_grid_e.py+issued :: test_e_start_windows_margins_and_the_critical_window (__main__.GridE) | Independent of the generator: kit.fx (the family's engine) on every second of [at, at + 60 s] + 45 s of every ... ok
+tests/test_grid_e.py+issued :: test_real_writer_builds_and_validates_e_up_and_down_lots (__main__.GridE) | v3.3g (root decision on this patch's review, finding 2): build_specs' REAL writer elects C/D/E, so a plans ... ok
+tests/test_grid_e.py+issued :: test_d_and_c_request_bytes_are_the_issued_ones (__main__.IssuedD) ... ok
+tests/test_grid_e.py+issued :: test_d_originals_reproduced_from_the_issued_dir (__main__.IssuedD) ... ok
+tests/test_grid_e.py+issued :: test_d_plans_over_the_issued_go_sha256_are_the_issued_ones (__main__.IssuedD) ... ok
+tests/test_grid_e.py+issued :: test_e_request_differs_from_d_only_in_the_six_minutes (__main__.IssuedD) ... ok

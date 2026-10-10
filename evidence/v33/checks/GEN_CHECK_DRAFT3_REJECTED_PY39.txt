@@ -1,0 +1,1 @@
+REFUSED START_WINDOW_NOT_ALLOWED:publish_launch

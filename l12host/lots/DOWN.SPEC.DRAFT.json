@@ -1,0 +1,759 @@
+{
+ "_comment": [
+  "L12-HOST v3.1 DOWN lot SPEC DRAFT (B3: no PRE_OPEN reader start; one late session start claim at",
+  "10:29:02 BRT; K9 capture as an EXTENDED step; v3.1 early read-only ready_check R0 at 09:30 BRT).",
+  "Every @P_...@ is unknown today. Supervisor state root /var/lib/c3po-bar/supervisor-e04 and config",
+  "/etc/c3po-reader-e04/supervisor are PROPOSALS for INSTALL_TREE04. J budget 300 s and the J2/J3 instants",
+  "are drafts. Not signed data.",
+  "Lots patch v3.4 (L-02): PO post 06:01:30 BRT (09:01:30Z, window [09:01:00Z, 09:03:30Z)), 30 s after E6;",
+  "[at, at + 60 s] + 45 s ends 06:03:15, before the engine's first forbidden second 06:03:40 (margin 130 s)."
+ ],
+ "spec": {
+  "bootstrap": null,
+  "capacity": {
+   "config_path": "/var/lib/c3po-capacity-e04/config/capacity-final-2026-10-12.json",
+   "lots": {
+    "activation": "CAP",
+    "j": "DOWN",
+    "m3": "BOOT"
+   },
+   "mode": "REAL",
+   "sources": {
+    "activation": "@P_CAPACITY_MONDAY04_PROGRAM_SHA256@",
+    "j": "0edb64f45b8a4e31e64aa274e778566106e3549d7e8fe2ab8d746dd1b751d8fa",
+    "m3": "@P_M3_ACTIVATE_PROGRAM_SHA256@"
+   },
+   "verifiers": {
+    "config": "cap_config",
+    "original": "cap_original",
+    "rule": "cap_rule"
+   }
+  },
+  "decision_sha256": "09de76e5a2ee54fdcdfa477b0f8df101fcda761b7f416e4308e29c0235e51c2a",
+  "extended": {
+   "steps": [
+    {
+     "ceiling_seconds": 60,
+     "decoder": {
+      "kind": "READY_ABSENT_V3"
+     },
+     "effect": null,
+     "hold_until": null,
+     "not_after": "2026-10-12T12:40:00Z",
+     "not_before": "2026-10-12T12:29:30Z",
+     "pre_effect": null,
+     "requires": [],
+     "slots": [
+      {
+       "at": "2026-10-12T12:30:00Z",
+       "slot": "R0"
+      }
+     ],
+     "step": "ready_check"
+    },
+    {
+     "ceiling_seconds": 420,
+     "decoder": {
+      "kind": "SESSION_START_V3",
+      "verifier": "session_verifier"
+     },
+     "effect": {
+      "kind": "UNIT_START",
+      "launch_class": "SESSION_READER",
+      "unit": {
+       "description": "Day-bounded R2D2 V2 shadow reader",
+       "exec": [
+        "/usr/bin/docker",
+        "run",
+        "--rm",
+        "--init",
+        "--restart",
+        "no",
+        "--name",
+        "c3po-reader-e04",
+        "--pull",
+        "never",
+        "--user",
+        "0:0",
+        "--workdir",
+        "/app",
+        "--network",
+        "c3po_c3po_internal",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,nodev,size=256m",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "512",
+        "--stop-timeout",
+        "25",
+        "--env-file",
+        "/etc/c3po-reader-e04/secret.env",
+        "--env-file",
+        "/etc/c3po-reader-e04/pins.env",
+        "--env-file",
+        "/etc/c3po-reader-e04/activation.env",
+        "--mount",
+        "type=bind,source=/mnt/day-d-data,target=/app/day-d-data,readonly",
+        "--mount",
+        "type=bind,source=/var/lib/c3po-bar/journal-e04,target=/var/lib/c3po-bar/journal-e04,readonly",
+        "--mount",
+        "type=bind,source=/var/lib/c3po-capacity-e04,target=/c3po-capacity,readonly",
+        "--mount",
+        "type=bind,source=/etc/c3po-reader-e04/launcher,target=/c3po-reader,readonly",
+        "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+        "python",
+        "-I",
+        "-B",
+        "/c3po-reader/reader_launcher.py"
+       ],
+       "name": "c3po-reader-e04",
+       "properties": [
+        [
+         "Wants",
+         "network-online.target"
+        ],
+        [
+         "Requires",
+         "docker.service"
+        ],
+        [
+         "After",
+         "network-online.target docker.service"
+        ],
+        [
+         "RequiresMountsFor",
+         "/mnt/day-d-data /var/lib/c3po-bar/journal-e04 /var/lib/c3po-capacity-e04 /etc/c3po-reader-e04"
+        ],
+        [
+         "Type",
+         "exec"
+        ],
+        [
+         "Environment",
+         "DOCKER_CONFIG=/etc/c3po-reader-e04/docker-cli"
+        ],
+        [
+         "ExecCondition",
+         "/usr/bin/test -f /etc/c3po-reader-e04/secret.env"
+        ],
+        [
+         "ExecCondition",
+         "/usr/bin/test -f /etc/c3po-reader-e04/pins.env"
+        ],
+        [
+         "ExecCondition",
+         "/usr/bin/test -f /etc/c3po-reader-e04/activation.env"
+        ],
+        [
+         "ExecStartPre",
+         "-/usr/bin/docker rm c3po-reader-e04"
+        ],
+        [
+         "ExecStartPre",
+         "/usr/bin/docker image inspect --format {{.Id}} sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3"
+        ],
+        [
+         "ExecStop",
+         "-/usr/bin/docker stop -t 25 c3po-reader-e04"
+        ],
+        [
+         "ExecStopPost",
+         "-/usr/bin/docker stop -t 25 c3po-reader-e04"
+        ],
+        [
+         "Restart",
+         "no"
+        ],
+        [
+         "TimeoutStartSec",
+         "60s"
+        ],
+        [
+         "TimeoutStopSec",
+         "30s"
+        ],
+        [
+         "KillMode",
+         "control-group"
+        ],
+        [
+         "UMask",
+         "0077"
+        ],
+        [
+         "NoNewPrivileges",
+         "true"
+        ],
+        [
+         "StandardOutput",
+         "journal"
+        ],
+        [
+         "StandardError",
+         "journal"
+        ],
+        [
+         "SyslogIdentifier",
+         "c3po-reader-e04"
+        ]
+       ]
+      }
+     },
+     "hold_until": "2026-10-12T13:30:30Z",
+     "not_after": "2026-10-12T13:36:30Z",
+     "not_before": "2026-10-12T13:28:30Z",
+     "pre_effect": {
+      "kind": "UNIT_START",
+      "launch_class": "SUPERVISOR",
+      "unit": {
+       "description": "Bounded daily Massive minute producer",
+       "exec": [
+        "/usr/bin/docker",
+        "run",
+        "--rm",
+        "--init",
+        "--restart",
+        "no",
+        "--name",
+        "c3po-massive-e04",
+        "--pull",
+        "never",
+        "--user",
+        "0:0",
+        "--workdir",
+        "/app",
+        "--network",
+        "c3po_db_loopback",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,nodev,size=256m",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "512",
+        "--stop-timeout",
+        "25",
+        "--mount",
+        "type=bind,source=/var/lib/c3po-bar/journal-e04,target=/var/lib/c3po-bar/journal-e04",
+        "--mount",
+        "type=bind,source=/var/lib/c3po-bar/supervisor-e04,target=/var/lib/c3po-bar/supervisor",
+        "--mount",
+        "type=bind,source=/etc/c3po-reader-e04/supervisor,target=/etc/c3po-bar,readonly",
+        "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+        "python",
+        "-B",
+        "-m",
+        "app.r2d2_v2_massive_supervisor",
+        "--journal-root",
+        "/var/lib/c3po-bar/journal-e04",
+        "--manifest-directory",
+        "/etc/c3po-bar/manifests",
+        "--token-file",
+        "/etc/c3po-bar/token",
+        "--state-root",
+        "/var/lib/c3po-bar/supervisor"
+       ],
+       "name": "c3po-massive-e04",
+       "properties": [
+        [
+         "Wants",
+         "network-online.target"
+        ],
+        [
+         "Requires",
+         "docker.service"
+        ],
+        [
+         "After",
+         "network-online.target docker.service"
+        ],
+        [
+         "RequiresMountsFor",
+         "/var/lib/c3po-bar/journal-e04 /var/lib/c3po-bar/supervisor-e04 /etc/c3po-reader-e04/supervisor"
+        ],
+        [
+         "Type",
+         "exec"
+        ],
+        [
+         "Environment",
+         "DOCKER_CONFIG=/etc/c3po-reader-e04/docker-cli"
+        ],
+        [
+         "ExecStartPre",
+         "-/usr/bin/docker rm c3po-massive-e04"
+        ],
+        [
+         "ExecStartPre",
+         "/usr/bin/docker image inspect --format {{.Id}} sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3"
+        ],
+        [
+         "ExecStop",
+         "-/usr/bin/docker stop -t 25 c3po-massive-e04"
+        ],
+        [
+         "ExecStopPost",
+         "-/usr/bin/docker stop -t 25 c3po-massive-e04"
+        ],
+        [
+         "Restart",
+         "no"
+        ],
+        [
+         "TimeoutStartSec",
+         "60s"
+        ],
+        [
+         "TimeoutStopSec",
+         "30s"
+        ],
+        [
+         "KillMode",
+         "control-group"
+        ],
+        [
+         "UMask",
+         "0077"
+        ],
+        [
+         "NoNewPrivileges",
+         "true"
+        ],
+        [
+         "StandardOutput",
+         "journal"
+        ],
+        [
+         "StandardError",
+         "journal"
+        ],
+        [
+         "SyslogIdentifier",
+         "c3po-massive-e04"
+        ]
+       ]
+      }
+     },
+     "requires": [
+      [
+       "core",
+       "admission_manifest"
+      ],
+      [
+       "core",
+       "post"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-12T13:29:02Z",
+       "slot": "S1"
+      }
+     ],
+     "step": "session_start"
+    },
+    {
+     "ceiling_seconds": 750,
+     "decoder": {
+      "k9_go": "k9/K9_GO_04.json",
+      "k9_request": "k9/K9_04_STEP_SET_REQUEST.json",
+      "kind": "K9_STEP_V1",
+      "mode": "REAL",
+      "phase_not_after": "2026-10-12T14:04:30Z",
+      "phase_not_before": "2026-10-12T13:51:30Z",
+      "provenance_binding_sha256": "7d55a1a7ced3997c0321567dbef6d8f3392b581e2333f584cae3b8684c9cb033",
+      "runner_source": "ext/k9_runner04.py",
+      "step_plan": "k9/capture_launch.json",
+      "verifiers": {
+       "approval": "k9_approval",
+       "original": "k9_original"
+      }
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/capture_launch.json",
+        "--plan-sha256",
+        "7729fbf311c7c0ea440fbe386462893b03bbdd83e5cd509a4d3476322d2ca081"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [
+        "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env"
+       ],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "capture_launch"
+        ],
+        [
+         "c3po.k9.plan",
+         "7729fbf311c7c0ea440fbe386462893b03bbdd83e5cd509a4d3476322d2ca081"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-source-20261012",
+         "target": "/c3po-source"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-capture-launch",
+       "network": "bridge",
+       "timeout_seconds": 655,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/capture_launch.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-12T14:04:30Z",
+     "not_before": "2026-10-12T13:51:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "core",
+       "post"
+      ],
+      [
+       "step",
+       "session_start"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-12T13:52:00Z",
+       "slot": "C1"
+      }
+     ],
+     "step": "capture_launch"
+    }
+   ]
+  },
+  "external": {
+   "cap_config": {
+    "file": "ext/capacity_verifiers.py",
+    "identity": "verify_config"
+   },
+   "cap_original": {
+    "file": "ext/capacity_verifiers.py",
+    "identity": "verify_original"
+   },
+   "cap_rule": {
+    "file": "ext/capacity_verifiers.py",
+    "identity": "verify_rule"
+   },
+   "j4_codec": {
+    "file": "ext/j4_codec.py",
+    "identity": "verify"
+   },
+   "k9_approval": {
+    "file": "ext/k9_verifiers04.py",
+    "identity": "verify_approval"
+   },
+   "k9_original": {
+    "file": "ext/k9_verifiers04.py",
+    "identity": "verify_original"
+   },
+   "k9_step": {
+    "file": "ext/k9_verifiers04.py",
+    "identity": "verify_step"
+   },
+   "readback_rule_verifier": {
+    "file": "ext/c6_bridge.py",
+    "identity": "verify_rule"
+   },
+   "readback_verifier": {
+    "file": "ext/c6_bridge.py",
+    "identity": "verify_readback"
+   },
+   "ready_ready": {
+    "file": "ext/ready_verifiers.py",
+    "identity": "verify_ready"
+   },
+   "ready_rule": {
+    "file": "ext/ready_verifiers.py",
+    "identity": "verify_rule"
+   },
+   "session_verifier": {
+    "file": "ext/session_verifier.py",
+    "identity": "verify"
+   },
+   "snapshot_reader": {
+    "file": "ext/c6_bridge.py",
+    "identity": "read_snapshot"
+   },
+   "snapshot_verifier": {
+    "file": "ext/c6_bridge.py",
+    "identity": "verify_snapshot"
+   }
+  },
+  "files": {
+   "docs/bounded_readback_rule.json": "@P_APPROVED_BOUNDED_READBACK_RULE_JSON@",
+   "ext/c6_bridge.py": "@P_CODEX_REVIEWED_C6_SNAPSHOT_READER_VERIFIER_PY@",
+   "ext/capacity_verifiers.py": "@P_CODEX_REVIEWED_CAPACITY_VERIFIERS_PY@",
+   "ext/j4_codec.py": "@P_CODEX_J4_RECEIPT_CODEC_PY@",
+   "ext/j4_hot_worker.py": "../vendor/j4_hot_worker.py",
+   "ext/k9_runner04.py": "k9tools/k9_runner04.py",
+   "ext/k9_verifiers04.py": "@P_CODEX_REVIEWED_K9_VERIFIERS04_PY@",
+   "ext/ready_verifiers.py": "@P_CODEX_REVIEWED_READY_VERIFIERS_PY@",
+   "ext/session_verifier.py": "@P_CODEX_REVIEWED_SESSION_START_VERIFIER_PY@",
+   "k9/K9_04_STEP_SET_REQUEST.json": "up_plans_DRAFT_actB_GO_pending/K9_04_STEP_SET_REQUEST.json",
+   "k9/K9_GO_04.json": "up_inputs/K9_GO_04.PLACEHOLDER.txt",
+   "k9/capture_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/capture_launch.json"
+  },
+  "gate": {
+   "journal_directory": "/var/lib/c3po-bar/journal-e04",
+   "readback": {
+    "readback_verifier": "readback_verifier",
+    "rule": "docs/bounded_readback_rule.json",
+    "rule_verifier": "readback_rule_verifier"
+   },
+   "scope": {
+    "build_sha": "de96aee90a26e9587663ba7a1f6e55a592afcd20",
+    "calendar_pin_sha256": "@P_CALENDAR_PIN_SHA256@",
+    "document_order_sha256": "70cb947fc5276949ca3f08d53cfaf79873463a83f36a64859056d7616fcdf9d3",
+    "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+    "manifest_directory": "@P_MANIFEST_DIRECTORY@",
+    "not_after": "2026-10-12T10:50:00Z",
+    "not_before": "2026-10-12T10:37:30Z",
+    "owner_uid": 0,
+    "package_sha256": "43db2b969fe113594fafe4a9e0cabec1f80ada9f8ab9ee5852677d65e2ec716a",
+    "release_sha256": "5fd6eadbf8c1c899598e23c52e98599fe9cc990bd33a182cc363d2c05c5784ab",
+    "require_go_mode": "INDIVIDUAL",
+    "runtime_authority_sha256": "@P_RUNTIME_AUTHORITY_SHA256@",
+    "session_open": "2026-10-12T13:30:00Z",
+    "view_opens_at": "2026-10-12T10:38:00Z"
+   },
+   "snapshot_reader": "snapshot_reader",
+   "snapshot_verifier": "snapshot_verifier"
+  },
+  "imports": {
+   "commit_result": {
+    "bound_sha256": "@P_UP_BOUND_SHA256@",
+    "request_sha256": "@P_UP_REQUEST_SHA256@",
+    "source_lot": "UP"
+   },
+   "publish_launch": {
+    "bound_sha256": "@P_UP_BOUND_SHA256@",
+    "request_sha256": "@P_UP_REQUEST_SHA256@",
+    "source_lot": "UP"
+   }
+  },
+  "initial_receipts": {
+   "commit_result": "@P_UP_COMMIT_RESULT_ORIGINAL_SHA256@",
+   "publish_launch": "@P_UP_PUBLISH_LAUNCH_ORIGINAL_SHA256@"
+  },
+  "j4": {
+   "bridge": {
+    "authorize": "authorize",
+    "bootstrap": "bootstrap",
+    "general_read": "general_read",
+    "general_verify": "general_verify"
+   },
+   "general_authority_sha256": "@P_J4_GENERAL_AUTHORITY_SHA256@",
+   "general_source_identity": "@P_J4_GENERAL_SOURCE_IDENTITY@",
+   "hot_worker_source": "ext/j4_hot_worker.py",
+   "originals": {
+    "act_b": "@P_J4_ORIGINAL_ACT_B_SHA256@",
+    "config_authority": "@P_J4_ORIGINAL_CONFIG_AUTHORITY_SHA256@",
+    "config_base": "@P_J4_ORIGINAL_CONFIG_BASE_SHA256@",
+    "decision": "@P_J4_ORIGINAL_DECISION_SHA256@",
+    "folder_authority": "@P_J4_ORIGINAL_FOLDER_AUTHORITY_SHA256@",
+    "folder_owner": "@P_J4_ORIGINAL_FOLDER_OWNER_SHA256@",
+    "folder_spec": "@P_J4_ORIGINAL_FOLDER_SPEC_SHA256@",
+    "machine_order": "@P_J4_ORIGINAL_MACHINE_ORDER_SHA256@",
+    "rule": "@P_J4_ORIGINAL_RULE_SHA256@",
+    "template": "@P_J4_ORIGINAL_TEMPLATE_SHA256@",
+    "veto_base": "@P_J4_ORIGINAL_VETO_BASE_SHA256@"
+   },
+   "programs": {
+    "authority_bridge": "@P_J4_AUTHORITY_BRIDGE_REAL_SHA256@",
+    "config_finalizer": "45dce62d7f8e17cb3d93bfefa480352778234cc9ee88c632ad9a5268b732a30d",
+    "consumer_codec": "57933d7cf4d79b62ab1c7b291b8c460a743864c78d5ad5a3111c9b2c0b76f2b6",
+    "finite_batch": "809a816d4179ee889531bfc2d270e193508f0d1a31d7a30a48159151f80dbeec",
+    "folder_veto": "8d63f75cad847da5d4f5ede7dedba24b64ea296d86bad67d16fb5f8e02271b18",
+    "hot_runtime": "55e2cc2c97c73d0b7ae9ad8289b9cf7ff28dfb26321690b5ea40cb21438921bc",
+    "hot_watchdog": "12ce74398c8bb5d0a48af8d528dc40be8703860b7cd47223328cdb9e6c073def",
+    "hot_worker": "0edb64f45b8a4e31e64aa274e778566106e3549d7e8fe2ab8d746dd1b751d8fa",
+    "j_slot": "d4c029cabf895276e81dec38f38b387be9c85f03d4e26926846d3c8c8505db04",
+    "veto_emitter": "b3ea98c4e35d749946f95b32b7dbf8e726779c70fa9f5e5001572a3f24045817"
+   },
+   "protocol": "WARM_IMAGE10_ACTUAL_OBSERVATION"
+  },
+  "k9": {
+   "go": "k9/K9_GO_04.json",
+   "networks": {
+    "DATABASE": "c3po_c3po_internal",
+    "DATABASE_AND_PROVIDER": "c3po_db_loopback",
+    "PROVIDER": "bridge"
+   },
+   "plans": {
+    "capture_launch": "k9/capture_launch.json"
+   },
+   "request": "k9/K9_04_STEP_SET_REQUEST.json",
+   "runner_source": "ext/k9_runner04.py",
+   "secrets_root": "/var/lib/c3po/r2d2-v2-k9-20261005/secrets"
+  },
+  "lane": "DOWNSTREAM_AFTER_E6",
+  "lot": "DOWN",
+  "mode": "REAL",
+  "owner_deadline": "2026-10-12T00:44:00Z",
+  "ready": {
+   "calendar_sha256": "@P_CALENDAR_PIN_SHA256@",
+   "max_wait_seconds": 48,
+   "mode": "REAL",
+   "not_after": "2026-10-12T13:29:50Z",
+   "not_before": "2026-10-12T13:29:00Z",
+   "poll_seconds": 0.25,
+   "ready_path": "/var/lib/c3po-bar/journal-e04/session_date=2026-10-12/ready.json",
+   "verifiers": {
+    "ready": "ready_ready",
+    "rule": "ready_rule"
+   }
+  },
+  "schema": "L12HOST_LOT_SPEC_V3",
+  "tasks": [
+   {
+    "budget_seconds": 60,
+    "decoder": {
+     "kind": "READBACK_V3"
+    },
+    "effect": {
+     "files": [
+      {
+       "mode": 256,
+       "path": "@P_E6_DOCUMENT_PATH@",
+       "sha256": "@P_E6_DOCUMENT_SHA256@",
+       "uid": 0
+      }
+     ],
+     "kind": "READBACK"
+    },
+    "image_go_sha256": null,
+    "image_proposal_sha256": null,
+    "not_after": "2026-10-12T09:03:00Z",
+    "not_before": "2026-10-12T09:00:30Z",
+    "operation": "e6",
+    "requires": [
+     "commit_result",
+     "publish_launch"
+    ],
+    "slots": [
+     {
+      "at": "2026-10-12T09:01:00Z",
+      "slot": "E6"
+     }
+    ]
+   },
+   {
+    "budget_seconds": 300,
+    "decoder": {
+     "kind": "HOT_J_V1",
+     "verifier": "j4_codec"
+    },
+    "effect": {
+     "argv": [
+      "--registry-record-base64",
+      "@DERIVED_J4_REGISTRY_RECORD@",
+      "--mode",
+      "REAL"
+     ],
+     "kind": "HOST_PROGRAM",
+     "source": "ext/j4_hot_worker.py"
+    },
+    "image_go_sha256": null,
+    "image_proposal_sha256": null,
+    "not_after": "2026-10-12T10:50:00Z",
+    "not_before": "2026-10-12T10:37:30Z",
+    "operation": "admission_manifest",
+    "requires": [
+     "e6"
+    ],
+    "slots": [
+     {
+      "at": "2026-10-12T10:38:00Z",
+      "slot": "J1"
+     },
+     {
+      "at": "2026-10-12T10:41:00Z",
+      "slot": "J2"
+     },
+     {
+      "at": "2026-10-12T10:44:00Z",
+      "slot": "J3"
+     }
+    ]
+   },
+   {
+    "budget_seconds": 60,
+    "decoder": {
+     "kind": "CHAIN_READBACK_V3"
+    },
+    "effect": {
+     "kind": "CHAIN_READBACK",
+     "source_bound_sha256": "@P_UP_BOUND_SHA256@",
+     "source_lot": "UP",
+     "source_request_sha256": "@P_UP_REQUEST_SHA256@",
+     "steps": [
+      "components",
+      "sources",
+      "bind",
+      "preflight",
+      "acquire",
+      "execute",
+      "stage"
+     ]
+    },
+    "image_go_sha256": null,
+    "image_proposal_sha256": null,
+    "not_after": "2026-10-12T09:03:30Z",
+    "not_before": "2026-10-12T09:01:00Z",
+    "operation": "post",
+    "requires": [
+     "publish_launch"
+    ],
+    "slots": [
+     {
+      "at": "2026-10-12T09:01:30Z",
+      "slot": "PO"
+     }
+    ]
+   }
+  ],
+  "veto_max_age_seconds": 10
+ }
+}

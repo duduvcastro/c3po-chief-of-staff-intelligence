@@ -1,0 +1,1067 @@
+{
+ "_comment": [
+  "L12-HOST v3.1 UP lot SPEC, REAL values; build_specs.py builds it from the gen_k9_plans04 output.",
+  "DRAFT until Saturday: act B 04 and the K9 04 GO (plan bytes and hashes change; regenerate the plans with",
+  "the real files and rebuild), ext/k9_verifiers04.py (Codex-reviewed REAL verifiers), D-NET network names,",
+  "secrets_root (REQUEST parameter, decision pending Codex). Not signed data until the owner's Assino.",
+  "v3.1: every LAUNCH row's inner KILL is budget - 65 s (generator: budget - 35 s) so the effect may start up",
+  "to 45 s after its instant (30 s beyond the 15 s gate allowance); Codex ruling on the runner's DEADLINE",
+  "receipt window (55 s -> 25 s + lateness) requested (CONTRACT 9.3)."
+ ],
+ "spec": {
+  "bootstrap": null,
+  "capacity": null,
+  "decision_sha256": "09de76e5a2ee54fdcdfa477b0f8df101fcda761b7f416e4308e29c0235e51c2a",
+  "extended": {
+   "steps": [
+    {
+     "ceiling_seconds": 2400,
+     "decoder": {
+      "kind": "K9_EXT_STEP_V3",
+      "verifier": "k9_step"
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/components_launch.json",
+        "--plan-sha256",
+        "a72ad39a5b6053bc24a50186bf92d23a85f7161482b14815265e5a3313628caa"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [
+        "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env"
+       ],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "components_launch"
+        ],
+        [
+         "c3po.k9.plan",
+         "a72ad39a5b6053bc24a50186bf92d23a85f7161482b14815265e5a3313628caa"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-source-20261012",
+         "target": "/c3po-source"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-components-launch",
+       "network": "bridge",
+       "timeout_seconds": 2335,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/components_launch.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-10T16:06:00Z",
+     "not_before": "2026-10-10T15:25:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "core",
+       "publish_launch"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-10T15:26:00Z",
+       "slot": "X1"
+      }
+     ],
+     "step": "components"
+    },
+    {
+     "ceiling_seconds": 4500,
+     "decoder": {
+      "kind": "K9_EXT_STEP_V3",
+      "verifier": "k9_step"
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/sources_launch.json",
+        "--plan-sha256",
+        "4565c457d5b1730e0a309dcf37bcf9c0a9007f0ff0886d4490951dac499ce328"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [
+        "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env",
+        "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/risk-db.env"
+       ],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "sources_launch"
+        ],
+        [
+         "c3po.k9.plan",
+         "4565c457d5b1730e0a309dcf37bcf9c0a9007f0ff0886d4490951dac499ce328"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-sources-launch",
+       "network": "c3po_db_loopback",
+       "timeout_seconds": 4435,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/sources_launch.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-10T17:41:00Z",
+     "not_before": "2026-10-10T16:25:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "core",
+       "publish_launch"
+      ],
+      [
+       "step",
+       "components"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-10T16:26:00Z",
+       "slot": "X2"
+      }
+     ],
+     "step": "sources"
+    },
+    {
+     "ceiling_seconds": 120,
+     "decoder": {
+      "kind": "K9_EXT_STEP_V3",
+      "verifier": "k9_step"
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/bind.json",
+        "--plan-sha256",
+        "384889b93523f6598aaf16fc7ca8cf12e1ed690267d9bdb22dbdba62656f091e"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "bind"
+        ],
+        [
+         "c3po.k9.plan",
+         "384889b93523f6598aaf16fc7ca8cf12e1ed690267d9bdb22dbdba62656f091e"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-bind",
+       "network": "none",
+       "timeout_seconds": 35,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/bind.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-11T00:28:00Z",
+     "not_before": "2026-10-11T00:25:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "core",
+       "publish_launch"
+      ],
+      [
+       "step",
+       "sources"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-11T00:26:00Z",
+       "slot": "X3"
+      }
+     ],
+     "step": "bind"
+    },
+    {
+     "ceiling_seconds": 300,
+     "decoder": {
+      "kind": "K9_EXT_STEP_V3",
+      "verifier": "k9_step"
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/preflight.json",
+        "--plan-sha256",
+        "3ea464bde2d27f7321afbe77afabf15f04b9621d85728e14adc6fdba1360b781"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "preflight"
+        ],
+        [
+         "c3po.k9.plan",
+         "3ea464bde2d27f7321afbe77afabf15f04b9621d85728e14adc6fdba1360b781"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-preflight",
+       "network": "none",
+       "timeout_seconds": 235,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/preflight.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-11T00:33:00Z",
+     "not_before": "2026-10-11T00:27:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "step",
+       "bind"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-11T00:28:00Z",
+       "slot": "X4"
+      }
+     ],
+     "step": "preflight"
+    },
+    {
+     "ceiling_seconds": 4200,
+     "decoder": {
+      "kind": "K9_EXT_STEP_V3",
+      "verifier": "k9_step"
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/acquire_launch.json",
+        "--plan-sha256",
+        "d6d219f107a37b530677c3dd2f02f5ea0f8484b9664d8f228319d440a2fa539a"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [
+        "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env",
+        "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/risk-db.env"
+       ],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "acquire_launch"
+        ],
+        [
+         "c3po.k9.plan",
+         "d6d219f107a37b530677c3dd2f02f5ea0f8484b9664d8f228319d440a2fa539a"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-acquire-launch",
+       "network": "c3po_db_loopback",
+       "timeout_seconds": 4135,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/acquire_launch.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-11T01:48:00Z",
+     "not_before": "2026-10-11T00:37:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "step",
+       "preflight"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-11T00:38:00Z",
+       "slot": "X5"
+      }
+     ],
+     "step": "acquire"
+    },
+    {
+     "ceiling_seconds": 1200,
+     "decoder": {
+      "kind": "K9_EXT_STEP_V3",
+      "verifier": "k9_step"
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/execute_launch.json",
+        "--plan-sha256",
+        "e9bbf2cb372d10da06b907ce98a108d88e4b2f2d42e8a345f2a1105affe5d107"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "execute_launch"
+        ],
+        [
+         "c3po.k9.plan",
+         "e9bbf2cb372d10da06b907ce98a108d88e4b2f2d42e8a345f2a1105affe5d107"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-execute-launch",
+       "network": "none",
+       "timeout_seconds": 1135,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/execute_launch.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-11T02:08:00Z",
+     "not_before": "2026-10-11T01:47:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "step",
+       "acquire"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-11T01:48:00Z",
+       "slot": "X6"
+      }
+     ],
+     "step": "execute"
+    },
+    {
+     "ceiling_seconds": 120,
+     "decoder": {
+      "kind": "K9_EXT_STEP_V3",
+      "verifier": "k9_step"
+     },
+     "effect": {
+      "docker": {
+       "command": [
+        "python",
+        "-I",
+        "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+        "--plan",
+        "/c3po-k9-day/plans/stage.json",
+        "--plan-sha256",
+        "c4f0bd8c52005abca03662e4dde65e485f91efbc1db5c403e17aecae656b490f"
+       ],
+       "env": [
+        [
+         "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+         "true"
+        ],
+        [
+         "C3PO_BUILD_SHA",
+         "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+        ]
+       ],
+       "env_files": [],
+       "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+       "labels": [
+        [
+         "c3po.k9.operation",
+         "stage"
+        ],
+        [
+         "c3po.k9.plan",
+         "c4f0bd8c52005abca03662e4dde65e485f91efbc1db5c403e17aecae656b490f"
+        ]
+       ],
+       "mounts": [
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+         "target": "/c3po-k9-tools"
+        },
+        {
+         "readonly": true,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+         "target": "/c3po-k9-day"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts",
+         "target": "/c3po-k9-day/receipts"
+        },
+        {
+         "readonly": false,
+         "source": "/var/lib/c3po/r2d2-v2-source-20261012",
+         "target": "/c3po-source"
+        }
+       ],
+       "name": "c3po-k9-e04-20261012-stage",
+       "network": "none",
+       "timeout_seconds": 20,
+       "tmpfs": false,
+       "workdir": null
+      },
+      "kind": "CONTAINER",
+      "receipt": {
+       "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/stage.RECEIPT.json",
+       "source": "FILE"
+      }
+     },
+     "hold_until": null,
+     "not_after": "2026-10-11T02:28:00Z",
+     "not_before": "2026-10-11T02:25:30Z",
+     "pre_effect": null,
+     "requires": [
+      [
+       "core",
+       "publish_launch"
+      ],
+      [
+       "step",
+       "bind"
+      ],
+      [
+       "step",
+       "execute"
+      ]
+     ],
+     "slots": [
+      {
+       "at": "2026-10-11T02:26:00Z",
+       "slot": "X7"
+      }
+     ],
+     "step": "stage"
+    }
+   ]
+  },
+  "external": {
+   "k9_approval": {
+    "file": "ext/k9_verifiers04.py",
+    "identity": "verify_approval"
+   },
+   "k9_original": {
+    "file": "ext/k9_verifiers04.py",
+    "identity": "verify_original"
+   },
+   "k9_step": {
+    "file": "ext/k9_verifiers04.py",
+    "identity": "verify_step"
+   }
+  },
+  "files": {
+   "ext/k9_runner04.py": "k9tools/k9_runner04.py",
+   "ext/k9_verifiers04.py": "@P_CODEX_REVIEWED_K9_VERIFIERS04_PY@",
+   "k9/K9_04_STEP_SET_REQUEST.json": "up_plans_DRAFT_actB_GO_pending/K9_04_STEP_SET_REQUEST.json",
+   "k9/K9_GO_04.json": "up_inputs/K9_GO_04.PLACEHOLDER.txt",
+   "k9/acquire_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/acquire_launch.json",
+   "k9/bind.json": "up_plans_DRAFT_actB_GO_pending/plans/bind.json",
+   "k9/collect_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/collect_launch.json",
+   "k9/commit_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/commit_launch.json",
+   "k9/components_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/components_launch.json",
+   "k9/execute_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/execute_launch.json",
+   "k9/preflight.json": "up_plans_DRAFT_actB_GO_pending/plans/preflight.json",
+   "k9/prove_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/prove_launch.json",
+   "k9/publish_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/publish_launch.json",
+   "k9/sources_launch.json": "up_plans_DRAFT_actB_GO_pending/plans/sources_launch.json",
+   "k9/stage.json": "up_plans_DRAFT_actB_GO_pending/plans/stage.json"
+  },
+  "gate": null,
+  "imports": {},
+  "initial_receipts": {},
+  "j4": null,
+  "k9": {
+   "go": "k9/K9_GO_04.json",
+   "networks": {
+    "DATABASE": "c3po_c3po_internal",
+    "DATABASE_AND_PROVIDER": "c3po_db_loopback",
+    "PROVIDER": "bridge"
+   },
+   "plans": {
+    "acquire_launch": "k9/acquire_launch.json",
+    "bind": "k9/bind.json",
+    "collect_launch": "k9/collect_launch.json",
+    "commit_launch": "k9/commit_launch.json",
+    "components_launch": "k9/components_launch.json",
+    "execute_launch": "k9/execute_launch.json",
+    "preflight": "k9/preflight.json",
+    "prove_launch": "k9/prove_launch.json",
+    "publish_launch": "k9/publish_launch.json",
+    "sources_launch": "k9/sources_launch.json",
+    "stage": "k9/stage.json"
+   },
+   "request": "k9/K9_04_STEP_SET_REQUEST.json",
+   "runner_source": "ext/k9_runner04.py",
+   "secrets_root": "/var/lib/c3po/r2d2-v2-k9-20261005/secrets"
+  },
+  "lane": "UPSTREAM_P",
+  "lot": "UP",
+  "mode": "REAL",
+  "owner_deadline": "2026-10-10T13:20:00Z",
+  "ready": null,
+  "schema": "L12HOST_LOT_SPEC_V3",
+  "tasks": [
+   {
+    "budget_seconds": 600,
+    "decoder": {
+     "k9_go": "k9/K9_GO_04.json",
+     "k9_request": "k9/K9_04_STEP_SET_REQUEST.json",
+     "kind": "K9_STEP_V1",
+     "mode": "REAL",
+     "phase_not_after": "2026-10-10T14:36:00Z",
+     "phase_not_before": "2026-10-10T14:25:30Z",
+     "provenance_binding_sha256": "549601e2cc455353fb6f4006e4a59412034e91266d10064cd9859b167d78ff5a",
+     "runner_source": "ext/k9_runner04.py",
+     "step_plan": "k9/prove_launch.json",
+     "verifiers": {
+      "approval": "k9_approval",
+      "original": "k9_original"
+     }
+    },
+    "effect": {
+     "docker": {
+      "command": [
+       "python",
+       "-I",
+       "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+       "--plan",
+       "/c3po-k9-day/plans/prove_launch.json",
+       "--plan-sha256",
+       "81f36dd6a1e046a1a1c6266b2616c3f52dfdf2eb35eb93eca3dd68ba1578bdbf"
+      ],
+      "env": [
+       [
+        "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+        "true"
+       ],
+       [
+        "C3PO_BUILD_SHA",
+        "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+       ]
+      ],
+      "env_files": [
+       "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env"
+      ],
+      "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+      "labels": [
+       [
+        "c3po.k9.operation",
+        "prove_launch"
+       ],
+       [
+        "c3po.k9.plan",
+        "81f36dd6a1e046a1a1c6266b2616c3f52dfdf2eb35eb93eca3dd68ba1578bdbf"
+       ]
+      ],
+      "mounts": [
+       {
+        "readonly": true,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+        "target": "/c3po-k9-tools"
+       },
+       {
+        "readonly": false,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+        "target": "/c3po-k9-day"
+       }
+      ],
+      "name": "c3po-k9-e04-20261012-prove-launch",
+      "network": "bridge",
+      "timeout_seconds": 535,
+      "tmpfs": false,
+      "workdir": null
+     },
+     "kind": "CONTAINER",
+     "receipt": {
+      "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/prove_launch.RECEIPT.json",
+      "source": "FILE"
+     }
+    },
+    "image_go_sha256": null,
+    "image_proposal_sha256": null,
+    "not_after": "2026-10-10T14:36:00Z",
+    "not_before": "2026-10-10T14:25:30Z",
+    "operation": "prove",
+    "requires": [],
+    "slots": [
+     {
+      "at": "2026-10-10T14:26:00Z",
+      "slot": "P1"
+     }
+    ]
+   },
+   {
+    "budget_seconds": 900,
+    "decoder": {
+     "k9_go": "k9/K9_GO_04.json",
+     "k9_request": "k9/K9_04_STEP_SET_REQUEST.json",
+     "kind": "K9_STEP_V1",
+     "mode": "REAL",
+     "phase_not_after": "2026-10-10T14:53:00Z",
+     "phase_not_before": "2026-10-10T14:37:30Z",
+     "provenance_binding_sha256": "567f129a0e6214f73e9641d278efc0b0517031ccaf49465a103e917f06c611f0",
+     "runner_source": "ext/k9_runner04.py",
+     "step_plan": "k9/collect_launch.json",
+     "verifiers": {
+      "approval": "k9_approval",
+      "original": "k9_original"
+     }
+    },
+    "effect": {
+     "docker": {
+      "command": [
+       "python",
+       "-I",
+       "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+       "--plan",
+       "/c3po-k9-day/plans/collect_launch.json",
+       "--plan-sha256",
+       "7387ceb8a2263c10935060018639c7c360bc01b544399b99783cb751aeb2307c"
+      ],
+      "env": [
+       [
+        "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+        "true"
+       ],
+       [
+        "C3PO_BUILD_SHA",
+        "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+       ]
+      ],
+      "env_files": [
+       "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/provider.env"
+      ],
+      "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+      "labels": [
+       [
+        "c3po.k9.operation",
+        "collect_launch"
+       ],
+       [
+        "c3po.k9.plan",
+        "7387ceb8a2263c10935060018639c7c360bc01b544399b99783cb751aeb2307c"
+       ]
+      ],
+      "mounts": [
+       {
+        "readonly": true,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+        "target": "/c3po-k9-tools"
+       },
+       {
+        "readonly": false,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+        "target": "/c3po-k9-day"
+       }
+      ],
+      "name": "c3po-k9-e04-20261012-collect-launch",
+      "network": "bridge",
+      "timeout_seconds": 835,
+      "tmpfs": false,
+      "workdir": null
+     },
+     "kind": "CONTAINER",
+     "receipt": {
+      "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/collect_launch.RECEIPT.json",
+      "source": "FILE"
+     }
+    },
+    "image_go_sha256": null,
+    "image_proposal_sha256": null,
+    "not_after": "2026-10-10T14:53:00Z",
+    "not_before": "2026-10-10T14:37:30Z",
+    "operation": "collect",
+    "requires": [
+     "prove"
+    ],
+    "slots": [
+     {
+      "at": "2026-10-10T14:38:00Z",
+      "slot": "P2"
+     }
+    ]
+   },
+   {
+    "budget_seconds": 600,
+    "decoder": {
+     "k9_go": "k9/K9_GO_04.json",
+     "k9_request": "k9/K9_04_STEP_SET_REQUEST.json",
+     "kind": "K9_STEP_V1",
+     "mode": "REAL",
+     "phase_not_after": "2026-10-10T15:03:00Z",
+     "phase_not_before": "2026-10-10T14:52:30Z",
+     "provenance_binding_sha256": "395bdd8305a0b5e8103f9bc7860d94470f58997112ce61da167c7fcff557153b",
+     "runner_source": "ext/k9_runner04.py",
+     "step_plan": "k9/commit_launch.json",
+     "verifiers": {
+      "approval": "k9_approval",
+      "original": "k9_original"
+     }
+    },
+    "effect": {
+     "docker": {
+      "command": [
+       "python",
+       "-I",
+       "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+       "--plan",
+       "/c3po-k9-day/plans/commit_launch.json",
+       "--plan-sha256",
+       "8d9a19cc7251e34ea257e73660ccb9689a4018856cd3c4acb2cf914f7f4a8448"
+      ],
+      "env": [
+       [
+        "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+        "true"
+       ],
+       [
+        "C3PO_BUILD_SHA",
+        "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+       ]
+      ],
+      "env_files": [],
+      "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+      "labels": [
+       [
+        "c3po.k9.operation",
+        "commit_launch"
+       ],
+       [
+        "c3po.k9.plan",
+        "8d9a19cc7251e34ea257e73660ccb9689a4018856cd3c4acb2cf914f7f4a8448"
+       ]
+      ],
+      "mounts": [
+       {
+        "readonly": true,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+        "target": "/c3po-k9-tools"
+       },
+       {
+        "readonly": false,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+        "target": "/c3po-k9-day"
+       },
+       {
+        "readonly": true,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/emitter",
+        "target": "/c3po-k9-emitter"
+       }
+      ],
+      "name": "c3po-k9-e04-20261012-commit-launch",
+      "network": "c3po_c3po_internal",
+      "timeout_seconds": 535,
+      "tmpfs": false,
+      "workdir": null
+     },
+     "kind": "CONTAINER",
+     "receipt": {
+      "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/commit_launch.RECEIPT.json",
+      "source": "FILE"
+     }
+    },
+    "image_go_sha256": null,
+    "image_proposal_sha256": null,
+    "not_after": "2026-10-10T15:03:00Z",
+    "not_before": "2026-10-10T14:52:30Z",
+    "operation": "commit_result",
+    "requires": [
+     "collect"
+    ],
+    "slots": [
+     {
+      "at": "2026-10-10T14:53:00Z",
+      "slot": "P3"
+     }
+    ]
+   },
+   {
+    "budget_seconds": 600,
+    "decoder": {
+     "k9_go": "k9/K9_GO_04.json",
+     "k9_request": "k9/K9_04_STEP_SET_REQUEST.json",
+     "kind": "K9_STEP_V1",
+     "mode": "REAL",
+     "phase_not_after": "2026-10-10T15:13:00Z",
+     "phase_not_before": "2026-10-10T15:02:30Z",
+     "provenance_binding_sha256": "2f6d697a2e78feed9050624e6259cd19d55f0b21e392c1e70b1ce0b013462a4d",
+     "runner_source": "ext/k9_runner04.py",
+     "step_plan": "k9/publish_launch.json",
+     "verifiers": {
+      "approval": "k9_approval",
+      "original": "k9_original"
+     }
+    },
+    "effect": {
+     "docker": {
+      "command": [
+       "python",
+       "-I",
+       "/c3po-k9-tools/k9_runner04-e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a.py",
+       "--plan",
+       "/c3po-k9-day/plans/publish_launch.json",
+       "--plan-sha256",
+       "e50bb4629241707a84bcf48b5dea03646eb54bff576ac0ec55151d666d1aeb59"
+      ],
+      "env": [
+       [
+        "C3PO_R2D2_V2_PRODUCERS_ENABLED",
+        "true"
+       ],
+       [
+        "C3PO_BUILD_SHA",
+        "de96aee90a26e9587663ba7a1f6e55a592afcd20"
+       ]
+      ],
+      "env_files": [],
+      "image_id": "sha256:bf37cec9f4f93e129543235a567a2de5daad0c8116086e2b176069e497defba3",
+      "labels": [
+       [
+        "c3po.k9.operation",
+        "publish_launch"
+       ],
+       [
+        "c3po.k9.plan",
+        "e50bb4629241707a84bcf48b5dea03646eb54bff576ac0ec55151d666d1aeb59"
+       ]
+      ],
+      "mounts": [
+       {
+        "readonly": true,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/tools",
+        "target": "/c3po-k9-tools"
+       },
+       {
+        "readonly": false,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12",
+        "target": "/c3po-k9-day"
+       },
+       {
+        "readonly": false,
+        "source": "/var/lib/c3po/r2d2-v2-source-20261012",
+        "target": "/c3po-source"
+       },
+       {
+        "readonly": true,
+        "source": "/var/lib/c3po/r2d2-v2-k9-20261005/secrets/emitter",
+        "target": "/c3po-k9-emitter"
+       }
+      ],
+      "name": "c3po-k9-e04-20261012-publish-launch",
+      "network": "c3po_c3po_internal",
+      "timeout_seconds": 535,
+      "tmpfs": false,
+      "workdir": null
+     },
+     "kind": "CONTAINER",
+     "receipt": {
+      "path": "/var/lib/c3po/r2d2-v2-k9-20261012/days/2026-10-12/receipts/publish_launch.RECEIPT.json",
+      "source": "FILE"
+     }
+    },
+    "image_go_sha256": null,
+    "image_proposal_sha256": null,
+    "not_after": "2026-10-10T15:13:00Z",
+    "not_before": "2026-10-10T15:02:30Z",
+    "operation": "publish_launch",
+    "requires": [
+     "commit_result"
+    ],
+    "slots": [
+     {
+      "at": "2026-10-10T15:03:00Z",
+      "slot": "P4"
+     }
+    ]
+   }
+  ],
+  "veto_max_age_seconds": 10
+ }
+}

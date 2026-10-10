@@ -1,0 +1,145 @@
+{
+ "all_ok": true,
+ "command": "L12_TEST_TMP=<v3.2 dir>/suite-tmp-under-icloud-documents <python> -I -S -B l12host/tests/test_l12host.py (5 times in a row; the 3.12 and 3.9 streams ran concurrently, 22:25-23:03 BRT, i.e. at night for N1, under load for C1, and with L12_TEST_TMP under the iCloud domain for M1)",
+ "family_seal_sha256": "625d244b538e36a270c1d5136dfb87a067a9950eeb4beac35d6505e7eb3cceb7",
+ "platform": "darwin",
+ "python": "3.12.14",
+ "runs": [
+  {
+   "ended_utc": "2026-10-10T01:32:54Z",
+   "exit": 0,
+   "failing": [],
+   "run": 1,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:25:54Z",
+   "stderr_sha256": "fcc7d8a8b5a8d0b3abe12c709fba99798bf1d927a93f346939d1e403aca2cf10",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.12.14",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T01:39:53Z",
+   "exit": 0,
+   "failing": [],
+   "run": 2,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:32:54Z",
+   "stderr_sha256": "d6a1bb10b344a888e96b7b930d2b8ef29f16521789e6275ad62dc22aed3c4a3f",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.12.14",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T01:46:52Z",
+   "exit": 0,
+   "failing": [],
+   "run": 3,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:39:53Z",
+   "stderr_sha256": "bdfb2cd7f5d17cc5b97a53e5f02c01bf5682d3e4c0c06ea522f1f9d18061a343",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.12.14",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T01:53:50Z",
+   "exit": 0,
+   "failing": [],
+   "run": 4,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:46:52Z",
+   "stderr_sha256": "31edf2304df0ea931fa7ec9e4f19bd4b195379d0ecd12761c4fb2830bfd3993a",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.12.14",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  },
+  {
+   "ended_utc": "2026-10-10T02:00:48Z",
+   "exit": 0,
+   "failing": [],
+   "run": 5,
+   "skipped": [
+    "test_b1_boot_id_on_real_linux_procfs"
+   ],
+   "started_utc": "2026-10-10T01:53:50Z",
+   "stderr_sha256": "c3e5a8719cb420ebb038c0c3432d4b0e3a3550973c3f460d6ec83cc571b8a9cd",
+   "summary": {
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "platform": "darwin",
+    "python": "3.12.14",
+    "schema": "L12HOST_V32_TEST_RESULT",
+    "skipped": 1,
+    "temp_parent": {
+     "file_provider_candidates_skipped": 1,
+     "source": "tempfile"
+    },
+    "tests": 81
+   },
+   "test_names_sha256": "373427d138d226ab26a8b3fcf6bd4d5b5c14ddf53dcb9cf512f66a1372dcacee",
+   "tests_listed": 81
+  }
+ ],
+ "schema": "L12HOST_V32_TEST_RUNS"
+}

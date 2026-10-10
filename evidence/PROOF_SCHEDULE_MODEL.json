@@ -1,0 +1,75 @@
+{
+ "assumed_durations_seconds": {
+  "bind": 20,
+  "cleanup": 20,
+  "down_build": 60,
+  "negatives": 20,
+  "prepare": 60,
+  "s1_finish": 25,
+  "x1_done": 30
+ },
+ "command": "python3.12 -I -S -B evidence/probes/proof_schedule_model.py <v3.2 l12host> 1",
+ "compute_seconds": 4.6,
+ "constants": {
+  "DOWN_LEAD": 90,
+  "DOWN_SPAN": [
+   -2,
+   180
+  ],
+  "HOLD_CHECK_SECONDS": 540,
+  "MAX_HOLD_SECONDS": 600,
+  "SLOT_SPAN": [
+   -2,
+   60
+  ],
+  "UP_GAP": 90,
+  "UP_LEAD": 240
+ },
+ "family_seal_sha256": "625d244b538e36a270c1d5136dfb87a067a9950eeb4beac35d6505e7eb3cceb7",
+ "h1": {
+  "engine_limit_seconds": 600,
+  "false_red_start_points": 0,
+  "fraction_of_starts_where_the_reader_negative_waits": 0.1068,
+  "max": 540,
+  "reader_check_hold_minus_now_seconds_min": 218
+ },
+ "linux_systemd_proof_sha256": "643d9190067e66d6920d7bae5cbc04ef88a5d4c86848c9e6581f2bbfd290fa26",
+ "probe": "evidence/probes/proof_schedule_model.py",
+ "probe_sha256": "cc1f7e73079a645b3ffd59ed423bf4f3c70fdb928bf5311365d9bf38de12e436",
+ "r0_minus_negatives_end_seconds_min": 50,
+ "rule": "l12host_effect.start_minute_violation (tabulated, checked)",
+ "schema": "L12HOST_V32_PROOF_SCHEDULE_MODEL",
+ "start_points": 86400,
+ "step_seconds": 1,
+ "timer_part_minutes": {
+  "max": 62.6,
+  "median": 26.7,
+  "min": 17.3,
+  "over_45": 0.0804,
+  "over_60": 0.0082,
+  "p90": 44.1,
+  "p99": 59.8
+ },
+ "worst_starts_BRT": [
+  {
+   "minutes": 62.6,
+   "start_BRT": "23:46:38"
+  },
+  {
+   "minutes": 62.6,
+   "start_BRT": "01:46:38"
+  },
+  {
+   "minutes": 62.6,
+   "start_BRT": "23:46:39"
+  },
+  {
+   "minutes": 62.6,
+   "start_BRT": "01:46:39"
+  },
+  {
+   "minutes": 62.6,
+   "start_BRT": "23:46:40"
+  }
+ ]
+}

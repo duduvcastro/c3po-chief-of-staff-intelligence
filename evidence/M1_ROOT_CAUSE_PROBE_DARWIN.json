@@ -1,0 +1,53 @@
+{
+ "command": "python3.12 -I -S -B evidence/probes/m1_file_provider_probe.py <v3.2 l12host> 3 5 2000000 <v3.2 dir>/.m1-probe-under-icloud-documents <scratchpad under /private/tmp>/m1-probe-private-tmp $TMPDIR/l12-m1-probe-tmpdir",
+ "finding": "The v3.1 review evidently ran the suite with L12_TEST_TMP under ~/Documents: its review-tmp/ holds tmp312/ and tmp39/, and tmp39/ still holds a kit root (l12v3-5rksgne3, the kit's mkdtemp prefix); its suite copy was also under ~/Documents (review-tmp/run). On this Mac ~/Documents (and ~/Desktop, ~/Library/Mobile Documents) carries com.apple.file-provider-domain-id: iCloud Drive 'Desktop & Documents'. The provider changes the ctime of every newly written file there shortly after the write (100 of 100 files here; about 0.4 s and about 3 s after creation in two separate ad-hoc timing probes); a strict read that straddles that instant is INPUT_FILE_CHANGED (ctime_ns only). Under /private/tmp and $TMPDIR: 0 of 100 files changed, 0 refusals. The host (Linux, no File Provider) is not affected; the strict check stays.",
+ "fix": "kit.safe_temp_parent skips any File Provider domain (kit.file_provider_domain); INPUT_FILE_CHANGED names the file",
+ "kit_note": "the probe imports the kit only for file_provider_domain and the runtime's read_path; the runtime bytes above are the sealed v3.2 ones",
+ "l12host_runtime_sha256": "d4f774590800618547ad482c011161223ddad99f8713f74d7e8daedb2be4670c",
+ "probe": "evidence/probes/m1_file_provider_probe.py",
+ "probe_sha256": "b0cfe0e0b71f7dce5fc4460d3bcb44a8741eac0664ddc4119116111cad0fd9cc",
+ "result": {
+  "bases": [
+   {
+    "base": "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/fable-l12host-v32-20261009/.m1-probe-under-icloud-documents",
+    "changed_fields": [
+     "ctime_ns"
+    ],
+    "file_provider_domain": "/Users/eduardocastro/Documents",
+    "files": 100,
+    "files_with_ctime_changed_after_creation": 100,
+    "input_file_changed": 6,
+    "named_example": "r0/f08.json",
+    "strict_reads": 116840
+   },
+   {
+    "base": "/private/tmp/claude-501/-Users-eduardocastro-ClaudeCode/b8e55609-7dea-462c-b8e1-0360e24c4e48/scratchpad/v32work/m1-probe-private-tmp",
+    "changed_fields": [],
+    "file_provider_domain": null,
+    "files": 100,
+    "files_with_ctime_changed_after_creation": 0,
+    "input_file_changed": 0,
+    "named_example": null,
+    "strict_reads": 116160
+   },
+   {
+    "base": "/var/folders/8b/ctmk_v6j0kgc6bqzptvrxzfw0000gn/T/l12-m1-probe-tmpdir",
+    "changed_fields": [],
+    "file_provider_domain": null,
+    "files": 100,
+    "files_with_ctime_changed_after_creation": 0,
+    "input_file_changed": 0,
+    "named_example": null,
+    "strict_reads": 116340
+   }
+  ],
+  "file_bytes": 2000000,
+  "files_per_round": 20,
+  "platform": "darwin",
+  "python": "3.12.14",
+  "rounds": 5,
+  "schema": "L12HOST_V32_M1_FILE_PROVIDER_PROBE",
+  "seconds_per_round": 3.0
+ },
+ "schema": "L12HOST_V32_M1_ROOT_CAUSE"
+}

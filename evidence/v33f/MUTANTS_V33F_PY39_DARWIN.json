@@ -1,0 +1,394 @@
+{
+ "killed": 25,
+ "mutants": 25,
+ "python": "/usr/bin/python3",
+ "rows": [
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_pins_the_three_k9_class_networks",
+    "FAIL: test_proof_lots_bind_under_the_v33f_pins"
+   ],
+   "failures": 6,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_k9_network_pin_removed",
+   "mutant_parses": true,
+   "mutated_sha256": "1d055270ab7a8dbe1dadf76d216da06fe97f3567b12c750a60d4b2bb668c3343",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_pins_each_session_unit_network",
+    "FAIL: test_proof_lots_bind_under_the_v33f_pins"
+   ],
+   "failures": 5,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_reader_network_pin_removed",
+   "mutant_parses": true,
+   "mutated_sha256": "faa2efd5291c6ae2b8847e87bb4d79d81985b8bc0fc10e5049876b5a277c4b23",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_pins_each_session_unit_network"
+   ],
+   "failures": 4,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_supervisor_network_pin_removed",
+   "mutant_parses": true,
+   "mutated_sha256": "ebf8353d5c47a08797e8a963ec3d041c9cc4fa5353cbabfce925a5772ecb6718",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 3,
+   "failing": [
+    "ERROR: test_in_family_validation_binds_the_synthetic_real_fill_ins",
+    "ERROR: test_proof_lots_bind_under_the_v33f_pins",
+    "ERROR: test_real_down_dir_and_the_extended_f1",
+    "FAIL: test_session_rows_differ_from_the_single_network_shape_only_in_the_network_word"
+   ],
+   "failures": 1,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_one_network_for_both_units",
+   "mutant_parses": true,
+   "mutated_sha256": "f3563fb3e22408cc5786e29fa55cc848dfa4e71eed05b31f10ab446d558ada45",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_refuses_absent_or_unbound_real_files"
+   ],
+   "failures": 15,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_real_check_not_called",
+   "mutant_parses": true,
+   "mutated_sha256": "3de9707e06aa533f3b89af043cc8e662cb5a478fca246cc06731b4f0e4414b3e",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 3,
+   "failing": [
+    "ERROR: test_physical_bind_refuses_absent_or_unbound_real_files"
+   ],
+   "failures": 0,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_real_fixed_files_not_required",
+   "mutant_parses": true,
+   "mutated_sha256": "fe97defe91ebadd5aa42acfee1f570b01747bf33ea3d76f96de442583c8a45d1",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_refuses_absent_or_unbound_real_files"
+   ],
+   "failures": 1,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_registry_seal_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "9cff4c46204b16d76982eb5dd692edc6ad93b6f3a46092cdb063dc8ba9a739eb",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_refuses_absent_or_unbound_real_files"
+   ],
+   "failures": 1,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_original_registered_sha_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "63ec7cf001bc61171400b44083fccd4433fd3517b15550addee6fe235c0b2614",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_refuses_absent_or_unbound_real_files"
+   ],
+   "failures": 1,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_registry_operations_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "858495a1d753494480bf65d9926cdc90ebc3c91d370fb3c276204776602f5707",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_physical_bind_refuses_absent_or_unbound_real_files"
+   ],
+   "failures": 1,
+   "file": "l12host_runtime.py",
+   "killed": true,
+   "mutant": "runtime_callbacks_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "a705a1ce812fe7f862a144e8d670bc7a702df9849e8cc59b44e2ab3d172e4c32",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 2,
+   "failing": [
+    "ERROR: test_in_family_validation_binds_the_synthetic_real_fill_ins",
+    "ERROR: test_real_down_dir_and_the_extended_f1",
+    "FAIL: test_dnet_constants_builder_and_drafts",
+    "FAIL: test_session_rows_differ_from_the_single_network_shape_only_in_the_network_word"
+   ],
+   "failures": 2,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_supervisor_takes_the_reader_network",
+   "mutant_parses": true,
+   "mutated_sha256": "dce2bb89a6aac75167944a1a515ada9729a2ca1e24de28934c8f0ad623dc33c4",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write"
+   ],
+   "failures": 1,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_writer_accepts_any_networks",
+   "mutant_parses": true,
+   "mutated_sha256": "2eceec10682f8f09140447b5da81a334c390e0ff5318eb11bf5d721a37d67ea9",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_codex_r2_verifier_read_only_ast_and_the_sha256_flag",
+    "FAIL: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write"
+   ],
+   "failures": 2,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_verifier_sha_flag_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "8339fe6490ded0bc3326ea3768fd6ad2501bbced023f9f06bc2ef997427f5bda",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write"
+   ],
+   "failures": 1,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_policy_seal_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "20185175ff086e6f480adb4f0e1dccc2098ef73784604214fb5c91e9cc77251e",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write"
+   ],
+   "failures": 1,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_effect_rows_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "65615d497ce0ba39152bbc8694257774c6f6782f414c53cb6c4a9003c4b36f3b",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write"
+   ],
+   "failures": 1,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_publication_go_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "6c828f203e69fbbe587fa52147bf5b9800a8a6ffd086b19a5fbca34e09970e4d",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_codex_r2_verifier_read_only_ast_and_the_sha256_flag",
+    "FAIL: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write"
+   ],
+   "failures": 2,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_act_b_pin_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "1889adc03d5bad56dfb8301e529092557b69c991cbcce3512ed39e2b4a320e52",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_real_down_dir_and_the_extended_f1"
+   ],
+   "failures": 3,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_f1_shared_files_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "95c821a27b66dd6f47d5458118d160f6d7efb1b585a8dc3a36df3dbb6465c202",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_real_down_dir_and_the_extended_f1"
+   ],
+   "failures": 1,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_f1_policy_beyond_lot_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "bbf5b7d1ccc35c27aa15ef62278c1bce6e97af423a68de882f903a50cceb752c",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_validate_rederives_the_records_and_refuses_tampering"
+   ],
+   "failures": 1,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_kill_record_not_rechecked",
+   "mutant_parses": true,
+   "mutated_sha256": "7cf2fe2a391fc537c3c709d8476b5132df6a891c926db8e5131b01f0e8732a1e",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 1,
+   "failing": [
+    "ERROR: test_real_down_dir_and_the_extended_f1",
+    "FAIL: test_kill_record_enumerates_every_row"
+   ],
+   "failures": 1,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_kill_capture_slack_applied",
+   "mutant_parses": true,
+   "mutated_sha256": "3f973b9348d91756ce967629ed1076e00e48f8cd5fde821104bb041bc99055a4",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 1,
+   "failing": [
+    "ERROR: test_writer_refuses_missing_unknown_or_unbound_real_inputs_before_any_write"
+   ],
+   "failures": 0,
+   "file": "lots/build_specs.py",
+   "killed": true,
+   "mutant": "builder_originals_count_unchecked",
+   "mutant_parses": true,
+   "mutated_sha256": "5de9eac3668aa01a6d892a75d73e79dfe531fac75621a2e39e355f320ff48706",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_real_down_dir_and_the_extended_f1"
+   ],
+   "failures": 1,
+   "file": "bind_l12host.py",
+   "killed": true,
+   "mutant": "question_unit_networks_removed",
+   "mutant_parses": true,
+   "mutated_sha256": "f351594bfb8bfb967729db7a77346f2e9ef1014dd5a018699cfac901c812ef60",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 1,
+   "failing": [
+    "ERROR: test_proof_lots_bind_under_the_v33f_pins"
+   ],
+   "failures": 0,
+   "file": "linux_systemd_proof.py",
+   "killed": true,
+   "mutant": "proof_up_lot_without_v33f",
+   "mutant_parses": true,
+   "mutated_sha256": "ab3537cc8b6c47f312c70682f001f174141a35c8494909d210afb6bef9971e02",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  },
+  {
+   "errors": 0,
+   "failing": [
+    "FAIL: test_proof_lots_bind_under_the_v33f_pins"
+   ],
+   "failures": 1,
+   "file": "linux_systemd_proof.py",
+   "killed": true,
+   "mutant": "proof_reader_keeps_c3po_default",
+   "mutant_parses": true,
+   "mutated_sha256": "70fa969daba580e7fb815ee063bc92149804deb6e7103cfb52f8c0f25fc1615b",
+   "occurrences": 1,
+   "rc": 1,
+   "tests": 15
+  }
+ ],
+ "schema": "L12HOST_V33F_MUTANTS"
+}

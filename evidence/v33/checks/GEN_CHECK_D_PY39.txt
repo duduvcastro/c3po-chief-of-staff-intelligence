@@ -1,0 +1,14 @@
+P1  prove_launch       Sat 10/10 15:26:00 BRT  2026-10-10T18:26:00+00:00  budget   600  run_not_after 2026-10-10T18:35:30+00:00  margin   460 s
+P2  collect_launch     Sat 10/10 15:38:00 BRT  2026-10-10T18:38:00+00:00  budget   900  run_not_after 2026-10-10T18:52:30+00:00  margin  1540 s
+P3  commit_launch      Sat 10/10 15:53:00 BRT  2026-10-10T18:53:00+00:00  budget   600  run_not_after 2026-10-10T19:02:30+00:00  margin   640 s
+P4  publish_launch     Sat 10/10 16:26:00 BRT  2026-10-10T19:26:00+00:00  budget   600  run_not_after 2026-10-10T19:35:30+00:00  margin   460 s
+X1  components_launch  Sat 10/10 16:38:00 BRT  2026-10-10T19:38:00+00:00  budget  2400  run_not_after 2026-10-10T20:17:30+00:00  margin  1540 s
+X2  sources_launch     Sat 10/10 17:26:00 BRT  2026-10-10T20:26:00+00:00  budget  4500  run_not_after 2026-10-10T21:40:30+00:00  margin   460 s
+X3  bind               Sat 10/10 21:26:00 BRT  2026-10-11T00:26:00+00:00  budget   120  run_not_after 2026-10-11T00:27:30+00:00  margin   460 s
+X4  preflight          Sat 10/10 21:28:00 BRT  2026-10-11T00:28:00+00:00  budget   300  run_not_after 2026-10-11T00:32:30+00:00  margin   340 s
+X5  acquire_launch     Sat 10/10 21:38:00 BRT  2026-10-11T00:38:00+00:00  budget  4200  run_not_after 2026-10-11T01:47:30+00:00  margin  1540 s
+X6  execute_launch     Sat 10/10 22:48:00 BRT  2026-10-11T01:48:00+00:00  budget  1200  run_not_after 2026-10-11T02:07:30+00:00  margin   940 s
+X7  stage              Sat 10/10 23:26:00 BRT  2026-10-11T02:26:00+00:00  budget   120  run_not_after 2026-10-11T02:27:30+00:00  margin   460 s
+C1  capture_launch     Mon 12/10 10:52:00 BRT  2026-10-12T13:52:00+00:00  budget   690  run_not_after 2026-10-12T14:03:00+00:00  margin   700 s
+GRID D slots_sha256=4497a1ec3ae026036b112a72678c3cb4a3597a236058b90b6c39b889d32ec536 start_window=[at, at+60 s]+45 s
+SCHEDULE_OK runner_sha256=e9be2b301397586a35f592cae3a23a5bfa3e7fdc5b9d27996c590e4303be081a grid=D engine_sha256=5dc4cdc8cdd1f0c575d85a782c61133822f2837b710db94dd181821409da9e30

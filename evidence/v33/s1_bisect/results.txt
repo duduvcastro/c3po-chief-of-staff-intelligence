@@ -1,0 +1,49 @@
+== b-full
+rc=1 stderr=A dependency job for b-full.service failed. See 'journalctl -xe' for details. 
+Result=success
+ExecMainStatus=0
+LoadState=not-found
+ActiveState=inactive
+SubState=dead
+== b-nocond
+rc=1 stderr=A dependency job for b-nocond.service failed. See 'journalctl -xe' for details. 
+Result=success
+ExecMainStatus=0
+LoadState=not-found
+ActiveState=inactive
+SubState=dead
+== b-nomnt
+rc=0 stderr=Running as unit: b-nomnt.service; invocation ID: b00d953c1f2d467282ef7c316c87242a 
+Result=success
+ExecMainStatus=0
+LoadState=loaded
+ActiveState=active
+SubState=running
+== b-neither
+rc=0 stderr=Running as unit: b-neither.service; invocation ID: 091176a348e743b797d9356749decbae 
+Result=success
+ExecMainStatus=0
+LoadState=loaded
+ActiveState=active
+SubState=running
+== b-cond1
+rc=0 stderr=Running as unit: b-cond1.service; invocation ID: 17a6f65ef2f94594b12beabd7cbb0d50 
+Result=success
+ExecMainStatus=0
+LoadState=loaded
+ActiveState=active
+SubState=running
+== b-condex
+rc=0 stderr=Running as unit: b-condex.service; invocation ID: 92af7065b14b40beae61e36b0fe38247 
+Result=success
+ExecMainStatus=0
+LoadState=loaded
+ActiveState=active
+SubState=running
+== b-rmf-mnt-only
+rc=1 stderr=A dependency job for b-rmf-mnt-only.service failed. See 'journalctl -xe' for details. 
+Result=success
+ExecMainStatus=0
+LoadState=not-found
+ActiveState=inactive
+SubState=dead

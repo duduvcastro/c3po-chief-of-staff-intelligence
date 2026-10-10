@@ -1,0 +1,77 @@
+{
+ "control_passes": true,
+ "family_seal_sha256": "604cf4aaad953c0911524200e077a1ea1de08951848d02c1a2e046bf7bebf3d9",
+ "family_seal_unchanged": true,
+ "killed": 5,
+ "mutants": {
+  "CONTROL": {
+   "errors": 0,
+   "failed": [],
+   "failures": 0,
+   "killed": null,
+   "rc": 0,
+   "skipped": 1,
+   "tests": 11
+  },
+  "ELECTED_ADDS_DRAFT3": {
+   "errors": 0,
+   "failed": [
+    "FAIL: test_real_writer_builds_and_validates_e_up_and_down_lots (__main__.GridE.test_real_writer_builds_and_validates_e_up_and_down_lots)"
+   ],
+   "failures": 1,
+   "killed": true,
+   "rc": 1,
+   "skipped": 1,
+   "tests": 11
+  },
+  "ELECTED_BACK_TO_C_D": {
+   "errors": 0,
+   "failed": [
+    "FAIL: test_real_writer_builds_and_validates_e_up_and_down_lots (__main__.GridE.test_real_writer_builds_and_validates_e_up_and_down_lots)"
+   ],
+   "failures": 1,
+   "killed": true,
+   "rc": 1,
+   "skipped": 1,
+   "tests": 11
+  },
+  "F1_GRID_CHECK_DROPPED": {
+   "errors": 0,
+   "failed": [
+    "FAIL: test_real_writer_builds_and_validates_e_up_and_down_lots (__main__.GridE.test_real_writer_builds_and_validates_e_up_and_down_lots)"
+   ],
+   "failures": 1,
+   "killed": true,
+   "rc": 1,
+   "skipped": 1,
+   "tests": 11
+  },
+  "VALIDATE_ELECTS_ONLY_C_D": {
+   "errors": 0,
+   "failed": [
+    "FAIL: test_real_writer_builds_and_validates_e_up_and_down_lots (__main__.GridE.test_real_writer_builds_and_validates_e_up_and_down_lots)"
+   ],
+   "failures": 1,
+   "killed": true,
+   "rc": 1,
+   "skipped": 1,
+   "tests": 11
+  },
+  "WRITE_ELECTS_ONLY_C_D": {
+   "errors": 1,
+   "failed": [
+    "ERROR: test_real_writer_builds_and_validates_e_up_and_down_lots (__main__.GridE.test_real_writer_builds_and_validates_e_up_and_down_lots)"
+   ],
+   "failures": 0,
+   "killed": true,
+   "rc": 1,
+   "skipped": 1,
+   "tests": 11
+  }
+ },
+ "python": "/private/tmp/claude-501/-Users-eduardocastro-ClaudeCode/b8e55609-7dea-462c-b8e1-0360e24c4e48/scratchpad/venv-backend/bin/python",
+ "schema": "L12HOST_V33G_MUTANTS",
+ "target": "lots/build_specs.py",
+ "target_sha256": "781dcf0a24a3f2fe80ec61a5e1603474e9a50b3f3adf2bddf536bf3e30dcb5b9",
+ "total": 5
+}

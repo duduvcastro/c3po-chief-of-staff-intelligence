@@ -1,0 +1,214 @@
+{
+ "all_ok": false,
+ "family_seal_sha256": "4108eb7b8003df12ebff1a7828b204f0c58c3b26382f13a908e5d51f92071e44",
+ "python": "/private/tmp/claude-501/-Users-eduardocastro-ClaudeCode/b8e55609-7dea-462c-b8e1-0360e24c4e48/scratchpad/venv-backend/bin/python",
+ "runs": [
+  {
+   "family_seal_unchanged": true,
+   "run": 1,
+   "seconds": 475.7,
+   "started_utc": "2026-10-10T14:23:07.390041Z",
+   "suites": {
+    "tests/test_l12host.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 441.6,
+     "skipped": 1,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 81
+    },
+    "tests/test_lots_patch_v34.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 1.4,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 17
+    },
+    "tests/test_v33.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 30.1,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 14
+    },
+    "tests/test_v33f.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 2.5,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 15
+    }
+   }
+  },
+  {
+   "family_seal_unchanged": true,
+   "run": 2,
+   "seconds": 475.0,
+   "started_utc": "2026-10-10T14:31:03.099246Z",
+   "suites": {
+    "tests/test_l12host.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 444.4,
+     "skipped": 1,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 81
+    },
+    "tests/test_lots_patch_v34.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 1.0,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 17
+    },
+    "tests/test_v33.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 28.5,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 14
+    },
+    "tests/test_v33f.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 1.1,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 15
+    }
+   }
+  },
+  {
+   "family_seal_unchanged": true,
+   "run": 3,
+   "seconds": 469.9,
+   "started_utc": "2026-10-10T14:38:57.940386Z",
+   "suites": {
+    "tests/test_l12host.py": {
+     "errors": 0,
+     "failures": 1,
+     "ok": false,
+     "problems": [
+      "FAIL: test_extended_ceiling_kills_the_group_and_is_uncertain (__main__.Review.test_extended_ceiling_kills_the_group_and_is_uncertain)"
+     ],
+     "python": "3.12.14",
+     "rc": 1,
+     "seconds": 439.1,
+     "skipped": 1,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 81
+    },
+    "tests/test_lots_patch_v34.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 1.1,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 17
+    },
+    "tests/test_v33.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 28.5,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 14
+    },
+    "tests/test_v33f.py": {
+     "errors": 0,
+     "failures": 0,
+     "ok": true,
+     "problems": [],
+     "python": "3.12.14",
+     "rc": 0,
+     "seconds": 1.1,
+     "skipped": 0,
+     "temp_parent": {
+      "file_provider_candidates_skipped": 0,
+      "source": "tempfile"
+     },
+     "tests": 15
+    }
+   }
+  }
+ ],
+ "schema": "L12HOST_V33F_TEST_RUNS"
+}
