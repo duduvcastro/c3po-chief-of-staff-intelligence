@@ -1,0 +1,146 @@
+# L12-HOST v3.3 Linux proof. Push ONLY this sealed tree (.github/, l12host/, evidence/, SHA256SUMS, CHANGES_V33.md) to
+# the disposable branch ops/fable-l12host-v33-proof-20261010 of a PRIVATE repository (the drafts and the contract name
+# host paths; none is a secret). Synthetic only: fake docker for the suites and the root proof; REAL root systemd timers,
+# slot services and units, REAL physical install through the installed runtime, a PHYSICAL DOWN session start run by a
+# timer (the root proof creates the epoch-04 host paths on the disposable runner). No credential, SSH, provider, SQL,
+# image, real container, owner question, signed real lot, secret path or operational job. The job FAILS if any seal,
+# suite or check fails.
+# v3.2 (LINUX_DIAG_NOTE of run 38006220510 / 38006490855): the 3.12 suites and the systemd proof use the host-equivalent
+# /usr/bin/python3.12 (root:root, not group/other-writable, as on the host); the 3.9 suites use setup-python with its
+# toolcache made root-owned and not group/other-writable BEFORE they run (the vendored ExecutablePin refuses a
+# group-writable interpreter); the proof's timer part is planned close to now (worst case about 62 min, median about
+# 27 min: evidence/PROOF_SCHEDULE_MODEL.json) under its own 95-min step timeout, so the results (with its timestamped
+# progress lines on stderr) are uploaded even then.
+# v3.3: (1) the proof first mirrors the host's mount layout for the reader's RequiresMountsFor paths (the proven cause of
+# v3.2's S1 UNIT_START_FAILED: the runner's failed fstab mnt.mount; CHANGES_V33.md) and dumps bounded unit/journal
+# diagnostics on any failure; (2) each Python step runs the three suites (tests/test_l12host.py, the merged lots patch
+# tests/test_lots_patch_v34.py and tests/test_v33.py), every one even if an earlier one failed; (3) v3.2 review LOW 3:
+# EVERY step has a timeout and the job timeout (200 min) covers their sum (5+5+5+30+10+5+30+95+10 = 195 min); the
+# interpreters and the suite/proof step timeouts are v3.2's.
+name: l12host-v33-proof
+on:
+  push:
+    branches: [ops/fable-l12host-v33-proof-20261010]
+permissions:
+  contents: read
+concurrency:
+  group: l12host-v33-proof-20261010
+  cancel-in-progress: false
+jobs:
+  proof:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Host-equivalent Python 3.12 (/usr/bin/python3.12, root-owned, not group/other-writable) and runner facts
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          R=/tmp/l12host-v33-proof-results
+          mkdir "$R"
+          test -x /usr/bin/python3.12 || { echo SYSTEM_PYTHON312_ABSENT; exit 1; }
+          real="$(readlink -f /usr/bin/python3.12)"
+          stat -c '%U:%G %a %F %n' /usr/bin/python3.12 "$real" > "$R/PYTHON312_IDENTITY.txt"
+          test "$(stat -c '%u' "$real")" = 0 || { echo PYTHON312_NOT_ROOT_OWNED; exit 1; }
+          test "$(( 0$(stat -c '%a' "$real") & 022 ))" = 0 || { echo PYTHON312_GROUP_OTHER_WRITABLE; exit 1; }
+          /usr/bin/python3.12 -I -S -B -c 'import sys; assert sys.version_info[:2] == (3, 12); print(sys.version)' > "$R/PYTHON312_VERSION.txt" || exit 1
+          { date -u +%Y-%m-%dT%H:%M:%SZ; TZ=America/Sao_Paulo date +%H:%M:%S-BRT; nproc; free -m; systemctl --version; } > "$R/RUNNER_FACTS.txt"
+          { findmnt /mnt || true; findmnt -T /mnt/day-d-data || true; systemctl show mnt.mount -p LoadState,ActiveState,FragmentPath || true; grep -nE '[[:space:]]/mnt([[:space:]]|/)' /etc/fstab || true; } > "$R/RUNNER_MOUNTS_BEFORE.txt" 2>&1
+      - name: Exact seals (pushed tree == top-level SHA256SUMS; family seal + vendor pins)
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          R=/tmp/l12host-v33-proof-results
+          sha256sum --strict -c SHA256SUMS > "$R/TOP_SEAL_CHECK.txt" || exit 1
+          git ls-files | LC_ALL=C sort > "$R/PUSHED_FILES.txt"
+          { cut -c67- SHA256SUMS; echo SHA256SUMS; } | LC_ALL=C sort > "$R/SEALED_FILES.txt"
+          diff "$R/PUSHED_FILES.txt" "$R/SEALED_FILES.txt" > "$R/TREE_DIFF.txt" || { echo TREE_NOT_THE_SEALED_SET; exit 1; }
+          /usr/bin/python3.12 -I -S -B l12host/verify_family.py > "$R/SEAL_RESULT.json" || exit 1
+          sha256sum SHA256SUMS l12host/SHA256SUMS > "$R/SEAL_SHA256.txt"
+      - name: Suites on Python 3.12 (/usr/bin/python3.12, FD_EXEC_LINUX)
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          R=/tmp/l12host-v33-proof-results
+          rc=0
+          L12_TEST_TMP="$RUNNER_TEMP" /usr/bin/python3.12 -I -S -B l12host/tests/test_l12host.py > "$R/TEST_RESULT_PY312.json" 2> "$R/TEST_NAMES_PY312.txt" || rc=1
+          L12_TEST_TMP="$RUNNER_TEMP" /usr/bin/python3.12 -I -S -B l12host/tests/test_lots_patch_v34.py > "$R/TEST_LOTS_RESULT_PY312.json" 2> "$R/TEST_LOTS_NAMES_PY312.txt" || rc=1
+          L12_TEST_TMP="$RUNNER_TEMP" /usr/bin/python3.12 -I -S -B l12host/tests/test_v33.py > "$R/TEST_V33_RESULT_PY312.json" 2> "$R/TEST_V33_NAMES_PY312.txt" || rc=1
+          test "$rc" = 0 || exit 1
+      - name: Python 3.9 (pinned setup-python)
+        id: py39
+        timeout-minutes: 10
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.9'
+          check-latest: false
+      - name: Python 3.9 toolcache root-owned and not group/other-writable (before its suites)
+        timeout-minutes: 5
+        shell: bash
+        env:
+          PY39: ${{ steps.py39.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          umask 077
+          R=/tmp/l12host-v33-proof-results
+          loc="$(dirname "$(dirname "$PY39")")"
+          test -n "${pythonLocation:-}" && test "$(readlink -f "$loc")" = "$(readlink -f "$pythonLocation")" || { echo PY39_LOCATION_MISMATCH; exit 1; }
+          sudo -n chown -R root:root "$pythonLocation"
+          sudo -n chmod -R go-w "$pythonLocation"
+          real="$(readlink -f "$PY39")"
+          stat -c '%U:%G %a %F %n' "$PY39" "$real" > "$R/PYTHON39_IDENTITY.txt"
+          test "$(stat -c '%u' "$real")" = 0 || { echo PYTHON39_NOT_ROOT_OWNED; exit 1; }
+          test "$(( 0$(stat -c '%a' "$real") & 022 ))" = 0 || { echo PYTHON39_GROUP_OTHER_WRITABLE; exit 1; }
+          writable="$(find "$pythonLocation" ! -type l -perm /022 -print -quit)"
+          test -z "$writable" || { echo PY39_TOOLCACHE_STILL_WRITABLE; exit 1; }
+          "$PY39" -I -S -B -c 'import sys; assert sys.version_info[:2] == (3, 9); print(sys.version)' > "$R/PYTHON39_VERSION.txt" || exit 1
+      - name: Suites on Python 3.9 (setup-python, root-owned toolcache, FD_EXEC_LINUX)
+        timeout-minutes: 30
+        shell: bash
+        env:
+          PY39: ${{ steps.py39.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          umask 077
+          R=/tmp/l12host-v33-proof-results
+          rc=0
+          L12_TEST_TMP="$RUNNER_TEMP" "$PY39" -I -S -B l12host/tests/test_l12host.py > "$R/TEST_RESULT_PY39.json" 2> "$R/TEST_NAMES_PY39.txt" || rc=1
+          L12_TEST_TMP="$RUNNER_TEMP" "$PY39" -I -S -B l12host/tests/test_lots_patch_v34.py > "$R/TEST_LOTS_RESULT_PY39.json" 2> "$R/TEST_LOTS_NAMES_PY39.txt" || rc=1
+          L12_TEST_TMP="$RUNNER_TEMP" "$PY39" -I -S -B l12host/tests/test_v33.py > "$R/TEST_V33_RESULT_PY39.json" 2> "$R/TEST_V33_NAMES_PY39.txt" || rc=1
+          test "$rc" = 0 || exit 1
+      - name: Host mount mirror + physical install + timer-run UP/DOWN slots + real systemd units as root (/usr/bin/python3.12, fake docker; must COMPLETE)
+        timeout-minutes: 95
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          R=/tmp/l12host-v33-proof-results
+          set +e
+          sudo -n --preserve-env=GITHUB_ACTIONS /usr/bin/python3.12 -I -S -B l12host/linux_systemd_proof.py > "$R/SYSTEMD_RESULT.json" 2> "$R/SYSTEMD_STDERR.txt"
+          rc=$?
+          set -e
+          cat "$R/SYSTEMD_STDERR.txt" >&2
+          sudo -n chown "$(id -u):$(id -g)" "$R/SYSTEMD_RESULT.json" "$R/SYSTEMD_STDERR.txt"
+          test "$rc" = 0 || exit 1
+          /usr/bin/python3.12 -I -S -B -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("ok") is True and d["checks"] and all(d["checks"].values()) else 1)' "$R/SYSTEMD_RESULT.json" || exit 1
+          /usr/bin/python3.12 -I -S -B l12host/verify_family.py > "$R/SEAL_RESULT_AFTER.json" || exit 1
+          sha256sum --strict -c SHA256SUMS > "$R/TOP_SEAL_CHECK_AFTER.txt" || exit 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        timeout-minutes: 10
+        with:
+          name: L12HOST_V33_OWN_LINUX_PROOF
+          path: /tmp/l12host-v33-proof-results/
+          if-no-files-found: error
+          retention-days: 7

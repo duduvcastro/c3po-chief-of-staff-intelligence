@@ -1,0 +1,1 @@
+PLACEHOLDER: ACT B 04 is signed Saturday 10/10 08:15 BRT. These bytes are NOT the act. Every plan hash derived from them is a DRAFT and changes when the real act B replaces this file.

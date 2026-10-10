@@ -1,0 +1,80 @@
+{
+ "engine_excerpt_unbounded": {
+  "applied": true,
+  "failing": [
+   "test_unit_start_failure_excerpt_is_bounded_and_printable"
+  ],
+  "rc": 1
+ },
+ "engine_no_failure_key": {
+  "applied": true,
+  "failing": [
+   "test_reader_start_fails_runner_like_and_runs_host_like_with_the_reason",
+   "test_slot_result_names_why_the_reader_start_failed",
+   "test_unit_start_failure_excerpt_is_bounded_and_printable"
+  ],
+  "rc": 1
+ },
+ "extended_no_unit_diag": {
+  "applied": true,
+  "failing": [
+   "test_slot_result_names_why_the_reader_start_failed"
+  ],
+  "rc": 1
+ },
+ "f1_no_capture_compare": {
+  "applied": true,
+  "failing": [
+   "test_f1_another_runner_capture_plan_or_up_dir_is_refused_before_any_write"
+  ],
+  "rc": 1
+ },
+ "f1_no_cross_check": {
+  "applied": true,
+  "failing": [
+   "test_f1_another_grid_request_or_go_is_refused_before_any_write",
+   "test_f1_another_runner_capture_plan_or_up_dir_is_refused_before_any_write",
+   "test_f1_down_of_the_up_plans_run_is_accepted_byte_identical",
+   "test_low6_validate_and_write_take_relative_dirs"
+  ],
+  "rc": 1
+ },
+ "fake_no_mount_refusal": {
+  "applied": true,
+  "failing": [
+   "test_fake_systemd_run_refuses_a_failed_mount_unit_like_systemd_255",
+   "test_reader_start_fails_runner_like_and_runs_host_like_with_the_reason",
+   "test_slot_result_names_why_the_reader_start_failed"
+  ],
+  "rc": 1
+ },
+ "fake_only_exact_path": {
+  "applied": true,
+  "failing": [
+   "test_fake_systemd_run_refuses_a_failed_mount_unit_like_systemd_255",
+   "test_reader_start_fails_runner_like_and_runs_host_like_with_the_reason"
+  ],
+  "rc": 1
+ },
+ "low6_relative_not_absolute": {
+  "applied": true,
+  "failing": [
+   "test_low6_validate_and_write_take_relative_dirs"
+  ],
+  "rc": 1
+ },
+ "proof_dump_e04_only": {
+  "applied": true,
+  "failing": [
+   "test_failure_dumps_are_bounded_printable_and_name_the_units"
+  ],
+  "rc": 1
+ },
+ "proof_mirror_check_loaded_ok": {
+  "applied": true,
+  "failing": [
+   "test_mirror_checks_are_red_on_the_runner_and_green_like_the_host"
+  ],
+  "rc": 1
+ }
+}

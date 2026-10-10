@@ -1,0 +1,70 @@
+{
+ "command": "python3.12 -I -S -B evidence/probes/up_grid_realtime_rehearsal.py <v3.2 l12host>  (started 22:25:42 BRT)",
+ "family_seal_sha256": "625d244b538e36a270c1d5136dfb87a067a9950eeb4beac35d6505e7eb3cceb7",
+ "linux_systemd_proof_sha256": "643d9190067e66d6920d7bae5cbc04ef88a5d4c86848c9e6581f2bbfd290fa26",
+ "note": "non-physical kit world (fake docker), in-process slots fired AT THEIR REAL INSTANTS with the wall-clock start-minute rules ON; X1 was pushed by the planner from 22:32:43 to 22:38:02 BRT past the HH:33:40-37:59 block. What it does not cover: physical mode, root, real systemd timers (the Linux proof).",
+ "ok": true,
+ "probe": "evidence/probes/up_grid_realtime_rehearsal.py",
+ "probe_sha256": "b5e991b66681f50c30f61daedd921ade16202ba03c79f691cd72e2b94f891c73",
+ "python": "3.12.14",
+ "results": {
+  "P1": {
+   "code": null,
+   "diagnostics": [],
+   "effect_calls": 1,
+   "exit": 0,
+   "late_seconds": 0.007,
+   "result_class": "K9_STEP_COMPLETE",
+   "run_seconds": 0.14,
+   "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+  },
+  "P2": {
+   "code": null,
+   "diagnostics": [],
+   "effect_calls": 1,
+   "exit": 0,
+   "late_seconds": 0.003,
+   "result_class": "K9_STEP_COMPLETE",
+   "run_seconds": 0.16,
+   "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+  },
+  "P3": {
+   "code": null,
+   "diagnostics": [],
+   "effect_calls": 1,
+   "exit": 0,
+   "late_seconds": 0.006,
+   "result_class": "K9_STEP_COMPLETE",
+   "run_seconds": 0.19,
+   "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+  },
+  "P4": {
+   "code": null,
+   "diagnostics": [],
+   "effect_calls": 1,
+   "exit": 0,
+   "late_seconds": 0.003,
+   "result_class": "K9_STEP_COMPLETE",
+   "run_seconds": 0.21,
+   "status": "ORIGINAL_COMPLETE_OBSERVED_CANDIDATE"
+  },
+  "X1": {
+   "code": null,
+   "diagnostics": [],
+   "effect_calls": 1,
+   "exit": 0,
+   "late_seconds": 0.006,
+   "result_class": "K9_STEP_COMPLETE",
+   "run_seconds": 0.14,
+   "status": "EXTENDED_COMPLETE"
+  }
+ },
+ "schema": "L12HOST_V32_UP_GRID_REALTIME_REHEARSAL_DARWIN",
+ "slots_planned": [
+  "2026-10-10T01:26:43Z",
+  "2026-10-10T01:28:13Z",
+  "2026-10-10T01:29:43Z",
+  "2026-10-10T01:31:13Z",
+  "2026-10-10T01:38:02Z"
+ ]
+}

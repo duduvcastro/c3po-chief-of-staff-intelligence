@@ -1,0 +1,193 @@
+{
+ "cases": {
+  "fixed_2026-10-09T23:58:00Z_(20:58_BRT)": {
+   "down_instants": {
+    "hold": "2026-10-10T00:40:30Z",
+    "open": "2026-10-10T00:40:00Z",
+    "r0": "2026-10-10T00:38:02Z",
+    "s1": "2026-10-10T00:39:02Z",
+    "step_not_before": "2026-10-10T00:38:30Z"
+   },
+   "down_physical_with_open_substitution": "ACCEPTED",
+   "down_physical_without_substitution": "SESSION_OPEN_NOT_THE_MONDAY_ONE",
+   "model": {
+    "hold_minus_reader_check": 396,
+    "r0_minus_negatives_end": 228,
+    "timer_part_minutes": 43.3
+   },
+   "up_physical_install_validation": "ACCEPTED",
+   "up_plan_rows_margin_seconds_at_P1_minus_200s": [
+    200,
+    1642,
+    1732,
+    1822,
+    1912
+   ],
+   "up_slots": [
+    "2026-10-10T00:02:00Z",
+    "2026-10-10T00:26:02Z",
+    "2026-10-10T00:27:32Z",
+    "2026-10-10T00:29:02Z",
+    "2026-10-10T00:30:32Z"
+   ],
+   "up_tasks": [
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T00:03:30Z",
+     "not_before": "2026-10-10T00:01:30Z",
+     "op": "prove",
+     "slot": "2026-10-10T00:02:00Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T00:27:32Z",
+     "not_before": "2026-10-10T00:25:32Z",
+     "op": "collect",
+     "slot": "2026-10-10T00:26:02Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T00:29:02Z",
+     "not_before": "2026-10-10T00:27:02Z",
+     "op": "commit_result",
+     "slot": "2026-10-10T00:27:32Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T00:30:32Z",
+     "not_before": "2026-10-10T00:28:32Z",
+     "op": "publish_launch",
+     "slot": "2026-10-10T00:29:02Z"
+    }
+   ]
+  },
+  "fixed_2026-10-10T02:59:00Z_(23:59_BRT)": {
+   "down_instants": {
+    "hold": "2026-10-10T03:57:32Z",
+    "open": "2026-10-10T03:57:02Z",
+    "r0": "2026-10-10T03:55:04Z",
+    "s1": "2026-10-10T03:56:04Z",
+    "step_not_before": "2026-10-10T03:55:32Z"
+   },
+   "down_physical_with_open_substitution": "ACCEPTED",
+   "down_physical_without_substitution": "SESSION_OPEN_NOT_THE_MONDAY_ONE",
+   "model": {
+    "hold_minus_reader_check": 218,
+    "r0_minus_negatives_end": 50,
+    "timer_part_minutes": 59.3
+   },
+   "up_physical_install_validation": "ACCEPTED",
+   "up_plan_rows_margin_seconds_at_P1_minus_200s": [
+    200,
+    290,
+    380,
+    470,
+    560
+   ],
+   "up_slots": [
+    "2026-10-10T03:46:02Z",
+    "2026-10-10T03:47:32Z",
+    "2026-10-10T03:49:02Z",
+    "2026-10-10T03:50:32Z",
+    "2026-10-10T03:52:02Z"
+   ],
+   "up_tasks": [
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T03:47:32Z",
+     "not_before": "2026-10-10T03:45:32Z",
+     "op": "prove",
+     "slot": "2026-10-10T03:46:02Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T03:49:02Z",
+     "not_before": "2026-10-10T03:47:02Z",
+     "op": "collect",
+     "slot": "2026-10-10T03:47:32Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T03:50:32Z",
+     "not_before": "2026-10-10T03:48:32Z",
+     "op": "commit_result",
+     "slot": "2026-10-10T03:49:02Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T03:52:02Z",
+     "not_before": "2026-10-10T03:50:02Z",
+     "op": "publish_launch",
+     "slot": "2026-10-10T03:50:32Z"
+    }
+   ]
+  },
+  "now": {
+   "down_instants": {
+    "hold": "2026-10-10T01:46:32Z",
+    "open": "2026-10-10T01:46:02Z",
+    "r0": "2026-10-10T01:44:04Z",
+    "s1": "2026-10-10T01:45:04Z",
+    "step_not_before": "2026-10-10T01:44:32Z"
+   },
+   "down_physical_with_open_substitution": "ACCEPTED",
+   "down_physical_without_substitution": "SESSION_OPEN_NOT_THE_MONDAY_ONE",
+   "model": {
+    "hold_minus_reader_check": 218,
+    "r0_minus_negatives_end": 50,
+    "timer_part_minutes": 22.2
+   },
+   "up_physical_install_validation": "ACCEPTED",
+   "up_plan_rows_margin_seconds_at_P1_minus_200s": [
+    200,
+    290,
+    644,
+    734,
+    824
+   ],
+   "up_slots": [
+    "2026-10-10T01:30:38Z",
+    "2026-10-10T01:32:08Z",
+    "2026-10-10T01:38:02Z",
+    "2026-10-10T01:39:32Z",
+    "2026-10-10T01:41:02Z"
+   ],
+   "up_tasks": [
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T01:32:08Z",
+     "not_before": "2026-10-10T01:30:08Z",
+     "op": "prove",
+     "slot": "2026-10-10T01:30:38Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T01:33:38Z",
+     "not_before": "2026-10-10T01:31:38Z",
+     "op": "collect",
+     "slot": "2026-10-10T01:32:08Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T01:39:32Z",
+     "not_before": "2026-10-10T01:37:32Z",
+     "op": "commit_result",
+     "slot": "2026-10-10T01:38:02Z"
+    },
+    {
+     "budget": 90,
+     "not_after": "2026-10-10T01:41:02Z",
+     "not_before": "2026-10-10T01:39:02Z",
+     "op": "publish_launch",
+     "slot": "2026-10-10T01:39:32Z"
+    }
+   ]
+  }
+ },
+ "command": "python3.12 -I -S -B evidence/probes/proof_lots_offline.py <v3.2 l12host>",
+ "family_seal_sha256": "625d244b538e36a270c1d5136dfb87a067a9950eeb4beac35d6505e7eb3cceb7",
+ "linux_systemd_proof_sha256": "643d9190067e66d6920d7bae5cbc04ef88a5d4c86848c9e6581f2bbfd290fa26",
+ "probe": "evidence/probes/proof_lots_offline.py",
+ "probe_sha256": "11e7ac99db78b9cfc19a64a79ef14beb629a0c8cf0f155d823341f7b29e121fa",
+ "schema": "L12HOST_V32_PROOF_LOTS_OFFLINE"
+}

@@ -1,0 +1,14 @@
+{
+ "binaries": {
+  "docker": "/usr/bin/docker",
+  "systemctl": "/usr/bin/systemctl",
+  "systemd_run": "/usr/bin/systemd-run"
+ },
+ "docker_config": "/etc/c3po-reader-e04/docker-cli",
+ "python": "/usr/bin/python3.12",
+ "root": "/var/lib/c3po-l12host-e04",
+ "schema": "L12HOST_LAYOUT_V3",
+ "unit_name_suffix": "-e04",
+ "unit_prefix": "l12h-e04-",
+ "veto_dir": "/var/lib/c3po-veto-e04"
+}
