@@ -25,8 +25,11 @@ engine sees; the block is persisted beside it, spec rev 7 "TP sem consenso dentr
 Prices (§2): the run PINS the vintage it starts with — the latest publication of ``valuation_price_history`` at run
 start (``publication_id`` + ``bars_sha256``), verified, recorded in the manifest and read for the whole run through a
 cut equal to that publication's availability, so a publication that appears mid-run is never mixed in (a pinned
-publication that stops resolving is a refusal, never a substitution). ``T`` filters ECONOMIC dates (``session_date ≤
-T``); it is never used as the availability cut of the series (that would return nothing).
+publication that stops resolving is a refusal, never a substitution). ``--price-pinned-at`` replaces the run-start clock
+as that cut, so a whole grid of runs reads ONE publication while the nightly series keeps publishing (P2-1; the pin is a
+pointer kept beside the manifest — the run is named by the publication it resolves, never by the instant asked). ``T``
+filters ECONOMIC dates (``session_date ≤ T``); it is never used as the availability cut of the series (that would return
+nothing).
 
 Identity and idempotency (§4): ``run_key = sha256(canonical_json([source_version, market, T, manifest]))`` (canonical
 JSON — never Python ``hash()``); one snapshot per run (``analysis_type = valuation_pit_rerun``, ``entity_key =
@@ -477,11 +480,13 @@ class PinnedPrices:
     calendar — inventory rev 4a §2 C found one B3 bar on Saturday 2024-03-16) is excluded from every window, count and
     price (design §2) and counted in ``off_calendar_bars`` (published as ``price_bars:off_calendar_session``), never served."""
 
-    def __init__(self, reader: PriceHistoryService, market: str, *, as_of: datetime, pinned_at: datetime) -> None:
+    def __init__(self, reader: PriceHistoryService, market: str, *, as_of: datetime, pinned_at: datetime, pin_mode: str = "run_start") -> None:
         self.reader = reader
         self.market = market
         self.as_of = _utc(as_of)
-        vintage = reader.vintage(market, available_before=_utc(pinned_at))
+        self.pinned_at = _utc(pinned_at)
+        self.pin_mode = pin_mode  # "run_start" (the clock at run start) or "explicit" (--price-pinned-at: one vintage for a whole grid, P2-1)
+        vintage = reader.vintage(market, available_before=self.pinned_at)
         if vintage is None or vintage["status"] != "ok":
             raise PitRerunInputError(f"no verifiable price vintage for {market} at run start ({'none' if vintage is None else vintage['status']})")
         self.publication_id = str(vintage["publication_id"])
@@ -506,6 +511,11 @@ class PinnedPrices:
     def manifest(self) -> dict[str, Any]:
         return {"publication_id": self.publication_id, "price_snapshot_id": self.price_snapshot_id, "available_at": self.available_at.isoformat(),
                 "bars_sha256": self.bars_sha256, "window": list(self.window), "historical_vintage": "N/D"}
+
+    def pin(self) -> dict[str, Any]:
+        """How the vintage was chosen — a POINTER, kept beside the manifest and outside ``run_key`` (as the catalogue's snapshot
+        id): two pins that resolve the same publication are the same inputs, hence the same run (P2-1)."""
+        return {"mode": self.pin_mode, "requested_at": self.pinned_at.isoformat(), "resolved_publication_id": self.publication_id}
 
     def _is_calendar_session(self, session: str) -> bool:
         """Whether ``session`` is a session of the market's exchange calendar (memoised per date). A date the calendar
@@ -906,7 +916,7 @@ class PitComputation:
     access to ``now``; ``persist`` adds the clock."""
 
     def __init__(self, *, market: str, as_of: datetime, results: dict[str, dict[str, Any]], resolver: PitSourceResolver, macro: MacroAtT,
-                 calibration: dict[str, Any], manifest: dict[str, Any], run_key: str, version: str) -> None:
+                 calibration: dict[str, Any], manifest: dict[str, Any], run_key: str, version: str, price_pin: dict[str, Any]) -> None:
         self.market = market
         self.as_of = _utc(as_of)
         self.results = results
@@ -916,6 +926,7 @@ class PitComputation:
         self.manifest = manifest
         self.run_key = run_key
         self.source_version = version
+        self.price_pin = price_pin  # a pointer beside the manifest (PinnedPrices.pin), never hashed into run_key
         self.entity_key = f"{market}_PIT_{run_key[:16]}"
 
     def provenance_for(self, symbol: str) -> dict[str, Any]:
@@ -981,7 +992,8 @@ class PitComputation:
                 "with_consensus": len(self.resolver.consensus), "pit_excluded_inputs": dict(sorted(self.resolver.excluded.items())),
                 "hypotheses": sum(len(items) for items in self.resolver.hypotheses.values()), "calibration": self.calibration["status"],
                 "macro_as_of": self.macro.macro_as_of(self.market).isoformat(), "price_vintage": self.manifest["price_vintage"]["publication_id"],
-                "catalogue_snapshot_id": self.resolver.catalogue_snapshot_id}  # a pointer only: the run_key names the catalogue by its classification hash
+                "price_pin": dict(self.price_pin),  # pointers only: the run_key names the vintage by its publication and bars hash,
+                "catalogue_snapshot_id": self.resolver.catalogue_snapshot_id}  # and the catalogue by its classification hash
 
 
 @contextmanager
@@ -1013,10 +1025,11 @@ class PitRerunService:
         self.price_history = price_history if price_history is not None else PriceHistoryService(settings if settings is not None else get_settings(), database,
                                                                                                      cast(JsonHttpClient, self.http))
 
-    def pin_vintage(self, market: str, *, as_of: datetime, pinned_at: datetime) -> PinnedPrices:
-        """Resolved ONCE at run start: the latest publication available before ``pinned_at`` (the persistence clock's reading at
-        start — the ONLY clock read before the economic computation, and only to select the vintage)."""
-        return PinnedPrices(self.price_history, market, as_of=as_of, pinned_at=pinned_at)
+    def pin_vintage(self, market: str, *, as_of: datetime, pinned_at: datetime, explicit: bool = False) -> PinnedPrices:
+        """Resolved ONCE at run start: the latest publication available before ``pinned_at`` — the persistence clock's reading at
+        start (the ONLY clock read before the economic computation, and only to select the vintage) or, ``explicit``, the
+        operator's ``--price-pinned-at`` (P2-1)."""
+        return PinnedPrices(self.price_history, market, as_of=as_of, pinned_at=pinned_at, pin_mode="explicit" if explicit else "run_start")
 
     def compute(self, market: str, *, as_of: datetime, prices: PinnedPrices) -> PitComputation:
         """The ECONOMIC computation: T, the filters, the engine's ``today``, the macro ``as_of``, the consensus cut — nothing
@@ -1042,7 +1055,7 @@ class PitRerunService:
         manifest["manifest_sha256"] = canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_sha256"})
         run_key = run_key_of(source_version_text=version, market=market, as_of=as_of, manifest=manifest)
         return PitComputation(market=market, as_of=as_of, results=results, resolver=resolver, macro=macro, calibration=calibration, manifest=manifest,
-                              run_key=run_key, version=version)
+                              run_key=run_key, version=version, price_pin=prices.pin())
 
     def persist(self, computation: PitComputation, *, clock: Callable[[], datetime] | None = None) -> dict[str, Any]:
         """§4: find-or-write under the run's lock; the set of prediction identities decides completeness."""
@@ -1067,7 +1080,8 @@ class PitRerunService:
                                                                            "diagnostic_only": True, "official_tp_replacement_authorized": False},
                                                                           "Point-in-time re-execution of the V3 engine (design rev 2 of 2026-09-11); diagnostic only.")
                 inputs = {"schema_version": SCHEMA_VERSION, "run_key": run_key, "market": market, "as_of": computation.as_of.isoformat(), "source": SOURCE,
-                          "source_version": computation.source_version, "manifest": computation.manifest, "external_api_calls": 0}
+                          "source_version": computation.source_version, "manifest": computation.manifest, "price_pin": dict(computation.price_pin),
+                          "external_api_calls": 0}
                 if supersedes:
                     inputs["supersedes"] = supersedes
                 outputs = {"schema_version": SCHEMA_VERSION, "run_key": run_key, "market": market, "as_of": computation.as_of.isoformat(), "published_at": published_at.isoformat(),
@@ -1092,9 +1106,20 @@ class PitRerunService:
                 "records": {"expected": len(expected), "stored_before": len(stored), "inserted": inserted, "complete": True},
                 "source_version": computation.source_version, "manifest_sha256": computation.manifest["manifest_sha256"], **computation.summary()}
 
-    def rerun(self, market: str, *, as_of: datetime, clock: Callable[[], datetime] | None = None) -> tuple[dict[str, Any], PitComputation]:
+    def rerun(self, market: str, *, as_of: datetime, clock: Callable[[], datetime] | None = None, price_pinned_at: datetime | None = None
+              ) -> tuple[dict[str, Any], PitComputation]:
+        """One run. ``price_pinned_at`` (P2-1, ``--price-pinned-at``) replaces the run-start clock as the vintage cut, so every
+        run of a grid resolves ONE publication whatever the nightly series publishes meanwhile; it must carry a zone and lie
+        at or before the run start (a pin in the future would resolve another vintage when re-run: not a pin)."""
         tick: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
-        prices = self.pin_vintage(market, as_of=as_of, pinned_at=tick())
+        started_at = _utc(tick())
+        if price_pinned_at is not None:
+            if price_pinned_at.tzinfo is None or price_pinned_at.utcoffset() is None:
+                raise PitRerunInputError("the price pin must carry a time zone")
+            if _utc(price_pinned_at) > started_at:
+                raise PitRerunInputError(f"the price pin {_utc(price_pinned_at).isoformat()} is after the run start {started_at.isoformat()}: a pin in the "
+                                         "future would resolve another vintage when the run is repeated")
+        prices = self.pin_vintage(market, as_of=as_of, pinned_at=started_at if price_pinned_at is None else price_pinned_at, explicit=price_pinned_at is not None)
         computation = self.compute(market, as_of=as_of, prices=prices)
         return self.persist(computation, clock=tick), computation
 
@@ -1236,12 +1261,14 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     parser.add_argument("--symbols", default="", help="with --fetch: comma-separated override of the catalogue")
     parser.add_argument("--as-of", default=None, help="with --rerun: T, ISO-8601 WITH zone")
     parser.add_argument("--detail", type=Path, default=None, help="with --rerun: write the PRIVATE per-symbol detail to this NEW path (O_EXCL|O_NOFOLLOW, 0600)")
+    parser.add_argument("--price-pinned-at", default=None, help="with --rerun: resolve the price vintage published before this ISO-8601 instant WITH zone "
+                                                                "(default: the run start) — one vintage for every run of a grid")
     parser.add_argument("--no-macro", action="store_true", help="with --fetch: skip the macro history")
     args = parser.parse_args(argv)
     if args.rerun and args.as_of is None:
         parser.error("--rerun requires --as-of")
-    if args.fetch and (args.as_of or args.detail):
-        parser.error("--as-of/--detail apply to --rerun only")
+    if args.fetch and (args.as_of or args.detail or args.price_pinned_at):
+        parser.error("--as-of/--detail/--price-pinned-at apply to --rerun only")
     if args.rerun and args.symbols:
         parser.error("--symbols applies to --fetch only")
     if args.detail is not None and (args.detail.is_symlink() or args.detail.exists()):
@@ -1257,8 +1284,9 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
         print(json.dumps(result, sort_keys=True, default=str))
         return 0
     as_of = _cli_instant(parser, "--as-of", str(args.as_of))
+    price_pinned_at = _cli_instant(parser, "--price-pinned-at", str(args.price_pinned_at)) if args.price_pinned_at is not None else None
     service = PitRerunService(database, settings=settings)
-    receipt, computation = service.rerun(args.market, as_of=as_of)
+    receipt, computation = service.rerun(args.market, as_of=as_of, price_pinned_at=price_pinned_at)
     if args.detail is not None:
         write_private_detail(args.detail, {"schema": f"{SCHEMA_VERSION}:detail", "run_key": receipt["run_key"], "cycle_id": receipt["cycle_id"],
                                            "results": computation.results, "not_evaluable": dict(computation.resolver.not_evaluable),

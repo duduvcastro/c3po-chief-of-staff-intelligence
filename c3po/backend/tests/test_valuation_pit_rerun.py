@@ -509,6 +509,49 @@ def test_price_vintage_is_pinned_at_run_start_and_a_publication_mid_run_is_never
         service.pin_vintage("NASDAQ", as_of=datetime(2026, 9, 14, 21, 0, tzinfo=UTC), pinned_at=NOW)
 
 
+def test_an_explicit_price_pin_gives_every_run_of_a_grid_one_vintage_and_names_the_run_by_the_publication(capsys: pytest.CaptureFixture[str]) -> None:
+    # P2-1: the nightly series republishes its whole window; a grid run across a phase must not mix vintages
+    database = _ready()
+    first = database.latest_analysis_snapshot(series.PUBLICATION_TYPE, "NASDAQ")
+    assert first is not None
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    doubled = {f"{symbol}.US": [{**bar, "close": bar["close"] * 2, "adjusted_close": bar["adjusted_close"] * 2} for bar in _bars_for(symbol, sessions, base=100.0 + 10 * i)]
+               for i, symbol in enumerate(SYMBOLS)}
+    newer = _publish_prices(database, bars=doubled, at=VINTAGE_AT + timedelta(hours=1))["publication_id"]  # the store moved on before the grid started
+    pin = VINTAGE_AT + timedelta(minutes=30)
+    grid = [_service(database).rerun("NASDAQ", as_of=T - timedelta(days=7 * k), clock=lambda k=k: NOW + timedelta(hours=k), price_pinned_at=pin) for k in range(3)]
+    assert {receipt["price_vintage"] for receipt, _ in grid} == {first["id"]} != {newer}  # every T of the grid: the pinned publication, never the newer one
+    assert all(receipt["price_pin"] == {"mode": "explicit", "requested_at": pin.isoformat(), "resolved_publication_id": first["id"]} for receipt, _ in grid)
+    receipt, run = grid[0]
+    snapshot = database.latest_analysis_snapshot(pit.ANALYSIS_TYPE, receipt["entity_key"])
+    assert snapshot is not None and snapshot["inputs"]["price_pin"] == receipt["price_pin"] and "price_pin" not in run.manifest  # beside the manifest, never in run_key
+    assert set(run.manifest["price_vintage"]) == {"publication_id", "price_snapshot_id", "available_at", "bars_sha256", "window", "historical_vintage"}
+    # the pin is a pointer: another instant resolving the SAME publication is the same run (no supersession, nothing written)
+    again, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(days=1), price_pinned_at=VINTAGE_AT + timedelta(minutes=45))
+    assert again["run_key"] == receipt["run_key"] and again["idempotent"] is True and again["records"]["inserted"] == 0 and again["supersedes"] is None
+    # without a pin the run start's clock resolves the newer publication: another run, superseding the pinned one
+    unpinned, later = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(days=2))
+    assert unpinned["price_vintage"] == newer and unpinned["price_pin"]["mode"] == "run_start" and unpinned["supersedes"] == receipt["run_key"]
+    assert all(later.resolver.per_symbol[s]["row"]["price"] == 2 * run.resolver.per_symbol[s]["row"]["price"] for s in SYMBOLS)
+    # refusals: a naive pin; a pin after the run start (it would resolve another vintage when repeated); a pin before any publication
+    with pytest.raises(pit.PitRerunInputError, match="time zone"):
+        _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW, price_pinned_at=datetime(2026, 9, 11, 3, 30))
+    with pytest.raises(pit.PitRerunInputError, match="after the run start"):
+        _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW, price_pinned_at=NOW + timedelta(seconds=1))
+    with pytest.raises(pit.PitRerunInputError, match="no verifiable price vintage"):
+        _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW, price_pinned_at=VINTAGE_AT - timedelta(days=1))
+    # the CLI: zone mandatory, --rerun only; the printed receipt names the pinned publication
+    with pytest.raises(SystemExit):
+        pit.main(["--market", "NASDAQ", "--rerun", "--as-of", "2024-06-14T18:00:00-03:00", "--price-pinned-at", "2026-09-11T03:30:00"], database=database, settings=_settings())
+    with pytest.raises(SystemExit):
+        pit.main(["--market", "NASDAQ", "--fetch", "--price-pinned-at", "2026-09-11T03:30:00+00:00"], database=database, settings=_settings())
+    capsys.readouterr()
+    assert pit.main(["--market", "NASDAQ", "--rerun", "--as-of", "2024-05-31T18:00:00-03:00", "--price-pinned-at", "2026-09-11T00:30:00-03:00"],
+                    database=database, settings=_settings()) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["price_vintage"] == first["id"] and printed["price_pin"]["mode"] == "explicit" and printed["price_pin"]["requested_at"] == "2026-09-11T03:30:00+00:00"
+
+
 def test_a_bar_dated_off_the_exchange_calendar_is_never_read_and_is_counted() -> None:
     """Design §2: sessions off the calendar are excluded from windows, counts and prices. The producer validates ISO dates,
     not the calendar (inventory rev 4a §2 C: one B3 bar on Saturday 2024-03-16), so the PIT reader must drop them itself."""
