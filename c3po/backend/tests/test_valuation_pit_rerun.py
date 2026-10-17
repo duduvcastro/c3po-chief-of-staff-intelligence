@@ -635,12 +635,12 @@ def test_weekday_holidays_and_b3_closures_are_off_calendar_bars_dropped_and_coun
     database = _database()
     b3_sessions = [s.date() for s in xcals.get_calendar("BVMF").sessions_in_range("2023-06-01", "2026-09-10")]
     assert date(2024, 2, 14) in b3_sessions and date(2024, 2, 12) not in b3_sessions
-    petr = _bars_for("PETR4", b3_sessions, base=30.0) + [{"date": day, **absurd} for day in ("2024-02-12", "2024-02-13", "2024-03-16")]
-    _publish_b3_prices(database, {"PETR4.SA": sorted(petr, key=lambda bar: bar["date"])})
+    b3_bars = _bars_for("AAAA3", b3_sessions, base=30.0) + [{"date": day, **absurd} for day in ("2024-02-12", "2024-02-13", "2024-03-16")]
+    _publish_b3_prices(database, {"AAAA3.SA": sorted(b3_bars, key=lambda bar: bar["date"])})
     prices = _service(database).pin_vintage("B3", as_of=datetime(2024, 6, 14, 21, 0, tzinfo=UTC), pinned_at=NOW)
-    kept = prices.bars("PETR4")
+    kept = prices.bars("AAAA3")
     assert prices.off_calendar_bars == 3 and not {"2024-02-12", "2024-02-13", "2024-03-16"} & set(kept) and "2024-02-14" in kept
-    assert all(bar["close"] != absurd["close"] for bar in kept.values()) and prices.valid_sessions("PETR4") == sum(1 for s in b3_sessions if s <= date(2024, 6, 14))
+    assert all(bar["close"] != absurd["close"] for bar in kept.values()) and prices.valid_sessions("AAAA3") == sum(1 for s in b3_sessions if s <= date(2024, 6, 14))
 
 
 # ------------------------------------------------------------------ P2-2: the price basis — levels on the as-traded close, returns on the adjusted close
