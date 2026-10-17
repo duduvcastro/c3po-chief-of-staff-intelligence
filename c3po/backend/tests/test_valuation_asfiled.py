@@ -125,6 +125,60 @@ def test_balances_are_read_at_the_ttm_quarter_end_never_from_an_older_quarter() 
     assert report["balance"]["short_term_borrowings"] is None and report["balance"]["cash"] is None and "cash" in report["missing"]
 
 
+def _split_issuer(database: Database, issuer: str, *, q2_cover: int, q2_eps: tuple[float, float]) -> datetime:
+    """Q3 2024 10-Q, FY 2024 10-K, Q1 2025 10-Q and a Q2 2025 10-Q whose cover count and EPS are ``q2_cover``/``q2_eps``
+    (a 10:1 split before it: 1000 and (0.1, 0.2)); returns the Q2 10-Q's acceptance."""
+    documents = {  # doc → (form, acceptance, cover date, cover share count)
+        "Q3-24": ("10-Q", datetime(2024, 11, 5, 21, 30, tzinfo=UTC), "2024-10-25", 100),
+        "FY-24": ("10-K", datetime(2025, 2, 20, 21, 30, tzinfo=UTC), "2025-02-10", 100),
+        "Q1-25": ("10-Q", datetime(2025, 5, 5, 20, 30, tzinfo=UTC), "2025-04-25", 100),
+        "Q2-25": ("10-Q", datetime(2025, 8, 5, 20, 30, tzinfo=UTC), "2025-07-25", q2_cover),
+    }
+    facts = [  # (doc, field, start, end, value)
+        ("Q3-24", "revenue", "2024-07-01", "2024-09-30", 100), ("Q3-24", "revenue", "2024-01-01", "2024-09-30", 300),
+        ("Q3-24", "eps", "2024-07-01", "2024-09-30", 1.0), ("Q3-24", "eps", "2024-01-01", "2024-09-30", 3.0),
+        ("FY-24", "revenue", "2024-01-01", "2024-12-31", 400), ("FY-24", "eps", "2024-01-01", "2024-12-31", 4.0),
+        ("Q1-25", "revenue", "2025-01-01", "2025-03-31", 100), ("Q1-25", "eps", "2025-01-01", "2025-03-31", 1.0),
+        ("Q2-25", "revenue", "2025-04-01", "2025-06-30", 100), ("Q2-25", "revenue", "2025-01-01", "2025-06-30", 200),
+        ("Q2-25", "eps", "2025-04-01", "2025-06-30", q2_eps[0]), ("Q2-25", "eps", "2025-01-01", "2025-06-30", q2_eps[1]),
+    ]
+    concepts = {"revenue": ("us-gaap:Revenues", "USD"), "eps": ("us-gaap:EarningsPerShareDiluted", "USD/shares")}
+
+    def row(doc: str, concept: str, unit: str, start: str | None, end: str, value: float) -> dict[str, Any]:
+        form, accepted, _, _ = documents[doc]
+        return {"market": "US", "issuer_key": issuer, "source": "sec_xbrl_companyfacts", "doc_id": doc, "form": form, "period_start": start,
+                "period_end": end, "concept": concept, "unit": unit, "value": value, "filed_date": accepted.date(), "accepted_at": accepted}
+
+    rows = [row(doc, *concepts[name], start, end, value) for doc, name, start, end, value in facts]
+    rows += [row(doc, "dei:EntityCommonStockSharesOutstanding", "shares", None, cover, count) for doc, (_, _, cover, count) in documents.items()]
+    StatementVintageStore(database).insert_vintages("US", issuer, rows)
+    return documents["Q2-25"][1]
+
+
+def test_ttm_eps_is_never_summed_across_a_share_split() -> None:
+    # review finding: after a 10:1 split the pre-split Q1 10-Q EPS (1.0) won over the post-split 6M − 3M (0.1), and the
+    # prior year's quarters are pre-split too: 0.1 + 1.0 + 1.0 + 1.0 = 3.1 against a split-adjusted 0.4
+    database = Database(_settings())
+    accepted = _split_issuer(database, "0000999004", q2_cover=1000, q2_eps=(0.1, 0.2))
+    report = asfiled.as_of_fundamentals(database, "0000999004", accepted)
+    assert report["period_end"] == "2025-06-30" and report["ttm"]["revenue"] == pytest.approx(400)
+    assert report["ttm"]["eps_diluted"] is None and "eps_diluted" in report["missing"]
+    assert report["warnings"] == [asfiled.EPS_SHARE_BASIS_CHANGED]
+    steady = Database(_settings())  # the same issuer without a split (a 2 % buyback): summed as before
+    accepted = _split_issuer(steady, "0000999004", q2_cover=98, q2_eps=(1.0, 2.0))
+    report = asfiled.as_of_fundamentals(steady, "0000999004", accepted)
+    assert report["ttm"]["eps_diluted"] == pytest.approx(4.0) and report["warnings"] == []
+    assert sum(item["derived_quarter"] for item in report["provenance"]["eps_diluted"]) == 2  # Q4 2024 = FY − 9M, two facts
+
+
+def test_a_ttm_that_is_a_fiscal_year_takes_the_years_reported_eps() -> None:
+    database = _ingested()
+    report = asfiled.as_of_fundamentals(database, fx.CIK, fx.true_instant("20260220163000"))
+    assert report["ttm"]["eps_diluted"] == pytest.approx(0.55)
+    [fact] = report["provenance"]["eps_diluted"]
+    assert (fact["period_start"], fact["period_end"], fact["doc_id"], fact["derived_quarter"]) == ("2025-01-01", "2025-12-31", TEN_K, False)
+
+
 def test_total_debt_adds_long_and_short_without_double_counting() -> None:
     assert asfiled.total_debt({"long_term_debt": 100.0, "debt_current": 20.0, "long_term_debt_current": 5.0, "short_term_borrowings": 3.0}) == 120.0
     assert asfiled.total_debt({"long_term_debt": 100.0, "long_term_debt_current": 5.0, "short_term_borrowings": 3.0}) == 108.0
@@ -222,28 +276,73 @@ def test_an_accepted_filing_marks_the_us_tp_stale_and_the_covering_cut_clears_it
     assert asfiled.us_valuation_universe(database) == {"SYNT": "NASDAQ", "KO": "NYSE"}  # ETFs file no 10-Q
     now = datetime(2026, 2, 21, 0, 0, tzinfo=UTC)
     counts = asfiled.evaluate_us_filings(database, now=now)
-    assert counts == {"filings": 2, "evaluated": 2, "stale": 1, "cleared": 1, "untracked": 0}
+    assert counts == {"filings": 2, "evaluated": 2, "stale": 2, "cleared": 0, "untracked": 0}
     marks = {(row["doc_id"], row["state"]): row for row in asfiled.TpStalenessStore(database).rows()}
     stale = marks[(TEN_K, "stale")]
     assert stale["reason"] == "tp_predates_acceptance" and stale["market"] == "NASDAQ" and stale["accepted_at"] == fx.true_instant("20260220163000")
     assert stale["queued_for_cut_at"] == datetime(2026, 2, 21, 0, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))  # tonight's cut, 03:00Z
-    assert stale["period_of_report"] == date(2025, 12, 31) and stale["covers_period"] is False
-    assert marks[(EIGHT_K, "cleared")]["reason"] == "tp_after_acceptance" and marks[(EIGHT_K, "cleared")]["covers_period"] is None
-    assert list(asfiled.stale_us_tps(database)) == ["SYNT"]
+    assert stale["period_of_report"] == date(2025, 12, 31) and stale["expected_period_end"] == date(2025, 12, 31) and stale["covers_period"] is False
+    # review finding: the 2026-02-20 cut is AFTER the 8-K 2.02 but its fundamentals (Q3) predate the quarter the 8-K
+    # announces (Q4 2025): the pre-earnings TP is stale, never 'cleared'
+    release = marks[(EIGHT_K, "stale")]
+    assert release["reason"] == "fundamentals_predate_period" and release["expected_period_end"] == date(2025, 12, 31)
+    assert release["covers_period"] is False and release["period_of_report"] == date(2026, 2, 12)  # the 8-K's own event date
+    assert [row["doc_id"] for row in asfiled.stale_us_tps(database)["SYNT"]] == [EIGHT_K, TEN_K]
     assert asfiled.evaluate_us_filings(database, now=now)["stale"] == 0  # idempotent
 
     _publish(database, "NASDAQ", [_universe_row("SYNT", fundamentals_as_of="2025-09-30")], datetime(2026, 2, 21, 3, 10, tzinfo=UTC))
     lagging = asfiled.evaluate_us_filings(database, now=datetime(2026, 2, 21, 3, 20, tzinfo=UTC))
-    assert lagging["cleared"] == 0 and list(asfiled.stale_us_tps(database)) == ["SYNT"]  # the cut ran, its fundamentals predate the 10-K
+    assert lagging["cleared"] == 0 and len(asfiled.stale_us_tps(database)["SYNT"]) == 2  # the cut ran, its fundamentals predate Q4
 
     _publish(database, "NASDAQ", [_universe_row("SYNT", fundamentals_as_of="2025-12-31")], datetime(2026, 2, 22, 3, 10, tzinfo=UTC))
     revalued = asfiled.evaluate_us_filings(database, now=datetime(2026, 3, 9, tzinfo=UTC))  # older than the lookback: still re-checked
-    assert revalued["cleared"] == 1 and asfiled.stale_us_tps(database) == {}
-    cleared = [row for row in asfiled.TpStalenessStore(database).rows() if row["doc_id"] == TEN_K and row["state"] == "cleared"]
-    assert cleared[0]["reason"] == "revalued_by_cut" and cleared[0]["covers_period"] is True and cleared[0]["fundamentals_as_of"] == date(2025, 12, 31)
+    assert revalued["cleared"] == 2 and asfiled.stale_us_tps(database) == {}
+    cleared = {row["doc_id"]: row for row in asfiled.TpStalenessStore(database).rows() if row["state"] == "cleared"}
+    assert cleared[TEN_K]["reason"] == "revalued_by_cut" and cleared[TEN_K]["covers_period"] is True
+    assert cleared[TEN_K]["fundamentals_as_of"] == date(2025, 12, 31) and cleared[EIGHT_K]["reason"] == "revalued_by_cut"
 
 
-def test_a_symbol_without_an_official_tp_is_untracked_once() -> None:
+def test_an_earnings_release_is_cleared_only_by_a_tp_whose_fundamentals_reach_the_announced_quarter() -> None:
+    database = Database(_settings())
+    store = StatementVintageStore(database)
+    issuer = "0000999005"
+
+    def filing(doc_id: str, form: str, accepted: datetime, period: str, items: str = "") -> dict[str, Any]:
+        return {"market": "US", "issuer_key": issuer, "source": "sec_edgar", "doc_id": doc_id, "form": form, "items": items, "symbols": ["SYNT"],
+                "period_of_report": period, "filed_date": accepted.date(), "accepted_at": accepted, "accepted_source": "sec_header"}
+
+    # the issuer's statements so far (Q3 2025 10-Q) and, inside the lookback, its Q4 earnings release: no 10-K yet
+    store.register_filings([filing("0000999005-25-000030", "10-Q", datetime(2025, 11, 5, 21, 30, tzinfo=UTC), "2025-09-30"),
+                            filing("0000999005-26-000003", "8-K", datetime(2026, 2, 12, 21, 5, tzinfo=UTC), "2026-02-12", "2.02,9.01")])
+    _official(database, datetime(2026, 2, 13, 3, 10, tzinfo=UTC), synt_fundamentals="2025-09-30")
+    after_release =asfiled.evaluate_us_filings(database, now=datetime(2026, 2, 13, 4, tzinfo=UTC))
+    assert after_release["stale"] == 1 and after_release["cleared"] == 0  # the cut after the release still has Q3 fundamentals
+    _publish(database, "NASDAQ", [_universe_row("SYNT", fundamentals_as_of="2025-09-30")], datetime(2026, 2, 20, 3, 10, tzinfo=UTC))
+    assert asfiled.evaluate_us_filings(database, now=datetime(2026, 2, 20, 4, tzinfo=UTC))["cleared"] == 0
+    assert list(asfiled.stale_us_tps(database)) == ["SYNT"]  # the whole window until the provider carries Q4
+    _publish(database, "NASDAQ", [_universe_row("SYNT", fundamentals_as_of="2025-12-31")], datetime(2026, 2, 21, 3, 10, tzinfo=UTC))
+    assert asfiled.evaluate_us_filings(database, now=datetime(2026, 2, 21, 4, tzinfo=UTC))["cleared"] == 1
+    assert asfiled.stale_us_tps(database) == {}
+
+
+def test_the_announced_quarter_is_stepped_from_the_issuers_own_fiscal_calendar() -> None:
+    at = lambda value: datetime.fromisoformat(value)  # noqa: E731
+    # a calendar year: the Q4 release in February
+    assert asfiled.announced_quarter_end(at("2026-02-12T21:05:00+00:00"), [date(2025, 9, 30)]) == date(2025, 12, 31)
+    # the matching 10-K already registered (accepted after the release) gives the same quarter
+    assert asfiled.announced_quarter_end(at("2026-02-12T21:05:00+00:00"), [date(2025, 9, 30), date(2025, 12, 31)]) == date(2025, 12, 31)
+    # a 52/53-week year (quarters of thirteen weeks): 2025-09-27 → 2025-12-27
+    assert asfiled.announced_quarter_end(at("2026-01-29T21:30:00+00:00"), [date(2025, 9, 27)]) == date(2025, 12, 27)
+    # an off-calendar year closing in January, stepped twice from an older statement
+    assert asfiled.announced_quarter_end(at("2026-02-19T12:00:00+00:00"), [date(2025, 7, 31)]) == date(2026, 1, 31)
+    # the acceptance day is New York's: 2026-01-01 02:00Z is still 2025-12-31 there, so Q4 has not ended yet
+    assert asfiled.announced_quarter_end(at("2026-01-01T02:00:00+00:00"), [date(2025, 9, 30)]) == date(2025, 9, 30)
+    # no statement of the issuer registered yet: the latest calendar quarter end before the release
+    assert asfiled.announced_quarter_end(at("2026-02-12T21:05:00+00:00"), []) == date(2025, 12, 31)
+    assert asfiled.next_quarter_end(date(2025, 11, 30)) == date(2026, 2, 28) and asfiled.next_quarter_end(date(2026, 3, 28)) == date(2026, 6, 27)
+
+
+def test_a_symbol_without_an_official_tp_is_untracked_once_and_marked_when_its_tp_arrives() -> None:
     database = _ingested()
     store = StatementVintageStore(database)
     store.register_filings([{"market": "US", "issuer_key": "0000999009", "source": "sec_edgar", "doc_id": "0000999009-26-000001", "form": "8-K",
@@ -254,6 +353,23 @@ def test_a_symbol_without_an_official_tp_is_untracked_once() -> None:
     assert asfiled.evaluate_us_filings(database, now=now)["untracked"] == 1
     assert asfiled.evaluate_us_filings(database, now=now)["untracked"] == 0
     assert asfiled.evaluate_us_filings(Database(_settings()), now=now) == {"filings": 0, "evaluated": 0, "stale": 0, "cleared": 0, "untracked": 0}
+    # review finding: 'untracked' is not terminal — the symbol enters the generation with a TP whose fundamentals predate
+    # the quarter the release announces (no statement registered for the issuer: the calendar quarter, 2025-12-31)
+    _publish(database, "NASDAQ", [_universe_row("SYNT", fundamentals_as_of="2025-12-31"), _universe_row("ZZZZ", fundamentals_as_of="2025-09-30")],
+             datetime(2026, 2, 21, 3, 10, tzinfo=UTC))
+    arrived = asfiled.evaluate_us_filings(database, now=datetime(2026, 2, 21, 4, tzinfo=UTC))
+    assert arrived["stale"] == 1 and arrived["untracked"] == 0
+    zzzz = asfiled.stale_us_tps(database)["ZZZZ"][0]
+    assert zzzz["reason"] == "fundamentals_predate_period" and zzzz["expected_period_end"] == date(2025, 12, 31)
+    # outside the lookback an untracked pair is history: never evaluated again
+    other = "0000999009-26-000002"
+    store.register_filings([{"market": "US", "issuer_key": "0000999009", "source": "sec_edgar", "doc_id": other, "form": "8-K", "items": "2.02",
+                             "symbols": ["WWWW"], "filed_date": "2026-02-19", "accepted_at": datetime(2026, 2, 19, 22, tzinfo=UTC),
+                             "accepted_source": "sec_header"}])
+    assert asfiled.evaluate_us_filings(database, now=datetime(2026, 2, 21, 5, tzinfo=UTC))["untracked"] == 1
+    _publish(database, "NASDAQ", [_universe_row("WWWW", fundamentals_as_of="2025-09-30")], datetime(2026, 3, 5, 3, 10, tzinfo=UTC))
+    late = asfiled.evaluate_us_filings(database, now=datetime(2026, 3, 5, 4, tzinfo=UTC))
+    assert late["stale"] == 0 and "WWWW" not in asfiled.stale_us_tps(database)
 
 
 def test_the_ir_processor_runs_the_trigger_only_behind_the_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,7 +381,7 @@ def test_the_ir_processor_runs_the_trigger_only_behind_the_flag(monkeypatch: pyt
     monkeypatch.setattr("app.ir_valuation.datetime", _FrozenDatetime)
     on = InvestorRelationsValuationProcessor(database, SimpleNamespace(), asfiled_enabled=True)  # type: ignore[arg-type]
     result = on.process()
-    assert result["claimed"] == 0 and result["us_revaluation"]["stale"] == 1
+    assert result["claimed"] == 0 and result["us_revaluation"]["stale"] == 2  # the 10-K and the 8-K 2.02 (Q3 fundamentals)
 
     def broken(database: Database, *, now: datetime) -> dict[str, int]:
         raise RuntimeError("boom")

@@ -4,18 +4,22 @@
   vintages ACCEPTED at or before ``as_of`` exist for it; for each fact the latest such acceptance wins (a restatement
   known at ``as_of`` supersedes the original); quarters come from ``sec_xbrl.discrete_quarters`` (Q4 = FY − 9M) and the
   TTM is the four contiguous quarters ending at the latest reported quarter of revenue (net income when there is none).
+  Diluted EPS is not additive: a TTM that is exactly a fiscal year takes the year's reported EPS, and quarters from
+  documents of different share bases (a split) are never summed (``None`` with a warning, see ``_ttm_eps``).
 * ``reconcile_with_eodhd`` / ``record_us_reconciliation`` — the shadow comparison, field by field, against the EODHD
   fundamentals the US producer consumed in the same build (agreement within ``AGREEMENT_TOLERANCE``). It is persisted as
   its own analysis snapshot; it never feeds a served number.
 * ``evaluate_us_filings`` — the US revaluation trigger: an accepted 10-Q/10-K (or amendment) or 8-K item 2.02 marks the
-  official TP of each of the issuer's symbols ``stale`` when that TP predates the acceptance (or its fundamentals predate
-  the filed period) and queues it for the next nightly cut; the cut that revalues it appends ``cleared``
+  official TP of each of the issuer's symbols ``stale`` when that TP predates the acceptance or its fundamentals predate
+  the period the filing reports (a 10-Q/10-K's filed period; for an 8-K 2.02, the fiscal quarter it announces — see
+  ``announced_quarter_end``) and queues it for the next nightly cut; the cut that revalues it appends ``cleared``
   (migration 053, append-only). ``stale_us_tps`` is what a decision reads.
 
 Everything here runs only behind ``C3PO_VALUATION_ASFILED_ENABLED`` (default off) and changes no served number.
 """
 from __future__ import annotations
 
+import calendar
 import logging
 import math
 from collections.abc import Iterable, Mapping, Sequence
@@ -28,13 +32,15 @@ from .database import Database
 from .sec_xbrl import (
     CONCEPT_LADDER,
     DURATION_FIELDS,
-    EARNINGS_RELEASE_FORMS,
     FIELD_UNITS,
     FILING_SOURCE,
     MARKET,
+    NEW_YORK,
     QUARTER_CONTIGUITY_DAYS,
+    STATEMENT_FORMS,
     VINTAGE_SOURCE,
     discrete_quarters,
+    duration_months,
     filing_items,
     is_trigger_filing,
 )
@@ -54,6 +60,9 @@ TRIGGER_LOOKBACK_DAYS = 10  # filings accepted earlier are not (re)evaluated by 
 PERIOD_TOLERANCE_DAYS = 7  # a provider labelling the quarter by calendar month end (06-30 for a 06-27 close) still covers it
 QUARTER_HISTORY = 8
 INSTANT_FIELDS = tuple(name for name in CONCEPT_LADDER if name not in DURATION_FIELDS)
+SHARES_CONCEPT = CONCEPT_LADDER["shares_outstanding"][0]
+SHARE_BASIS_RATIO = 1.4  # cover share counts this far apart across the documents of one TTM EPS: a split (or a new share base)
+EPS_SHARE_BASIS_CHANGED = "eps_diluted_share_basis_changed"
 STALE, CLEARED, UNTRACKED = "stale", "cleared", "untracked"
 
 
@@ -148,6 +157,44 @@ def _provenance(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _cover_shares(rows: Iterable[Mapping[str, Any]]) -> dict[str, float]:
+    """doc_id → the cover-page share count the document reported (its latest cover date): the share basis of its EPS."""
+    latest: dict[str, tuple[date, float]] = {}
+    for row in rows:
+        if str(row["concept"]) != SHARES_CONCEPT:
+            continue
+        value, end = _float(row["value"]), as_date(row["period_end"])
+        if value is None or value <= 0 or end is None:
+            continue
+        doc_id = str(row["doc_id"])
+        if doc_id not in latest or end > latest[doc_id][0]:
+            latest[doc_id] = (end, value)
+    return {doc_id: value for doc_id, (_, value) in latest.items()}
+
+
+def _ttm_eps(
+    quarters: Mapping[tuple[date, date], Mapping[str, Any]],
+    chain: Sequence[tuple[date, date]],
+    durations: Mapping[tuple[date, date], Mapping[str, Any]],
+    cover_shares: Mapping[str, float],
+) -> tuple[float | None, list[tuple[Mapping[str, Any], bool]], str | None]:
+    """TTM diluted EPS on ONE share basis → (value, [(fact, derived quarter)], refusal reason).
+
+    When the four quarters are exactly a fiscal year, the year's reported EPS (exact: EPS is not additive, so FY − 9M is
+    only an approximation of Q4). Otherwise the sum of the quarters — refused (``None``) when the documents behind them
+    report cover share counts ``SHARE_BASIS_RATIO`` or more apart: a split restates EPS only in the documents filed after
+    it, so their quarters are never added to quarters of an older share basis."""
+    span = (chain[-1][0], chain[0][1])
+    annual = durations.get(span)
+    if annual is not None and duration_months(*span) == 12:
+        return float(annual["value"]), [(annual, False)], None
+    facts = [(fact, bool(quarters[key]["derived"])) for key in chain for fact in quarters[key]["facts"]]
+    counts = [cover_shares[doc_id] for doc_id in {str(fact["doc_id"]) for fact, _ in facts} if doc_id in cover_shares]
+    if counts and max(counts) / min(counts) >= SHARE_BASIS_RATIO:
+        return None, facts, EPS_SHARE_BASIS_CHANGED
+    return sum(float(quarters[key]["value"]) for key in chain), facts, None
+
+
 def total_debt(balance: Mapping[str, float | None]) -> float | None:
     """Long + short without double counting: ``DebtCurrent`` when tagged, else current maturities of long-term debt plus
     short-term borrowings (commercial paper only when no short-term total is tagged); when only ``LongTermDebt`` (which
@@ -176,18 +223,21 @@ def as_of_fundamentals(database: Database, issuer_key: str, as_of: datetime, *, 
     ttm: dict[str, float | None] = {}
     provenance: dict[str, list[dict[str, Any]]] = {}
     used: list[Mapping[str, Any]] = []
+    warnings: list[str] = []
     for field in sorted(DURATION_FIELDS):
         chain = _chain_ending(quarters[field], ending) if ending else []
         if not chain:
             ttm[field] = None
             continue
-        ttm[field] = sum(float(quarters[field][key]["value"]) for key in chain)
-        facts = [fact for key in chain for fact in quarters[field][key]["facts"]]
-        used.extend(facts)
-        provenance[field] = [
-            {**_provenance(fact), "derived_quarter": bool(quarters[field][key]["derived"])}
-            for key in chain for fact in quarters[field][key]["facts"]
-        ]
+        if field == "eps_diluted":
+            ttm[field], facts, refusal = _ttm_eps(quarters[field], chain, _ladder_durations(view, field), _cover_shares(rows))
+            if refusal:
+                warnings.append(refusal)
+        else:
+            ttm[field] = sum(float(quarters[field][key]["value"]) for key in chain)
+            facts = [(fact, bool(quarters[field][key]["derived"])) for key in chain for fact in quarters[field][key]["facts"]]
+        used.extend(fact for fact, _ in facts)
+        provenance[field] = [{**_provenance(fact), "derived_quarter": derived} for fact, derived in facts]
     balance: dict[str, float | None] = {}
     balance_dates: dict[str, str | None] = {}
     for field in INSTANT_FIELDS:
@@ -238,6 +288,7 @@ def as_of_fundamentals(database: Database, issuer_key: str, as_of: datetime, *, 
         "quarters": quarter_history,
         "provenance": provenance,
         "missing": [name for name in expected if values.get(name) is None],
+        "warnings": warnings,
     }
 
 
@@ -367,7 +418,8 @@ def record_us_reconciliation(
 # -- the US revaluation trigger (migration 053) -------------------------------------------------------------------------
 
 _STALENESS_KEYS = ("id", "market", "symbol", "issuer_key", "doc_id", "form", "items", "accepted_at", "period_of_report", "state", "reason",
-                   "official_cycle_id", "prediction_instant", "fundamentals_as_of", "covers_period", "queued_for_cut_at", "recorded_at")
+                   "official_cycle_id", "prediction_instant", "fundamentals_as_of", "expected_period_end", "covers_period",
+                   "queued_for_cut_at", "recorded_at")
 
 
 class TpStalenessStore:
@@ -447,18 +499,57 @@ def next_nightly_cut(now: datetime) -> datetime:
     return datetime.combine(local.date() + timedelta(days=1), time.min, tzinfo=SAO_PAULO)
 
 
-def _covers_period(filing: Mapping[str, Any], official: Mapping[str, Any]) -> bool | None:
-    """For a 10-Q/10-K: whether the official row's fundamentals reach the filed period; ``None`` for an 8-K."""
-    if filing["form"] in EARNINGS_RELEASE_FORMS:
-        return None
+def next_quarter_end(end: date) -> date:
+    """The fiscal quarter end after ``end``: three calendar months on for a month-end close (06-30 → 09-30, 11-30 →
+    02-28), thirteen weeks on for a 52/53-week close (2025-09-27 → 2025-12-27)."""
+    if (end + timedelta(days=1)).day != 1:
+        return end + timedelta(weeks=13)
+    month_index = end.year * 12 + end.month - 1 + 3
+    year, month = divmod(month_index, 12)
+    return date(year, month + 1, calendar.monthrange(year, month + 1)[1])
+
+
+def announced_quarter_end(accepted_at: Any, statement_periods: Iterable[date]) -> date:
+    """The fiscal quarter an earnings release (8-K item 2.02) reports: the latest quarter end before its acceptance day
+    (New York), stepped forward from the issuer's latest filed statement period that ended before that day (the
+    ``period_of_report`` of its registered 10-Q/10-K). Without any such period (the issuer is not backfilled yet), the
+    latest calendar quarter end before that day — for an off-calendar fiscal year that is later than the true quarter
+    end, so a pre-release TP is still flagged; a release more than a month after an off-calendar close may then stay
+    stale until the backfill registers the issuer's statements."""
+    accepted_day = utc_instant(accepted_at).astimezone(NEW_YORK).date()
+    known = [period for period in statement_periods if period < accepted_day]
+    if not known:
+        return max(
+            date(year, month, calendar.monthrange(year, month)[1])
+            for year in (accepted_day.year - 1, accepted_day.year) for month in (3, 6, 9, 12)
+            if date(year, month, calendar.monthrange(year, month)[1]) < accepted_day
+        )
+    end = max(known)
+    while (following := next_quarter_end(end)) < accepted_day:
+        end = following
+    return end
+
+
+def expected_period_end(filing: Mapping[str, Any], statement_periods: Iterable[date]) -> date:
+    """The quarter end an official TP's fundamentals must reach to reflect the filing: a 10-Q/10-K's filed period
+    (``period_of_report``); for an 8-K item 2.02 (or a statement without a period), the quarter it announces."""
     period = as_date(filing.get("period_of_report"))
+    if filing["form"] in STATEMENT_FORMS and period is not None:
+        return period
+    return announced_quarter_end(filing["accepted_at"], statement_periods)
+
+
+def _fundamentals_as_of(official: Mapping[str, Any] | None) -> date | None:
     try:
-        fundamentals = as_date(official.get("fundamentals_as_of"))
+        return as_date((official or {}).get("fundamentals_as_of"))
     except ValueError:
-        fundamentals = None
-    if period is None:
         return None
-    return fundamentals is not None and fundamentals >= period - timedelta(days=PERIOD_TOLERANCE_DAYS)
+
+
+def _covers_period(expected: date, official: Mapping[str, Any]) -> bool:
+    """Whether the official row's fundamentals reach ``expected`` (within the provider's labelling tolerance)."""
+    fundamentals = _fundamentals_as_of(official)
+    return fundamentals is not None and fundamentals >= expected - timedelta(days=PERIOD_TOLERANCE_DAYS)
 
 
 def _official_clock(official: Mapping[str, Any]) -> datetime | None:
@@ -469,13 +560,7 @@ def _official_clock(official: Mapping[str, Any]) -> datetime | None:
 
 
 def _mark(filing: Mapping[str, Any], symbol: str, *, state: str, reason: str, official: Mapping[str, Any] | None,
-          now: datetime, covers: bool | None = None) -> dict[str, Any]:
-    fundamentals = None
-    if official:
-        try:
-            fundamentals = as_date(official.get("fundamentals_as_of"))
-        except ValueError:
-            fundamentals = None
+          now: datetime, expected: date | None = None, covers: bool | None = None) -> dict[str, Any]:
     return {
         "market": str((official or {}).get("official_market") or MARKET),
         "symbol": symbol,
@@ -489,7 +574,8 @@ def _mark(filing: Mapping[str, Any], symbol: str, *, state: str, reason: str, of
         "reason": reason,
         "official_cycle_id": str(official["official_cycle_id"]) if official and official.get("official_cycle_id") else None,
         "prediction_instant": _official_clock(official) if official else None,
-        "fundamentals_as_of": fundamentals,
+        "fundamentals_as_of": _fundamentals_as_of(official),
+        "expected_period_end": expected,
         "covers_period": covers,
         "queued_for_cut_at": next_nightly_cut(now) if state == STALE else None,
         "recorded_at": utc_instant(now),
@@ -498,9 +584,11 @@ def _mark(filing: Mapping[str, Any], symbol: str, *, state: str, reason: str, of
 
 def evaluate_us_filings(database: Database, *, now: datetime | None = None) -> dict[str, int]:
     """The US revaluation trigger, idempotent: every trigger filing registered in the last ``TRIGGER_LOOKBACK_DAYS`` is
-    evaluated once per symbol (``stale`` / ``cleared`` / ``untracked``); every pending ``stale`` mark — whatever its age —
-    is re-checked against the official TP in force and ``cleared`` once a cycle predicted after the acceptance (covering
-    the filed period, for a 10-Q/10-K) is official. Reads ONE generation for the whole pass."""
+    evaluated per symbol (``stale`` / ``cleared`` / ``untracked``); every pending ``stale`` mark — whatever its age — is
+    re-checked against the official TP in force and ``cleared`` once a cycle predicted after the acceptance AND whose
+    fundamentals reach the reported period (``expected_period_end``: the filed period of a 10-Q/10-K, the announced
+    quarter of an 8-K 2.02) is official. ``untracked`` is not terminal: inside the lookback the pair is evaluated again
+    on every pass, so a TP that enters the generation later is still marked. Reads ONE generation for the whole pass."""
     clock = utc_instant(now or datetime.now(timezone.utc))
     vintages = StatementVintageStore(database)
     staleness = TpStalenessStore(database)
@@ -509,17 +597,32 @@ def evaluate_us_filings(database: Database, *, now: datetime | None = None) -> d
         states.setdefault((row["doc_id"], row["symbol"]), set()).add(row["state"])
     pending_documents = {doc_id for (doc_id, _), known in states.items() if STALE in known and CLEARED not in known}
     recent = vintages.filings(MARKET, source=FILING_SOURCE, accepted_since=clock - timedelta(days=TRIGGER_LOOKBACK_DAYS))
-    older = vintages.filings(MARKET, source=FILING_SOURCE, doc_ids=pending_documents - {filing["doc_id"] for filing in recent})
+    recent_documents = {filing["doc_id"] for filing in recent}
+    older = vintages.filings(MARKET, source=FILING_SOURCE, doc_ids=pending_documents - recent_documents)
     filings = [filing for filing in [*older, *recent] if is_trigger_filing(filing["form"], filing_items(filing.get("items")))]
-    open_pairs = [
-        (filing, symbol) for filing in filings for symbol in filing.get("symbols") or ()
-        if not ({CLEARED, UNTRACKED} & states.get((filing["doc_id"], symbol), set()))
-    ]
+
+    def is_open(filing: Mapping[str, Any], symbol: str) -> bool:
+        known = states.get((filing["doc_id"], symbol), set())
+        if CLEARED in known:
+            return False
+        return STALE in known or not known or filing["doc_id"] in recent_documents  # untracked: re-evaluated in the lookback
+
+    open_pairs = [(filing, symbol) for filing in filings for symbol in filing.get("symbols") or () if is_open(filing, symbol)]
     counts = {"filings": len(filings), "evaluated": len(open_pairs), "stale": 0, "cleared": 0, "untracked": 0}
     if not open_pairs:
         return counts
     generation = current_generation(database)
     served = official_rows(database, MARKET, generation=generation) if generation else {}  # NASDAQ + NYSE, one generation
+    periods_by_issuer: dict[str, list[date]] = {}
+
+    def statement_periods(issuer_key: str) -> list[date]:
+        if issuer_key not in periods_by_issuer:
+            periods_by_issuer[issuer_key] = [
+                period for row in vintages.filings(MARKET, source=FILING_SOURCE, issuer_key=issuer_key)
+                if row["form"] in STATEMENT_FORMS and (period := as_date(row.get("period_of_report"))) is not None
+            ]
+        return periods_by_issuer[issuer_key]
+
     marks: list[dict[str, Any]] = []
     for filing, symbol in open_pairs:
         known = states.get((filing["doc_id"], symbol), set())
@@ -529,14 +632,15 @@ def evaluate_us_filings(database: Database, *, now: datetime | None = None) -> d
                 marks.append(_mark(filing, symbol, state=UNTRACKED, reason="no_official_tp", official=None, now=clock))
             continue
         predicted = _official_clock(official)
-        covers = _covers_period(filing, official)
+        expected = expected_period_end(filing, statement_periods(str(filing["issuer_key"])))
+        covers = _covers_period(expected, official)
         after = predicted is not None and predicted > utc_instant(filing["accepted_at"])
-        if after and covers is not False:
+        if after and covers:
             reason = "revalued_by_cut" if STALE in known else "tp_after_acceptance"
-            marks.append(_mark(filing, symbol, state=CLEARED, reason=reason, official=official, now=clock, covers=covers))
-        elif not known:
+            marks.append(_mark(filing, symbol, state=CLEARED, reason=reason, official=official, now=clock, expected=expected, covers=covers))
+        elif STALE not in known:
             reason = "tp_predates_acceptance" if not after else "fundamentals_predate_period"
-            marks.append(_mark(filing, symbol, state=STALE, reason=reason, official=official, now=clock, covers=covers))
+            marks.append(_mark(filing, symbol, state=STALE, reason=reason, official=official, now=clock, expected=expected, covers=covers))
     staleness.append(marks)
     for mark in marks:
         counts[mark["state"]] += 1

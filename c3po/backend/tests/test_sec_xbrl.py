@@ -30,6 +30,7 @@ from app.sec_xbrl import (
     trailing_quarters,
 )
 from app.statement_vintages import StatementVintageStore, vintage_row_hash
+from app.valuation_asfiled import as_of_fundamentals
 
 from tests import asfiled_fixtures as fx
 
@@ -145,6 +146,9 @@ def test_the_process_limiter_is_shared_and_only_ever_lowered(monkeypatch: pytest
     first = sec_xbrl.process_rate_limiter(6.0)
     assert sec_xbrl.process_rate_limiter(8.0) is first and first.rate == 6.0
     assert sec_xbrl.process_rate_limiter(3.0) is first and first.rate == 3.0
+    # the limiter is per process and three processes call EDGAR (API, IR worker, valuation worker): the default keeps the
+    # host under the 8/s fair-access ceiling even when all three run at once
+    assert 3 * Settings().sec_max_requests_per_second <= sec_xbrl.SEC_FAIR_ACCESS_MAX_PER_SECOND
     assert sec_xbrl.is_sec_host("data.sec.gov") and sec_xbrl.is_sec_host("www.sec.gov") and not sec_xbrl.is_sec_host("sec.gov.example.com")
 
 
@@ -360,6 +364,62 @@ def test_a_header_failure_defers_that_document_and_every_later_one() -> None:
     assert result.header_failures == 1 and result.deferred_documents == 4  # Q1, Q2, Q3 2025 and FY 2025 wait
     stored = StatementVintageStore(database).documents_with_vintages("US", fx.CIK)
     assert stored == {"0000999001-24-000030", "0000999001-25-000005"}  # only the documents before the gap
+
+
+ALL_DOCUMENTS = {doc["accession"] for doc in fx.DOCUMENTS}
+
+
+def _companyfacts_calls(fake: fx.EdgarFake) -> int:
+    return sum(1 for path in fake.paths() if path.startswith("/api/xbrl/companyfacts/"))
+
+
+def test_a_transient_header_failure_is_recovered_on_the_next_poll() -> None:
+    # review finding: one 503 on a mid-history header used to leave the new 10-K 'settled' without a single stored row,
+    # and nothing ever retried the deferred documents (TTM revenue None four days later)
+    database = Database(_settings())
+    first = datetime(2026, 2, 21, tzinfo=UTC)
+    ingestor, failed = _poll_once(database, fx.EdgarFake(failing_headers={"0000999001-25-000012"}), first)
+    assert failed.deferred_documents == 4 and "0000999001-26-000005" not in ingestor._settled  # never settled without its rows
+    healthy = fx.EdgarFake()
+    ingestor.client = _client(healthy)
+    _, early = _poll_once(database, healthy, first + timedelta(minutes=2), ingestor)
+    assert early.issuers_ingested == 0 and _companyfacts_calls(healthy) == 0  # inside the retry backoff
+    _, retried = _poll_once(database, healthy, first + timedelta(minutes=15), ingestor)
+    assert retried.issuers_ingested == 1 and retried.header_failures == 0 and retried.deferred_documents == 0
+    assert StatementVintageStore(database).documents_with_vintages("US", fx.CIK) == ALL_DOCUMENTS
+    report = as_of_fundamentals(database, fx.CIK, first + timedelta(days=4))
+    assert report["period_end"] == "2025-12-31" and report["ttm"]["revenue"] == pytest.approx(400)
+    calls = _companyfacts_calls(healthy)
+    _, settled = _poll_once(database, healthy, first + timedelta(hours=2), ingestor)
+    assert settled.issuers_ingested == 0 and _companyfacts_calls(healthy) == calls  # nothing left: no further download
+
+
+def test_a_deferral_lost_to_a_restart_is_repaired_from_the_store() -> None:
+    database = Database(_settings())
+    first = datetime(2026, 2, 21, tzinfo=UTC)
+    _poll_once(database, fx.EdgarFake(failing_headers={"0000999001-25-000012"}), first)
+    healthy = fx.EdgarFake()
+    restarted, result = _poll_once(database, healthy, first + timedelta(days=4))  # a new process: no retry state survives
+    assert result.gap_ingestions == 1 and result.issuers_backfilled == 0 and result.vintages_written > 0
+    assert StatementVintageStore(database).documents_with_vintages("US", fx.CIK) == ALL_DOCUMENTS
+    calls = _companyfacts_calls(healthy)
+    _, again = _poll_once(database, healthy, first + timedelta(days=4, hours=1), restarted)
+    assert again.issuers_ingested == 0 and _companyfacts_calls(healthy) == calls  # the newest 10-K is stored: no gap left
+
+
+def test_a_header_that_keeps_failing_is_retried_with_a_doubling_backoff() -> None:
+    database = Database(_settings())
+    fake = fx.EdgarFake(failing_headers={"0000999001-25-000012"})
+    first = datetime(2026, 6, 1, tzinfo=UTC)  # nothing in the detection window: a pure backfill
+    ingestor, backfill = _poll_once(database, fake, first)
+    assert backfill.issuers_backfilled == 1 and backfill.deferred_documents == 4 and _companyfacts_calls(fake) == 1
+    schedule = [(6, True), (12, False), (17, True), (30, False), (38, True)]  # retries at +5, then 10 and 20 minutes later
+    for minutes, expected in schedule:
+        _, result = _poll_once(database, fake, first + timedelta(minutes=minutes), ingestor)
+        assert (result.deferred_retries == 1) is expected, minutes
+        assert result.gap_ingestions == 0  # a waiting deferral is never re-downloaded as a gap
+    assert _companyfacts_calls(fake) == 4
+    assert ingestor._deferred[fx.CIK][0] == 4
 
 
 def test_a_fair_access_refusal_stops_the_whole_pass_at_once() -> None:

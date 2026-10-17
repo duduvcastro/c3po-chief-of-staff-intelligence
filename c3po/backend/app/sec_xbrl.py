@@ -2,7 +2,8 @@
 
 * **The client** (``SecXbrlClient``) never calls the SEC without the contact configured on the host
   (``C3PO_SEC_CONTACT``, sent in the User-Agent) and spaces its requests through one per-process limiter
-  (``C3PO_SEC_MAX_REQUESTS_PER_SECOND``, at most 8/s — SEC fair access).
+  (``C3PO_SEC_MAX_REQUESTS_PER_SECOND``, default 2.5/s, never above 8/s). SEC fair access is 8/s for the whole host
+  and three processes call EDGAR (API, Investor Relations worker, valuation worker): 3 × 2.5 ≤ 8.
 * **The acceptance clock** is the filing header's ``<ACCEPTANCE-DATETIME>`` (``…/<accession>-index-headers.html``),
   America/New_York. The submissions JSON ``acceptanceDateTime`` is NOT true UTC — verified 2026-10-17 on AAPL
   0000320193-26-000018 (header 20260730163028, JSON 2026-07-31T00:30:28Z) and 0000320193-26-000005 (header
@@ -18,7 +19,9 @@
 * **The poll** (``SecXbrlIngestor.poll``), run by ``InvestorRelationsService.sync_sec_asfiled`` in the Investor Relations
   worker's SEC polling loop: for the US valuation universe, register every newly accepted 10-Q/10-K (and amendments)
   and 8-K carrying item 2.02, then ingest the issuer's companyfacts when a statement document is new or still
-  pending, and backfill issuers with no vintages a few per poll.
+  pending, when an earlier ingestion deferred documents behind a header that failed (retried with a growing backoff),
+  and — a few issuers per poll — when the issuer's newest original 10-Q/10-K has no stored fact (the backfill, and the
+  durable repair of a gap whose in-memory retry state a restart lost).
 
 Nothing here changes a served number; the whole path is behind ``C3PO_VALUATION_ASFILED_ENABLED`` (default off).
 """
@@ -55,6 +58,7 @@ SEC_FAIR_ACCESS_MAX_PER_SECOND = 8.0
 USER_AGENT_PRODUCT = "C3PO Chief of Staff Intelligence"
 
 STATEMENT_FORMS = frozenset({"10-Q", "10-K", "10-Q/A", "10-K/A", "10-QT", "10-KT", "10-QT/A", "10-KT/A"})
+ORIGINAL_STATEMENT_FORMS = frozenset({"10-Q", "10-K", "10-QT", "10-KT"})  # always carry the financial statements in XBRL
 RESULTS_FORMS = frozenset({"10-Q", "10-K", "10-Q/A", "10-K/A"})
 EARNINGS_RELEASE_FORMS = frozenset({"8-K", "8-K/A"})
 EARNINGS_RELEASE_ITEM = "2.02"  # Results of Operations and Financial Condition
@@ -63,6 +67,9 @@ VINTAGE_LOOKBACK_DAYS = 6 * 366  # facts whose period ended earlier are not inge
 DETECTION_LOOKBACK_DAYS = 10  # a filing accepted earlier than this is history (companyfacts), not a new-filing event
 PENDING_FACTS_DAYS = 3  # a registered statement document whose facts are not in companyfacts yet is retried this long
 PENDING_RETRY = timedelta(hours=1)
+DEFERRED_RETRY = timedelta(minutes=5)  # documents deferred behind a failed header: the next poll retries them …
+DEFERRED_RETRY_MAX = timedelta(hours=6)  # … and every further failure doubles the wait, up to this
+NOT_BEFORE = datetime.min.replace(tzinfo=timezone.utc)
 
 # The concept ladder: per field, the us-gaap/dei concepts in priority order (the first one reported for a period wins).
 # Debt is kept by component — the bridge adds long + short without double counting (see valuation_asfiled.total_debt).
@@ -522,6 +529,8 @@ class AsFiledPollResult:
     json_clock_mismatches: int = 0
     issuers_ingested: int = 0
     issuers_backfilled: int = 0
+    deferred_retries: int = 0
+    gap_ingestions: int = 0
     vintages_written: int = 0
     first_publications: int = 0
     out_of_order: int = 0
@@ -535,15 +544,18 @@ class AsFiledPollResult:
 
 class SecXbrlIngestor:
     """Registers accepted filings (header clock) and ingests companyfacts into statement vintages for one issuer at a
-    time. Holds per-process retry state for documents whose facts are not in companyfacts yet."""
+    time. Holds per-process retry state for documents whose facts are not in companyfacts yet and for issuers whose
+    documents were deferred behind a failed header; what a restart loses is found again from the store (the newest
+    original 10-Q/10-K without a stored fact, see ``_statement_gap``)."""
 
     def __init__(self, database: Database, client: SecXbrlClient, *, backfill_per_poll: int = 10) -> None:
         self.database = database
         self.client = client
         self.store = StatementVintageStore(database)
         self.backfill_per_poll = backfill_per_poll
-        self._retry_after: dict[str, datetime] = {}  # doc_id → not before (facts pending in companyfacts)
-        self._settled: set[str] = set()  # doc_ids companyfacts already processed (with or without ladder facts)
+        self._retry_after: dict[str, datetime] = {}  # doc_id → not before (facts pending in companyfacts, or deferred)
+        self._settled: set[str] = set()  # doc_ids with nothing left to store: their rows are stored, or they have no ladder fact
+        self._deferred: dict[str, tuple[int, datetime]] = {}  # issuer → (failed attempts in a row, retry not before)
         self._no_statements: set[str] = set()  # issuers whose companyfacts had no ladder fact at all (backfill not retried)
 
     def register_filing(self, cik: str, filing: Mapping[str, Any], *, symbols: Iterable[str], result: AsFiledPollResult) -> datetime | None:
@@ -625,14 +637,18 @@ class SecXbrlIngestor:
                         new_statement = new_statement or filing["form"] in STATEMENT_FORMS
                 pending = self._pending_documents(cik, now=now)
                 first_ingestion = cik not in known_issuers
-                backfill = (
-                    first_ingestion and cik not in self._no_statements and backfill_budget > 0
-                    and any(filing["form"] in STATEMENT_FORMS for filing in filings)
+                deferred = self._deferred.get(cik)
+                retry_deferred = deferred is not None and deferred[1] <= now
+                gap = (
+                    not (new_statement or pending or retry_deferred) and cik not in self._no_statements and backfill_budget > 0
+                    and self._statement_gap(cik, filings, now=now, has_vintages=not first_ingestion)
                 )
-                if new_statement or pending or backfill:
-                    if not new_statement and not pending:
-                        backfill_budget -= 1  # the budget paces pure backfills only: a new filing is never held back
+                if new_statement or pending or retry_deferred or gap:
+                    if gap:
+                        backfill_budget -= 1  # the budget paces backfills and gap repairs only: a new filing or a retry never waits
                     result.issuers_backfilled += int(first_ingestion)
+                    result.deferred_retries += int(retry_deferred)
+                    result.gap_ingestions += int(gap and not first_ingestion)
                     self.ingest_issuer(cik, symbols, filings=filings, now=now, result=result)
                     known_issuers.add(cik)
             except SecThrottled as error:  # fair access first: the SEC said slow down, so this pass ends here
@@ -657,8 +673,31 @@ class SecXbrlIngestor:
         stored = self.store.documents_with_vintages(MARKET, cik)
         return [
             row["doc_id"] for row in recent
-            if row["doc_id"] not in stored and self._retry_after.get(row["doc_id"], datetime.min.replace(tzinfo=timezone.utc)) <= now
+            if row["doc_id"] not in stored and self._retry_after.get(row["doc_id"], NOT_BEFORE) <= now
         ]
+
+    def _statement_gap(self, cik: str, filings: Iterable[Mapping[str, Any]], *, now: datetime, has_vintages: bool) -> bool:
+        """The issuer's newest original 10-Q/10-K in its submissions has no stored fact, is not settled and is not
+        waiting out a retry: it was never ingested (the backfill) or was left behind (documents deferred behind a failed
+        header whose in-memory retry state a restart lost). Read from the store, so it survives a restart."""
+        statements = [filing for filing in filings if filing["form"] in ORIGINAL_STATEMENT_FORMS and filing["accepted_at_json"] is not None]
+        if not statements:
+            return False
+        newest = str(max(statements, key=lambda filing: (filing["accepted_at_json"], filing["accession"]))["accession"])
+        if newest in self._settled or self._retry_after.get(newest, NOT_BEFORE) > now:
+            return False
+        if has_vintages and newest in self.store.documents_with_vintages(MARKET, cik):
+            self._settled.add(newest)  # stored: never asked again in this process
+            return False
+        return True
+
+    def _defer(self, cik: str, *, now: datetime) -> datetime:
+        """Documents of the issuer wait behind a failed header: retry on the next poll, doubling the wait after every
+        failure in a row (a header that keeps failing never turns into a companyfacts download per poll)."""
+        attempts = self._deferred.get(cik, (0, now))[0] + 1
+        retry_at = now + min(DEFERRED_RETRY * 2 ** min(attempts - 1, 8), DEFERRED_RETRY_MAX)
+        self._deferred[cik] = (attempts, retry_at)
+        return retry_at
 
     def ingest_issuer(
         self,
@@ -670,8 +709,10 @@ class SecXbrlIngestor:
         result: AsFiledPollResult | None = None,
     ) -> AsFiledPollResult:
         """companyfacts → vintages for one issuer. Documents are stamped in acceptance order with their header clock; the
-        first document whose header cannot be read stops the issuer there (it and every later one wait for the next
-        poll), so first publications are always inserted before the documents that re-report them."""
+        first document whose header cannot be read stops the issuer there (it and every later one are deferred: the
+        issuer is retried on the next poll, with a growing backoff while the header keeps failing), so first publications
+        are always inserted before the documents that re-report them. A document is settled only when its rows are
+        stored or companyfacts holds it without any ladder fact — never merely because companyfacts holds it."""
         result = result or AsFiledPollResult()
         payload = self.client.companyfacts(cik)
         processed = companyfacts_accessions(payload)
@@ -693,9 +734,9 @@ class SecXbrlIngestor:
                     break
                 accepted[doc_id] = clock
             ready.append(doc_id)
-        deferred = len(documents) - len(ready)
-        result.deferred_documents += deferred
-        ready_set = set(ready)
+        documents_set, ready_set = set(documents), set(ready)
+        deferred = documents_set - ready_set
+        result.deferred_documents += len(deferred)
         stamped = [{**row, "accepted_at": accepted[row["doc_id"]]} for row in rows if row["doc_id"] in ready_set]
         stamped.sort(key=lambda row: (utc_instant(row["accepted_at"]), row["doc_id"]))
         counts = self.store.insert_vintages(MARKET, cik, stamped)
@@ -705,10 +746,21 @@ class SecXbrlIngestor:
         result.out_of_order += counts["out_of_order"]
         if not rows:
             self._no_statements.add(cik)
-        for row in self.store.filings(MARKET, source=FILING_SOURCE, issuer_key=cik, accepted_since=now - timedelta(days=PENDING_FACTS_DAYS)):
-            if row["doc_id"] in processed:
-                self._settled.add(row["doc_id"])
-                self._retry_after.pop(row["doc_id"], None)
+        retry_deferred_at = self._defer(cik, now=now) if deferred else None
+        if not deferred:
+            self._deferred.pop(cik, None)
+        recently_registered = self.store.filings(
+            MARKET, source=FILING_SOURCE, issuer_key=cik, accepted_since=now - timedelta(days=PENDING_FACTS_DAYS),
+        )
+        candidates = {  # the statement documents a later poll asks about: the recently registered ones and the submissions' own
+            row["doc_id"] for row in recently_registered if row["form"] in STATEMENT_FORMS
+        } | {str(filing["accession"]) for filing in filings or () if filing["form"] in STATEMENT_FORMS}
+        for doc_id in candidates | ready_set:
+            if doc_id in ready_set or (doc_id in processed and doc_id not in documents_set):
+                self._settled.add(doc_id)  # its rows are stored now, or companyfacts holds it without a ladder fact
+                self._retry_after.pop(doc_id, None)
+            elif doc_id in deferred and retry_deferred_at is not None:
+                self._retry_after[doc_id] = retry_deferred_at  # behind a failed header: retried with its issuer
             else:
-                self._retry_after[row["doc_id"]] = now + PENDING_RETRY
+                self._retry_after[doc_id] = now + PENDING_RETRY  # companyfacts has not processed it yet
         return result

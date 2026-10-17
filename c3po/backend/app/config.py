@@ -274,11 +274,12 @@ class Settings(BaseSettings):
     # Valuation as-filed (owner 2026-10-17): SEC XBRL statement vintages, new-filing detection for the US valuation
     # universe, the as-of bridge with its shadow reconciliation and the US revaluation trigger. OFF by default: nothing is
     # fetched and no served number changes. The SEC contact is configured on the host only (C3PO_SEC_CONTACT); the
-    # as-filed client refuses to call the SEC without it. Fair access: at most 8 requests/second per process — the
-    # default leaves half of it to the other process that polls EDGAR (the nightly valuation worker).
+    # as-filed client refuses to call the SEC without it. Fair access: at most 8 requests/second from the HOST, and the
+    # limiter is per process; three processes call EDGAR (the API — One Pager and /investor-relations/sync —, the
+    # Investor Relations worker and the nightly valuation worker), so the default is 2.5/s each: 3 × 2.5 = 7.5 ≤ 8.
     valuation_asfiled_enabled: bool = False
     sec_contact: str = Field(default="", repr=False)
-    sec_max_requests_per_second: float = Field(default=4.0, gt=0.0, le=8.0)
+    sec_max_requests_per_second: float = Field(default=2.5, gt=0.0, le=8.0)
     valuation_asfiled_backfill_issuers_per_poll: int = Field(default=10, ge=0, le=200)
     r2d2_fmp_prefilter_enabled: bool = True
     r2d2_fmp_prefilter_cache_seconds: int = 15

@@ -1,11 +1,12 @@
 -- Valuation as-filed (owner's direction 2026-10-17), US revaluation trigger (app/valuation_asfiled.py, run by
 -- app/ir_valuation.py and the nightly cut): an accepted 10-Q/10-K (and their amendments) or an 8-K carrying item 2.02
 -- marks the official US target price of the issuer's symbols STALE when that TP was predicted before the filing's
--- acceptance (or its fundamentals predate the filed period), and queues it for the next nightly cut. Append-only: a
--- mark is never updated — the cut that revalues it appends a 'cleared' row for the same (doc_id, symbol).
+-- acceptance or its fundamentals predate the period the filing reports (expected_period_end), and queues it for the
+-- next nightly cut. Append-only: a mark is never updated — the cut that revalues it appends a 'cleared' row for the
+-- same (doc_id, symbol).
 --   stale     — the official TP does not reflect the filing yet; queued_for_cut_at is the next nightly cut
---   cleared   — a cycle predicted after the acceptance (and, for a 10-Q/10-K, whose fundamentals reach the filed period)
---   untracked — the symbol had no official TP when the filing was evaluated (nothing to mark)
+--   cleared   — a cycle predicted after the acceptance whose fundamentals reach expected_period_end
+--   untracked — the symbol had no official TP when the filing was evaluated (not terminal: re-evaluated in the lookback)
 -- Behind C3PO_VALUATION_ASFILED_ENABLED (default off); no served number reads this table.
 
 CREATE TABLE IF NOT EXISTS valuation_tp_staleness (
@@ -23,7 +24,8 @@ CREATE TABLE IF NOT EXISTS valuation_tp_staleness (
     official_cycle_id TEXT,                                          -- the cycle whose record was compared
     prediction_instant TIMESTAMPTZ,
     fundamentals_as_of DATE,
-    covers_period BOOLEAN,                                           -- NULL for an 8-K (no filed period)
+    expected_period_end DATE,                                        -- 10-Q/10-K: filed period; 8-K 2.02: announced quarter
+    covers_period BOOLEAN,                                           -- fundamentals reach expected_period_end (NULL untracked)
     queued_for_cut_at TIMESTAMPTZ,                                   -- 'stale' only: the nightly cut it waits for
     recorded_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
