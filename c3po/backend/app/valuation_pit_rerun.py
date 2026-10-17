@@ -22,12 +22,15 @@ history (estimates, peer quality, insiders, news, grades, …) is passed as ABSE
 engine sees; the block is persisted beside it, spec rev 7 "TP sem consenso dentro"); ``buy_in`` comes from
 ``official_buy_in_v1`` with neutral, declared parameters (``provenance.buy_in_rule``).
 
-As-filed statements (``--statements``, default ``auto``): when the ``statement_vintages`` table of the as-filed front
-(migration 051: SEC XBRL, CVM) exists and covers a name, that name is rebuilt ONLY from its statements as filed and
-accepted at or before ``T`` — the regulator's acceptance instant is the evidence of availability in every market (no B3
-lag hypothesis, no day granularity), per period the latest acceptance by ``T`` — and the provider payload serves at most
-``outstandingShares``. Without the table the run is exactly the provider-payload run (no-op); ``provider`` never reads
-the table; ``vintages`` evaluates covered names only. The adapter's column contract is ``STATEMENT_VINTAGE_COLUMNS``.
+As-filed statements (``--statements``, default ``provider``: the table is never read unless asked): with ``auto``, when
+the ``statement_vintages`` table of the as-filed front (migration 051: SEC XBRL, CVM) exists and covers a name, that name
+is rebuilt ONLY from its statements as filed and accepted at or before ``T`` — the regulator's acceptance instant is the
+evidence of availability in every market (no B3 lag hypothesis, no day granularity), per period the latest acceptance by
+``T``; flow rows carry their duration (a year-to-date row is refused) and the Q4 no regulator receives is derived as the
+fiscal year minus Q1–Q3 — and the provider payload serves at most ``outstandingShares``. Without the table the run is
+exactly the provider-payload run (no-op); ``vintages`` evaluates covered names only. The adapter's column contract is
+``STATEMENT_VINTAGE_COLUMNS``; the 051 as built by the as-filed front holds one row per document FACT and is refused by
+name until a reader maps it onto that contract. Every TTM sums four CONSECUTIVE quarters (a gap is never bridged).
 
 Prices (§2): the run PINS the vintage it starts with — the latest publication of ``valuation_price_history`` at run
 start (``publication_id`` + ``bars_sha256``), verified, recorded in the manifest and read for the whole run through a
@@ -39,8 +42,9 @@ filters ECONOMIC dates (``session_date ≤ T``); it is never used as the availab
 nothing). Price basis (P2-2, ``PRICE_BASIS`` in the manifest): every LEVEL is the AS-TRADED ``close`` of the session —
 the unit of the share counts as reported and of the panel's label ``a(T) = adjusted_close(T) / close(T)`` —, and
 ``adjusted_close`` feeds log returns only; a name whose close changed unit (a capital event: raw and adjusted returns
-apart by ≥ 25 %) after its shares' period end and by T is refused, and the run publishes how many such events the vintage
-shows (a close the provider retro-adjusted for splits shows none).
+apart by ≥ 25 %) after its shares' period end and by T is refused, a fiscal year whose price session and share report
+straddle one loses its ratios (the year's own count only, never the current one), and the run publishes how many such
+events the vintage shows (a close the provider retro-adjusted for splits shows none).
 
 Identity and idempotency (§4): ``run_key = sha256(canonical_json([source_version, market, T, manifest]))`` (canonical
 JSON — never Python ``hash()``); one snapshot per run (``analysis_type = valuation_pit_rerun``, ``entity_key =
@@ -130,7 +134,10 @@ MIN_CONSENSUS_HOUSES = 3
 CONSENSUS_HORIZON = "N/D"  # the provider does not expose the horizon per target; the literal "12m" attests nothing (§3) — the panel reads it ``consensus_unattested:horizon`` and never compares it
 MIN_VALID_SESSIONS = 90  # §7: admissibility per symbol and T, verified in the run, never presumed from the calendar
 TTM_QUARTERS = 4
-TTM_MAX_SPAN_DAYS = 400
+QUARTER_GAP_DAYS = (80, 100)  # consecutive quarter ends are one quarter apart (13 or 14 weeks, calendar months, a few days of labelling): a missing quarter is never bridged
+QUARTER_DURATION_DAYS = (80, 100)  # an as-filed flow row of a quarter covers 80–100 days (first and last day counted); a year-to-date row (6 or 9 months) is not a quarter
+YEAR_DURATION_DAYS = (350, 380)  # an as-filed flow row of a fiscal year (52, 53 weeks or 12 months)
+CONTIGUITY_TOLERANCE_DAYS = 3  # Q1 starts with its fiscal year and each quarter the day after the previous one ends, within this tolerance (Q4 derivation)
 FISCAL_PRICE_TOLERANCE_DAYS = 30
 BETA_WINDOW_SESSIONS = 252
 BETA_MIN_SESSIONS = 60
@@ -141,6 +148,8 @@ PRICE_BASIS: dict[str, Any] = {  # P2-2, declared in the manifest (hashed into r
     "level": PRICE_LEVEL_FIELD, "level_basis": "as_traded_close_of_the_session", "returns": RETURN_FIELD,
     "shares_basis": "as_reported_at_the_shares_period_end", "capital_event_min_factor": CAPITAL_EVENT_MIN_FACTOR,
     "capital_event_rule": "refuse the name when a capital event falls after the shares' period end and at or before the session of T",
+    "fiscal_year_rule": "a fiscal year's ratios pair the close of its last session with that year's own share count; dropped when a capital event "
+                        "falls after that session and at or before the day the count was reported",
 }
 ENTRY_RISK_SCORE = 50.0  # neutral, declared: no point-in-time risk model exists (provenance.buy_in_rule.parameters)
 ENTRY_CONFIDENCE = 50.0
@@ -151,9 +160,13 @@ CURRENT_FIELDS_ADMITTED: tuple[str, ...] = ("sector", "industry", "valuation_pro
 AVAILABILITY_RULE = ("as available per evidence (regulator accepted_at <= T for a name covered by statement_vintages; else provider filing_date) "
                      "or declared hypothesis (B3 provider payload: period_end+90d); provider original vintage N/D")
 STATEMENT_VINTAGES_TABLE = "statement_vintages"  # migration 051 (the as-filed front): SEC XBRL (US) and CVM (B3) statements as filed
-STATEMENT_VINTAGE_COLUMNS: tuple[str, ...] = ("id", "market", "symbol", "statement", "frequency", "period_end", "accepted_at", "fields")  # the adapter's contract
+STATEMENT_VINTAGE_COLUMNS: tuple[str, ...] = ("id", "market", "symbol", "statement", "frequency", "period_start", "period_end", "accepted_at",
+                                             "fields")  # the adapter's contract (period_start: NULL for a balance sheet, the first day of a flow's period)
+FACT_SCHEMA_COLUMNS = frozenset({"issuer_key", "concept", "unit", "value"})  # the as-filed front's 051 as built: one row per document FACT, not this contract
 STATEMENT_VINTAGE_MARKETS = {"B3": ("B3",), "NASDAQ": ("NASDAQ", "US"), "NYSE": ("NYSE", "US")}  # an SEC filer is not listed per exchange: "US" serves both
-STATEMENTS_MODES: tuple[str, ...] = ("auto", "provider", "vintages")  # auto: as-filed for a covered name, else the provider payload (no-op without the table)
+STATEMENTS_MODES: tuple[str, ...] = ("provider", "auto", "vintages")  # auto: as-filed for a covered name, else the provider payload (no-op without the table)
+STATEMENTS_DEFAULT = "provider"  # until the as-filed front's 051 (fact rows) is mapped onto the adapter's contract, the table is read only when asked
+FLOW_STATEMENTS: tuple[str, ...] = ("Income_Statement", "Cash_Flow")  # statements of a PERIOD (a duration); the balance sheet is an instant
 BASIS_VINTAGES = "statement_vintages"
 BASIS_PROVIDER = "provider_payload"
 AS_FILED_AVAILABILITY = "_pit_as_filed_availability"  # the key the adapter sets on a rebuilt row: the regulator's acceptance (evidence)
@@ -164,13 +177,20 @@ DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and
     "consensus_published_date_zone": "a publishedDate without a zone is read as UTC (assumption: the provider states no zone)",
     "beta_proxy_membership": "the equal-weight universe proxy of daily log returns INCLUDES the symbol itself (it is not excluded from its own proxy)",
     "ttm_basis_mix": "ttm.basis is four_quarters or latest_fiscal_year; the prior period of revenue_growth may be previous_fiscal_year while the TTM is four_quarters (the bases can mix)",
+    "ttm_contiguity": "four_quarters sums four CONSECUTIVE quarters (each period end one quarter after the next older one; the prior period of the "
+                      "growth: the eight latest consecutive); a gap is never bridged — the TTM falls back to the latest fiscal year, counted",
+    "fiscal_year_shares_basis": "a fiscal year's ratios read the share count of that year's own balance sheet, never the current count, in the unit of "
+                                "the day it was reported (its filing date, acceptance or declared lag); a capital event between the session of the "
+                                "fiscal-year price and that day drops the year's ratios, counted",
     "price_basis": "the series' close is read as the AS-TRADED close of the session (the basis of the as-reported share counts and of the panel's "
                    "a(T) = adjusted_close(T) / close(T)); adjusted_close feeds log returns only. If the provider's close were retro-adjusted for "
                    "splits, every level would be off by the split factor after T: price_basis_evidence counts the raw-vs-adjusted capital events "
                    "the vintage shows up to T (none across a whole universe and window points to a split-adjusted close)",
-    "statements_basis": "a name the statement_vintages table covers (any row, any date: the basis is chosen by coverage, never by T) is rebuilt ONLY "
-                        "from its as-filed statements accepted at or before T — per period the latest acceptance by T, so an amendment accepted "
-                        "after T is never read; the provider payload then serves outstandingShares only, when the as-filed balance carries no share "
+    "statements_basis": "provider payload unless --statements auto|vintages; then a name the statement_vintages table covers (any row, any date: the "
+                        "basis is chosen by coverage, never by T) is rebuilt ONLY from its as-filed statements accepted at or before T — per period "
+                        "the latest acceptance by T, so an amendment accepted after T is never read; flow rows are discrete quarters or fiscal years "
+                        "by their own duration (a year-to-date row is refused), the missing Q4 is FY minus Q1–Q3 and the fiscal-year-end balance is "
+                        "also the Q4 balance; the provider payload then serves outstandingShares only, when the as-filed balance carries no share "
                         "count. An uncovered name reads the provider payload (auto) or is not evaluable (vintages)",
 }
 _RUN_LOCKS: dict[str, threading.Lock] = {}
@@ -337,7 +357,7 @@ def eligible_statements(payload: Mapping[str, Any], *, market: str, economic_dat
                     excluded[f"{statement}.{frequency}:not_available_at_T"] += 1
                     continue
                 seen.add(period_end)
-                rows.append({"period_end": period_end, "availability": availability, "data": data})
+                rows.append({"period_end": period_end, "availability": availability, "available_on": available_on, "data": data})
             rows.sort(key=lambda row: row["period_end"], reverse=True)
             output[statement][frequency] = rows
     return output
@@ -351,11 +371,21 @@ def _first_number(data: Mapping[str, Any], *fields: str) -> float | None:
     return None
 
 
+def _consecutive_quarters(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether ``rows`` (newest first) are consecutive quarters: every period end one quarter (``QUARTER_GAP_DAYS``) after
+    the next older one."""
+    low, high = QUARTER_GAP_DAYS
+    return all(low <= (newer["period_end"] - older["period_end"]).days <= high for newer, older in zip(rows, rows[1:]))
+
+
 def _ttm(rows: Sequence[Mapping[str, Any]], yearly: Sequence[Mapping[str, Any]], fields: Mapping[str, tuple[str, ...]], *, offset: int = 0
          ) -> tuple[dict[str, float | None], str | None]:
-    """Sum of the four eligible quarters starting at ``offset`` (a span ≤ 400 days), else the latest eligible fiscal year."""
-    quarters = list(rows[offset:offset + TTM_QUARTERS])
-    if len(quarters) == TTM_QUARTERS and (quarters[0]["period_end"] - quarters[-1]["period_end"]).days <= TTM_MAX_SPAN_DAYS:
+    """Sum of the four eligible quarters starting at ``offset`` when the ``offset + 4`` newest eligible quarters are
+    CONSECUTIVE (a missing quarter is never bridged: as filed, no regulator has a Q4 report, and four quarters around the
+    hole would pass for a year; the prior period is then the year right before), else the latest eligible fiscal year."""
+    window = list(rows[:offset + TTM_QUARTERS])
+    if len(window) == offset + TTM_QUARTERS and _consecutive_quarters(window):
+        quarters = window[offset:]
         totals: dict[str, float | None] = {}
         for name, candidates in fields.items():
             values = [_first_number(quarter["data"], *candidates) for quarter in quarters]
@@ -424,6 +454,9 @@ def pit_fundamentals(payload: Mapping[str, Any], *, market: str, economic_date: 
     if prior_basis is None and len(income_y) >= 2:
         prior, prior_basis = {name: _first_number(income_y[1]["data"], *candidates) for name, candidates in INCOME_FIELDS.items()}, "previous_fiscal_year"
     cash_ttm, cash_basis = _ttm(cash_q, cash_y, CASH_FLOW_FIELDS)
+    for statement, quarters, basis in (("Income_Statement", income_q, ttm_basis), ("Cash_Flow", cash_q, cash_basis)):
+        if len(quarters) >= TTM_QUARTERS and basis != "four_quarters":  # four quarters around a gap are never a year
+            excluded[f"{statement}.quarterly:ttm_quarters_not_consecutive"] += 1
     balance = balance_q[0] if balance_q else (balance_y[0] if balance_y else None)
     balance_fields = _balance_fields(balance["data"]) if balance is not None else {"equity": None, "debt": None, "cash": None, "shares": None}
     shares, shares_availability = shares_at(payload, balance, market=market, economic_date=economic_date, excluded=excluded, hypotheses=hypotheses)
@@ -440,12 +473,16 @@ def pit_fundamentals(payload: Mapping[str, Any], *, market: str, economic_date: 
     cash_by_year = {row["period_end"]: row for row in cash_y}
     fiscal_years: list[dict[str, Any]] = []
     for row in income_y:
-        fields = _balance_fields(balance_by_year[row["period_end"]]["data"]) if row["period_end"] in balance_by_year else {"equity": None, "debt": None, "cash": None, "shares": None}
+        year_balance = balance_by_year.get(row["period_end"])
+        fields = _balance_fields(year_balance["data"]) if year_balance is not None else {"equity": None, "debt": None, "cash": None, "shares": None}
         net_debt = (fields["debt"] or 0.0) - (fields["cash"] or 0.0) if fields["debt"] is not None or fields["cash"] is not None else None
         dividends = _first_number(cash_by_year[row["period_end"]]["data"], "dividendsPaid") if row["period_end"] in cash_by_year else None
+        # the year's OWN share count, never the current one (a split in between would put the year's price and count in two units), with the
+        # day it was reported: its unit (a count reported after a split — a later filing's restated comparative — carries the split)
         fiscal_years.append({"fiscal_year_end": row["period_end"].isoformat(), "net_income": _first_number(row["data"], *INCOME_FIELDS["net_income"]),
                              "revenue": _first_number(row["data"], *INCOME_FIELDS["revenue"]), "ebitda": _first_number(row["data"], *INCOME_FIELDS["ebitda"]),
-                             "equity": fields["equity"], "net_debt": net_debt, "shares": fields["shares"] or shares, "dividends_paid": dividends,
+                             "equity": fields["equity"], "net_debt": net_debt, "shares": fields["shares"], "dividends_paid": dividends,
+                             "shares_reported_on": year_balance["available_on"].isoformat() if year_balance is not None and fields["shares"] is not None else None,
                              "availability": row["availability"]})
     periods = [row["period_end"] for rows in (income_q, income_y, balance_q, balance_y, cash_q, cash_y) for row in rows]
     net_debt_now = ((balance_fields["debt"] or 0.0) - (balance_fields["cash"] or 0.0)) if balance is not None else None
@@ -470,11 +507,20 @@ def _slug(value: Any) -> str:
     return "".join(character for character in str(value or "").lower() if character.isalnum())
 
 
+def _days_covered(start: date, end: date) -> int:
+    return (end - start).days + 1
+
+
 def as_filed_row(raw: Mapping[str, Any], *, as_of: datetime, refused: Counter[str]) -> dict[str, Any] | None:
     """One ``statement_vintages`` row normalised for the reconstruction, or ``None`` (counted, aggregate) when it cannot be
     read: an unknown statement/frequency, an unparseable period end, ``fields`` that are not an object, or an
     ``accepted_at`` without a zone — never guessed: the SEC's own submissions JSON shifts New York wall time by the UTC offset,
-    so only a zoned instant is evidence. A row accepted after ``T`` is not an error: it did not exist yet (skipped)."""
+    so only a zoned instant is evidence. A row accepted after ``T`` is not an error: it did not exist yet (skipped).
+
+    A FLOW row (income statement, cash flow) is a period with a duration: it must carry ``period_start`` and cover a
+    quarter (``QUARTER_DURATION_DAYS``) when quarterly, a fiscal year (``YEAR_DURATION_DAYS``) when yearly — a 10-Q's
+    year-to-date column (6 or 9 months) under the same period end would otherwise be summed as a quarter, or collide with
+    the three-month row (refused, counted). A balance row is an instant: its ``period_start`` is not read."""
     statement, frequency = _STATEMENT_NAMES.get(_slug(raw.get("statement"))), _FREQUENCY_NAMES.get(_slug(raw.get("frequency")))
     period_end = _parse_date(raw.get("period_end"))
     fields = raw.get("fields")
@@ -498,8 +544,47 @@ def as_filed_row(raw: Mapping[str, Any], *, as_of: datetime, refused: Counter[st
         return None
     if _utc(accepted_at) > _utc(as_of):
         return None
+    period_start: date | None = None
+    if statement in FLOW_STATEMENTS:
+        period_start = _parse_date(raw.get("period_start"))
+        if period_start is None or period_start > period_end:
+            refused["statement_vintages:flow_without_its_period_start"] += 1
+            return None
+        low, high = QUARTER_DURATION_DAYS if frequency == "quarterly" else YEAR_DURATION_DAYS
+        if not low <= _days_covered(period_start, period_end) <= high:
+            refused[f"statement_vintages:{frequency}_flow_of_another_duration"] += 1
+            return None
     return {"id": str(raw.get("id") or ""), "symbol": str(raw.get("symbol") or "").strip().upper(), "statement": statement, "frequency": frequency,
-            "period_end": period_end, "accepted_at": _utc(accepted_at), "fields": dict(fields)}
+            "period_start": period_start, "period_end": period_end, "accepted_at": _utc(accepted_at), "fields": dict(fields)}
+
+
+def _as_filed_entry(fields: Mapping[str, Any], *, period_end: date, accepted_at: datetime, market: str, vintage_id: str,
+                    derived: str | None = None) -> dict[str, Any]:
+    """A provider-shaped period stamped with the regulator's acceptance as EVIDENCE (``AS_FILED_AVAILABILITY``) and that
+    acceptance's date IN THE MARKET'S ZONE as ``filing_date`` (an acceptance at 23:00 New York is 03:00Z the next day)."""
+    availability: dict[str, Any] = {"kind": "evidence", "rule": "regulator_accepted_at", "period_end": period_end.isoformat(),
+                                    "available_at": accepted_at.isoformat(), "published_at_original": accepted_at.isoformat(), "vintage_id": vintage_id}
+    if derived is not None:
+        availability["derived"] = derived
+    return {**dict(fields), "date": period_end.isoformat(), "filing_date": accepted_at.astimezone(SESSION_ZONES[market]).date().isoformat(),
+            AS_FILED_AVAILABILITY: availability}
+
+
+def _first_three_quarters(year: Mapping[str, Any], quarters: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]] | None:
+    """Q1–Q3 of a fiscal year among its statement's quarterly rows (oldest first) — Q1 starting with the year, each next
+    quarter the day after the previous one ends (``CONTIGUITY_TOLERANCE_DAYS``) — when what is left of the year is itself a
+    quarter; else ``None`` (no Q4 is derived from a partial year)."""
+    chain: list[Mapping[str, Any]] = []
+    start = cast(date, year["period_start"])
+    for _ in range(3):
+        step = next((quarter for quarter in quarters if quarter["period_end"] < year["period_end"]
+                     and abs((cast(date, quarter["period_start"]) - start).days) <= CONTIGUITY_TOLERANCE_DAYS), None)
+        if step is None:
+            return None
+        chain.append(step)
+        start = cast(date, step["period_end"]) + timedelta(days=1)
+    low, high = QUARTER_DURATION_DAYS
+    return chain if low <= (cast(date, year["period_end"]) - cast(date, chain[-1]["period_end"])).days <= high else None
 
 
 def as_filed_payload(rows: Sequence[Mapping[str, Any]], *, market: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -508,7 +593,13 @@ def as_filed_payload(rows: Sequence[Mapping[str, Any]], *, market: str) -> tuple
     one accepted after ``T`` never reached here) — each row stamped with the regulator's acceptance as EVIDENCE
     (``AS_FILED_AVAILABILITY``: ``available_at`` = ``published_at_original`` = ``accepted_at``, the vintage id) and its
     date in the market's zone as ``filing_date``; plus the content reference the manifest hashes (``rows_sha256`` of the
-    rows used, so an older filing backfilled later is another run, a later amendment the same run)."""
+    rows used, so an older filing backfilled later is another run, a later amendment the same run).
+
+    The provider's shape has a Q4 and a Q4 balance; as filed, neither exists (the SEC and the CVM receive Q1–Q3 reports and
+    the annual one). So, as the provider does: a flow statement's missing Q4 is DERIVED as the fiscal year minus Q1–Q3
+    (field by field, only where all four carry it; available at the latest of the four acceptances), and a fiscal-year-end
+    balance with no quarterly row of that date is also the Q4 balance — otherwise the TTM would stop at Q3 (or bridge the
+    hole) and the latest balance would be Q3's while the annual one is known."""
     chosen: dict[tuple[str, str, date], Mapping[str, Any]] = {}
     for row in rows:
         key = (str(row["statement"]), str(row["frequency"]), cast(date, row["period_end"]))
@@ -518,29 +609,59 @@ def as_filed_payload(rows: Sequence[Mapping[str, Any]], *, market: str) -> tuple
     used: list[list[Any]] = []
     for (statement, frequency, period_end), row in sorted(chosen.items()):
         accepted_at = cast(datetime, row["accepted_at"])
-        availability = {"kind": "evidence", "rule": "regulator_accepted_at", "period_end": period_end.isoformat(), "available_at": accepted_at.isoformat(),
-                        "published_at_original": accepted_at.isoformat(), "vintage_id": row["id"]}
-        financials[statement][frequency][period_end.isoformat()] = {**dict(row["fields"]), "date": period_end.isoformat(),
-                                                                    "filing_date": accepted_at.astimezone(SESSION_ZONES[market]).date().isoformat(),
-                                                                    AS_FILED_AVAILABILITY: availability}
-        used.append([row["id"], statement, frequency, period_end.isoformat(), accepted_at.isoformat(), dict(row["fields"])])
-    return {"Financials": financials}, {"rows": len(used), "superseded_by_T": len(rows) - len(used), "rows_sha256": canonical_sha256(used)}
+        financials[statement][frequency][period_end.isoformat()] = _as_filed_entry(row["fields"], period_end=period_end, accepted_at=accepted_at, market=market,
+                                                                                   vintage_id=str(row["id"]))
+        period_start = row.get("period_start")
+        used.append([row["id"], statement, frequency, period_start.isoformat() if isinstance(period_start, date) else None, period_end.isoformat(),
+                     accepted_at.isoformat(), dict(row["fields"])])
+    derived = mirrored = 0
+    for (statement, frequency, period_end), year in sorted(chosen.items()):
+        if frequency != "yearly" or (statement, "quarterly", period_end) in chosen:
+            continue
+        if statement == "Balance_Sheet":
+            financials[statement]["quarterly"][period_end.isoformat()] = _as_filed_entry(
+                year["fields"], period_end=period_end, accepted_at=cast(datetime, year["accepted_at"]), market=market, vintage_id=str(year["id"]),
+                derived="fiscal_year_end_balance")
+            mirrored += 1
+            continue
+        quarters = sorted((row for (name, kind, _end), row in chosen.items() if name == statement and kind == "quarterly"), key=lambda row: row["period_end"])
+        chain = _first_three_quarters(year, quarters)
+        if chain is None:
+            continue
+        q4: dict[str, float] = {}
+        for field, value in _mapping(year["fields"]).items():
+            total, parts = _number(value), [_number(_mapping(quarter["fields"]).get(field)) for quarter in chain]
+            if total is not None and all(part is not None for part in parts):
+                q4[field] = total - sum(cast(list[float], parts))
+        financials[statement]["quarterly"][period_end.isoformat()] = _as_filed_entry(
+            q4, period_end=period_end, accepted_at=max(cast(datetime, row["accepted_at"]) for row in (year, *chain)), market=market,
+            vintage_id=f"q4:{year['id']}", derived="fiscal_year_minus_q1_q3")
+        derived += 1
+    return {"Financials": financials}, {"rows": len(used), "superseded_by_T": len(rows) - len(used), "rows_sha256": canonical_sha256(used),
+                                        "q4_derived": derived, "q4_balances_from_fiscal_year": mirrored}
 
 
 class StatementVintageStore:
     """Read-only access to ``statement_vintages`` (migration 051 of the as-filed front: SEC XBRL for the US, CVM for B3).
 
     The adapter's CONTRACT (``STATEMENT_VINTAGE_COLUMNS``): one row per (filing, statement, frequency, period) with ``id``,
-    ``market`` (B3, NASDAQ, NYSE or US), ``symbol``, ``statement`` (``Income_Statement``/``Balance_Sheet``/``Cash_Flow``,
-    aliases accepted), ``frequency`` (``quarterly``/``yearly``), ``period_end`` (date), ``accepted_at`` (timestamptz: the
-    regulator's acceptance as a TRUE instant — for the SEC the filing header's ACCEPTANCE-DATETIME read in
-    America/New_York, never the submissions JSON's ``acceptanceDateTime``; a producer that holds only a date stores the END
-    of that day) and ``fields`` (jsonb, keyed by the provider-normalised names the reconstruction reads: ``totalRevenue``,
-    ``netIncome``, ``totalStockholderEquity``, ``commonStockSharesOutstanding``, …). Append-only; never written here.
+    ``market`` (B3, NASDAQ, NYSE or US), ``symbol`` (the catalogue's symbol: ``PETR4``, ``AAPL`` — never a CVM company code,
+    a root or a provider suffix), ``statement`` (``Income_Statement``/``Balance_Sheet``/``Cash_Flow``, aliases accepted),
+    ``frequency`` (``quarterly``/``yearly``), ``period_start`` (date: the first day of a flow's period — a quarter for a
+    quarterly row, a fiscal year for a yearly one, never year-to-date; ``NULL`` for a balance sheet), ``period_end`` (date),
+    ``accepted_at`` (timestamptz: the regulator's acceptance as a TRUE instant — for the SEC the filing header's
+    ACCEPTANCE-DATETIME read in America/New_York, never the submissions JSON's ``acceptanceDateTime``; a producer that holds
+    only a date (the CVM's ``DT_RECEB``) stores the END of that day IN THE REGULATOR'S ZONE — 23:59:59.999999
+    America/Sao_Paulo for the CVM, America/New_York for the SEC —, never the end of the UTC day, which is 21:00 in Brasília
+    and would show a document received at 22:00 before it existed) and ``fields`` (jsonb, keyed by the provider-normalised
+    names the reconstruction reads: ``totalRevenue``, ``netIncome``, ``totalStockholderEquity``,
+    ``commonStockSharesOutstanding``, …). Append-only; never written here.
 
     No table → ``present()`` is ``False`` and the run is exactly the provider-payload run (no-op). A table WITHOUT the
-    contract's columns is a refusal naming them — never a silent fallback that would hide a schema drift. In memory the
-    double is ``Database._statement_vintages`` (a list of contract rows) when the attribute exists."""
+    contract's columns is a refusal naming them — never a silent fallback that would hide a schema drift; the as-filed
+    front's 051 as built (one row per document FACT: ``issuer_key``, ``concept``, ``unit``, ``value``) is named as such:
+    it needs a reader that maps its facts onto this contract before ``--statements auto|vintages`` can read it. In memory
+    the double is ``Database._statement_vintages`` (a list of contract rows) when the attribute exists."""
 
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -548,9 +669,13 @@ class StatementVintageStore:
 
     def _check_columns(self, columns: set[str]) -> None:
         missing = [column for column in STATEMENT_VINTAGE_COLUMNS if column not in columns]
+        if missing and FACT_SCHEMA_COLUMNS <= columns:
+            raise PitRerunInputError(f"{STATEMENT_VINTAGES_TABLE} holds one row per document FACT (issuer_key, concept, unit, value: the as-filed front's "
+                                     f"051), not the adapter's normalised statements {missing}: a reader mapping the facts onto the contract (concepts, "
+                                     "discrete quarters, the catalogue's symbols) must land first — run with --statements provider (the default)")
         if missing:
             raise PitRerunInputError(f"{STATEMENT_VINTAGES_TABLE} exists but lacks the adapter's columns {missing}: align the as-filed schema or run "
-                                     "with --statements provider")
+                                     "with --statements provider (the default)")
 
     def present(self) -> bool:
         if self._present is None:
@@ -588,7 +713,7 @@ class StatementVintageStore:
                 f"SELECT DISTINCT symbol FROM {STATEMENT_VINTAGES_TABLE} WHERE market = ANY(%s)", (markets,)).fetchall()}
             rows = connection.execute(
                 f"""
-                SELECT id::text, market, symbol, statement, frequency, period_end, accepted_at, fields
+                SELECT id::text, market, symbol, statement, frequency, period_start, period_end, accepted_at, fields
                 FROM {STATEMENT_VINTAGES_TABLE}
                 WHERE market = ANY(%s) AND accepted_at <= %s
                 """,
@@ -746,17 +871,16 @@ class PinnedPrices:
         """The sessions ≤ T where the raw and the adjusted closes move apart by at least ``CAPITAL_EVENT_MIN_FACTOR`` from the
         previous session (a split, a reverse split, a large bonus issue — a dividend under 20 % of the price never qualifies):
         the as-traded close changes unit there while the reported share counts change only at the next filing (P2-2). A
-        close that the provider retro-adjusted for splits shows none."""
+        close that the provider retro-adjusted for splits shows none. Each VALID bar (both closes positive) is compared
+        with the previous valid one, so an invalid bar on the event's own session never hides the event: it is dated at
+        the first valid session after it."""
         if symbol not in self._capital_events:
             bars = self.bars(symbol)
-            sessions = sorted(bars)
+            valid = [(session, cast(float, _positive(bars[session].get(PRICE_LEVEL_FIELD))), cast(float, _positive(bars[session].get(RETURN_FIELD))))
+                     for session in sorted(bars) if _positive(bars[session].get(PRICE_LEVEL_FIELD)) and _positive(bars[session].get(RETURN_FIELD))]
             threshold = math.log(CAPITAL_EVENT_MIN_FACTOR)
             events: list[str] = []
-            for previous, current in zip(sessions, sessions[1:]):
-                raw_before, raw_after = _positive(bars[previous].get(PRICE_LEVEL_FIELD)), _positive(bars[current].get(PRICE_LEVEL_FIELD))
-                adjusted_before, adjusted_after = _positive(bars[previous].get(RETURN_FIELD)), _positive(bars[current].get(RETURN_FIELD))
-                if raw_before is None or raw_after is None or adjusted_before is None or adjusted_after is None:
-                    continue
+            for (_before, raw_before, adjusted_before), (current, raw_after, adjusted_after) in zip(valid, valid[1:]):
                 if abs(math.log(raw_after / raw_before) - math.log(adjusted_after / adjusted_before)) >= threshold:
                     events.append(current)
             self._capital_events[symbol] = events
@@ -889,7 +1013,7 @@ class PitSourceResolver:
     pinned price series and the dated macro — plus the references, exclusions and hypotheses the manifest and the records
     declare. Reads the store only; never the network."""
 
-    def __init__(self, database: Database, *, market: str, as_of: datetime, prices: PinnedPrices, statements: str = "auto",
+    def __init__(self, database: Database, *, market: str, as_of: datetime, prices: PinnedPrices, statements: str = STATEMENTS_DEFAULT,
                  vintages: StatementVintageStore | None = None) -> None:
         if market not in MARKETS:
             raise PitRerunInputError(f"unknown market {market!r}")
@@ -903,6 +1027,7 @@ class PitSourceResolver:
         self.statements = statements
         self.vintages = vintages if vintages is not None else StatementVintageStore(database)
         self.vintages_present: bool | None = None  # None: not asked (--statements provider)
+        self.vintages_coverage: dict[str, int] | None = None  # None: not asked; else how deep the table covers the catalogue at T (aggregate)
         self.statements_basis: Counter[str] = Counter()
         self._as_filed: tuple[set[str], dict[str, list[dict[str, Any]]]] | None = None
         self.references: list[dict[str, Any]] = []
@@ -959,6 +1084,23 @@ class PitSourceResolver:
             self._as_filed = (covered, by_symbol)
         return self._as_filed
 
+    def _check_coverage(self, catalogue: Sequence[Mapping[str, Any]]) -> None:
+        """How the table covers the catalogue (``vintages_coverage``, in the summary) — and a refusal when it covers names
+        of the market but NONE of the catalogue's: a symbol format apart from the catalogue's would send every name to the
+        provider without a word (``auto``) or leave none evaluable (``vintages``)."""
+        if self.statements == "provider":
+            return
+        covered, by_symbol = self._as_filed_rows()
+        if not self.vintages_present:
+            return
+        names = {str(row["symbol"]) for row in catalogue}
+        matched = covered & names
+        if covered and names and not matched:
+            raise PitRerunInputError(f"{STATEMENT_VINTAGES_TABLE} covers {len(covered)} {self.market} name(s) and none of the catalogue's {len(names)}: its "
+                                     "symbols are not the catalogue's (a CVM company code, a root such as PETR for PETR4, a provider suffix such as .US?) "
+                                     "— align them or run with --statements provider")
+        self.vintages_coverage = {"covered": len(covered), "covered_in_catalogue": len(matched), "covered_without_rows_by_T": len(matched - set(by_symbol))}
+
     def _statements_payload(self, market: str, symbol: str) -> tuple[dict[str, Any] | None, str]:
         """The payload the reconstruction reads for one name and its basis: the as-filed ``Financials`` (+ the provider's
         ``outstandingShares`` only when the as-filed balance eligible at T carries no share count) for a covered name; the
@@ -993,8 +1135,9 @@ class PitSourceResolver:
         fundamentals = pit_fundamentals(payload, market=market, economic_date=self.economic_date)
         for key, count in fundamentals["excluded"].items():
             self.excluded[key] += count
-        if not fundamentals["eligible"]:
-            self.not_evaluable[symbol] = "no_statement_available_at_T"
+        if not fundamentals["eligible"]:  # a covered name with no acceptance by T says so: a shallow backfill shrinks the grid by name, never silently
+            covered_but_unfiled = basis == BASIS_VINTAGES and not self._as_filed_rows()[1].get(symbol)
+            self.not_evaluable[symbol] = "statement_vintages_none_accepted_by_T" if covered_but_unfiled else "no_statement_available_at_T"
             return None
         if self.prices.valid_sessions(symbol) < MIN_VALID_SESSIONS:
             self.not_evaluable[symbol] = f"fewer_than_{MIN_VALID_SESSIONS}_valid_sessions_at_T"
@@ -1030,11 +1173,15 @@ class PitSourceResolver:
         key_metrics: list[dict[str, Any]] = []
         for year in fundamentals["fiscal_years"]:
             fiscal_end = date.fromisoformat(year["fiscal_year_end"])
-            fy_price, _session = self.prices.price_at(symbol, on=fiscal_end)
+            fy_price, fy_session = self.prices.price_at(symbol, on=fiscal_end)
             fy_shares = year["shares"]
             if fy_price is None or not fy_shares:
                 self.excluded["fiscal_year:no_price_or_shares"] += 1
                 continue
+            reported_on = str(year["shares_reported_on"] or "")
+            if any(str(fy_session) < session <= reported_on for session in self.prices.capital_events(symbol)):  # P2-2 per year: the close of the
+                self.excluded["fiscal_year:capital_event_between_price_and_shares_report"] += 1  # year's session and a count reported after a split
+                continue  # (an annual filing after it, or a later filing's restated comparative) are in two units: the year's ratios would be off by the factor
             fy_eps = year["net_income"] / fy_shares if year["net_income"] is not None else None
             fy_equity = year["equity"]
             fy_mcap = fy_price * fy_shares
@@ -1075,6 +1222,7 @@ class PitSourceResolver:
         """The ``loaded`` mapping of ``_contexts`` (every role/market of ``_SOURCE_SPECS`` present; peer markets rebuilt when
         their snapshots exist, empty otherwise), with peers = the same-sector names of the peer markets."""
         catalogue = self.catalogue(self.market)
+        self._check_coverage(catalogue)
         self.prices.build_proxy([row["symbol"] for row in catalogue])
         inputs_by_market: dict[str, dict[str, dict[str, Any]]] = {market: {} for market in MARKETS}
         for catalogue_row in catalogue:
@@ -1252,7 +1400,8 @@ class PitComputation:
                 "hypotheses": sum(len(items) for items in self.resolver.hypotheses.values()), "calibration": self.calibration["status"],
                 "macro_as_of": self.macro.macro_as_of(self.market).isoformat(), "price_vintage": self.manifest["price_vintage"]["publication_id"],
                 "price_basis_evidence": dict(self.resolver.price_basis_evidence),
-                "statements": {"mode": self.resolver.statements, "table_present": self.resolver.vintages_present, "basis": dict(sorted(self.resolver.statements_basis.items()))},
+                "statements": {"mode": self.resolver.statements, "table_present": self.resolver.vintages_present, "basis": dict(sorted(self.resolver.statements_basis.items())),
+                               "coverage": self.resolver.vintages_coverage},
                 "price_pin": dict(self.price_pin),  # pointers only: the run_key names the vintage by its publication and bars hash,
                 "catalogue_snapshot_id": self.resolver.catalogue_snapshot_id}  # and the catalogue by its classification hash
 
@@ -1292,7 +1441,7 @@ class PitRerunService:
         operator's ``--price-pinned-at`` (P2-1)."""
         return PinnedPrices(self.price_history, market, as_of=as_of, pinned_at=pinned_at, pin_mode="explicit" if explicit else "run_start")
 
-    def compute(self, market: str, *, as_of: datetime, prices: PinnedPrices, statements: str = "auto") -> PitComputation:
+    def compute(self, market: str, *, as_of: datetime, prices: PinnedPrices, statements: str = STATEMENTS_DEFAULT) -> PitComputation:
         """The ECONOMIC computation: T, the filters, the engine's ``today``, the macro ``as_of``, the consensus cut — nothing
         here reads ``now`` (pinned by the exploding-clock test). ``statements`` (``--statements``): ``auto`` reads a name's
         as-filed statements when ``statement_vintages`` covers it, else the provider payload (no table: unchanged);
@@ -1370,7 +1519,7 @@ class PitRerunService:
                 "source_version": computation.source_version, "manifest_sha256": computation.manifest["manifest_sha256"], **computation.summary()}
 
     def rerun(self, market: str, *, as_of: datetime, clock: Callable[[], datetime] | None = None, price_pinned_at: datetime | None = None,
-              statements: str = "auto") -> tuple[dict[str, Any], PitComputation]:
+              statements: str = STATEMENTS_DEFAULT) -> tuple[dict[str, Any], PitComputation]:
         """One run. ``price_pinned_at`` (P2-1, ``--price-pinned-at``) replaces the run-start clock as the vintage cut, so every
         run of a grid resolves ONE publication whatever the nightly series publishes meanwhile; it must carry a zone and lie
         at or before the run start (a pin in the future would resolve another vintage when re-run: not a pin)."""
@@ -1527,8 +1676,8 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     parser.add_argument("--price-pinned-at", default=None, help="with --rerun: resolve the price vintage published before this ISO-8601 instant WITH zone "
                                                                 "(default: the run start) — one vintage for every run of a grid")
     parser.add_argument("--statements", choices=STATEMENTS_MODES, default=None,
-                        help="with --rerun: auto (default) = as-filed statement_vintages for a covered name, else the provider payload (no table: "
-                             "unchanged); provider = never the table; vintages = as-filed only")
+                        help="with --rerun: provider (default) = never the table; auto = as-filed statement_vintages for a covered name, else the "
+                             "provider payload (no table: unchanged); vintages = as-filed only")
     parser.add_argument("--no-macro", action="store_true", help="with --fetch: skip the macro history")
     args = parser.parse_args(argv)
     if args.rerun and args.as_of is None:
@@ -1552,7 +1701,7 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     as_of = _cli_instant(parser, "--as-of", str(args.as_of))
     price_pinned_at = _cli_instant(parser, "--price-pinned-at", str(args.price_pinned_at)) if args.price_pinned_at is not None else None
     service = PitRerunService(database, settings=settings)
-    receipt, computation = service.rerun(args.market, as_of=as_of, price_pinned_at=price_pinned_at, statements=args.statements or "auto")
+    receipt, computation = service.rerun(args.market, as_of=as_of, price_pinned_at=price_pinned_at, statements=args.statements or STATEMENTS_DEFAULT)
     if args.detail is not None:
         write_private_detail(args.detail, {"schema": f"{SCHEMA_VERSION}:detail", "run_key": receipt["run_key"], "cycle_id": receipt["cycle_id"],
                                            "results": computation.results, "not_evaluable": dict(computation.resolver.not_evaluable),
