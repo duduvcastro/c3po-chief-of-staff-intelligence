@@ -216,6 +216,23 @@ Rev 9 / P1 — the declared residue closed, the receipt the owner reads, the ord
 * THE ORDER AS A COMMAND: ``--switch-to-internal --before-after-sha256 H --reason …`` (and ``--rollback-to-blend --reason …``,
   never locked) take the same proposal options as ``--before-after`` and execute ``select_generation`` with the host's wall
   clock; they print the new generation without the targeted symbols.
+
+Rev 9 / P1, cross-review (2026-10-17):
+* THE FREEZE (F1): the lock commit is merged and deployed AFTER the owner accepts the receipt, so the head must not move
+  between the receipt and the order — yet the IR worker republishes the B3 universe on every disclosure, a One Pager
+  admits a targeted cycle, the deploy restarts the workers. ``freeze_selection`` (CLI ``--freeze-selection --until …``) is
+  an explicit order that re-selects the head's OWN composition (nothing served changes but the generation id) and carries
+  ``receipt.freeze.until`` (at most ``FREEZE_MAX`` ahead): while the HEAD carries an unexpired freeze the automatic writers
+  (the activation pass, the targeted admission, the bootstrap) activate nothing over it, the IR propagation leaves its
+  queue untouched and the B3 producer builds no on-demand cycle — so the receipt computed on the frozen head still
+  recomputes when the order lands, and nothing produced in the window is then held by the order (W1). The switch or the
+  rollback ends it (an explicit order; its receipt names ``ended_freeze``); past ``until`` everything resumes by itself;
+* ``--keep-internal-targeted`` (F2): the proposal keeps the head's targeted admissions that are valid for the internal
+  source and drops the others — no longer a blanket purge of valid rev-9 targeted cycles (a purged same-day cycle is
+  never rebuilt by the producer that day, so its One Pager failed until the next day);
+* THE RATING (F3): the receipt counts, per arm, the One Pager rating of the served upside (``ONE_PAGER_RATING_CUTS``,
+  mirrored from the pinned ``one_pager.py``) besides the candidate gate (``BUY_STATUS``), and the summary no longer calls
+  the candidate gate "COMPRA" — the word the One Pager uses for its rating.
 """
 from __future__ import annotations
 
@@ -248,7 +265,13 @@ RECORDABLE_SOURCES: tuple[str, ...] = (*OFFICIAL_SOURCES, SOURCE_V3_2_SHADOW)
 OFFICIAL_TP_REPLACEMENT_AUTHORIZED = False  # the Passo 1 lock (spec §7-bis item 4): a switch to SOURCE_INTERNAL is refused while False; flips ONLY by a commit citing the mesa's receipt
 OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = None  # the before/after report_sha256 the owner accepted, named by the commit that flips the lock: a switch must cite exactly it
 BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V3"  # V3 (rev 9): the served view of both arms (status/BUY/upside/score); V2 (C395-1) bound the AFTER composition
-BUY_STATUS = "full_match"  # what the receipt counts as BUY: the screeners' candidate gate (the B3 list also dedups issuers and asks the power zone)
+BUY_STATUS = "full_match"  # what the receipt counts as a CANDIDATE: the screeners' candidate gate (the B3 list also dedups issuers and asks the power zone)
+ONE_PAGER_RATING_CUTS: tuple[tuple[str, float], ...] = (  # the One Pager's rating of the upside (one_pager.py, pinned): the first cut the upside reaches
+    ("COMPRA", 25.0), ("ACUMULAR", 10.0), ("NEUTRO", -10.0),
+)
+ONE_PAGER_RATING_FLOOR = "REDUZIR"  # below the last cut
+FREEZE_MAX = timedelta(hours=16)  # the longest freeze the mesa may order (F1): from the morning receipt to the evening order
+FREEZE_NIGHTLY_ZONE = ZoneInfo("America/Sao_Paulo")  # the valuation worker's nightly cycle is due at midnight here: a freeze never spans it (F1)
 INTERNAL_VIEW_KEYS = {  # served key → the producer's internal-view field (rev 9): the TP-dependent tail of the row on the internal TP
     "score": "internal_score", "status": "internal_status", "expected_total_return_percent": "internal_expected_total_return_percent",
 }
@@ -777,6 +800,82 @@ def _selected_source(generation: Mapping[str, Any] | None) -> str | None:
     return None
 
 
+def selection_freeze(generation: Mapping[str, Any] | None, *, now: datetime) -> dict[str, Any] | None:
+    """The freeze the HEAD carries and that still holds at ``now`` (F1) — ``{"generation_id", "until", "reason"}`` — or
+    ``None``. Only an explicit order written by ``freeze_selection`` carries one, and only the head's counts: while a head
+    is frozen no automatic writer chains on it, so the next generation is an order of the mesa (the switch, the rollback, a
+    new freeze) or — once ``until`` has passed — the first automatic pass, and either way the freeze is gone. Always
+    bounded: ``until`` never reads later than the order's own ``activated_at`` + ``FREEZE_MAX``, and an unreadable ``until``
+    (never written by this module) reads as that bound."""
+    receipt = (generation or {}).get("receipt") or {}
+    freeze = receipt.get("freeze")
+    if not generation or not isinstance(freeze, Mapping) or receipt.get("explicit") is not True:
+        return None
+    bound = _utc(generation["activated_at"]) + FREEZE_MAX
+    try:
+        until = min(_utc(freeze.get("until")), bound)
+    except (TypeError, ValueError):
+        until = bound
+    if _utc(now) >= until:
+        return None
+    return {"generation_id": str(generation["generation_id"]), "until": until.isoformat(), "reason": receipt.get("reason")}
+
+
+def selection_frozen(database: Any, *, now: datetime | None = None) -> dict[str, Any] | None:
+    """``selection_freeze`` of the generation in force at ``now`` (the wall clock by default): what a producer asks before
+    publishing a cycle the frozen head could not take (the IR propagation, the on-demand B3 valuation, F1)."""
+    return selection_freeze(database.latest_valuation_official_selection(), now=now or datetime.now(timezone.utc))
+
+
+def freeze_selection(database: Any, *, now: datetime, until: datetime, reason: str, activated_by: str) -> dict[str, Any]:
+    """The mesa's FREEZE (F1): an explicit order that re-selects the head's OWN composition — cycles, targeted admissions
+    (normalized as the automatic carry-over does), source, ``source_version`` and session dates, nothing validated anew and
+    nothing served changed but the generation id and its stamp — with ``receipt.freeze = {"until": …}``. Until then the
+    automatic writers (``activate_generation_if_changed``, ``admit_targeted_cycle``, the bootstrap) activate nothing over it,
+    the IR propagation leaves its queue untouched and the B3 producer builds no on-demand cycle (``selection_frozen``): the
+    before/after receipt computed on the frozen head still recomputes when the order lands — after the lock commit's review,
+    merge and deploy — and nothing is produced in the window for the order to hold (W1). The switch or the rollback (both
+    explicit) ends it, naming it in ``receipt.ended_freeze``; past ``until`` everything resumes by itself (the first
+    universe publication or ``--bootstrap`` composes the pending cycles; they were predicted after the freeze, so W1 lets
+    them in). Like every order it is authoritative over the cycles predicted at or before it (W1/Z2) — the head's own, in
+    practice. ``now`` is the mesa's wall clock (W2: not ahead of ours by more than ``EXPLICIT_CLOCK_TOLERANCE``); ``until``
+    must be after it, at most ``FREEZE_MAX`` ahead and not past the next midnight in ``FREEZE_NIGHTLY_ZONE`` (the nightly
+    cycle is never frozen out). ``ValueError`` without a generation in force, under a head whose source is unknown (Q3:
+    roll back first), on a naive or out-of-bounds ``until``, or when the chain moves meanwhile (the mesa re-reads)."""
+    instant = _utc(now)
+    wall = datetime.now(timezone.utc)
+    if instant > wall + EXPLICIT_CLOCK_TOLERANCE:
+        raise ValueError(f"activation clock {instant.isoformat()} is in the future by more than {int(EXPLICIT_CLOCK_TOLERANCE.total_seconds())} s "
+                         f"(wall clock {wall.isoformat()}) — the order carries the mesa's wall clock")
+    if not isinstance(until, datetime) or until.tzinfo is None:
+        raise ValueError(f"the freeze's until must be an aware instant (an offset or a zone), got {until!r}")
+    end = _utc(until)
+    local = instant.astimezone(FREEZE_NIGHTLY_ZONE)
+    midnight = datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tzinfo=FREEZE_NIGHTLY_ZONE).astimezone(timezone.utc)
+    if end <= instant:
+        raise ValueError(f"the freeze's until {end.isoformat()} is not after the order's clock {instant.isoformat()}")
+    if end > instant + FREEZE_MAX or end > midnight:
+        raise ValueError(f"the freeze's until {end.isoformat()} is too far: at most {FREEZE_MAX} after the order and never past the nightly cycle "
+                         f"({midnight.isoformat()}, midnight in {FREEZE_NIGHTLY_ZONE})")
+    current = database.latest_valuation_official_selection()
+    if current is None:
+        raise ValueError("no official generation in force: nothing to freeze (bootstrap the blend first)")
+    source = _selected_source(current)
+    if source is None:
+        raise ValueError(f"the generation in force ({current.get('generation_id')}) selects an unknown source {current.get('source')!r}: "
+                         "it is not frozen — roll back to the blend by explicit order first (Q3)")
+    receipt = {"reason": reason, "explicit": True, "freeze": {"until": end.isoformat(), "of_generation": str(current["generation_id"])}}
+    generation = _new_generation(
+        database, expected_previous=str(current["generation_id"]), cycles=current["cycles"],
+        targeted=_normalized_targeted(current.get("targeted") or {}, strict=False), source=source, source_version=str(current["source_version"]),
+        session_dates=dict(current.get("session_dates") or {}), now=instant, activated_by=activated_by, receipt=receipt, strict=True,
+    )
+    assert generation is not None  # strict mode raises instead of returning None
+    logger.info("valuation_official: the mesa froze the selection on generation %s until %s (%s) — the automatic writers activate nothing until "
+                "then, or until the mesa's next order", generation["generation_id"], end.isoformat(), reason)
+    return generation
+
+
 def record_snapshot(database: Any, snapshot: Mapping[str, Any]) -> dict[str, Any]:
     """Called by the persistence layer right after a producer publishes a cycle: turns the cycle's rows into
     prediction records FIRST (both official sources, Passo 1), then (universe cycles) activates a new generation when
@@ -1075,12 +1174,19 @@ def activate_generation_if_changed(database: Any) -> dict[str, Any] | None:
     source — a switch ordered by the mesa is never undone by the next pass, and a market whose new cycle has no records
     of the selected source (a cycle produced before Passo 1, for an internal generation) is carried over. A head whose
     source is unknown activates NOTHING (Q3, ERROR logged by ``_selected_source``): the pass never composes a blend
-    generation over it — the mesa rolls back by explicit order."""
+    generation over it — the mesa rolls back by explicit order.
+    A head FROZEN by the mesa (``selection_freeze``, F1) activates nothing either (INFO): the cycles stay recorded and the
+    first pass after the freeze — or the mesa's order — decides over them; the freeze is read on every attempt."""
     for attempt in range(RECOMPOSITION_ATTEMPTS):
         current = database.latest_valuation_official_selection()
         selected = _selected_source(current)
         if selected is None:
             return None  # Q3: an unknown head source is not a source to compose for; the ERROR is logged, the health says so
+        freeze = selection_freeze(current, now=datetime.now(timezone.utc))
+        if freeze is not None:
+            logger.info("valuation_official: the selection is frozen by the mesa's order %s until %s — nothing activated by this pass; the cycles "
+                        "stay recorded (F1)", freeze["generation_id"], freeze["until"])
+            return None
         candidates = selectable_cycles(database, source=selected)
         order = database.latest_explicit_valuation_official_selection() if current else None  # the mesa's last order, once (W1/W3)
         authority = _utc(order["activated_at"]) if order else None
@@ -1153,7 +1259,9 @@ def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[s
     old cycle (``record_snapshot`` on a snapshot recorded long ago, with no order after it) no longer downgrades the
     served number and flip-flops the chain with the next pass. The held cycle is read from the head's map NORMALIZED
     (the same map the carry-over writes, U1): a legacy key not written clean (``wege3``, which Y4 tolerates) is still
-    the held cycle for this rule and for the early return — it no longer lets the replay through as if nothing were held."""
+    the held cycle for this rule and for the early return — it no longer lets the replay through as if nothing were held.
+    Nothing is admitted over a head FROZEN by the mesa (``selection_freeze``, F1; INFO): the cycle stays recorded and the
+    first activation pass after the freeze recovers it (it was predicted after the freeze order, Z2)."""
     clean = symbol.strip().upper()
     validation: dict[str, Any] | None = None
     for attempt in range(RECOMPOSITION_ATTEMPTS):
@@ -1163,6 +1271,11 @@ def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[s
         selected = _selected_source(current)  # every record read below is of the head's source (Passo 1)
         if selected is None:
             return None  # Q3: nothing is admitted under a head whose source is unknown (ERROR logged); the mesa rolls back
+        freeze = selection_freeze(current, now=datetime.now(timezone.utc))
+        if freeze is not None:
+            logger.info("valuation_official: targeted cycle %s for %s not admitted — the selection is frozen by the mesa's order %s until %s (F1)",
+                        cycle_id, clean, freeze["generation_id"], freeze["until"])
+            return None
         carried = _normalized_targeted(current.get("targeted") or {}, strict=False)  # the head's admissions as they are served (Y4, U1)
         held_cycle = carried.get(clean)
         if held_cycle == str(cycle_id):
@@ -1241,7 +1354,9 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
     rollback to the blend stamps ``"rollback"`` (the Passo 0 behaviour) — a switch is never stamped ``"rollback"``.
     The ROLLBACK to the blend is this same call with ``source=SOURCE_OFFICIAL`` and the previous generation's cycles:
     never locked, no hash required — and the way out of a head whose source is unknown (Q3). When the source changes,
-    ``receipt.source_switch`` names ``from`` (the head's source as stored)/``to``/hash."""
+    ``receipt.source_switch`` names ``from`` (the head's source as stored)/``to``/hash. An order over a head the mesa FROZE
+    (``freeze_selection``, F1) lands as on any head — the freeze holds the automatic writers, never the mesa — and ends the
+    freeze: ``receipt.ended_freeze`` names it."""
     if source not in OFFICIAL_SOURCES:
         raise ValueError(f"unknown official source {source!r}; expected one of {OFFICIAL_SOURCES}")
     if source != SOURCE_OFFICIAL:
@@ -1305,7 +1420,10 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
                              f"commit): {str(before_after_sha256)[:12]}… is the receipt of the generation in force over this proposal but not the "
                              "accepted one — the head moved or the proposal changed since the acceptance; a new receipt needs a new acceptance "
                              "and a new lock commit")
-    receipt: dict[str, Any] = {"reason": reason, "explicit": True}  # the marker of an order — written here and nowhere else (W3)
+    receipt: dict[str, Any] = {"reason": reason, "explicit": True}  # the marker of an order — written here and by freeze_selection, nowhere else (W3)
+    frozen = selection_freeze(current, now=instant)
+    if frozen is not None:  # F1: this order ends the mesa's freeze (the automatic writers chain on it again) — named for the audit
+        receipt["ended_freeze"] = {"generation_id": frozen["generation_id"], "until": frozen["until"]}
     if current is not None and current.get("source") != source:  # a switch or a rollback of the SOURCE: named in the receipt (Passo 1) — as STORED, so
         receipt["source_switch"] = {"from": current.get("source"), "to": source, "before_after_sha256": before_after_sha256}  # an unknown source is named (Q3)
     generation = _new_generation(
@@ -1556,11 +1674,12 @@ def selection_health(database: Any, *, now: datetime) -> dict[str, Any]:
     of the head when the head (``max(activated_at)``) is not the chain tip — a row chained behind its predecessor; the
     next activation chains on the tip (W4). A head whose source is unknown (Q3) is ``status = "error"``: ``source`` is
     ``None``, ``unknown_source`` names what the row carries, and the detail says nothing is served until the mesa rolls
-    back by explicit order."""
+    back by explicit order. ``freeze`` is the mesa's freeze holding the head at ``now`` (``selection_freeze``, F1) or
+    ``None``; a frozen head keeps its status (the freshness is reported as it is) and the detail says until when."""
     current = current_generation(database)
     if not current:
         return {"status": "none", "generation_id": None, "source": None, "unknown_source": None, "markets": {}, "head_has_successor": None,
-                "detail": "no official generation in force — screeners serve nothing"}
+                "freeze": None, "detail": "no official generation in force — screeners serve nothing"}
     source = _selected_source(current)
     successor = database.valuation_official_selection_successor(str(current["generation_id"]))
     today = _utc(now)
@@ -1592,6 +1711,9 @@ def selection_health(database: Any, *, now: datetime) -> dict[str, Any]:
         detail += f"; calendar unavailable: {', '.join(unavailable)}"
     if successor:
         detail += f"; the head has a successor dated behind it ({successor['generation_id']}) — the next activation chains on the chain tip"
+    freeze = selection_freeze(current, now=today)
+    if freeze is not None:
+        detail += f"; frozen by the mesa's order until {freeze['until']} — no automatic activation until then or the mesa's next order (F1)"
     status = "stale" if stale else "ok"
     if source is None:  # Q3: loud on the card too — nothing is served under this head
         status = "error"
@@ -1600,7 +1722,7 @@ def selection_health(database: Any, *, now: datetime) -> dict[str, Any]:
     return {"status": status, "generation_id": current["generation_id"], "source": source,
             "unknown_source": None if source is not None else current.get("source"),
             "activated_at": current["activated_at"], "markets": markets, "stale_markets": stale, "calendar_unavailable": unavailable,
-            "head_has_successor": str(successor["generation_id"]) if successor else None, "detail": detail}
+            "head_has_successor": str(successor["generation_id"]) if successor else None, "freeze": freeze, "detail": detail}
 
 
 def bootstrap_official_selection(database: Any) -> dict[str, Any]:
@@ -1676,6 +1798,17 @@ def _report_view(database: Any, generation: Mapping[str, Any], market: str, reco
     return _served(row, record, generation=generation, cycle_id=cycle_id, scope=str(record.get("scope") or "universe"), market=market)
 
 
+def one_pager_rating(upside_percent: Any) -> str | None:
+    """The One Pager's rating of an upside (F3): the first of ``ONE_PAGER_RATING_CUTS`` it reaches, else
+    ``ONE_PAGER_RATING_FLOOR`` — the rule of the pinned ``one_pager.py``, mirrored (a test reads its line). ``None`` without
+    an upside. The receipt applies it to the SERVED upside (the TP over the cycle's price); the One Pager applies it to the
+    price it quotes when generated."""
+    upside = _number(upside_percent)
+    if upside is None:
+        return None
+    return next((rating for rating, cut in ONE_PAGER_RATING_CUTS if upside >= cut), ONE_PAGER_RATING_FLOOR)
+
+
 def _status_block(pairs: list[tuple[str, str]]) -> dict[str, Any]:
     """Status counts of each arm and the transitions (``before->after``, only the changed ones) over the served pairs."""
     before: dict[str, int] = {}
@@ -1713,7 +1846,9 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     a consumer: the blend row, and the internal record under the producer's internal view — over the ``served_pairs`` (the
     pairs served on BOTH sides; ``before_unservable``/``after_unservable`` count the rest: a cycle row gone, or an after row
     without the internal view — a cycle produced before rev 9, which the validator also refuses): ``status`` (counts per
-    arm, ``changed``, ``transitions``), ``buy`` (``BUY_STATUS`` before/after/entered/left), ``upside_percent`` (quantiles of
+    arm, ``changed``, ``transitions``), ``rating`` (the same block for the One Pager rating of each arm's served upside,
+    ``one_pager_rating``; the cuts are in ``rating_cuts``, F3), ``buy`` (the candidate gate ``BUY_STATUS``
+    before/after/entered/left), ``upside_percent`` (quantiles of
     each arm and of the change in percentage points), ``score_change`` (points) and ``tp_validation`` (validated counts,
     null for a market whose rows carry no TP validation). The AGGREGATE (returned, printable) names no symbol;
     ``report_sha256`` is the canonical hash of the aggregate without itself — the hash the mesa's order to switch cites
@@ -1782,6 +1917,8 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
                     "validated_blend": shown_before.get("tp_validation_status") == "validated",
                     "validated_internal": shown_after.get("tp_validation_status") == "validated",
                 }
+                view["rating_blend"] = one_pager_rating(view["upside_blend"]) or "unknown"  # F3: what the owner reads on a One Pager
+                view["rating_internal"] = one_pager_rating(view["upside_internal"]) or "unknown"
                 validation_present = validation_present or "tp_validation_status" in shown_before or "tp_validation_status" in shown_after
                 pair.update(view)
                 served.append(view)
@@ -1795,6 +1932,7 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
             "tp": _ratio_stats(tp_ratios), "tp_change_buckets": _change_buckets(tp_ratios),
             "buy_in": _ratio_stats([pair["buy_in_ratio"] for pair in pairs.values()]),
             "status": _status_block([(view["status_blend"], view["status_internal"]) for view in served]),
+            "rating": _status_block([(view["rating_blend"], view["rating_internal"]) for view in served]),  # F3: the One Pager rating of the served upside
             "buy": {"status": BUY_STATUS, "before": sum(view["status_blend"] == BUY_STATUS for view in served),
                     "after": sum(view["status_internal"] == BUY_STATUS for view in served),
                     "entered": sum(view["status_blend"] != BUY_STATUS and view["status_internal"] == BUY_STATUS for view in served),
@@ -1822,6 +1960,7 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
         "session_dates": dict(resolved.get("session_dates") or {}),
         "source_version": resolved.get("source_version"),
         "buy_status": BUY_STATUS,
+        "rating_cuts": {**{rating: cut for rating, cut in ONE_PAGER_RATING_CUTS}, ONE_PAGER_RATING_FLOOR: None},  # F3: the cuts the ratings were read with
         "markets": markets,
         "p90_method": P90_METHOD,
         "private_detail_sha256": canonical_sha256(detail),
@@ -1842,8 +1981,15 @@ def _pt_number(value: Any, *, digits: int = 1, suffix: str = "", signed: bool = 
     return text.replace(".", ",") + suffix
 
 
-def _pt_counts(block: Mapping[str, Any] | None) -> str:
-    return ", ".join(f"`{name}` {count}" for name, count in (block or {}).items()) or "—"
+def _pt_counts(block: Mapping[str, Any] | None, *, quoted: bool = True) -> str:
+    return ", ".join(f"`{name}` {count}" if quoted else f"{name} {count}" for name, count in (block or {}).items()) or "—"
+
+
+def _pt_cuts(cuts: Any) -> str:
+    """The rating cuts as the owner reads them: ``COMPRA ≥ 25 %, …, REDUZIR abaixo`` (the floor has no cut)."""
+    items = [(str(name), _number(cut)) for name, cut in (cuts.items() if isinstance(cuts, Mapping) else [])]
+    items.sort(key=lambda item: (item[1] is None, -(item[1] or 0.0)))  # highest cut first, the floor last — whatever order the JSON kept
+    return ", ".join(f"{name} ≥ {_pt_number(cut, digits=0, suffix=' %')}" if cut is not None else f"{name} abaixo" for name, cut in items) or "n/d"
 
 
 def before_after_markdown(report: Mapping[str, Any]) -> str:
@@ -1858,21 +2004,27 @@ def before_after_markdown(report: Mapping[str, Any]) -> str:
         f"- Antes: geração `{report.get('generation_id')}` servindo `{report.get('source_from')}` (fonte em vigor: `{report.get('generation_source')}`)",
         f"- Depois: `{report.get('source_to')}`, versão `{report.get('after_source_version')}`, "
         f"{report.get('after_targeted_count')} direcionado(s) (hash `{str(report.get('after_targeted_sha256') or '')[:12]}…`)",
-        f"- COMPRA = status `{report.get('buy_status')}` (o portão de Candidatos; a lista B3 ainda deduplica emissores e exige a zona de poder)",
+        f"- **Candidato** = status `{report.get('buy_status')}` (o portão da lista de Candidatos; a lista B3 ainda deduplica emissores e exige a "
+        "zona de poder) — **não** é o rating do One Pager",
+        f"- **Rating do One Pager** = faixa do upside do TP servido ({_pt_cuts(report.get('rating_cuts'))}), sobre o preço do ciclo — o One Pager "
+        "aplica os mesmos cortes à cotação do momento em que é gerado",
         "",
-        "| Mercado | Pares | Só no blend | Servidos nos dois | Sem visão interna | COMPRA antes → depois | Entram | Saem "
-        "| Mudam de status | ΔTP mediana | ΔTP p10 / p90 | Upside mediano antes → depois |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Mercado | Pares | Só no blend | Servidos nos dois | Sem visão interna | Candidatos antes → depois | Entram | Saem "
+        "| Mudam de status | COMPRA (One Pager) antes → depois | Mudam de rating | ΔTP mediana | ΔTP p10 / p90 | Upside mediano antes → depois |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for market in MARKETS:
         if market not in markets:
             continue
         item = markets[market]
         tp, buy, upside = item.get("tp") or {}, item.get("buy") or {}, item.get("upside_percent") or {}
+        rating = item.get("rating") or {}
+        top = ONE_PAGER_RATING_CUTS[0][0]
         ratio = {key: _pt_number(tp.get(key), digits=2, suffix=" %", signed=True, scale=100) for key in ("median", "p10", "p90")}
         lines.append(
             f"| {market} | {item.get('n')} | {item.get('missing_internal')} | {item.get('served_pairs')} | {item.get('after_unservable')} "
             f"| {buy.get('before')} → {buy.get('after')} | {buy.get('entered')} | {buy.get('left')} | {(item.get('status') or {}).get('changed')} "
+            f"| {(rating.get('before') or {}).get(top, 0)} → {(rating.get('after') or {}).get(top, 0)} | {rating.get('changed', 0)} "
             f"| {ratio['median']} | {ratio['p10']} / {ratio['p90']} "
             f"| {_pt_number((upside.get('before') or {}).get('median'), suffix=' %')} → {_pt_number((upside.get('after') or {}).get('median'), suffix=' %')} |"
         )
@@ -1886,6 +2038,10 @@ def before_after_markdown(report: Mapping[str, Any]) -> str:
         buckets = item.get("tp_change_buckets") or {}
         magnitude = buckets.get("abs") or {}
         lines.append(f"- **{market}** — antes: {_pt_counts(status.get('before'))}; depois: {_pt_counts(status.get('after'))}; transições: {transitions}.")
+        rating = item.get("rating") or {}
+        moves = ", ".join(f"{name.replace('->', ' → ')} {count}" for name, count in (rating.get("transitions") or {}).items()) or "nenhuma"
+        lines.append(f"  Rating do One Pager — antes: {_pt_counts(rating.get('before'), quoted=False)}; depois: {_pt_counts(rating.get('after'), quoted=False)}; "
+                     f"mudanças: {moves}.")
         lines.append(f"  ΔTP: {buckets.get('down', 0)} caem, {buckets.get('flat', 0)} iguais, {buckets.get('up', 0)} sobem; |Δ| < 1 %: {magnitude.get('lt_1pct', 0)}, "
                      f"1–5 %: {magnitude.get('1_to_5pct', 0)}, 5–10 %: {magnitude.get('5_to_10pct', 0)}, 10–25 %: {magnitude.get('10_to_25pct', 0)}, "
                      f"≥ 25 %: {magnitude.get('ge_25pct', 0)}. Δ score mediano: {_pt_number((item.get('score_change') or {}).get('median'), signed=True)} ponto(s).")
@@ -1923,18 +2079,40 @@ def _write_private_detail(path: Path, detail: Mapping[str, Any]) -> None:
 
 def _order_summary(generation: Mapping[str, Any]) -> dict[str, Any]:
     """What the order commands print (rev 9): the new generation WITHOUT the targeted symbols (a count and the hash of the
-    normalized mapping, as the receipt) — the cycles, the source, the version and the receipt's ``source_switch``."""
+    normalized mapping, as the receipt) — the cycles, the source, the version and the receipt's ``source_switch``, and the
+    freeze it carries or ends (F1)."""
     targeted = dict(sorted((generation.get("targeted") or {}).items()))
+    receipt = generation.get("receipt") or {}
     return {"generation_id": generation.get("generation_id"), "previous_generation_id": generation.get("previous_generation_id"),
             "source": generation.get("source"), "source_version": generation.get("source_version"), "activated_at": generation.get("activated_at"),
             "cycles": dict(generation.get("cycles") or {}), "targeted_count": len(targeted), "targeted_sha256": canonical_sha256(targeted),
-            "source_switch": (generation.get("receipt") or {}).get("source_switch"), "explicit": (generation.get("receipt") or {}).get("explicit")}
+            "source_switch": receipt.get("source_switch"), "explicit": receipt.get("explicit"),
+            "freeze": receipt.get("freeze"), "ended_freeze": receipt.get("ended_freeze")}
+
+
+def targeted_valid_for(database: Any, generation: Mapping[str, Any], *, source: str = SOURCE_INTERNAL) -> dict[str, str]:
+    """The ``generation``'s targeted admissions (normalized as the carry-over reads them, Y4) that ``select_generation``
+    would accept for ``source``: a targeted cycle OF THAT SYMBOL that passes ``cycle_validation`` for ``source`` with the
+    symbol's own record of it (F2). ``--keep-internal-targeted`` proposes exactly these — the valid rev-9 admissions are
+    kept, only the ones the order would refuse are dropped — instead of purging every targeted cycle (a purged same-day
+    cycle is not rebuilt by the producer that day: its One Pager failed until the next day). Deterministic for a given
+    head (no clock beyond the cycles' own sessions), so the receipt and the order compute the same map."""
+    kept: dict[str, str] = {}
+    for symbol, cycle_id in _normalized_targeted(generation.get("targeted") or {}, strict=False).items():
+        snapshot = database.analysis_snapshot_by_id(cycle_id)
+        if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS or str(snapshot.get("entity_key") or "").strip().upper() != symbol:
+            continue
+        recorded = database.valuation_predictions_for_cycle(cycle_id, source=source)
+        if cycle_validation(snapshot, recorded=recorded, source=source)["valid"] and symbol in recorded:
+            kept[symbol] = cycle_id
+    return dict(sorted(kept.items()))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Official TP selection (V3.2 rev 7 §7-bis): bootstrap records/generation, show the health, "
                                                  "publish the Passo 1 before/after receipt (aggregate only; the per-symbol detail goes to --private-detail), "
-                                                 "or execute the mesa's order — the switch to the internal source (locked) or the rollback to the blend.")
+                                                 "or execute the mesa's order — the switch to the internal source (locked), the rollback to the blend, or the "
+                                                 "freeze of the head between the receipt and the order.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--bootstrap", action="store_true")
     group.add_argument("--health", action="store_true")
@@ -1944,6 +2122,11 @@ def main(argv: list[str] | None = None) -> int:
                             "(refused while the lock is false or the hash is not the accepted receipt)")
     group.add_argument("--rollback-to-blend", action="store_true",
                        help="the mesa's order: select_generation(source=official_blend_v1) over the proposal (never locked, no hash)")
+    group.add_argument("--freeze-selection", action="store_true",
+                       help="the mesa's freeze (F1): re-select the head's own composition with --until, so no automatic writer moves the head "
+                            "between the receipt and the order")
+    parser.add_argument("--until", metavar="ISO_INSTANT", default=None,
+                        help="with --freeze-selection: when the freeze ends by itself, with its offset (e.g. 2026-10-20T21:00:00-03:00)")
     parser.add_argument("--private-detail", metavar="PATH", default=None, help="with --before-after: write the per-symbol detail to PATH (never printed)")
     parser.add_argument("--markdown", metavar="PATH", default=None,
                         help="with --before-after: APPEND the Portuguese summary of the aggregate to PATH (no symbols; $GITHUB_STEP_SUMMARY works)")
@@ -1954,26 +2137,41 @@ def main(argv: list[str] | None = None) -> int:
                         help="with --before-after or an order: a targeted admission of the proposal (repeatable)")
     parser.add_argument("--purge-targeted", action="store_true",
                         help="with --before-after or an order: the proposal admits no targeted cycle (the head's cycles, targeted={})")
+    parser.add_argument("--keep-internal-targeted", action="store_true",
+                        help="with --before-after or an order: the proposal keeps the head's targeted admissions valid for the internal source and "
+                             "drops the others (F2; the head's cycles unless --cycles)")
     parser.add_argument("--source-version", metavar="VERSION", default=None,
                         help="with --before-after or an order: the source_version the order declares (else the cycles' union; a rollback: 'rollback')")
     parser.add_argument("--before-after-sha256", metavar="HASH", default=None, help="with --switch-to-internal: the accepted receipt's report_sha256")
-    parser.add_argument("--reason", metavar="TEXT", default=None, help="with an order: the reason written in the generation's receipt (required)")
+    parser.add_argument("--reason", metavar="TEXT", default=None,
+                        help="with an order or --freeze-selection: the reason written in the generation's receipt (required)")
     args = parser.parse_args(argv)
     order = args.switch_to_internal or args.rollback_to_blend
-    if (args.cycles or args.targeted or args.purge_targeted or args.source_version) and not (args.before_after or order):
-        parser.error("--cycles/--targeted/--purge-targeted/--source-version require --before-after, --switch-to-internal or --rollback-to-blend")
+    if (args.cycles or args.targeted or args.purge_targeted or args.keep_internal_targeted or args.source_version) and not (args.before_after or order):
+        parser.error("--cycles/--targeted/--purge-targeted/--keep-internal-targeted/--source-version require --before-after, --switch-to-internal "
+                     "or --rollback-to-blend")
     if (args.private_detail or args.markdown) and not args.before_after:
         parser.error("--private-detail/--markdown require --before-after")
-    if args.targeted and args.purge_targeted:
-        parser.error("--targeted and --purge-targeted are exclusive")
+    if sum(map(bool, (args.targeted, args.purge_targeted, args.keep_internal_targeted))) > 1:
+        parser.error("--targeted, --purge-targeted and --keep-internal-targeted are exclusive")
     if args.before_after_sha256 and not args.switch_to_internal:
         parser.error("--before-after-sha256 requires --switch-to-internal")
     if args.switch_to_internal and not args.before_after_sha256:
         parser.error("--switch-to-internal requires --before-after-sha256 (the report_sha256 of the receipt the owner accepted)")
-    if order and not (args.reason or "").strip():
-        parser.error("an order (--switch-to-internal/--rollback-to-blend) requires --reason")
-    if args.reason and not order:
-        parser.error("--reason requires --switch-to-internal or --rollback-to-blend")
+    if (order or args.freeze_selection) and not (args.reason or "").strip():
+        parser.error("an order (--switch-to-internal/--rollback-to-blend/--freeze-selection) requires --reason")
+    if args.reason and not (order or args.freeze_selection):
+        parser.error("--reason requires --switch-to-internal, --rollback-to-blend or --freeze-selection")
+    if bool(args.until) != bool(args.freeze_selection):
+        parser.error("--freeze-selection requires --until, and --until requires --freeze-selection")
+    freeze_until: datetime | None = None
+    if args.freeze_selection:
+        try:
+            freeze_until = datetime.fromisoformat(str(args.until))
+        except ValueError:
+            parser.error(f"--until expects an ISO 8601 instant, got {args.until!r}")
+        if freeze_until is None or freeze_until.tzinfo is None:
+            parser.error(f"--until needs its offset (e.g. 2026-10-20T21:00:00-03:00), got {args.until!r}")
 
     def _pairs(items: list[str] | None, flag: str, *, keys: tuple[str, ...] | None = None) -> dict[str, str]:
         pairs: dict[str, str] = {}
@@ -1993,12 +2191,15 @@ def main(argv: list[str] | None = None) -> int:
     database = Database(get_settings())
 
     def _proposal() -> tuple[dict[str, str] | None, dict[str, str] | None]:
-        """The proposal exactly as the receipt reads it: with --cycles/--targeted/--purge-targeted, the head's cycles overlaid
-        by --cycles and targeted = --targeted (or none); without them, ``(None, None)`` — the head's own composition."""
-        if not (args.cycles or args.targeted or args.purge_targeted):
+        """The proposal exactly as the receipt reads it: with --cycles/--targeted/--purge-targeted/--keep-internal-targeted, the
+        head's cycles overlaid by --cycles and targeted = --targeted, the head's admissions valid for the internal source
+        (``targeted_valid_for``, F2) or none; without them, ``(None, None)`` — the head's own composition."""
+        if not (args.cycles or args.targeted or args.purge_targeted or args.keep_internal_targeted):
             return None, None
         head = database.latest_valuation_official_selection() or {}
         cycles = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles", keys=tuple(MARKETS))}
+        if args.keep_internal_targeted:
+            return cycles, targeted_valid_for(database, head)
         return cycles, _pairs(args.targeted, "--targeted")
 
     if args.bootstrap:
@@ -2024,6 +2225,10 @@ def main(argv: list[str] | None = None) -> int:
             before_after_sha256=args.before_after_sha256 if args.switch_to_internal else None,
         )
         result = _order_summary(generation)
+    elif args.freeze_selection:
+        assert freeze_until is not None  # parsed above (parser.error exits otherwise)
+        result = _order_summary(freeze_selection(database, now=datetime.now(timezone.utc), until=freeze_until, reason=str(args.reason).strip(),
+                                                 activated_by="mesa"))
     else:
         result = selection_health(database, now=datetime.now(timezone.utc))
     print(json.dumps(result, sort_keys=True, default=str))

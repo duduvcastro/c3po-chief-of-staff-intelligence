@@ -17,7 +17,7 @@ from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
-from ..valuation_official import UNRESOLVED, current_generation, item_stamp, official_rows, official_stamp, provenance_sha256
+from ..valuation_official import UNRESOLVED, current_generation, item_stamp, official_rows, official_stamp, provenance_sha256, selection_frozen
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -286,7 +286,12 @@ class B3ScreenerService:
         return int(size) if size is not None and size > 0 else 0
 
     def valuation_for(self, symbol: str, *, build_if_missing: bool = False) -> dict[str, Any] | None:
-        """Return the shared valuation basis, optionally building an on-demand B3 valuation."""
+        """Return the shared valuation basis, optionally building an on-demand B3 valuation. Nothing is built while the
+        mesa freezes the official selection (Valuation P1, F1): the cycle could not be admitted over the frozen head, and
+        the mesa's order would then hold it — a same-day snapshot is never rebuilt, so the symbol would stay without an
+        official TP for the rest of the day. After the order (or the freeze's end) the next request builds as usual."""
+        if build_if_missing and selection_frozen(self.database) is not None:
+            build_if_missing = False
         clean = symbol.strip().upper().removesuffix(".SA")
         self._hydrate_persisted_state()
         if not self._matrix_rows:

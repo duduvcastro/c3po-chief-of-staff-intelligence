@@ -382,6 +382,7 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     report = official.before_after_report(database, private_detail_path=detail_path)
     assert report["schema"] == "VALUATION_P1_BEFORE_AFTER_V3" and report["generation_id"] == generation["generation_id"] and report["generation_source"] == SOURCE_BLEND
     assert report["buy_status"] == official.BUY_STATUS == "full_match"
+    assert report["rating_cuts"] == {"COMPRA": 25.0, "ACUMULAR": 10.0, "NEUTRO": -10.0, "REDUZIR": None}  # F3: the cuts the ratings were read with
     assert report["source_from"] == SOURCE_BLEND and report["source_to"] == SOURCE_INTERNAL and report["cycles"] == {"B3": b3, "NASDAQ": nasdaq, "NYSE": nyse}
     assert report["session_dates"] == {"B3": "2026-09-04", "NASDAQ": "2026-09-04", "NYSE": "2026-09-04"} and report["source_version"] == "7" and report["targeted_cycles"] == 0
     assert report["p90_method"] == "linear interpolation at (n-1)*0.9"
@@ -400,6 +401,7 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
         "tp_change_buckets": {"down": 1, "flat": 0, "up": 0, "abs": {"lt_1pct": 0, "1_to_5pct": 1, "5_to_10pct": 0, "10_to_25pct": 0, "ge_25pct": 0}},
         # rev 9 (V3): the SERVED view of both arms — the blend row's status/score, the internal record under the producer's internal view
         "status": {"before": {"full_match": 1}, "after": {"near_buy": 1}, "changed": 1, "transitions": {"full_match->near_buy": 1}},
+        "rating": {"before": {"ACUMULAR": 1}, "after": {"ACUMULAR": 1}, "changed": 0, "transitions": {}},  # F3: the One Pager rating, +13,6 % and +11,4 %
         "buy": {"status": "full_match", "before": 1, "after": 0, "entered": 0, "left": 1},
         "upside_percent": {"before": {key: pytest.approx(upside_before) for key in ("p10", "p25", "median", "p75", "p90")},
                            "after": {key: pytest.approx(upside_after) for key in ("p10", "p25", "median", "p75", "p90")},
@@ -427,7 +429,8 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     assert detail["markets"]["B3"]["pairs"]["ITUB4"] == {"tp_blend": 30.0, "tp_internal": 33.0, "tp_ratio": pytest.approx(0.1), "buy_in_blend": 25.0, "buy_in_internal": 27.5,
                                                          "buy_in_ratio": pytest.approx(0.1), "status_blend": "full_match", "status_internal": "near_buy",
                                                          "upside_blend": pytest.approx((30.0 / 27.0 - 1) * 100), "upside_internal": pytest.approx((33.0 / 27.0 - 1) * 100),
-                                                         "score_blend": 80.0, "score_internal": 79.0, "validated_blend": False, "validated_internal": False}
+                                                         "score_blend": 80.0, "score_internal": 79.0, "validated_blend": False, "validated_internal": False,
+                                                         "rating_blend": "ACUMULAR", "rating_internal": "ACUMULAR"}
     # a market with NO pair reports n = 0 and null statistics (never a fabricated number)
     empty = _database()
     _publish_universe(empty, "B3", [_row("PETR4", tp=40.0, buy_in=32.0, price=36.0, internal_tp=39.0)], NOW)
@@ -438,7 +441,8 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     assert official.before_after_report(empty)["markets"]["B3"] == {
         "n": 0, "missing_internal": 1, "only_internal": 0, "served_pairs": 0, "before_unservable": 0, "after_unservable": 0, "tp": null_stats, "buy_in": null_stats,
         "tp_change_buckets": {"down": 0, "flat": 0, "up": 0, "abs": {"lt_1pct": 0, "1_to_5pct": 0, "5_to_10pct": 0, "10_to_25pct": 0, "ge_25pct": 0}},
-        "status": {"before": {}, "after": {}, "changed": 0, "transitions": {}}, "buy": {"status": "full_match", "before": 0, "after": 0, "entered": 0, "left": 0},
+        "status": {"before": {}, "after": {}, "changed": 0, "transitions": {}}, "rating": {"before": {}, "after": {}, "changed": 0, "transitions": {}},
+        "buy": {"status": "full_match", "before": 0, "after": 0, "entered": 0, "left": 0},
         "upside_percent": {"before": null_quantiles, "after": null_quantiles, "change_pp": null_stats}, "score_change": null_stats, "tp_validation": None,
     }
     # the CLI prints the aggregate only; the detail goes to --private-detail; --private-detail alone is refused
@@ -891,8 +895,16 @@ def test_r9_the_receipt_and_its_markdown_name_no_symbol_and_the_cli_appends_the_
     markdown = official.before_after_markdown(report)
     symbols = ("PETR4", "VALE3", "ITUB4", "AAPL", "KO")
     assert not any(symbol in json.dumps(report) or symbol in markdown for symbol in symbols)
-    assert report["report_sha256"] in markdown and "| B3 | 3 | 0 | 3 | 0 | 1 → 1 | 1 | 1 | 2 |" in markdown and "`full_match → near_buy` 1" in markdown
-    assert "| NASDAQ | 1 | 0 | 1 | 0 | 1 → 0 | 0 | 1 | 1 | -2,00 % | -2,00 % / -2,00 % |" in markdown and "**Atenção:**" not in markdown
+    assert report["report_sha256"] in markdown and "| B3 | 3 | 0 | 3 | 0 | 1 → 1 | 1 | 1 | 2 | 0 → 1 | 2 |" in markdown and "`full_match → near_buy` 1" in markdown
+    assert "| NASDAQ | 1 | 0 | 1 | 0 | 1 → 0 | 0 | 1 | 1 | 0 → 0 | 0 | -2,00 % | -2,00 % / -2,00 % |" in markdown and "**Atenção:**" not in markdown
+    # F3: the One Pager rating of the served upside, per arm — the candidate gate is no longer called "COMPRA"
+    assert b3["rating"] == {"before": {"ACUMULAR": 3}, "after": {"ACUMULAR": 1, "COMPRA": 1, "NEUTRO": 1}, "changed": 2,
+                            "transitions": {"ACUMULAR->COMPRA": 1, "ACUMULAR->NEUTRO": 1}}  # +11,1/+12,9/+11,1 % → +8,3/+29,0/+11,1 %
+    assert "Rating do One Pager — antes: ACUMULAR 3; depois: ACUMULAR 1, COMPRA 1, NEUTRO 1; mudanças: ACUMULAR → COMPRA 1, ACUMULAR → NEUTRO 1." in markdown
+    assert "COMPRA ≥ 25 %, ACUMULAR ≥ 10 %, NEUTRO ≥ -10 %, REDUZIR abaixo" in markdown and "COMPRA = status" not in markdown
+    assert "- **Candidato** = status `full_match`" in markdown and "**não** é o rating do One Pager" in markdown
+    reordered = {**report, "rating_cuts": dict(sorted(report["rating_cuts"].items()))}  # a JSON reload keeps the cuts sorted by name: same text
+    assert official.before_after_markdown(reordered) == markdown
     # the CLI prints the aggregate and APPENDS the summary (a CI step summary is an existing file); --markdown alone is refused
     monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
     monkeypatch.setattr("app.database.Database", lambda settings: database)
@@ -936,7 +948,8 @@ def test_r9_the_order_commands_execute_the_switch_and_the_rollback_over_the_rece
     assert generation is not None and generation["source"] == SOURCE_INTERNAL and generation["targeted"] == {} and generation["cycles"] == cycles
     assert printed == {"generation_id": generation["generation_id"], "previous_generation_id": head["generation_id"], "source": SOURCE_INTERNAL, "source_version": "7",
                        "activated_at": generation["activated_at"], "cycles": cycles, "targeted_count": 0, "targeted_sha256": official.canonical_sha256({}),
-                       "source_switch": {"from": SOURCE_BLEND, "to": SOURCE_INTERNAL, "before_after_sha256": receipt["report_sha256"]}, "explicit": True}
+                       "source_switch": {"from": SOURCE_BLEND, "to": SOURCE_INTERNAL, "before_after_sha256": receipt["report_sha256"]}, "explicit": True,
+                       "freeze": None, "ended_freeze": None}
     assert generation["receipt"]["reason"] == "P1: owner accepted the receipt" and generation["activated_by"] == "mesa"
     assert official.official_row(database, "US", "AAPL")["status"] == "near_buy"  # type: ignore[index]  # served with the internal view
     # the rollback: the same path, never locked, no hash — over the head's own composition unless a proposal is given; no symbol printed
@@ -948,3 +961,227 @@ def test_r9_the_order_commands_execute_the_switch_and_the_rollback_over_the_rece
     assert printed["source_switch"] == {"from": SOURCE_INTERNAL, "to": SOURCE_BLEND, "before_after_sha256": None} and printed["targeted_count"] == 1
     assert "WEGE3" not in json.dumps(printed) and printed["targeted_sha256"] == official.canonical_sha256({"WEGE3": wege})
     assert official.official_row(database, "US", "AAPL")["status"] == "full_match"  # type: ignore[index]  # the blend's view again
+
+
+# ------------------------------------------------------------------------------------- cross-review of rev 9 (F1–F3)
+
+
+def _noon_zone() -> timezone:
+    """A fixed zone where the wall clock reads about noon: a freeze of a few hours never reaches ITS midnight, whenever the
+    suite runs (the real ``FREEZE_NIGHTLY_ZONE`` bound is tested on its own)."""
+    return timezone(timedelta(hours=12 - datetime.now(timezone.utc).hour))
+
+
+def test_f1_the_freeze_holds_the_head_from_the_receipt_to_the_order(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    # F1: the lock commit is reviewed, merged and deployed AFTER the owner accepts the receipt; meanwhile the IR worker republished
+    # the B3 universe (a new cycle → a new head) and the accepted receipt no longer recomputed: the order was refused. The mesa's
+    # freeze re-selects the head's own composition and holds every automatic writer; the order lands on it and ends it.
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    database = _database()
+    cycles = _three_markets(database)
+    wege = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0), _wall())
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": wege}
+    served = official.official_row(database, "B3", "PETR4")
+    wall = _wall()
+    frozen = official.freeze_selection(database, now=wall, until=wall + timedelta(hours=8), reason="P1: congela até a ordem", activated_by="mesa")
+    # the head's own composition, a new generation id, an explicit order carrying the freeze — nothing served changes but the stamp
+    assert {key: frozen[key] for key in ("cycles", "targeted", "source", "source_version", "session_dates")} == \
+        {key: head[key] for key in ("cycles", "targeted", "source", "source_version", "session_dates")}
+    assert frozen["previous_generation_id"] == head["generation_id"] and frozen["activated_by"] == "mesa"
+    assert frozen["receipt"] == {"reason": "P1: congela até a ordem", "explicit": True,
+                                 "freeze": {"until": official._utc(wall + timedelta(hours=8)).isoformat(), "of_generation": head["generation_id"]}}
+    again = official.official_row(database, "B3", "PETR4")
+    assert again is not None and served is not None and again["generation_id"] == frozen["generation_id"]
+    assert {k: v for k, v in again.items() if k != "generation_id"} == {k: v for k, v in served.items() if k != "generation_id"}
+    health = official.selection_health(database, now=_wall())
+    assert health["freeze"] == {"generation_id": frozen["generation_id"], "until": frozen["receipt"]["freeze"]["until"], "reason": "P1: congela até a ordem"}
+    assert "frozen by the mesa's order until" in health["detail"] and health["status"] in {"ok", "stale"}
+    # the receipt on the frozen head, over the proposal the order will carry (the valid targeted admissions kept, F2)
+    proposal = official.targeted_valid_for(database, frozen)
+    assert proposal == {"WEGE3": wege}
+    report = official.before_after_report(database, cycles=frozen["cycles"], targeted=proposal)
+    assert report["generation_id"] == frozen["generation_id"]
+    # the window: an IR republish of the B3 universe, a One Pager's targeted cycle, the deploy's bootstrap — nothing moves the head
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    b3_ir = _publish_universe(database, "B3", [_row("PETR4", tp=41.0, buy_in=33.0, price=36.0, internal_tp=40.0, internal_buy_in=32.0),
+                                               _row("VALE3", tp=70.0, buy_in=60.0, price=62.0, internal_tp=69.0, internal_buy_in=59.0)], _wall())
+    itsa = _targeted(database, "ITSA4", _row("ITSA4", tp=12.0, buy_in=10.0, price=11.0, internal_tp=11.8, internal_buy_in=9.8), _wall())
+    assert official.bootstrap_official_selection(database)["generation"] == frozen
+    assert official.current_generation(database) == frozen
+    assert database.valuation_prediction_record(b3_ir, "PETR4", source=SOURCE_INTERNAL) is not None  # recorded all the same (records first)
+    assert any("frozen by the mesa's order" in record.getMessage() and record.levelno == logging.INFO for record in caplog.records)
+    assert any(f"targeted cycle {itsa} for ITSA4 not admitted — the selection is frozen" in record.getMessage() for record in caplog.records)
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+    # the order (after the lock commit's deploy): the accepted receipt still recomputes on the frozen head — it lands and ends the freeze
+    _authorize(monkeypatch, report["report_sha256"])
+    switched = official.select_generation(database, cycles=frozen["cycles"], targeted=proposal, now=_wall(), activated_by="mesa", reason="P1 switch",
+                                          source=SOURCE_INTERNAL, before_after_sha256=report["report_sha256"])
+    assert switched["source"] == SOURCE_INTERNAL and switched["previous_generation_id"] == frozen["generation_id"]
+    assert switched["receipt"]["ended_freeze"] == {"generation_id": frozen["generation_id"], "until": frozen["receipt"]["freeze"]["until"]}
+    assert official.selection_freeze(switched, now=_wall()) is None and official.selection_health(database, now=_wall())["freeze"] is None
+    assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 49.0  # type: ignore[index]  # the kept targeted admission, internal
+    # the automatic writers chain again: a cycle published after the order is activated in the internal source
+    b3_after = _publish_universe(database, "B3", [_row("PETR4", tp=42.0, buy_in=33.0, price=36.0, internal_tp=41.5, internal_buy_in=32.5),
+                                                  _row("VALE3", tp=70.0, buy_in=60.0, price=62.0, internal_tp=69.0, internal_buy_in=59.0)], _wall())
+    latest = official.current_generation(database)
+    assert latest is not None and latest["cycles"]["B3"] == b3_after and latest["source"] == SOURCE_INTERNAL
+    assert official.official_row(database, "B3", "PETR4")["our_tp"] == 41.5  # type: ignore[index]
+    assert cycles["NASDAQ"] == latest["cycles"]["NASDAQ"]
+
+
+def test_f1_a_freeze_ends_by_itself_and_the_cycles_of_its_window_are_then_activated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    database = _database()
+    cycles = _three_markets(database)
+    wall = _wall()
+    frozen = official.freeze_selection(database, now=wall, until=wall + timedelta(milliseconds=300), reason="short", activated_by="mesa")
+    b3_window = _publish_universe(database, "B3", [_row("PETR4", tp=41.0, buy_in=33.0, price=36.0, internal_tp=40.0, internal_buy_in=32.0)], _wall())
+    assert official.current_generation(database) == frozen
+    time.sleep(0.35)
+    # past `until` the first pass composes the window's cycle — predicted AFTER the freeze order, so W1 lets it in
+    activated = official.bootstrap_official_selection(database)["generation"]
+    assert activated is not None and activated["cycles"] == {**cycles, "B3": b3_window} and activated["activated_by"] == official.ACTIVATED_BY
+    assert activated["receipt"]["explicit_order"] == frozen["generation_id"] and "explicit" not in activated["receipt"]
+    # the pure reading: bounded by until, by activated_at + FREEZE_MAX, explicit orders only
+    at = official._utc(frozen["activated_at"])
+    until = official._utc(frozen["receipt"]["freeze"]["until"])
+    assert official.selection_freeze(frozen, now=until - timedelta(microseconds=1)) is not None and official.selection_freeze(frozen, now=until) is None
+    unbounded = {**frozen, "receipt": {**frozen["receipt"], "freeze": {"until": (at + timedelta(days=3)).isoformat()}}}
+    assert official.selection_freeze(unbounded, now=at + official.FREEZE_MAX - timedelta(seconds=1))["until"] == (at + official.FREEZE_MAX).isoformat()  # type: ignore[index]
+    assert official.selection_freeze(unbounded, now=at + official.FREEZE_MAX) is None
+    unreadable = {**frozen, "receipt": {**frozen["receipt"], "freeze": {"until": "tomorrow"}}}
+    assert official.selection_freeze(unreadable, now=at)["until"] == (at + official.FREEZE_MAX).isoformat()  # type: ignore[index]
+    automatic = {**frozen, "receipt": {key: value for key, value in frozen["receipt"].items() if key != "explicit"}}
+    assert official.selection_freeze(automatic, now=at) is None and official.selection_freeze(None, now=at) is None
+
+
+def test_f1_the_freeze_refusals_and_the_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    empty = _database()
+    wall = _wall()
+    with pytest.raises(ValueError, match="nothing to freeze"):
+        official.freeze_selection(empty, now=wall, until=wall + timedelta(minutes=5), reason="x", activated_by="mesa")
+    database = _database()
+    _three_markets(database)
+    head = official.current_generation(database)
+    wall = _wall()
+    for until, message in ((wall.replace(tzinfo=None) + timedelta(hours=1), "must be an aware instant"), (wall, "is not after the order's clock"),
+                           (wall + official.FREEZE_MAX + timedelta(minutes=1), "is too far")):
+        with pytest.raises(ValueError, match=message):
+            official.freeze_selection(database, now=wall, until=until, reason="x", activated_by="mesa")
+    # the real nightly bound: never past the next midnight in São Paulo, whatever FREEZE_MAX would allow
+    local = wall.astimezone(official.FREEZE_NIGHTLY_ZONE)
+    midnight = datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tzinfo=official.FREEZE_NIGHTLY_ZONE)
+    with pytest.raises(ValueError, match="never past the nightly cycle"):
+        official.freeze_selection(database, now=wall, until=midnight + timedelta(minutes=1), reason="x", activated_by="mesa")
+    with pytest.raises(ValueError, match="is in the future"):
+        official.freeze_selection(database, now=wall + timedelta(minutes=5), until=wall + timedelta(minutes=30), reason="x", activated_by="mesa")
+    assert official.current_generation(database) == head  # nothing written by any refusal
+    unknown = _database()
+    _three_markets(unknown)
+    unknown_head = official.current_generation(unknown)
+    assert unknown_head is not None
+    unknown._valuation_official_selections.append({**unknown_head, "generation_id": "unknown-source", "source": "v3_2_shadow",  # a hand edit (Q3)
+                                                   "previous_generation_id": unknown_head["generation_id"],
+                                                   "activated_at": (official._utc(unknown_head["activated_at"]) + timedelta(microseconds=1)).isoformat()})
+    unknown.drop_official_cycle_cache()
+    with pytest.raises(ValueError, match="roll back to the blend by explicit order first"):
+        official.freeze_selection(unknown, now=_wall(), until=_wall() + timedelta(minutes=5), reason="x", activated_by="mesa")
+    # the CLI: --freeze-selection --until (with its offset) --reason; prints the generation without symbols, with the freeze
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    until = (datetime.now(timezone.utc) + timedelta(hours=2)).astimezone(timezone(timedelta(hours=-3))).replace(microsecond=0)
+    for argv in (["--freeze-selection", "--reason", "x"], ["--freeze-selection", "--until", until.isoformat()], ["--health", "--until", until.isoformat()],
+                 ["--freeze-selection", "--until", until.replace(tzinfo=None).isoformat(), "--reason", "x"],
+                 ["--freeze-selection", "--until", "amanhã", "--reason", "x"],
+                 ["--freeze-selection", "--until", until.isoformat(), "--reason", "x", "--purge-targeted"],
+                 ["--before-after", "--purge-targeted", "--keep-internal-targeted"], ["--before-after", "--targeted", "WEGE3=x", "--keep-internal-targeted"]):
+        with pytest.raises(SystemExit):
+            official.main(argv)
+    assert official.current_generation(database) == head
+    assert official.main(["--freeze-selection", "--until", until.isoformat(), "--reason", "P1: recibo de terça"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    frozen = official.current_generation(database)
+    assert frozen is not None and printed["generation_id"] == frozen["generation_id"] and printed["previous_generation_id"] == head["generation_id"]  # type: ignore[index]
+    assert printed["freeze"] == {"until": official._utc(until).isoformat(), "of_generation": head["generation_id"]} and printed["explicit"] is True  # type: ignore[index]
+    assert printed["ended_freeze"] is None and printed["source"] == SOURCE_BLEND and printed["targeted_count"] == 0
+    assert official.main(["--health"]) == 0
+    assert json.loads(capsys.readouterr().out)["freeze"]["generation_id"] == frozen["generation_id"]
+    # the rollback (never locked) ends it too, over the head's composition
+    assert official.main(["--rollback-to-blend", "--source-version", "7", "--reason", "libera o congelamento"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["ended_freeze"]["generation_id"] == frozen["generation_id"] and printed["freeze"] is None
+    assert official.selection_frozen(database) is None
+
+
+def test_f1_the_ir_propagation_and_the_on_demand_b3_build_wait_while_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.ir_valuation import InvestorRelationsValuationProcessor
+    from app.market_data.b3_screener import B3ScreenerService
+
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    database = _database()
+    cycles = _three_markets(database)
+    claims: list[int] = []
+
+    def claim(limit: int = 12) -> list[dict[str, Any]]:
+        claims.append(limit)
+        return []
+
+    monkeypatch.setattr(database, "claim_ir_valuation_updates", claim)
+    screener = B3ScreenerService(Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False), database, object())  # type: ignore[arg-type]
+    built: list[str] = []
+    monkeypatch.setattr(screener, "_build_targeted_valuation", lambda symbol: built.append(symbol) or {"symbol": symbol, "our_tp": 12.0})
+    monkeypatch.setattr(screener, "refresh_symbols", lambda symbols: pytest.fail("no B3 universe is republished while frozen"))
+    screener._matrix_rows = [{"symbol": "PETR4", "our_tp": 40.0}]
+    processor = InvestorRelationsValuationProcessor(database, screener)
+    assert processor.process() == {"claimed": 0, "updated": [], "targeted_only": [], "failed": []} and claims == [12]  # not frozen: claims as before
+    assert screener.valuation_for("ITSA4", build_if_missing=True) == {"symbol": "ITSA4", "our_tp": 12.0} and built == ["ITSA4"]
+    wall = _wall()
+    frozen = official.freeze_selection(database, now=wall, until=wall + timedelta(hours=4), reason="P1", activated_by="mesa")
+    until = frozen["receipt"]["freeze"]["until"]
+    # frozen: the queue is not even claimed (it keeps every update for the first poll after the order) and nothing is built on demand
+    assert processor.process() == {"claimed": 0, "updated": [], "targeted_only": [], "failed": [], "deferred_until": until} and claims == [12]
+    assert screener.valuation_for("ITSA4", build_if_missing=True) is None and built == ["ITSA4"]
+    assert screener.valuation_for("PETR4", build_if_missing=True) == {"symbol": "PETR4", "our_tp": 40.0}  # a current row is still answered
+    # the order (here the rollback, never locked) ends the freeze: both resume
+    official.select_generation(database, cycles=cycles, now=_wall(), activated_by="mesa", reason="libera", source_version="7")
+    processor.process()
+    assert claims == [12, 12]
+    assert screener.valuation_for("ITSA4", build_if_missing=True) is not None and built == ["ITSA4", "ITSA4"]
+
+
+def test_f2_keep_internal_targeted_keeps_the_valid_admissions_and_drops_only_the_ones_the_order_would_refuse(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    # F2: `--purge-targeted` also dropped valid rev-9 targeted cycles; a same-day one is never rebuilt by the producer that day
+    # (valuation_for answers the same-day snapshot), so its One Pager failed until the next day. The proposal now keeps them.
+    database = _database()
+    cycles = _three_markets(database)
+    old = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0, view=False), _wall())  # pre-rev 9
+    new = _targeted(database, "ITSA4", _row("ITSA4", tp=12.0, buy_in=10.0, price=11.0, internal_tp=11.8, internal_buy_in=9.8), _wall())  # rev 9
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"ITSA4": new, "WEGE3": old}
+    assert official.targeted_valid_for(database, head) == {"ITSA4": new} and official.targeted_valid_for(database, head, source=SOURCE_BLEND) == head["targeted"]
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt == json.loads(json.dumps(official.before_after_report(database, cycles=cycles, targeted={"ITSA4": new})))
+    assert receipt["targeted_cycles"] == 2 and receipt["after_targeted_count"] == 1 and "ITSA4" not in json.dumps(receipt)
+    assert receipt["markets"]["B3"]["missing_internal"] == 1  # the dropped pre-rev-9 admission: registered in the blend only
+    _authorize(monkeypatch, receipt["report_sha256"])
+    assert official.main(["--switch-to-internal", "--keep-internal-targeted", "--before-after-sha256", receipt["report_sha256"], "--reason", "P1"]) == 0
+    capsys.readouterr()
+    switched = official.current_generation(database)
+    assert switched is not None and switched["source"] == SOURCE_INTERNAL and switched["targeted"] == {"ITSA4": new}
+    assert official.official_row(database, "B3", "ITSA4")["our_tp"] == 11.8 and official.official_row(database, "B3", "WEGE3") is None  # type: ignore[index]
+
+
+def test_f3_the_rating_mirrors_the_pinned_one_pager_rule() -> None:
+    # the receipt's rating is the One Pager's: the same cuts, the same order, the floor below — read from the pinned file itself
+    cuts = official.ONE_PAGER_RATING_CUTS
+    expected = "rating = " + " else ".join(f'"{name}" if upside >= {cut:g}' for name, cut in cuts) + f' else "{official.ONE_PAGER_RATING_FLOOR}"'
+    assert expected in (APP / "one_pager.py").read_text(encoding="utf-8")
+    assert [official.one_pager_rating(value) for value in (25.0, 24.99, 10.0, 9.99, -10.0, -10.01, None, float("nan"), "12")] == \
+        ["COMPRA", "ACUMULAR", "ACUMULAR", "NEUTRO", "NEUTRO", "REDUZIR", None, None, "ACUMULAR"]
