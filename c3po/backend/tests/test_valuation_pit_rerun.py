@@ -589,6 +589,58 @@ def test_a_bar_dated_off_the_exchange_calendar_is_never_read_and_is_counted() ->
     assert excluded_dirty == excluded_clean
 
 
+def test_a_bar_date_the_calendar_cannot_place_is_a_refusal_never_a_silent_drop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """P3-3 of the 10/10 review (mutant M6: the ``PitRerunInputError`` of ``_is_calendar_session`` replaced by ``return
+    False`` survived every test): a bar ≤ T dated where the exchange calendar cannot answer — before its first session
+    (≈ 20 years back) or not a date at all — refuses the run; it is never dropped and counted as an off-calendar bar."""
+    database = _ready()
+    service = _service(database)
+    pinned = service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW)
+    sound = {"close": 100.0, "adjusted_close": 100.0, "volume": 1.0}
+    held = {"2005-01-03": dict(sound), "2024-06-13": dict(sound), "2024-06-14": dict(sound)}  # 2005-01-03: a Monday before the calendar's first session
+    monkeypatch.setattr(pinned.reader, "series", lambda market, symbol, *, available_before: {"status": "ok", "publication_id": pinned.publication_id,
+                                                                                             "bars": {key: dict(value) for key, value in held.items()}})
+    with pytest.raises(pit.PitRerunInputError, match="calendar cannot place a bar dated '2005-01-03'"):
+        pinned.bars("AAA")
+    assert pinned.off_calendar_bars == 0 and "AAA" not in pinned._bars  # refused: nothing kept, nothing counted as "off calendar"
+    with pytest.raises(pit.PitRerunInputError, match="calendar cannot place a bar dated '2024-13-01'"):
+        pinned._is_calendar_session("2024-13-01")
+    with pytest.raises(pit.PitRerunInputError, match="calendar cannot place"):  # the whole run refuses, it never computes around the bar
+        service.compute("NASDAQ", as_of=T, prices=pinned)
+
+
+def _publish_b3_prices(database: Database, bars: dict[str, list[dict]]) -> dict[str, Any]:
+    http = ScriptedHttp({f"/api/eod/{key}": rows for key, rows in bars.items()})
+    producer = series.PriceHistoryService(_settings(), database, http, eodhd=EodhdClient("https://eodhd.com", "secret", http))  # type: ignore[arg-type]
+    return producer.persist_run("B3", start=date(2023, 6, 1), end=date(2026, 9, 10), symbols=[key.split(".")[0] for key in bars], now=VINTAGE_AT)
+
+
+def test_weekday_holidays_and_b3_closures_are_off_calendar_bars_dropped_and_counted() -> None:
+    # XNYS: Good Friday 2024-03-29 inside the beta window, and Independence Day (Thursday 2024-07-04) right before T — AAA has no bar on
+    # the session of T (Friday 2024-07-05), so without the calendar the holiday bar would become the price of T
+    at = datetime(2024, 7, 5, 21, 0, tzinfo=UTC)
+    absurd = {"close": 9_999.0, "adjusted_close": 9_999.0, "volume": 1.0}
+    clean = _clean_bars()
+    clean["AAA.US"] = [bar for bar in clean["AAA.US"] if bar["date"] != "2024-07-05"]
+    dirty = {key: list(rows) for key, rows in clean.items()}
+    dirty["AAA.US"] = sorted(dirty["AAA.US"] + [{"date": "2024-07-04", **absurd}], key=lambda bar: bar["date"])
+    dirty["BBB.US"] = sorted(dirty["BBB.US"] + [{"date": "2024-03-29", **absurd}], key=lambda bar: bar["date"])
+    clean_run, dirty_run = _compute_with_bars(clean, at=at), _compute_with_bars(dirty, at=at)
+    assert dirty_run.resolver.prices.off_calendar_bars == 2 and dirty_run.resolver.excluded["price_bars:off_calendar_session"] == 2
+    assert dirty_run.resolver.per_symbol["AAA"]["row"]["price_session"] == "2024-07-03" != "2024-07-04"
+    assert dirty_run.resolver.per_symbol == clean_run.resolver.per_symbol and dirty_run.results == clean_run.results
+    # B3 (BVMF): carnival Monday and Tuesday 2024-02-12/13 and the Saturday 2024-03-16 the inventory found are dropped; Ash Wednesday 2024-02-14 IS a session
+    database = _database()
+    b3_sessions = [s.date() for s in xcals.get_calendar("BVMF").sessions_in_range("2023-06-01", "2026-09-10")]
+    assert date(2024, 2, 14) in b3_sessions and date(2024, 2, 12) not in b3_sessions
+    petr = _bars_for("PETR4", b3_sessions, base=30.0) + [{"date": day, **absurd} for day in ("2024-02-12", "2024-02-13", "2024-03-16")]
+    _publish_b3_prices(database, {"PETR4.SA": sorted(petr, key=lambda bar: bar["date"])})
+    prices = _service(database).pin_vintage("B3", as_of=datetime(2024, 6, 14, 21, 0, tzinfo=UTC), pinned_at=NOW)
+    kept = prices.bars("PETR4")
+    assert prices.off_calendar_bars == 3 and not {"2024-02-12", "2024-02-13", "2024-03-16"} & set(kept) and "2024-02-14" in kept
+    assert all(bar["close"] != absurd["close"] for bar in kept.values()) and prices.valid_sessions("PETR4") == sum(1 for s in b3_sessions if s <= date(2024, 6, 14))
+
+
 # ------------------------------------------------------------------ P2-2: the price basis — levels on the as-traded close, returns on the adjusted close
 def _compute_with_bars(bars: dict[str, list[dict]], *, at: datetime = T) -> pit.PitComputation:
     database = _database()
