@@ -2269,19 +2269,37 @@ class B3ScreenerService:
         power_score = self._power_score(upside, risk_score, quality, valuation_confidence, distance)
 
         tp_upside_cutoff = self._tp_upside_cutoff_percent(macro)
+        status = self._screen_status(upside, distance, valuation_confidence, method_dispersion, tp_validation["status"], tp_upside_cutoff)
 
-        if (
-            upside >= tp_upside_cutoff
-            and distance <= MAX_ENTRY_DISTANCE
-            and valuation_confidence >= MIN_VALUATION_CONFIDENCE
-            and method_dispersion <= MAX_METHOD_DISPERSION
-            and tp_validation["status"] == "validated"
-        ):
-            status = "full_match"
-        elif upside >= max(tp_upside_cutoff - 5, 0) and distance <= 25 and valuation_confidence >= 60:
-            status = "near_buy"
-        else:
-            status = "watchlist"
+        # Passo 1 rev 9 (official_internal_v1): the TP-dependent tail of the row — upside, entry distance, the TP plausibility
+        # check, expected return (consensus weight 0), Power Score and status — by the SAME rules on the internal TP and its
+        # buy-in: what an internal record is served with, never the blend's. Without a consensus the blend IS the internal TP
+        # and the internal view is the blend's, bit for bit (the validation is reused, not re-read against the clock).
+        internal_upside = (internal_tp / row["price"] - 1) * 100
+        internal_distance = (row["price"] / internal_buy_in - 1) * 100 if internal_buy_in > 0 else 999.0
+        internal_validation = tp_validation if internal_tp == our_tp else self._validate_target_price(
+            row=row,
+            methods=normalized_methods,
+            internal_tp=internal_tp,
+            consensus_tp=consensus_for_blend,
+            our_tp=internal_tp,
+            valuation_confidence=valuation_confidence,
+            method_dispersion=method_dispersion,
+        )
+        internal_total_return = self._expected_12m_return(
+            row["price"],
+            internal_tp,
+            expected_dividend,
+            sustainable_growth,
+            convergence_years,
+            valuation_confidence,
+            method_dispersion,
+            0.0,
+        )
+        internal_score = self._power_score(internal_upside, risk_score, quality, valuation_confidence, internal_distance)
+        internal_status = self._screen_status(
+            internal_upside, internal_distance, valuation_confidence, method_dispersion, internal_validation["status"], tp_upside_cutoff,
+        )
 
         row.update({
             "methods": normalized_methods,
@@ -2302,6 +2320,14 @@ class B3ScreenerService:
             "buy_in_models": buy_in_models,
             "internal_buy_in": internal_buy_in,  # Passo 1: the same entry rule applied to internal_tp (official_internal_v1 reads these two)
             "internal_buy_in_models": internal_buy_in_models,
+            "internal_upside_percent": internal_upside,  # rev 9: the internal view (valuation_official.internal_view serves score/status/expected return/validation)
+            "internal_price_vs_buy_in_percent": internal_distance,
+            "internal_expected_total_return_percent": internal_total_return,
+            "internal_convergence_weight": self._convergence_weight(valuation_confidence, method_dispersion, 0.0),
+            "internal_score": internal_score,
+            "internal_tp_validation_status": internal_validation["status"],
+            "internal_tp_validation_reasons": internal_validation["reasons"],
+            "internal_status": internal_status,
             "expected_dividend": expected_dividend,
             "price_vs_buy_in_percent": distance,
             "fcf_yield_percent": fcf_yield * 100 if row.get("fcf") else None,
@@ -2605,6 +2631,28 @@ class B3ScreenerService:
             0,
             100,
         )
+
+    @staticmethod
+    def _screen_status(
+        tp_upside: float,
+        price_vs_buy_in: float,
+        valuation_confidence: float,
+        method_dispersion: float,
+        tp_validation_status: str,
+        tp_upside_cutoff: float,
+    ) -> str:
+        """The screen status of a row (Power Zone gate): applied to the blend and — Passo 1 rev 9 — to the internal TP."""
+        if (
+            tp_upside >= tp_upside_cutoff
+            and price_vs_buy_in <= MAX_ENTRY_DISTANCE
+            and valuation_confidence >= MIN_VALUATION_CONFIDENCE
+            and method_dispersion <= MAX_METHOD_DISPERSION
+            and tp_validation_status == "validated"
+        ):
+            return "full_match"
+        if tp_upside >= max(tp_upside_cutoff - 5, 0) and price_vs_buy_in <= 25 and valuation_confidence >= 60:
+            return "near_buy"
+        return "watchlist"
 
     @staticmethod
     def _sustainable_growth(profile: str, observed_growth: float) -> float:

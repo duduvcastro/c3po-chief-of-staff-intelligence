@@ -195,6 +195,27 @@ Rev 8 / P1 residuals (Q1–Q6, internal adversarial verification):
   path (a file or a symlink) is refused (``FileExistsError``), nothing is overwritten or followed, the owner alone reads it;
 * a switch without an explicit ``source_version`` stamps the validated cycles' methodology versions (Q6: ``"+".join(sorted)``,
   exactly as the automatic pass), never ``"rollback"``; a rollback to the blend keeps ``"rollback"`` unless given.
+
+Rev 9 / P1 — the declared residue closed, the receipt the owner reads, the order as a command (Passo 1 delivery, 2026-10-17):
+* THE INTERNAL VIEW: the producers emit, on the same row, the TP-dependent tail of the row evaluated by their OWN rules on the
+  internal TP and its buy-in (consensus weight 0) — ``internal_score``, ``internal_status``,
+  ``internal_expected_total_return_percent`` (and, where the producer's status depends on a TP plausibility check, B3:
+  ``internal_tp_validation_status``/``internal_tp_validation_reasons``); ``_served`` overlays them for an internal record
+  (``INTERNAL_VIEW_KEYS``), so the screeners' candidates/matrices and R2D2 rank and filter by the status and score OF THE TP
+  THEY SHOW. A row without the view (a cycle produced before this revision) is not usable for the internal source
+  (``_usable``: invalid, carried, never patched) and an internal record whose row lacks it is NOT served (never the blend's
+  status under the internal TP); the internal record's ``decomposition.status``/``tp_validation_status``/``convergence_weight``
+  are the internal ones. Blend records are served exactly as before, bit for bit;
+* THE RECEIPT V3 (``BEFORE_AFTER_SCHEMA``): besides the TP/buy-in ratios, per market the SERVED view of both arms — status
+  counts and transitions, BUY (``BUY_STATUS``) before/after/entered/left, upside quantiles before/after and their change, the
+  score change, TP change buckets — over the pairs served on both sides; ``before_after_markdown`` renders it in Portuguese
+  (CLI ``--markdown PATH``, appended: ``$GITHUB_STEP_SUMMARY`` works). No symbol in either; the detail stays private;
+* THE LOCK NAMES THE RECEIPT: a switch must cite EXACTLY ``OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256`` — the ``report_sha256`` the
+  owner accepted, written in the same commit that flips ``OFFICIAL_TP_REPLACEMENT_AUTHORIZED`` — besides matching the receipt
+  recomputed on the head over the order's proposal (Q1/C395-1). A lock commit without a hex-64 receipt switches nothing;
+* THE ORDER AS A COMMAND: ``--switch-to-internal --before-after-sha256 H --reason …`` (and ``--rollback-to-blend --reason …``,
+  never locked) take the same proposal options as ``--before-after`` and execute ``select_generation`` with the host's wall
+  clock; they print the new generation without the targeted symbols.
 """
 from __future__ import annotations
 
@@ -225,8 +246,19 @@ SOURCE_V3_2_SHADOW = "v3_2_shadow"  # the point-in-time re-execution of the V3 e
 # reading `OFFICIAL_SOURCES` only: `_selected_source`, `_new_generation` and the store's selection writer refuse `v3_2_shadow` as before.
 RECORDABLE_SOURCES: tuple[str, ...] = (*OFFICIAL_SOURCES, SOURCE_V3_2_SHADOW)
 OFFICIAL_TP_REPLACEMENT_AUTHORIZED = False  # the Passo 1 lock (spec §7-bis item 4): a switch to SOURCE_INTERNAL is refused while False; flips ONLY by a commit citing the mesa's receipt
-BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V2"  # V2 (C395-1): the aggregate binds the AFTER composition (cycles + targeted)
+OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = None  # the before/after report_sha256 the owner accepted, named by the commit that flips the lock: a switch must cite exactly it
+BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V3"  # V3 (rev 9): the served view of both arms (status/BUY/upside/score); V2 (C395-1) bound the AFTER composition
+BUY_STATUS = "full_match"  # what the receipt counts as BUY: the screeners' candidate gate (the B3 list also dedups issuers and asks the power zone)
+INTERNAL_VIEW_KEYS = {  # served key → the producer's internal-view field (rev 9): the TP-dependent tail of the row on the internal TP
+    "score": "internal_score", "status": "internal_status", "expected_total_return_percent": "internal_expected_total_return_percent",
+}
+INTERNAL_VIEW_OPTIONAL_KEYS = {  # overlaid when the producer emits them (B3: its status depends on a TP plausibility check)
+    "tp_validation_status": "internal_tp_validation_status", "tp_validation_reasons": "internal_tp_validation_reasons",
+}
 P90_METHOD = "linear interpolation at (n-1)*0.9"
+TP_CHANGE_BUCKETS: tuple[tuple[str, float], ...] = (  # rev 9: |tp_internal / tp_blend − 1| below each bound (the last bucket: ge_25pct)
+    ("lt_1pct", 0.01), ("1_to_5pct", 0.05), ("5_to_10pct", 0.10), ("10_to_25pct", 0.25),
+)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 PREDICTION_SCHEMA = "VALUATION_PREDICTION_V2"  # V2 (rev 6, B2): `published_at` joined the hashed core
 LEGACY_PREDICTION_SCHEMA = "VALUATION_PREDICTION_V1"  # rev 5: one clock — a stored V1 row is read, verified and served as V1, never relabelled (F393-11)
@@ -246,6 +278,7 @@ CHAIN_WALK_LIMIT = 64  # successors followed from an unmoved head to the chain t
 _refusals_logged: dict[str, str] = {}  # symbol → the refused targeted cycle this PROCESS already warned about (Z3; the receipt carries it across processes)
 _unrecordable_logged: set[str] = set()  # re-run cycle ids this PROCESS already warned were not recordable (S5): the repeats are INFO
 _integrity_logged: set[str] = set()  # stored record ids this PROCESS already warned could not be verified (F393-11): the repeats are INFO
+_viewless_logged: set[str] = set()  # internal records this PROCESS already warned had no internal view on their row (rev 9): the repeats are INFO
 
 
 class CalendarUnavailable(RuntimeError):
@@ -386,6 +419,24 @@ def consensus_block(row: Mapping[str, Any], *, market: str) -> dict[str, Any]:
     return {**payload, "payload_sha256": canonical_sha256(payload)}
 
 
+def internal_view(row: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The producer's INTERNAL VIEW of a row (rev 9): the TP-dependent tail — Power Score, status, expected return (and,
+    when emitted, the TP validation the status depends on) — that the producer evaluated by its own rules on the internal TP
+    and its buy-in, keyed as served (``INTERNAL_VIEW_KEYS``/``INTERNAL_VIEW_OPTIONAL_KEYS``). ``None`` when a required field
+    is absent or not a number/text — a row produced before rev 9 — which makes the row unusable for the internal source
+    and its internal record unservable: an internal TP is never shown under the blend's status or score. Copies."""
+    score = _number(row.get(INTERNAL_VIEW_KEYS["score"]))
+    expected = _number(row.get(INTERNAL_VIEW_KEYS["expected_total_return_percent"]))
+    status = _text_or_none(row.get(INTERNAL_VIEW_KEYS["status"]))
+    if score is None or expected is None or status is None:
+        return None
+    view: dict[str, Any] = {"score": score, "status": status, "expected_total_return_percent": expected}
+    for served_key, key in INTERNAL_VIEW_OPTIONAL_KEYS.items():
+        if key in row:
+            view[served_key] = copy.deepcopy(row[key])
+    return view
+
+
 def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycle_id: str, source_version: str,
                         prediction_instant: datetime, source_manifest_sha256: str | None = None,
                         published_at: datetime | None = None, rerun_of: str | None = None,
@@ -406,7 +457,10 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
     ``consensus_weight_percent = 0`` (top level and ``decomposition.weights``), ``decomposition.buy_in_models`` from
     ``internal_buy_in_models`` (else the producer's), bands from ``internal_bear_tp``/``internal_bull_tp`` (null when the
     producer emits none — never rescaled) — and keeps EVERYTHING else identical: the consensus of reference with its own
-    identity (``consensus_block``, same ``payload_sha256``), methods, calibration, provenance, both clocks.
+    identity (``consensus_block``, same ``payload_sha256``), methods, calibration, provenance, both clocks. Rev 9: the internal
+    record's ``decomposition.status`` is the producer's ``internal_status`` (null on a row without the internal view — never
+    the blend's), its ``tp_validation_status`` the ``internal_tp_validation_status`` when emitted and its
+    ``weights.convergence_weight`` the ``internal_convergence_weight`` when emitted (else the row's, TP-independent).
     ``extra_provenance`` (the point-in-time re-execution, ``valuation_pit_rerun``): JSON-ready keys MERGED into
     ``decomposition.provenance`` after the fixed ones (a fixed key is never overridden) — hashed with the record, stored in
     the JSONB column, rebuilt by the PostgreSQL reader as any other provenance field. ``None`` for every producer today."""
@@ -437,6 +491,11 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
     bear_key, bull_key = ("internal_bear_tp", "internal_bull_tp") if internal else ("bear_tp", "bull_tp")
     bear_tp, bull_tp = _positive(row.get(bear_key)), _positive(row.get(bull_key))
     consensus_weight_percent = 0.0 if internal else _number(row.get("consensus_weight_percent"))
+    status, validation_status, convergence_weight = row.get("status"), row.get("tp_validation_status"), row.get("convergence_weight")
+    if internal:  # rev 9: the internal record names the producer's internal view, never the blend's status
+        status = row.get("internal_status")
+        validation_status = row["internal_tp_validation_status"] if "internal_tp_validation_status" in row else validation_status
+        convergence_weight = row["internal_convergence_weight"] if "internal_convergence_weight" in row else convergence_weight
     core = {
         "schema": PREDICTION_SCHEMA,
         "source": source,
@@ -464,7 +523,7 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
             "buy_in_models": {str(k): _number(v) for k, v in buy_in_models.items()} if isinstance(buy_in_models, Mapping) else {},
             "weights": {
                 "calibration_factor": _number(row.get("calibration_factor")),
-                "convergence_weight": _number(row.get("convergence_weight")),
+                "convergence_weight": _number(convergence_weight),
                 "consensus_weight_percent": consensus_weight_percent,
             },
             "bands": {"bear_tp": bear_tp, "bull_tp": bull_tp},
@@ -474,8 +533,8 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
             "valuation_confidence": _number(row.get("valuation_confidence")),
             "method_dispersion_percent": _number(row.get("method_dispersion_percent")),
             "signal_quality": row.get("signal_quality"),
-            "status": row.get("status"),
-            "tp_validation_status": row.get("tp_validation_status"),
+            "status": status,
+            "tp_validation_status": validation_status,
             "provenance": {
                 "source_name": row.get("source_name") or row.get("history_source") or None,
                 "fundamentals_as_of": row.get("fundamentals_as_of") or None,
@@ -602,10 +661,12 @@ def cycle_clocks(snapshot: Mapping[str, Any]) -> tuple[datetime, datetime, str |
 
 def _usable(row: Mapping[str, Any], source: str = SOURCE_OFFICIAL) -> bool:
     """A row with everything a prediction of ``source`` needs: symbol, price, blend TP, buy-in, internal TP — and, for
-    ``SOURCE_INTERNAL``, the buy-in the producer derived from the internal TP (``internal_buy_in``, Passo 1)."""
+    ``SOURCE_INTERNAL``, the buy-in the producer derived from the internal TP (``internal_buy_in``, Passo 1) and the
+    producer's internal view (``internal_view``: score/status/expected return on the internal TP, rev 9) — a row without
+    it would serve the internal TP under the blend's status."""
     base = bool(str(row.get("symbol") or "").strip() and _positive(row.get("price")) and _positive(row.get("our_tp"))
                 and _positive(row.get("buy_in")) and _positive(row.get("internal_tp")))
-    return base and (source != SOURCE_INTERNAL or _positive(row.get("internal_buy_in")) is not None)
+    return base and (source != SOURCE_INTERNAL or (_positive(row.get("internal_buy_in")) is not None and internal_view(row) is not None))
 
 
 def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapping[str, Any]] | None = None,
@@ -617,7 +678,8 @@ def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapp
     when ``recorded`` (the records of THAT source) is given — every usable row already has its immutable prediction
     record (selection never precedes the records, F393-5). Coverage against the producer's universe size is recorded,
     never presumed. The same rule admits targeted cycles (automatic and explicit paths alike, F393-4). A cycle produced
-    before Passo 1 (no ``internal_buy_in``) is invalid for the internal source and valid for the blend: it is carried."""
+    before Passo 1 (no ``internal_buy_in``) or before rev 9 (no internal view) is invalid for the internal source and valid
+    for the blend: it is carried."""
     rows = cycle_rows(snapshot)
     outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), Mapping) else {}
     universe_size = _number(outputs.get("universe_size")) if isinstance(outputs, Mapping) else None
@@ -1169,7 +1231,11 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
     and a hash that is not that ``report_sha256`` is refused, naming both — so a well-formed but foreign hash, the receipt
     of a generation the chain has moved past, or a receipt approved over ANOTHER composition (a different cycle in a market,
     a targeted admission added or dropped, another version) never lands; a switch needs a generation in force (there is no
-    "before" to compare otherwise — refused before anything else is read).
+    "before" to compare otherwise — refused before anything else is read). Rev 9: the cited hash must ALSO be exactly
+    ``OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256`` — the receipt the owner accepted, named by the commit that flips the lock —
+    checked last, after the recomputation (so a hash of another generation or composition is named as such first): a lock
+    commit whose receipt is absent or not hex-64 (the placeholder) switches nothing, and a receipt computed after the
+    accepted one (the head moved: a new night, a targeted admission) needs a new acceptance and a new lock commit.
     ``source_version`` (Q6): the mesa's declaration when given; when omitted, a switch stamps the methodology versions of
     the validated universe cycles (``"+".join(sorted(set))``, exactly as the automatic pass stamps its generations) and a
     rollback to the blend stamps ``"rollback"`` (the Passo 0 behaviour) — a switch is never stamped ``"rollback"``.
@@ -1229,6 +1295,16 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
                              "another generation (the chain moved since the mesa read it), over another composition (a different cycle in a "
                              "market, a targeted admission added or dropped, another declared source_version), or is not this receipt; re-run "
                              "before_after_report on the head with the order's cycles/targeted/source_version and cite it (C395-1)")
+        accepted = OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256  # rev 9: the receipt the owner accepted, named by the lock commit
+        if not isinstance(accepted, str) or not _SHA256.match(accepted):
+            raise ValueError(f"a switch to {source!r} is refused: the lock commit names no accepted before/after receipt "
+                             f"(OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256 = {accepted!r}) — the commit that flips the lock writes the report_sha256 "
+                             "the owner accepted")
+        if str(before_after_sha256) != accepted:
+            raise ValueError(f"a switch to {source!r} must cite the before/after receipt the owner accepted ({accepted[:12]}…, named by the lock "
+                             f"commit): {str(before_after_sha256)[:12]}… is the receipt of the generation in force over this proposal but not the "
+                             "accepted one — the head moved or the proposal changed since the acceptance; a new receipt needs a new acceptance "
+                             "and a new lock commit")
     receipt: dict[str, Any] = {"reason": reason, "explicit": True}  # the marker of an order — written here and nowhere else (W3)
     if current is not None and current.get("source") != source:  # a switch or a rollback of the SOURCE: named in the receipt (Passo 1) — as STORED, so
         receipt["source_switch"] = {"from": current.get("source"), "to": source, "before_after_sha256": before_after_sha256}  # an unknown source is named (Q3)
@@ -1267,7 +1343,8 @@ def _markets_for(market: str | None) -> tuple[str, ...]:
     return (clean,) if clean in MARKETS else ()
 
 
-def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Mapping[str, Any], cycle_id: str, scope: str, market: str) -> dict[str, Any]:
+def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Mapping[str, Any], cycle_id: str, scope: str,
+            market: str) -> dict[str, Any] | None:
     """What a consumer receives: a DEEP COPY of the cycle row for display fields, with the SERVED numbers taken from
     the immutable record (``our_tp``, ``buy_in``) and the full stamp (F393-3, F393-5, F393-6). Mutating the result
     never reaches a cache or a record.
@@ -1279,8 +1356,21 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
     it carries any (Q2): the internal record's are the producer's ``internal_buy_in_models`` (else the producer's, as
     ``prediction_from_row`` stored them), so the models shown beside the internal buy-in are its own; for a blend record
     they are the row's own values, bit for bit (a record without models leaves the row's untouched).
-    The producer's other display fields (``score``, ``status``, ``expected_total_return_percent``) stay as the producer
-    computed them over the blend (a declared residue of Passo 1, closed by Passo 3)."""
+    Rev 9 (the residue of Passo 1, closed): for an INTERNAL record the TP-dependent display fields — ``score``, ``status``,
+    ``expected_total_return_percent`` and, when the producer emits them, ``tp_validation_status``/``tp_validation_reasons``
+    — are the producer's INTERNAL VIEW of the row (``internal_view``), never the blend's; an internal record whose row has
+    no internal view is NOT served (``None``, WARNING once per record per process, INFO after) — the validator never selects
+    such a cycle for the internal source, so this is the guard of a hand-made generation. A blend record is served as before."""
+    view: dict[str, Any] | None = None
+    if record.get("source") == SOURCE_INTERNAL:
+        view = internal_view(row)
+        if view is None:
+            key = f"{cycle_id}/{record.get('symbol')}"
+            level = logging.INFO if key in _viewless_logged else logging.WARNING
+            _viewless_logged.add(key)
+            logger.log(level, "valuation_official: internal record %s/%s of cycle %s has no internal view on its row (score/status/expected return on the "
+                       "internal TP) — not served: the internal TP is never shown under the blend's status (rev 9)", market, record.get("symbol"), cycle_id)
+            return None
     stamped = copy.deepcopy(dict(row))
     tp, buy_in, price = float(record["tp"]), float(record["buy_in"]), _positive(record.get("price"))
     if price is not None:
@@ -1292,6 +1382,8 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
     models = decomposition.get("buy_in_models") if isinstance(decomposition, Mapping) else None
     if isinstance(models, Mapping) and models:
         stamped["buy_in_models"] = copy.deepcopy(dict(models))  # Q2: the models of the served buy-in, never the blend's under an internal record
+    if view is not None:
+        stamped.update(view)  # rev 9: the status/score/expected return of the served (internal) TP, never the blend's
     stamped.update({
         "our_tp": tp,
         "buy_in": buy_in,
@@ -1343,14 +1435,17 @@ def official_rows(database: Any, market: str, *, generation: Any = UNRESOLVED) -
             if row is None:
                 logger.warning("valuation_official: record %s/%s of cycle %s has no display row — not served", selected, symbol, cycle_id)
                 continue
-            result.setdefault(symbol, _served(row, record, generation=resolved, cycle_id=str(cycle_id), scope="universe", market=selected))
+            served = _served(row, record, generation=resolved, cycle_id=str(cycle_id), scope="universe", market=selected)
+            if served is not None:  # rev 9: an internal record without its row's internal view is not served (logged by _served)
+                result.setdefault(symbol, served)
     return result
 
 
 def official_row(database: Any, market: str, symbol: str, *, generation: Any = UNRESOLVED) -> dict[str, Any] | None:
     """The official row for one symbol, resolved through ONE generation: from the market's universe cycle, else from
     the targeted cycles the generation admitted for that symbol. Nothing outside the generation is ever served
-    (F393-4). ``None`` means "no official TP" — consumers say so instead of computing."""
+    (F393-4). ``None`` means "no official TP" — consumers say so instead of computing; an internal record whose row has no
+    internal view is ``None`` too (rev 9, ``_served``)."""
     clean = symbol.strip().upper().removesuffix(".SA").removesuffix(".US")
     resolved = _resolve(database, generation)
     if not resolved:
@@ -1544,8 +1639,55 @@ def _percentile(values: list[float], fraction: float) -> float | None:
 
 def _ratio_stats(values: list[float]) -> dict[str, float | None]:
     magnitudes = [abs(value) for value in values]
-    return {"median": statistics.median(values) if values else None, "p90": _percentile(values, 0.9),
+    return {"median": statistics.median(values) if values else None, "p10": _percentile(values, 0.1), "p90": _percentile(values, 0.9),
             "abs_median": statistics.median(magnitudes) if magnitudes else None, "abs_p90": _percentile(magnitudes, 0.9)}
+
+
+def _quantiles(values: list[float]) -> dict[str, float | None]:
+    """The spread of a served quantity (rev 9: the upside of each arm), ``P90_METHOD`` at 10/25/75/90 %, the median exact."""
+    return {"p10": _percentile(values, 0.1), "p25": _percentile(values, 0.25), "median": statistics.median(values) if values else None,
+            "p75": _percentile(values, 0.75), "p90": _percentile(values, 0.9)}
+
+
+def _change_buckets(ratios: list[float]) -> dict[str, Any]:
+    """How many TPs move, and by how much (rev 9): ``down``/``flat``/``up`` by the sign of ``tp_internal / tp_blend − 1`` and
+    the magnitude in ``TP_CHANGE_BUCKETS`` (upper bound exclusive; the last bucket ``ge_25pct``). Counts only."""
+    magnitude: dict[str, int] = {name: 0 for name, _ in TP_CHANGE_BUCKETS}
+    magnitude["ge_25pct"] = 0
+    for ratio in ratios:
+        name = next((bucket for bucket, bound in TP_CHANGE_BUCKETS if abs(ratio) < bound), "ge_25pct")
+        magnitude[name] += 1
+    return {"down": sum(ratio < 0 for ratio in ratios), "flat": sum(ratio == 0 for ratio in ratios), "up": sum(ratio > 0 for ratio in ratios),
+            "abs": magnitude}
+
+
+def _report_view(database: Any, generation: Mapping[str, Any], market: str, record: Mapping[str, Any],
+                 rows: dict[str, dict[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    """The row a consumer would be served for ``record`` (``_served``, the same overlay), read from the record's own cycle —
+    ``None`` when the cycle row is gone or, for an internal record, has no internal view (counted by the report, not logged:
+    a receipt over a pre-rev-9 cycle would otherwise warn once per symbol). ``rows`` memoizes the cycles read."""
+    cycle_id = str(record["cycle_id"])
+    if cycle_id not in rows:
+        snapshot = database.official_cycle_snapshot(cycle_id)
+        rows[cycle_id] = {str(row.get("symbol") or "").strip().upper(): row for row in cycle_rows(snapshot)} if snapshot else {}
+    row = rows[cycle_id].get(str(record["symbol"]))
+    if row is None or (record.get("source") == SOURCE_INTERNAL and internal_view(row) is None):
+        return None
+    return _served(row, record, generation=generation, cycle_id=cycle_id, scope=str(record.get("scope") or "universe"), market=market)
+
+
+def _status_block(pairs: list[tuple[str, str]]) -> dict[str, Any]:
+    """Status counts of each arm and the transitions (``before->after``, only the changed ones) over the served pairs."""
+    before: dict[str, int] = {}
+    after: dict[str, int] = {}
+    transitions: dict[str, int] = {}
+    for old, new in pairs:
+        before[old] = before.get(old, 0) + 1
+        after[new] = after.get(new, 0) + 1
+        if old != new:
+            transitions[f"{old}->{new}"] = transitions.get(f"{old}->{new}", 0) + 1
+    return {"before": dict(sorted(before.items())), "after": dict(sorted(after.items())), "changed": sum(transitions.values()),
+            "transitions": dict(sorted(transitions.items()))}
 
 
 def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_detail_path: str | Path | None = None,
@@ -1564,15 +1706,22 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     ``select_generation`` recomputes it with the exact ``cycles``/``targeted``/``source_version`` of the order and a
     receipt computed over another composition (another cycle in a market, a targeted admission added or dropped,
     another declared version) is refused.
-    Per market ``n`` (symbols recorded in BOTH sources),
-    ``missing_internal`` (recorded in the blend only: rows produced before Passo 1), and the median / p90 (signed and in
-    magnitude, ``P90_METHOD``) of ``tp_internal / tp_blend − 1`` and of ``buy_in_internal / buy_in_blend − 1``. The
-    AGGREGATE (returned, printable) names no symbol; ``report_sha256`` is the canonical hash of the aggregate without
-    itself — the hash the mesa's order to switch cites (``select_generation(before_after_sha256=…)``). The per-symbol
-    DETAIL exists only in ``private_detail_path`` when given (written as the canonical JSON whose sha256 is the aggregate's
-    ``private_detail_sha256``), never printed. ``ValueError`` without a generation in force, or under a generation whose
-    source is unknown (Q3). Deterministic: no clock — the hash recomputes wherever the same generation is read, which is
-    what lets ``select_generation`` check the hash a switch cites (Q1).
+    Per market ``n`` (symbols recorded in BOTH sources), ``missing_internal`` (recorded in the blend only: rows produced
+    before Passo 1), ``only_internal`` (recorded in the after arm only), and the median / p10 / p90 (signed and in
+    magnitude, ``P90_METHOD``) of ``tp_internal / tp_blend − 1`` and of ``buy_in_internal / buy_in_blend − 1`` over the n
+    pairs, with ``tp_change_buckets`` (``_change_buckets``). Rev 9 (V3): the SERVED view of both arms — what ``_served`` hands
+    a consumer: the blend row, and the internal record under the producer's internal view — over the ``served_pairs`` (the
+    pairs served on BOTH sides; ``before_unservable``/``after_unservable`` count the rest: a cycle row gone, or an after row
+    without the internal view — a cycle produced before rev 9, which the validator also refuses): ``status`` (counts per
+    arm, ``changed``, ``transitions``), ``buy`` (``BUY_STATUS`` before/after/entered/left), ``upside_percent`` (quantiles of
+    each arm and of the change in percentage points), ``score_change`` (points) and ``tp_validation`` (validated counts,
+    null for a market whose rows carry no TP validation). The AGGREGATE (returned, printable) names no symbol;
+    ``report_sha256`` is the canonical hash of the aggregate without itself — the hash the mesa's order to switch cites
+    (``select_generation(before_after_sha256=…)``) and the owner accepts (``OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256``). The
+    per-symbol DETAIL exists only in ``private_detail_path`` when given (written as the canonical JSON whose sha256 is the
+    aggregate's ``private_detail_sha256``), never printed. ``ValueError`` without a generation in force, or under a
+    generation whose source is unknown (Q3). Deterministic: no clock — the hash recomputes wherever the same generation is
+    read, which is what lets ``select_generation`` check the hash a switch cites (Q1).
     The private file is created EXCLUSIVELY (Q5): ``O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW``, mode ``0o600`` (then
     ``fchmod`` so the umask cannot widen it) — an existing path, a file or a symlink (dangling or not), is refused with
     ``FileExistsError`` and nothing is overwritten or followed; the report is returned only after the bytes are written."""
@@ -1603,23 +1752,60 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     after_generation: dict[str, Any] = {**resolved, "cycles": after_cycles, "targeted": after_targeted}
     markets: dict[str, dict[str, Any]] = {}
     detail_markets: dict[str, dict[str, Any]] = {}
+    rows: dict[str, dict[str, dict[str, Any]]] = {}  # cycle id → its rows by symbol, read once for both arms
     for market in MARKETS:
         blend, _ = _generation_records(database, resolved, market, source=SOURCE_OFFICIAL)
         internal, _ = _generation_records(database, after_generation, market, source=SOURCE_INTERNAL)
-        pairs: dict[str, dict[str, float]] = {}
+        pairs: dict[str, dict[str, Any]] = {}
         missing: list[str] = []
+        served: list[dict[str, Any]] = []
+        unservable = {"before": 0, "after": 0}
+        validation_present = False
         for symbol in sorted(blend):
             before, after = blend[symbol], internal.get(symbol)
             if after is None:
                 missing.append(symbol)
                 continue
-            pairs[symbol] = {"tp_blend": float(before["tp"]), "tp_internal": float(after["tp"]), "tp_ratio": float(after["tp"]) / float(before["tp"]) - 1,
-                             "buy_in_blend": float(before["buy_in"]), "buy_in_internal": float(after["buy_in"]),
-                             "buy_in_ratio": float(after["buy_in"]) / float(before["buy_in"]) - 1}
-        markets[market] = {"n": len(pairs), "missing_internal": len(missing),
-                           "tp": _ratio_stats([pair["tp_ratio"] for pair in pairs.values()]),
-                           "buy_in": _ratio_stats([pair["buy_in_ratio"] for pair in pairs.values()])}
-        detail_markets[market] = {"pairs": pairs, "missing_internal": missing}
+            pair: dict[str, Any] = {
+                "tp_blend": float(before["tp"]), "tp_internal": float(after["tp"]), "tp_ratio": float(after["tp"]) / float(before["tp"]) - 1,
+                "buy_in_blend": float(before["buy_in"]), "buy_in_internal": float(after["buy_in"]), "buy_in_ratio": float(after["buy_in"]) / float(before["buy_in"]) - 1,
+            }
+            shown_before = _report_view(database, resolved, market, before, rows)
+            shown_after = _report_view(database, after_generation, market, after, rows)
+            unservable["before"] += shown_before is None
+            unservable["after"] += shown_after is None
+            if shown_before is not None and shown_after is not None:
+                view = {
+                    "status_blend": str(shown_before.get("status") or "unknown"), "status_internal": str(shown_after.get("status") or "unknown"),
+                    "upside_blend": _number(shown_before.get("upside_percent")), "upside_internal": _number(shown_after.get("upside_percent")),
+                    "score_blend": _number(shown_before.get("score")), "score_internal": _number(shown_after.get("score")),
+                    "validated_blend": shown_before.get("tp_validation_status") == "validated",
+                    "validated_internal": shown_after.get("tp_validation_status") == "validated",
+                }
+                validation_present = validation_present or "tp_validation_status" in shown_before or "tp_validation_status" in shown_after
+                pair.update(view)
+                served.append(view)
+            pairs[symbol] = pair
+        upsides = [(view["upside_blend"], view["upside_internal"]) for view in served if view["upside_blend"] is not None and view["upside_internal"] is not None]
+        scores = [view["score_internal"] - view["score_blend"] for view in served if view["score_blend"] is not None and view["score_internal"] is not None]
+        tp_ratios = [pair["tp_ratio"] for pair in pairs.values()]
+        markets[market] = {
+            "n": len(pairs), "missing_internal": len(missing), "only_internal": len(set(internal) - set(blend)),
+            "served_pairs": len(served), "before_unservable": unservable["before"], "after_unservable": unservable["after"],
+            "tp": _ratio_stats(tp_ratios), "tp_change_buckets": _change_buckets(tp_ratios),
+            "buy_in": _ratio_stats([pair["buy_in_ratio"] for pair in pairs.values()]),
+            "status": _status_block([(view["status_blend"], view["status_internal"]) for view in served]),
+            "buy": {"status": BUY_STATUS, "before": sum(view["status_blend"] == BUY_STATUS for view in served),
+                    "after": sum(view["status_internal"] == BUY_STATUS for view in served),
+                    "entered": sum(view["status_blend"] != BUY_STATUS and view["status_internal"] == BUY_STATUS for view in served),
+                    "left": sum(view["status_blend"] == BUY_STATUS and view["status_internal"] != BUY_STATUS for view in served)},
+            "upside_percent": {"before": _quantiles([old for old, _ in upsides]), "after": _quantiles([new for _, new in upsides]),
+                               "change_pp": _ratio_stats([new - old for old, new in upsides])},
+            "score_change": _ratio_stats(scores),
+            "tp_validation": ({"before_validated": sum(view["validated_blend"] for view in served),
+                               "after_validated": sum(view["validated_internal"] for view in served)} if validation_present else None),
+        }
+        detail_markets[market] = {"pairs": pairs, "missing_internal": missing, "only_internal": sorted(set(internal) - set(blend))}
     detail = {"schema": f"{BEFORE_AFTER_SCHEMA}_DETAIL", "generation_id": resolved["generation_id"], "markets": detail_markets}
     aggregate = {
         "schema": BEFORE_AFTER_SCHEMA,
@@ -1635,6 +1821,7 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
         "after_source_version": after_source_version,  # the version the switch stamps (declared, or the after cycles' union): bound too
         "session_dates": dict(resolved.get("session_dates") or {}),
         "source_version": resolved.get("source_version"),
+        "buy_status": BUY_STATUS,
         "markets": markets,
         "p90_method": P90_METHOD,
         "private_detail_sha256": canonical_sha256(detail),
@@ -1643,6 +1830,78 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     if private_detail_path is not None:
         _write_private_detail(Path(private_detail_path), detail)
     return report
+
+
+def _pt_number(value: Any, *, digits: int = 1, suffix: str = "", signed: bool = False, scale: float = 1.0) -> str:
+    """A number as the owner reads it (decimal comma; ``scale`` 100 turns a ratio into percent); ``n/d`` for an absent one."""
+    number = _number(value)
+    if number is None:
+        return "n/d"
+    number *= scale
+    text = f"{number:+.{digits}f}" if signed else f"{number:.{digits}f}"
+    return text.replace(".", ",") + suffix
+
+
+def _pt_counts(block: Mapping[str, Any] | None) -> str:
+    return ", ".join(f"`{name}` {count}" for name, count in (block or {}).items()) or "—"
+
+
+def before_after_markdown(report: Mapping[str, Any]) -> str:
+    """The receipt as the owner reads it — Portuguese markdown rendered ONLY from the aggregate (rev 9): no symbol can reach
+    it, so it is safe in a public CI log (``$GITHUB_STEP_SUMMARY``). It quotes ``report_sha256``: the hash the owner accepts
+    is the one the lock commit names and the order cites."""
+    markets = {market: item for market, item in (report.get("markets") or {}).items() if isinstance(item, Mapping)}
+    lines = [
+        "## Valuation P1 — antes/depois do TP oficial sem consenso",
+        "",
+        f"- Recibo `report_sha256`: `{report.get('report_sha256')}` (esquema `{report.get('schema')}`)",
+        f"- Antes: geração `{report.get('generation_id')}` servindo `{report.get('source_from')}` (fonte em vigor: `{report.get('generation_source')}`)",
+        f"- Depois: `{report.get('source_to')}`, versão `{report.get('after_source_version')}`, "
+        f"{report.get('after_targeted_count')} direcionado(s) (hash `{str(report.get('after_targeted_sha256') or '')[:12]}…`)",
+        f"- COMPRA = status `{report.get('buy_status')}` (o portão de Candidatos; a lista B3 ainda deduplica emissores e exige a zona de poder)",
+        "",
+        "| Mercado | Pares | Só no blend | Servidos nos dois | Sem visão interna | COMPRA antes → depois | Entram | Saem "
+        "| Mudam de status | ΔTP mediana | ΔTP p10 / p90 | Upside mediano antes → depois |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for market in MARKETS:
+        if market not in markets:
+            continue
+        item = markets[market]
+        tp, buy, upside = item.get("tp") or {}, item.get("buy") or {}, item.get("upside_percent") or {}
+        ratio = {key: _pt_number(tp.get(key), digits=2, suffix=" %", signed=True, scale=100) for key in ("median", "p10", "p90")}
+        lines.append(
+            f"| {market} | {item.get('n')} | {item.get('missing_internal')} | {item.get('served_pairs')} | {item.get('after_unservable')} "
+            f"| {buy.get('before')} → {buy.get('after')} | {buy.get('entered')} | {buy.get('left')} | {(item.get('status') or {}).get('changed')} "
+            f"| {ratio['median']} | {ratio['p10']} / {ratio['p90']} "
+            f"| {_pt_number((upside.get('before') or {}).get('median'), suffix=' %')} → {_pt_number((upside.get('after') or {}).get('median'), suffix=' %')} |"
+        )
+    lines += ["", "### Status por mercado (pares servidos nos dois lados)", ""]
+    for market in MARKETS:
+        if market not in markets:
+            continue
+        item = markets[market]
+        status = item.get("status") or {}
+        transitions = ", ".join(f"`{name.replace('->', ' → ')}` {count}" for name, count in (status.get("transitions") or {}).items()) or "nenhuma"
+        buckets = item.get("tp_change_buckets") or {}
+        magnitude = buckets.get("abs") or {}
+        lines.append(f"- **{market}** — antes: {_pt_counts(status.get('before'))}; depois: {_pt_counts(status.get('after'))}; transições: {transitions}.")
+        lines.append(f"  ΔTP: {buckets.get('down', 0)} caem, {buckets.get('flat', 0)} iguais, {buckets.get('up', 0)} sobem; |Δ| < 1 %: {magnitude.get('lt_1pct', 0)}, "
+                     f"1–5 %: {magnitude.get('1_to_5pct', 0)}, 5–10 %: {magnitude.get('5_to_10pct', 0)}, 10–25 %: {magnitude.get('10_to_25pct', 0)}, "
+                     f"≥ 25 %: {magnitude.get('ge_25pct', 0)}. Δ score mediano: {_pt_number((item.get('score_change') or {}).get('median'), signed=True)} ponto(s).")
+        upside = item.get("upside_percent") or {}
+        before, after = upside.get("before") or {}, upside.get("after") or {}
+        lines.append(f"  Upside p10–p90: antes {_pt_number(before.get('p10'))} a {_pt_number(before.get('p90'), suffix=' %')}; depois {_pt_number(after.get('p10'))} a "
+                     f"{_pt_number(after.get('p90'), suffix=' %')}; Δ mediano {_pt_number((upside.get('change_pp') or {}).get('median'), signed=True)} p.p.")
+        if isinstance(item.get("tp_validation"), Mapping):
+            lines.append(f"  TP validado: {item['tp_validation'].get('before_validated')} → {item['tp_validation'].get('after_validated')}.")
+    lines += ["", "Nenhum símbolo é impresso: o detalhe por símbolo fica só no arquivo privado "
+              f"(`private_detail_sha256` `{str(report.get('private_detail_sha256') or '')[:12]}…`)."]
+    unservable = sum(int(item.get("after_unservable") or 0) for item in markets.values())
+    if unservable:
+        lines.append(f"**Atenção:** {unservable} par(es) sem a visão interna do produtor (ciclo anterior à rev 9) — a troca seria recusada pelo "
+                     "validador; é preciso uma noite completa dos três produtores com esta revisão.")
+    return "\n".join(lines) + "\n"
 
 
 def _write_private_detail(path: Path, detail: Mapping[str, Any]) -> None:
@@ -1662,26 +1921,59 @@ def _write_private_detail(path: Path, detail: Mapping[str, Any]) -> None:
         handle.write(encoded)
 
 
+def _order_summary(generation: Mapping[str, Any]) -> dict[str, Any]:
+    """What the order commands print (rev 9): the new generation WITHOUT the targeted symbols (a count and the hash of the
+    normalized mapping, as the receipt) — the cycles, the source, the version and the receipt's ``source_switch``."""
+    targeted = dict(sorted((generation.get("targeted") or {}).items()))
+    return {"generation_id": generation.get("generation_id"), "previous_generation_id": generation.get("previous_generation_id"),
+            "source": generation.get("source"), "source_version": generation.get("source_version"), "activated_at": generation.get("activated_at"),
+            "cycles": dict(generation.get("cycles") or {}), "targeted_count": len(targeted), "targeted_sha256": canonical_sha256(targeted),
+            "source_switch": (generation.get("receipt") or {}).get("source_switch"), "explicit": (generation.get("receipt") or {}).get("explicit")}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Official TP selection (V3.2 rev 7 §7-bis): bootstrap records/generation, show the health, "
-                                                 "or publish the Passo 1 before/after receipt (aggregate only; the per-symbol detail goes to --private-detail).")
+                                                 "publish the Passo 1 before/after receipt (aggregate only; the per-symbol detail goes to --private-detail), "
+                                                 "or execute the mesa's order — the switch to the internal source (locked) or the rollback to the blend.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--bootstrap", action="store_true")
     group.add_argument("--health", action="store_true")
     group.add_argument("--before-after", action="store_true", help="the before/after receipt of the current generation (Passo 1); prints the aggregate only")
+    group.add_argument("--switch-to-internal", action="store_true",
+                       help="the mesa's order: select_generation(source=official_internal_v1) over the proposal, citing --before-after-sha256 "
+                            "(refused while the lock is false or the hash is not the accepted receipt)")
+    group.add_argument("--rollback-to-blend", action="store_true",
+                       help="the mesa's order: select_generation(source=official_blend_v1) over the proposal (never locked, no hash)")
     parser.add_argument("--private-detail", metavar="PATH", default=None, help="with --before-after: write the per-symbol detail to PATH (never printed)")
+    parser.add_argument("--markdown", metavar="PATH", default=None,
+                        help="with --before-after: APPEND the Portuguese summary of the aggregate to PATH (no symbols; $GITHUB_STEP_SUMMARY works)")
     parser.add_argument("--cycles", metavar="MARKET=CYCLE_ID", action="append", default=None,
-                        help="with --before-after: the proposal's universe cycle for MARKET (repeatable; markets not named keep the head's cycle) — "
-                             "the receipt then binds THIS proposal (C395-1) and, unless --targeted names them, admits no targeted cycle")
+                        help="with --before-after or an order: the proposal's universe cycle for MARKET (repeatable; markets not named keep the head's "
+                             "cycle) — the receipt then binds THIS proposal (C395-1) and, unless --targeted names them, admits no targeted cycle")
     parser.add_argument("--targeted", metavar="SYMBOL=CYCLE_ID", action="append", default=None,
-                        help="with --before-after: a targeted admission of the proposal (repeatable)")
-    parser.add_argument("--purge-targeted", action="store_true", help="with --before-after: the proposal admits no targeted cycle (the head's cycles, targeted={})")
-    parser.add_argument("--source-version", metavar="VERSION", default=None, help="with --before-after: the source_version the order will declare (else the cycles' union)")
+                        help="with --before-after or an order: a targeted admission of the proposal (repeatable)")
+    parser.add_argument("--purge-targeted", action="store_true",
+                        help="with --before-after or an order: the proposal admits no targeted cycle (the head's cycles, targeted={})")
+    parser.add_argument("--source-version", metavar="VERSION", default=None,
+                        help="with --before-after or an order: the source_version the order declares (else the cycles' union; a rollback: 'rollback')")
+    parser.add_argument("--before-after-sha256", metavar="HASH", default=None, help="with --switch-to-internal: the accepted receipt's report_sha256")
+    parser.add_argument("--reason", metavar="TEXT", default=None, help="with an order: the reason written in the generation's receipt (required)")
     args = parser.parse_args(argv)
-    if (args.private_detail or args.cycles or args.targeted or args.purge_targeted or args.source_version) and not args.before_after:
-        parser.error("--private-detail/--cycles/--targeted/--purge-targeted/--source-version require --before-after")
+    order = args.switch_to_internal or args.rollback_to_blend
+    if (args.cycles or args.targeted or args.purge_targeted or args.source_version) and not (args.before_after or order):
+        parser.error("--cycles/--targeted/--purge-targeted/--source-version require --before-after, --switch-to-internal or --rollback-to-blend")
+    if (args.private_detail or args.markdown) and not args.before_after:
+        parser.error("--private-detail/--markdown require --before-after")
     if args.targeted and args.purge_targeted:
         parser.error("--targeted and --purge-targeted are exclusive")
+    if args.before_after_sha256 and not args.switch_to_internal:
+        parser.error("--before-after-sha256 requires --switch-to-internal")
+    if args.switch_to_internal and not args.before_after_sha256:
+        parser.error("--switch-to-internal requires --before-after-sha256 (the report_sha256 of the receipt the owner accepted)")
+    if order and not (args.reason or "").strip():
+        parser.error("an order (--switch-to-internal/--rollback-to-blend) requires --reason")
+    if args.reason and not order:
+        parser.error("--reason requires --switch-to-internal or --rollback-to-blend")
 
     def _pairs(items: list[str] | None, flag: str, *, keys: tuple[str, ...] | None = None) -> dict[str, str]:
         pairs: dict[str, str] = {}
@@ -1699,16 +1991,39 @@ def main(argv: list[str] | None = None) -> int:
     from .config import get_settings
     from .database import Database
     database = Database(get_settings())
+
+    def _proposal() -> tuple[dict[str, str] | None, dict[str, str] | None]:
+        """The proposal exactly as the receipt reads it: with --cycles/--targeted/--purge-targeted, the head's cycles overlaid
+        by --cycles and targeted = --targeted (or none); without them, ``(None, None)`` — the head's own composition."""
+        if not (args.cycles or args.targeted or args.purge_targeted):
+            return None, None
+        head = database.latest_valuation_official_selection() or {}
+        cycles = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles", keys=tuple(MARKETS))}
+        return cycles, _pairs(args.targeted, "--targeted")
+
     if args.bootstrap:
         result = bootstrap_official_selection(database)
     elif args.before_after:
-        if args.cycles or args.targeted or args.purge_targeted:  # a PROPOSAL: the head's cycles overlaid by --cycles; targeted = --targeted (or none)
-            head = database.latest_valuation_official_selection() or {}
-            proposal = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles", keys=tuple(MARKETS))}
-            result = before_after_report(database, private_detail_path=args.private_detail, cycles=proposal, targeted=_pairs(args.targeted, "--targeted"),
-                                         source_version=args.source_version)
-        else:
-            result = before_after_report(database, private_detail_path=args.private_detail, source_version=args.source_version)
+        cycles, targeted = _proposal()
+        result = before_after_report(database, private_detail_path=args.private_detail, cycles=cycles, targeted=targeted,
+                                     source_version=args.source_version)
+        if args.markdown:
+            with open(args.markdown, "a", encoding="utf-8") as handle:  # appended: a CI step summary is an existing file
+                handle.write(before_after_markdown(result))
+    elif order:
+        cycles, targeted = _proposal()
+        if cycles is None:  # no proposal: the head's own composition — the cycles and admissions the receipt without options read
+            head = database.latest_valuation_official_selection()
+            if head is None:
+                parser.error("no official generation in force: an order needs a head (bootstrap the blend first)")
+            cycles = {market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}
+            targeted = _normalized_targeted(head.get("targeted") or {}, strict=False)
+        generation = select_generation(
+            database, cycles=cycles, targeted=targeted, now=datetime.now(timezone.utc), activated_by="mesa", reason=str(args.reason).strip(),
+            source=SOURCE_INTERNAL if args.switch_to_internal else SOURCE_OFFICIAL, source_version=args.source_version,
+            before_after_sha256=args.before_after_sha256 if args.switch_to_internal else None,
+        )
+        result = _order_summary(generation)
     else:
         result = selection_health(database, now=datetime.now(timezone.utc))
     print(json.dumps(result, sort_keys=True, default=str))

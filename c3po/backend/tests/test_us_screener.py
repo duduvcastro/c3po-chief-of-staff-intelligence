@@ -207,6 +207,80 @@ def test_stock_rows_carry_the_internal_buy_in_derived_by_the_producers_own_entry
     assert record is not None and record["tp"] == 145.0 and record["buy_in"] == expected and record["consensus_tp"] == 150.0 and record["consensus_weight_percent"] == 0.0
 
 
+def _status_before_rev9(signal_quality: str, upside: float, risk: float, entry_distance: float, tp_cutoff: float, risk_cutoff: float) -> str:
+    """The inline status rule of ``_build`` before rev 9, verbatim — the oracle the extracted ``_screen_status`` must reproduce."""
+    from app.market_data.us_screener import MAX_ENTRY_DISTANCE
+    return (
+        "full_match"
+        if signal_quality == "validated"
+        and upside >= tp_cutoff
+        and risk < risk_cutoff
+        and -10 <= entry_distance <= MAX_ENTRY_DISTANCE
+        else "near_buy"
+        if signal_quality == "validated" and upside >= tp_cutoff
+        else "watchlist"
+    )
+
+
+def test_the_status_rule_is_unchanged_and_the_internal_status_applies_it_to_the_internal_tp_with_the_same_cutoffs() -> None:
+    """Passo 1 rev 9: ``_assign_statuses`` (extracted from ``_build``) gives every row the status it always had and, by the SAME
+    rule and the SAME cutoffs of the build — the same US hurdle (defect b: the build's US risk-free rate + 6 p.p., stamped on
+    every row) — ``internal_status`` over the internal upside and entry distance."""
+    from app.market_data.us_screener import MAX_ENTRY_DISTANCE
+    risk_free_rate = DummyOnePagers()._us_risk_free_rate()
+    tp_cutoff = USScreeningService._tp_cutoff(risk_free_rate)
+    rows = []
+    for signal in ("validated", "provisional"):
+        for upside in (tp_cutoff - 1, tp_cutoff, tp_cutoff + 10):
+            for risk in (20.0, 39.0, 41.0, 60.0):
+                for distance in (-11.0, -10.0, 0.0, MAX_ENTRY_DISTANCE, MAX_ENTRY_DISTANCE + 1):
+                    rows.append({"signal_quality": signal, "upside_percent": upside, "risk_score": risk, "price_vs_buy_in_percent": distance,
+                                 "internal_upside_percent": upside - 5, "internal_price_vs_buy_in_percent": -distance})
+    USScreeningService._assign_statuses(rows, risk_free_rate)
+    risk_cutoff = USScreeningService._risk_cutoff(rows)
+    for row in rows:
+        assert (row["tp_hurdle_percent"], row["tp_hurdle_risk_free_rate"]) == (tp_cutoff, risk_free_rate)
+        assert row["status"] == _status_before_rev9(row["signal_quality"], row["upside_percent"], row["risk_score"], row["price_vs_buy_in_percent"], tp_cutoff, risk_cutoff)
+        assert row["internal_status"] == _status_before_rev9(row["signal_quality"], row["internal_upside_percent"], row["risk_score"],
+                                                             row["internal_price_vs_buy_in_percent"], tp_cutoff, risk_cutoff)
+    assert {row["status"] for row in rows} == {"full_match", "near_buy", "watchlist"} and any(row["status"] != row["internal_status"] for row in rows)
+
+
+def test_rows_carry_the_internal_view_and_the_internal_record_is_served_with_it_bit_for_bit() -> None:
+    """Passo 1 rev 9 (official_internal_v1): the row carries the TP-dependent tail on the INTERNAL TP and its buy-in — upside,
+    entry distance, expected return, Power Score (and status, in the build's status pass) — by the same expressions; the
+    internal record is served with exactly that view (the served identities equal the row's internal upside/distance bit for
+    bit); an ETF, with no consensus, has the blend's view."""
+    from app import valuation_official as official
+
+    stock = service()._analyze_stock("NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    assert stock["internal_buy_in"] != stock["buy_in"]  # the blend's buy-in is capped by the consensus pull; the internal one is not
+    assert stock["internal_upside_percent"] == (stock["internal_tp"] / 100.0 - 1) * 100
+    assert stock["internal_price_vs_buy_in_percent"] == (100.0 / stock["internal_buy_in"] - 1) * 100 != stock["price_vs_buy_in_percent"]
+    assert stock["internal_expected_total_return_percent"] == stock["internal_upside_percent"] + 1.0  # dividendYield 0.01 → 1 p.p., as the blend's
+    assert stock["expected_total_return_percent"] == stock["upside_percent"] + 1.0
+    assert stock["internal_score"] == USScreeningService._power_score(stock["internal_upside_percent"], stock["risk_score"], stock["operating_quality"],
+                                                                      stock["valuation_confidence"], stock["internal_price_vs_buy_in_percent"])
+    assert stock["score"] == USScreeningService._power_score(stock["upside_percent"], stock["risk_score"], stock["operating_quality"],
+                                                             stock["valuation_confidence"], stock["price_vs_buy_in_percent"])
+    etf = service()._analyze_etf("NYSE", {**STOCK_QUOTE, "symbol": "TESTETF"}, {"companyName": "Test ETF", "isETF": True, "etfCategory": "Large Blend",
+                                                                             "etfTotalAssets": 8_000_000_000, "etfHoldingsCount": 500}, rising_history(), 400_000_000)
+    USScreeningService._assign_statuses([stock, etf], DummyOnePagers()._us_risk_free_rate())
+    for key in ("upside_percent", "price_vs_buy_in_percent", "expected_total_return_percent", "score", "status"):
+        assert etf[f"internal_{key}"] == etf[key]  # no consensus: the internal view IS the blend's
+    # the internal record is served with the internal view; the blend record with the blend's, as before
+    at = datetime(2026, 9, 7, 21, 0, tzinfo=timezone.utc)
+    internal = official.prediction_from_row(stock, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=at, source=official.SOURCE_INTERNAL)
+    blend = official.prediction_from_row(stock, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=at)
+    assert internal is not None and blend is not None and internal["decomposition"]["status"] == stock["internal_status"] and blend["decomposition"]["status"] == stock["status"]
+    served = official._served(stock, internal, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="NASDAQ")
+    assert served is not None and served["upside_percent"] == stock["internal_upside_percent"] and served["price_vs_buy_in_percent"] == stock["internal_price_vs_buy_in_percent"]
+    assert served["score"] == stock["internal_score"] and served["status"] == stock["internal_status"]
+    assert served["expected_total_return_percent"] == stock["internal_expected_total_return_percent"]
+    shown = official._served(stock, blend, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="NASDAQ")
+    assert shown is not None and (shown["score"], shown["status"], shown["upside_percent"]) == (stock["score"], stock["status"], stock["upside_percent"])
+
+
 def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:
     result = service()._analyze_etf(
         "NYSE",
@@ -665,6 +739,11 @@ def test_us_tp_hurdle_is_the_us_ten_year_plus_the_premium_never_selic(monkeypatc
     assert rows[0]["upside_percent"] == pytest.approx(145 / 126 * 100 - 100)
     assert rows[0]["tp_hurdle_percent"] == pytest.approx(10.2) and rows[0]["tp_hurdle_risk_free_rate"] == 0.042
     assert rows[0]["status"] == "near_buy"  # validated and above the US hurdle; the buy-in (94) is far below the price
+    # Passo 1 rev 9: the internal status is judged against the SAME stamped US hurdle and the build's risk cutoff
+    assert rows[0]["internal_status"] == USScreeningService._screen_status(
+        rows[0]["signal_quality"], rows[0]["internal_upside_percent"], rows[0]["risk_score"], rows[0]["internal_price_vs_buy_in_percent"],
+        rows[0]["tp_hurdle_percent"], USScreeningService._risk_cutoff(rows),
+    )
 
 
 def test_served_us_criteria_and_matrix_use_the_hurdle_the_cycle_was_built_with(monkeypatch) -> None:
