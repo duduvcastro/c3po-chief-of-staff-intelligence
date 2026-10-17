@@ -589,6 +589,59 @@ def test_a_bar_dated_off_the_exchange_calendar_is_never_read_and_is_counted() ->
     assert excluded_dirty == excluded_clean
 
 
+# ------------------------------------------------------------------ P2-2: the price basis — levels on the as-traded close, returns on the adjusted close
+def _compute_with_bars(bars: dict[str, list[dict]], *, at: datetime = T) -> pit.PitComputation:
+    database = _database()
+    _publish_prices(database, bars=bars)
+    _publish_sources(database)
+    service = _service(database)
+    return service.compute("NASDAQ", as_of=at, prices=service.pin_vintage("NASDAQ", as_of=at, pinned_at=NOW))
+
+
+def _clean_bars() -> dict[str, list[dict]]:
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    return {f"{symbol}.US": _bars_for(symbol, sessions, base=100.0 + 10 * i) for i, symbol in enumerate(SYMBOLS)}
+
+
+def test_the_price_level_is_the_as_traded_close_and_adjusted_close_only_feeds_returns() -> None:
+    clean = _clean_bars()
+    doubled_close = {key: [{**bar, "close": bar["close"] * 2} for bar in rows] for key, rows in clean.items()}  # levels ×2, returns unchanged
+    halved_adjusted = {key: [{**bar, "adjusted_close": bar["adjusted_close"] / 2} for bar in rows] for key, rows in clean.items()}  # a constant adjustment
+    base, levels, adjusted = _compute_with_bars(clean), _compute_with_bars(doubled_close), _compute_with_bars(halved_adjusted)
+    for symbol in SYMBOLS:
+        row, row_levels, row_adjusted = (run.resolver.per_symbol[symbol]["row"] for run in (base, levels, adjusted))
+        assert row_levels["price"] == 2 * row["price"] and row_levels["market_cap"] == 2 * row["market_cap"]  # every level reads close...
+        assert row_levels["beta"] == pytest.approx(row["beta"])  # ...and never the returns
+        assert row_adjusted == row  # adjusted_close never reaches a level; a constant adjustment leaves every log return as it was
+    assert adjusted.results == base.results
+    assert base.manifest["price_basis"] == pit.PRICE_BASIS and base.manifest["price_basis"]["level"] == "close" and base.manifest["price_basis"]["returns"] == "adjusted_close"
+    assert panel.LABEL_CONVENTION == "total_return:adjusted_close"  # the panel's a(T) = adjusted_close(T) / close(T) assumes the TP on the as-traded basis
+    assert "price_basis" in pit.DECLARED_ASSUMPTIONS and base.resolver.price_basis_evidence == {"symbols_read": 6, "capital_event_sessions": 0, "symbols_with_capital_events": 0}
+
+
+def test_a_capital_event_between_the_shares_period_and_t_refuses_the_name_and_the_evidence_is_counted() -> None:
+    clean = _clean_bars()
+    bars = {key: [dict(bar) for bar in rows] for key, rows in clean.items()}
+
+    def raw_before(key: str, session: str, factor: float) -> None:  # the as-traded close × factor before ``session``; the adjusted series stays continuous
+        bars[key] = [{**bar, "close": round(bar["close"] * factor, 4)} if bar["date"] < session else bar for bar in bars[key]]
+
+    raw_before("AAA.US", "2024-05-01", 10.0)   # 10:1 split AFTER the shares' period end (balance 2024-03-31, filed 2024-05-15) and before T: refused
+    raw_before("BBB.US", "2024-02-01", 10.0)   # 10:1 split BEFORE the shares' period end: the reported count already carries it
+    raw_before("CCC.US", "2024-05-01", 1 / 0.85)  # a 15 % one-day dividend: below the threshold, never a capital event
+    raw_before("DDD.US", "2024-07-01", 10.0)   # a split AFTER T: outside every bar the run reads
+    base, run = _compute_with_bars(clean), _compute_with_bars(bars)
+    assert run.resolver.not_evaluable == {"AAA": "capital_event_between_shares_and_T"} and "AAA" not in run.results and set(run.results) == set(SYMBOLS) - {"AAA"}
+    assert run.resolver.prices.capital_events("AAA") == ["2024-05-01"] and run.resolver.prices.capital_events("BBB") == ["2024-02-01"]
+    assert run.resolver.prices.capital_events("CCC") == [] and run.resolver.prices.capital_events("DDD") == []
+    assert run.resolver.price_basis_evidence == {"symbols_read": 6, "capital_event_sessions": 2, "symbols_with_capital_events": 2}
+    assert run.summary()["price_basis_evidence"] == run.resolver.price_basis_evidence and run.summary()["not_evaluable"] == {"capital_event_between_shares_and_T": 1}
+    for symbol, factor in (("BBB", 1.0), ("CCC", 1.0), ("DDD", 10.0)):  # the price of T is the as-traded close of T (DDD: before its split, 10×);
+        assert run.resolver.per_symbol[symbol]["row"]["price"] == pytest.approx(factor * base.resolver.per_symbol[symbol]["row"]["price"])  # the beta
+        assert run.resolver.per_symbol[symbol]["beta_audit"] == base.resolver.per_symbol[symbol]["beta_audit"]  # reads the continuous adjusted series
+        assert run.resolver.per_symbol[symbol]["row"]["beta"] == pytest.approx(base.resolver.per_symbol[symbol]["row"]["beta"])
+
+
 # ------------------------------------------------------------------ §4 (auditor ii): identity, idempotency, interruption, changed inputs, concurrency
 def test_run_key_is_a_canonical_sha256_and_the_lock_key_derives_from_it() -> None:
     manifest = {"b": [1, 2], "a": {"y": 1.5, "x": None}}

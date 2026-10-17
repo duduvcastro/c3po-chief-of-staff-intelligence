@@ -29,7 +29,11 @@ publication that stops resolving is a refusal, never a substitution). ``--price-
 as that cut, so a whole grid of runs reads ONE publication while the nightly series keeps publishing (P2-1; the pin is a
 pointer kept beside the manifest — the run is named by the publication it resolves, never by the instant asked). ``T``
 filters ECONOMIC dates (``session_date ≤ T``); it is never used as the availability cut of the series (that would return
-nothing).
+nothing). Price basis (P2-2, ``PRICE_BASIS`` in the manifest): every LEVEL is the AS-TRADED ``close`` of the session —
+the unit of the share counts as reported and of the panel's label ``a(T) = adjusted_close(T) / close(T)`` —, and
+``adjusted_close`` feeds log returns only; a name whose close changed unit (a capital event: raw and adjusted returns
+apart by ≥ 25 %) after its shares' period end and by T is refused, and the run publishes how many such events the vintage
+shows (a close the provider retro-adjusted for splits shows none).
 
 Identity and idempotency (§4): ``run_key = sha256(canonical_json([source_version, market, T, manifest]))`` (canonical
 JSON — never Python ``hash()``); one snapshot per run (``analysis_type = valuation_pit_rerun``, ``entity_key =
@@ -123,6 +127,14 @@ TTM_MAX_SPAN_DAYS = 400
 FISCAL_PRICE_TOLERANCE_DAYS = 30
 BETA_WINDOW_SESSIONS = 252
 BETA_MIN_SESSIONS = 60
+PRICE_LEVEL_FIELD = "close"  # P2-2: every price LEVEL (price at T, market cap, P/E, P/BV, yield, fiscal-year ratios) is the AS-TRADED close
+RETURN_FIELD = "adjusted_close"  # log returns only (beta): splits and dividends neutralised; never a level
+CAPITAL_EVENT_MIN_FACTOR = 1.25  # a session whose raw and adjusted returns differ by ≥ this factor is a capital event (split, reverse split, large bonus issue)
+PRICE_BASIS: dict[str, Any] = {  # P2-2, declared in the manifest (hashed into run_key) — the panel's label is on the same basis (a(T) = adjusted_close(T) / close(T))
+    "level": PRICE_LEVEL_FIELD, "level_basis": "as_traded_close_of_the_session", "returns": RETURN_FIELD,
+    "shares_basis": "as_reported_at_the_shares_period_end", "capital_event_min_factor": CAPITAL_EVENT_MIN_FACTOR,
+    "capital_event_rule": "refuse the name when a capital event falls after the shares' period end and at or before the session of T",
+}
 ENTRY_RISK_SCORE = 50.0  # neutral, declared: no point-in-time risk model exists (provenance.buy_in_rule.parameters)
 ENTRY_CONFIDENCE = 50.0
 ALLOWED_PAYLOAD_BLOCKS: tuple[str, ...] = ("Financials", "outstandingShares")  # the closed list of §3: nothing else of the payload is read
@@ -134,6 +146,10 @@ DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and
     "consensus_published_date_zone": "a publishedDate without a zone is read as UTC (assumption: the provider states no zone)",
     "beta_proxy_membership": "the equal-weight universe proxy of daily log returns INCLUDES the symbol itself (it is not excluded from its own proxy)",
     "ttm_basis_mix": "ttm.basis is four_quarters or latest_fiscal_year; the prior period of revenue_growth may be previous_fiscal_year while the TTM is four_quarters (the bases can mix)",
+    "price_basis": "the series' close is read as the AS-TRADED close of the session (the basis of the as-reported share counts and of the panel's "
+                   "a(T) = adjusted_close(T) / close(T)); adjusted_close feeds log returns only. If the provider's close were retro-adjusted for "
+                   "splits, every level would be off by the split factor after T: price_basis_evidence counts the raw-vs-adjusted capital events "
+                   "the vintage shows up to T (none across a whole universe and window points to a split-adjusted close)",
 }
 _RUN_LOCKS: dict[str, threading.Lock] = {}
 _RUN_LOCKS_GUARD = threading.Lock()
@@ -504,6 +520,7 @@ class PinnedPrices:
                                      f"{market} price vintage {self.publication_id}: the run refuses to serve a stale close as the close of a later session")
         self._bars: dict[str, dict[str, dict[str, Any]]] = {}
         self._returns: dict[str, dict[str, float]] = {}
+        self._capital_events: dict[str, list[str]] = {}
         self._proxy: dict[str, float] | None = None
         self._calendar_sessions: dict[str, bool] = {}
         self.off_calendar_bars = 0  # bars ≤ T dated off the exchange calendar, excluded (an aggregate: never a symbol)
@@ -549,10 +566,12 @@ class PinnedPrices:
         return self._bars[symbol]
 
     def valid_sessions(self, symbol: str) -> int:
-        return sum(1 for bar in self.bars(symbol).values() if _positive(bar.get("close")) and _positive(bar.get("adjusted_close")))
+        return sum(1 for bar in self.bars(symbol).values() if _positive(bar.get(PRICE_LEVEL_FIELD)) and _positive(bar.get(RETURN_FIELD)))
 
     def price_at(self, symbol: str, on: date | None = None) -> tuple[float | None, str | None]:
-        """The close of the last session ≤ ``on`` (default: the session of T); for a fiscal date, within the tolerance."""
+        """The AS-TRADED close (``PRICE_LEVEL_FIELD``, P2-2) of the last session ≤ ``on`` (default: the session of T); for a
+        fiscal date, within the tolerance. Never ``adjusted_close``: a level on the adjusted basis would carry every dividend
+        and split paid AFTER that session, which nobody knew then."""
         bars = self.bars(symbol)
         limit = on.isoformat() if on is not None else self.session_date
         sessions = [session for session in bars if session <= limit]
@@ -561,7 +580,27 @@ class PinnedPrices:
         session = max(sessions)
         if on is not None and (on - date.fromisoformat(session)).days > FISCAL_PRICE_TOLERANCE_DAYS:
             return None, None
-        return _positive(bars[session].get("close")), session
+        return _positive(bars[session].get(PRICE_LEVEL_FIELD)), session
+
+    def capital_events(self, symbol: str) -> list[str]:
+        """The sessions ≤ T where the raw and the adjusted closes move apart by at least ``CAPITAL_EVENT_MIN_FACTOR`` from the
+        previous session (a split, a reverse split, a large bonus issue — a dividend under 20 % of the price never qualifies):
+        the as-traded close changes unit there while the reported share counts change only at the next filing (P2-2). A
+        close that the provider retro-adjusted for splits shows none."""
+        if symbol not in self._capital_events:
+            bars = self.bars(symbol)
+            sessions = sorted(bars)
+            threshold = math.log(CAPITAL_EVENT_MIN_FACTOR)
+            events: list[str] = []
+            for previous, current in zip(sessions, sessions[1:]):
+                raw_before, raw_after = _positive(bars[previous].get(PRICE_LEVEL_FIELD)), _positive(bars[current].get(PRICE_LEVEL_FIELD))
+                adjusted_before, adjusted_after = _positive(bars[previous].get(RETURN_FIELD)), _positive(bars[current].get(RETURN_FIELD))
+                if raw_before is None or raw_after is None or adjusted_before is None or adjusted_after is None:
+                    continue
+                if abs(math.log(raw_after / raw_before) - math.log(adjusted_after / adjusted_before)) >= threshold:
+                    events.append(current)
+            self._capital_events[symbol] = events
+        return self._capital_events[symbol]
 
     def _log_returns(self, symbol: str) -> dict[str, float]:
         if symbol not in self._returns:
@@ -569,7 +608,7 @@ class PinnedPrices:
             sessions = sorted(bars)[-(BETA_WINDOW_SESSIONS + 1):]
             returns: dict[str, float] = {}
             for previous, current in zip(sessions, sessions[1:]):
-                before, after = _positive(bars[previous].get("adjusted_close")), _positive(bars[current].get("adjusted_close"))
+                before, after = _positive(bars[previous].get(RETURN_FIELD)), _positive(bars[current].get(RETURN_FIELD))
                 if before is not None and after is not None:
                     returns[current] = math.log(after / before)
             self._returns[symbol] = returns
@@ -703,6 +742,7 @@ class PitSourceResolver:
         self.per_symbol: dict[str, dict[str, Any]] = {}
         self.consensus: dict[str, dict[str, Any]] = {}
         self.not_evaluable: dict[str, str] = {}
+        self.price_basis_evidence: dict[str, int] = {}
         self.catalogue_snapshot_id: str | None = None  # a pointer for the reader; NOT part of the manifest hashed into run_key
 
     # ---- catalogue (the only current fields admitted: classification)
@@ -751,6 +791,10 @@ class PitSourceResolver:
         shares = fundamentals["shares"]
         if price is None or shares is None:
             self.not_evaluable[symbol] = "price_or_shares_unavailable_at_T"
+            return None
+        shares_period_end = str(_mapping(fundamentals["shares_availability"]).get("period_end") or "")
+        if any(session > shares_period_end for session in self.prices.capital_events(symbol)):  # P2-2: the as-traded close of T and the share
+            self.not_evaluable[symbol] = "capital_event_between_shares_and_T"  # count are in different units: every level would be off by the factor
             return None
         ttm, balance = fundamentals["ttm"], fundamentals["balance"]
         eps = ttm["net_income"] / shares if ttm["net_income"] is not None else None
@@ -851,6 +895,8 @@ class PitSourceResolver:
         self.excluded["peer_quality:no_history"] += len(self.per_symbol)
         if self.prices.off_calendar_bars:  # every bar of the run was read above (the proxy reads the whole catalogue): the total is final
             self.excluded["price_bars:off_calendar_session"] = self.prices.off_calendar_bars
+        events = [len(self.prices.capital_events(row["symbol"])) for row in catalogue]  # P2-2: what the vintage itself says of its close (aggregate)
+        self.price_basis_evidence = {"symbols_read": len(catalogue), "capital_event_sessions": sum(events), "symbols_with_capital_events": sum(1 for n in events if n)}
         return loaded
 
     def macro(self) -> MacroAtT:
@@ -992,6 +1038,7 @@ class PitComputation:
                 "with_consensus": len(self.resolver.consensus), "pit_excluded_inputs": dict(sorted(self.resolver.excluded.items())),
                 "hypotheses": sum(len(items) for items in self.resolver.hypotheses.values()), "calibration": self.calibration["status"],
                 "macro_as_of": self.macro.macro_as_of(self.market).isoformat(), "price_vintage": self.manifest["price_vintage"]["publication_id"],
+                "price_basis_evidence": dict(self.resolver.price_basis_evidence),
                 "price_pin": dict(self.price_pin),  # pointers only: the run_key names the vintage by its publication and bars hash,
                 "catalogue_snapshot_id": self.resolver.catalogue_snapshot_id}  # and the catalogue by its classification hash
 
@@ -1048,7 +1095,7 @@ class PitRerunService:
                                                             "implementation_file_sha256": {name: _file_sha256(name) for name in ("valuation_v3_engine.py", "valuation_v3_inputs.py", "valuation_v3_macro.py", "valuation_v3_shadow.py", "valuation_pit_rerun.py")}},
             "buy_in_rule": {"identity": buy_in_identity(), "risk_score": ENTRY_RISK_SCORE, "valuation_confidence": ENTRY_CONFIDENCE},
             "sources": sorted(resolver.references, key=lambda item: json.dumps(item, sort_keys=True)),
-            "price_vintage": prices.manifest(), "macro": macro.references, "calibration": calibration,
+            "price_vintage": prices.manifest(), "price_basis": dict(PRICE_BASIS), "macro": macro.references, "calibration": calibration,
             "availability_rule": AVAILABILITY_RULE, "consensus_rule": {"window_days": CONSENSUS_WINDOW_DAYS, "min_houses": MIN_CONSENSUS_HOUSES, "horizon": CONSENSUS_HORIZON},
             "declared_assumptions": dict(DECLARED_ASSUMPTIONS), "external_api_calls": 0,
         }
