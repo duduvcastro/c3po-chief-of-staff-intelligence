@@ -19,12 +19,16 @@ The rules (every number in ``DecisorThresholds``, the ONE settings block the PRE
   error the producer measured for the name's ``valuation_profile`` (``valuation_calibration/<M>_POWER_MODEL``,
   ``metrics[profile].median_absolute_error_percent``) — only when the calibration is ``active``, its horizon in range, the
   profile has its minimum samples and the snapshot is fresh; ``h_market`` is the market rate over the TP horizon plus the
-  declared premium — B3: the Selic the official B3 cycle used (its ``outputs.macro.selic``), else BCB SGS 432; US: the
-  13-week T-bill (the R2D2 cash yield package), else the interpolated 5Y — the first FRESH source of the declared order wins
-  and is named in the record.
+  declared premium — B3: BCB SGS 432 (dated observations), else the Selic the official B3 cycle used (its
+  ``outputs.macro.selic``: UNDATED — the producer records no observation date and may have used its governor constant —
+  so admitted only when the block lists it in ``undated_rate_sources_admitted``); US: the 13-week T-bill (the R2D2 cash
+  yield package), else the interpolated 5Y (the validated package, aged by its yields' observation date) — the first
+  FRESH source of the declared order wins and is named in the record.
 * freshness (VETO): ``tp_stale`` set on the row; the TP's session more than ``max_tp_age_sessions`` behind the last
   completed session; fundamentals older than a quarter + 45 days (or undated); the price moved more than
-  ``max_price_move_percent`` since the cut (the TP record's price), or no price.
+  ``max_price_move_percent`` since the cut (the TP record's price), or no price; the price not observed since the last
+  completed session closed (``PRICE_SESSION_STALE``: the cut's own price is of the TP's session, so a TP one session
+  behind is never decided on the session nobody observed — a cycle published after that close, or a fresh quote, is).
 * quality (VETO): not validated (``tp_validation_status`` when the producer emits it — B3 —, else ``signal_quality`` —
   US); method dispersion above the limit (or unknown); confidence below the limit (or unknown); any data-defect mark.
 
@@ -34,13 +38,19 @@ completed session of the market's calendar — never a civil date; an unavailabl
 market), the identity of the TP read (generation, source, cycle, row hash, prediction instant), ``inputs`` with the
 provenance of every input and its ``inputs_sha256``, ``checks`` with every gate's numbers, the thresholds' hash and the
 canonical ``row_sha256`` — recomputed and verified by every reader (``stored_decision``). Append-only; idempotent per
-``(run_id, market, symbol)``; ``mode`` is ``shadow`` (the migration admits nothing else).
+``(run_id, market, symbol)``; ``mode`` is ``shadow`` (the migration admits nothing else). Causal: the TP is read from the
+generation IN FORCE AT the run's clock (``generation_at``, never a later one — a replay decides what that night saw), and
+a served row predicted after the clock is not decided.
 
 The nightly phase (``valuation_worker``, flag ``C3PO_VALUATION_DECISOR_SHADOW``, default OFF) runs LAST, after the official
-cut and every existing phase, and never writes the selection or any served number. A night is done when the latest run
-decided over the generation in force (``last_run_at``): a generation activated later inside the window (a canonical
+cut and every existing phase, and never writes the selection or any served number. ``run_shadow`` writes only when asked
+(``write=True``) AND the flag is on; a run on a caller's quotes is a dry run, never a record: the nightly verdicts are
+decided on the cut and the cycles published after it, and nothing intraday replaces them. A night is done when the latest
+run decided over the generation in force (``last_run_at``): a generation activated later inside the window (a canonical
 retry) is decided again. The R2D2 lab reads verdicts by symbol (``latest_verdict``/``latest_verdicts``): it names the
-symbols it asks about — nothing here enumerates the names a verdict permits, and receipts are aggregate counts only.
+symbols it asks about — nothing here enumerates the names a verdict permits, and receipts are aggregate counts only. A
+verdict is ``current`` only for its own session AND while the generation in force still serves the TP it read (the same
+row hash: a targeted admission of another name keeps it, a source switch or a rollback does not).
 """
 from __future__ import annotations
 
@@ -55,8 +65,10 @@ from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
 from . import valuation_official as official
-from .valuation_official import MARKETS, CalendarUnavailable, canonical_sha256, current_generation, cycle_rows, official_row, official_rows, session_date_of
-from .valuation_v3_macro import package_hash_is_valid
+from .config import Settings, get_settings
+from .valuation_official import (MARKETS, CalendarUnavailable, canonical_sha256, current_generation, cycle_rows, generation_at, official_row, official_rows,
+                                 session_date_of)
+from .valuation_v3_macro import ValuationV3MacroDataError, package_hash_is_valid, validate_us_curve_package
 
 logger = logging.getLogger(__name__)
 
@@ -72,15 +84,17 @@ VERDICTS: tuple[str, ...] = (COMPRA_PERMITIDA, OBSERVAR, VETO)
 
 ALL_GATES_PASSED = "ALL_GATES_PASSED"
 VERDICT_NOT_CURRENT = "VERDICT_NOT_CURRENT"  # the lab helper's downgrade of a verdict decided for another session
+VERDICT_TP_NOT_SERVED = "VERDICT_TP_NOT_SERVED"  # the lab helper's downgrade of a verdict whose TP the generation in force no longer serves
 VETO_CODES: tuple[str, ...] = (
-    "TP_STALE_FLAG", "TP_SESSION_STALE", "FUNDAMENTALS_STALE", "FUNDAMENTALS_DATE_UNKNOWN", "PRICE_UNAVAILABLE", "PRICE_MOVED_SINCE_CUT",
-    "NOT_VALIDATED", "METHOD_DISPERSION_HIGH", "METHOD_DISPERSION_UNKNOWN", "CONFIDENCE_LOW", "CONFIDENCE_UNKNOWN", "DATA_DEFECT",
+    "TP_STALE_FLAG", "TP_SESSION_STALE", "FUNDAMENTALS_STALE", "FUNDAMENTALS_DATE_UNKNOWN", "PRICE_UNAVAILABLE", "PRICE_SESSION_STALE",
+    "PRICE_MOVED_SINCE_CUT", "NOT_VALIDATED", "METHOD_DISPERSION_HIGH", "METHOD_DISPERSION_UNKNOWN", "CONFIDENCE_LOW", "CONFIDENCE_UNKNOWN",
+    "DATA_DEFECT",
 )
 OBSERVAR_CODES: tuple[str, ...] = (
     "E_PROFILE_WARMING_UP", "E_PROFILE_UNAVAILABLE", "MARKET_RATE_UNAVAILABLE", "PRICE_ABOVE_BUY_IN", "TP_MARGIN_INSUFFICIENT",
 )
 
-RATE_B3_CYCLE_SELIC = "b3_cycle_selic"  # outputs.macro.selic of the generation's B3 universe cycle (the producer's effective Selic)
+RATE_B3_CYCLE_SELIC = "b3_cycle_selic"  # outputs.macro.selic of the generation's B3 universe cycle (the producer's effective Selic; UNDATED)
 RATE_BCB_SGS_432 = "bcb_sgs_432"  # valuation_macro_history/B3_SELIC_REGIME (hashed package, dated observations)
 RATE_US_TBILL_13W = "us_tbill_13w"  # r2d2_cash_yield_rate/US_TBILL_13_WEEK_COUPON_EQUIVALENT (hashed package)
 RATE_US_5Y = "us_5y_interpolated"  # valuation_macro_rates/US_5Y_INTERPOLATED (hashed package)
@@ -100,6 +114,7 @@ class DecisorThresholds:
     fundamentals_quarter_days: int = 92
     fundamentals_grace_days: int = 45  # fundamentals older than a quarter + 45 days veto
     max_price_move_percent: float = 5.0  # |price / cut price - 1| above this since the cut vetoes
+    max_quote_age_minutes: int = 15  # a caller's quote older than this at the run's clock is refused (a dry run's quotes only)
     validated_status: str = "validated"
     max_method_dispersion_percent: float = 45.0  # the producers' own MAX_METHOD_DISPERSION / MAX_DISPERSION
     min_valuation_confidence: float = 70.0  # the producers' own MIN_VALUATION_CONFIDENCE / MIN_CONFIDENCE
@@ -109,8 +124,9 @@ class DecisorThresholds:
     calibration_max_horizon_days: int = 150  # the producers' active window for the observed horizon
     calibration_max_age_days: int = 7  # a calibration snapshot older than this is not a measurement of tonight's producer
     allow_global_error_fallback: bool = False  # a profile below its minimum samples borrows the global error only if True
-    b3_rate_sources: tuple[str, ...] = (RATE_B3_CYCLE_SELIC, RATE_BCB_SGS_432)
+    b3_rate_sources: tuple[str, ...] = (RATE_BCB_SGS_432, RATE_B3_CYCLE_SELIC)
     us_rate_sources: tuple[str, ...] = (RATE_US_TBILL_13W, RATE_US_5Y)
+    undated_rate_sources_admitted: tuple[str, ...] = ()  # an UNDATED source (the B3 cycle's Selic) counts only if listed here — aged by its cycle's publication
     market_rate_max_age_days: int = 10
     tp_horizon_years: float = 1.0  # a 12-month TP: h_market = (1 + rate) ** years - 1 + premium
     market_premium: float = 0.0
@@ -273,9 +289,20 @@ def _package_rate(database: Any, source: str, *, at: datetime) -> dict[str, Any]
         latest = max(observations, key=lambda item: str(item.get("observation_date"))) if observations else None
         rate, observed = (_positive((latest or {}).get("annual_rate")), _text((latest or {}).get("observation_date")))
     elif source == RATE_US_TBILL_13W:
+        if _text(outputs.get("available_at")) and _utc(outputs["available_at"]) > at:
+            return {**candidate, "detail": "the observation was not available at the run's clock"}
         rate, observed = _positive(outputs.get("annual_rate")), _text(outputs.get("observation_date"))
     else:
-        rate, observed = _positive(outputs.get("interpolated_5y_rate")), _text(outputs.get("as_of"))
+        # the 5Y is aged by its YIELDS' observation date, never by the package's as_of (the date the operator asked for:
+        # the producer takes the latest yield within 30 days of it) — the package validated as V3 validates it
+        try:
+            rate = _positive(validate_us_curve_package(dict(outputs), as_of=date.fromisoformat(str(outputs.get("as_of") or ""))))
+        except (ValuationV3MacroDataError, ValueError) as error:
+            return {**candidate, "detail": f"package does not validate: {error}"}
+        points = [point for point in outputs.get("points") or [] if isinstance(point, Mapping)]
+        if any(_utc(point["available_at"]) > at for point in points):
+            return {**candidate, "detail": "a yield was not available at the run's clock"}
+        observed = _text(points[0].get("observation_date")) if points else None  # validated: both tenors share one observation date
     return {**candidate, "annual_rate": rate, "observed_at": observed, "detail": None if rate is not None else "no usable observation"}
 
 
@@ -284,19 +311,32 @@ def market_rate(database: Any, market: str, *, at: datetime, generation: Mapping
     """``h_market``: the market rate over the TP horizon plus the declared premium, from the FIRST source of the declared
     order (B3: ``b3_rate_sources``; US: ``us_rate_sources``) whose observation is positive and no older than
     ``market_rate_max_age_days`` at ``at``. ``status`` ``ok`` names the source, its reference (snapshot / cycle id,
-    package hash), the observation and the annual rate; ``unavailable`` lists what was tried."""
+    package hash), the observation and the annual rate; ``unavailable`` lists what was tried. An UNDATED source (the B3
+    cycle's Selic: the cycle records no observation date, and its producer falls back to a hard-coded governor constant
+    when both of its feeds fail — indistinguishable in the cycle) is tried and refused unless the block lists it in
+    ``undated_rate_sources_admitted``; admitted, it is aged by its cycle's publication and recorded ``undated``."""
     sources = thresholds.b3_rate_sources if market == "B3" else thresholds.us_rate_sources
     tried: list[dict[str, Any]] = []
     for source in sources:
         if source == RATE_B3_CYCLE_SELIC:
             cycle_id = ((generation or {}).get("cycles") or {}).get("B3")
             snapshot = database.official_cycle_snapshot(str(cycle_id)) if cycle_id else None
+            if snapshot and (not snapshot.get("published_at") or _utc(snapshot["published_at"]) > at):
+                snapshot = None  # causal: a cycle published after the run's clock was not there to be read
             macro = (snapshot.get("outputs") or {}).get("macro") if snapshot and isinstance(snapshot.get("outputs"), Mapping) else None
             candidate = {"source": source, "reference": f"valuation_universe/B3_UNIVERSE#{cycle_id}" if cycle_id else None,
-                         "snapshot_id": str(cycle_id) if cycle_id else None, "payload_sha256": None,
+                         "snapshot_id": str(cycle_id) if cycle_id else None, "payload_sha256": None, "undated": True,
                          "annual_rate": _positive((macro or {}).get("selic")) if isinstance(macro, Mapping) else None,
-                         "observed_at": _utc(snapshot["published_at"]).isoformat() if snapshot and snapshot.get("published_at") else None}
-            candidate["detail"] = None if candidate["annual_rate"] is not None else "the B3 cycle carries no macro.selic"
+                         "observed_at": _utc(snapshot["published_at"]).isoformat() if snapshot else None}
+            if candidate["annual_rate"] is None:
+                candidate["detail"] = "the B3 cycle carries no macro.selic"
+            elif source not in thresholds.undated_rate_sources_admitted:
+                candidate["detail"] = "undated: the cycle records macro.selic without its observation date (the producer's governor constant cannot be " \
+                                      "told from a BCB observation) — not admitted by the block"
+                tried.append({key: candidate.get(key) for key in ("source", "reference", "detail")})
+                continue
+            else:
+                candidate["detail"] = None
         elif source in _RATE_PACKAGES:
             candidate = _package_rate(database, source, at=at)
         else:
@@ -309,31 +349,64 @@ def market_rate(database: Any, market: str, *, at: datetime, generation: Mapping
             else:
                 rate = float(candidate["annual_rate"])
                 hurdle = (1 + rate) ** thresholds.tp_horizon_years - 1 + thresholds.market_premium
-                return {"status": "ok", **candidate, "h_market": hurdle, "tp_horizon_years": thresholds.tp_horizon_years,
-                        "market_premium": thresholds.market_premium, "tried": tried}
+                return {"status": "ok", **candidate, "undated": bool(candidate.get("undated")), "h_market": hurdle,
+                        "tp_horizon_years": thresholds.tp_horizon_years, "market_premium": thresholds.market_premium, "tried": tried}
         tried.append({key: candidate.get(key) for key in ("source", "reference", "detail")})
     return {"status": "unavailable", "source": None, "annual_rate": None, "h_market": None, "tried": tried}
 
 
-def _price_observation(row: Mapping[str, Any], *, market: str, symbol: str, quotes: Mapping[tuple[str, str], Mapping[str, Any]] | None,
-                       latest_universe: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """The price the verdict is taken at: a quote the caller hands over (``quotes[(market, symbol)]``: ``price``, optional
-    ``ask``, ``as_of``, ``source``); else the newest universe cycle of the market published AFTER the TP's cut that quotes
-    the symbol (the generation may carry an older cycle); else the cut's own price (the TP record's). ``None``: no price."""
+def _session_or_none(market: str, instant: datetime) -> str | None:
+    try:
+        return session_date_of(market, instant)
+    except CalendarUnavailable:
+        return None
+
+
+def _price_observation(row: Mapping[str, Any], *, market: str, symbol: str, at: datetime, quotes: Mapping[tuple[str, str], Mapping[str, Any]] | None,
+                       latest_universe: Mapping[str, Any] | None, thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
+    """The price the verdict is taken at, with the market ``session`` it belongs to (``decide`` vetoes a price of a session
+    before the last completed one, ``PRICE_SESSION_STALE``):
+
+    * a quote the caller hands over (``quotes[(market, symbol)]``: ``price``, optional ``ask``, ``as_of``, ``source``; a dry
+      run only) — its session is the last completed one at its ``as_of``. Refused, and named in ``quote_refused``, without a
+      positive price, without a readable ``as_of``, with an ``as_of`` after the run's clock or older than
+      ``max_quote_age_minutes``: the next source answers;
+    * else the newest universe cycle of the market published AFTER the TP's cut that quotes the symbol (the generation may
+      carry an older cycle) — its session the last completed one at its publication;
+    * else the cut's own price (the TP record's), of the TP's own session.
+
+    ``price`` is ``None`` when no source has one."""
+    refused: str | None = None
     quote = (quotes or {}).get((market, symbol))
-    if quote is not None and _positive(quote.get("price")) is not None:
-        return {"price": _positive(quote.get("price")), "ask": _positive(quote.get("ask")), "as_of": _text(quote.get("as_of")),
-                "source": _text(quote.get("source")) or "quote", "reference": _text(quote.get("reference"))}
+    if quote is not None:
+        price = _positive(quote.get("price"))
+        try:
+            quoted_at = _utc(quote["as_of"]) if _text(quote.get("as_of")) else None
+        except (TypeError, ValueError):
+            quoted_at = None
+        if price is None:
+            refused = "no positive price"
+        elif quoted_at is None:
+            refused = "no readable as_of"
+        elif quoted_at > at:
+            refused = "as_of after the run's clock"
+        elif at - quoted_at > timedelta(minutes=thresholds.max_quote_age_minutes):
+            refused = f"older than {thresholds.max_quote_age_minutes} minutes at the run's clock"
+        else:
+            return {"price": price, "ask": _positive(quote.get("ask")), "as_of": quoted_at.isoformat(), "session": _session_or_none(market, quoted_at),
+                    "source": _text(quote.get("source")) or "quote", "reference": _text(quote.get("reference")), "quote_refused": None}
     if latest_universe and latest_universe.get("published_at") and str(latest_universe.get("id")) != str(row.get("official_cycle_id")) \
             and _utc(latest_universe["published_at"]) > _utc(row["prediction_instant"]):
         for candidate in cycle_rows({**latest_universe, "analysis_type": official.UNIVERSE_ANALYSIS}):
             if str(candidate.get("symbol") or "").strip().upper() == symbol and _positive(candidate.get("price")) is not None:
                 return {"price": _positive(candidate.get("price")), "ask": None, "as_of": _text(candidate.get("as_of")),
-                        "source": "latest_universe_cycle", "reference": str(latest_universe.get("id"))}
+                        "session": _session_or_none(market, _utc(latest_universe["published_at"])), "source": "latest_universe_cycle",
+                        "reference": str(latest_universe.get("id")), "quote_refused": refused}
     price = _positive(row.get("price"))
     if price is None:
-        return None
-    return {"price": price, "ask": None, "as_of": _text(row.get("as_of")), "source": "official_cut", "reference": _text(row.get("official_cycle_id"))}
+        return {"price": None, "ask": None, "as_of": None, "session": None, "source": None, "reference": None, "quote_refused": refused}
+    return {"price": price, "ask": None, "as_of": _text(row.get("as_of")), "session": _text(row.get("official_session_date")), "source": "official_cut",
+            "reference": _text(row.get("official_cycle_id")), "quote_refused": refused}
 
 
 # ------------------------------------------------------------------ the verdict (pure)
@@ -369,10 +442,19 @@ def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind:
     move = abs(observed / cut_price - 1) * 100 if observed is not None and cut_price is not None else None
     checks["price_move"] = {"pass": move is not None and move <= thresholds.max_price_move_percent, "cut_price": cut_price, "price": observed,
                             "move_percent": move, "limit_percent": thresholds.max_price_move_percent, "price_source": (price or {}).get("source")}
+    # the price must be observed since the last completed session closed: the cut's own price is of the TP's session, so a
+    # TP one session behind (tolerated by the age gate) is never decided on a session nobody observed — its move would be 0
+    price_session = _text((price or {}).get("session"))
+    session_observed = price_session is not None and price_session >= expected_session
+    checks["price_session"] = {"pass": session_observed if observed is not None else None, "price_session": price_session,
+                               "expected_session": expected_session, "price_source": (price or {}).get("source")}
     if move is None:
         codes.append("PRICE_UNAVAILABLE")
-    elif move > thresholds.max_price_move_percent:
-        codes.append("PRICE_MOVED_SINCE_CUT")
+    else:
+        if not session_observed:
+            codes.append("PRICE_SESSION_STALE")
+        if move > thresholds.max_price_move_percent:
+            codes.append("PRICE_MOVED_SINCE_CUT")
 
     status_field = "tp_validation_status" if row.get("tp_validation_status") is not None else "signal_quality"
     validated = row.get(status_field) == thresholds.validated_status
@@ -522,18 +604,27 @@ ROW_INPUT_KEYS = ("valuation_profile", "fundamentals_as_of", "as_of", "tp_valida
 
 
 def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
-               thresholds: DecisorThresholds = THRESHOLDS, write: bool = True) -> dict[str, Any]:
-    """One decision run over the generation in force: a verdict per served name, every record written in ONE append
-    (idempotent per ``(run_id, market, symbol)``) unless ``write`` is ``False`` (a dry run: the receipt only). ``now`` is
-    the run's clock (the wall clock by default); ``published_at`` is the later of it and the wall clock read immediately
-    before the insert. ``quotes`` (``(market, symbol) → {price, ask, as_of, source}``) is for a caller holding live quotes;
-    the nightly phase passes none. The receipt is aggregate (per market: decided, verdicts, reasons, unrecordable) — it
-    names no symbol. Nothing is decided without a generation, under a generation whose source is unknown, or under a
-    thresholds block other than the one the PREREG froze (``ValueError``)."""
+               thresholds: DecisorThresholds = THRESHOLDS, write: bool = False, settings: Settings | None = None) -> dict[str, Any]:
+    """One decision run over the generation IN FORCE AT the run's clock (``generation_at``: a replay with a past ``now``
+    reads what that night saw, never a later selection): a verdict per served name. A dry run by default (the receipt
+    only); ``write=True`` records every verdict in ONE append (idempotent per ``(run_id, market, symbol)``) — refused
+    (``ValueError``, nothing read) while ``C3PO_VALUATION_DECISOR_SHADOW`` is off (``settings``, else the process's) and
+    for a run on ``quotes``: a caller's quotes (``(market, symbol) → {price, ask, as_of, source}``, fresh ones only — see
+    ``_price_observation``) are for a dry run, so nothing intraday replaces the nightly verdicts in the lab's reads. ``now``
+    is the run's clock (the wall clock by default); ``published_at`` is the later of it and the wall clock read
+    immediately before the insert. A served row predicted after the run's clock is not decided (counted in
+    ``tp_after_run_instant``). The receipt is aggregate (per market: decided, verdicts, reasons, unrecordable, refused
+    quotes) — it names no symbol. Nothing is decided without a generation, under a generation whose source is unknown, or
+    under a thresholds block other than the one the PREREG froze (``ValueError``)."""
+    if write and quotes:
+        raise ValueError("a run on a caller's quotes is a dry run (write=False): the nightly verdicts are decided on the official cut and the cycles "
+                         "published after it, and nothing intraday replaces them")
+    if write and not (settings if settings is not None else get_settings()).valuation_decisor_shadow:
+        raise ValueError("C3PO_VALUATION_DECISOR_SHADOW is off: the decisor records nothing (a dry run decides without writing)")
     frozen = _prereg_frozen(thresholds)
     digest = thresholds_sha256(thresholds)
     instant = _utc(now) if now is not None else datetime.now(timezone.utc)
-    generation = current_generation(database)
+    generation = generation_at(database, instant)
     receipt: dict[str, Any] = {"schema": RUN_SCHEMA, "decisor_version": DECISOR_VERSION, "mode": MODE_SHADOW, "run_id": None, "status": "no_generation",
                                "generation_id": generation.get("generation_id") if generation else None, "tp_source": generation.get("source") if generation else None,
                                "prediction_instant": instant.isoformat(), "published_at": None, "thresholds_sha256": digest, "prereg_frozen": frozen,
@@ -550,7 +641,7 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
     errors: dict[tuple[str, str], dict[str, Any]] = {}
     for market in MARKETS:
         stats: dict[str, Any] = {"decided": 0, "verdicts": {verdict: 0 for verdict in VERDICTS}, "reasons": {}, "unrecordable": 0,
-                                 "expected_session": None, "calendar_unavailable": False}
+                                 "tp_after_run_instant": 0, "quotes_refused": 0, "expected_session": None, "calendar_unavailable": False}
         receipt["markets"][market] = stats
         try:
             expected = session_date_of(market, instant)
@@ -563,6 +654,11 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
             rates[group] = market_rate(database, market, at=instant, generation=generation, thresholds=thresholds)
         latest_universe = database.analysis_snapshot_at_or_before(official.UNIVERSE_ANALYSIS, f"{market}_UNIVERSE", instant)
         for symbol, row in sorted(_served_rows(database, market, generation).items()):
+            if _utc(row["prediction_instant"]) > instant:  # causal: a TP predicted after the run's clock is not one this run could read
+                logger.warning("valuation_decision: %s/%s not decided — its TP was predicted at %s, after the run's clock %s", market, symbol,
+                               _utc(row["prediction_instant"]).isoformat(), instant.isoformat())
+                stats["tp_after_run_instant"] += 1
+                continue
             try:
                 behind = _sessions_behind(market, str(row.get("official_session_date") or ""), expected)
             except CalendarUnavailable as error:
@@ -572,7 +668,10 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
             profile = str(row.get("valuation_profile") or "general")
             if (market, profile) not in errors:
                 errors[(market, profile)] = profile_error(database, market, profile, at=instant, thresholds=thresholds)
-            price = _price_observation(row, market=market, symbol=symbol, quotes=quotes, latest_universe=latest_universe)
+            price = _price_observation(row, market=market, symbol=symbol, at=instant, quotes=quotes, latest_universe=latest_universe,
+                                       thresholds=thresholds)
+            if price["quote_refused"]:
+                stats["quotes_refused"] += 1
             outcome = decide(row, expected_session=expected, tp_sessions_behind=behind, price=price, error=errors[(market, profile)],
                              rate=rates[group], thresholds=thresholds)
             inputs = {
@@ -622,26 +721,32 @@ def last_run_at(database: Any) -> datetime | None:
 # ------------------------------------------------------------------ the R2D2 lab's read helper
 
 
-def _view(record: Mapping[str, Any], *, now: datetime) -> dict[str, Any]:
+def _view(record: Mapping[str, Any], *, now: datetime, served_row_sha256: str | None) -> dict[str, Any]:
     try:
-        current = record["session_date"] == session_date_of(str(record["market"]), now)
+        session_current = record["session_date"] == session_date_of(str(record["market"]), now)
     except CalendarUnavailable:
-        current = False
+        session_current = False
+    tp_served = served_row_sha256 is not None and served_row_sha256 == record["tp_row_sha256"]
+    downgrades = [code for code, failed in ((VERDICT_NOT_CURRENT, not session_current), (VERDICT_TP_NOT_SERVED, not tp_served)) if failed]
     view = {key: copy.deepcopy(record.get(key)) for key in ("symbol", "market", "verdict", "reason_codes", "session_date", "prediction_instant",
-                                                             "published_at", "run_id", "generation_id", "tp_source", "tp_cycle_id", "tp", "buy_in",
-                                                             "price", "e_profile", "h_market", "thresholds_sha256", "row_sha256", "mode")}
-    view.update({"current": current, "effective_verdict": record["verdict"] if current else VETO,
-                 "effective_reason_codes": list(record["reason_codes"]) if current else [VERDICT_NOT_CURRENT]})
+                                                             "published_at", "run_id", "generation_id", "tp_source", "tp_cycle_id", "tp_row_sha256", "tp",
+                                                             "buy_in", "price", "e_profile", "h_market", "thresholds_sha256", "row_sha256", "mode")}
+    view.update({"current": not downgrades, "session_current": session_current, "tp_served": tp_served,
+                 "effective_verdict": VETO if downgrades else record["verdict"],
+                 "effective_reason_codes": downgrades if downgrades else list(record["reason_codes"])})
     return view
 
 
 def latest_verdicts(database: Any, market: str, symbols: Iterable[str], *, now: datetime | None = None) -> dict[str, dict[str, Any]]:
     """The latest verdict of each REQUESTED symbol (``market``: ``B3``, ``NASDAQ``, ``NYSE`` or ``US`` for both US
     markets) — the R2D2 lab names what it asks about; nothing here enumerates the names a verdict permits. Each view
-    carries the verdict, its codes, the TP read and its identity, and whether it was decided for the session in force at
-    ``now`` (``current``: its session is the last completed one); a verdict of another session is served with
-    ``effective_verdict = VETO`` and ``effective_reason_codes = [VERDICT_NOT_CURRENT]`` — no permission outlives its night.
-    A symbol without a verified verdict is absent."""
+    carries the verdict, its codes, the TP read and its identity, and whether it is ``current`` at ``now``: decided for
+    the last completed session (``session_current``) AND over the TP the generation in force at ``now`` still serves
+    for the symbol (``tp_served``: the same row hash — a generation is immutable, so the verdict's own generation always
+    serves it; a later one serves it while it carries the same record, e.g. after a targeted admission of another name,
+    and not after a source switch or a rollback). A verdict that is not current is served with ``effective_verdict =
+    VETO`` and ``effective_reason_codes`` naming why (``VERDICT_NOT_CURRENT``, ``VERDICT_TP_NOT_SERVED``) — no permission
+    outlives its night or its TP. A symbol without a verified verdict is absent."""
     at = _utc(now) if now is not None else datetime.now(timezone.utc)
     wanted = sorted({str(symbol).strip().upper().removesuffix(".SA").removesuffix(".US") for symbol in symbols if str(symbol).strip()})
     found: dict[str, dict[str, Any]] = {}
@@ -652,7 +757,16 @@ def latest_verdicts(database: Any, market: str, symbols: Iterable[str], *, now: 
             held = found.get(symbol)
             if held is None or (_utc(record["prediction_instant"]), _utc(record["published_at"])) > (_utc(held["prediction_instant"]), _utc(held["published_at"])):
                 found[symbol] = record
-    return {symbol: _view(record, now=at) for symbol, record in found.items()}
+    generation = generation_at(database, at)
+    views: dict[str, dict[str, Any]] = {}
+    for symbol, record in found.items():
+        if generation is not None and str(record["generation_id"]) == str(generation.get("generation_id")):
+            served: str | None = str(record["tp_row_sha256"])  # the verdict's own generation: immutable, it serves the row the verdict read
+        else:
+            row = official_row(database, str(record["market"]), symbol, generation=generation)  # None generation → nothing served
+            served = _text((row or {}).get("official_row_sha256"))
+        views[symbol] = _view(record, now=at, served_row_sha256=served)
+    return views
 
 
 def latest_verdict(database: Any, market: str, symbol: str, *, now: datetime | None = None) -> dict[str, Any] | None:
@@ -669,7 +783,6 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--run", action="store_true", help="decide and record (only with C3PO_VALUATION_DECISOR_SHADOW on)")
     group.add_argument("--verdict", metavar="MARKET:SYMBOL", help="the latest verdict of one symbol")
     args = parser.parse_args(argv)
-    from .config import get_settings
     from .database import Database
     settings = get_settings()
     if args.run and not settings.valuation_decisor_shadow:
@@ -681,7 +794,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--verdict expects MARKET:SYMBOL")
         result: Any = latest_verdict(database, market.strip().upper(), symbol)
     else:
-        result = run_shadow(database, write=args.run)
+        result = run_shadow(database, write=args.run, settings=settings)
     print(json.dumps(result, sort_keys=True, default=str))
     return 0
 

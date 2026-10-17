@@ -403,7 +403,7 @@ def main() -> None:
                 ),
             ) if settings.r2d2_cash_yield_accounting_enabled else ()),
             # Decisor V1 (migration 052): LAST, after the official cut and every existing phase — it never delays one; dormant until the mesa enables it
-            *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database)),)
+            *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True, settings=settings)),)
               if settings.valuation_decisor_shadow else ()),
         )
 
