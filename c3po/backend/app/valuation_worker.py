@@ -21,6 +21,7 @@ from .official_fundamentals import ensure_builtin_official_fundamentals
 from .observability import HealthcheckPing, init_sentry
 from .r2d2_cash_yield import R2D2CashYieldService
 from .push_notifications import PushNotificationService
+from .valuation_decision import last_run_at as decision_last_run_at, run_shadow as run_decisor_shadow
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
@@ -401,6 +402,9 @@ def main() -> None:
                     end_hour=10,
                 ),
             ) if settings.r2d2_cash_yield_accounting_enabled else ()),
+            # Decisor V1 (migration 052): LAST, after the official cut and every existing phase — it never delays one; dormant until the mesa enables it
+            *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database)),)
+              if settings.valuation_decisor_shadow else ()),
         )
 
     while True:

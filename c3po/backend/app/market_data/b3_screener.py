@@ -3110,6 +3110,8 @@ class B3ScreenerService:
                     "samples": len(samples),
                     "median_forecast_error_percent": round(statistics.median(errors) * 100, 2) if errors else None,
                     "mean_absolute_error_percent": round(statistics.mean(absolute_errors) * 100, 2) if absolute_errors else None,
+                    # Decisor V1 (valuation_decision): e_profile is this measured median absolute error — a diagnostic, no factor reads it
+                    "median_absolute_error_percent": round(statistics.median(absolute_errors) * 100, 2) if absolute_errors else None,
                     "directional_accuracy_percent": round(statistics.mean(directional) * 100, 2) if directional else None,
                     "factor": round(factor, 5),
                 }

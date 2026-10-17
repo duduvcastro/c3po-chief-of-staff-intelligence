@@ -365,6 +365,9 @@ def test_us_valuation_calibration_uses_mature_price_return_samples() -> None:
     assert calibration and calibration["outputs"]["status"] == "active"
     assert 1.0 < calibration["outputs"]["factors"]["global"] <= 1.05
     assert calibration["outputs"]["metrics"]["global"]["samples"] == 40
+    # Decisor V1 reads e_profile from this metric: the median ABSOLUTE error (equal samples here: the mean equals it)
+    global_metrics = calibration["outputs"]["metrics"]["global"]
+    assert global_metrics["median_absolute_error_percent"] == global_metrics["mean_absolute_error_percent"] > 0
 
 
 def test_us_valuation_calibration_warms_up_without_a_mature_prior_snapshot() -> None:
