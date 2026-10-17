@@ -42,8 +42,10 @@ FISCAL_PERIODS = {3: "Q1", 6: "Q2", 9: "Q3"}
 
 class CvmVintageCapture:
     """Hands each batch of raw CVM rows to the 051 store. A document is registered in ``statement_filings`` only after
-    its whole package was written, so a run that dies half-way redoes that document next time (the store's natural key
-    makes the facts already written a no-op) instead of skipping it forever."""
+    its whole package was written, and never when any of its facts failed to write: ``open()`` skips registered
+    documents, so registering one with facts missing would lose its original for good once the CVM replaces it in the
+    dump. A run that dies half-way, or whose store refused a write, redoes those documents next time (the store's
+    natural key makes the facts already written a no-op) instead of skipping them forever."""
 
     def __init__(self, database: Database, status: str, store: Any = None, detail: str | None = None) -> None:
         self.database = database
@@ -52,6 +54,7 @@ class CvmVintageCapture:
         self.detail = detail
         self.known: set[tuple[str, int]] = set()
         self.pending: dict[tuple[str, int], dict[str, Any]] = {}
+        self.unwritten: set[tuple[str, int]] = set()  # documents with a refused write: left for the next run, whole
         self.facts_written = 0
         self.filings_written = 0
         self.unindexed = 0
@@ -84,19 +87,26 @@ class CvmVintageCapture:
     def enabled(self) -> bool:
         return self.status == "ready"
 
+    @property
+    def degraded(self) -> bool:
+        """The store was there and refused a write: the run is partial, not a clean no-op."""
+        return self.enabled and bool(self.failures)
+
     def write(self, batch: CvmVintageBatch) -> None:
         if not self.enabled:
             return
         facts: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        documents: dict[str, set[tuple[str, int]]] = defaultdict(set)
         for (tax_id, refer, version), rows in batch.rows.items():
             filing = cvm_filing(batch, tax_id, refer, version)
             if filing is None:
                 self.unindexed += 1
                 continue
             key = (filing["doc_id"], filing["document_version"])
-            if key in self.known:
+            if key in self.known or key in self.unwritten:
                 continue
             self.pending.setdefault(key, filing)
+            documents[tax_id].add(key)
             facts[tax_id].extend(cvm_facts(batch, filing, rows))
         for tax_id, rows in facts.items():
             if not rows:
@@ -105,6 +115,9 @@ class CvmVintageCapture:
                 counts = self.store.insert_vintages("B3", tax_id, rows)
                 self.facts_written += int((counts or {}).get("written") or 0)
             except Exception as exc:
+                for key in documents[tax_id]:  # every document in the refused call, even if another batch wrote its rest
+                    self.pending.pop(key, None)
+                    self.unwritten.add(key)
                 self._fail(exc)
 
     def finish_package(self) -> None:
@@ -122,7 +135,10 @@ class CvmVintageCapture:
         if self.enabled and not self.failures:
             return None
         if self.enabled:
-            return f"statement_vintages: {len(self.failures)} write(s) failed; first: {self.failures[0]}"
+            return (
+                f"statement_vintages: {len(self.failures)} write(s) failed, {len(self.unwritten)} document(s) left "
+                f"unregistered for the next run; first: {self.failures[0]}"
+            )
         reason = {
             "store_absent": "store absent (app.statement_vintages, migration 051 front, not merged)",
             "table_absent": f"table {self.detail} absent (migration 051 not applied)",

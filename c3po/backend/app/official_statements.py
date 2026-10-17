@@ -42,6 +42,8 @@ STATEMENTS_CAPTURE_ENV = "C3PO_CVM_STATEMENTS_CAPTURE_ENABLED"
 STATEMENTS_INTERVAL_ENV = "C3PO_CVM_STATEMENTS_INTERVAL_HOURS"
 STATEMENT_FIELDS = ("quarterlyIncome", "quarterlyCashFlow", "quarterlyBalance")
 HISTORY_QUARTERS = 8  # kept per statement across runs: two years covers every TTM and year-over-year read
+AS_OF_DOCUMENT_FIELDS = ("published_at", "source_url")  # describe the as_of document only: never inherited from another
+DOCUMENT_IDENTITY = ("document", "referenceDate", "version")
 METHODOLOGY_PARAMETERS = {
     "scope": "CVM ITR and DFP: DRE, DVA, DFC, BPA/BPP and capital composition; individual statements only for an issuer with no consolidated statement",
     "accounts": "Matched by code and description; a missing or ambiguous account leaves the field out",
@@ -114,7 +116,7 @@ def apply_official_statements_map(
     market: str,
 ) -> dict[str, dict[str, Any]]:
     """Field-by-field counterpart of ``official_fundamentals.apply_official_fundamentals_map``: the complete
-    statements when they are at least as recent as the legacy overlay, else the legacy overlay itself."""
+    statements whenever the symbol has them, else the legacy overlay itself."""
     keys = [_entity_key(market, symbol.upper()) for symbol in fundamentals_by_symbol]
     statements = database.latest_analysis_snapshots(ANALYSIS_TYPE, keys)
     legacy = database.latest_analysis_snapshots(LEGACY_ANALYSIS_TYPE, keys)
@@ -130,12 +132,17 @@ def apply_official_statements_map(
 
 
 def select_official_overlay(statements: Any, legacy: Any) -> dict[str, Any] | None:
-    """One overlay, never a blend of rows: the legacy CVM rows map bank and insurer accounts by code alone, so mixing
-    them under the complete statements would leak those values back. Legacy official metrics (an issuer release's
-    adjusted EBITDA, say) are kept under the statements' own."""
+    """One overlay, never a blend of rows: the legacy CVM rows map bank and insurer accounts by code alone (3.05
+    pre-tax as EBIT, 2.02.01 deposits as debt) and keep equity with minorities, so mixing them under the complete
+    statements would leak those values back. A symbol with complete statements is served from them even while the
+    legacy sync, which polls the same ITR every half hour, is a quarter ahead of the daily statements run: otherwise a
+    bank's EV, ROE and P/B would swing to the legacy values after every ITR until that run caught up. Statements older
+    than the provider's own quarter leave the provider in place (``apply_official_statements``), so the lag costs
+    freshness, never correctness. Legacy official metrics (an issuer release's adjusted EBITDA, say) are kept under
+    the statements' own."""
     statements_period = _valid_date(statements.get("as_of")) if isinstance(statements, dict) else None
     legacy_period = _valid_date(legacy.get("as_of")) if isinstance(legacy, dict) else None
-    if statements_period and isinstance(statements, dict) and (not legacy_period or statements_period >= legacy_period):
+    if statements_period and isinstance(statements, dict):
         selected = copy.deepcopy(statements)
         if isinstance(legacy, dict):
             selected["official_metrics"] = {
@@ -270,6 +277,9 @@ def _merge_statement_payloads(base: Any, incoming: dict[str, Any]) -> dict[str, 
         return copy.deepcopy(base)
     merged = copy.deepcopy(base)
     merged.update({key: copy.deepcopy(value) for key, value in incoming.items() if value is not None})
+    if not _same_as_of_document(base, incoming):
+        for key in AS_OF_DOCUMENT_FIELDS:  # an unknown receipt of a new document stays unknown, never the prior one's
+            merged[key] = copy.deepcopy(incoming.get(key))
     for field in STATEMENT_FIELDS:
         rows: dict[str, dict[str, Any]] = {}
         for source in (base.get(field), incoming.get(field)):  # same source: a period is replaced whole, never blended
@@ -280,10 +290,30 @@ def _merge_statement_payloads(base: Any, incoming: dict[str, Any]) -> dict[str, 
     base_metrics = base.get("official_metrics") or {}
     incoming_metrics = incoming.get("official_metrics") or {}
     merged["official_metrics"] = {**copy.deepcopy(base_metrics), **copy.deepcopy(incoming_metrics)}
-    documents = {
-        **copy.deepcopy(base_metrics.get("periodDocuments") or {}),
-        **copy.deepcopy(incoming_metrics.get("periodDocuments") or {}),
-    }
+    documents = copy.deepcopy(base_metrics.get("periodDocuments") or {})
+    for period, document in (incoming_metrics.get("periodDocuments") or {}).items():
+        document = copy.deepcopy(document)
+        prior = documents.get(period)
+        if _same_document(prior, document) and document.get("receivedOn") is None:
+            document["receivedOn"] = prior.get("receivedOn")  # the same version: a receipt seen before is still true
+        documents[period] = document
     kept = {row["date"] for field in STATEMENT_FIELDS for row in merged[field]}
     merged["official_metrics"]["periodDocuments"] = {period: documents[period] for period in sorted(documents) if period in kept}
     return merged
+
+
+def _same_as_of_document(base: dict[str, Any], incoming: dict[str, Any]) -> bool:
+    """Both payloads describe the same version of the same ``as_of`` document."""
+    period = _valid_date(incoming.get("as_of"))
+    if not period or _valid_date(base.get("as_of")) != period:
+        return False
+    return _same_document(
+        ((base.get("official_metrics") or {}).get("periodDocuments") or {}).get(period),
+        ((incoming.get("official_metrics") or {}).get("periodDocuments") or {}).get(period),
+    )
+
+
+def _same_document(first: Any, second: Any) -> bool:
+    if not isinstance(first, dict) or not isinstance(second, dict):
+        return False
+    return all(first.get(key) is not None and first.get(key) == second.get(key) for key in DOCUMENT_IDENTITY)

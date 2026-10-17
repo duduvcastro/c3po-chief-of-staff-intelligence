@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
 from app.config import Settings
 from app.cvm_fundamentals import (
+    SAO_PAULO,
     CvmPackage,
     _quarterly_flows,
     extract_cvm_official_statements,
@@ -85,12 +86,9 @@ def test_own_filing_wins_over_restated_comparative_and_latest_version_dates_publ
         "sourceUrl": f"https://example.invalid/itr/{YEAR}.zip", "receivedOn": f"{YEAR}-08-02",
     }
     assert documents[f"{PREVIOUS}-12-31"]["document"] == "DFP"
-    assert payload["published_at"] == datetime(YEAR, 8, 2, tzinfo=payload_tz(payload)).isoformat()
+    # a receipt DATE: the end of that day in Sao Paulo (as the vintages' accepted_at), never its first instant
+    assert payload["published_at"] == datetime.combine(date(YEAR, 8, 2), time.max, tzinfo=SAO_PAULO).isoformat()
     assert payload["source_name"] == "CVM Dados Abertos - ITR/DFP consolidado"
-
-
-def payload_tz(payload: dict):
-    return datetime.fromisoformat(payload["published_at"]).tzinfo
 
 
 def test_individual_statements_only_when_the_issuer_files_no_consolidated_ones() -> None:

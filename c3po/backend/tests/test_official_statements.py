@@ -147,7 +147,7 @@ def test_an_overlay_older_than_the_provider_is_ignored() -> None:
     assert apply_official_statements(base, statements_overlay()) == base
 
 
-def test_select_overlay_prefers_statements_unless_the_legacy_overlay_is_newer() -> None:
+def test_select_overlay_serves_statements_whenever_the_symbol_has_them() -> None:
     legacy = itr_overlay()
     legacy["official_metrics"] = {"adjustedRecurringEbitda": 402.0, "cvmTaxId": "legacy"}
     statements = statements_overlay()
@@ -157,10 +157,43 @@ def test_select_overlay_prefers_statements_unless_the_legacy_overlay_is_newer() 
     assert selected["official_metrics"]["adjustedRecurringEbitda"] == 402.0
     assert selected["official_metrics"]["cvmTaxId"] == "00.000.000/0001-00"
 
+    # the legacy sync a quarter ahead of the daily statements run (every new ITR) never takes the symbol over
     legacy["as_of"] = "2026-09-30"
-    assert select_official_overlay(statements, legacy)["source_name"] == legacy["source_name"]
+    assert select_official_overlay(statements, legacy)["source_name"] == statements["source_name"]
+    assert select_official_overlay(None, legacy)["source_name"] == legacy["source_name"]
     assert select_official_overlay(None, None) is None
     assert select_official_overlay(statements, None)["as_of"] == "2026-06-30"
+
+
+def test_a_bank_never_swings_to_legacy_code_mapped_values_after_a_new_itr(tmp_path) -> None:
+    """The legacy reader maps a bank's 3.05 (pre-tax) as EBIT and 2.02.01 (deposits) as debt; the statements leave
+    those fields out. A legacy overlay one quarter ahead must not put them back into EV, ROE or P/B."""
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    statements = {
+        "market": "B3", "symbol": "BSIN3", "as_of": "2026-06-30", "source_name": "CVM Dados Abertos - ITR/DFP consolidado",
+        "quarterlyIncome": [{"date": "2026-06-30", "incomeBeforeTax": 120.0, "netIncome": 78.0}],
+        "quarterlyCashFlow": [],
+        "quarterlyBalance": [{"date": "2026-06-30", "totalEquity": 800.0}],
+        "official_metrics": {"statementScope": "consolidated", "companyEvBalance": None},
+    }
+    legacy = {
+        "market": "B3", "symbol": "BSIN3", "as_of": "2026-09-30", "source_name": "CVM Dados Abertos - ITR consolidado",
+        "quarterlyIncome": [{"date": "2026-09-30", "operatingIncome": 130.0, "netIncome": 80.0}],
+        "quarterlyCashFlow": [],
+        "quarterlyBalance": [{"date": "2026-09-30", "shortLongTermDebtTotal": 5_000.0, "totalStockholderEquity": 870.0}],
+        "official_metrics": {"companyEvBalance": {"asOf": "2026-09-30", "totalCash": 10.0, "totalDebt": 5_000.0}},
+    }
+    save_official_statements(database, [statements])
+    save_official_fundamentals(database, [legacy])
+    provider_bank = {"financialsAsOf": "2026-03-31", "marketCap": 2_000.0, "totalDebt": 300.0, "totalEquity": 790.0}
+
+    served = apply_official_statements_map(database, {"BSIN3": provider_bank}, market="B3")["BSIN3"]
+
+    assert served["officialFundamentals"]["asOf"] == "2026-06-30"
+    assert served["totalDebt"] == 300.0  # the provider's, never 5,000 of deposits
+    assert served["totalEquity"] == 800.0
+    assert served["officialMetrics"]["companyEvBalance"] is None
+    assert all(row["date"] != "2026-09-30" for row in served["quarterlyIncome"])
 
 
 def test_statements_snapshots_keep_unseen_periods_and_never_move_backwards(tmp_path) -> None:
@@ -182,6 +215,42 @@ def test_statements_snapshots_keep_unseen_periods_and_never_move_backwards(tmp_p
     assert save_official_statements(database, [older]) == 0
     assert database.latest_analysis_snapshot(ANALYSIS_TYPE, "B3:SYNT3")["outputs"]["as_of"] == "2026-09-30"
     assert database.latest_analysis_snapshot(LEGACY_ANALYSIS_TYPE, "B3:SYNT3") is None
+
+
+def payload_with_document(as_of: str, version: int, received_on: str | None) -> dict:
+    payload = copy.deepcopy(statements_overlay())
+    payload["as_of"] = as_of
+    payload["quarterlyIncome"] = [{"date": as_of, "totalRevenue": 260.0 + version}]
+    payload["published_at"] = f"{received_on}T23:59:59.999999-03:00" if received_on else None
+    payload["source_url"] = f"https://example.invalid/itr/{as_of[:4]}.zip" if received_on else None
+    payload["official_metrics"] = {"periodDocuments": {as_of: {
+        "document": "ITR", "referenceDate": as_of, "version": version, "sourceUrl": "https://example.invalid", "receivedOn": received_on,
+    }}}
+    return payload
+
+
+def test_published_at_belongs_to_the_as_of_document_and_is_never_inherited(tmp_path) -> None:
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+
+    def saved() -> dict:
+        return database.latest_analysis_snapshot(ANALYSIS_TYPE, "B3:SYNT3")["outputs"]
+
+    assert save_official_statements(database, [payload_with_document("2026-03-31", 1, "2026-05-10")]) == 1
+    # the as_of advances to a document whose receipt is unknown: unknown, not the prior quarter's receipt
+    assert save_official_statements(database, [payload_with_document("2026-06-30", 1, None)]) == 1
+    assert saved()["as_of"] == "2026-06-30"
+    assert saved()["published_at"] is None and saved()["source_url"] is None
+
+    assert save_official_statements(database, [payload_with_document("2026-06-30", 1, "2026-08-12")]) == 1
+    assert saved()["published_at"] == "2026-08-12T23:59:59.999999-03:00"
+    # the same version seen again without its index row: the receipt seen before still holds, nothing appended
+    assert save_official_statements(database, [payload_with_document("2026-06-30", 1, None)]) == 0
+    assert saved()["official_metrics"]["periodDocuments"]["2026-06-30"]["receivedOn"] == "2026-08-12"
+
+    # a re-filed version of the same quarter with an unknown receipt: never dated by the first version's receipt
+    assert save_official_statements(database, [payload_with_document("2026-06-30", 2, None)]) == 1
+    assert saved()["published_at"] is None
+    assert saved()["official_metrics"]["periodDocuments"]["2026-06-30"]["version"] == 2
 
 
 def test_switches_default_to_legacy_overlay_and_capture_on(monkeypatch) -> None:

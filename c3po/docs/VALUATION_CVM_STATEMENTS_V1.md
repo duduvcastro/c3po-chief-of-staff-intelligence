@@ -26,7 +26,10 @@ arquivadas, SEC XBRL para os EUA e CVM para a B3). Código: `app/cvm_fundamental
 - **Como arquivado.** Para cada período vence o documento do próprio período (DT_REFER = fim do período) sobre o
   comparativo de um documento posterior (possivelmente reapresentado), depois a maior versão. `periodDocuments`
   registra documento, versão e `receivedOn` (DT_RECEB) de cada período; `published_at` é o recebimento do documento
-  do `as_of`.
+  do `as_of`, no **fim desse dia em São Paulo** (a CVM publica uma data, não um instante; o mesmo critério do
+  `accepted_at` das safras). Recebimento desconhecido fica `null`: nunca o relógio da coleta e nunca herdado de outro
+  documento — quando o `as_of` avança, ou a mesma data vem numa versão nova, `published_at` e `source_url` são os do
+  documento novo, mesmo nulos; só a mesma versão do mesmo documento conserva o recebimento já visto.
 - **EBITDA = EBIT (DRE, resultado antes do resultado financeiro e dos tributos) + D&A (DVA)**, só quando os dois
   existem no trimestre. Conferido no probe real: UNIP6 2T26 dá 386,2 mi (release: 386 mi).
 - **Patrimônio.** `totalEquity` = PL consolidado; `totalStockholderEquity` = PL − participação de não
@@ -45,15 +48,28 @@ e dois do provedor, o EBITDA TTM cai à metade e o EV/EBITDA dobra (teste
 2. todo TTM exige **quatro trimestres consecutivos que tenham o campo**; senão o valor do provedor permanece (e as
    razões derivadas dele não são recalculadas);
 3. capex TTM soma tamanhos (CVM e releases arquivam negativo, linhas do provedor podem vir positivas);
-4. uma só fonte oficial por símbolo: as demonstrações completas quando tão ou mais recentes que o overlay legado;
-   senão o legado (também campo a campo). Nunca uma mistura de linhas das duas, para que os valores de banco do
-   leitor legado não voltem; as `official_metrics` do legado (p.ex. EBITDA ajustado de um release) são mantidas.
+4. uma só fonte oficial por símbolo: **as demonstrações completas sempre que o símbolo as tiver**; o legado (também
+   campo a campo) só para símbolo sem demonstrações completas. Nunca uma mistura de linhas das duas, para que os
+   valores de banco do leitor legado não voltem; as `official_metrics` do legado (p.ex. EBITDA ajustado de um release)
+   são mantidas sob as das demonstrações. O sync legado relê o ITR a cada 30 min e a coleta completa roda a cada 24 h:
+   se o legado vencesse quando um trimestre à frente, a cada ITR novo um banco passaria a servir `3.05` como EBIT,
+   depósitos como dívida e PL com minoritários até a coleta seguinte (EV, ROE e P/VPA oscilando). O atraso custa
+   frescor, não correção: demonstrações mais antigas que o trimestre do provedor deixam o provedor no lugar. Para
+   encurtar o atraso na temporada de resultados, `C3PO_CVM_STATEMENTS_INTERVAL_HOURS` desce até 6.
 
 **`official_fundamentals.py` não muda.** O diferencial de risco do R2D2 V2 fixa os bytes do arquivo
 (`r2d2_v2_risk_differential.ORIGIN_PINS`, `ORIGIN_AUXILIARY_CHANGED`) e `r2d2_v2_risk_bundle` usa a função: alterar o
 arquivo quebraria a prova e mudaria os insumos de risco do R2D2. Pelo mesmo motivo nada aqui toca `one_pager.py`
 (fixado por `ORACLE_ONE_PAGER_SHA256`): **o One Pager continua no overlay legado.** O decisor deve chamar
 `apply_official_statements_map` diretamente.
+
+**Antes de ligar `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED`.** Com a chave ligada, o screener B3 serve o overlay
+campo a campo e o One Pager (e o `r2d2_v2_risk_bundle`) seguem no legado: o mesmo símbolo sai com EV/EBITDA diferente
+nas duas telas (no caso sintético do teste, 2,68 no screener e 5,5 no One Pager). A chave só deve ser ligada depois de
+uma destas decisões do dono: (a) repin do One Pager (`ORIGIN_PINS`/`ORACLE_ONE_PAGER_SHA256`) para ele chamar
+`apply_official_statements_map`, ou (b) o One Pager deixar de exibir EV/EBITDA e TTM do overlay e o decisor ser a
+única leitura. O `r2d2_v2_risk_bundle` fica no legado por desenho (insumo fixado do R2D2 V2) até uma nova versão do
+diferencial de risco.
 
 ## Chaves (variáveis de ambiente, não `Settings`)
 
@@ -89,13 +105,18 @@ mais de uma versão no índice, nenhum com mais de uma versão nas demonstraçõ
 
 Pacotes em ordem cronológica (DFP ano−2, ITR ano−1, DFP ano−1, ITR ano), para o store ver os documentos de cada
 emissor em ordem de aceitação (`is_first_publication`). Um documento só é registrado em `statement_filings` depois
-que o pacote inteiro foi gravado: uma corrida que morre no meio refaz o documento na próxima (a chave natural torna
-os fatos já gravados um no-op) e nunca o pula; documentos já registrados são saltados sem ler o banco fato a fato.
+que o pacote inteiro foi gravado, e **nunca quando qualquer fato dele foi recusado pelo store**: a corrida seguinte
+abre a captura com os documentos registrados e os salta, então registrar um documento com fatos faltando perderia o
+original para sempre assim que a CVM o substituísse no dump. Uma corrida que morre no meio, ou cujo store recusou uma
+escrita, refaz esses documentos inteiros na próxima (a chave natural torna os fatos já gravados um no-op) e nunca os
+pula.
 
 **No-op enquanto o store não foi mergeado ou as tabelas não existem**, com o motivo no `error_summary` da corrida
-(`ingestion_runs`, fonte `cvm_statements`); falhas de escrita são relatadas, nunca derrubam a corrida. O teste de
-integração com o store real (`test_capture_against_the_real_051_store_once_merged`) é pulado até o merge e passa a
-correr sozinho depois; foi exercitado contra o rascunho da frente XBRL de 17/10 e passou.
+(`ingestion_runs`, fonte `cvm_statements`, status `succeeded`). Escrita recusada pelo store não derruba a corrida
+(as demonstrações já foram gravadas), mas a marca **`partial`**, com o número de falhas e de documentos deixados
+para a próxima corrida no `error_summary`, e emite um `logger.error` (evento no Sentry), para não ficar só gravada.
+O teste de integração com o store real (`test_capture_against_the_real_051_store_once_merged`) é pulado até o merge
+e passa a correr sozinho depois; foi exercitado contra o rascunho da frente XBRL de 17/10 e passou.
 
 ## Limites conhecidos
 

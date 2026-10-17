@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import re
 import unicodedata
 import zipfile
@@ -41,6 +42,8 @@ from .schemas import (
     InvestorRelationsSyncResponse,
 )
 
+
+logger = logging.getLogger(__name__)
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 SEC_FORMS = {"8-K", "10-Q", "10-K", "6-K", "20-F", "40-F", "8-K/A", "10-Q/A", "10-K/A", "6-K/A", "20-F/A"}
@@ -370,7 +373,12 @@ class InvestorRelationsService:
                 vintages.finish_package()
             overlays = extract_cvm_official_statements(scans, issuers=issuers)
             written = save_official_statements(self.database, overlays)
-            self.database.finish_ingestion_run(run_id, "succeeded", records_read, written, vintages.summary())
+            warning = vintages.summary()
+            if vintages.degraded:  # the store refused writes: a partial run and an error event, not a quiet summary
+                logger.error("CVM statements run %s: %s", run_id, warning)
+            self.database.finish_ingestion_run(
+                run_id, "partial" if vintages.degraded else "succeeded", records_read, written, warning
+            )
             return records_read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))

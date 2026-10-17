@@ -566,18 +566,16 @@ def extract_cvm_official_statements(
         period_documents = _period_documents(span_documents, documents, tax_id)
         latest_document = period_documents.get(latest_period) or {}
         received_on = _iso_date(latest_document.get("receivedOn"))
-        # never the wall clock: an unknown receipt stays unknown (and a rerun does not append a new snapshot for it)
-        published_at = (
-            datetime.combine(received_on, time.min, tzinfo=SAO_PAULO) if received_on else issuer.get("published_at")
-        )
+        # CVM files a receipt DATE: the end of that day in Sao Paulo, as the vintages' accepted_at, so a reader never
+        # sees the document before it could have existed. Never the wall clock: an unknown receipt stays unknown (and a
+        # rerun does not append a new snapshot for it).
+        published_at = datetime.combine(received_on, time.max, tzinfo=SAO_PAULO) if received_on else None
         for symbol in symbols:
             payload: dict[str, Any] = {
                 "market": "B3",
                 "symbol": symbol,
                 "as_of": latest_period,
-                "published_at": (
-                    published_at.isoformat() if isinstance(published_at, datetime) else str(published_at) if published_at else None
-                ),
+                "published_at": published_at.isoformat() if published_at else None,
                 "source_name": f"{STATEMENTS_SOURCE_NAME} {'consolidado' if scope == 'con' else 'individual'}",
                 "source_url": latest_document.get("sourceUrl"),
                 "currency": "BRL",
