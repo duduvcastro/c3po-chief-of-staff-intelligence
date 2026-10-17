@@ -52,6 +52,12 @@ SEC_ACCEPTANCE_FROM_SUBMISSIONS = "submissions_json_ny_corrected"
 SEC_HEADER_ACCEPTANCE_PATTERN = re.compile(r"<ACCEPTANCE-DATETIME>\s*(\d{14})")
 SEC_MAX_REQUESTS_PER_SECOND = 8  # SEC fair access: at most 10/s per user; this process stays below it
 SEC_HEADER_READS_PER_SYNC = 40  # newest first; the rest keep the corrected JSON reading until a later sync reads them
+# A header read that fails waits 1 h, then 2 h, 4 h … up to a day before it is tried again, so a header that never
+# answers cannot keep one of the newest-first slots on every sync. 403/429 is the SEC throttling: no more header reads
+# in that sync at all.
+SEC_HEADER_RETRY_BASE = timedelta(hours=1)
+SEC_HEADER_RETRY_MAX = timedelta(days=1)
+SEC_THROTTLE_STATUSES = frozenset({403, 429})
 SEC_FORMS = {"8-K", "10-Q", "10-K", "6-K", "20-F", "40-F", "8-K/A", "10-Q/A", "10-K/A", "6-K/A", "20-F/A"}
 SEC_FULLTEXT_KEYWORDS = (
     "guidance", "acquisition", "merger", "restatement", "material weakness",
@@ -214,7 +220,7 @@ class LinkCollector(HTMLParser):
 
 
 class InvestorRelationsService:
-    def __init__(self, settings: Settings, database: Database) -> None:
+    def __init__(self, settings: Settings, database: Database, *, read_sec_headers: bool = False) -> None:
         self.settings = settings
         self.database = database
         self.pdf = InvestorRelationsPdf(settings.investor_relations_output_dir)
@@ -223,7 +229,13 @@ class InvestorRelationsService:
             follow_redirects=True,
             headers={"User-Agent": settings.sec_user_agent, "Accept-Encoding": "gzip, deflate"},
         )
+        # Defect (e): only the process that passes read_sec_headers=True (the IR worker, a single container) requests
+        # filing headers, so their 8 req/s pacing holds for the whole host; every other process (API, valuation and
+        # R2D2 workers) reuses the header instants already stored and never calls the SEC for them.
+        self.read_sec_headers = read_sec_headers
         self.sec_rate = SecRateLimiter()  # paces the filing-header reads (defect e)
+        self._sec_header_failures: dict[str, tuple[int, datetime]] = {}  # accession -> (failed reads, next attempt)
+        self._sec_contact_warned = False
         self.finnhub = FinnhubClient(settings.finnhub_base_url, settings.finnhub_api_token, self.client)
         self.eodhd = EodhdClient(
             settings.eodhd_base_url, settings.eodhd_api_token,
@@ -549,9 +561,20 @@ class InvestorRelationsService:
         """Defect (e): give each SEC filing event its EDGAR acceptance instant from the filing header — the source of
         truth. A header already read by an earlier sync is reused from storage (never read twice, never downgraded to
         the JSON reading); the others are read newest first, at most ``SEC_HEADER_READS_PER_SYNC`` per sync, paced by
-        ``sec_rate`` and only with ``C3PO_SEC_CONTACT`` configured (the SEC is never called without a contact). An
-        event whose header is not read keeps the corrected submissions-JSON instant and says so in ``raw_metadata``.
-        Insider events (also ``source_code = "sec"``) carry no acceptance reading and are left alone."""
+        ``sec_rate``, only in the process built with ``read_sec_headers=True`` and only with ``C3PO_SEC_CONTACT``
+        configured (the SEC is never called without a contact). An event whose header is not read keeps the corrected
+        submissions-JSON instant and says so in ``raw_metadata``. Insider events (also ``source_code = "sec"``) carry no
+        acceptance reading and are left alone.
+        Best-effort, like the full-text enrichment: any failure here (the stored-instant lookup included) leaves the
+        events with the corrected submissions-JSON instant and never fails sync_sec, whose Finnhub/EODHD insider events
+        R2D2's risk source reads (RC-4)."""
+        try:
+            self._read_sec_header_acceptances(events)
+        except Exception as exc:
+            logger.warning("SEC filing-header acceptance step skipped (%s); the events keep the corrected "
+                           "submissions-JSON time", type(exc).__name__)
+
+    def _read_sec_header_acceptances(self, events: list[dict[str, Any]]) -> None:
         filings = [
             event for event in events
             if (event.get("raw_metadata") or {}).get("acceptance_time_source") == SEC_ACCEPTANCE_FROM_SUBMISSIONS
@@ -567,25 +590,42 @@ class InvestorRelationsService:
                 self._set_sec_header_acceptance(event, stored[event["external_id"]])
             else:
                 pending.append(event)
-        if not pending:
+        if not pending or not self.read_sec_headers:
             return
         contact = clean_text(self.settings.sec_contact)
         if not contact:
-            logger.warning(
-                "C3PO_SEC_CONTACT is not configured: %d SEC filing(s) keep the corrected submissions-JSON acceptance "
-                "time; their filing headers are not read without an SEC contact.", len(pending),
-            )
+            if not self._sec_contact_warned:  # once per process: the IR worker syncs every 15 minutes
+                self._sec_contact_warned = True
+                logger.warning(
+                    "C3PO_SEC_CONTACT is not configured: %d SEC filing(s) keep the corrected submissions-JSON "
+                    "acceptance time; their filing headers are not read without an SEC contact.", len(pending),
+                )
             return
+        now = datetime.now(timezone.utc)
+        due = [
+            event for event in pending
+            if event["external_id"] not in self._sec_header_failures
+            or self._sec_header_failures[event["external_id"]][1] <= now
+        ]
         semantics_warned = False
-        for event in sorted(pending, key=lambda item: item["published_at"], reverse=True)[:SEC_HEADER_READS_PER_SYNC]:
+        for event in sorted(due, key=lambda item: item["published_at"], reverse=True)[:SEC_HEADER_READS_PER_SYNC]:
+            accession = str(event["external_id"])
             try:
                 accepted = self._sec_header_acceptance(event, contact)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in SEC_THROTTLE_STATUSES:
+                    logger.warning("SEC answered %d to filing header %s: no more header reads in this sync",
+                                   exc.response.status_code, accession)
+                    return
+                self._defer_sec_header(accession, now, f"HTTP {exc.response.status_code}")
+                continue
             except Exception as exc:
-                logger.info("SEC filing header %s not read (%s); it keeps the corrected submissions-JSON time",
-                            event["external_id"], type(exc).__name__)
+                self._defer_sec_header(accession, now, type(exc).__name__)
                 continue
             if accepted is None:
+                self._defer_sec_header(accession, now, "no ACCEPTANCE-DATETIME")
                 continue
+            self._sec_header_failures.pop(accession, None)
             if accepted != event["published_at"] and not semantics_warned:
                 semantics_warned = True
                 logger.warning(
@@ -594,6 +634,15 @@ class InvestorRelationsService:
                     event["external_id"], accepted.isoformat(), event["published_at"].isoformat(),
                 )
             self._set_sec_header_acceptance(event, accepted)
+
+    def _defer_sec_header(self, accession: str, now: datetime, reason: str) -> None:
+        """A failed header read waits ``SEC_HEADER_RETRY_BASE`` doubled per consecutive failure (at most
+        ``SEC_HEADER_RETRY_MAX``); kept in memory, so a worker restart simply tries it again."""
+        failures = self._sec_header_failures.get(accession, (0, now))[0] + 1
+        delay = min(SEC_HEADER_RETRY_BASE * (2 ** min(failures - 1, 10)), SEC_HEADER_RETRY_MAX)  # bounded exponent
+        self._sec_header_failures[accession] = (failures, now + delay)
+        logger.info("SEC filing header %s not read (%s, failure %d); it keeps the corrected submissions-JSON time and "
+                    "is retried after %s", accession, reason, failures, delay)
 
     def _sec_header_acceptance(self, event: dict[str, Any], contact: str) -> datetime | None:
         """One filing header read (``…/Archives/edgar/data/<cik>/<accession digits>/<accession>-index-headers.html``),

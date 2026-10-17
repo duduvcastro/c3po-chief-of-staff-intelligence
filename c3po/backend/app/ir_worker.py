@@ -22,7 +22,8 @@ def main() -> None:
         init_sentry(settings, service_name="investor-relations-worker")
         database = Database(settings)
         database.initialize()
-        service = InvestorRelationsService(settings, database)
+        # the only process that reads SEC filing headers (one container): their pacing then holds host-wide
+        service = InvestorRelationsService(settings, database, read_sec_headers=True)
         market_data = MarketDataService(settings, database)
         valuation_processor = InvestorRelationsValuationProcessor(
             database,

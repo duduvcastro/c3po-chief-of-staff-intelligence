@@ -14,10 +14,21 @@ a correção é o comportamento novo). O defeito de overlay/EBITDA da CVM fica c
 ## Notas de operação
 
 - **C3PO_SEC_CONTACT** (novo; só no host, nunca no repositório): o contato de fair access da SEC. Sem ele o header
-  **não é lido** (a SEC não é chamada) e o evento fica com a leitura corrigida do JSON, com aviso no log. Com ele, os
-  headers são lidos do mais novo para o mais antigo, no máximo 40 por sincronização, a ≤ 8 req/s, e um header já lido
-  é reaproveitado do banco (`Database.stored_sec_acceptances`) — nunca relido, nunca rebaixado à leitura do JSON. Se um
-  header divergir da leitura corrigida do JSON, o log avisa que a semântica verificada em 17/10 deixou de valer.
+  **não é lido** (a SEC não é chamada) e o evento fica com a leitura corrigida do JSON, com um aviso no log por
+  processo. Com ele, os headers são lidos do mais novo para o mais antigo, no máximo 40 por sincronização, a ≤ 8 req/s, e
+  um header já lido é reaproveitado do banco (`Database.stored_sec_acceptances`) — nunca relido, nunca rebaixado à
+  leitura do JSON. Se um header divergir da leitura corrigida do JSON, o log avisa que a semântica verificada em 17/10
+  deixou de valer.
+- **Só o `investor-relations-worker` lê headers** (`InvestorRelationsService(..., read_sec_headers=True)`; um único
+  contêiner), então o ritmo de 8 req/s dessas leituras vale para o host inteiro. API, `valuation-worker` e `r2d2-worker`
+  só reaproveitam os instantes já gravados. As chamadas SEC que já existiam (`company_tickers`, submissions, full-text)
+  continuam sem esse limitador: um limitador compartilhado pelo host fica pendente para antes de a frente XBRL ganhar o
+  próprio cliente SEC.
+- **Falhas.** Um 403/429 da SEC interrompe as leituras de header daquela sincronização. Um header que falha (erro HTTP,
+  rede, ou sem `ACCEPTANCE-DATETIME`) espera 1 h, depois 2 h, 4 h… até no máximo 1 dia antes de nova tentativa. Assim
+  ele não ocupa toda vez uma das 40 vagas. Essa espera fica em memória e zera quando o worker reinicia. O passo inteiro
+  é best-effort: se falhar, `sync_sec` segue e grava os eventos de insider que o R2D2 lê. A divergência de `sync_sec` em
+  relação à origem pinada do R2D2 está anotada em `r2d2-risk-source/DIVERGENCES.md`.
 - Os eventos SEC já gravados nos últimos 365 dias são corrigidos na próxima sincronização (o upsert por accession
   reescreve `published_at`); o header vai substituindo a leitura do JSON em lotes de 40.
 - Ciclos dos EUA publicados antes do deploy não têm o hurdle gravado nas linhas: até o próximo ciclo noturno, critérios
