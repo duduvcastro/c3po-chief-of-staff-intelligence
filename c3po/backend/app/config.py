@@ -156,6 +156,9 @@ class Settings(BaseSettings):
     sec_archives_base_url: str = "https://www.sec.gov"
     sec_fulltext_base_url: str = "https://efts.sec.gov"
     sec_user_agent: str = "C3PO Chief of Staff Intelligence eu@eduardocastro.com.br"
+    # C3PO_SEC_CONTACT: the SEC fair-access contact (an e-mail), configured on the host only — never committed. The
+    # filing-header reads (exact EDGAR acceptance times) refuse to call the SEC without it.
+    sec_contact: str = Field(default="", repr=False)
     investor_relations_poll_minutes: int = 15
     investor_relations_cvm_poll_minutes: int = 120
     investor_relations_ri_poll_minutes: int = 60

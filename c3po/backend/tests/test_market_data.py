@@ -3428,3 +3428,84 @@ def test_rankings_reorder_after_quote_updates_without_mutating_scan(market, monk
     assert [r.symbol for r in updated['losers']] == ['AAA','BBB']
     assert [r.symbol for r in updated['cash_leaders']] == ['BBB','AAA']
     assert {k:[r.model_dump() for r in v] for k,v in groups.items()} == original
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Defect (c), 2026-10-17: BCB SGS 432 is the primary Selic, the COPOM governor its fallback, and a governor past its
+# 50-day window no longer outranks Brapi's live macro feed; the winning source is persisted with the cycle.
+
+class SelicRoutingHttp:
+    """Brapi's macro feed and BCB SGS 432 answered from memory; anything else (the Tesouro cross-check) fails closed."""
+
+    def __init__(self, *, bcb: object, brapi_selic_percent: float | None) -> None:
+        self.bcb = bcb
+        self.brapi_selic_percent = brapi_selic_percent
+        self.calls: list[str] = []
+
+    def get_json(self, url, *, params=None, headers=None):
+        self.calls.append(url)
+        if "bcdata.sgs.432" in url:
+            if isinstance(self.bcb, Exception):
+                raise self.bcb
+            return self.bcb
+        if url.endswith("/api/v2/macro/latest"):
+            results = [{"series": {"slug": "ipca12m"}, "latest": {"value": 4.4}}]
+            if self.brapi_selic_percent is not None:
+                results.append({"series": {"slug": "selic"}, "latest": {"value": self.brapi_selic_percent}})
+            return {"results": results}
+        raise MarketDataRequestError("not stubbed")
+
+
+def test_stale_copom_governor_yields_to_brapis_live_selic_and_says_so() -> None:
+    """The governor dated 2026-08-05 is 73 days old on 2026-10-17: a later COPOM may have moved the rate, so with BCB
+    unreadable the live Brapi Selic wins over the stale governor (it used to return the governor's 14%)."""
+    now = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)
+    value, provenance = B3ScreenerService._resolve_selic(provider_value=0.15, bcb_value=None, bcb_as_of=None, now=now)
+    assert value == 0.15
+    assert B3ScreenerService._effective_selic(provider_value=0.15, bcb_value=None, bcb_as_of=None, now=now) == 0.15
+    assert provenance["source"] == "brapi_macro_governor_stale" and provenance["governor_age_days"] == 73
+    # nothing better than the stale governor: it is used, but flagged — never silently
+    stale_value, stale = B3ScreenerService._resolve_selic(provider_value=None, bcb_value=None, bcb_as_of=None, now=now)
+    assert stale_value == 0.14 and stale["source"] == "copom_governor_stale"
+    # BCB SGS 432 stays primary whenever it has an observation newer than the governor
+    primary, bcb = B3ScreenerService._resolve_selic(provider_value=0.15, bcb_value=0.1475, bcb_as_of=date(2026, 10, 16), now=now)
+    assert primary == 0.1475 and bcb["source"] == "bcb_sgs_432" and bcb["bcb_as_of"] == "2026-10-16"
+    # inside its window the governor still bridges a decision the daily series has not picked up yet
+    bridging, governor = B3ScreenerService._resolve_selic(
+        provider_value=0.15, bcb_value=0.1425, bcb_as_of=date(2026, 8, 5), now=datetime(2026, 8, 5, 21, 31, tzinfo=timezone.utc))
+    assert bridging == 0.14 and governor["source"] == "copom_governor"
+    # an implausible reading (a unit error) is never a rate
+    assert B3ScreenerService._resolve_selic(provider_value=15.0, bcb_value=None, bcb_as_of=None, now=now)[1]["source"] == "copom_governor_stale"
+
+
+def test_macro_context_reads_the_newest_dated_bcb_observation_and_persists_its_provenance() -> None:
+    """BCB SGS 432 rows are taken by DATE (not list position) and decimal commas are read; the source travels with the
+    cycle's macro in the universe snapshot. (It used to read the last row's undated position and drop "15,25".)"""
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    http = SelicRoutingHttp(
+        bcb=[{"data": "16/10/2026", "valor": "15,25"}, {"data": "15/10/2026", "valor": "15.00"}],
+        brapi_selic_percent=14.0,
+    )
+    service = B3ScreenerService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    macro = service._macro_context()
+
+    assert macro["selic"] == pytest.approx(0.1525) and macro["ipca12m"] == pytest.approx(0.044)
+    assert service._selic_provenance is not None and service._selic_provenance["source"] == "bcb_sgs_432"
+    assert service._selic_provenance["bcb_as_of"] == "2026-10-16"
+    service._persist_universe(datetime.now(timezone.utc), macro)
+    snapshot = service.database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
+    assert snapshot is not None and snapshot["outputs"]["selic_provenance"]["source"] == "bcb_sgs_432"
+    assert snapshot["outputs"]["macro"]["selic"] == pytest.approx(0.1525)
+
+
+def test_macro_context_with_bcb_down_records_which_fallback_it_used() -> None:
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = B3ScreenerService(settings, Database(settings), SelicRoutingHttp(bcb=MarketDataRequestError("down"), brapi_selic_percent=15.0))  # type: ignore[arg-type]
+
+    macro = service._macro_context()
+
+    # the wall clock is past 2026-09-24, so the governor of 2026-08-05 is outside its 50-day window: Brapi's live Selic
+    assert service._selic_provenance is not None and service._selic_provenance["bcb_as_of"] is None
+    assert service._selic_provenance["governor_age_days"] > 50
+    assert macro["selic"] == pytest.approx(0.15) and service._selic_provenance["source"] == "brapi_macro_governor_stale"

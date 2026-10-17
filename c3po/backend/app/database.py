@@ -3151,6 +3151,33 @@ class Database:
         )
         return {row[0]: dict(zip(keys, row)) for row in rows}
 
+    def stored_sec_acceptances(self, accessions: list[str], *, acceptance_source: str) -> dict[str, datetime]:
+        """SEC filing events already stored with an acceptance instant from ``acceptance_source`` (their
+        ``raw_metadata.acceptance_time_source``), by accession: a sync reuses what it already read from the filing
+        headers instead of reading them again (SEC fair access) and never downgrades such an instant."""
+        clean = sorted({str(accession) for accession in accessions if accession})
+        if not clean:
+            return {}
+        if not self.database_url:
+            return {
+                external_id: event["published_at"]
+                for (source_code, external_id), event in self._ir_events.items()
+                if source_code == "sec" and external_id in clean
+                and (event.get("raw_metadata") or {}).get("acceptance_time_source") == acceptance_source
+            }
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT external_id, published_at
+                FROM ir_events
+                WHERE source_code = 'sec'
+                  AND external_id = ANY(%s)
+                  AND raw_metadata->>'acceptance_time_source' = %s
+                """,
+                (clean, acceptance_source),
+            ).fetchall()
+        return {str(external_id): published_at for external_id, published_at in rows}
+
     @staticmethod
     def _insider_transaction_direction(metadata: dict[str, Any]) -> int:
         """+1 buy, -1 sell, 0 unknown. Handles the two raw_metadata shapes

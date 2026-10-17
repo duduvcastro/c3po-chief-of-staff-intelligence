@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import html
 import io
 import json
+import logging
 import re
 import unicodedata
 import zipfile
@@ -11,7 +13,9 @@ from datetime import date, datetime, time, timedelta, timezone
 from difflib import SequenceMatcher
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from threading import Lock
+from time import monotonic, sleep
+from typing import Any, Callable
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
@@ -34,7 +38,20 @@ from .schemas import (
 )
 
 
+logger = logging.getLogger(__name__)
+
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+NEW_YORK = ZoneInfo("America/New_York")
+# Defect (e), verified 2026-10-17: the submissions JSON `acceptanceDateTime` is NOT true UTC. AAPL 0000320193-26-000018:
+# header ACCEPTANCE-DATETIME 20260730163028 (New York) vs JSON 2026-07-31T00:30:28.000Z; 0000320193-26-000005: header
+# 20260129163033 vs JSON 2026-01-30T02:30:33Z — the JSON is the true instant PLUS the New York UTC offset. The filing
+# header (…/<accession>-index-headers.html, New York wall clock) is the source of truth; the corrected JSON reading is
+# the fallback while a header is not (yet) read, and each event says which one it carries.
+SEC_ACCEPTANCE_FROM_HEADER = "filing_header"
+SEC_ACCEPTANCE_FROM_SUBMISSIONS = "submissions_json_ny_corrected"
+SEC_HEADER_ACCEPTANCE_PATTERN = re.compile(r"<ACCEPTANCE-DATETIME>\s*(\d{14})")
+SEC_MAX_REQUESTS_PER_SECOND = 8  # SEC fair access: at most 10/s per user; this process stays below it
+SEC_HEADER_READS_PER_SYNC = 40  # newest first; the rest keep the corrected JSON reading until a later sync reads them
 SEC_FORMS = {"8-K", "10-Q", "10-K", "6-K", "20-F", "40-F", "8-K/A", "10-Q/A", "10-K/A", "6-K/A", "20-F/A"}
 SEC_FULLTEXT_KEYWORDS = (
     "guidance", "acquisition", "merger", "restatement", "material weakness",
@@ -111,6 +128,59 @@ def date_at_midnight(value: str) -> datetime:
     return datetime.combine(date.fromisoformat(value[:10]), time.min, tzinfo=SAO_PAULO)
 
 
+def sec_submissions_acceptance(value: str) -> datetime:
+    """A submissions JSON ``acceptanceDateTime`` read with its real semantics (defect e): the value labelled UTC is the
+    true acceptance instant plus the New York UTC offset in force at that instant (4 h under EDT, 5 h under EST), so the
+    instant is the label minus the offset that makes the result consistent. EDGAR accepts nothing in the hour around a
+    DST switch (Sunday ~02:00 ET), where this reading would be ambiguous."""
+    labelled = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if labelled.tzinfo is None:
+        labelled = labelled.replace(tzinfo=timezone.utc)
+    for hours in (4, 5):
+        candidate = labelled - timedelta(hours=hours)
+        if candidate.astimezone(NEW_YORK).utcoffset() == timedelta(hours=-hours):
+            return candidate
+    return labelled + (labelled.astimezone(NEW_YORK).utcoffset() or timedelta())
+
+
+def sec_header_acceptance(text: str) -> datetime | None:
+    """The EDGAR acceptance instant from a filing header (``<ACCEPTANCE-DATETIME>YYYYMMDDHHMMSS``, a New York wall
+    clock; the ``-index-headers.html`` page may HTML-escape the tag), in UTC. ``None`` when the header carries none."""
+    match = SEC_HEADER_ACCEPTANCE_PATTERN.search(html.unescape(text or ""))
+    if not match:
+        return None
+    try:
+        local = datetime.strptime(match.group(1), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+    return local.replace(tzinfo=NEW_YORK).astimezone(timezone.utc)
+
+
+class SecRateLimiter:
+    """SEC fair access for this process: consecutive requests at least ``1 / rate`` seconds apart."""
+
+    def __init__(
+        self,
+        rate: float = SEC_MAX_REQUESTS_PER_SECOND,
+        *,
+        clock: Callable[[], float] = monotonic,
+        pause: Callable[[float], None] = sleep,
+    ) -> None:
+        self.interval = 1.0 / rate
+        self.clock = clock
+        self.pause = pause
+        self._lock = Lock()
+        self._next_at = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = self.clock()
+            if now < self._next_at:
+                self.pause(self._next_at - now)
+                now = self._next_at
+            self._next_at = now + self.interval
+
+
 class LinkCollector(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -153,6 +223,7 @@ class InvestorRelationsService:
             follow_redirects=True,
             headers={"User-Agent": settings.sec_user_agent, "Accept-Encoding": "gzip, deflate"},
         )
+        self.sec_rate = SecRateLimiter()  # paces the filing-header reads (defect e)
         self.finnhub = FinnhubClient(settings.finnhub_base_url, settings.finnhub_api_token, self.client)
         self.eodhd = EodhdClient(
             settings.eodhd_base_url, settings.eodhd_api_token,
@@ -465,6 +536,7 @@ class InvestorRelationsService:
                         events.append(event)
                 finnhub_insider_events = self._finnhub_insider_events(symbol, cik, company, company_name)
                 events.extend(finnhub_insider_events or self._eodhd_insider_events(symbol, cik, company, company_name))
+            self._apply_sec_header_acceptances(events)
             self._enrich_with_sec_fulltext(events)
             written = self.database.save_ir_events(events)
             self.database.finish_ingestion_run(run_id, "succeeded", read, written)
@@ -472,6 +544,77 @@ class InvestorRelationsService:
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
+
+    def _apply_sec_header_acceptances(self, events: list[dict[str, Any]]) -> None:
+        """Defect (e): give each SEC filing event its EDGAR acceptance instant from the filing header — the source of
+        truth. A header already read by an earlier sync is reused from storage (never read twice, never downgraded to
+        the JSON reading); the others are read newest first, at most ``SEC_HEADER_READS_PER_SYNC`` per sync, paced by
+        ``sec_rate`` and only with ``C3PO_SEC_CONTACT`` configured (the SEC is never called without a contact). An
+        event whose header is not read keeps the corrected submissions-JSON instant and says so in ``raw_metadata``.
+        Insider events (also ``source_code = "sec"``) carry no acceptance reading and are left alone."""
+        filings = [
+            event for event in events
+            if (event.get("raw_metadata") or {}).get("acceptance_time_source") == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+        ]
+        if not filings:
+            return
+        stored = self.database.stored_sec_acceptances(
+            [event["external_id"] for event in filings], acceptance_source=SEC_ACCEPTANCE_FROM_HEADER,
+        )
+        pending: list[dict[str, Any]] = []
+        for event in filings:
+            if event["external_id"] in stored:
+                self._set_sec_header_acceptance(event, stored[event["external_id"]])
+            else:
+                pending.append(event)
+        if not pending:
+            return
+        contact = clean_text(self.settings.sec_contact)
+        if not contact:
+            logger.warning(
+                "C3PO_SEC_CONTACT is not configured: %d SEC filing(s) keep the corrected submissions-JSON acceptance "
+                "time; their filing headers are not read without an SEC contact.", len(pending),
+            )
+            return
+        semantics_warned = False
+        for event in sorted(pending, key=lambda item: item["published_at"], reverse=True)[:SEC_HEADER_READS_PER_SYNC]:
+            try:
+                accepted = self._sec_header_acceptance(event, contact)
+            except Exception as exc:
+                logger.info("SEC filing header %s not read (%s); it keeps the corrected submissions-JSON time",
+                            event["external_id"], type(exc).__name__)
+                continue
+            if accepted is None:
+                continue
+            if accepted != event["published_at"] and not semantics_warned:
+                semantics_warned = True
+                logger.warning(
+                    "SEC filing header %s says %s but the corrected submissions JSON says %s — the JSON semantics "
+                    "verified on 2026-10-17 no longer hold; events without a header read may be off.",
+                    event["external_id"], accepted.isoformat(), event["published_at"].isoformat(),
+                )
+            self._set_sec_header_acceptance(event, accepted)
+
+    def _sec_header_acceptance(self, event: dict[str, Any], contact: str) -> datetime | None:
+        """One filing header read (``…/Archives/edgar/data/<cik>/<accession digits>/<accession>-index-headers.html``),
+        paced for SEC fair access and identified by the configured contact."""
+        accession = str(event["external_id"])
+        cik = str(event.get("regulator_id") or "").lstrip("0") or "0"
+        url = (
+            f"{self.settings.sec_archives_base_url.rstrip('/')}/Archives/edgar/data/{cik}/"
+            f"{accession.replace('-', '')}/{accession}-index-headers.html"
+        )
+        self.sec_rate.wait()
+        response = self.client.get(url, headers={"User-Agent": f"C3PO Chief of Staff Intelligence {contact}"})
+        response.raise_for_status()
+        return sec_header_acceptance(response.text)
+
+    @staticmethod
+    def _set_sec_header_acceptance(event: dict[str, Any], accepted: datetime) -> None:
+        event["published_at"] = accepted
+        metadata = event.setdefault("raw_metadata", {})
+        metadata["acceptance_time_source"] = SEC_ACCEPTANCE_FROM_HEADER
+        metadata["acceptance_datetime_header"] = accepted.astimezone(NEW_YORK).strftime("%Y%m%d%H%M%S")
 
     def _enrich_with_sec_fulltext(self, events: list[dict[str, Any]]) -> None:
         """Cross-reference recently-discovered SEC filings against EDGAR's full-
@@ -1378,7 +1521,8 @@ class InvestorRelationsService:
         company: dict[str, Any] | None,
         cutoff: datetime,
     ) -> dict[str, Any] | None:
-        accepted = datetime.fromisoformat(str(recent["acceptanceDateTime"][index]).replace("Z", "+00:00"))
+        raw_acceptance = str(recent["acceptanceDateTime"][index])
+        accepted = sec_submissions_acceptance(raw_acceptance)  # never the label as UTC (defect e); the header may replace it
         if accepted < cutoff:
             return None
         accession = str(recent["accessionNumber"][index])
@@ -1412,7 +1556,11 @@ class InvestorRelationsService:
             "materiality": materiality,
             "valuation_relevant": relevant,
             "valuation_status": "pending_review" if relevant else "informational",
-            "raw_metadata": {"accession": accession, "items": items, "is_xbrl": recent.get("isXBRL", [0])[index]},
+            "raw_metadata": {
+                "accession": accession, "items": items, "is_xbrl": recent.get("isXBRL", [0])[index],
+                "acceptance_time_source": SEC_ACCEPTANCE_FROM_SUBMISSIONS,
+                "acceptance_datetime_json": raw_acceptance,
+            },
             "collected_at": datetime.now().astimezone(),
         }
 

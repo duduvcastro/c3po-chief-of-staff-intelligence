@@ -13,7 +13,7 @@ from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixP
 from ..valuation_official import current_generation, item_stamp, official_row, official_rows, official_stamp, provenance_sha256
 from ..valuation_official_engine import official_buy_in_v1, official_entry_discount_v1
 from ..valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
-from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, LATEST_COPOM_SELIC, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
+from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
 from .eodhd import EodhdClient
 from .models import canonical_us_security_type
 from .realtime import RealtimeMarketsService
@@ -47,6 +47,12 @@ CALIBRATION_MIN_GLOBAL_SAMPLES = 40
 CALIBRATION_MIN_PROFILE_SAMPLES = 15
 CALIBRATION_FACTOR_LIMIT = 0.05
 PROVIDER_DELAY_MINUTES = 15
+# Defect (b), 2026-10-17: the US Power Zone hurdle was Brazil's Selic (LATEST_COPOM_SELIC + 6 p.p. = 20%), a BRL policy
+# rate gating USD returns. It is now the US risk-free rate the same build already uses for CAPM — the live 10-year
+# Treasury yield (OnePagerService._us_risk_free_rate: EODHD GBOND, its own fallback when the feed is down) — plus the
+# SAME 6 p.p. premium B3 adds to Selic. The hurdle a cycle was built with travels on its rows (`tp_hurdle_percent`,
+# `tp_hurdle_risk_free_rate`), so the statuses, criteria and matrix quadrants served from that cycle share one hurdle.
+US_TP_HURDLE_BASIS = "US 10Y Treasury"
 NEW_YORK = ZoneInfo("America/New_York")
 US_REGULAR_OPEN_ET = time(9, 30)
 US_REGULAR_CLOSE_ET = time(16, 0)
@@ -331,8 +337,10 @@ class USScreeningService:
             audit["calculated_tp"] += 1
 
         risk_cutoff = self._risk_cutoff(rows)
-        tp_cutoff = self._tp_cutoff()
+        tp_cutoff = self._tp_cutoff(risk_free_rate)
         for row in rows:
+            row["tp_hurdle_percent"] = tp_cutoff
+            row["tp_hurdle_risk_free_rate"] = risk_free_rate
             row["status"] = (
                 "full_match"
                 if row["signal_quality"] == "validated"
@@ -426,6 +434,12 @@ class USScreeningService:
             internal_buy_in = official_buy_in_v1(
                 methods.values(), official_entry_discount_v1("US", float(analysis["risk_score"]), confidence), statistics.mean(methods.values()),
             )
+        # Defect (d), 2026-10-17: the row stored a fixed 35% whenever a consensus existed, while the producer blends by its
+        # analyst-breadth weight (20-35%, 0 without coverage) and the primary-listing bridge never blends. The row now
+        # carries the weight official_blend_v1 actually applied: the producer's own `consensus_weight_diagnostic`.
+        blend_weight = 0.0
+        if consensus is not None and not analysis.get("method_estimate_registered_on"):
+            blend_weight = clamp(number(analysis.get("consensus_weight_diagnostic")) or 0.0, 0.0, 1.0)
         return self._common_row(
             market,
             quote,
@@ -436,6 +450,7 @@ class USScreeningService:
             our_tp=calibrated_tp,
             internal_tp=internal_tp,
             consensus=consensus,
+            consensus_weight_percent=blend_weight * 100,
             analyst_count=analyst_count,
             consensus_source=consensus_source,
             consensus_observed_at=consensus_observed_at,
@@ -565,6 +580,7 @@ class USScreeningService:
         quality_score: int = 70,
         consensus_source: str | None = None,
         consensus_observed_at: datetime | None = None,
+        consensus_weight_percent: float = 0.0,  # the blend weight the producer applied (defect d); an ETF never blends
     ) -> dict[str, Any]:
         price = float(quote["price"])
         upside = (our_tp / price - 1) * 100
@@ -598,7 +614,7 @@ class USScreeningService:
             "market_cap": positive(fundamentals.get("etfTotalAssets") if security_type == "ETF" else fundamentals.get("marketCap")),
             "our_tp": our_tp,
             "internal_tp": internal_tp,
-            "consensus_weight_percent": 0.0 if consensus is None else 35.0,
+            "consensus_weight_percent": 0.0 if consensus is None else consensus_weight_percent,
             "upside_percent": upside,
             "expected_total_return_percent": expected_return,
             "buy_in": buy_in,
@@ -666,7 +682,7 @@ class USScreeningService:
     def _candidate_response(self, market: USMarket) -> B3CandidateResponse:
         generation = current_generation(self.database)  # resolved ONCE per response
         rows = self._served_rows(market, generation)
-        tp_cutoff = self._tp_cutoff()
+        tp_cutoff, hurdle_rate = self._served_tp_hurdle(rows)
         risk_cutoff = self._risk_cutoff(rows)
         selected = sorted(
             (row for row in rows if row["status"] == "full_match"),
@@ -691,7 +707,7 @@ class USScreeningService:
                 "quality": "Stocks use the canonical five-method valuation; ETFs use asset-allocation, momentum, trend, volatility and drawdown evidence",
                 "valuation": "Same canonical C3PO methodology consumed by Dark Side, Last Jedi and Laser Pager",
                 "score": "Power Score: 35% return, 25% inverse risk, 15% quality, 15% confidence, 10% entry",
-                "tp_upside": f"C3PO TP upside >= Selic + 6 p.p. = {tp_cutoff:.1f}%",
+                "tp_upside": f"C3PO TP upside >= {US_TP_HURDLE_BASIS} ({hurdle_rate * 100:.2f}%) + {TP_UPSIDE_PREMIUM * 100:.0f} p.p. = {tp_cutoff:.1f}%",
                 "entry": "Price within -10% to +15% of disciplined buy-in",
                 "risk": f"Risk below min(40, eligible-universe median) = {risk_cutoff:.1f}/100",
                 "confidence": "Validated valuation only: confidence >= 70, dispersion <= 45% and independent market evidence",
@@ -703,7 +719,7 @@ class USScreeningService:
         generation = current_generation(self.database)  # resolved ONCE per response (F393-3): the matrix reads the official selection, never the raw build
         rows = self._served_rows(market, generation)
         self._refresh_quotes(market, rows, now)
-        tp_cutoff = self._tp_cutoff()
+        tp_cutoff, _ = self._served_tp_hurdle(rows)
         risk_cutoff = self._risk_cutoff(rows)
         returns = [row["upside_percent"] for row in rows]
         risks = [row["risk_score"] for row in rows]
@@ -750,7 +766,7 @@ class USScreeningService:
             basis_generated_at=self._basis_at[market] or now, generated_at=now, items=items,
             **official_stamp(self.database, market, generation=generation),
             methodology={
-                "return": "Raw C3PO TP upside is the return axis and must exceed live Selic + 6 p.p. for the Power Zone.",
+                "return": "Raw C3PO TP upside is the return axis and must exceed the live US 10-year Treasury yield + 6 p.p. for the Power Zone.",
                 "risk": "Market volatility, beta, drawdown, balance-sheet evidence and liquidity produce the shared 0-100 risk score.",
                 "power": "Power Score combines 35% upside, 25% inverse risk, 15% quality, 15% confidence and 10% entry discipline.",
                 "universe": f"{market} stocks and ETFs that clear price, size, liquidity and history gates.",
@@ -1026,8 +1042,19 @@ class USScreeningService:
         )
 
     @staticmethod
-    def _tp_cutoff() -> float:
-        return (LATEST_COPOM_SELIC + TP_UPSIDE_PREMIUM) * 100
+    def _tp_cutoff(risk_free_rate: float) -> float:
+        return (risk_free_rate + TP_UPSIDE_PREMIUM) * 100
+
+    def _served_tp_hurdle(self, rows: list[dict[str, Any]]) -> tuple[float, float]:
+        """``(tp_cutoff_percent, risk_free_rate)`` of the served cycle: the hurdle its rows were built with, so criteria
+        and quadrants describe the very hurdle behind each row's status. A cycle built before the hurdle travelled on
+        its rows (or no served row at all) takes the current US rate — never Selic."""
+        for row in rows:
+            cutoff, rate = number(row.get("tp_hurdle_percent")), number(row.get("tp_hurdle_risk_free_rate"))
+            if cutoff is not None and rate is not None:
+                return cutoff, rate
+        rate = self.one_pagers._us_risk_free_rate()
+        return self._tp_cutoff(rate), rate
 
     @staticmethod
     def _risk_cutoff(rows: list[dict[str, Any]]) -> float:

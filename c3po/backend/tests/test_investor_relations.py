@@ -1,6 +1,6 @@
 import io
 import zipfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import httpx
 import pytest
@@ -9,12 +9,18 @@ from app.config import Settings
 from app.cvm_fundamentals import extract_itr_official_fundamentals
 from app.database import Database
 from app.investor_relations import (
+    NEW_YORK,
     RI_URL_OVERRIDES,
+    SEC_ACCEPTANCE_FROM_HEADER,
+    SEC_ACCEPTANCE_FROM_SUBMISSIONS,
     SEC_FULLTEXT_KEYWORDS,
     LinkCollector,
     InvestorRelationsService,
+    SecRateLimiter,
     is_ri_navigation_link,
     normalize_company_name,
+    sec_header_acceptance,
+    sec_submissions_acceptance,
 )
 from app.market_data.b3_screener import B3ScreenerService
 
@@ -1073,3 +1079,150 @@ def test_matrix_risk_score_lowers_on_insider_buying_and_raises_on_selling():
 
     assert buying < neutral < selling
     assert no_signal_at_all == neutral
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Defect (e), verified 2026-10-17: the submissions JSON acceptanceDateTime is NOT true UTC (it is the true instant plus
+# the New York UTC offset); the filing header (New York wall clock) is the source of truth.
+
+def _submissions(acceptances: list[str], accessions: list[str]) -> tuple[dict, dict]:
+    count = len(accessions)
+    recent = {
+        "accessionNumber": accessions, "form": ["10-Q"] * count, "acceptanceDateTime": acceptances,
+        "primaryDocument": ["doc.htm"] * count, "primaryDocDescription": ["10-Q"] * count, "items": [""] * count,
+        "reportDate": [""] * count, "isXBRL": [1] * count,
+    }
+    return {"cik": "0000320193", "name": "Apple Inc.", "tickers": ["AAPL"], "filings": {"recent": recent}}, recent
+
+
+def test_sec_event_reads_the_submissions_acceptance_as_true_time_plus_the_new_york_offset(tmp_path):
+    """The two AAPL filings verified on 2026-10-17: the JSON's "UTC" labels are 4 h (EDT) / 5 h (EST) late. The event
+    used to carry the label as UTC (00:30:28Z / 02:30:33Z); it now carries the header's instant (16:30 New York)."""
+    ir, _ = service(tmp_path)
+    payload, recent = _submissions(
+        ["2026-07-31T00:30:28.000Z", "2026-01-30T02:30:33.000Z"], ["0000320193-26-000018", "0000320193-26-000005"],
+    )
+    cutoff = datetime(2025, 10, 1, tzinfo=timezone.utc)
+
+    july = ir._sec_event(payload, recent, 0, None, cutoff)
+    january = ir._sec_event(payload, recent, 1, None, cutoff)
+
+    assert july["published_at"] == datetime(2026, 7, 30, 20, 30, 28, tzinfo=timezone.utc)
+    assert july["published_at"].astimezone(NEW_YORK).strftime("%Y%m%d%H%M%S") == "20260730163028"  # the header
+    assert january["published_at"] == datetime(2026, 1, 29, 21, 30, 33, tzinfo=timezone.utc)
+    assert january["published_at"].astimezone(NEW_YORK).strftime("%Y%m%d%H%M%S") == "20260129163033"  # the header
+    assert july["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+    assert july["raw_metadata"]["acceptance_datetime_json"] == "2026-07-31T00:30:28.000Z"
+    assert sec_submissions_acceptance("2026-07-31T00:30:28.000Z") == july["published_at"]
+
+
+def test_sec_header_acceptance_is_a_new_york_wall_clock_escaped_or_not():
+    escaped = "<pre>&lt;SEC-HEADER&gt;0000320193-26-000018.hdr.sgml : 20260731\n&lt;ACCEPTANCE-DATETIME&gt;20260730163028\n</pre>"
+    raw = "<SEC-HEADER>\n<ACCEPTANCE-DATETIME>20260129163033\nACCESSION NUMBER: 0000320193-26-000005"
+    assert sec_header_acceptance(escaped) == datetime(2026, 7, 30, 20, 30, 28, tzinfo=timezone.utc)  # EDT: UTC-4
+    assert sec_header_acceptance(raw) == datetime(2026, 1, 29, 21, 30, 33, tzinfo=timezone.utc)  # EST: UTC-5
+    assert sec_header_acceptance("<html>no header here</html>") is None
+
+
+def test_sec_rate_limiter_keeps_requests_at_or_below_eight_per_second():
+    pauses: list[float] = []
+    limiter = SecRateLimiter(clock=lambda: 100.0, pause=pauses.append)
+    for _ in range(4):
+        limiter.wait()
+    assert pauses == pytest.approx([0.125, 0.25, 0.375])  # four requests at one instant leave 1/8 s between each
+
+
+class _SecResponse:
+    def __init__(self, payload=None, text=""):
+        self._payload, self.text = payload, text
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _SecArchive:
+    """company_tickers, one AAPL submissions file, its filing header and an empty full-text search, from memory."""
+
+    def __init__(self, submissions: dict, header_text: str) -> None:
+        self.submissions, self.header_text = submissions, header_text
+        self.calls: list[tuple[str, dict]] = []
+
+    def get(self, url, params=None, headers=None):
+        self.calls.append((url, dict(headers or {})))
+        if url.endswith("/files/company_tickers.json"):
+            return _SecResponse({"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}})
+        if url.endswith("/submissions/CIK0000320193.json"):
+            return _SecResponse(self.submissions)
+        if url.endswith("-index-headers.html"):
+            return _SecResponse(text=self.header_text)
+        if url.endswith("/LATEST/search-index"):
+            return _SecResponse({"hits": {"hits": []}})
+        raise AssertionError(f"unexpected SEC request {url}")
+
+    def header_reads(self) -> list[tuple[str, dict]]:
+        return [call for call in self.calls if call[0].endswith("-index-headers.html")]
+
+
+def test_sync_sec_takes_the_filing_header_once_and_never_calls_the_sec_without_a_contact(tmp_path, caplog):
+    accepted_local = datetime.combine(date.today() - timedelta(days=3), time(16, 30, 28), tzinfo=NEW_YORK)
+    accepted = accepted_local.astimezone(timezone.utc)
+    label = (accepted - accepted_local.utcoffset()).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # the JSON: true instant + NY offset
+    accession = "0000320193-26-000099"
+    payload, _ = _submissions([label], [accession])
+    header = f"<pre>&lt;ACCEPTANCE-DATETIME&gt;{accepted_local:%Y%m%d%H%M%S}\n</pre>"
+    base = dict(database_url="", migrations_dir=tmp_path, investor_relations_output_dir=tmp_path / "ir-pdf",
+                investor_relations_sec_watchlist="AAPL")
+    database = Database(Settings(**base))
+
+    # 1) no C3PO_SEC_CONTACT: no header is requested; the corrected JSON reading is stored and labelled as such
+    without_contact = InvestorRelationsService(Settings(**base), database)
+    archive = _SecArchive(payload, header)
+    without_contact.client = archive
+    with caplog.at_level("WARNING", logger="app.investor_relations"):
+        without_contact.sync_sec()
+    assert archive.header_reads() == [] and "C3PO_SEC_CONTACT is not configured" in caplog.text
+    stored = database._ir_events[("sec", accession)]
+    assert stored["published_at"] == accepted and stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+
+    # 2) with a contact: the header is read once, paced, identified by the contact, and its instant becomes the event's
+    with_contact = InvestorRelationsService(Settings(**base, sec_contact="C3PO test desk"), database)
+    pauses: list[float] = []
+    with_contact.sec_rate = SecRateLimiter(clock=lambda: 0.0, pause=pauses.append)
+    archive = _SecArchive(payload, header)
+    with_contact.client = archive
+    with_contact.sync_sec()
+    reads = archive.header_reads()
+    assert [url for url, _ in reads] == [
+        f"https://www.sec.gov/Archives/edgar/data/320193/000032019326000099/{accession}-index-headers.html"
+    ]
+    assert reads[0][1]["User-Agent"].endswith("C3PO test desk")
+    stored = database._ir_events[("sec", accession)]
+    assert stored["published_at"] == accepted
+    assert stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+    assert stored["raw_metadata"]["acceptance_datetime_header"] == f"{accepted_local:%Y%m%d%H%M%S}"
+
+    # 3) a later sync reuses the stored header instant: no second read, no downgrade to the JSON reading
+    archive = _SecArchive(payload, header)
+    with_contact.client = archive
+    with_contact.sync_sec()
+    assert archive.header_reads() == []
+    assert database._ir_events[("sec", accession)]["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+
+
+def test_sec_header_wins_over_the_json_and_a_semantics_change_is_reported(tmp_path, caplog):
+    ir, database = service(tmp_path)
+    ir.settings.sec_contact = "C3PO test desk"
+    ir.sec_rate = SecRateLimiter(clock=lambda: 0.0, pause=lambda _: None)
+    payload, recent =_submissions(["2026-07-31T00:30:28.000Z"], ["0000320193-26-000018"])
+    event = ir._sec_event(payload, recent, 0, None, datetime(2025, 10, 1, tzinfo=timezone.utc))
+    ir.client = _SecArchive(payload, "&lt;ACCEPTANCE-DATETIME&gt;20260730163031")  # three seconds later than the JSON says
+
+    with caplog.at_level("WARNING", logger="app.investor_relations"):
+        ir._apply_sec_header_acceptances([event])
+
+    assert event["published_at"] == datetime(2026, 7, 30, 20, 30, 31, tzinfo=timezone.utc)
+    assert event["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+    assert "no longer hold" in caplog.text
