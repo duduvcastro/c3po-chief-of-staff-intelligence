@@ -107,12 +107,15 @@ def _switch(database: Database, monkeypatch: pytest.MonkeyPatch, *, cycles: dict
 def test_the_constants_the_lock_and_the_pinned_one_pager() -> None:
     assert official.SOURCE_OFFICIAL == SOURCE_BLEND == "official_blend_v1" and official.SOURCE_INTERNAL == SOURCE_INTERNAL == "official_internal_v1"
     assert OFFICIAL_SOURCES == (SOURCE_BLEND, SOURCE_INTERNAL)
-    # the lock is a literal in the module (it flips only by a commit citing the mesa's receipt), and this tree has it FALSE
-    assert official.OFFICIAL_TP_REPLACEMENT_AUTHORIZED is False
-    assert "\nOFFICIAL_TP_REPLACEMENT_AUTHORIZED = False" in (APP / "valuation_official.py").read_text(encoding="utf-8")
-    # rev 9: the lock commit names the receipt the owner accepted beside the lock — none in this tree
-    assert official.OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256 is None
-    assert "\nOFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = None" in (APP / "valuation_official.py").read_text(encoding="utf-8")
+    # the lock is a literal in the module, flipped by THE LOCK COMMIT together with the receipt it names (rev 9): this tree has it
+    # TRUE, and the receipt is either the placeholder (the owner has not accepted yet: nothing switches) or the accepted hex-64 hash
+    source = (APP / "valuation_official.py").read_text(encoding="utf-8")
+    assert official.OFFICIAL_TP_REPLACEMENT_AUTHORIZED is True and "\nOFFICIAL_TP_REPLACEMENT_AUTHORIZED = True" in source
+    receipt = official.OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256
+    assert official.RECEIPT_PLACEHOLDER == "PENDING-OWNER-ACCEPTANCE" and not official._SHA256.match(official.RECEIPT_PLACEHOLDER)
+    assert isinstance(receipt, str) and (receipt == official.RECEIPT_PLACEHOLDER or official._SHA256.match(receipt))
+    assert ("\nOFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = RECEIPT_PLACEHOLDER" in source
+            or f'\nOFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = "{receipt}"' in source)
     # the pinned producer framework is not edited by Passo 1 (the mirror of its entry hurdle lives in the engine module)
     assert hashlib.sha256((APP / "one_pager.py").read_bytes()).hexdigest() == ORACLE_ONE_PAGER_SHA256
 
@@ -238,7 +241,7 @@ def test_the_switch_is_refused_while_the_lock_is_false_and_without_the_receipt_h
     g0 = official.current_generation(database)
     assert g0 is not None
     report = official.before_after_report(database)
-    assert official.OFFICIAL_TP_REPLACEMENT_AUTHORIZED is False
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", False)  # the lock as it stood before the lock commit
     with pytest.raises(ValueError, match="official_tp_replacement_authorized is false"):
         official.select_generation(database, cycles=cycles, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, before_after_sha256=report["report_sha256"])
     with pytest.raises(ValueError, match="unknown official source"):
@@ -948,8 +951,14 @@ def test_r9_the_order_commands_execute_the_switch_and_the_rollback_over_the_rece
     receipt = json.loads(capsys.readouterr().out)
     assert receipt["after_targeted_count"] == 0 and receipt["targeted_cycles"] == 1
     switch = ["--switch-to-internal", "--purge-targeted", "--before-after-sha256", receipt["report_sha256"], "--reason", "P1: owner accepted the receipt"]
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", False)  # the lock as it stood before the lock commit
     with pytest.raises(ValueError, match="official_tp_replacement_authorized is false"):
         official.main(switch)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", official.RECEIPT_PLACEHOLDER)  # the lock commit before the acceptance
+    with pytest.raises(ValueError, match="the lock commit names no accepted before/after receipt"):
+        official.main(switch)
+    assert official.current_generation(database) == head  # nothing switched
     _authorize(monkeypatch, receipt["report_sha256"])
     assert official.main(switch) == 0
     printed = json.loads(capsys.readouterr().out)
