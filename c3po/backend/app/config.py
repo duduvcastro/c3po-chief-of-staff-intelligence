@@ -271,6 +271,15 @@ class Settings(BaseSettings):
     # Valuation V3.2 price series (rev 7 §2.2): OFF by default; the nightly phase runs only when enabled by the mesa
     valuation_price_history_enabled: bool = False
     valuation_price_history_backfill_months: int = Field(default=36, ge=1, le=120)
+    # Valuation as-filed (owner 2026-10-17): SEC XBRL statement vintages, new-filing detection for the US valuation
+    # universe, the as-of bridge with its shadow reconciliation and the US revaluation trigger. OFF by default: nothing is
+    # fetched and no served number changes. The SEC contact is configured on the host only (C3PO_SEC_CONTACT); the
+    # as-filed client refuses to call the SEC without it. Fair access: at most 8 requests/second per process — the
+    # default leaves half of it to the other process that polls EDGAR (the nightly valuation worker).
+    valuation_asfiled_enabled: bool = False
+    sec_contact: str = Field(default="", repr=False)
+    sec_max_requests_per_second: float = Field(default=4.0, gt=0.0, le=8.0)
+    valuation_asfiled_backfill_issuers_per_poll: int = Field(default=10, ge=0, le=200)
     r2d2_fmp_prefilter_enabled: bool = True
     r2d2_fmp_prefilter_cache_seconds: int = 15
     r2d2_fmp_prefilter_max_quote_age_seconds: int = 120

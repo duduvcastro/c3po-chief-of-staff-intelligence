@@ -26,6 +26,16 @@ from .market_data.eodhd import EodhdClient
 from .market_data.finnhub import FinnhubClient
 from .market_data.http import JsonHttpClient
 from .official_fundamentals import save_official_fundamentals
+from .sec_xbrl import (
+    FILING_SOURCE as SEC_FILING_SOURCE,
+    SecXbrlClient,
+    SecXbrlIngestor,
+    acceptance_from_submissions_json,
+    is_sec_host,
+    process_rate_limiter,
+)
+from .statement_vintages import StatementVintageStore
+from .valuation_asfiled import us_valuation_universe
 from .schemas import (
     InvestorRelationsEvent,
     InvestorRelationsResponse,
@@ -152,12 +162,20 @@ class InvestorRelationsService:
             timeout=httpx.Timeout(30.0),
             follow_redirects=True,
             headers={"User-Agent": settings.sec_user_agent, "Accept-Encoding": "gzip, deflate"},
+            event_hooks={"request": [self._sec_fair_access]},
         )
+        self._asfiled_ingestor: SecXbrlIngestor | None = None
         self.finnhub = FinnhubClient(settings.finnhub_base_url, settings.finnhub_api_token, self.client)
         self.eodhd = EodhdClient(
             settings.eodhd_base_url, settings.eodhd_api_token,
             JsonHttpClient(timeout=30.0, max_retries=2, client=self.client),
         )
+
+    def _sec_fair_access(self, request: httpx.Request) -> None:
+        """Every SEC request of this client waits on the process-wide fair-access limiter shared with the as-filed
+        client (sec_xbrl.process_rate_limiter): one pace per process, whatever path calls EDGAR."""
+        if is_sec_host(request.url.host):
+            process_rate_limiter(self.settings.sec_max_requests_per_second).acquire()
 
     def register_b3_universe(self, catalog: list[dict[str, Any]]) -> None:
         companies = []
@@ -235,6 +253,8 @@ class InvestorRelationsService:
                     source_read, source_written = self.sync_ri()
                 elif code == "finnhub":
                     source_read, source_written = self.sync_finnhub_news()
+                elif code == "sec_asfiled":
+                    source_read, source_written = self.sync_sec_asfiled()
                 else:
                     raise ValueError(f"Unsupported Investor Relations source: {code}")
                 read += source_read
@@ -465,10 +485,69 @@ class InvestorRelationsService:
                         events.append(event)
                 finnhub_insider_events = self._finnhub_insider_events(symbol, cik, company, company_name)
                 events.extend(finnhub_insider_events or self._eodhd_insider_events(symbol, cik, company, company_name))
+            self._apply_header_acceptances(events)
             self._enrich_with_sec_fulltext(events)
             written = self.database.save_ir_events(events)
             self.database.finish_ingestion_run(run_id, "succeeded", read, written)
             return read, written
+        except Exception as exc:
+            self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
+            raise
+
+    def _apply_header_acceptances(self, events: list[dict[str, Any]]) -> None:
+        """Where the as-filed registry already holds a filing's header acceptance (the source of truth: the
+        submissions JSON clock is only corrected arithmetic), the header clock replaces it. Best-effort: the registry is
+        filled only behind C3PO_VALUATION_ASFILED_ENABLED, and a read failure leaves the corrected JSON clocks."""
+        filings = [
+            event for event in events
+            if event.get("source_code") == "sec" and (event.get("raw_metadata") or {}).get("accession") == event.get("external_id")
+        ]
+        if not filings:
+            return
+        try:
+            accepted = StatementVintageStore(self.database).filing_acceptances(
+                "US", [str(event["external_id"]) for event in filings], source=SEC_FILING_SOURCE,
+            )
+        except Exception:
+            return
+        for event in filings:
+            clock = accepted.get(str(event["external_id"]))
+            if clock is not None:
+                event["published_at"] = clock
+                event["raw_metadata"]["acceptance_source"] = "sec_header"
+
+    def sync_sec_asfiled(self) -> tuple[int, int]:
+        """Valuation as-filed (owner 2026-10-17): the SEC polling extended to the US valuation universe. Every newly
+        accepted 10-Q/10-K (and amendments) and 8-K carrying item 2.02 is registered with its filing header's acceptance
+        clock, and the issuer's companyfacts are ingested into statement vintages (app/sec_xbrl.py). Off unless
+        C3PO_VALUATION_ASFILED_ENABLED; refuses to call the SEC without C3PO_SEC_CONTACT (the run fails, naming it).
+        Not part of sync("all"): only the Investor Relations worker polls it, so one process carries the heavy pass."""
+        if not self.settings.valuation_asfiled_enabled:
+            return 0, 0
+        run_id = self.database.begin_ingestion_run(
+            "sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure", {"operation": "valuation_universe"},
+        )
+        try:
+            if self._asfiled_ingestor is None:  # kept across polls: it holds the retry state of pending documents
+                self._asfiled_ingestor = SecXbrlIngestor(
+                    self.database,
+                    SecXbrlClient(self.settings),
+                    backfill_per_poll=self.settings.valuation_asfiled_backfill_issuers_per_poll,
+                )
+            ingestor = self._asfiled_ingestor
+            universe = us_valuation_universe(self.database)
+            tickers = ingestor.client.company_tickers()
+            result = ingestor.poll(universe, tickers, now=datetime.now(timezone.utc))
+            written = result.filings_registered + result.vintages_written
+            warning = None
+            if result.errors or result.header_failures or result.json_clock_mismatches:
+                warning = (
+                    f"{'SEC throttled the pass; ' if result.throttled else ''}"
+                    f"{len(result.errors)} issuer errors, {result.header_failures} header failures, "
+                    f"{result.json_clock_mismatches} JSON/header clock mismatches: {'; '.join(result.errors[:10])}"
+                )
+            self.database.finish_ingestion_run(run_id, "succeeded", result.submissions_read, written, warning)
+            return result.submissions_read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
@@ -1378,7 +1457,10 @@ class InvestorRelationsService:
         company: dict[str, Any] | None,
         cutoff: datetime,
     ) -> dict[str, Any] | None:
-        accepted = datetime.fromisoformat(str(recent["acceptanceDateTime"][index]).replace("Z", "+00:00"))
+        # the submissions JSON acceptanceDateTime is NOT true UTC (verified 2026-10-17 against the filing headers: it is
+        # the real instant plus the New York UTC offset); sync_sec replaces it by the header clock when the registry has it
+        acceptance_raw = str(recent["acceptanceDateTime"][index])
+        accepted = acceptance_from_submissions_json(acceptance_raw)
         if accepted < cutoff:
             return None
         accession = str(recent["accessionNumber"][index])
@@ -1412,7 +1494,10 @@ class InvestorRelationsService:
             "materiality": materiality,
             "valuation_relevant": relevant,
             "valuation_status": "pending_review" if relevant else "informational",
-            "raw_metadata": {"accession": accession, "items": items, "is_xbrl": recent.get("isXBRL", [0])[index]},
+            "raw_metadata": {
+                "accession": accession, "items": items, "is_xbrl": recent.get("isXBRL", [0])[index],
+                "acceptance_source": "sec_json_corrected", "acceptance_json_raw": acceptance_raw,
+            },
             "collected_at": datetime.now().astimezone(),
         }
 
