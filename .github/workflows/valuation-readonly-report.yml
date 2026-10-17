@@ -8,9 +8,12 @@ run-name: Valuation read-only accuracy report (PREREG_VALUATION_DECISOR_V1)
 #   - the database session is read-only in PostgreSQL itself (PGOPTIONS
 #     default_transaction_read_only=on, set here and again by the module);
 #   - the module reaches four store readers only and never the network.
-# Only the aggregate receipt (no symbols) and a metadata file are uploaded. The remote stderr
-# stays in the runner's temp directory and is never printed: this repository is public and a
-# log line may name a symbol.
+# Nothing is uploaded unless the reading is valid under §10 of the pre-registration: the
+# deployed prereg is byte-identical to this revision's, the code the container ran is exactly
+# the code the prereg pins (§17: every pinned module and object, by sha256) and the deployed
+# revision is a commit sha. Then only the aggregate receipt (no symbols) and a metadata file are
+# uploaded. The remote stderr stays in the runner's temp directory and is never printed: this
+# repository is public and a log line may name a symbol.
 # Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
 
 on:
@@ -138,16 +141,15 @@ jobs:
           set -uo pipefail
           out="$RUNNER_TEMP/valuation-readonly-report"
           mkdir -p "$out" || exit 1
-          prereg_sha256=$(sha256sum c3po/docs/PREREG_VALUATION_DECISOR_V1.md | cut -d ' ' -f 1) || exit 1
-          [[ "$prereg_sha256" =~ ^[0-9a-f]{64}$ ]] || { echo 'could not hash the pre-registration' >&2; exit 1; }
-          python3 - "$RUNNER_TEMP/raw/stdout.json" "$out" "$prereg_sha256" <<'PY' || exit 1
+          python3 - "$RUNNER_TEMP/raw/stdout.json" "$out" c3po/docs/PREREG_VALUATION_DECISOR_V1.md <<'PY' || exit 1
           import hashlib
           import json
           import os
+          import re
           import sys
           from pathlib import Path
 
-          source, out, workflow_prereg = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+          source, out, prereg = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
           try:
               receipt = json.loads(source.read_text(encoding="utf-8"))
           except (OSError, ValueError):
@@ -162,29 +164,52 @@ jobs:
               sys.exit("unexpected schema")
           if payload.get("holdout_start") != (os.environ["HOLDOUT_START"] or None):
               sys.exit("the receipt's holdout_start is not the requested one")
+          # §10: the deployed pre-registration is this revision's, byte for byte
+          prereg_bytes = prereg.read_bytes()
+          workflow_prereg = hashlib.sha256(prereg_bytes).hexdigest()
+          if payload.get("prereg_sha256") != workflow_prereg:
+              sys.exit("the deployed pre-registration is not the one of this workflow revision: the reading is void")
+          # §10/§17: the code the container ran is exactly the pinned code (checked here, independently of the module's own binding)
+          pinned = {}
+          for line in prereg_bytes.decode("utf-8").splitlines():
+              match = re.match(r"^(file|object) (\S+) ([0-9a-f]{64})$", line.strip())
+              if match:
+                  pinned[f"{match.group(1)} {match.group(2)}"] = match.group(3)
+          code = payload.get("code") or {}
+          ran = {**{f"file {name}": digest for name, digest in (code.get("files") or {}).items()},
+                 **{f"object {name}": digest for name, digest in (code.get("objects") or {}).items()}}
+          if not pinned:
+              sys.exit("the pre-registration pins no code: the reading is void")
+          if ran != pinned:
+              differing = sorted(key for key in pinned.keys() | ran.keys() if pinned.get(key) != ran.get(key))
+              sys.exit("the deployed code is not the pinned code (" + ", ".join(differing) + "): the reading is void")
+          if (payload.get("code_binding") or {}).get("status") != "BOUND":
+              sys.exit("the receipt does not declare its code BOUND: the reading is void")
+          build_sha = code.get("build_sha")
+          if not isinstance(build_sha, str) or re.fullmatch(r"[0-9a-f]{40}", build_sha) is None:
+              sys.exit("the deployed revision is not a commit sha (C3PO_BUILD_SHA): the reading cannot be attributed")
           (out / "report.json").write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
           metadata = {
               "run_id": os.environ["RUN_ID"],
               "workflow_revision": os.environ["REVISION"],
-              "deployed_build_sha": receipt["provenance"].get("build_sha"),
-              "module_sha256": receipt["provenance"].get("module_sha256"),
+              "deployed_build_sha": build_sha,
               "as_of_requested": os.environ["AS_OF"],
               "cut": payload.get("cut"),
               "holdout_start": payload.get("holdout_start"),
               "payload_sha256": receipt["payload_sha256"],
-              "payload_prereg_sha256": payload.get("prereg_sha256"),
-              "workflow_prereg_sha256": workflow_prereg,
-              "prereg_matches_workflow_revision": payload.get("prereg_sha256") == workflow_prereg,
+              "prereg_sha256": workflow_prereg,
+              "code_pins_verified": len(pinned),
           }
           (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
           lines = ["## Valuation read-only accuracy report", "",
                    f"- payload_sha256 `{receipt['payload_sha256']}`; cut `{payload.get('cut')}`; H0 `{payload.get('holdout_start')}`",
-                   f"- prereg sha256 (deployed) `{payload.get('prereg_sha256')}`; matches this workflow revision: {metadata['prereg_matches_workflow_revision']}",
-                   "", "| market | source | verdict | development IC h=21 (mean per session) | development sessions |", "|---|---|---|---|---|"]
+                   f"- prereg sha256 `{workflow_prereg}`; {len(pinned)} code pins verified; deployed revision `{build_sha}`",
+                   "", "| market | source | holdout verdict | development executable IC h=21 (mean per session) | development sessions |",
+                   "|---|---|---|---|---|"]
           for group, by_source in sorted(payload["results"].items()):
               for name, cell in sorted(by_source.items()):
                   development = cell["partitions"]["development"]
-                  ic = development["horizons"].get("21", {}).get("ic", {}).get("blocks", {}).get("mean_per_session")
+                  ic = development["horizons"].get("21", {}).get("ic_executable", {}).get("blocks", {}).get("mean_per_session")
                   lines.append(f"| {group} | {name} | {cell['verdict']['status']} | {ic} | {development['sessions']} |")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write("\n".join(lines) + "\n")
