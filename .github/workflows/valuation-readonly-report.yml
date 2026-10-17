@@ -1,0 +1,200 @@
+name: Valuation read-only accuracy report
+run-name: Valuation read-only accuracy report (PREREG_VALUATION_DECISOR_V1)
+
+# Dispatch only. Runs app.valuation_accuracy_report inside the running api container of the
+# production host through the deploy SSH transport of c3po-pipeline.yml, READ-ONLY:
+#   - no file is copied to or written on the host, no container is created, restarted or
+#     stopped (`docker compose exec` into the running api), no lock is taken;
+#   - the database session is read-only in PostgreSQL itself (PGOPTIONS
+#     default_transaction_read_only=on, set here and again by the module);
+#   - the module reaches four store readers only and never the network.
+# Only the aggregate receipt (no symbols) and a metadata file are uploaded. The remote stderr
+# stays in the runner's temp directory and is never printed: this repository is public and a
+# log line may name a symbol.
+# Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN VALUATION READ-ONLY REPORT
+        required: true
+        type: string
+      as_of:
+        description: Cut C, ISO-8601 with zone (e.g. 2026-10-24T12:00:00-03:00); empty = now (UTC)
+        required: false
+        default: ''
+        type: string
+      holdout_start:
+        description: H0 of PREREG_VALUATION_DECISOR_V1 (YYYY-MM-DD); empty = development partition only
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valuation-readonly-report
+  cancel-in-progress: false
+
+jobs:
+  read-only-report:
+    name: Read-only report
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Require exact confirmation
+        env:
+          RECEIVED: ${{ inputs.confirmation }}
+        run: |
+          if [ "$RECEIVED" != 'RUN VALUATION READ-ONLY REPORT' ]; then
+            echo 'Confirmation did not match the approved phrase.' >&2
+            exit 2
+          fi
+
+      - name: Validate the cut and the holdout start
+        id: inputs
+        env:
+          AS_OF: ${{ inputs.as_of }}
+          HOLDOUT_START: ${{ inputs.holdout_start }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ -z "$AS_OF" ]; then
+            AS_OF=$(date -u +%Y-%m-%dT%H:%M:%S+00:00) || exit 1
+          fi
+          [[ "$AS_OF" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$ ]] \
+            || { echo 'as_of must be ISO-8601 with a zone' >&2; exit 2; }
+          if [ -n "$HOLDOUT_START" ]; then
+            [[ "$HOLDOUT_START" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo 'holdout_start must be YYYY-MM-DD' >&2; exit 2; }
+          fi
+          printf 'as_of=%s\n' "$AS_OF" >> "$GITHUB_OUTPUT" || exit 1
+          printf 'holdout_start=%s\n' "$HOLDOUT_START" >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Check out the workflow revision
+        uses: actions/checkout@v6
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run the report in the running api container, read-only
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          AS_OF: ${{ steps.inputs.outputs.as_of }}
+          HOLDOUT_START: ${{ steps.inputs.outputs.holdout_start }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "AS_OF='$AS_OF' HOLDOUT_START='$HOLDOUT_START' bash -s" \
+            > "$raw/stdout.json" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo 'Security reboot pending; the report must wait for recovery' >&2
+            exit 11
+          fi
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          args=(--as-of "$AS_OF" --prereg /legacy/c3po/docs/PREREG_VALUATION_DECISOR_V1.md)
+          if [ -n "$HOLDOUT_START" ]; then
+            args+=(--holdout-start "$HOLDOUT_START")
+          fi
+          exec "${compose[@]}" exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' \
+            api python -m app.valuation_accuracy_report "${args[@]}" </dev/null
+          REMOTE
+          lines=$(wc -l < "$raw/stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          [ "$rc" -eq 0 ] || exit 1
+
+      - name: Verify the receipt and keep aggregates only
+        env:
+          AS_OF: ${{ steps.inputs.outputs.as_of }}
+          HOLDOUT_START: ${{ steps.inputs.outputs.holdout_start }}
+          RUN_ID: ${{ github.run_id }}
+          REVISION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/valuation-readonly-report"
+          mkdir -p "$out" || exit 1
+          prereg_sha256=$(sha256sum c3po/docs/PREREG_VALUATION_DECISOR_V1.md | cut -d ' ' -f 1) || exit 1
+          [[ "$prereg_sha256" =~ ^[0-9a-f]{64}$ ]] || { echo 'could not hash the pre-registration' >&2; exit 1; }
+          python3 - "$RUNNER_TEMP/raw/stdout.json" "$out" "$prereg_sha256" <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          source, out, workflow_prereg = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+          try:
+              receipt = json.loads(source.read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit("the report output is not a single JSON document (content not printed)")
+          if not isinstance(receipt, dict) or set(receipt) != {"schema", "payload", "payload_sha256", "provenance"}:
+              sys.exit("unexpected receipt shape")
+          payload = receipt["payload"]
+          canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+          if hashlib.sha256(canonical).hexdigest() != receipt["payload_sha256"]:
+              sys.exit("payload_sha256 does not recompute")
+          if receipt["schema"] != "VALUATION-ACCURACY-REPORT-v1" or payload.get("schema") != receipt["schema"]:
+              sys.exit("unexpected schema")
+          if payload.get("holdout_start") != (os.environ["HOLDOUT_START"] or None):
+              sys.exit("the receipt's holdout_start is not the requested one")
+          (out / "report.json").write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+          metadata = {
+              "run_id": os.environ["RUN_ID"],
+              "workflow_revision": os.environ["REVISION"],
+              "deployed_build_sha": receipt["provenance"].get("build_sha"),
+              "module_sha256": receipt["provenance"].get("module_sha256"),
+              "as_of_requested": os.environ["AS_OF"],
+              "cut": payload.get("cut"),
+              "holdout_start": payload.get("holdout_start"),
+              "payload_sha256": receipt["payload_sha256"],
+              "payload_prereg_sha256": payload.get("prereg_sha256"),
+              "workflow_prereg_sha256": workflow_prereg,
+              "prereg_matches_workflow_revision": payload.get("prereg_sha256") == workflow_prereg,
+          }
+          (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          lines = ["## Valuation read-only accuracy report", "",
+                   f"- payload_sha256 `{receipt['payload_sha256']}`; cut `{payload.get('cut')}`; H0 `{payload.get('holdout_start')}`",
+                   f"- prereg sha256 (deployed) `{payload.get('prereg_sha256')}`; matches this workflow revision: {metadata['prereg_matches_workflow_revision']}",
+                   "", "| market | source | verdict | development IC h=21 (mean per session) | development sessions |", "|---|---|---|---|---|"]
+          for group, by_source in sorted(payload["results"].items()):
+              for name, cell in sorted(by_source.items()):
+                  development = cell["partitions"]["development"]
+                  ic = development["horizons"].get("21", {}).get("ic", {}).get("blocks", {}).get("mean_per_session")
+                  lines.append(f"| {group} | {name} | {cell['verdict']['status']} | {ic} | {development['sessions']} |")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          PY
+          (cd "$out" && sha256sum report.json metadata.json > SHA256SUMS) || exit 1
+
+      - name: Publish the aggregate receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: valuation-readonly-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/valuation-readonly-report
+          if-no-files-found: error
+          retention-days: 30
