@@ -22,6 +22,13 @@ history (estimates, peer quality, insiders, news, grades, …) is passed as ABSE
 engine sees; the block is persisted beside it, spec rev 7 "TP sem consenso dentro"); ``buy_in`` comes from
 ``official_buy_in_v1`` with neutral, declared parameters (``provenance.buy_in_rule``).
 
+As-filed statements (``--statements``, default ``auto``): when the ``statement_vintages`` table of the as-filed front
+(migration 051: SEC XBRL, CVM) exists and covers a name, that name is rebuilt ONLY from its statements as filed and
+accepted at or before ``T`` — the regulator's acceptance instant is the evidence of availability in every market (no B3
+lag hypothesis, no day granularity), per period the latest acceptance by ``T`` — and the provider payload serves at most
+``outstandingShares``. Without the table the run is exactly the provider-payload run (no-op); ``provider`` never reads
+the table; ``vintages`` evaluates covered names only. The adapter's column contract is ``STATEMENT_VINTAGE_COLUMNS``.
+
 Prices (§2): the run PINS the vintage it starts with — the latest publication of ``valuation_price_history`` at run
 start (``publication_id`` + ``bars_sha256``), verified, recorded in the manifest and read for the whole run through a
 cut equal to that publication's availability, so a publication that appears mid-run is never mixed in (a pinned
@@ -141,7 +148,18 @@ ALLOWED_PAYLOAD_BLOCKS: tuple[str, ...] = ("Financials", "outstandingShares")  #
 FORBIDDEN_PAYLOAD_BLOCKS: tuple[str, ...] = ("General", "Highlights", "Valuation", "Technicals", "SharesStats", "AnalystRatings", "Earnings",
                                              "ESGScores", "Holders", "InsiderTransactions", "SplitsDividends", "ETF_Data")
 CURRENT_FIELDS_ADMITTED: tuple[str, ...] = ("sector", "industry", "valuation_profile", "security_type")  # the catalogue's classification (§3), declared
-AVAILABILITY_RULE = "as available per evidence (provider filing_date) or declared hypothesis (B3: period_end+90d); original vintage N/D"
+AVAILABILITY_RULE = ("as available per evidence (regulator accepted_at <= T for a name covered by statement_vintages; else provider filing_date) "
+                     "or declared hypothesis (B3 provider payload: period_end+90d); provider original vintage N/D")
+STATEMENT_VINTAGES_TABLE = "statement_vintages"  # migration 051 (the as-filed front): SEC XBRL (US) and CVM (B3) statements as filed
+STATEMENT_VINTAGE_COLUMNS: tuple[str, ...] = ("id", "market", "symbol", "statement", "frequency", "period_end", "accepted_at", "fields")  # the adapter's contract
+STATEMENT_VINTAGE_MARKETS = {"B3": ("B3",), "NASDAQ": ("NASDAQ", "US"), "NYSE": ("NYSE", "US")}  # an SEC filer is not listed per exchange: "US" serves both
+STATEMENTS_MODES: tuple[str, ...] = ("auto", "provider", "vintages")  # auto: as-filed for a covered name, else the provider payload (no-op without the table)
+BASIS_VINTAGES = "statement_vintages"
+BASIS_PROVIDER = "provider_payload"
+AS_FILED_AVAILABILITY = "_pit_as_filed_availability"  # the key the adapter sets on a rebuilt row: the regulator's acceptance (evidence)
+_STATEMENT_NAMES = {"incomestatement": "Income_Statement", "income": "Income_Statement", "balancesheet": "Balance_Sheet", "balance": "Balance_Sheet",
+                    "cashflow": "Cash_Flow", "cashflowstatement": "Cash_Flow"}
+_FREQUENCY_NAMES = {"quarterly": "quarterly", "quarter": "quarterly", "q": "quarterly", "yearly": "yearly", "annual": "yearly", "fy": "yearly", "y": "yearly"}
 DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and the manifest DECLARE (never silent)
     "consensus_published_date_zone": "a publishedDate without a zone is read as UTC (assumption: the provider states no zone)",
     "beta_proxy_membership": "the equal-weight universe proxy of daily log returns INCLUDES the symbol itself (it is not excluded from its own proxy)",
@@ -150,6 +168,10 @@ DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and
                    "a(T) = adjusted_close(T) / close(T)); adjusted_close feeds log returns only. If the provider's close were retro-adjusted for "
                    "splits, every level would be off by the split factor after T: price_basis_evidence counts the raw-vs-adjusted capital events "
                    "the vintage shows up to T (none across a whole universe and window points to a split-adjusted close)",
+    "statements_basis": "a name the statement_vintages table covers (any row, any date: the basis is chosen by coverage, never by T) is rebuilt ONLY "
+                        "from its as-filed statements accepted at or before T — per period the latest acceptance by T, so an amendment accepted "
+                        "after T is never read; the provider payload then serves outstandingShares only, when the as-filed balance carries no share "
+                        "count. An uncovered name reads the provider payload (auto) or is not evaluable (vintages)",
 }
 _RUN_LOCKS: dict[str, threading.Lock] = {}
 _RUN_LOCKS_GUARD = threading.Lock()
@@ -279,7 +301,11 @@ def eligible_statements(payload: Mapping[str, Any], *, market: str, economic_dat
     for B3 the ``+90 d`` lag already kept it out, only the counter's name changes); outside B3, a ``filing_date`` BEFORE
     the period end is refused (``filing_before_period_end``: a filing cannot precede the period it reports; B3's
     ``filing_date`` is not read as evidence, so it is not checked). A missing ``filing_date`` keeps the existing rule:
-    outside B3 the period is not eligible (``filing_date_missing``); B3 ignores the field."""
+    outside B3 the period is not eligible (``filing_date_missing``); B3 ignores the field.
+
+    A row rebuilt from ``statement_vintages`` (``as_filed_payload``) carries the regulator's acceptance under
+    ``AS_FILED_AVAILABILITY``: EVIDENCE in every market (B3 included), its ``filing_date`` the acceptance's date in the
+    market's zone — the instant itself was already cut at ``accepted_at ≤ T`` by the adapter; the date checks run again."""
     financials = _mapping(payload.get("Financials"))
     output: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for statement in ("Income_Statement", "Balance_Sheet", "Cash_Flow"):
@@ -298,14 +324,16 @@ def eligible_statements(payload: Mapping[str, Any], *, market: str, economic_dat
                     excluded[f"{statement}.{frequency}:period_after_T"] += 1
                     continue
                 filing_date = _parse_date(data.get("filing_date"))
-                availability = availability_of(market, period_end, filing_date)
-                if availability is None:
+                as_filed = data.get(AS_FILED_AVAILABILITY)
+                availability = dict(as_filed) if isinstance(as_filed, Mapping) else availability_of(market, period_end, filing_date)
+                available_on = filing_date if isinstance(as_filed, Mapping) else (date.fromisoformat(availability["available_at"]) if availability else None)
+                if availability is None or available_on is None:
                     excluded[f"{statement}.{frequency}:filing_date_missing"] += 1
                     continue
-                if market != "B3" and filing_date is not None and filing_date < period_end:
+                if (market != "B3" or isinstance(as_filed, Mapping)) and filing_date is not None and filing_date < period_end:
                     excluded[f"{statement}.{frequency}:filing_before_period_end"] += 1
                     continue
-                if date.fromisoformat(availability["available_at"]) > economic_date:
+                if available_on > economic_date:
                     excluded[f"{statement}.{frequency}:not_available_at_T"] += 1
                     continue
                 seen.add(period_end)
@@ -435,6 +463,138 @@ def pit_fundamentals(payload: Mapping[str, Any], *, market: str, economic_date: 
         "hypotheses": hypotheses,
         "eligible_periods": {statement: {frequency: len(rows) for frequency, rows in by_frequency.items()} for statement, by_frequency in statements.items()},
     }
+
+
+# ------------------------------------------------------------------ as-filed statements: the statement_vintages adapter (accepted_at ≤ T)
+def _slug(value: Any) -> str:
+    return "".join(character for character in str(value or "").lower() if character.isalnum())
+
+
+def as_filed_row(raw: Mapping[str, Any], *, as_of: datetime, refused: Counter[str]) -> dict[str, Any] | None:
+    """One ``statement_vintages`` row normalised for the reconstruction, or ``None`` (counted, aggregate) when it cannot be
+    read: an unknown statement/frequency, an unparseable period end, ``fields`` that are not an object, or an
+    ``accepted_at`` without a zone — never guessed: the SEC's own submissions JSON shifts New York wall time by the UTC offset,
+    so only a zoned instant is evidence. A row accepted after ``T`` is not an error: it did not exist yet (skipped)."""
+    statement, frequency = _STATEMENT_NAMES.get(_slug(raw.get("statement"))), _FREQUENCY_NAMES.get(_slug(raw.get("frequency")))
+    period_end = _parse_date(raw.get("period_end"))
+    fields = raw.get("fields")
+    if statement is None or frequency is None:
+        refused["statement_vintages:unknown_statement_or_frequency"] += 1
+        return None
+    if period_end is None:
+        refused["statement_vintages:period_end_unparseable"] += 1
+        return None
+    if not isinstance(fields, Mapping):
+        refused["statement_vintages:fields_not_an_object"] += 1
+        return None
+    accepted = raw.get("accepted_at")
+    try:
+        accepted_at = accepted if isinstance(accepted, datetime) else datetime.fromisoformat(str(accepted).replace("Z", "+00:00"))
+    except ValueError:
+        refused["statement_vintages:accepted_at_unparseable"] += 1
+        return None
+    if accepted_at.tzinfo is None or accepted_at.utcoffset() is None:
+        refused["statement_vintages:accepted_at_without_zone"] += 1
+        return None
+    if _utc(accepted_at) > _utc(as_of):
+        return None
+    return {"id": str(raw.get("id") or ""), "symbol": str(raw.get("symbol") or "").strip().upper(), "statement": statement, "frequency": frequency,
+            "period_end": period_end, "accepted_at": _utc(accepted_at), "fields": dict(fields)}
+
+
+def as_filed_payload(rows: Sequence[Mapping[str, Any]], *, market: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The provider-shaped ``Financials`` block rebuilt from one name's as-filed rows accepted at or before ``T`` — per
+    (statement, frequency, period) the LATEST acceptance by ``T`` (an amendment accepted before ``T`` replaces the original;
+    one accepted after ``T`` never reached here) — each row stamped with the regulator's acceptance as EVIDENCE
+    (``AS_FILED_AVAILABILITY``: ``available_at`` = ``published_at_original`` = ``accepted_at``, the vintage id) and its
+    date in the market's zone as ``filing_date``; plus the content reference the manifest hashes (``rows_sha256`` of the
+    rows used, so an older filing backfilled later is another run, a later amendment the same run)."""
+    chosen: dict[tuple[str, str, date], Mapping[str, Any]] = {}
+    for row in rows:
+        key = (str(row["statement"]), str(row["frequency"]), cast(date, row["period_end"]))
+        if key not in chosen or (row["accepted_at"], row["id"]) > (chosen[key]["accepted_at"], chosen[key]["id"]):
+            chosen[key] = row
+    financials: dict[str, dict[str, dict[str, Any]]] = {statement: {"quarterly": {}, "yearly": {}} for statement in ("Income_Statement", "Balance_Sheet", "Cash_Flow")}
+    used: list[list[Any]] = []
+    for (statement, frequency, period_end), row in sorted(chosen.items()):
+        accepted_at = cast(datetime, row["accepted_at"])
+        availability = {"kind": "evidence", "rule": "regulator_accepted_at", "period_end": period_end.isoformat(), "available_at": accepted_at.isoformat(),
+                        "published_at_original": accepted_at.isoformat(), "vintage_id": row["id"]}
+        financials[statement][frequency][period_end.isoformat()] = {**dict(row["fields"]), "date": period_end.isoformat(),
+                                                                    "filing_date": accepted_at.astimezone(SESSION_ZONES[market]).date().isoformat(),
+                                                                    AS_FILED_AVAILABILITY: availability}
+        used.append([row["id"], statement, frequency, period_end.isoformat(), accepted_at.isoformat(), dict(row["fields"])])
+    return {"Financials": financials}, {"rows": len(used), "superseded_by_T": len(rows) - len(used), "rows_sha256": canonical_sha256(used)}
+
+
+class StatementVintageStore:
+    """Read-only access to ``statement_vintages`` (migration 051 of the as-filed front: SEC XBRL for the US, CVM for B3).
+
+    The adapter's CONTRACT (``STATEMENT_VINTAGE_COLUMNS``): one row per (filing, statement, frequency, period) with ``id``,
+    ``market`` (B3, NASDAQ, NYSE or US), ``symbol``, ``statement`` (``Income_Statement``/``Balance_Sheet``/``Cash_Flow``,
+    aliases accepted), ``frequency`` (``quarterly``/``yearly``), ``period_end`` (date), ``accepted_at`` (timestamptz: the
+    regulator's acceptance as a TRUE instant — for the SEC the filing header's ACCEPTANCE-DATETIME read in
+    America/New_York, never the submissions JSON's ``acceptanceDateTime``; a producer that holds only a date stores the END
+    of that day) and ``fields`` (jsonb, keyed by the provider-normalised names the reconstruction reads: ``totalRevenue``,
+    ``netIncome``, ``totalStockholderEquity``, ``commonStockSharesOutstanding``, …). Append-only; never written here.
+
+    No table → ``present()`` is ``False`` and the run is exactly the provider-payload run (no-op). A table WITHOUT the
+    contract's columns is a refusal naming them — never a silent fallback that would hide a schema drift. In memory the
+    double is ``Database._statement_vintages`` (a list of contract rows) when the attribute exists."""
+
+    def __init__(self, database: Database) -> None:
+        self.database = database
+        self._present: bool | None = None
+
+    def _check_columns(self, columns: set[str]) -> None:
+        missing = [column for column in STATEMENT_VINTAGE_COLUMNS if column not in columns]
+        if missing:
+            raise PitRerunInputError(f"{STATEMENT_VINTAGES_TABLE} exists but lacks the adapter's columns {missing}: align the as-filed schema or run "
+                                     "with --statements provider")
+
+    def present(self) -> bool:
+        if self._present is None:
+            if not self.database.database_url:
+                self._present = isinstance(getattr(self.database, "_statement_vintages", None), list)
+            else:
+                with self.database.connection() as connection:
+                    found = connection.execute("SELECT to_regclass(%s)::text", (STATEMENT_VINTAGES_TABLE,)).fetchone()
+                    if not found or found[0] is None:
+                        self._present = False
+                    else:
+                        columns = {str(row[0]): str(row[1]) for row in connection.execute(
+                            "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = %s",
+                            (STATEMENT_VINTAGES_TABLE,)).fetchall()}
+                        self._check_columns(set(columns))
+                        if columns["accepted_at"] != "timestamp with time zone":  # a wall-clock column would make every acceptance a guess
+                            raise PitRerunInputError(f"{STATEMENT_VINTAGES_TABLE}.accepted_at is {columns['accepted_at']!r}, not a timestamp with time zone: "
+                                                     "an acceptance without its zone is not evidence")
+                        self._present = True
+        return self._present
+
+    def load(self, market: str, *, as_of: datetime) -> tuple[set[str], list[dict[str, Any]]]:
+        """(the symbols the table covers in ``market`` — any row, any date: the basis follows coverage, never ``T`` —, the raw
+        rows accepted at or before ``T``). The cut is in the query itself: a row accepted after ``T`` is never read."""
+        markets = list(STATEMENT_VINTAGE_MARKETS[market])
+        cut = _utc(as_of)
+        if not self.database.database_url:
+            stored = [dict(row) for row in cast(list[dict[str, Any]], getattr(self.database, "_statement_vintages")) if str(row.get("market")) in markets]
+            for row in stored:
+                self._check_columns(set(row))
+            covered = {str(row.get("symbol") or "").strip().upper() for row in stored}
+            return covered, [row for row in stored if not isinstance(row.get("accepted_at"), datetime) or _utc(row["accepted_at"]) <= cut]
+        with self.database.connection() as connection:
+            covered = {str(row[0]).strip().upper() for row in connection.execute(
+                f"SELECT DISTINCT symbol FROM {STATEMENT_VINTAGES_TABLE} WHERE market = ANY(%s)", (markets,)).fetchall()}
+            rows = connection.execute(
+                f"""
+                SELECT id::text, market, symbol, statement, frequency, period_end, accepted_at, fields
+                FROM {STATEMENT_VINTAGES_TABLE}
+                WHERE market = ANY(%s) AND accepted_at <= %s
+                """,
+                (markets, cut),
+            ).fetchall()
+        return covered, [dict(zip(STATEMENT_VINTAGE_COLUMNS, row)) for row in rows]
 
 
 # ------------------------------------------------------------------ consensus (§3): last eligible target per house, ≥ 3 houses, currency by field
@@ -725,17 +885,26 @@ class MacroAtT:
 class PitSourceResolver:
     """For a market and ``T``, the ``loaded`` mapping ``valuation_v3_shadow._contexts`` consumes — every role of
     ``_SOURCE_SPECS`` rebuilt from the PIT source snapshots (``valuation_pit_source/<M>_EODHD_FUNDAMENTALS_<hash>``,
-    ``<M>_FMP_TARGETS_<hash>``), the pinned price series and the dated macro — plus the references, exclusions and
-    hypotheses the manifest and the records declare. Reads the store only; never the network."""
+    ``<M>_FMP_TARGETS_<hash>``) or, for a name ``statement_vintages`` covers, its as-filed statements accepted ≤ T; the
+    pinned price series and the dated macro — plus the references, exclusions and hypotheses the manifest and the records
+    declare. Reads the store only; never the network."""
 
-    def __init__(self, database: Database, *, market: str, as_of: datetime, prices: PinnedPrices) -> None:
+    def __init__(self, database: Database, *, market: str, as_of: datetime, prices: PinnedPrices, statements: str = "auto",
+                 vintages: StatementVintageStore | None = None) -> None:
         if market not in MARKETS:
             raise PitRerunInputError(f"unknown market {market!r}")
+        if statements not in STATEMENTS_MODES:
+            raise PitRerunInputError(f"unknown statements mode {statements!r} (one of {', '.join(STATEMENTS_MODES)})")
         self.database = database
         self.market = market
         self.as_of = _utc(as_of)
         self.economic_date = economic_date_of(market, self.as_of)
         self.prices = prices
+        self.statements = statements
+        self.vintages = vintages if vintages is not None else StatementVintageStore(database)
+        self.vintages_present: bool | None = None  # None: not asked (--statements provider)
+        self.statements_basis: Counter[str] = Counter()
+        self._as_filed: tuple[set[str], dict[str, list[dict[str, Any]]]] | None = None
         self.references: list[dict[str, Any]] = []
         self.excluded: Counter[str] = Counter()
         self.hypotheses: dict[str, list[dict[str, Any]]] = {}
@@ -770,14 +939,57 @@ class PitSourceResolver:
                                 "published_at": _instant(snapshot["published_at"]).isoformat()})
         return snapshot
 
+    # ---- as-filed statements (statement_vintages), read once per run
+    def _as_filed_rows(self) -> tuple[set[str], dict[str, list[dict[str, Any]]]]:
+        """(covered symbols, normalised rows accepted ≤ T by symbol) — empty with ``--statements provider`` or without the
+        table (``auto``: the no-op); ``--statements vintages`` without the table is a refusal."""
+        if self._as_filed is None:
+            covered: set[str] = set()
+            by_symbol: dict[str, list[dict[str, Any]]] = {}
+            if self.statements != "provider":
+                self.vintages_present = self.vintages.present()
+                if not self.vintages_present and self.statements == "vintages":
+                    raise PitRerunInputError(f"--statements vintages: the table {STATEMENT_VINTAGES_TABLE} does not exist")
+                if self.vintages_present:
+                    covered, raw_rows = self.vintages.load(self.market, as_of=self.as_of)
+                    for raw in raw_rows:
+                        row = as_filed_row(raw, as_of=self.as_of, refused=self.excluded)
+                        if row is not None:
+                            by_symbol.setdefault(row["symbol"], []).append(row)
+            self._as_filed = (covered, by_symbol)
+        return self._as_filed
+
+    def _statements_payload(self, market: str, symbol: str) -> tuple[dict[str, Any] | None, str]:
+        """The payload the reconstruction reads for one name and its basis: the as-filed ``Financials`` (+ the provider's
+        ``outstandingShares`` only when the as-filed balance eligible at T carries no share count) for a covered name; the
+        provider snapshot otherwise (``auto``) — ``None`` when there is nothing to read."""
+        covered, as_filed = self._as_filed_rows()
+        if symbol not in covered:
+            if self.statements == "vintages":
+                return None, "statement_vintages_missing"
+            snapshot = self._source_snapshot(market, PROVIDER_EODHD, symbol)
+            if snapshot is None:
+                return None, "fundamentals_snapshot_missing"
+            return _mapping(_mapping(snapshot.get("outputs")).get("payload")), BASIS_PROVIDER
+        payload, reference = as_filed_payload(as_filed.get(symbol, []), market=market)
+        self.references.append({"role": BASIS_VINTAGES, "market": market, "symbol_sha256": symbol_hash(symbol), **reference})
+        if reference["superseded_by_T"]:
+            self.excluded["statement_vintages:superseded_by_a_later_acceptance_by_T"] += reference["superseded_by_T"]
+        if pit_fundamentals(payload, market=market, economic_date=self.economic_date)["shares"] is None:
+            snapshot = self._source_snapshot(market, PROVIDER_EODHD, symbol)  # outstandingShares only (an allowed block): its own declared hypothesis
+            shares = _mapping(_mapping(snapshot.get("outputs")).get("payload")).get("outstandingShares") if snapshot is not None else None
+            if shares is not None:
+                payload["outstandingShares"] = shares
+        return payload, BASIS_VINTAGES
+
     # ---- one symbol
     def _symbol_inputs(self, market: str, catalogue_row: Mapping[str, Any]) -> dict[str, Any] | None:
         symbol = str(catalogue_row["symbol"])
-        snapshot = self._source_snapshot(market, PROVIDER_EODHD, symbol)
-        if snapshot is None:
-            self.not_evaluable[symbol] = "fundamentals_snapshot_missing"
+        payload, basis = self._statements_payload(market, symbol)
+        if payload is None:
+            self.not_evaluable[symbol] = basis
             return None
-        payload = _mapping(_mapping(snapshot.get("outputs")).get("payload"))
+        self.statements_basis[basis] += 1
         fundamentals = pit_fundamentals(payload, market=market, economic_date=self.economic_date)
         for key, count in fundamentals["excluded"].items():
             self.excluded[key] += count
@@ -840,7 +1052,7 @@ class PitSourceResolver:
         else:
             self.excluded["trailing_quality:not_recomputable"] += 1
         self.hypotheses[symbol] = list(fundamentals["hypotheses"])
-        return {"row": row, "ratios_annual": ratios, "key_metrics_annual": key_metrics, "chewie": chewie, "beta_audit": beta_audit,
+        return {"row": row, "ratios_annual": ratios, "key_metrics_annual": key_metrics, "chewie": chewie, "beta_audit": beta_audit, "statements_basis": basis,
                 "fundamentals": {key: fundamentals[key] for key in ("fundamentals_as_of", "eligible_periods", "excluded", "shares_availability")}}
 
     def _consensus_for(self, symbol: str) -> None:
@@ -984,6 +1196,7 @@ class PitComputation:
             "price_vintage": {"publication_id": self.manifest["price_vintage"]["publication_id"], "available_at": self.manifest["price_vintage"]["available_at"],
                               "historical_vintage": "N/D"},
             "availability_rule": AVAILABILITY_RULE,
+            "statements_basis": item.get("statements_basis"),  # statement_vintages (as filed, accepted ≤ T) or provider_payload
             "declared_assumptions": dict(DECLARED_ASSUMPTIONS),
             "availability_hypotheses": list(self.resolver.hypotheses.get(symbol) or []),
             "pit_excluded_inputs": dict(sorted(excluded.items())),
@@ -1039,6 +1252,7 @@ class PitComputation:
                 "hypotheses": sum(len(items) for items in self.resolver.hypotheses.values()), "calibration": self.calibration["status"],
                 "macro_as_of": self.macro.macro_as_of(self.market).isoformat(), "price_vintage": self.manifest["price_vintage"]["publication_id"],
                 "price_basis_evidence": dict(self.resolver.price_basis_evidence),
+                "statements": {"mode": self.resolver.statements, "table_present": self.resolver.vintages_present, "basis": dict(sorted(self.resolver.statements_basis.items()))},
                 "price_pin": dict(self.price_pin),  # pointers only: the run_key names the vintage by its publication and bars hash,
                 "catalogue_snapshot_id": self.resolver.catalogue_snapshot_id}  # and the catalogue by its classification hash
 
@@ -1078,12 +1292,14 @@ class PitRerunService:
         operator's ``--price-pinned-at`` (P2-1)."""
         return PinnedPrices(self.price_history, market, as_of=as_of, pinned_at=pinned_at, pin_mode="explicit" if explicit else "run_start")
 
-    def compute(self, market: str, *, as_of: datetime, prices: PinnedPrices) -> PitComputation:
+    def compute(self, market: str, *, as_of: datetime, prices: PinnedPrices, statements: str = "auto") -> PitComputation:
         """The ECONOMIC computation: T, the filters, the engine's ``today``, the macro ``as_of``, the consensus cut — nothing
-        here reads ``now`` (pinned by the exploding-clock test)."""
+        here reads ``now`` (pinned by the exploding-clock test). ``statements`` (``--statements``): ``auto`` reads a name's
+        as-filed statements when ``statement_vintages`` covers it, else the provider payload (no table: unchanged);
+        ``provider`` never reads the table; ``vintages`` reads only as-filed statements (an uncovered name is not evaluable)."""
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise PitRerunInputError("T must carry a time zone")
-        resolver = PitSourceResolver(self.database, market=market, as_of=as_of, prices=prices)
+        resolver = PitSourceResolver(self.database, market=market, as_of=as_of, prices=prices, statements=statements)
         loaded = resolver.resolve()
         macro = resolver.macro()
         calibration = resolver.calibration()
@@ -1153,8 +1369,8 @@ class PitRerunService:
                 "records": {"expected": len(expected), "stored_before": len(stored), "inserted": inserted, "complete": True},
                 "source_version": computation.source_version, "manifest_sha256": computation.manifest["manifest_sha256"], **computation.summary()}
 
-    def rerun(self, market: str, *, as_of: datetime, clock: Callable[[], datetime] | None = None, price_pinned_at: datetime | None = None
-              ) -> tuple[dict[str, Any], PitComputation]:
+    def rerun(self, market: str, *, as_of: datetime, clock: Callable[[], datetime] | None = None, price_pinned_at: datetime | None = None,
+              statements: str = "auto") -> tuple[dict[str, Any], PitComputation]:
         """One run. ``price_pinned_at`` (P2-1, ``--price-pinned-at``) replaces the run-start clock as the vintage cut, so every
         run of a grid resolves ONE publication whatever the nightly series publishes meanwhile; it must carry a zone and lie
         at or before the run start (a pin in the future would resolve another vintage when re-run: not a pin)."""
@@ -1167,7 +1383,7 @@ class PitRerunService:
                 raise PitRerunInputError(f"the price pin {_utc(price_pinned_at).isoformat()} is after the run start {started_at.isoformat()}: a pin in the "
                                          "future would resolve another vintage when the run is repeated")
         prices = self.pin_vintage(market, as_of=as_of, pinned_at=started_at if price_pinned_at is None else price_pinned_at, explicit=price_pinned_at is not None)
-        computation = self.compute(market, as_of=as_of, prices=prices)
+        computation = self.compute(market, as_of=as_of, prices=prices, statements=statements)
         return self.persist(computation, clock=tick), computation
 
 
@@ -1310,12 +1526,15 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     parser.add_argument("--detail", type=Path, default=None, help="with --rerun: write the PRIVATE per-symbol detail to this NEW path (O_EXCL|O_NOFOLLOW, 0600)")
     parser.add_argument("--price-pinned-at", default=None, help="with --rerun: resolve the price vintage published before this ISO-8601 instant WITH zone "
                                                                 "(default: the run start) — one vintage for every run of a grid")
+    parser.add_argument("--statements", choices=STATEMENTS_MODES, default=None,
+                        help="with --rerun: auto (default) = as-filed statement_vintages for a covered name, else the provider payload (no table: "
+                             "unchanged); provider = never the table; vintages = as-filed only")
     parser.add_argument("--no-macro", action="store_true", help="with --fetch: skip the macro history")
     args = parser.parse_args(argv)
     if args.rerun and args.as_of is None:
         parser.error("--rerun requires --as-of")
-    if args.fetch and (args.as_of or args.detail or args.price_pinned_at):
-        parser.error("--as-of/--detail/--price-pinned-at apply to --rerun only")
+    if args.fetch and (args.as_of or args.detail or args.price_pinned_at or args.statements):
+        parser.error("--as-of/--detail/--price-pinned-at/--statements apply to --rerun only")
     if args.rerun and args.symbols:
         parser.error("--symbols applies to --fetch only")
     if args.detail is not None and (args.detail.is_symlink() or args.detail.exists()):
@@ -1333,7 +1552,7 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     as_of = _cli_instant(parser, "--as-of", str(args.as_of))
     price_pinned_at = _cli_instant(parser, "--price-pinned-at", str(args.price_pinned_at)) if args.price_pinned_at is not None else None
     service = PitRerunService(database, settings=settings)
-    receipt, computation = service.rerun(args.market, as_of=as_of, price_pinned_at=price_pinned_at)
+    receipt, computation = service.rerun(args.market, as_of=as_of, price_pinned_at=price_pinned_at, statements=args.statements or "auto")
     if args.detail is not None:
         write_private_detail(args.detail, {"schema": f"{SCHEMA_VERSION}:detail", "run_key": receipt["run_key"], "cycle_id": receipt["cycle_id"],
                                            "results": computation.results, "not_evaluable": dict(computation.resolver.not_evaluable),

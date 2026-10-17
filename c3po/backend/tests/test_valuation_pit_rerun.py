@@ -11,10 +11,12 @@ import os
 import stat
 import threading
 from collections import Counter
-from datetime import date, datetime, timedelta, timezone
+from contextlib import contextmanager
+from datetime import date, datetime, time as wall_time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
 import pytest
@@ -692,6 +694,187 @@ def test_a_capital_event_between_the_shares_period_and_t_refuses_the_name_and_th
         assert run.resolver.per_symbol[symbol]["row"]["price"] == pytest.approx(factor * base.resolver.per_symbol[symbol]["row"]["price"])  # the beta
         assert run.resolver.per_symbol[symbol]["beta_audit"] == base.resolver.per_symbol[symbol]["beta_audit"]  # reads the continuous adjusted series
         assert run.resolver.per_symbol[symbol]["row"]["beta"] == pytest.approx(base.resolver.per_symbol[symbol]["row"]["beta"])
+
+
+# ------------------------------------------------------------------ as-filed statements: the statement_vintages adapter (accepted_at ≤ T)
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def _vintages_from(symbol: str, *, market: str = "US", at: wall_time = wall_time(16, 30), b3: bool = False) -> list[dict[str, Any]]:
+    """As-filed rows rebuilt from the synthetic provider payload: one per (statement, frequency, period), accepted at ``at``
+    (local wall time of the market) on the payload's filing date — the same numbers, the regulator's instant."""
+    zone = ZoneInfo("America/Sao_Paulo") if b3 else NEW_YORK
+    rows: list[dict[str, Any]] = []
+    for statement, by_frequency in _payload(symbol, b3=b3)["Financials"].items():
+        for frequency, periods in by_frequency.items():
+            for period, data in periods.items():
+                accepted = datetime.combine(date.fromisoformat(data["filing_date"]), at, tzinfo=zone)
+                rows.append({"id": f"{symbol}:{statement}:{frequency}:{period}:0", "market": market, "symbol": symbol, "statement": statement, "frequency": frequency,
+                             "period_end": period, "accepted_at": accepted, "fields": {key: value for key, value in data.items() if key not in ("date", "filing_date")}})
+    return rows
+
+
+def _compute(database: Database, at: datetime = T, statements: str = "auto") -> pit.PitComputation:
+    service = _service(database)
+    return service.compute("NASDAQ", as_of=at, prices=service.pin_vintage("NASDAQ", as_of=at, pinned_at=NOW), statements=statements)
+
+
+def test_without_the_statement_vintages_table_the_run_is_exactly_the_provider_run() -> None:
+    database = _ready()
+    assert not hasattr(database, "_statement_vintages")  # the as-filed front's migration (051) is not in this tree: no table
+    auto, provider = _compute(database), _compute(database, statements="provider")
+    assert auto.run_key == provider.run_key and auto.results == provider.results and auto.manifest == provider.manifest  # a no-op, to the byte
+    assert auto.summary()["statements"] == {"mode": "auto", "table_present": False, "basis": {"provider_payload": 6}}
+    assert provider.summary()["statements"] == {"mode": "provider", "table_present": None, "basis": {"provider_payload": 6}}  # never asked
+    with pytest.raises(pit.PitRerunInputError, match="statement_vintages does not exist"):
+        _compute(database, statements="vintages")
+    setattr(database, "_statement_vintages", [])  # the table exists but covers nobody: still the provider run
+    empty = _compute(database)
+    assert empty.run_key == provider.run_key and empty.summary()["statements"]["table_present"] is True
+
+
+def test_as_filed_vintages_accepted_by_t_replace_the_provider_statements_of_a_covered_name() -> None:
+    database = _ready()
+    rows = _vintages_from("AAA")  # stored under "US": an SEC filer is not listed per exchange
+    setattr(database, "_statement_vintages", rows)
+    provider, auto = _compute(database, statements="provider"), _compute(database)
+    assert auto.results == provider.results and auto.run_key != provider.run_key  # same filings, same numbers — but another input, another run
+    assert auto.resolver.per_symbol["AAA"]["statements_basis"] == "statement_vintages" and auto.resolver.per_symbol["BBB"]["statements_basis"] == "provider_payload"
+    assert auto.summary()["statements"] == {"mode": "auto", "table_present": True, "basis": {"provider_payload": 5, "statement_vintages": 1}}
+    assert auto.provenance_for("AAA")["statements_basis"] == "statement_vintages" and auto.provenance_for("AAA")["availability_hypotheses"] == []
+    aaa_refs = [ref for ref in auto.manifest["sources"] if ref.get("symbol_sha256") == pit.symbol_hash("AAA")]
+    assert [ref["role"] for ref in aaa_refs] == ["statement_vintages"] and aaa_refs[0]["rows"] == 45 and aaa_refs[0]["superseded_by_T"] == 0  # provider never read
+    # the instant, not the day: T at the close of 2024-05-15 (16:00 New York) precedes the 16:30 acceptance of 2024Q1 — the provider's
+    # filing DATE 2024-05-15 lets the quarter in, the regulator's acceptance does not
+    close_of_filing_day = datetime(2024, 5, 15, 16, 0, tzinfo=NEW_YORK)
+    day, instant = _compute(database, close_of_filing_day, "provider"), _compute(database, close_of_filing_day)
+    assert day.resolver.per_symbol["AAA"]["fundamentals"]["fundamentals_as_of"] == "2024-03-31"
+    assert instant.resolver.per_symbol["AAA"]["fundamentals"]["fundamentals_as_of"] == "2023-12-31"
+    assert instant.resolver.per_symbol["BBB"]["fundamentals"]["fundamentals_as_of"] == "2024-03-31"  # an uncovered name keeps the provider's day rule
+    # an amendment accepted BEFORE T replaces the original; one accepted AFTER T is never read; strict mode needs coverage
+    original_q3 = next(row for row in rows if row["statement"] == "Income_Statement" and row["frequency"] == "quarterly" and row["period_end"] == "2023-09-30")
+    amended = {**original_q3, "id": "AAA:q3:amendment", "accepted_at": datetime(2024, 6, 3, 9, 0, tzinfo=NEW_YORK),
+               "fields": {**original_q3["fields"], "totalRevenue": original_q3["fields"]["totalRevenue"] * 1.5}}
+    restated_after_t = {**original_q3, "id": "AAA:q3:restated-after-T", "accepted_at": datetime(2024, 7, 1, 9, 0, tzinfo=NEW_YORK),
+                        "fields": {**original_q3["fields"], "totalRevenue": 1e15}}
+    setattr(database, "_statement_vintages", rows + [restated_after_t])
+    assert _compute(database).run_key == auto.run_key  # appended after T: invisible at T, the same run
+    setattr(database, "_statement_vintages", rows + [restated_after_t, amended])
+    with_amendment = _compute(database)
+    assert with_amendment.run_key != auto.run_key  # an acceptance by T backfilled later IS new content
+    used = [row for row in (pit.as_filed_row(raw, as_of=T, refused=Counter()) for raw in rows + [restated_after_t, amended]) if row is not None]
+    ttm = pit.pit_fundamentals(pit.as_filed_payload(used, market="NASDAQ")[0], market="NASDAQ", economic_date=date(2024, 6, 14))["ttm"]
+    last_four = ("2023-06-30", "2023-09-30", "2023-12-31", "2024-03-31")
+    assert ttm["basis"] == "four_quarters" and ttm["revenue"] == pytest.approx(sum(  # 2023Q2..2024Q1 with Q3 as amended by T; the restatement after T never read
+        row["fields"]["totalRevenue"] * (1.5 if row["period_end"] == "2023-09-30" else 1.0) for row in rows
+        if row["statement"] == "Income_Statement" and row["frequency"] == "quarterly" and row["period_end"] in last_four))
+    reference = next(ref for ref in with_amendment.manifest["sources"] if ref["role"] == "statement_vintages")
+    assert reference["superseded_by_T"] == 1 and with_amendment.resolver.excluded["statement_vintages:superseded_by_a_later_acceptance_by_T"] == 1
+    assert with_amendment.resolver.per_symbol["AAA"]["chewie"] != auto.resolver.per_symbol["AAA"]["chewie"]  # the amended revenue reaches the trailing growth
+    assert with_amendment.results["AAA"] != auto.results["AAA"]  # (the peers move too: the sector medians include AAA)
+    strict = _compute(database, statements="vintages")
+    assert strict.resolver.not_evaluable == {s: "statement_vintages_missing" for s in SYMBOLS if s != "AAA"} and set(strict.results) == {"AAA"}
+    # the basis follows COVERAGE, never T: a covered name whose every acceptance is after T is not evaluable — never the provider's statements
+    setattr(database, "_statement_vintages", [{**row, "accepted_at": datetime(2025, 1, 6, 16, 30, tzinfo=NEW_YORK)} for row in rows])
+    late = _compute(database)
+    assert late.resolver.not_evaluable == {"AAA": "no_statement_available_at_T"} and late.summary()["statements"]["basis"] == {"provider_payload": 5, "statement_vintages": 1}
+
+
+def test_as_filed_rows_are_refused_when_unreadable_and_b3_acceptance_is_evidence_not_the_lag_hypothesis() -> None:
+    refused: Counter[str] = Counter()
+    base = {"id": "x", "market": "US", "symbol": "AAA", "statement": "Income_Statement", "frequency": "quarterly", "period_end": "2024-03-31",
+            "accepted_at": datetime(2024, 5, 1, 16, 30, tzinfo=NEW_YORK), "fields": {"totalRevenue": 1.0}}
+    assert pit.as_filed_row(base, as_of=T, refused=refused) is not None
+    assert pit.as_filed_row({**base, "statement": "income statement", "frequency": "Q"}, as_of=T, refused=refused)["statement"] == "Income_Statement"  # type: ignore[index]
+    assert pit.as_filed_row({**base, "accepted_at": "2024-05-01T16:30:00"}, as_of=T, refused=refused) is None  # a naive instant is never guessed
+    assert pit.as_filed_row({**base, "statement": "Equity_Statement"}, as_of=T, refused=refused) is None
+    assert pit.as_filed_row({**base, "fields": "totalRevenue=1"}, as_of=T, refused=refused) is None
+    assert pit.as_filed_row({**base, "period_end": "Q1"}, as_of=T, refused=refused) is None
+    assert pit.as_filed_row({**base, "accepted_at": "yesterday"}, as_of=T, refused=refused) is None
+    assert pit.as_filed_row({**base, "accepted_at": T + timedelta(seconds=1)}, as_of=T, refused=refused) is None  # not yet filed at T: skipped, not an error
+    assert dict(refused) == {"statement_vintages:accepted_at_without_zone": 1, "statement_vintages:unknown_statement_or_frequency": 1,
+                             "statement_vintages:fields_not_an_object": 1, "statement_vintages:period_end_unparseable": 1, "statement_vintages:accepted_at_unparseable": 1}
+    # B3 (CVM): the acceptance is EVIDENCE — the period enters at its acceptance (+40 d here), not under the provider payload's +90 d hypothesis
+    b3_rows = [row for row in (pit.as_filed_row(raw, as_of=datetime(2024, 12, 31, tzinfo=UTC), refused=Counter())
+                               for raw in _vintages_from("PETR", market="B3", b3=True)) if row is not None]
+    for row in b3_rows:
+        row["accepted_at"] = datetime.combine(row["period_end"] + timedelta(days=40), wall_time(19, 0), tzinfo=ZoneInfo("America/Sao_Paulo")).astimezone(UTC)
+    payload, _reference = pit.as_filed_payload(b3_rows, market="B3")
+    as_filed = pit.pit_fundamentals(payload, market="B3", economic_date=date(2024, 2, 9))  # FY2023 accepted 2024-02-09: in; the hypothesis would wait for 2024-03-30
+    provider = pit.pit_fundamentals(_payload("PETR", b3=True), market="B3", economic_date=date(2024, 2, 9))
+    assert as_filed["fiscal_years"][0]["fiscal_year_end"] == "2023-12-31" and provider["fiscal_years"][0]["fiscal_year_end"] == "2022-12-31"
+    assert as_filed["hypotheses"] == [] and as_filed["fiscal_years"][0]["availability"]["kind"] == "evidence"
+    assert as_filed["fiscal_years"][0]["availability"]["rule"] == "regulator_accepted_at" and as_filed["fiscal_years"][0]["availability"]["published_at_original"] != "N/D"
+    # a stored row without the adapter's columns is a refusal naming them, never a silent fallback
+    database = _ready()
+    setattr(database, "_statement_vintages", [{"market": "US", "symbol": "AAA", "accepted": "2024-05-01"}])
+    with pytest.raises(pit.PitRerunInputError, match=r"lacks the adapter's columns \['id', 'statement', 'frequency', 'period_end', 'accepted_at', 'fields'\]"):
+        _compute(database)
+
+
+class _FakeResult:
+    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
+        self.rows = rows
+
+    def fetchone(self) -> tuple[Any, ...] | None:
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return list(self.rows)
+
+
+class _FakeConnection:
+    """Answers the store's SQL by a substring; records every statement with its parameters (no PostgreSQL in the suite)."""
+
+    def __init__(self, answers: dict[str, list[tuple[Any, ...]]]) -> None:
+        self.answers = answers
+        self.calls: list[tuple[str, Any]] = []
+
+    def execute(self, sql: str, params: Any = None) -> _FakeResult:
+        self.calls.append((" ".join(sql.split()), params))
+        for key, rows in self.answers.items():
+            if key in sql:
+                return _FakeResult(rows)
+        raise AssertionError(f"unexpected SQL: {sql}")
+
+
+def _postgres_double(answers: dict[str, list[tuple[Any, ...]]]) -> tuple[Database, _FakeConnection]:
+    database = _database()
+    database.database_url = "postgresql://never-connected"
+    fake = _FakeConnection(answers)
+
+    @contextmanager
+    def connection() -> Iterator[_FakeConnection]:
+        yield fake
+
+    setattr(database, "connection", connection)
+    return database, fake
+
+
+def test_the_postgresql_store_checks_the_table_and_its_columns_and_cuts_at_t_in_the_query() -> None:
+    absent, fake = _postgres_double({"to_regclass": [(None,)]})
+    assert pit.StatementVintageStore(absent).present() is False and fake.calls == [("SELECT to_regclass(%s)::text", ("statement_vintages",))]
+    drifted, _ = _postgres_double({"to_regclass": [("statement_vintages",)], "information_schema": [("id", "text"), ("market", "text"), ("symbol", "text"),
+                                                                                                    ("payload", "jsonb")]})
+    with pytest.raises(pit.PitRerunInputError, match=r"lacks the adapter's columns \['statement', 'frequency', 'period_end', 'accepted_at', 'fields'\]"):
+        pit.StatementVintageStore(drifted).present()
+    contract = [(column, "timestamp with time zone" if column == "accepted_at" else "text") for column in pit.STATEMENT_VINTAGE_COLUMNS]
+    wall_clock, _ = _postgres_double({"to_regclass": [("statement_vintages",)],
+                                      "information_schema": [(c, "timestamp without time zone" if c == "accepted_at" else t) for c, t in contract]})
+    with pytest.raises(pit.PitRerunInputError, match="not a timestamp with time zone"):
+        pit.StatementVintageStore(wall_clock).present()
+    accepted = datetime(2024, 5, 1, 20, 30, tzinfo=UTC)
+    row = ("7", "US", "AAA", "Income_Statement", "quarterly", date(2024, 3, 31), accepted, {"totalRevenue": 1.0})
+    ready, fake = _postgres_double({"to_regclass": [("statement_vintages",)], "information_schema": contract,
+                                    "DISTINCT symbol": [("aaa ",), ("BBB",)], "accepted_at <= %s": [row]})
+    store = pit.StatementVintageStore(ready)
+    assert store.present() is True
+    covered, rows = store.load("NYSE", as_of=T.astimezone(NEW_YORK))
+    assert covered == {"AAA", "BBB"} and rows == [dict(zip(pit.STATEMENT_VINTAGE_COLUMNS, row))]
+    distinct, eligible = fake.calls[-2], fake.calls[-1]
+    assert distinct == ("SELECT DISTINCT symbol FROM statement_vintages WHERE market = ANY(%s)", (["NYSE", "US"],))
+    assert "WHERE market = ANY(%s) AND accepted_at <= %s" in eligible[0] and eligible[1] == (["NYSE", "US"], T)  # the cut at T, in UTC, inside the query
+    assert pit.as_filed_row(rows[0], as_of=T, refused=Counter()) is not None
 
 
 # ------------------------------------------------------------------ §4 (auditor ii): identity, idempotency, interruption, changed inputs, concurrency
