@@ -36,6 +36,10 @@ VALUATION_WORKER_PHASES: dict[str, dict[str, str]] = {
         "code": "valuation-worker-price-history",
         "name": "Valuation V3.2 price series cycle",
     },
+    "earnings_calendar": {
+        "code": "valuation-worker-earnings-calendar",
+        "name": "Valuation earnings calendar cycle",
+    },
     "decisor_shadow": {
         "code": "valuation-worker-decisor-shadow",
         "name": "Valuation decisor V1 shadow cycle",

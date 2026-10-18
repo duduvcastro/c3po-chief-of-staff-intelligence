@@ -1,4 +1,4 @@
-"""The SEC contact and pace, and the switches of the as-filed and decisor fronts — read from the environment, NOT
+"""The SEC contact and pace, and the switches of the as-filed, decisor and earnings-calendar fronts — read from the environment, NOT
 ``Settings``.
 
 ``config.py`` is hashed into the R2D2 V2 implementation package (``r2d2_v2_earnings_package.PACKAGE_FILES``): a field
@@ -15,6 +15,7 @@ host's values in the process environment; every process reads the same names it 
 | ``C3PO_VALUATION_ASFILED_ENABLED`` | off | IR worker poll, IR valuation trigger, nightly cut, US producer shadow hook |
 | ``C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL`` | 10 (0 to 200) | the as-filed poll's backfill |
 | ``C3PO_VALUATION_DECISOR_SHADOW`` | off | the decisor's nightly phase, its writes and the phase health |
+| ``C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED`` | off | the nightly earnings-calendar phase (one EODHD call) and its health |
 
 A value that does not parse falls back to the default (a switch: off); a number outside its range is clamped into it.
 The contact is never logged or put in a ``repr``.
@@ -29,7 +30,9 @@ SEC_MAX_REQUESTS_PER_SECOND_ENV = "C3PO_SEC_MAX_REQUESTS_PER_SECOND"
 ASFILED_ENABLED_ENV = "C3PO_VALUATION_ASFILED_ENABLED"
 ASFILED_BACKFILL_ENV = "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL"
 DECISOR_SHADOW_ENV = "C3PO_VALUATION_DECISOR_SHADOW"
-ENVIRONMENT_NAMES: tuple[str, ...] = (SEC_CONTACT_ENV, SEC_MAX_REQUESTS_PER_SECOND_ENV, ASFILED_ENABLED_ENV, ASFILED_BACKFILL_ENV, DECISOR_SHADOW_ENV)
+EARNINGS_CALENDAR_ENV = "C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED"
+ENVIRONMENT_NAMES: tuple[str, ...] = (SEC_CONTACT_ENV, SEC_MAX_REQUESTS_PER_SECOND_ENV, ASFILED_ENABLED_ENV, ASFILED_BACKFILL_ENV, DECISOR_SHADOW_ENV,
+                                      EARNINGS_CALENDAR_ENV)
 
 # SEC fair access is at most 8 requests/second from the HOST and three processes call EDGAR (the API — One Pager and
 # /investor-relations/sync —, the Investor Relations worker and the nightly valuation worker): 3 × 2.5 = 7.5 ≤ 8.
@@ -81,3 +84,9 @@ def decisor_shadow_enabled() -> bool:
     """Valuation Decisor V1 (migration 052): off by default; the nightly shadow phase records verdicts only when the mesa
     enables it."""
     return _switch(DECISOR_SHADOW_ENV)
+
+
+def earnings_calendar_enabled() -> bool:
+    """The nightly earnings-calendar phase of the valuation worker (Decisor V1, ``EARNINGS_WITHIN_N``): ONE EODHD
+    ``/api/calendar/earnings`` call per night, stored as an append-only snapshot. Off by default: nothing is fetched."""
+    return _switch(EARNINGS_CALENDAR_ENV)

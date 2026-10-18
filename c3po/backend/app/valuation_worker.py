@@ -24,6 +24,7 @@ from .r2d2_cash_yield import R2D2CashYieldService
 from .push_notifications import PushNotificationService
 from .valuation_asfiled import evaluate_us_filings
 from .valuation_decision import last_run_at as decision_last_run_at, run_shadow as run_decisor_shadow
+from .valuation_earnings_calendar import EarningsCalendarService
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
@@ -376,6 +377,7 @@ def main() -> None:
         v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
         v3_shadow = ValuationV3ShadowService(database)
         price_history = PriceHistoryService(settings, database, market_data.http)
+        earnings_calendar = EarningsCalendarService(settings, database)
         cash_yield = R2D2CashYieldService(
             settings,
             database,
@@ -411,6 +413,9 @@ def main() -> None:
                     end_hour=10,
                 ),
             ) if settings.r2d2_cash_yield_accounting_enabled else ()),
+            # Decisor V1 events: ONE EODHD whole-market earnings-calendar call, before the decisor reads it; dormant until the mesa enables it
+            *((OffhoursPhase("earnings_calendar", earnings_calendar.last_run_at, earnings_calendar.run),)
+              if valuation_env.earnings_calendar_enabled() else ()),
             # Decisor V1 (migration 052): LAST, after the official cut and every existing phase — it never delays one; dormant until the mesa enables it
             *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True)),)
               if valuation_env.decisor_shadow_enabled() else ()),

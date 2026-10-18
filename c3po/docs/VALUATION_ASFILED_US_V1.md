@@ -165,8 +165,10 @@ instante real **mais** o deslocamento UTC de Nova York.
   causal: só marcas com `recorded_at` ≤ `at` e, no PostgreSQL, `created_at` ≤ `at`; por (protocolo, símbolo) o estado
   mais recente entre elas; tabela ausente → `unavailable` (nada é criado). O decisor V1 o lê uma vez por rodada no
   relógio da rodada: TP dos EUA com marca `stale` pendente sai `OBSERVAR` / `TP_STALE_AFTER_FILING` com o protocolo
-  nomeado no registro; sem a tabela, todo nome dos EUA sai `OBSERVAR` / `STALENESS_SOURCE_UNAVAILABLE`
-  (`VALUATION_DECISOR_V1.md`).
+  nomeado no registro; sem a tabela, todo nome dos EUA sai `OBSERVAR` / `STALENESS_SOURCE_UNAVAILABLE`; sem um poll
+  `sec_asfiled` bem-sucedido concluído nas 6 h antes do relógio, `OBSERVAR` / `STALENESS_SOURCE_STALE` — tabela vazia
+  não é evidência enquanto ninguém olha (`VALUATION_DECISOR_V1.md`). A 053 é aplicada na partida do container
+  (`Database.initialize()`).
 
 ## Chaves (variáveis de ambiente, não `Settings`)
 
@@ -184,6 +186,7 @@ do compose põe os valores do host no ambiente do processo; os nomes são os mes
 | `C3PO_VALUATION_ASFILED_ENABLED` | desligada | poll do worker de IR, gatilho de reavaliação, corte noturno, gancho sombra do produtor EUA |
 | `C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL` | 10 (0 a 200) | backfill do poll as-filed |
 | `C3PO_VALUATION_DECISOR_SHADOW` | desligada | fase noturna do decisor, gravação e saúde da fase |
+| `C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED` | desligada | fase noturna do calendário de resultados (uma chamada EODHD) e saúde da fase |
 
 Valor ilegível volta ao padrão (chave: desligada); número fora da faixa é trazido para dentro dela.
 

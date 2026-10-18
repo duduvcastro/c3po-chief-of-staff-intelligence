@@ -626,6 +626,23 @@ def test_valuation_worker_phase_health_expects_the_decisor_only_when_enabled(mon
     assert "pending/stale: decisor_shadow" in (service._valuation_worker_phase_health(now).detail or "")
 
 
+def test_valuation_worker_phase_health_expects_the_earnings_calendar_only_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Decisor V1 events: the earnings-calendar phase is dormant by default — never expected, never pending, until enabled
+    now = datetime.now(timezone.utc)
+    states = {
+        definition["code"]: {"last_status": "succeeded", "started_at": now, "completed_at": now, "last_success_at": now, "last_error": None,
+                             "metadata": {"phase": phase}}
+        for phase, definition in VALUATION_WORKER_PHASES.items()
+        if phase != "earnings_calendar"
+    }
+    service = _service(valuation_phase_states=states)
+    monkeypatch.delenv(valuation_env.EARNINGS_CALENDAR_ENV, raising=False)
+    monkeypatch.setenv(valuation_env.DECISOR_SHADOW_ENV, "true")
+    assert "earnings_calendar" not in (service._valuation_worker_phase_health(now).detail or "")
+    monkeypatch.setenv(valuation_env.EARNINGS_CALENDAR_ENV, "true")
+    assert "pending/stale: earnings_calendar" in (service._valuation_worker_phase_health(now).detail or "")
+
+
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
     now = datetime.now(timezone.utc)
     states = {

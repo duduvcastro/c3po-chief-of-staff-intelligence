@@ -9,8 +9,13 @@ toca tabelas, ordens ou posições do R2D2. Código: `backend/app/valuation_deci
 | Veredicto | Quando |
 |---|---|
 | `COMPRA_PERMITIDA` | todos os portões passaram (`reason_codes = ["ALL_GATES_PASSED"]`) |
-| `OBSERVAR` | TP confiável, mas sem permissão: sem margem hoje (`PRICE_ABOVE_BUY_IN`, `TP_MARGIN_INSUFFICIENT`), insumo da margem ainda não medido (`E_PROFILE_WARMING_UP`, `E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`) ou, nos EUA, TP à espera da reavaliação que um protocolo aceito depois dele disparou (`TP_STALE_AFTER_FILING`) ou pergunta sem resposta (`STALENESS_SOURCE_UNAVAILABLE`) |
+| `OBSERVAR` | TP confiável, mas sem permissão: sem margem hoje (`PRICE_ABOVE_BUY_IN`, `TP_MARGIN_INSUFFICIENT`), insumo da margem ainda não medido (`E_PROFILE_WARMING_UP`, `E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`), nos EUA TP à espera da reavaliação que um protocolo aceito depois dele disparou (`TP_STALE_AFTER_FILING`) ou pergunta sem resposta (`STALENESS_SOURCE_UNAVAILABLE`, `STALENESS_SOURCE_STALE`), ou resultado anunciado nas próximas N sessões (`EARNINGS_WITHIN_N`, só EUA) |
 | `VETO` | o TP ou seus dados não são confiáveis agora (frescor, qualidade, defeito de dado); lista **todos** os códigos que falharam, inclusive os de OBSERVAR |
+
+**Marcas** (`checks.events.marks`; nunca mudam o veredicto): `EARNINGS_DATE_ESTIMATED`, `EARNINGS_CALENDAR_UNAVAILABLE`,
+`CONSENSUS_EPS_CUT_SINCE_TP`, `NEWS_SENTIMENT_NEGATIVE` — e `EARNINGS_WITHIN_N` na B3. Todo registro guarda também o
+**contrafactual** `checks.counterfactual.verdict_without_events` (o veredicto com os portões de evento desligados), para um
+relatório somente-leitura comparar com e sem o portão.
 
 ## Regras
 
@@ -53,8 +58,41 @@ toca tabelas, ordens ou posições do R2D2. Código: `backend/app/valuation_deci
   (053 não aplicada; `to_regclass` nulo) → `STALENESS_SOURCE_UNAVAILABLE` em **todo** nome dos EUA: falha fechada,
   como todo insumo não medido de uma permissão (`E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`); erro de leitura
   derruba a rodada, como qualquer outra leitura do decisor. **B3: não se aplica** (`not_applicable`; a 053 só marca os
-  EUA) — e linha servida para mercado dos EUA nunca é `not_applicable` (falha fechada). OBSERVAR, não VETO: o TP não
-  tem defeito, ele espera o corte que o reavalia.
+  EUA) — e linha servida para mercado dos EUA nunca é `not_applicable` (falha fechada). OBSERVAR, não VETO (decisão da
+  coordenação de 17/10): TP desatualizado por protocolo é "ainda não sabemos", não opinião negativa — ele espera o corte
+  que o reavalia. **Assimetria declarada com `TP_STALE_FLAG`**, que continua VETO: aquela é a marca do próprio produtor
+  na linha (o produtor declara a linha não confiável, sem reavaliação agendada), na família de frescor junto com
+  `TP_SESSION_STALE` e `FUNDAMENTALS_STALE`, e o teste da família a trata como veto; esta é uma inferência nossa com
+  resolução conhecida (o próximo corte).
+  * **Vivacidade da fonte**: tabela vazia não é evidência enquanto ninguém olha. A 053 só conta com uma execução
+    **bem-sucedida** do poll as-filed (`ingestion_runs`, fonte `sec_asfiled`, `InvestorRelationsService.sync_sec_asfiled`)
+    **concluída** em [D − 6 h, D] (`staleness_poll_max_age_hours`, no bloco); só execuções com `completed_at` ≤ D são lidas
+    (uma ainda rodando em D, ou concluída depois, não conta; uma falha também não). Sem ela, **todo** nome dos EUA sai
+    `STALENESS_SOURCE_STALE` (falha fechada; distinto de `STALENESS_SOURCE_UNAVAILABLE`), e um nome com marca pendente
+    leva os dois códigos. O registro nomeia o poll em que confiou (`trigger_poll`: fonte, id, conclusão).
+* **Eventos** (`event_gates` no bloco diz quais seguram a permissão; todo outro código de evento é marca):
+  * **`EARNINGS_WITHIN_N`** (portão → OBSERVAR nos EUA; **marca** na B3): resultado conhecido em D anunciado nas sessões
+    [T+1, T+N] do calendário da bolsa (T = última sessão completa, N = 2). DAY, BMO e AMC contam igual (um AMC em T+1 está
+    dentro); data que não é sessão vale pela próxima sessão; um AMC em T já foi anunciado quando a noite decide. Fonte:
+    o snapshot do calendário EODHD (fase `earnings_calendar`, abaixo) **recebido** até D e com no máximo 36 h, cuja janela
+    pedida cobre [T+1, T+N] e sem linha inválida do nome. Senão (calendário ausente, velho, curto ou com linha inválida
+    do nome), nos EUA, a **estimativa por cadência** da 051: o último 8-K 2.02 (senão o último 10-Q/10-K) **aceito e
+    registrado** (`first_seen_at`) até D + 91 dias, contada quando a sessão estimada cai na janela alargada em 7 dias
+    de cada lado — marcada `EARNINGS_DATE_ESTIMATED`. Sem nenhuma das duas → sem portão, marca
+    `EARNINGS_CALENDAR_UNAVAILABLE` (regra de abstenção: falhar aberto é aceitável, e fica registrado). **B3 só
+    informativa**: a cobertura do calendário EODHD para a B3 não foi verificada (o snapshot conta eventos por bolsa em
+    `counts.by_exchange` para a mesa julgar) e não há estimativa CVM equivalente.
+  * **`CONSENSUS_EPS_CUT_SINCE_TP`** (marca): ln(EPS de consenso FY1 no último `valuation_v2_data/<M>_V2_DATA` publicado até
+    D ÷ FY1 no snapshot da hora do TP) < −0,05, comparando o **mesmo** ano fiscal (o FY1 do TP procurado na estrutura
+    atual), ou FY1 que virou não positivo. O TP oficial **não registra** o snapshot V2 que usou (o produtor oficial não lê a
+    V2): usa-se o snapshot publicado mais perto **antes** da publicação do registro do TP (`official_published_at`, senão
+    `prediction_instant`), nunca depois do relógio da rodada. Ano fiscal que rolou ou EPS não positivo na hora do TP →
+    `not_comparable`, sem marca.
+  * **`NEWS_SENTIMENT_NEGATIVE`** (marca): o sentimento semanal Finnhub (`ir_events`, `News Sentiment`) lido em D — a linha
+    com `published_at` ≤ D — com bearish ≥ 60 %, pelo menos 5 artigos na semana do provedor e no máximo 8 dias de idade;
+    o valor fica gravado na linha da decisão. **A fonte sobrescreve a linha da semana a cada poll** (mantém a primeira
+    publicação e troca os números): um replay depois de um poll da mesma semana lê outros números — só o valor gravado
+    na nossa linha é reprodutível (o veredicto não muda: é marca). Só EUA (B3 `not_applicable`).
 
 ## Bloco de limiares (a congelar no PREREG)
 
@@ -75,22 +113,36 @@ Todos em `DecisorThresholds` (um único bloco, com hash `thresholds_sha256` grav
 | `undated_rate_sources_admitted` | vazio (a Selic do ciclo não conta) |
 | `market_rate_max_age_days` | 10 |
 | `tp_horizon_years` / `market_premium` | 1,0 / 0,0 |
+| `staleness_poll_source` / `staleness_poll_max_age_hours` | `sec_asfiled` / 6 |
+| `earnings_window_sessions` (N) / `earnings_gate_markets` | 2 / NASDAQ, NYSE (B3 só marca) |
+| `earnings_calendar_max_age_hours` | 36 |
+| `earnings_estimate_offset_days` / `earnings_estimate_tolerance_days` | 91 / 7 |
+| `consensus_eps_cut_log` | 0,05 |
+| `news_sentiment_bearish_min_percent` / `news_sentiment_min_articles` / `news_sentiment_max_age_days` | 60,0 / 5 / 8 |
+| `event_gates` | `EARNINGS_WITHIN_N` |
 
 Congelamento: o commit que cita o PREREG grava `PREREG_THRESHOLDS_SHA256 = thresholds_sha256()`; a partir daí uma rodada
-com qualquer outro bloco é recusada (`ValueError`) e os registros passam a dizer `prereg_frozen = true`.
+com qualquer outro bloco é recusada (`ValueError`) e os registros passam a dizer `prereg_frozen = true`. As regras de
+evento e a vivacidade da 053 entraram no bloco **antes** do recibo de congelamento (previsto para 24–25/10): o hash do
+bloco passou de `172bfda63759e07e2de5c41f55d867de2b996fd4374e8aa485635ae7c988c4ca` para
+`bd7b8357a7dcdeb814906602482c520905f90f29df591c9cb4101278ce114a10`; `PREREG_THRESHOLDS_SHA256` continua `None` (nada
+congelado ainda, nenhum pino a atualizar).
 
 ## Registros (`valuation_decisions`, migração 052)
 
 Mesma disciplina de `valuation_predictions`: dois relógios (`prediction_instant` = relógio da rodada; `published_at` lido
 imediatamente antes do insert, nunca antes — CHECK), sessão do veredicto pelo calendário da bolsa (nunca data civil),
 identidade do TP lido (geração, fonte, ciclo, hash da linha, instante), `inputs` com a procedência de cada insumo
-(calibração, taxa, preço, campos da linha, marcas 053 em `tp_staleness`) + `inputs_sha256`, `checks` com os números de
-cada portão (`tp_staleness`: estado e protocolos), `row_sha256` canônico recomputado por todo leitor (linha que não
-confere não é servida). Append-only (UPDATE/DELETE/TRUNCATE recusados), idempotente por `(run_id, market, symbol)`,
+(calibração, taxa, preço, campos da linha, marcas 053 e poll em `tp_staleness`, fatos de evento em `events`) +
+`inputs_sha256`, `checks` com os números de cada portão (`tp_staleness`: estado, fonte e protocolos; `events`: calendário
+ou estimativa, consenso, sentimento, `gates` e `marks`; `counterfactual`), `row_sha256` canônico recomputado por todo
+leitor (linha que não confere não é servida). Nenhuma coluna nova: marcas e contrafactual vivem em `checks` (052
+inalterada). Append-only (UPDATE/DELETE/TRUNCATE recusados), idempotente por `(run_id, market, symbol)`,
 `mode` só `shadow`: veredicto que age exige migração e ordem novas.
 Causal: o TP vem da geração **em vigor no relógio da rodada** (`generation_at`, nunca uma posterior — um replay decide o
 que aquela noite viu), linha servida com `prediction_instant` depois do relógio não é decidida
-(`tp_after_run_instant` no recibo) e as marcas 053 são as conhecidas no relógio. `replay_sha256(registro)` é o hash do
+(`tp_after_run_instant` no recibo) e as marcas 053, o poll, o calendário, os filings 051, o consenso e o sentimento
+são os conhecidos no relógio. `replay_sha256(registro)` é o hash do
 que o veredicto decidiu, sem a identidade da rodada (`id`, `run_id`, `published_at`, `row_sha256`): rodar de novo a
 mesma noite no mesmo relógio dá o mesmo hash, o que quer que tenha sido publicado ou marcado depois.
 
@@ -100,7 +152,8 @@ mesma noite no mesmo relógio dá o mesmo hash, o que quer que tenha sido public
 último entre as fases off-hours (depois do corte oficial e de toda fase existente; nunca atrasa uma delas). A noite está
 feita quando a última rodada decidiu sobre a geração em vigor: uma geração ativada depois, dentro da janela (retry do
 canônico), é decidida de novo. O recibo da rodada é agregado (contagens por mercado, veredicto e código, cotações
-recusadas, estado da fonte 053 em `tp_staleness_source`) — não nomeia símbolo nem protocolo. CLI:
+recusadas, estado da fonte 053 em `tp_staleness_source`, estado do calendário, contagem de marcas e
+`verdicts_without_events`) — não nomeia símbolo nem protocolo. CLI:
 `python -m app.valuation_decision --dry-run` (nada gravado), `--run` (recusado com a
 flag desligada), `--verdict MERCADO:SÍMBOLO`.
 
@@ -110,6 +163,16 @@ pacote do R2D2 V2); `run_shadow(enabled=…)` a fixa só para quem chama explici
 noturnos que o laboratório lê. Cotação sem `as_of` legível, com `as_of` depois do relógio da rodada ou mais velha que
 `max_quote_age_minutes` é recusada (`quote_refused` na procedência) e a fonte noturna responde.
 
+**Fase `earnings_calendar`** (`valuation_earnings_calendar.py`): **desligada por padrão**
+(`C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=true` liga; ambiente, não `Settings`), roda antes de `decisor_shadow`. Faz UMA
+chamada EODHD `/api/calendar/earnings` para a janela de mercado inteira [hoje − 7 d, hoje + 30 d] (sem lista de
+símbolos), valida com o parser do R2D2 V2 (`r2d2_v2_earnings_source.parse_earnings_response`, importado, não modificado,
+fora do pacote de fingerprint do R2D2 V2) e grava um snapshot append-only `valuation_earnings_calendar/EODHD_EARNINGS_CALENDAR`
+(tabela de snapshots existente, sem migração nova) datado pelo `received_at`, com o SHA-256 do corpo e os eventos
+analisados (código, data, período fiscal, BMO/AMC). O corpo em si não é guardado. Resposta não 200, tipo não JSON ou
+corpo inválido não grava nada: a fase falha (o motivo fica na execução) e repete dentro da janela. O token nunca sai do
+pedido.
+
 ## Leitura pelo laboratório do R2D2
 
 `latest_verdicts(database, mercado, símbolos, now=…)` / `latest_verdict(...)`: o laboratório **nomeia** os símbolos que
@@ -118,7 +181,8 @@ veredicto, os códigos, o TP lido e sua identidade, e `current` = `session_curre
 completa em `now`) **e** `tp_served` (a geração em vigor em `now` ainda serve, para o símbolo, a mesma linha — mesmo
 `tp_row_sha256` — que o veredicto leu: admissão dirigida de outro nome mantém; troca de fonte ou rollback não). Veredicto
 que não é current sai com `effective_verdict = VETO` e `effective_reason_codes` com o motivo (`VERDICT_NOT_CURRENT`,
-`VERDICT_TP_NOT_SERVED`): nenhuma permissão sobrevive à sua noite nem ao seu TP.
+`VERDICT_TP_NOT_SERVED`): nenhuma permissão sobrevive à sua noite nem ao seu TP. A resposta traz também `marks` (as
+marcas do registro), sem efeito no veredicto.
 
 ## Pendências declaradas
 
@@ -135,16 +199,19 @@ que não é current sai com `effective_verdict = VETO` e `effective_reason_codes
   do ciclo (`undated_rate_sources_admitted`) sabendo do risco da constante.
 * **Portões ainda inertes**: nenhum produtor emite hoje `tp_stale`, `data_defect` ou `data_defects` na linha servida —
   `TP_STALE_FLAG` e `DATA_DEFECT` passam todo nome em produção, e o PREREG não os conta como checagens até um produtor
-  gravar a marca. A marca dos EUA veio em outra estrutura (053) e **agora tem leitor causal**: `TP_STALE_AFTER_FILING`
-  (regra acima). Ela só é evidência quando o gatilho roda: com `C3PO_VALUATION_ASFILED_ENABLED` desligada nos workers
-  de IR e de valuation a tabela fica vazia e todo nome dos EUA passa nesse portão (ausência de marca não prova
-  ausência de protocolo). **Decisão em aberto para o PREREG/mesa:** (a) se a 053 sem gatilho ativo deve falhar fechada
-  como a tabela ausente (hoje não: a rodada só registra `marks_known` e `latest_recorded_at` da leitura); (b) a classe
-  do código — OBSERVAR, como entregue (TP à espera de reavaliação, não defeituoso), ou VETO, como a família de frescor
-  (`TP_STALE_FLAG`) e o texto anterior desta pendência previam; trocar é mover o código de tupla, sem migração.
-* **053 no host**: enquanto a migração 053 não for aplicada no servidor, uma rodada com o decisor ligado registra
-  `STALENESS_SOURCE_UNAVAILABLE` em todo nome dos EUA (nenhuma permissão nos EUA; B3 inalterada). Aplicar a 053 antes
-  de ligar `C3PO_VALUATION_DECISOR_SHADOW`, ou aceitar esse estado declarado.
+  gravar a marca. A marca dos EUA veio em outra estrutura (053) e tem leitor causal: `TP_STALE_AFTER_FILING`, com a
+  vivacidade do poll (`STALENESS_SOURCE_STALE`) — resolvido em 17/10: a 053 sem poll vivo falha fechada; a classe fica
+  OBSERVAR (assimetria com `TP_STALE_FLAG` acima).
+* **053 no host**: aplicada **automaticamente** na partida do container — `Database.initialize()` executa toda migração
+  numerada de `db/` sob trava consultiva (`IF NOT EXISTS`, idempotente); nenhuma ação manual. `STALENESS_SOURCE_UNAVAILABLE`
+  só aparece se a inicialização falhar ou numa janela de deploy.
+* **Vivacidade ≠ gatilho**: o poll `sec_asfiled` bem-sucedido prova que os protocolos estão sendo registrados, não que o
+  gatilho (`evaluate_us_filings`, no processador de IR e no corte) rodou — uma falha do gatilho é só log, sem execução
+  gravada. Se a mesa quiser a prova exata, o gatilho passa a gravar a própria execução e o bloco aponta para ela.
+* **Eventos — decisões em aberto para o PREREG/mesa**: (a) a tolerância de 7 dias da estimativa por cadência (o produtor
+  de earnings do R2D2 usa 15; com 0 a estimativa vira ponto); (b) cobertura do calendário na B3 antes de virar portão lá;
+  (c) os limiares de sentimento (60 % / 5 artigos / 8 dias) e de consenso (−0,05 em log) são propostas; (d) o snapshot V2
+  "da hora do TP" é aproximado (o TP oficial não registra o seu).
 * **Resíduos do leitor 053** (declarados): (1) uma passagem do gatilho cuja transação começa antes do relógio da rodada
   e confirma depois da leitura (milissegundos; o gatilho noturno roda antes da fase do decisor, só o poll de IR pode
   coincidir) é vista por um replay e não pela rodada original — o `inputs_sha256` diverge e mostra; (2) um `cleared` é

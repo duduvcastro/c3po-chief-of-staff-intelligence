@@ -111,13 +111,24 @@ def _curve(database: Database, at: datetime, *, observed: str, as_of: str = SESS
     return database.save_analysis_snapshot("valuation_macro_rates", "US_5Y_INTERPOLATED", "mv-1", {}, package, at)
 
 
+def _poll(database: Database, completed_at: datetime, *, status: str = "succeeded") -> str:
+    """One as-filed poll of the Investor Relations worker (``ingestion_runs`` source ``sec_asfiled``), dated in the test world."""
+    run_id = database.begin_ingestion_run("sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure", {"operation": "valuation_universe"})
+    database.finish_ingestion_run(run_id, status, 1, 1)
+    database._ingestion_runs[run_id].update(started_at=completed_at - timedelta(minutes=3), completed_at=completed_at)
+    return run_id
+
+
 def _night(database: Database, *, b3: list[dict[str, Any]] | None = None, us: list[dict[str, Any]] | None = None, selic: bool = True,
-           staleness_table: bool = True) -> dict[str, str]:
+           staleness_table: bool = True, poll: bool = True) -> dict[str, str]:
     """One official night: the three universe cycles (the generation activates when the third lands — dated then), the
-    producers' calibration snapshots, the US cash-rate package, (``selic``) the dated SGS 432 package and
-    (``staleness_table``) migration 053 applied — empty: no filing marked any TP."""
+    producers' calibration snapshots, the US cash-rate package, (``selic``) the dated SGS 432 package,
+    (``staleness_table``) migration 053 applied — empty: no filing marked any TP — and (``poll``) a successful as-filed
+    poll just after the cut: the 053 marks are evidence."""
     if staleness_table:
         asfiled.TpStalenessStore(database)  # the memory double's table exists once its store is opened (as the as-filed tables')
+    if poll:
+        _poll(database, CUT + timedelta(minutes=5))
     with _activated_at(database, CUT + timedelta(minutes=2, seconds=30)):
         cycles = {
             "B3": _universe(database, "B3", b3 if b3 is not None else [_row("PETR4", tp=45.0, buy_in=32.0, price=30.0), _row("VALE3", tp=70.0, buy_in=60.0, price=65.0)], CUT),
@@ -135,6 +146,8 @@ def _night(database: Database, *, b3: list[dict[str, Any]] | None = None, us: li
 GOOD_ERROR = {"status": "ok", "value": 0.10}
 GOOD_RATE = {"status": "ok", "h_market": 0.14}
 B3_STALENESS = decisor.name_staleness(None, "B3", "PETR4")  # not applicable: 053 marks US TPs only
+CALM = {"market": "B3", "earnings": {"status": "calendar", "within": False, "events": []}, "consensus": {"status": "unavailable"},
+        "sentiment": {"status": "not_applicable"}}  # the calendar answered and nothing is announced; no consensus or sentiment fact
 
 
 def _served(**extra: Any) -> dict[str, Any]:
@@ -142,10 +155,11 @@ def _served(**extra: Any) -> dict[str, Any]:
 
 
 def _decide(row: dict[str, Any] | None = None, *, behind: int = 0, price: dict[str, Any] | None = None, error: dict[str, Any] = GOOD_ERROR,
-            rate: dict[str, Any] = GOOD_RATE, staleness: dict[str, Any] = B3_STALENESS) -> dict[str, Any]:
+            rate: dict[str, Any] = GOOD_RATE, staleness: dict[str, Any] = B3_STALENESS, events: dict[str, Any] = CALM) -> dict[str, Any]:
     served = row if row is not None else _served()
     observation = price if price is not None else {"price": served["price"], "ask": None, "source": "official_cut", "session": served["official_session_date"]}
-    return decisor.decide(served, expected_session=SESSION, tp_sessions_behind=behind, price=observation, error=error, rate=rate, staleness=staleness)
+    return decisor.decide(served, expected_session=SESSION, tp_sessions_behind=behind, price=observation, error=error, rate=rate, staleness=staleness,
+                          events=events)
 
 
 # ------------------------------------------------------------------ the pure verdict
@@ -198,7 +212,7 @@ def test_the_edges_of_the_freshness_gates() -> None:
     assert "PRICE_MOVED_SINCE_CUT" in _decide(price={"price": 28.4, "source": "quote", "session": SESSION})["reason_codes"]
     assert _decide(price={"price": 31.4, "source": "quote", "session": SESSION})["verdict"] == decisor.COMPRA_PERMITIDA
     unpriced = decisor.decide(_served(), expected_session=SESSION, tp_sessions_behind=0, price=None, error=GOOD_ERROR, rate=GOOD_RATE,
-                              staleness=B3_STALENESS)
+                              staleness=B3_STALENESS, events=CALM)
     assert unpriced["verdict"] == decisor.VETO and "PRICE_UNAVAILABLE" in unpriced["reason_codes"] and unpriced["checks"]["tp_margin"]["pass"] is None
     assert "PRICE_SESSION_STALE" not in unpriced["reason_codes"] and unpriced["checks"]["price_session"]["pass"] is None
     # a US row carries no tp_validation_status: its signal_quality decides
@@ -621,14 +635,19 @@ def _mark(database: Database, symbol: str, state: str, recorded_at: datetime, *,
 
 
 def test_the_filings_gate_is_pure_us_only_and_never_exempts_a_us_row() -> None:
-    stale = {"status": decisor.STALENESS_STALE, "filings": [{"mark_id": "m-1", "doc_id": FILING}]}
+    stale = {"status": decisor.STALENESS_STALE, "source_status": "ok", "filings": [{"mark_id": "m-1", "doc_id": FILING}]}
     outcome = _decide(staleness=stale)
     assert outcome["verdict"] == decisor.OBSERVAR and outcome["reason_codes"] == [decisor.TP_STALE_AFTER_FILING]
-    assert outcome["checks"]["tp_staleness"] == {"pass": False, "status": "stale", "filings": [{"mark_id": "m-1", "doc_id": FILING}], "detail": None}
+    assert outcome["checks"]["tp_staleness"] == {"pass": False, "status": "stale", "source_status": "ok", "filings": [{"mark_id": "m-1", "doc_id": FILING}],
+                                                 "trigger_poll": None, "detail": None}
     unavailable = _decide(staleness={"status": decisor.STALENESS_UNAVAILABLE, "detail": "absent"})
     assert unavailable["verdict"] == decisor.OBSERVAR and unavailable["reason_codes"] == [decisor.STALENESS_SOURCE_UNAVAILABLE]
     assert _decide(staleness={"status": "something else"})["reason_codes"] == [decisor.STALENESS_SOURCE_UNAVAILABLE]  # unknown → fail closed
-    assert _decide(staleness={"status": decisor.STALENESS_CLEAR, "filings": []})["verdict"] == decisor.COMPRA_PERMITIDA
+    assert _decide(staleness={"status": decisor.STALENESS_CLEAR, "source_status": "ok", "filings": []})["verdict"] == decisor.COMPRA_PERMITIDA
+    # a clear read is no permission unless the poll that would have marked it was alive (source_status ok)
+    assert _decide(staleness={"status": decisor.STALENESS_CLEAR, "filings": []})["reason_codes"] == [decisor.STALENESS_SOURCE_UNAVAILABLE]
+    assert _decide(staleness={"status": decisor.STALENESS_CLEAR, "source_status": "stale"})["reason_codes"] == [decisor.STALENESS_SOURCE_STALE]
+    assert _decide(staleness={**stale, "source_status": "stale"})["reason_codes"] == [decisor.TP_STALE_AFTER_FILING, decisor.STALENESS_SOURCE_STALE]
     b3 = _decide()
     assert b3["verdict"] == decisor.COMPRA_PERMITIDA and b3["checks"]["tp_staleness"]["pass"] is None and b3["checks"]["tp_staleness"]["status"] == "not_applicable"
     # a row the official selection served for a US market is never 'not_applicable', whoever builds the staleness
@@ -687,7 +706,9 @@ def test_a_cleared_or_untracked_filing_known_at_the_clock_leaves_the_name_to_its
     assert receipt["markets"]["NASDAQ"]["verdicts"]["COMPRA_PERMITIDA"] == 1 and decisor.TP_STALE_AFTER_FILING not in receipt["markets"]["NASDAQ"]["reasons"]
     assert receipt["markets"]["NYSE"]["reasons"] == {"PRICE_ABOVE_BUY_IN": 1, "TP_MARGIN_INSUFFICIENT": 1}
     aapl = database.list_valuation_decisions("NASDAQ", "AAPL")[0]
-    assert aapl["checks"]["tp_staleness"] == {"pass": True, "status": "clear", "filings": [], "detail": None}
+    gate = aapl["checks"]["tp_staleness"]
+    assert (gate["pass"], gate["status"], gate["source_status"], gate["filings"], gate["detail"]) == (True, "clear", "ok", [], None)
+    assert gate["trigger_poll"]["source_code"] == "sec_asfiled" and gate["trigger_poll"]["completed_at"] == (CUT + timedelta(minutes=5)).isoformat()
     assert aapl["inputs"]["tp_staleness"]["marks_known"] == 3
 
 

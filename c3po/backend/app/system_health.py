@@ -1409,6 +1409,7 @@ class SystemHealthService:
             if (phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled)
             and (phase != "price_history" or getattr(self.settings, "valuation_price_history_enabled", False))
             and (phase != "decisor_shadow" or valuation_env.decisor_shadow_enabled())
+            and (phase != "earnings_calendar" or valuation_env.earnings_calendar_enabled())
         }
         codes = [definition["code"] for definition in definitions.values()]
         try:
