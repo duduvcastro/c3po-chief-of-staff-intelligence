@@ -1542,3 +1542,51 @@ def test_the_run_refuses_a_naive_t_and_counts_inadmissible_names() -> None:
     early = datetime(2023, 8, 1, 21, 0, tzinfo=UTC)
     receipt, run = service.rerun("NASDAQ", as_of=early, clock=lambda: NOW)
     assert receipt["evaluated"] == 0 and receipt["records"]["expected"] == 0 and run.resolver.not_evaluable == {s: "fewer_than_90_valid_sessions_at_T" for s in SYMBOLS}
+
+
+# ------------------------------------------------------------------ the backtest's needs (PREREG_VALUATION_PIT_BACKTEST_US_V1 review, 18/10): catalogue pin, screen inputs, producer files
+def test_a_catalogue_pin_gives_a_grid_one_catalogue_and_without_it_nothing_changes(capsys: pytest.CaptureFixture[str]) -> None:
+    database = _ready()
+    first = database.latest_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE")
+    assert first is not None
+    plain, plain_run = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    snapshot = database.latest_analysis_snapshot(pit.ANALYSIS_TYPE, plain["entity_key"])
+    assert snapshot is not None and "catalogue_pin" not in plain and "catalogue_pin" not in snapshot["inputs"]  # unpinned: the run it always was
+    later_rows = [row for row in first["outputs"]["rows"] if row["symbol"] != "FFF"]
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7}, {"rows": later_rows}, VINTAGE_AT + timedelta(hours=1))
+    pin = VINTAGE_AT  # after the first catalogue (VINTAGE_AT − 1 h), before the later one
+    pinned, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=1), catalogue_pinned_at=pin)
+    assert pinned["run_key"] == plain["run_key"] and pinned["idempotent"] is True  # a pointer: the content (classification hash) names the run
+    assert pinned["catalogue_pin"] == {"mode": "explicit", "requested_at": pin.isoformat(), "resolved_snapshot_id": first["id"]}
+    latest, latest_run = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=2))
+    assert latest["run_key"] != plain["run_key"] and latest["supersedes"] == plain["run_key"] and "FFF" not in latest_run.results
+    for refused, message in ((datetime(2026, 9, 11, 3, 0), "time zone"), (NOW + timedelta(days=1), "after the run start"),
+                             (VINTAGE_AT - timedelta(days=1), "no NASDAQ catalogue published before")):
+        with pytest.raises(pit.PitRerunInputError, match=message):
+            _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW, catalogue_pinned_at=refused)
+    capsys.readouterr()
+    assert pit.main(["--market", "NASDAQ", "--rerun", "--as-of", "2024-06-14T18:00:00-03:00", "--catalogue-pinned-at", "2026-09-11T00:00:00-03:00"],
+                    database=database, settings=_settings()) == 0
+    assert json.loads(capsys.readouterr().out)["catalogue_pin"]["resolved_snapshot_id"] == first["id"]
+    with pytest.raises(SystemExit):
+        pit.main(["--market", "NASDAQ", "--fetch", "--catalogue-pinned-at", "2026-09-11T00:00:00-03:00"], database=database, settings=_settings())
+    # the screen inputs of every evaluated name, and the catalogue counts, beside the rows (outputs only: never in run_key)
+    screen = plain_run.screen_inputs()
+    stored = database.latest_analysis_snapshot(pit.ANALYSIS_TYPE, plain["entity_key"])
+    assert stored is not None and stored["outputs"]["screen"] == screen and stored["outputs"]["catalogue_counts"] == {"rows": 6, "stocks": 6}
+    aaa = plain_run.resolver.per_symbol["AAA"]["row"]
+    bars = plain_run.resolver.prices.bars("AAA")
+    expected = sorted(bar["close"] * bar["volume"] for bar in (bars[s] for s in sorted(bars)[-20:]))
+    assert screen["AAA"] == {"security_type": "Stock", "close": aaa["price"], "price_session": aaa["price_session"], "market_cap": aaa["price"] * aaa["shares"],
+                             "dollar_volume_median_20": pytest.approx((expected[9] + expected[10]) / 2)}
+    assert plain_run.resolver.prices.dollar_volume_median("AAA", sessions=100_000) is None  # fewer bars than asked: no liquidity reading
+
+
+def test_the_run_names_every_producer_module_in_its_manifest() -> None:
+    database = _ready()
+    service = _service(database)
+    run = service.compute("NASDAQ", as_of=T, prices=service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW))
+    files = run.manifest["engine"]["implementation_file_sha256"]
+    assert tuple(files) == pit.IMPLEMENTATION_FILES and files == {name: pit._file_sha256(name) for name in pit.IMPLEMENTATION_FILES}
+    for name in ("valuation_v2_engine.py", "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py"):
+        assert name in files  # the record writer, the buy-in rule and the as-filed reader are part of the producer

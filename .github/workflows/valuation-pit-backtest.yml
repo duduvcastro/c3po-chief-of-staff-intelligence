@@ -3,19 +3,26 @@ run-name: Valuation PIT backtest US (PREREG_VALUATION_PIT_BACKTEST_US_V1) — ${
 
 # Dispatch only. Runs the steps of PREREG_VALUATION_PIT_BACKTEST_US_V1 §14 inside the running api container of the
 # production host through the deploy SSH transport of c3po-pipeline.yml (the pattern of valuation-readonly-report.yml):
-#   host-check      READ-ONLY  free disk on the host, the price publications a cut now sees, the as-filed coverage
-#   dry-run         READ-ONLY  the pre-registered grid for a pin, what is reusable
-#   price-backfill  WRITES     valuation_price_history --backfill --months 120, NASDAQ then NYSE (owner order required)
-#   fetch           WRITES     valuation_pit_rerun --fetch, NASDAQ then NYSE (the US macro once) (owner order required)
-#   grid            WRITES     valuation_pit_grid, one chunk (--max-runs, --stop-before the next window) (owner order required)
-#   report          READ-ONLY  valuation_pit_backtest_report over the grid manifest of a previous grid run's artifact
-# The write modes refuse an empty or malformed owner_order_sha256 and print it. No mode starts inside the US session
-# (09:00-16:30 America/New_York on weekdays) or the nightly phase (00:45-08:15 America/Sao_Paulo); a grid chunk stops
-# before the next one. No container is created, restarted or stopped (`docker compose exec` into the running api); the
-# read-only modes force PGOPTIONS default_transaction_read_only=on and write nothing on the host. Only aggregates are
-# uploaded: the remote stdout is reduced (and checked) here, the remote stderr stays in the runner's temp directory and is
-# never printed: this repository is public and a log line may name a symbol. Secrets travel only through the deploy-key
-# step's environment, as in valuation-readonly-report.yml (never in argv, never echoed).
+#   host-check      READ-ONLY  free disk and memory on the host, the price publications a cut now sees, the as-filed
+#                              coverage, the running ingestions — the ONLY mode exempt from the operating window
+#   dry-run         READ-ONLY  the pre-registered grid for the two pins, what is reusable
+#   price-backfill  WRITES     valuation_price_history --backfill --months 120, NASDAQ then NYSE
+#   fetch           WRITES     valuation_pit_rerun --fetch, NASDAQ then NYSE (the US macro once)
+#   grid            WRITES     valuation_pit_grid, one chunk (--max-runs <= 200, --stop-before the next window)
+#   report          READ-ONLY  valuation_pit_backtest_report over the complete manifest of a previous grid run's artifact
+# A writing mode needs the owner's order: the workflow runs from main, c3po/ops/owner-orders/<owner_order_sha256>.json
+# exists at this revision, hashes to the input and authorises this mode with these pins, flags and cap, not after its
+# deadline. No mode but host-check starts inside the US session (09:00-16:30 America/New_York on weekdays) or the nightly
+# window (23:30 of the previous day to 08:15 America/Sao_Paulo: the cycle starts at 00:00); a writing mode runs under
+# `timeout` that ends it 10 minutes before the next window, a grid chunk stops before it, and a cancelled or failed run
+# stops the host process. Writes take the deploy lock SHARED (a deploy in flight refuses the write; a deploy arriving during
+# a write waits 120 s and fails, to be re-run after it; the security reboot controller waits too), check
+# the host (disk, memory, R2D2/massive timers and services, running ingestions, pending reboot) first, and the grid
+# refuses producer files other than those of the prereg commit. The read-only modes force PGOPTIONS
+# default_transaction_read_only=on and write nothing on the host. No container is created, restarted or stopped (`docker
+# compose exec` into the running api). Only aggregates are uploaded: the remote stdout is reduced (and checked) here, the
+# remote stderr stays in the runner's temp directory and is never printed — this repository is public and a log line may
+# name a symbol. Secrets travel only through the deploy-key step's environment, as in valuation-readonly-report.yml.
 # Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
 
 on:
@@ -31,30 +38,30 @@ on:
         type: choice
         options: [host-check, dry-run, price-backfill, fetch, grid, report]
       owner_order_sha256:
-        description: sha256 of the owner's order (required for price-backfill, fetch and grid — the modes that write on the host)
+        description: price-backfill/fetch/grid — sha256 of c3po/ops/owner-orders/<sha>.json at this revision (the owner's order)
         required: false
         default: ''
         type: string
       price_pinned_at:
-        description: dry-run/grid — the ONE pin of the grid, ISO-8601 with zone (right after the 120-month backfill publications)
+        description: dry-run/grid — the ONE price pin of the grid, ISO-8601 with zone (right after the 120-month backfill publications)
         required: false
         default: ''
         type: string
-      grid_from:
-        description: dry-run/grid — first session of the sub-range (YYYY-MM-DD); empty = the pre-registered first
-        required: false
-        default: ''
-        type: string
-      grid_to:
-        description: dry-run/grid — last session of the sub-range (YYYY-MM-DD); empty = the pre-registered last
+      catalogue_pinned_at:
+        description: dry-run/grid — the ONE catalogue pin of the grid, ISO-8601 with zone
         required: false
         default: ''
         type: string
       max_runs:
-        description: grid — grid instants COMPUTED in this chunk (reused ones are free)
+        description: grid — grid instants COMPUTED in this chunk (reused ones are free), at most 200
         required: false
         default: '10'
         type: string
+      recompute_existing:
+        description: grid — re-run every instant through the public API (must match the owner's order)
+        required: false
+        default: false
+        type: boolean
       manifest_run_id:
         description: report — the run id of the grid chunk whose artifact holds the complete manifest
         required: false
@@ -66,7 +73,7 @@ on:
         default: ''
         type: string
       prereg_commit:
-        description: report — the commit (40 hex) cited by the prereg's hash receipt
+        description: grid/report — the commit (40 hex) cited by the prereg's hash receipt
         required: false
         default: ''
         type: string
@@ -101,9 +108,9 @@ jobs:
           MODE: ${{ inputs.mode }}
           ORDER: ${{ inputs.owner_order_sha256 }}
           PIN: ${{ inputs.price_pinned_at }}
-          FROM: ${{ inputs.grid_from }}
-          TO: ${{ inputs.grid_to }}
+          CATALOGUE_PIN: ${{ inputs.catalogue_pinned_at }}
           MAX_RUNS: ${{ inputs.max_runs }}
+          RECOMPUTE: ${{ inputs.recompute_existing }}
           MANIFEST_RUN_ID: ${{ inputs.manifest_run_id }}
           MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
           PREREG_COMMIT: ${{ inputs.prereg_commit }}
@@ -114,14 +121,14 @@ jobs:
             host-check|dry-run|price-backfill|fetch|grid|report) ;;
             *) echo 'unknown mode' >&2; exit 2 ;;
           esac
-          # every value that reaches the remote command line is validated in EVERY mode (quoted there, never free text)
+          # every value that reaches a remote command line is validated in EVERY mode (quoted there, never free text)
+          instant='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$'
           [ -z "$ORDER" ] || [[ "$ORDER" =~ ^[0-9a-f]{64}$ ]] || { echo 'owner_order_sha256 must be 64 lowercase hex' >&2; exit 2; }
-          [ -z "$PIN" ] || [[ "$PIN" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$ ]] \
-            || { echo 'price_pinned_at must be ISO-8601 with a zone' >&2; exit 2; }
-          for day in "$FROM" "$TO"; do
-            [ -z "$day" ] || [[ "$day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo 'grid_from/grid_to must be YYYY-MM-DD' >&2; exit 2; }
-          done
-          [[ "$MAX_RUNS" =~ ^[0-9]{1,4}$ ]] || { echo 'max_runs must be a non-negative integer' >&2; exit 2; }
+          [ -z "$PIN" ] || [[ "$PIN" =~ $instant ]] || { echo 'price_pinned_at must be ISO-8601 with a zone' >&2; exit 2; }
+          [ -z "$CATALOGUE_PIN" ] || [[ "$CATALOGUE_PIN" =~ $instant ]] || { echo 'catalogue_pinned_at must be ISO-8601 with a zone' >&2; exit 2; }
+          [[ "$MAX_RUNS" =~ ^[0-9]{1,3}$ ]] && [ "$MAX_RUNS" -le 200 ] || { echo 'max_runs must be an integer from 0 to 200' >&2; exit 2; }
+          [ "$RECOMPUTE" = true ] || [ "$RECOMPUTE" = false ] || { echo 'recompute_existing must be a boolean' >&2; exit 2; }
+          [ -z "$PREREG_COMMIT" ] || [[ "$PREREG_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'prereg_commit must be a 40-hex commit' >&2; exit 2; }
           case "$MODE" in
             price-backfill|fetch|grid)
               [ -n "$ORDER" ] || { echo 'owner_order_sha256 is required for a mode that writes on the host' >&2; exit 2; }
@@ -129,20 +136,22 @@ jobs:
           esac
           case "$MODE" in
             dry-run|grid)
-              [ -n "$PIN" ] || { echo 'price_pinned_at is required for dry-run and grid' >&2; exit 2; } ;;
+              [ -n "$PIN" ] && [ -n "$CATALOGUE_PIN" ] || { echo 'price_pinned_at and catalogue_pinned_at are required for dry-run and grid' >&2; exit 2; } ;;
+          esac
+          case "$MODE" in
+            grid|report) [ -n "$PREREG_COMMIT" ] || { echo 'prereg_commit is required for grid and report' >&2; exit 2; } ;;
           esac
           if [ "$MODE" = report ]; then
             [[ "$MANIFEST_RUN_ID" =~ ^[0-9]{1,20}$ ]] || { echo 'manifest_run_id must be a run id' >&2; exit 2; }
             [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'manifest_sha256 must be 64 lowercase hex' >&2; exit 2; }
-            [[ "$PREREG_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'prereg_commit must be a 40-hex commit' >&2; exit 2; }
           fi
           {
             printf 'mode=%s\n' "$MODE"
             printf 'order=%s\n' "$ORDER"
             printf 'pin=%s\n' "$PIN"
-            printf 'from=%s\n' "$FROM"
-            printf 'to=%s\n' "$TO"
+            printf 'catalogue_pin=%s\n' "$CATALOGUE_PIN"
             printf 'max_runs=%s\n' "$MAX_RUNS"
+            printf 'recompute=%s\n' "$RECOMPUTE"
           } >> "$GITHUB_OUTPUT" || exit 1
 
       - name: Check the operating window
@@ -159,26 +168,28 @@ jobs:
           from zoneinfo import ZoneInfo
 
           mode = os.environ["MODE"]
-          now = dt.datetime.now(dt.timezone.utc)
+          now = dt.datetime.fromisoformat(os.environ["WINDOW_NOW"]) if os.environ.get("WINDOW_NOW") else dt.datetime.now(dt.timezone.utc)  # WINDOW_NOW: tests only
           new_york, sao_paulo = ZoneInfo("America/New_York"), ZoneInfo("America/Sao_Paulo")
           windows = []
-          for offset in range(-1, 5):
+          for offset in range(-2, 6):
               day = now.astimezone(new_york).date() + dt.timedelta(days=offset)
               if day.weekday() < 5:  # the US session with a buffer (holidays are treated as sessions: conservative)
                   windows.append((dt.datetime.combine(day, dt.time(9, 0), new_york), dt.datetime.combine(day, dt.time(16, 30), new_york)))
-              local = now.astimezone(sao_paulo).date() + dt.timedelta(days=offset)  # the nightly phase 01:00-08:00 with a buffer
-              windows.append((dt.datetime.combine(local, dt.time(0, 45), sao_paulo), dt.datetime.combine(local, dt.time(8, 15), sao_paulo)))
-          inside = [start for start, end in windows if start <= now < end]
+              local = now.astimezone(sao_paulo).date() + dt.timedelta(days=offset)  # the nightly window: the cycle starts at 00:00, its phases to 08:00
+              windows.append((dt.datetime.combine(local - dt.timedelta(days=1), dt.time(23, 30), sao_paulo), dt.datetime.combine(local, dt.time(8, 15), sao_paulo)))
+          inside = sorted(start for start, end in windows if start <= now < end)
           upcoming = min(start for start, _end in windows if start > now)
-          if mode != "host-check" and mode != "dry-run" and inside:
-              sys.exit(f"{mode} refused: now is inside the US session or the nightly phase window (from {inside[0].isoformat()})")
+          if mode != "host-check" and inside:
+              sys.exit(f"{mode} refused: now is inside the US session or the nightly window (from {inside[0].isoformat()})")
           minutes = (upcoming - now).total_seconds() / 60
           if mode in ("price-backfill", "fetch") and minutes < 120:
               sys.exit(f"{mode} refused: the next window starts in {minutes:.0f} min (at least 120 needed)")
           stop_before = min(upcoming - dt.timedelta(minutes=20), now + dt.timedelta(minutes=300))
+          deadline = min(upcoming - dt.timedelta(minutes=10), now + dt.timedelta(minutes=320))
           if mode == "grid" and stop_before <= now + dt.timedelta(minutes=15):
               sys.exit("grid refused: less than 35 min before the next window")
           print(f"stop_before={stop_before.astimezone(dt.timezone.utc).isoformat(timespec='seconds')}")
+          print(f"deadline_seconds={max(0, int((deadline - now).total_seconds()))}")
           print(f"next_window={upcoming.astimezone(dt.timezone.utc).isoformat(timespec='seconds')}")
           PY
 
@@ -187,8 +198,73 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify the owner's order
+        if: inputs.mode == 'price-backfill' || inputs.mode == 'fetch' || inputs.mode == 'grid'
+        env:
+          MODE: ${{ steps.inputs.outputs.mode }}
+          ORDER: ${{ steps.inputs.outputs.order }}
+          PIN: ${{ steps.inputs.outputs.pin }}
+          CATALOGUE_PIN: ${{ steps.inputs.outputs.catalogue_pin }}
+          MAX_RUNS: ${{ steps.inputs.outputs.max_runs }}
+          RECOMPUTE: ${{ steps.inputs.outputs.recompute }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - "$GITHUB_WORKSPACE" <<'PY' || exit 1
+          import datetime as dt
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          root, mode, order = Path(sys.argv[1]), os.environ["MODE"], os.environ["ORDER"]
+          if os.environ.get("GITHUB_REF") != "refs/heads/main":
+              sys.exit("a writing mode runs only from main (the owner's order is a file of main)")
+          path = root / "c3po" / "ops" / "owner-orders" / f"{order}.json"
+          if not path.is_file() or path.is_symlink():
+              sys.exit("the owner's order file does not exist at this revision")
+          content = path.read_bytes()
+          if hashlib.sha256(content).hexdigest() != order:
+              sys.exit("the owner's order file does not hash to owner_order_sha256")
+          try:
+              data = json.loads(content.decode("utf-8"))
+          except (UnicodeDecodeError, ValueError):
+              sys.exit("the owner's order is not a JSON document")
+
+
+          def instant(value):
+              try:
+                  parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+              except ValueError:
+                  return None
+              return parsed.astimezone(dt.timezone.utc) if parsed.tzinfo is not None else None
+
+
+          now = instant(os.environ["ORDER_NOW"]) if os.environ.get("ORDER_NOW") else dt.datetime.now(dt.timezone.utc)  # ORDER_NOW: tests only
+          if data.get("schema") != "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1" or data.get("prereg") != "PREREG_VALUATION_PIT_BACKTEST_US_V1":
+              sys.exit("the owner's order is not a VALUATION-PIT-BACKTEST-OWNER-ORDER-v1 for PREREG_VALUATION_PIT_BACKTEST_US_V1")
+          if mode not in (data.get("modes") or []):
+              sys.exit(f"the owner's order does not authorise mode {mode}")
+          deadline = instant(data.get("not_after"))
+          if deadline is None or now is None or deadline < now:
+              sys.exit("the owner's order has expired (not_after)")
+          if mode == "grid":
+              if instant(data.get("price_pinned_at")) != instant(os.environ["PIN"]) or instant(os.environ["PIN"]) is None:
+                  sys.exit("the owner's order names another price pin")
+              if instant(data.get("catalogue_pinned_at")) != instant(os.environ["CATALOGUE_PIN"]) or instant(os.environ["CATALOGUE_PIN"]) is None:
+                  sys.exit("the owner's order names another catalogue pin")
+              if bool(data.get("recompute_existing")) != (os.environ["RECOMPUTE"] == "true") or not isinstance(data.get("recompute_existing"), bool):
+                  sys.exit("the owner's order does not authorise this recompute_existing flag")
+              cap = data.get("max_runs_cap")
+              if not isinstance(cap, int) or isinstance(cap, bool) or int(os.environ["MAX_RUNS"]) > cap:
+                  sys.exit("max_runs exceeds the owner's order's max_runs_cap")
+          print(f"owner's order verified: modes {data.get('modes')}, not after {deadline.isoformat()}")
+          PY
+
       - name: Read the pre-registration and the producer at the prereg commit
-        if: inputs.mode == 'report'
+        id: prereg
+        if: inputs.mode == 'grid' || inputs.mode == 'report'
         env:
           PREREG_COMMIT: ${{ inputs.prereg_commit }}
         shell: bash
@@ -196,15 +272,47 @@ jobs:
           set -uo pipefail
           git cat-file -e "$PREREG_COMMIT^{commit}" || { echo 'prereg_commit is not a commit of this repository' >&2; exit 2; }
           git show "$PREREG_COMMIT:c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md" > "$RUNNER_TEMP/prereg-at-commit.md" || exit 1
+          cmp -s "$RUNNER_TEMP/prereg-at-commit.md" c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md \
+            || { echo 'the pre-registration changed since the commit of its hash receipt' >&2; exit 2; }
           printf '{' > "$RUNNER_TEMP/producer.json" || exit 1
           separator=''
-          for name in valuation_v3_engine.py valuation_v3_inputs.py valuation_v3_macro.py valuation_v3_shadow.py valuation_pit_rerun.py; do
+          for name in valuation_v3_engine.py valuation_v3_inputs.py valuation_v3_macro.py valuation_v3_shadow.py valuation_pit_rerun.py \
+                      valuation_v2_engine.py valuation_official.py valuation_official_engine.py sec_xbrl.py valuation_asfiled.py statement_vintages.py; do
             digest=$(git show "$PREREG_COMMIT:c3po/backend/app/$name" | sha256sum | cut -d' ' -f1) || exit 1
             [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
             printf '%s"%s":"%s"' "$separator" "$name" "$digest" >> "$RUNNER_TEMP/producer.json" || exit 1
             separator=','
           done
           printf '}\n' >> "$RUNNER_TEMP/producer.json" || exit 1
+          digest=$(python3 -c 'import hashlib, json, sys; print(hashlib.sha256(json.dumps(json.load(open(sys.argv[1])), sort_keys=True, separators=(",", ":")).encode()).hexdigest())' \
+                   "$RUNNER_TEMP/producer.json") || exit 1
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          printf 'producer_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Check the grid run's provenance
+        if: inputs.mode == 'report'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_RUN_ID: ${{ inputs.manifest_run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MANIFEST_RUN_ID" > "$RUNNER_TEMP/grid-run.json" || exit 1
+          python3 - "$RUNNER_TEMP/grid-run.json" <<'PY' || exit 1
+          import json
+          import os
+          import sys
+
+          run = json.loads(open(sys.argv[1], encoding="utf-8").read())
+          if not str(run.get("path") or "").startswith(".github/workflows/valuation-pit-backtest.yml"):
+              sys.exit("the referenced run is not a run of this workflow")
+          if run.get("event") != "workflow_dispatch" or run.get("head_branch") != "main" or run.get("conclusion") != "success":
+              sys.exit("the referenced run is not a successful dispatch from main")
+          if (run.get("repository") or {}).get("full_name") != os.environ["GITHUB_REPOSITORY"] or str(run.get("id")) != os.environ["MANIFEST_RUN_ID"]:
+              sys.exit("the referenced run is not of this repository")
+          if not str(run.get("display_title") or "").endswith("— grid"):
+              sys.exit("the referenced run is not a grid chunk")
+          PY
 
       - name: Download the grid manifest
         if: inputs.mode == 'report'
@@ -219,26 +327,80 @@ jobs:
         if: inputs.mode == 'report'
         env:
           EXPECTED: ${{ inputs.manifest_sha256 }}
+          MANIFEST_RUN_ID: ${{ inputs.manifest_run_id }}
         shell: bash
         run: |
           set -uo pipefail
-          python3 - "$RUNNER_TEMP/manifest/manifest.json" <<'PY' || exit 1
+          (cd "$RUNNER_TEMP/manifest" && sha256sum -c --strict --quiet SHA256SUMS) || { echo 'the artifact does not match its SHA256SUMS' >&2; exit 2; }
+          python3 - "$RUNNER_TEMP/manifest" <<'PY' || exit 1
           import hashlib
           import json
           import os
           import sys
+          from pathlib import Path
 
-          manifest = json.loads(open(sys.argv[1], encoding="utf-8").read())
+          folder = Path(sys.argv[1])
+          metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
+          if metadata.get("mode") != "grid" or str(metadata.get("run_id")) != os.environ["MANIFEST_RUN_ID"] or metadata.get("partial"):
+              sys.exit("the artifact is not the complete output of that grid run")
+          raw = (folder / "manifest.json").read_bytes()
+          if len(raw) > 8 * 1024 * 1024:
+              sys.exit("the grid manifest is too large")
+          manifest = json.loads(raw.decode("utf-8"))
           body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
           digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
           if digest != manifest.get("manifest_sha256") or digest != os.environ["EXPECTED"]:
               sys.exit("the grid manifest's sha256 does not recompute or is not the published one")
-          if manifest.get("schema") != "VALUATION-PIT-GRID-MANIFEST-v1" or manifest.get("complete") is not True:
-              sys.exit("the artifact does not hold a complete VALUATION-PIT-GRID-MANIFEST-v1")
+          expected = {"schema": "VALUATION-PIT-GRID-MANIFEST-v1", "complete": True, "market": "US", "grid_start": "2021-06-01", "step_sessions": 5,
+                      "statements": "vintages"}
+          wrong = sorted(key for key, value in expected.items() if manifest.get(key) != value)
+          if wrong:
+              sys.exit("the grid manifest is not the pre-registered complete grid (" + ", ".join(wrong) + ")")
           PY
-          gzip -9 -c "$RUNNER_TEMP/manifest/manifest.json" | base64 -w0 > "$RUNNER_TEMP/manifest.b64" || exit 1
+
+      - name: List the previous readings
+        if: inputs.mode == 'report'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/previous"
+          mkdir -p "$dir" || exit 1
+          gh run list -R "$GITHUB_REPOSITORY" --workflow valuation-pit-backtest.yml --status success --limit 200 \
+            --json databaseId,displayTitle > "$dir/runs.json" || exit 1
+          for id in $(python3 -c 'import json, sys; print(" ".join(str(r["databaseId"]) for r in json.load(open(sys.argv[1])) if str(r.get("displayTitle", "")).endswith("— report")))' "$dir/runs.json"); do
+            [[ "$id" =~ ^[0-9]+$ ]] || continue
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n "valuation-pit-backtest-report-$id" -D "$dir/$id" >/dev/null 2>&1 || true
+          done
+
+      - name: Check the single look
+        if: inputs.mode == 'report'
+        env:
+          EXPECTED: ${{ inputs.manifest_sha256 }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - "$RUNNER_TEMP/previous" c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          folder, prereg = Path(sys.argv[1]), hashlib.sha256(Path(sys.argv[2]).read_bytes()).hexdigest()
+          for metadata_path in sorted(folder.glob("*/metadata.json")):
+              try:
+                  metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+              except (OSError, ValueError):
+                  continue
+              if metadata.get("prereg_sha256") == prereg and metadata.get("manifest_sha256") not in (None, os.environ["EXPECTED"]):
+                  sys.exit("a previous reading published this pre-registration over another manifest: the single look was spent")
+          print("no previous reading of this pre-registration over another manifest")
+          PY
 
       - name: Configure deployment SSH key
+        id: sshkey
         env:
           DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
@@ -257,66 +419,107 @@ jobs:
           MODE: ${{ steps.inputs.outputs.mode }}
           ORDER: ${{ steps.inputs.outputs.order }}
           PIN: ${{ steps.inputs.outputs.pin }}
-          FROM: ${{ steps.inputs.outputs.from }}
-          TO: ${{ steps.inputs.outputs.to }}
+          CATALOGUE_PIN: ${{ steps.inputs.outputs.catalogue_pin }}
           MAX_RUNS: ${{ steps.inputs.outputs.max_runs }}
+          RECOMPUTE: ${{ steps.inputs.outputs.recompute }}
           STOP_BEFORE: ${{ steps.window.outputs.stop_before }}
+          DEADLINE: ${{ steps.window.outputs.deadline_seconds }}
+          PRODUCER: ${{ steps.prereg.outputs.producer_sha256 }}
           RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
           set -uo pipefail
           raw="$RUNNER_TEMP/raw"
           mkdir -p "$raw" || exit 1
-          manifest_b64=''
-          if [ "$MODE" = report ]; then
-            manifest_b64=$(cat "$RUNNER_TEMP/manifest.b64") || exit 1
-            [[ "$manifest_b64" =~ ^[A-Za-z0-9+/=]+$ ]] || exit 1
-          fi
+          [[ "$DEADLINE" =~ ^[0-9]+$ ]] || exit 1
+          [ -z "$PRODUCER" ] || [[ "$PRODUCER" =~ ^[0-9a-f]{64}$ ]] || exit 1
           rc=0
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' FROM='$FROM' TO='$TO' MAX_RUNS='$MAX_RUNS' STOP_BEFORE='$STOP_BEFORE' RUN_ID='$RUN_ID' MANIFEST_B64='$manifest_b64' bash -s" \
+            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' CATALOGUE_PIN='$CATALOGUE_PIN' MAX_RUNS='$MAX_RUNS' RECOMPUTE='$RECOMPUTE' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' PRODUCER='$PRODUCER' RUN_ID='$RUN_ID' bash -s" \
             > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
           set -uo pipefail
           APP_DIR=/opt/chief-of-staff-digital
           cd "$APP_DIR" || exit 10
-          if [ -e /run/c3po-security/reboot.pending ]; then
-            echo 'Security reboot pending; the backtest must wait for recovery' >&2
-            exit 11
-          fi
+          for flag in /run/c3po-security/reboot.pending /var/run/reboot-required; do
+            if [ -e "$flag" ]; then
+              echo "reboot pending ($flag): the backtest must wait for recovery" >&2
+              exit 11
+            fi
+          done
           compose=(docker compose --env-file .env -f c3po/compose.yml)
           api=$("${compose[@]}" ps -q api) || exit 12
           [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
           state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
           [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
           readonly_session=(-e 'PGOPTIONS=-c default_transaction_read_only=on')
-          grid=(--market US --price-pinned-at "$PIN" --statements vintages --step-sessions 5)
-          [ -z "$FROM" ] || grid+=(--from "$FROM")
-          [ -z "$TO" ] || grid+=(--to "$TO")
+          if [ "$MODE" = host-check ]; then
+            { df -P / /var/lib/docker /mnt/day-d-data 2>/dev/null || true; } | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
+            awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {sub(":", "", $1); print "MEM " $1 " " $2}' /proc/meminfo || exit 13
+            exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null
+          fi
+          writes=0
+          case "$MODE" in price-backfill|fetch|grid) writes=1 ;; esac
+          if [ "$writes" = 1 ] || [ "$MODE" = report ]; then
+            # no R2D2/massive host job active, none due before this run's window ends (+ 60 min), no ingestion running
+            limit=$(( $(date -d "$STOP_BEFORE" +%s) + 3600 )) || exit 18
+            active=$(systemctl list-units --type=service --state=active,activating,reloading --no-legend --plain 'r2d2*' 'c3po-massive*' 2>/dev/null | awk 'NF {print $1}')
+            [ -z "$active" ] || { echo 'an R2D2/massive host service is active: the backtest must wait' >&2; exit 19; }
+            for timer in $(systemctl list-units --type=timer --all --no-legend --plain 'r2d2*' 'c3po-massive*' 2>/dev/null | awk 'NF {print $1}'); do
+              next=$(systemctl show -p NextElapseUSecRealtime --value "$timer" 2>/dev/null) || next=''
+              if [ -z "$next" ] || [ "$next" = n/a ]; then
+                continue
+              fi
+              next_epoch=$(date -d "$next" +%s 2>/dev/null) || continue
+              if [ "$next_epoch" -le "$limit" ]; then
+                echo "an R2D2/massive host timer fires before this run's window ends + 60 min" >&2
+                exit 19
+              fi
+            done
+            preflight=$("${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null) || exit 20
+            running=$(printf '%s' "$preflight" | python3 -c 'import json, sys; print(int(json.load(sys.stdin)["ingestion_runs_running_12h"]))') || exit 20
+            [ "$running" = 0 ] || { echo 'an ingestion run is running: the backtest must wait' >&2; exit 21; }
+          fi
+          if [ "$writes" = 1 ]; then
+            avail_kb=$(df -P /var/lib/docker | awk 'NR == 2 {print $4}') || exit 22
+            mem_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) || exit 22
+            [[ "$avail_kb" =~ ^[0-9]+$ ]] && [[ "$mem_kb" =~ ^[0-9]+$ ]] || exit 22
+            case "$MODE" in
+              price-backfill) reserve=2097152 ;;
+              fetch) reserve=524288 ;;
+              grid) reserve=$((MAX_RUNS * 2 * 10240)) ;;
+            esac
+            need=$((6291456 + reserve))
+            [ "$avail_kb" -ge "$need" ] || { echo "free disk ${avail_kb} KiB below ${need} KiB (6 GiB + the mode's reserve)" >&2; exit 23; }
+            [ "$mem_kb" -ge 3145728 ] || { echo "available memory ${mem_kb} KiB below 3 GiB" >&2; exit 24; }
+            exec 9>>"$APP_DIR/runtime/security/deployment.lock" || exit 17
+            flock -s -n 9 || { echo 'a deploy holds the deployment lock: the backtest must wait' >&2; exit 17; }
+            echo "PREFLIGHT disk_kb=$avail_kb mem_kb=$mem_kb"
+          fi
+          run=(timeout -s TERM -k 120 "$DEADLINE" nice -n 10 python -m)
           case "$MODE" in
-            host-check)
-              { df -P / /var/lib/docker 2>/dev/null || true; } | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
-              exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null
-              ;;
             dry-run)
-              exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid "${grid[@]}" --dry-run </dev/null
+              exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --price-pinned-at "$PIN" \
+                --catalogue-pinned-at "$CATALOGUE_PIN" --statements vintages --step-sessions 5 --dry-run </dev/null
               ;;
             price-backfill)
               for market in NASDAQ NYSE; do
-                "${compose[@]}" exec -T api python -m app.valuation_price_history --market "$market" --backfill --months 120 </dev/null || exit 14
+                "${compose[@]}" exec -T api "${run[@]}" app.valuation_price_history --market "$market" --backfill --months 120 </dev/null || exit 14
               done
               ;;
             fetch)
-              "${compose[@]}" exec -T api python -m app.valuation_pit_rerun --market NASDAQ --fetch </dev/null || exit 15
-              "${compose[@]}" exec -T api python -m app.valuation_pit_rerun --market NYSE --fetch --no-macro </dev/null || exit 15
+              "${compose[@]}" exec -T api "${run[@]}" app.valuation_pit_rerun --market NASDAQ --fetch </dev/null || exit 15
+              "${compose[@]}" exec -T api "${run[@]}" app.valuation_pit_rerun --market NYSE --fetch --no-macro </dev/null || exit 15
               ;;
             grid)
-              exec "${compose[@]}" exec -T api python -m app.valuation_pit_grid "${grid[@]}" --max-runs "$MAX_RUNS" --stop-before "$STOP_BEFORE" \
-                --owner-order-sha256 "$ORDER" --manifest-out "/tmp/valuation-pit-grid-$RUN_ID.json" </dev/null
+              recompute=()
+              [ "$RECOMPUTE" != true ] || recompute=(--recompute-existing)
+              exec "${compose[@]}" exec -T api "${run[@]}" app.valuation_pit_grid --market US --price-pinned-at "$PIN" --catalogue-pinned-at "$CATALOGUE_PIN" \
+                --statements vintages --step-sessions 5 --max-runs "$MAX_RUNS" --stop-before "$STOP_BEFORE" --owner-order-sha256 "$ORDER" \
+                --expect-producer-sha256 "$PRODUCER" "${recompute[@]}" --manifest-out "/tmp/valuation-pit-grid-$RUN_ID.json" </dev/null
               ;;
             report)
-              printf '%s' "$MANIFEST_B64" | base64 -d | gunzip | "${compose[@]}" exec -T "${readonly_session[@]}" api \
-                python -m app.valuation_pit_backtest_report --manifest - --prereg /legacy/c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md
+              echo 'PREFLIGHT report ok'
               ;;
             *)
               echo 'unknown mode' >&2
@@ -328,11 +531,32 @@ jobs:
           echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
           printf 'rc=%s\n' "$rc" >> "$GITHUB_OUTPUT" || exit 1
 
+      - name: Run the report on the host
+        id: report
+        if: inputs.mode == 'report' && steps.host.outputs.rc == '0'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          rc=0
+          # the manifest travels on stdin (never in argv); the remote command is fixed text
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api python -m app.valuation_pit_backtest_report --manifest - --prereg /legacy/c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md" \
+            < "$RUNNER_TEMP/manifest/manifest.json" > "$raw/report.txt" 2>> "$raw/stderr.log" || rc=$?
+          echo "remote report exit status: $rc"
+          cp "$raw/report.txt" "$raw/stdout.txt" || exit 1
+          printf 'rc=%s\n' "$rc" >> "$GITHUB_OUTPUT" || exit 1
+
       - name: Verify and keep aggregates only
         id: verify
         env:
           MODE: ${{ steps.inputs.outputs.mode }}
           ORDER: ${{ steps.inputs.outputs.order }}
+          RC: ${{ inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc }}
           EXPECTED_MANIFEST: ${{ inputs.manifest_sha256 }}
           PREREG_COMMIT: ${{ inputs.prereg_commit }}
           RUN_ID: ${{ github.run_id }}
@@ -353,8 +577,9 @@ jobs:
 
           source, out, prereg, prereg_at_commit, producer_path = (Path(arg) for arg in sys.argv[1:6])
           mode = os.environ["MODE"]
+          partial = (os.environ.get("RC") or "1") != "0"  # the host step failed: publish what was found, marked partial; the job fails after the upload
           text = source.read_text(encoding="utf-8") if source.exists() else ""
-          summary = [f"## Valuation PIT backtest US — {mode}", ""]
+          summary = [f"## Valuation PIT backtest US — {mode}" + (" (PARTIAL: the host step failed)" if partial else ""), ""]
 
 
           def canonical(value):
@@ -386,21 +611,31 @@ jobs:
               return reduced
 
 
-          metadata = {"run_id": os.environ["RUN_ID"], "workflow_revision": os.environ["REVISION"], "mode": mode,
+          metadata = {"run_id": os.environ["RUN_ID"], "workflow_revision": os.environ["REVISION"], "mode": mode, "partial": partial,
                       "owner_order_sha256": os.environ.get("ORDER") or None}
+          preflight = [line.split(" ", 1)[1] for line in text.splitlines() if line.startswith("PREFLIGHT ")]
+          if preflight:
+              metadata["preflight"] = preflight
           if mode == "host-check":
               disks = [line.split()[1:] for line in text.splitlines() if line.startswith("DISK ")]
+              memory = {line.split()[1]: int(line.split()[2]) for line in text.splitlines() if line.startswith("MEM ")}
               found = [document for document in documents() if document.get("kind") == "host_check"]
               if len(found) != 1:
                   sys.exit("no host check in the output")
-              result = {"disk": [{"available_kb": int(avail), "size_kb": int(size), "mount": mount} for avail, size, mount in disks], **found[0]}
+              result = {"disk": [{"available_kb": int(avail), "size_kb": int(size), "mount": mount} for avail, size, mount in disks], "memory_kb": memory, **found[0]}
               (out / "host-check.json").write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
               for disk in result["disk"]:
                   summary.append(f"- disk {disk['mount']}: {disk['available_kb'] // 1024} MiB free of {disk['size_kb'] // 1024} MiB")
+              summary.append(f"- memory: {memory.get('MemAvailable', 0) // 1024} MiB available; swap {memory.get('SwapFree', 0) // 1024} MiB free of "
+                             f"{memory.get('SwapTotal', 0) // 1024} MiB; running ingestions {found[0].get('ingestion_runs_running_12h')}")
               for market, publication in sorted((found[0].get("publications") or {}).items()):
                   if publication:
                       summary.append(f"- {market}: publication `{publication['publication_id']}` available {publication['available_at']}, window "
                                      f"{publication['from']} … {publication['to']}, {publication['symbols']} symbols, {publication['bars']} bars")
+              docker = [disk for disk in result["disk"] if disk["mount"] in ("/var/lib/docker", "/")]
+              if docker and min(disk["available_kb"] for disk in docker) < 6 * 1024 * 1024:
+                  (out / "metadata.json").write_text(json.dumps({**metadata, "disk_below_6_gib": True}, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+                  sys.exit("less than 6 GiB free for the database: the backtest must not start (the host check is published as an error)")
           elif mode == "dry-run":
               found = [document for document in documents() if document.get("kind") == "dry_run"]
               if len(found) != 1:
@@ -411,7 +646,7 @@ jobs:
                              f"{plan['prereg_grid_sessions']}); reusable runs {plan['reusable']['runs']}")
           elif mode in ("price-backfill", "fetch"):
               found = [aggregate(document) for document in documents()]
-              if len(found) != 2:
+              if len(found) != 2 and not partial:
                   sys.exit(f"{mode}: expected one result per exchange, got {len(found)}")
               (out / f"{mode}.json").write_text(json.dumps(found, sort_keys=True, indent=2) + "\n", encoding="utf-8")
               for item in found:
@@ -419,74 +654,86 @@ jobs:
           elif mode == "grid":
               found = documents()
               final = [document for document in found if document.get("kind") == "manifest"]
-              if len(final) != 1:
-                  sys.exit("the grid printed no manifest")
-              manifest = final[0]["manifest"]
-              digest = hashlib.sha256(canonical({key: value for key, value in manifest.items() if key != "manifest_sha256"})).hexdigest()
-              if digest != manifest.get("manifest_sha256") or digest != final[0].get("manifest_sha256"):
-                  sys.exit("the grid manifest's sha256 does not recompute")
-              if manifest.get("owner_order_sha256") != (os.environ.get("ORDER") or None):
-                  sys.exit("the manifest does not carry this run's owner order")
-              (out / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
               receipts = [document for document in found if document.get("kind") == "t"]
               (out / "receipts.jsonl").write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in receipts), encoding="utf-8")
               elapsed = sum(float(item.get("elapsed_seconds") or 0) for item in receipts)
-              metadata.update({"manifest_sha256": digest, "complete": manifest.get("complete"), "entries": len(manifest.get("grid") or []),
-                               "remaining": manifest.get("remaining"), "stopped": manifest.get("stopped"), "elapsed_seconds_this_chunk": elapsed})
-              summary.append(f"- manifest_sha256 `{digest}`; complete {manifest.get('complete')}; entries {len(manifest.get('grid') or [])}; "
-                             f"remaining {manifest.get('remaining')}; stopped {manifest.get('stopped')}")
-              summary.append(f"- this chunk: {len(receipts)} instants in {elapsed:.0f} s ({elapsed / max(1, len(receipts)):.1f} s per instant)")
+              metadata.update({"instants_this_chunk": len(receipts), "elapsed_seconds_this_chunk": elapsed,
+                               "peak_rss_kb": max([int(item.get("peak_rss_kb") or 0) for item in receipts] or [0])})
+              if len(final) != 1:
+                  if not partial:
+                      sys.exit("the grid printed no manifest")
+              else:
+                  manifest = final[0]["manifest"]
+                  digest = hashlib.sha256(canonical({key: value for key, value in manifest.items() if key != "manifest_sha256"})).hexdigest()
+                  if digest != manifest.get("manifest_sha256") or digest != final[0].get("manifest_sha256"):
+                      sys.exit("the grid manifest's sha256 does not recompute")
+                  if manifest.get("owner_order_sha256") != (os.environ.get("ORDER") or None):
+                      sys.exit("the manifest does not carry this run's owner order")
+                  (out / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+                  metadata.update({"manifest_sha256": digest, "complete": manifest.get("complete"), "entries": len(manifest.get("grid") or []),
+                                   "remaining": manifest.get("remaining"), "stopped": manifest.get("stopped")})
+                  summary.append(f"- manifest_sha256 `{digest}`; complete {manifest.get('complete')}; entries {len(manifest.get('grid') or [])}; "
+                                 f"remaining {manifest.get('remaining')}; stopped {manifest.get('stopped')}")
+              summary.append(f"- this chunk: {len(receipts)} instants in {elapsed:.0f} s ({elapsed / max(1, len(receipts)):.1f} s per instant); "
+                             f"peak RSS {metadata['peak_rss_kb'] // 1024} MiB")
           elif mode == "report":
               found = documents()
-              if len(found) != 1:
-                  sys.exit("the report output is not a single JSON document (content not printed)")
-              receipt = found[0]
-              if set(receipt) != {"schema", "payload", "payload_sha256", "provenance"}:
-                  sys.exit("unexpected receipt shape")
-              payload = receipt["payload"]
-              if hashlib.sha256(canonical(payload)).hexdigest() != receipt["payload_sha256"]:
-                  sys.exit("payload_sha256 does not recompute")
-              if receipt["schema"] != "VALUATION-PIT-BACKTEST-REPORT-v1" or payload.get("schema") != receipt["schema"]:
-                  sys.exit("unexpected schema")
-              prereg_bytes = prereg.read_bytes()
-              workflow_prereg = hashlib.sha256(prereg_bytes).hexdigest()
-              if payload.get("prereg_sha256") != workflow_prereg:
-                  sys.exit("the deployed pre-registration is not the one of this workflow revision: the reading is void")
-              if not prereg_at_commit.exists() or prereg_at_commit.read_bytes() != prereg_bytes:
-                  sys.exit("the pre-registration changed since the commit of its hash receipt: the reading is void")
-              pinned = {}
-              for line in prereg_bytes.decode("utf-8").splitlines():
-                  match = re.match(r"^(file|object) (\S+) ([0-9a-f]{64})$", line.strip())
-                  if match:
-                      pinned[f"{match.group(1)} {match.group(2)}"] = match.group(3)
-              code = payload.get("code") or {}
-              ran = {**{f"file {name}": digest for name, digest in (code.get("files") or {}).items()},
-                     **{f"object {name}": digest for name, digest in (code.get("objects") or {}).items()}}
-              if not pinned:
-                  sys.exit("the pre-registration pins no code: the reading is void")
-              if ran != pinned:
-                  differing = sorted(key for key in pinned.keys() | ran.keys() if pinned.get(key) != ran.get(key))
-                  sys.exit("the deployed code is not the pinned code (" + ", ".join(differing) + "): the reading is void")
-              if (payload.get("code_binding") or {}).get("status") != "BOUND":
-                  sys.exit("the receipt does not declare its code BOUND: the reading is void")
-              build_sha = code.get("build_sha")
-              if not isinstance(build_sha, str) or re.fullmatch(r"[0-9a-f]{40}", build_sha) is None:
-                  sys.exit("the deployed revision is not a commit sha (C3PO_BUILD_SHA): the reading cannot be attributed")
-              if (payload.get("manifest") or {}).get("manifest_sha256") != os.environ["EXPECTED_MANIFEST"]:
-                  sys.exit("the receipt was not computed over the published grid manifest")
-              producer = json.loads(producer_path.read_text(encoding="utf-8")) if producer_path.exists() else {}
-              engine = ((payload.get("runs") or {}).get("producer") or {}).get("engine_files")
-              if not producer or engine != producer:
-                  sys.exit("the grid's producer (engine files of its runs) is not the code of the prereg commit: the reading is void")
-              (out / "report.json").write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-              decided = payload["verdict"]
-              metadata.update({"deployed_build_sha": build_sha, "payload_sha256": receipt["payload_sha256"], "prereg_sha256": workflow_prereg,
-                               "prereg_commit": os.environ["PREREG_COMMIT"], "manifest_sha256": os.environ["EXPECTED_MANIFEST"], "code_pins_verified": len(pinned),
-                               "verdict": decided["status"]})
-              summary += [f"- payload_sha256 `{receipt['payload_sha256']}`; prereg `{workflow_prereg}` (commit `{os.environ['PREREG_COMMIT']}`); "
-                          f"{len(pinned)} code pins verified; deployed revision `{build_sha}`",
-                          f"- **verdict {decided['status']}** — IC executable h=21 {decided['ic_estimate']} (p_greater {decided['ic_p_greater']}), blocks "
-                          f"{decided['blocks']}, halves {decided['halves']}, reasons {decided['reasons']}"]
+              if partial:
+                  summary.append("- the report did not complete: nothing is published but this metadata")
+              else:
+                  if len(found) != 1:
+                      sys.exit("the report output is not a single JSON document (content not printed)")
+                  receipt = found[0]
+                  if set(receipt) != {"schema", "payload", "payload_sha256", "provenance"}:
+                      sys.exit("unexpected receipt shape")
+                  payload = receipt["payload"]
+                  if hashlib.sha256(canonical(payload)).hexdigest() != receipt["payload_sha256"]:
+                      sys.exit("payload_sha256 does not recompute")
+                  if receipt["schema"] != "VALUATION-PIT-BACKTEST-REPORT-v1" or payload.get("schema") != receipt["schema"]:
+                      sys.exit("unexpected schema")
+                  prereg_bytes = prereg.read_bytes()
+                  workflow_prereg = hashlib.sha256(prereg_bytes).hexdigest()
+                  if payload.get("prereg_sha256") != workflow_prereg:
+                      sys.exit("the deployed pre-registration is not the one of this workflow revision: the reading is void")
+                  if not prereg_at_commit.exists() or prereg_at_commit.read_bytes() != prereg_bytes:
+                      sys.exit("the pre-registration changed since the commit of its hash receipt: the reading is void")
+                  pinned = {}
+                  for line in prereg_bytes.decode("utf-8").splitlines():
+                      match = re.match(r"^(file|object) (\S+) ([0-9a-f]{64})$", line.strip())
+                      if match:
+                          pinned[f"{match.group(1)} {match.group(2)}"] = match.group(3)
+                  code = payload.get("code") or {}
+                  ran = {**{f"file {name}": digest for name, digest in (code.get("files") or {}).items()},
+                         **{f"object {name}": digest for name, digest in (code.get("objects") or {}).items()}}
+                  if not pinned:
+                      sys.exit("the pre-registration pins no code: the reading is void")
+                  if ran != pinned:
+                      differing = sorted(key for key in pinned.keys() | ran.keys() if pinned.get(key) != ran.get(key))
+                      sys.exit("the deployed code is not the pinned code (" + ", ".join(differing) + "): the reading is void")
+                  if (payload.get("code_binding") or {}).get("status") != "BOUND":
+                      sys.exit("the receipt does not declare its code BOUND: the reading is void")
+                  build_sha = code.get("build_sha")
+                  if not isinstance(build_sha, str) or re.fullmatch(r"[0-9a-f]{40}", build_sha) is None:
+                      sys.exit("the deployed revision is not a commit sha (C3PO_BUILD_SHA): the reading cannot be attributed")
+                  if (payload.get("manifest") or {}).get("manifest_sha256") != os.environ["EXPECTED_MANIFEST"]:
+                      sys.exit("the receipt was not computed over the published grid manifest")
+                  producer = json.loads(producer_path.read_text(encoding="utf-8")) if producer_path.exists() else {}
+                  engine = ((payload.get("runs") or {}).get("producer") or {}).get("engine_files")
+                  if not producer or engine != producer:
+                      sys.exit("the grid's producer (the producer files of its runs) is not the code of the prereg commit: the reading is void")
+                  (out / "report.json").write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+                  decided = payload["verdict"]
+                  metadata.update({"deployed_build_sha": build_sha, "payload_sha256": receipt["payload_sha256"], "prereg_sha256": workflow_prereg,
+                                   "prereg_commit": os.environ["PREREG_COMMIT"], "manifest_sha256": os.environ["EXPECTED_MANIFEST"],
+                                   "code_pins_verified": len(pinned), "verdict": decided["status"]})
+                  summary.append(f"- payload_sha256 `{receipt['payload_sha256']}`; prereg `{workflow_prereg}` (commit `{os.environ['PREREG_COMMIT']}`); "
+                                 f"{len(pinned)} code pins verified; deployed revision `{build_sha}`")
+                  if decided["status"] == "VOID":  # a VOID reading shows no statistic, here either
+                      summary.append(f"- **verdict VOID** — reasons {decided['reasons']}")
+                  else:
+                      summary.append(f"- **verdict {decided['status']}** — IC executable h=21 {decided['ic_estimate']} (p_greater {decided['ic_p_greater']}), blocks "
+                                     f"{decided['blocks']}, halves {decided['halves']}, persistence p {decided['persistence_p_greater']}, coverage "
+                                     f"{decided['coverage_records_share']} / {decided['coverage_screened_names_median']}, reasons {decided['reasons']}")
           else:
               sys.exit("unknown mode")
           (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
@@ -504,9 +751,28 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Stop the host process on cancel or failure
+        if: (cancelled() || failure()) && steps.sshkey.outcome == 'success' && (inputs.mode == 'price-backfill' || inputs.mode == 'fetch' || inputs.mode == 'grid')
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T api pkill -TERM -f 'app.valuation_(pit_grid|price_history|pit_rerun)'" \
+            > /dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo 'a backtest process was running in the api container: SIGTERM sent (the grid writes its manifest and stops between runs)' ;;
+            1) echo 'no backtest process was running in the api container' ;;
+            *) echo "the stop request failed (status $rc): check the api container by hand" >&2 ;;
+          esac
+
       - name: Fail when the host step failed
         env:
-          RC: ${{ steps.host.outputs.rc }}
+          RC: ${{ inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc }}
         run: |
           if [ "$RC" != 0 ]; then
             echo "the host step exited with status $RC (its stderr is kept private)" >&2
