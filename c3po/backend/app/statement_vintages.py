@@ -331,7 +331,7 @@ class StatementVintageStore:
                 """,
                 (market, issuer_key, concepts),
             ).fetchall()
-            stored = [dict(zip(("market", "issuer_key", "source", "concept", "unit", "period_start", "period_end", "doc_id",
+            stored: list[dict[str, Any]] = [dict(zip(("market", "issuer_key", "source", "concept", "unit", "period_start", "period_end", "doc_id",
                                 "document_version", "accepted_at"), row)) for row in stored_rows]
             earliest = self._earliest_by_identity(stored)
             existing_keys = {_natural_key(row) for row in stored}

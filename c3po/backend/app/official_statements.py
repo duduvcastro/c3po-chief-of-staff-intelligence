@@ -294,7 +294,7 @@ def _merge_statement_payloads(base: Any, incoming: dict[str, Any]) -> dict[str, 
     for period, document in (incoming_metrics.get("periodDocuments") or {}).items():
         document = copy.deepcopy(document)
         prior = documents.get(period)
-        if _same_document(prior, document) and document.get("receivedOn") is None:
+        if prior is not None and _same_document(prior, document) and document.get("receivedOn") is None:
             document["receivedOn"] = prior.get("receivedOn")  # the same version: a receipt seen before is still true
         documents[period] = document
     kept = {row["date"] for field in STATEMENT_FIELDS for row in merged[field]}
