@@ -23,6 +23,7 @@ import pytest
 
 from app import valuation_official as official
 from app import valuation_panel as panel
+from app import valuation_pit_panel as pit_panel
 from app import valuation_pit_rerun as pit
 from app import valuation_price_history as series
 from app import valuation_v2_engine, valuation_v3_engine, valuation_v3_macro, valuation_v3_shadow
@@ -416,7 +417,7 @@ def test_rerun_persists_one_snapshot_and_explicit_records_with_the_three_clocks_
     consensus = aaa["decomposition"]["consensus"]
     assert consensus["tp"] == 140.0 and consensus["horizon"] == "N/D" and consensus["currency"] == "USD" and consensus["published_at"] == (T - timedelta(days=1)).isoformat()
     assert consensus["source"] == "fmp:price-target-news" and aaa["analyst_count"] == 3 and len(consensus["payload_sha256"]) == 64
-    assert panel._consensus_of(aaa)[1] == "consensus_unattested:horizon"  # design §3: the horizon N/D attests nothing — the panel never compares it
+    assert pit_panel.consensus_of(aaa)[1] == "consensus_unattested:horizon"  # design §3: the horizon N/D attests nothing — the PIT panel never compares it
     assert provenance["run_key"] == receipt["run_key"] and provenance["declared_assumptions"] == pit.DECLARED_ASSUMPTIONS and provenance["beta"]["proxy_includes_symbol"] is True
     assert run.manifest["declared_assumptions"] == pit.DECLARED_ASSUMPTIONS and "consensus_published_date_zone" in pit.DECLARED_ASSUMPTIONS
     bbb = records["BBB"]
@@ -1271,7 +1272,7 @@ def test_changed_inputs_make_a_new_run_key_naming_the_superseded_one() -> None:
 
 def _panel_cell(database: Database, *, cut: datetime) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     reader = series.PriceHistoryService(_settings(), database, panel._NoNetworkHttp())
-    receipt, detail = panel.PanelService(database, price_history=reader).run(cut=cut, markets=["NASDAQ"], sources=[pit.SOURCE])
+    receipt, detail = pit_panel.PitPanelService(database, price_history=reader).run(cut=cut, markets=["NASDAQ"], sources=[pit.SOURCE])
     return receipt["payload"]["results"]["NASDAQ"][pit.SOURCE], detail
 
 
@@ -1282,7 +1283,7 @@ def test_the_panel_serves_the_current_run_and_refuses_the_superseded_one() -> No
     _publish_sources(database, symbols=("AAA",), at=VINTAGE_AT + timedelta(hours=1), scale={"AAA": 1.3}, catalogue=False)
     second, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=1))
     assert second["supersedes"] == first["run_key"] and len(database._valuation_predictions) == 12
-    assert panel.superseded_run_keys(database, market="NASDAQ", as_of=T.isoformat()) == {first["run_key"]}
+    assert pit_panel.superseded_run_keys(database, market="NASDAQ", as_of=T.isoformat()) == {first["run_key"]}
     cell, detail = _panel_cell(database, cut=NOW + timedelta(hours=2))
     assert cell["records"] == {"read": 12, "admissible": 6, "refused": {"superseded_run": 6}, "reruns": 0}  # never ``duplicate_session`` on the OLD cycle
     assert {row["cycle_id"] for row in detail} == {second["cycle_id"]} and len(detail) == 6
@@ -1290,11 +1291,11 @@ def test_the_panel_serves_the_current_run_and_refuses_the_superseded_one() -> No
     _publish_sources(database, symbols=("BBB",), at=VINTAGE_AT + timedelta(hours=2), scale={"BBB": 0.8}, catalogue=False)
     third, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=3))
     assert third["supersedes"] == second["run_key"]
-    assert panel.superseded_run_keys(database, market="NASDAQ", as_of=T.isoformat()) == {first["run_key"], second["run_key"]}
+    assert pit_panel.superseded_run_keys(database, market="NASDAQ", as_of=T.isoformat()) == {first["run_key"], second["run_key"]}
     cell, detail = _panel_cell(database, cut=NOW + timedelta(hours=4))
     assert cell["records"]["refused"] == {"superseded_run": 12} and {row["cycle_id"] for row in detail} == {third["cycle_id"]}
     # another T is untouched by the chain
-    assert panel.superseded_run_keys(database, market="NASDAQ", as_of=(T - timedelta(days=7)).isoformat()) == set()
+    assert pit_panel.superseded_run_keys(database, market="NASDAQ", as_of=(T - timedelta(days=7)).isoformat()) == set()
 
 
 def test_the_panel_never_mixes_a_crashed_partial_cycle_with_the_run_that_superseded_it(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1418,7 +1419,7 @@ def test_the_panel_classifies_every_pit_record_retrospective_and_never_in_the_de
     database = _ready()
     _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
     reader = series.PriceHistoryService(_settings(), database, panel._NoNetworkHttp())
-    service = panel.PanelService(database, price_history=reader)
+    service = pit_panel.PitPanelService(database, price_history=reader)
     receipt, detail = service.run(cut=NOW + timedelta(hours=1), markets=["NASDAQ"], sources=[pit.SOURCE])
     cell = receipt["payload"]["results"]["NASDAQ"][pit.SOURCE]
     assert cell["records"]["read"] == 6 and cell["records"]["admissible"] == 6 and cell["observations"]["cohort"] == {"retrospective": 6}
@@ -1426,6 +1427,52 @@ def test_the_panel_classifies_every_pit_record_retrospective_and_never_in_the_de
     assert cell["decision"]["status"] == "UNMEASURED" and "no_live_cohort" in cell["decision"]["reasons"]
     assert all(row["cohort"] == "retrospective" and row["source"] == "v3_2_shadow" for row in detail)
     assert all(row["horizons"]["126"]["status"] == "labelled" for row in detail)  # T + 126 sessions closed long before the cut: measured, apart
+
+
+def test_the_pit_rules_live_outside_the_pinned_panel_which_reads_the_same_store_unchanged(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+                                                                                          tmp_path: Path) -> None:
+    """``valuation_panel.py`` is pinned byte for byte by PREREG_VALUATION_DECISOR_V1 §17: the unattested horizon and the
+    superseded run are the PIT panel's (``valuation_pit_panel``). On the same store the pinned panel reads AAA's ``N/D``
+    block as present; the PIT panel reads it ``consensus_unattested:horizon``, never compares it, keeps the literal in
+    the detail, and is otherwise the panel's reading; its receipt names the rules under its own schema."""
+    database = _ready(targets={"AAA": [_target("H1", T - timedelta(days=3), 130.0), _target("H2", T - timedelta(days=2), 140.0), _target("H3", T - timedelta(days=1), 150.0)]})
+    _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    stored = [dict(record) for record in database._valuation_predictions]
+    reader = series.PriceHistoryService(_settings(), database, panel._NoNetworkHttp())
+    cut = NOW + timedelta(hours=1)
+    plain, plain_detail = panel.PanelService(database, price_history=reader).run(cut=cut, markets=["NASDAQ"], sources=[pit.SOURCE])
+    service = pit_panel.PitPanelService(database, price_history=reader)
+    receipt, detail = service.run(cut=cut, markets=["NASDAQ"], sources=[pit.SOURCE])
+    plain_aaa, pit_aaa = (next(row for row in rows if row["symbol"] == "AAA") for rows in (plain_detail, detail))
+    assert plain_aaa["consensus_status"] == "present" and plain_aaa["horizons"]["126"]["e_consensus"] is not None  # the pinned panel knows no such literal
+    assert pit_aaa["consensus_status"] == "consensus_unattested:horizon" and pit_aaa["consensus"]["horizon"] == "N/D" and pit_aaa["consensus"]["tp"] == 140.0
+    assert all(entry["e_consensus"] is None for entry in pit_aaa["horizons"].values())
+    unchanged = lambda row: {**row, "consensus_status": None, "horizons": {h: {**e, "e_consensus": None} for h, e in row["horizons"].items()}}  # noqa: E731
+    assert [unchanged(row) for row in detail] == [unchanged(row) for row in plain_detail]  # everything else is the panel's own reading
+    assert database._valuation_predictions == stored  # nothing written, the stored block keeps its N/D
+    cell, plain_cell = receipt["payload"]["results"]["NASDAQ"][pit.SOURCE], plain["payload"]["results"]["NASDAQ"][pit.SOURCE]
+    assert cell["records"] == plain_cell["records"] == {"read": 6, "admissible": 6, "refused": {}, "reruns": 0}
+    assert receipt["schema"] == receipt["payload"]["schema"] == pit_panel.PIT_SCHEMA_VERSION and receipt["payload"]["pit_rules"] == pit_panel.pit_rules()
+    assert receipt["payload"]["protocol"] == plain["payload"]["protocol"] == panel.protocol() and receipt["payload_sha256"] == official.canonical_sha256(receipt["payload"])
+    assert plain["schema"] == panel.SCHEMA_VERSION and "pit_rules" not in plain["payload"]
+    # a reused instance reads exactly what a new one reads (one view per measure call)
+    again, again_detail = service.run(cut=cut, markets=["NASDAQ"], sources=[pit.SOURCE])
+    assert again == receipt and again_detail == detail
+    # the CLI: v3_2_shadow by default, aggregates only, the private detail exclusive and 0600
+    monkeypatch.setattr(pit_panel, "get_settings", _settings)
+    monkeypatch.setattr(pit_panel, "Database", lambda settings: database)
+    path = tmp_path / "pit-detail.json"
+    assert pit_panel.main(["--as-of", cut.isoformat(), "--markets", "NASDAQ", "--detail", str(path)]) == 0
+    out = capsys.readouterr().out
+    printed = json.loads(out)
+    assert printed["schema"] == pit_panel.PIT_SCHEMA_VERSION and printed["payload"]["sources"] == [pit.SOURCE] and all(symbol not in out for symbol in SYMBOLS)
+    assert printed["payload"]["results"]["NASDAQ"][pit.SOURCE]["records"] == cell["records"] and stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written["schema"] == f"{pit_panel.PIT_SCHEMA_VERSION}:detail" and written["payload_sha256"] == printed["payload_sha256"] and len(written["rows"]) == 6
+    for arguments in (["--as-of", "2026-09-12T00:00:00"], ["--as-of", cut.isoformat(), "--markets", "XETRA"], ["--as-of", cut.isoformat(), "--detail", str(path)]):
+        with pytest.raises(SystemExit) as refused:
+            pit_panel.main(arguments)
+        assert refused.value.code == 2 and capsys.readouterr().out == ""
 
 
 # ------------------------------------------------------------------ --fetch and the CLI
