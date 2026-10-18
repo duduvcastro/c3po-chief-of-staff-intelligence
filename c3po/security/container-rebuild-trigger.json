@@ -1,9 +1,18 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-38872519156",
+  "artifact_name": "c3po-production-container-vulnerabilities-39110193842",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 14,
+  "finding_total": 16,
   "findings": [
+    {
+      "fixed_version": "2.9.0-r0",
+      "image": "web",
+      "installed_version": "2.8.5-r0",
+      "package": "libexpat",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-77214"
+    },
     {
       "fixed_version": "1.26.9, 1.27.2",
       "image": "database",
@@ -30,6 +39,15 @@
       "severity": "high",
       "target": "usr/local/bin/gosu",
       "vulnerability_id": "CVE-2026-97031"
+    },
+    {
+      "fixed_version": "2.9.0-r0",
+      "image": "web",
+      "installed_version": "2.8.5-r0",
+      "package": "libexpat",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-102633"
     },
     {
       "fixed_version": "1.26.9, 1.27.2",
@@ -110,6 +128,15 @@
       "package": "stdlib",
       "severity": "medium",
       "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-97030"
+    },
+    {
+      "fixed_version": "1.26.9, 1.27.2",
+      "image": "database",
+      "installed_version": "v1.25.13",
+      "package": "stdlib",
+      "severity": "medium",
+      "target": "usr/local/bin/gosu",
       "vulnerability_id": "CVE-2026-97032"
     },
     {
@@ -120,28 +147,19 @@
       "severity": "low",
       "target": "usr/local/bin/gosu",
       "vulnerability_id": "CVE-2026-56857"
-    },
-    {
-      "fixed_version": "1.26.9, 1.27.2",
-      "image": "database",
-      "installed_version": "v1.25.13",
-      "package": "stdlib",
-      "severity": "unknown",
-      "target": "usr/local/bin/gosu",
-      "vulnerability_id": "CVE-2026-97030"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 3,
+    "high": 4,
     "low": 1,
-    "medium": 9,
-    "unknown": 1
+    "medium": 11,
+    "unknown": 0
   },
-  "generated_at": "2026-10-16T08:17:15.868695+00:00",
-  "remediation_key": "9f042929728ac606c56189f59f80bb5104a9e9c91927918a1c90db4c5be30a18",
-  "report_sha256": "d719d8830c2147d7e24aecf1aae123b707db6d9c1d2b8ba64b510c68911a0ca0",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/38872519156",
+  "generated_at": "2026-10-18T08:08:16.032179+00:00",
+  "remediation_key": "c8caea8eb852a2174770519a97872e235622c1af5c8a32a56dfc655a44c472c5",
+  "report_sha256": "cca7cd7634f4d7349ea1e7cc6d0898d7d49fcd03b75706cf0a543b186b338aae",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/39110193842",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
   "source_revision": "de96aee90a26e9587663ba7a1f6e55a592afcd20"
 }
