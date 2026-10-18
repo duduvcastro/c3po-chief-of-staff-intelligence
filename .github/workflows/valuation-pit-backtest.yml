@@ -15,8 +15,9 @@ run-name: Valuation PIT backtest US (PREREG_VALUATION_PIT_BACKTEST_US_V1) — ${
 # exists at this revision (no symbolic link on its path), hashes to the input and authorises this mode with these pins,
 # flags and cap, not after its deadline. No mode but host-check starts inside the US session (09:00-16:30
 # America/New_York on weekdays) or the nightly window (23:30 of the previous day to 08:15 America/Sao_Paulo: the cycle
-# starts at 00:00). Every process on the host runs under `timeout` with what is left of ONE deadline, 10 minutes before
-# the next window, computed once on the host (a writing leg needs 60 s left, the dry run and the report 10 minutes); a
+# starts at 00:00). Every process on the host but the read-only host check (the host-check mode and the preflight's own
+# host check, both short reads) runs under `timeout` with what is left of ONE deadline, 10 minutes before the next window,
+# computed once on the host (a writing leg needs 60 s left, the dry run and the report 10 minutes); a
 # grid chunk stops before the window; a cancelled or failed run, or a host step that exited non-zero, stops the host
 # process. Writes take the deploy lock SHARED (a deploy in flight refuses the write; a deploy arriving during a write
 # waits 120 s and fails, to be re-run after it; the security reboot controller waits too), check the host (disk, memory,

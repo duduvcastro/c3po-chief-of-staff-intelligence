@@ -60,8 +60,8 @@ computed set is an integrity failure. Changed inputs → a new ``run_key`` namin
 
 Grids (the US backtest): ``--catalogue-pinned-at`` pins the universe catalogue as ``--price-pinned-at`` pins the vintage (a
 pointer, outside ``run_key``; without it nothing changes); every run records the inputs of a point-in-time screen of the
-cross-section (``outputs.screen``: security type, close and market cap at T, the 20-session median dollar volume on the
-as-traded and on the adjusted close — never an engine input) and names its producer in its manifest: every module
+cross-section (``outputs.screen``: security type, close and market cap at T, the 20-session median dollar volume for a
+volume in traded shares and for a split-adjusted one — never an engine input) and names its producer in its manifest: every module
 (``IMPLEMENTATION_FILES``) and the ``Database`` methods its readers call (``IMPLEMENTATION_OBJECTS``).
 
 Phases (§5): ``--fetch`` (one read per symbol through the existing provider HTTP clients, persisted as dated, hashed
@@ -73,6 +73,7 @@ stdout carries aggregates only).
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import importlib
 import json
@@ -94,7 +95,7 @@ from .database import Database
 from .market_data.eodhd import EodhdClient
 from .market_data.fmp import FmpClient
 from .market_data.http import JsonHttpClient
-from .source_identity import object_sha256
+from .source_identity import objects_sha256
 from .valuation_official import (
     SESSION_ZONES,
     SOURCE_V3_2_SHADOW,
@@ -227,7 +228,8 @@ IMPLEMENTATION_OBJECTS: tuple[str, ...] = (  # the Database methods the run's RE
     "app.database.Database._stored_prediction",
 )
 CATALOGUE_ANALYSIS_TYPE = "valuation_universe"
-SCREEN_DOLLAR_VOLUME_SESSIONS = 20  # the point-in-time liquidity of a name: the median as-traded close × volume of its last 20 valid sessions ≤ T
+SCREEN_DOLLAR_VOLUME_SESSIONS = 20  # the point-in-time liquidity of a name: the median dollar volume of its last 20 valid sessions ≤ T
+DOLLAR_VOLUME_BASES: tuple[str, ...] = ("as_traded", "split_adjusted")  # what the provider's volume is: traded shares, or split-adjusted shares
 _RUN_LOCKS: dict[str, threading.Lock] = {}
 _RUN_LOCKS_GUARD = threading.Lock()
 
@@ -318,15 +320,30 @@ def _file_sha256(name: str) -> str:
     return hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
 
 
-def _object_sha256(qualified: str) -> str:
-    """``app.<module>.<Class>.<method>`` hashed from the module's text (``source_identity``: the workflow does the same on
-    the runner from the prereg commit's file)."""
-    _package, module, rest = qualified.split(".", 2)
-    return object_sha256(Path(__file__).with_name(f"{module}.py").read_text(encoding="utf-8"), rest)
+@functools.cache
+def _implementation_identity() -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
+    """The producer of THIS process, computed once (the deployed code does not change under a running process): the sha256
+    of every ``IMPLEMENTATION_FILES`` file, and of every ``IMPLEMENTATION_OBJECTS`` object (``app.<module>.<Class>.<method>``)
+    hashed from its module's text by ``source_identity`` — each module read and parsed once (the workflow does the same on
+    the runner from the prereg commit's files)."""
+    files = tuple((name, _file_sha256(name)) for name in IMPLEMENTATION_FILES)
+    by_module: dict[str, list[str]] = {}
+    for qualified in IMPLEMENTATION_OBJECTS:
+        _package, module, rest = qualified.split(".", 2)
+        by_module.setdefault(module, []).append(rest)
+    digests: dict[str, str] = {}
+    for module, names in by_module.items():
+        digests.update({f"app.{module}.{name}": digest for name, digest in
+                        objects_sha256(Path(__file__).with_name(f"{module}.py").read_text(encoding="utf-8"), names).items()})
+    return files, tuple((name, digests[name]) for name in IMPLEMENTATION_OBJECTS)
+
+
+def implementation_files() -> dict[str, str]:
+    return dict(_implementation_identity()[0])
 
 
 def implementation_objects() -> dict[str, str]:
-    return {name: _object_sha256(name) for name in IMPLEMENTATION_OBJECTS}
+    return dict(_implementation_identity()[1])
 
 
 def module_sha256() -> str:
@@ -900,6 +917,7 @@ class PinnedPrices:
         self._bars: dict[str, dict[str, dict[str, Any]]] = {}
         self._returns: dict[str, dict[str, float]] = {}
         self._capital_events: dict[str, list[str]] = {}
+        self._splits: dict[str, list[tuple[str, float]]] = {}  # the capital events of the WHOLE pinned series, per symbol (screen inputs only)
         self._proxy: dict[str, float] | None = None
         self._calendar_sessions: dict[str, bool] = {}
         self.off_calendar_bars = 0  # bars ≤ T dated off the exchange calendar, excluded (an aggregate: never a symbol)
@@ -942,7 +960,31 @@ class PinnedPrices:
                     continue
                 kept[session] = bar
             self._bars[symbol] = kept
+            self._splits[symbol] = self._split_events(series["bars"])
         return self._bars[symbol]
+
+    def _split_events(self, bars: Mapping[str, Mapping[str, Any]]) -> list[tuple[str, float]]:
+        """``(session, factor)`` of every capital event of the WHOLE pinned series (before and after T): a session where the
+        ratio ``close / adjusted_close`` moves by at least ``CAPITAL_EVENT_MIN_FACTOR`` from the previous valid session of
+        the calendar; ``factor`` = the ratio before ÷ the ratio after (2 for a 2:1 split, 0.1 for a 1:10 reverse split). A
+        dividend moves the ratio by its yield only — under 20 % it is never an event, so the factor is SPLIT-ONLY."""
+        threshold = math.log(CAPITAL_EVENT_MIN_FACTOR)
+        events: list[tuple[str, float]] = []
+        previous: float | None = None
+        for session in sorted(bars):
+            close, adjusted = _positive(bars[session].get(PRICE_LEVEL_FIELD)), _positive(bars[session].get(RETURN_FIELD))
+            if close is None or adjusted is None:
+                continue
+            try:
+                if not self._is_calendar_session(session):
+                    continue
+            except PitRerunInputError:
+                continue  # a bar the calendar cannot place: no event read from it (the bars ≤ T refuse it in bars())
+            ratio = close / adjusted
+            if previous is not None and abs(math.log(previous / ratio)) >= threshold:
+                events.append((session, previous / ratio))
+            previous = ratio
+        return events
 
     def valid_sessions(self, symbol: str) -> int:
         return sum(1 for bar in self.bars(symbol).values() if _positive(bar.get(PRICE_LEVEL_FIELD)) and _positive(bar.get(RETURN_FIELD)))
@@ -961,15 +1003,19 @@ class PinnedPrices:
             return None, None
         return _positive(bars[session].get(PRICE_LEVEL_FIELD)), session
 
-    def dollar_volume_median(self, symbol: str, sessions: int = SCREEN_DOLLAR_VOLUME_SESSIONS, *, field: str = PRICE_LEVEL_FIELD) -> float | None:
-        """The median ``price × volume`` of the symbol's last ``sessions`` bars ≤ T with a positive price and volume (the
-        pinned vintage): its point-in-time dollar liquidity; ``None`` with fewer such bars. ``field`` is the as-traded
-        ``close`` (a volume in traded shares) or ``adjusted_close`` (a volume the provider split-adjusted: the backtest's
-        volume check decides which, prereg §2). A screen input, never an engine input."""
-        if field not in (PRICE_LEVEL_FIELD, RETURN_FIELD):
-            raise ValueError(f"unknown price field {field!r}")
+    def dollar_volume_median(self, symbol: str, sessions: int = SCREEN_DOLLAR_VOLUME_SESSIONS, *, basis: str = "as_traded") -> float | None:
+        """The median dollar volume of the symbol's last ``sessions`` bars ≤ T with a positive close and volume (the pinned
+        vintage): its point-in-time dollar liquidity; ``None`` with fewer such bars. ``basis`` says what the provider's
+        ``volume`` is: ``as_traded`` (traded shares) → ``close × volume``; ``split_adjusted`` (pre-split volumes multiplied
+        by the later splits) → ``close × volume ÷ S(s)``, ``S(s)`` the product of the SPLIT-ONLY factors of the series'
+        capital events after session ``s`` — never the total-return ``adjusted_close``, which carries every dividend paid
+        after ``s``. The backtest's volume check decides which (prereg §2). A screen input, never an engine input."""
+        if basis not in DOLLAR_VOLUME_BASES:
+            raise ValueError(f"unknown dollar-volume basis {basis!r}")
         bars = self.bars(symbol)
-        values = [price * volume for session in sorted(bars) if (price := _positive(bars[session].get(field))) is not None
+        splits = self._splits.get(symbol.strip().upper(), []) if basis == "split_adjusted" else []
+        values = [close * volume / math.prod(factor for when, factor in splits if when > session) for session in sorted(bars)
+                  if (close := _positive(bars[session].get(PRICE_LEVEL_FIELD))) is not None
                   and (volume := _positive(bars[session].get("volume"))) is not None][-sessions:]
         return statistics.median(values) if len(values) == sessions else None
 
@@ -1522,7 +1568,7 @@ class PitComputation:
             row = self.resolver.per_symbol[symbol]["row"]
             screen[symbol] = {"security_type": row.get("security_type"), "close": row.get("price"), "price_session": row.get("price_session"),
                               "market_cap": row.get("market_cap"), "dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol),
-                              "adjusted_dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol, field=RETURN_FIELD)}
+                              "split_adjusted_dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol, basis="split_adjusted")}
         return screen
 
     def summary(self) -> dict[str, Any]:
@@ -1591,7 +1637,7 @@ class PitRerunService:
         manifest: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION, "market": market, "as_of": _utc(as_of).isoformat(), "economic_date": resolver.economic_date.isoformat(),
             "session_date": prices.session_date, "engine": {"identity": engine_identity(), "engine_version": ENGINE_VERSION,
-                                                            "implementation_file_sha256": {name: _file_sha256(name) for name in IMPLEMENTATION_FILES},
+                                                            "implementation_file_sha256": implementation_files(),
                                                             "implementation_object_sha256": implementation_objects()},
             "buy_in_rule": {"identity": buy_in_identity(), "risk_score": ENTRY_RISK_SCORE, "valuation_confidence": ENTRY_CONFIDENCE},
             "sources": sorted(resolver.references, key=lambda item: json.dumps(item, sort_keys=True)),

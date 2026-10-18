@@ -474,6 +474,14 @@ def test_the_volume_check_reads_the_capital_events_of_the_pinned_vintages_and_an
         checked = REAL_VOLUME_CHECK(database, _settings(), pins, backtest.MARKETS, CATALOGUE_PIN)
         assert checked == {"events": 3, "as_traded_like": 0 if adjusted else 3, "split_adjusted_like": 3 if adjusted else 0, "decision": decision,
                            "field": backtest.VOLUME_BASES[decision], "series_read": 10}, adjusted
+    # a later republication (traded-share volumes) never changes the check of the PINNED publications
+    for offset, (market, symbols) in enumerate(US.items()):
+        bars = {f"{symbol}.US": _split_bars(symbol, sessions, at=60 + 40 * index if market == "NASDAQ" and index < 3 else None, factor=2.0 + index,
+                                            adjusted_volume=False) for index, symbol in enumerate(symbols)}
+        http = ScriptedHttp({f"/api/eod/{key}": rows for key, rows in bars.items()})
+        producer = series.PriceHistoryService(_settings(), database, http, eodhd=EodhdClient("https://eodhd.com", "secret", http))  # type: ignore[arg-type]
+        producer.persist_run(market, start=date(2023, 6, 1), end=date(2024, 7, 31), symbols=list(symbols), now=VINTAGE_AT + timedelta(hours=2, minutes=offset))
+    assert REAL_VOLUME_CHECK(database, _settings(), pins, backtest.MARKETS, CATALOGUE_PIN)["decision"] == "split_adjusted"
     monkeypatch.setattr(grid, "volume_check", lambda *args, **kwargs: {**DECIDED, "decision": "undetermined", "field": None})
     store = _store()
     with pytest.raises(SystemExit):

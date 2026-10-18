@@ -144,7 +144,7 @@ def test_the_point_in_time_screen_applies_the_screeners_rules_at_t(monkeypatch: 
     assert kept == {"AAA"} and removed == {"beyond_top_per_exchange": 2}  # the most liquid; a tie goes to the first symbol
     # the volume basis the grid decided picks the dollar volume: as traded (close × volume) or split-adjusted (adjusted close × volume)
     monkeypatch.setattr(backtest, "SCREEN_TOP_PER_EXCHANGE", 300)
-    both = {"AAA": {**item(volume=5e7), "adjusted_dollar_volume_median_20": 1e7}, "BBB": {**item(volume=1e7), "adjusted_dollar_volume_median_20": 5e7}}
+    both = {"AAA": {**item(volume=5e7), "split_adjusted_dollar_volume_median_20": 1e7}, "BBB": {**item(volume=1e7), "split_adjusted_dollar_volume_median_20": 5e7}}
     assert backtest.screen(both)[0] == {"AAA"} and backtest.screen(both, basis="as_traded")[0] == {"AAA"}
     assert backtest.screen(both, basis="split_adjusted")[0] == {"BBB"}
     with pytest.raises(KeyError):
@@ -169,7 +169,7 @@ def test_the_volume_check_reads_split_factors_from_the_vintage_and_decides_only_
     assert backtest.volume_split_check(raw) == {"events": 3, "as_traded_like": 3, "split_adjusted_like": 0, "decision": "as_traded",
                                                 "field": "dollar_volume_median_20"}
     adjusted = [_series(at=40, factor=f, adjusted_volume=True) for f in (2.0, 3.0, 0.25)]
-    assert backtest.volume_split_check(adjusted)["decision"] == "split_adjusted" and backtest.volume_split_check(adjusted)["field"] == "adjusted_dollar_volume_median_20"
+    assert backtest.volume_split_check(adjusted)["decision"] == "split_adjusted" and backtest.volume_split_check(adjusted)["field"] == "split_adjusted_dollar_volume_median_20"
     assert backtest.volume_split_check(raw[:2])["decision"] == "undetermined"  # fewer than three clean events
     assert backtest.volume_split_check([*raw[:2], *adjusted[:2]])["decision"] == "undetermined"  # no two-thirds agreement
     assert backtest.volume_split_votes(_series(at=None, factor=2.0, adjusted_volume=False)) == {}  # no event, no vote
@@ -319,6 +319,8 @@ def test_the_protocol_is_the_prereg() -> None:
     assert constants["coverage_floor"]["min_records_share"] == 0.60 and constants["coverage_floor"]["min_screened_names_median"] == 150
     assert constants["screen"]["top_per_exchange"] == 300 and constants["allowed_refusals"] == ["duplicate_across_exchanges", "run_not_in_manifest"]
     assert constants["screen"]["volume_basis"]["min_events"] == 3 and constants["screen"]["volume_basis"]["min_factor"] == 1.5
+    assert "split-only" in constants["screen"]["rank"] and "never the total-return adjusted close" in constants["screen"]["rank"]
+    assert constants["screen"]["volume_basis"]["split_adjusted"].startswith("close x volume / S(s)")
     assert "covered_in_catalogue" in constants["statements_stability"] and "zero included" in constants["coverage_floor"]["screened_names_median"]
     assert constants["decisory_statistic"] == "ic_executable" and constants["statements"] == "vintages" and constants["markets"] == ["NASDAQ", "NYSE"]
     assert constants["t_clock"] == "01:00 America/Sao_Paulo of the civil day after session D (session_date = D)" and constants["look"] == "single"
@@ -333,7 +335,8 @@ def test_the_protocol_is_the_prereg() -> None:
                    "--catalogue-pinned-at", "23:30", "ic_executable", f"DESIGN_SEED = {backtest.DESIGN_SEED}", f"DESIGN_REPS = {backtest.DESIGN_REPS}",
                    "GRID_START = 2021-06-01", "--months 120", "own_history", "vintages_coverage", "covered_in_catalogue", "VOLUME_CHECK_MIN_FACTOR = 1,5",
                    "VOLUME_CHECK_MIN_EVENTS = 3", "não-`VOID`", "DESIGN_INSTANTS = (51, 101, 266)", "valuation_price_history.py", "implementation_object_sha256",
-                   "git log -1 --format=%H", "manifest_volume_basis_not_decided", "≈ 1,51"):
+                   "git log -1 --format=%H", "manifest_volume_basis_not_decided", "≈ 1,51", "split_adjusted_dollar_volume_median_20", "close × volume ÷ S(s)",
+                   "definido duas vezes"):
         assert needle in text, needle
 
 
@@ -490,7 +493,7 @@ class Synthetic:
             inputs["supersedes"] = supersedes
         screen = {symbol: {"security_type": "Stock", "close": self.closes[symbol][day], "price_session": day.isoformat(),
                            "market_cap": 1e8 if symbol in self.small_caps else 5e9, "dollar_volume_median_20": 1e8 + index,
-                           "adjusted_dollar_volume_median_20": 1e6 + index}
+                           "split_adjusted_dollar_volume_median_20": 1e6 + index}
                   for index, symbol in enumerate(sorted(upsides))}
         outputs = {"summary": {"evaluated": len(records) + 1, "with_internal_tp": len(records), "not_evaluable": {"statement_vintages_missing": 2},
                                "statements": {"mode": statements, "table_present": True, "basis": {"statement_vintages": len(records) + 1},

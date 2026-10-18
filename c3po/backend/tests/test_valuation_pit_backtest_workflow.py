@@ -243,7 +243,13 @@ def test_the_report_reads_only_a_successful_grid_run_of_this_workflow_once(tmp_p
     look = _python("Check the single look", str(previous), str(PREREG_PATH), env={"EXPECTED": "b" * 64})
     assert look.returncode != 0 and "the single look was spent" in look.stderr
     assert _python("Check the single look", str(previous), str(PREREG_PATH), env={"EXPECTED": "a" * 64}).returncode == 0  # the same look, repeated
-    # a VOID reading read no label: it spends no look (a new revision may follow it)
+    # every non-VOID verdict spends the look; a VOID reading read no label: it spends none (a new revision may follow it)
+    for verdict in ("FAIL", "PASS", "UNMEASURED", "NEGATIVE"):
+        spent = tmp_path / f"spent-{verdict}"
+        (spent / "1").mkdir(parents=True)
+        (spent / "1" / "metadata.json").write_text(json.dumps({"prereg_sha256": prereg_sha, "manifest_sha256": "a" * 64, "verdict": verdict}), encoding="utf-8")
+        refused = _python("Check the single look", str(spent), str(PREREG_PATH), env={"EXPECTED": "b" * 64})
+        assert refused.returncode != 0 and "the single look was spent" in refused.stderr, verdict
     voided = tmp_path / "voided"
     (voided / "9").mkdir(parents=True)
     (voided / "9" / "metadata.json").write_text(json.dumps({"prereg_sha256": prereg_sha, "manifest_sha256": "a" * 64, "verdict": "VOID"}), encoding="utf-8")
@@ -332,6 +338,12 @@ def test_a_real_receipt_is_accepted_and_every_invalid_reading_is_refused(small: 
     partial = _verify(tmp_path, "report", "", expected_manifest=manifest["manifest_sha256"], rc="1")
     assert partial.returncode == 0 and not (tmp_path / "out" / "report.json").exists()
     assert json.loads((tmp_path / "out" / "metadata.json").read_text(encoding="utf-8"))["partial"] is True
+    # a receipt cut short while it was printed (the timeout): metadata only, marked partial, published as an error — never read as a receipt
+    cut = _verify(tmp_path, "report", out[:300] + "\n", expected_manifest=manifest["manifest_sha256"])
+    assert cut.returncode == 0 and not (tmp_path / "out" / "report.json").exists()
+    cut_metadata = json.loads((tmp_path / "out" / "metadata.json").read_text(encoding="utf-8"))
+    assert cut_metadata["partial"] is True and cut_metadata["errors"] == ["truncated_last_line"] and "verdict" not in cut_metadata
+    assert (tmp_path / "verify-failed").read_text(encoding="utf-8").strip() == "truncated_last_line"
 
 
 def test_the_grid_manifest_is_checked_and_the_host_outputs_are_reduced_to_aggregates(tmp_path: Path) -> None:
@@ -464,3 +476,59 @@ def test_the_prereg_commit_is_the_last_that_changed_the_prereg_and_the_producer_
     git("commit", "-q", "-am", "a new revision")
     stale, _ = run(first)
     assert stale.returncode != 0 and "is not the last commit that changed the pre-registration" in stale.stderr
+
+
+def _remote(tmp_path: Path, mode: str, *, reboot: bool) -> tuple[subprocess.CompletedProcess[str], str]:
+    """The host script of "Run on the host", run for real on stubs (docker, df, systemctl, flock, date): its paths moved
+    into ``tmp_path`` (the app directory, the two reboot flags, /proc/meminfo)."""
+    script = _step("Run on the host")["run"].split("<<'REMOTE' || rc=$?\n", 1)[1].split("\nREMOTE\n", 1)[0]
+    app, flags, bin_dir = tmp_path / "app", tmp_path / "flags", tmp_path / "bin"
+    for folder in (app / "runtime" / "security", flags, bin_dir):
+        folder.mkdir(parents=True, exist_ok=True)
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("MemTotal: 8000000 kB\nMemAvailable: 5000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n", encoding="utf-8")
+    for flag in ("reboot.pending", "reboot-required"):
+        path = flags / flag
+        if reboot:
+            path.write_text("", encoding="utf-8")
+        elif path.exists():
+            path.unlink()
+    script = (script.replace("/opt/chief-of-staff-digital", str(app)).replace("/run/c3po-security/reboot.pending", str(flags / "reboot.pending"))
+              .replace("/var/run/reboot-required", str(flags / "reboot-required")).replace("/proc/meminfo", str(meminfo)))
+    log = tmp_path / "calls.log"
+    stubs = {
+        "docker": ('echo "docker $*" >> "$STUB_LOG"\ncase "$*" in\n  *" ps -q api"*) echo cafe ;;\n  "inspect "*) echo running ;;\n'
+                   '  *"--host-check"*) echo \'{"kind": "host_check", "ingestion_runs": {"running": 0, "blocking": 0}}\' ;;\nesac'),
+        "df": 'echo "Filesystem 1024-blocks Used Available Capacity Mounted"\nfor arg in "$@"; do [ "$arg" = -P ] || echo "fs 41943040 0 9437184 0% $arg"; done',
+        "systemctl": '[ "$1" = show ] && echo n/a\nexit 0',
+        "flock": "exit 0",
+        "date": ('if [ "$1" = -d ]; then python3 -c \'import datetime, sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))'
+                 '.timestamp()))\' "$2"; else /bin/date "$@"; fi'),
+    }
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text("#!/bin/bash\n" + body + "\n", encoding="utf-8")
+        stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "STUB_LOG": str(log), "MODE": mode, "ORDER": "", "PIN": "2026-10-19T01:00:01+00:00",
+           "CATALOGUE_PIN": "2026-10-19T00:00:00+00:00", "MAX_RUNS": "10", "RECOMPUTE": "false", "STOP_BEFORE": "2026-10-19T02:10:00+00:00",
+           "DEADLINE": "3600", "PRODUCER": "", "RUN_ID": "7"}
+    if log.exists():
+        log.unlink()
+    result = subprocess.run(["bash", "-s"], input=script, capture_output=True, text=True, env=env)
+    return result, log.read_text(encoding="utf-8") if log.exists() else ""
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or shutil.which("python3") is None, reason="bash and python3 run the host script on stubs")
+def test_the_host_check_shows_a_pending_reboot_and_every_other_mode_refuses_on_it(tmp_path: Path) -> None:
+    checked, calls = _remote(tmp_path, "host-check", reboot=True)
+    assert checked.returncode == 0, checked.stderr
+    assert f"REBOOT pending {tmp_path / 'flags' / 'reboot.pending'}" in checked.stdout and f"REBOOT pending {tmp_path / 'flags' / 'reboot-required'}" in checked.stdout
+    assert "MEM MemAvailable 5000000" in checked.stdout and "--host-check" in calls and "timeout" not in calls
+    for mode in ("report", "dry-run"):
+        refused, calls = _remote(tmp_path, mode, reboot=True)
+        assert refused.returncode == 11 and "the backtest must wait for recovery" in refused.stderr and "valuation_pit_grid --market US --price" not in calls, mode
+    report, calls = _remote(tmp_path, "report", reboot=False)
+    assert report.returncode == 0 and "PREFLIGHT report ok" in report.stdout, report.stderr
+    dry, calls = _remote(tmp_path, "dry-run", reboot=False)
+    assert dry.returncode == 0, dry.stderr
+    assert "-e PGOPTIONS=-c default_transaction_read_only=on api timeout -s TERM -k 120" in calls and "--dry-run" in calls

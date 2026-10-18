@@ -105,8 +105,9 @@ SCREEN_MIN_DOLLAR_VOLUME = 20_000_000.0
 SCREEN_TOP_PER_EXCHANGE = 300
 # the screen's dollar volume: the provider's volume may be split-adjusted while the close is as-traded; the volume check of the pinned vintages
 # (volume_split_check, prereg §2) decides the basis ONCE per grid and the manifest records it: "as_traded" → close × volume, "split_adjusted" →
-# adjusted_close × volume (the rerun records both medians)
-VOLUME_BASES: dict[str, str] = {"as_traded": "dollar_volume_median_20", "split_adjusted": "adjusted_dollar_volume_median_20"}
+# close × volume ÷ S(s), S(s) the split-only factor of the later capital events (never the total-return adjusted_close: it carries every dividend
+# paid after s). The rerun records both medians.
+VOLUME_BASES: dict[str, str] = {"as_traded": "dollar_volume_median_20", "split_adjusted": "split_adjusted_dollar_volume_median_20"}
 VOLUME_CHECK_MIN_FACTOR = 1.5  # a capital event of the check: the close/adjusted-close ratio moves by ≥ this factor between two valid sessions
 VOLUME_CHECK_WINDOW = 20  # valid sessions of volume before and from the event (no other event inside)
 VOLUME_CHECK_MIN_EVENTS = 3
@@ -156,10 +157,13 @@ def protocol() -> dict[str, Any]:
         "universe": "the catalogue of each exchange pinned for the whole grid (the 2026 screener's output: selected on the outcome), screened point-in-time",
         "screen": {"security_type": SCREEN_SECURITY_TYPE, "min_close": SCREEN_MIN_CLOSE, "min_market_cap": SCREEN_MIN_MARKET_CAP,
                    "min_dollar_volume_median_20": SCREEN_MIN_DOLLAR_VOLUME, "top_per_exchange": SCREEN_TOP_PER_EXCHANGE,
-                   "rank": "median as-traded close x volume of the last 20 sessions <= T, descending; ties by symbol",
+                   "rank": ("median dollar volume of the last 20 sessions <= T on the grid's volume basis (traded shares: close x volume; split-adjusted "
+                            "shares: close x volume / the split-only factor of the later capital events, never the total-return adjusted close), "
+                            "descending; ties by symbol"),
                    "applies_to": "every verdict condition; the unscreened catalogue is descriptive",
                    "volume_basis": {"rule": "volume_split_check of the pinned vintages, decided once per grid and recorded in the manifest",
-                                    "as_traded": "close x volume", "split_adjusted": "adjusted_close x volume", "min_factor": VOLUME_CHECK_MIN_FACTOR,
+                                    "as_traded": "close x volume", "split_adjusted": "close x volume / S(s), S(s) = the product of the split-only factors "
+                                    "(close/adjusted_close jumps >= 1.25) after session s", "min_factor": VOLUME_CHECK_MIN_FACTOR,
                                     "window_sessions": VOLUME_CHECK_WINDOW, "min_events": VOLUME_CHECK_MIN_EVENTS,
                                     "min_agreement": VOLUME_CHECK_MIN_AGREEMENT, "undetermined": "the grid does not run; a manifest without a decision is VOID"}},
         "step_sessions": STEP_SESSIONS,
@@ -388,7 +392,7 @@ def volume_split_decision(votes: Mapping[str, int]) -> dict[str, Any]:
     """The screen's volume basis from the votes of every series of the pinned vintages: the leading reading when at least
     ``VOLUME_CHECK_MIN_EVENTS`` clean events voted and at least ``VOLUME_CHECK_MIN_AGREEMENT`` of them agree, else
     ``undetermined`` (the grid does not run). Both branches are pre-registered: ``as_traded`` → close × volume,
-    ``split_adjusted`` → adjusted_close × volume (``VOLUME_BASES``)."""
+    ``split_adjusted`` → close × volume ÷ the split-only factor of the later capital events (``VOLUME_BASES``)."""
     events = int(sum(votes.values()))
     as_traded, split_adjusted = int(votes.get("as_traded", 0)), int(votes.get("split_adjusted", 0))
     decision = "undetermined"

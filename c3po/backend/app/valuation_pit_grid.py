@@ -80,8 +80,9 @@ class GridError(RuntimeError):
 
 
 def engine_files() -> dict[str, str]:
-    """The producer's files in this code: the sha256 a run manifest names in ``engine.implementation_file_sha256``."""
-    return {name: pit._file_sha256(name) for name in ENGINE_FILES}
+    """The producer's files in this code: the sha256 a run manifest names in ``engine.implementation_file_sha256`` (computed
+    once per process)."""
+    return pit.implementation_files()
 
 
 def engine_objects() -> dict[str, str]:

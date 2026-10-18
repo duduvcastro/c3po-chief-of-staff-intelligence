@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import statistics
 import threading
 from collections import Counter
 from contextlib import contextmanager
@@ -1578,18 +1579,40 @@ def test_a_catalogue_pin_gives_a_grid_one_catalogue_and_without_it_nothing_chang
     aaa = plain_run.resolver.per_symbol["AAA"]["row"]
     bars = plain_run.resolver.prices.bars("AAA")
     expected = sorted(bar["close"] * bar["volume"] for bar in (bars[s] for s in sorted(bars)[-20:]))
-    adjusted = sorted(bar["adjusted_close"] * bar["volume"] for bar in (bars[s] for s in sorted(bars)[-20:]))
     assert screen["AAA"] == {"security_type": "Stock", "close": aaa["price"], "price_session": aaa["price_session"], "market_cap": aaa["price"] * aaa["shares"],
                              "dollar_volume_median_20": pytest.approx((expected[9] + expected[10]) / 2),
-                             "adjusted_dollar_volume_median_20": pytest.approx((adjusted[9] + adjusted[10]) / 2)}
+                             "split_adjusted_dollar_volume_median_20": pytest.approx((expected[9] + expected[10]) / 2)}  # no split: the same
     prices = plain_run.resolver.prices
     assert prices.dollar_volume_median("AAA", sessions=100_000) is None  # fewer bars than asked: no liquidity reading
-    # the two bases read two prices: the as-traded close (traded shares) and the adjusted close (split-adjusted volumes)
-    prices._bars["ZZQ"] = {f"2024-05-{day:02d}": {"close": 10.0, "adjusted_close": 5.0, "volume": 1_000.0 * day} for day in range(1, 21)}
-    assert prices.dollar_volume_median("ZZQ") == pytest.approx(10.0 * 1_000.0 * 10.5)
-    assert prices.dollar_volume_median("ZZQ", field="adjusted_close") == pytest.approx(5.0 * 1_000.0 * 10.5)
     with pytest.raises(ValueError):
-        prices.dollar_volume_median("ZZQ", field="volume")
+        prices.dollar_volume_median("AAA", basis="adjusted_close")
+
+
+def test_a_split_adjusted_volume_is_undone_by_the_split_only_factor_never_by_the_dividends_paid_after_t() -> None:
+    """A 4 % yielder (1 % a quarter) that splits 2:1 a year after T, with a provider that split-adjusts its volume: at T it
+    traded 250,000 shares at $100 = $25.0M a day. ``close × volume ÷ S(s)`` reads $25.0M; the total-return
+    ``adjusted_close × volume`` would read $25.0M × the dividends paid after T (no information available at T)."""
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    split = next(index for index, day in enumerate(sessions) if day >= date(2025, 6, 2))
+    ex_dates = list(range(30, len(sessions), 63))  # a 1 % dividend every quarter
+    rows = []
+    for index, day in enumerate(sessions):
+        later_split = 2.0 if index < split else 1.0
+        later_dividends = 0.99 ** sum(1 for ex in ex_dates if ex > index)
+        close = 100.0 if index < split else 50.0  # as traded
+        rows.append({"date": day.isoformat(), "close": close, "adjusted_close": close * later_dividends / later_split,
+                     "volume": 250_000.0 * 2.0})  # traded shares × the later split: 500,000 before (adjusted) and after (traded) the split
+    bars = {f"{symbol}.US": _bars_for(symbol, sessions, base=100.0 + 10 * index) for index, symbol in enumerate(SYMBOLS)}
+    bars["AAA.US"] = rows
+    computation = _compute_with_bars(bars)
+    prices = computation.resolver.prices
+    prices.bars("AAA")
+    assert [(when, round(factor, 6)) for when, factor in prices._splits["AAA"]] == [(sessions[split].isoformat(), 2.0)]  # the dividends are no event
+    assert prices.dollar_volume_median("AAA", basis="split_adjusted") == pytest.approx(25_000_000.0)
+    assert prices.dollar_volume_median("AAA") == pytest.approx(50_000_000.0)  # a split-adjusted volume read as traded shares: twice the truth
+    total_return = statistics.median(rows[index]["adjusted_close"] * rows[index]["volume"] for index in range(len(rows)) if sessions[index] <= date(2024, 6, 14))
+    assert total_return < 24_000_000.0  # what adjusted_close × volume would have read (the dividends paid after T)
+    assert computation.screen_inputs()["AAA"]["split_adjusted_dollar_volume_median_20"] == pytest.approx(25_000_000.0)
 
 
 def test_the_run_names_every_producer_module_in_its_manifest() -> None:
