@@ -9,14 +9,16 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from app import valuation_asfiled as asfiled
 from app import valuation_decision as decisor
 from app import valuation_env
 from app import valuation_official as official
@@ -109,9 +111,13 @@ def _curve(database: Database, at: datetime, *, observed: str, as_of: str = SESS
     return database.save_analysis_snapshot("valuation_macro_rates", "US_5Y_INTERPOLATED", "mv-1", {}, package, at)
 
 
-def _night(database: Database, *, b3: list[dict[str, Any]] | None = None, us: list[dict[str, Any]] | None = None, selic: bool = True) -> dict[str, str]:
+def _night(database: Database, *, b3: list[dict[str, Any]] | None = None, us: list[dict[str, Any]] | None = None, selic: bool = True,
+           staleness_table: bool = True) -> dict[str, str]:
     """One official night: the three universe cycles (the generation activates when the third lands — dated then), the
-    producers' calibration snapshots, the US cash-rate package and (``selic``) the dated SGS 432 package."""
+    producers' calibration snapshots, the US cash-rate package, (``selic``) the dated SGS 432 package and
+    (``staleness_table``) migration 053 applied — empty: no filing marked any TP."""
+    if staleness_table:
+        asfiled.TpStalenessStore(database)  # the memory double's table exists once its store is opened (as the as-filed tables')
     with _activated_at(database, CUT + timedelta(minutes=2, seconds=30)):
         cycles = {
             "B3": _universe(database, "B3", b3 if b3 is not None else [_row("PETR4", tp=45.0, buy_in=32.0, price=30.0), _row("VALE3", tp=70.0, buy_in=60.0, price=65.0)], CUT),
@@ -128,6 +134,7 @@ def _night(database: Database, *, b3: list[dict[str, Any]] | None = None, us: li
 
 GOOD_ERROR = {"status": "ok", "value": 0.10}
 GOOD_RATE = {"status": "ok", "h_market": 0.14}
+B3_STALENESS = decisor.name_staleness(None, "B3", "PETR4")  # not applicable: 053 marks US TPs only
 
 
 def _served(**extra: Any) -> dict[str, Any]:
@@ -135,10 +142,10 @@ def _served(**extra: Any) -> dict[str, Any]:
 
 
 def _decide(row: dict[str, Any] | None = None, *, behind: int = 0, price: dict[str, Any] | None = None, error: dict[str, Any] = GOOD_ERROR,
-            rate: dict[str, Any] = GOOD_RATE) -> dict[str, Any]:
+            rate: dict[str, Any] = GOOD_RATE, staleness: dict[str, Any] = B3_STALENESS) -> dict[str, Any]:
     served = row if row is not None else _served()
     observation = price if price is not None else {"price": served["price"], "ask": None, "source": "official_cut", "session": served["official_session_date"]}
-    return decisor.decide(served, expected_session=SESSION, tp_sessions_behind=behind, price=observation, error=error, rate=rate)
+    return decisor.decide(served, expected_session=SESSION, tp_sessions_behind=behind, price=observation, error=error, rate=rate, staleness=staleness)
 
 
 # ------------------------------------------------------------------ the pure verdict
@@ -190,7 +197,8 @@ def test_the_edges_of_the_freshness_gates() -> None:
     assert "PRICE_MOVED_SINCE_CUT" in _decide(price={"price": 31.6, "source": "quote", "session": SESSION})["reason_codes"]
     assert "PRICE_MOVED_SINCE_CUT" in _decide(price={"price": 28.4, "source": "quote", "session": SESSION})["reason_codes"]
     assert _decide(price={"price": 31.4, "source": "quote", "session": SESSION})["verdict"] == decisor.COMPRA_PERMITIDA
-    unpriced = decisor.decide(_served(), expected_session=SESSION, tp_sessions_behind=0, price=None, error=GOOD_ERROR, rate=GOOD_RATE)
+    unpriced = decisor.decide(_served(), expected_session=SESSION, tp_sessions_behind=0, price=None, error=GOOD_ERROR, rate=GOOD_RATE,
+                              staleness=B3_STALENESS)
     assert unpriced["verdict"] == decisor.VETO and "PRICE_UNAVAILABLE" in unpriced["reason_codes"] and unpriced["checks"]["tp_margin"]["pass"] is None
     assert "PRICE_SESSION_STALE" not in unpriced["reason_codes"] and unpriced["checks"]["price_session"]["pass"] is None
     # a US row carries no tp_validation_status: its signal_quality decides
@@ -590,6 +598,149 @@ def test_the_prereg_freeze_refuses_any_other_block(monkeypatch: pytest.MonkeyPat
     with pytest.raises(ValueError, match="not the block the PREREG froze"):
         decisor.run_shadow(database, now=RUN, thresholds=replace(decisor.THRESHOLDS, max_price_move_percent=9.0))
     assert database._valuation_decisions == []
+
+
+# ------------------------------------------------------------------ the US filings gate (migration 053, read causally)
+
+
+FILING = "0000999101-26-000007"  # a synthetic accession: an 8-K item 2.02 of the issuer behind the NASDAQ name
+ACCEPTED = datetime(2026, 10, 13, 20, 5, tzinfo=timezone.utc)  # 16:05 New York, after Tuesday's close and before the cut
+_REASONS = {"stale": "tp_predates_acceptance", "cleared": "revalued_by_cut", "untracked": "no_official_tp"}
+
+
+def _mark(database: Database, symbol: str, state: str, recorded_at: datetime, *, doc_id: str = FILING, market: str = "NASDAQ") -> str:
+    """One 053 mark, as ``evaluate_us_filings`` writes it (append-only; the store is the table)."""
+    mark_id = str(uuid4())
+    written = asfiled.TpStalenessStore(database).append([{
+        "id": mark_id, "market": market if state != "untracked" else "US", "symbol": symbol, "issuer_key": "0000999101", "doc_id": doc_id,
+        "form": "8-K", "items": "2.02,9.01", "accepted_at": ACCEPTED, "period_of_report": date(2026, 10, 13), "state": state, "reason": _REASONS[state],
+        "official_cycle_id": None, "prediction_instant": None, "fundamentals_as_of": None, "expected_period_end": date(2026, 9, 30),
+        "covers_period": None if state == "untracked" else state == "cleared", "queued_for_cut_at": None, "recorded_at": recorded_at}])
+    assert written == 1
+    return mark_id
+
+
+def test_the_filings_gate_is_pure_us_only_and_never_exempts_a_us_row() -> None:
+    stale = {"status": decisor.STALENESS_STALE, "filings": [{"mark_id": "m-1", "doc_id": FILING}]}
+    outcome = _decide(staleness=stale)
+    assert outcome["verdict"] == decisor.OBSERVAR and outcome["reason_codes"] == [decisor.TP_STALE_AFTER_FILING]
+    assert outcome["checks"]["tp_staleness"] == {"pass": False, "status": "stale", "filings": [{"mark_id": "m-1", "doc_id": FILING}], "detail": None}
+    unavailable = _decide(staleness={"status": decisor.STALENESS_UNAVAILABLE, "detail": "absent"})
+    assert unavailable["verdict"] == decisor.OBSERVAR and unavailable["reason_codes"] == [decisor.STALENESS_SOURCE_UNAVAILABLE]
+    assert _decide(staleness={"status": "something else"})["reason_codes"] == [decisor.STALENESS_SOURCE_UNAVAILABLE]  # unknown → fail closed
+    assert _decide(staleness={"status": decisor.STALENESS_CLEAR, "filings": []})["verdict"] == decisor.COMPRA_PERMITIDA
+    b3 = _decide()
+    assert b3["verdict"] == decisor.COMPRA_PERMITIDA and b3["checks"]["tp_staleness"]["pass"] is None and b3["checks"]["tp_staleness"]["status"] == "not_applicable"
+    # a row the official selection served for a US market is never 'not_applicable', whoever builds the staleness
+    us = {**_row("AAPL", tp=130.0, buy_in=105.0, price=100.0, market="NASDAQ"), "official_session_date": SESSION, "official_market": "NASDAQ"}
+    assert _decide(us, staleness=B3_STALENESS)["reason_codes"] == [decisor.STALENESS_SOURCE_UNAVAILABLE]
+    # both OBSERVAR codes sit with the margin's unmeasured inputs; a VETO keeps them in its full picture
+    assert {decisor.TP_STALE_AFTER_FILING, decisor.STALENESS_SOURCE_UNAVAILABLE} <= set(decisor.OBSERVAR_CODES)
+    assert not {decisor.TP_STALE_AFTER_FILING, decisor.STALENESS_SOURCE_UNAVAILABLE} & set(decisor.VETO_CODES)
+    both = _decide(_served(valuation_confidence=50.0), staleness=stale)
+    assert both["verdict"] == decisor.VETO and both["reason_codes"] == [decisor.TP_STALE_AFTER_FILING, "CONFIDENCE_LOW"]
+    # what decide reads per name: B3 is not applicable whatever the read; a US name is stale, clear or unavailable
+    read = {"status": "ok", "known_at": RUN.isoformat(), "marks_known": 1, "latest_recorded_at": RUN.isoformat(), "pending": {"AAPL": [
+        {"id": "m-1", "doc_id": FILING, "form": "8-K", "items": "2.02", "accepted_at": ACCEPTED, "recorded_at": RUN, "reason": "tp_predates_acceptance",
+         "expected_period_end": date(2026, 9, 30), "official_cycle_id": None}]}}
+    assert decisor.name_staleness(read, "B3", "AAPL")["status"] == "not_applicable"
+    named = decisor.name_staleness(read, "NASDAQ", "AAPL")
+    assert named["status"] == "stale" and named["source"] == decisor.STALENESS_SOURCE and named["marks_known"] == 1
+    assert named["filings"] == [{"mark_id": "m-1", "doc_id": FILING, "form": "8-K", "items": "2.02", "accepted_at": ACCEPTED.isoformat(),
+                                 "recorded_at": RUN.isoformat(), "reason": "tp_predates_acceptance", "expected_period_end": "2026-09-30",
+                                 "official_cycle_id": None}]
+    assert decisor.name_staleness(read, "NYSE", "KO")["status"] == "clear"
+    assert decisor.name_staleness(None, "NYSE", "KO")["status"] == decisor.name_staleness({"status": "unavailable"}, "NYSE", "KO")["status"] == "unavailable"
+
+
+def test_a_stale_mark_known_at_the_runs_clock_is_observar_and_the_record_names_the_filing() -> None:
+    database = _database()
+    _night(database)
+    mark_id = _mark(database, "AAPL", "stale", ACCEPTED + timedelta(minutes=10))  # the IR poll after the release
+    receipt = _run(database)
+    assert receipt["markets"]["NASDAQ"]["verdicts"] == {"COMPRA_PERMITIDA": 0, "OBSERVAR": 1, "VETO": 0}
+    assert receipt["markets"]["NASDAQ"]["reasons"] == {decisor.TP_STALE_AFTER_FILING: 1} and receipt["markets"]["NASDAQ"]["tp_staleness_source"] == "ok"
+    assert receipt["markets"]["B3"]["tp_staleness_source"] == "not_applicable" and receipt["markets"]["B3"]["verdicts"]["COMPRA_PERMITIDA"] == 1
+    assert receipt["markets"]["NYSE"]["reasons"] == {"PRICE_ABOVE_BUY_IN": 1, "TP_MARGIN_INSUFFICIENT": 1}  # KO: no mark, its own reasons only
+    dumped = json.dumps(receipt)
+    assert FILING not in dumped and mark_id not in dumped and "AAPL" not in dumped  # the receipt is aggregate: no symbol, no filing
+    record = database.list_valuation_decisions("NASDAQ", "AAPL")[0]
+    assert record["verdict"] == decisor.OBSERVAR and record["reason_codes"] == [decisor.TP_STALE_AFTER_FILING]
+    gate = record["checks"]["tp_staleness"]
+    assert gate["pass"] is False and gate["status"] == "stale" and [(item["mark_id"], item["doc_id"]) for item in gate["filings"]] == [(mark_id, FILING)]
+    provenance = record["inputs"]["tp_staleness"]
+    assert provenance["source"] == "valuation_tp_staleness" and provenance["known_at"] == RUN.isoformat() and provenance["marks_known"] == 1
+    assert provenance["filings"] == gate["filings"] and provenance["filings"][0]["accepted_at"] == ACCEPTED.isoformat()
+    petr = database.list_valuation_decisions("B3", "PETR4")[0]
+    assert petr["verdict"] == decisor.COMPRA_PERMITIDA and petr["inputs"]["tp_staleness"]["status"] == "not_applicable"  # 053 is US only
+    view = decisor.latest_verdict(database, "NASDAQ", "AAPL", now=datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc))
+    assert view is not None and view["effective_verdict"] == decisor.OBSERVAR and view["effective_reason_codes"] == [decisor.TP_STALE_AFTER_FILING]
+
+
+def test_a_cleared_or_untracked_filing_known_at_the_clock_leaves_the_name_to_its_other_gates() -> None:
+    database = _database()
+    _night(database)
+    _mark(database, "AAPL", "stale", ACCEPTED + timedelta(minutes=10))
+    _mark(database, "AAPL", "cleared", CUT + timedelta(minutes=15))  # the nightly cut revalued it, before the decisor's phase
+    _mark(database, "KO", "untracked", ACCEPTED + timedelta(minutes=10), doc_id="0000999102-26-000003")  # KO had no TP then
+    receipt = _run(database)
+    assert receipt["markets"]["NASDAQ"]["verdicts"]["COMPRA_PERMITIDA"] == 1 and decisor.TP_STALE_AFTER_FILING not in receipt["markets"]["NASDAQ"]["reasons"]
+    assert receipt["markets"]["NYSE"]["reasons"] == {"PRICE_ABOVE_BUY_IN": 1, "TP_MARGIN_INSUFFICIENT": 1}
+    aapl = database.list_valuation_decisions("NASDAQ", "AAPL")[0]
+    assert aapl["checks"]["tp_staleness"] == {"pass": True, "status": "clear", "filings": [], "detail": None}
+    assert aapl["inputs"]["tp_staleness"]["marks_known"] == 3
+
+
+def test_a_mark_written_after_the_runs_clock_never_reaches_its_decision() -> None:
+    database = _database()
+    _night(database)
+    _mark(database, "AAPL", "stale", ACCEPTED + timedelta(minutes=10))
+    _mark(database, "AAPL", "cleared", RUN + timedelta(minutes=10))  # cleared AFTER the run's clock
+    _mark(database, "KO", "stale", RUN + timedelta(minutes=1), doc_id="0000999102-26-000004", market="NYSE")  # a stale mark after it, too
+    at_the_clock = decisor.run_shadow(database, now=RUN)
+    assert at_the_clock["markets"]["NASDAQ"]["reasons"] == {decisor.TP_STALE_AFTER_FILING: 1}  # the later 'cleared' does not leak back
+    assert decisor.TP_STALE_AFTER_FILING not in at_the_clock["markets"]["NYSE"]["reasons"]  # nor does the later 'stale'
+    later = decisor.run_shadow(database, now=RUN + timedelta(minutes=20))  # same session: after the clear, the name is permitted again
+    assert later["markets"]["NASDAQ"]["verdicts"]["COMPRA_PERMITIDA"] == 1 and later["markets"]["NYSE"]["reasons"][decisor.TP_STALE_AFTER_FILING] == 1
+    # the reader itself: only marks recorded by the clock, the latest state per (filing, symbol)
+    assert list(asfiled.us_staleness_at(database, RUN)["pending"]) == ["AAPL"]
+    assert list(asfiled.us_staleness_at(database, RUN + timedelta(minutes=20))["pending"]) == ["KO"]
+    assert asfiled.us_staleness_at(database, ACCEPTED)["pending"] == {} and asfiled.us_staleness_at(database, ACCEPTED)["marks_known"] == 0
+
+
+def test_without_the_053_table_no_us_name_is_permitted_and_b3_is_decided_as_before() -> None:
+    database = _database()
+    _night(database, staleness_table=False)  # migration 053 not applied
+    receipt = _run(database)
+    for market in ("NASDAQ", "NYSE"):
+        stats = receipt["markets"][market]
+        assert stats["tp_staleness_source"] == "unavailable" and stats["verdicts"]["COMPRA_PERMITIDA"] == 0
+        assert stats["reasons"][decisor.STALENESS_SOURCE_UNAVAILABLE] == stats["decided"] == 1
+    assert receipt["markets"]["B3"]["verdicts"] == {"COMPRA_PERMITIDA": 1, "OBSERVAR": 1, "VETO": 0}
+    aapl = database.list_valuation_decisions("NASDAQ", "AAPL")[0]
+    assert aapl["verdict"] == decisor.OBSERVAR and aapl["reason_codes"] == [decisor.STALENESS_SOURCE_UNAVAILABLE]
+    assert aapl["inputs"]["tp_staleness"]["status"] == "unavailable" and "migration 053 not applied" in aapl["inputs"]["tp_staleness"]["detail"]
+    assert not hasattr(database, "_valuation_tp_staleness")  # the reader creates nothing
+
+
+def test_a_rerun_of_a_night_reproduces_its_decisions_whatever_was_marked_after_it() -> None:
+    database = _database()
+    _night(database)
+    _mark(database, "AAPL", "stale", ACCEPTED + timedelta(minutes=10))
+    first = _run(database)
+    _mark(database, "AAPL", "cleared", RUN + timedelta(hours=1))
+    _mark(database, "KO", "stale", RUN + timedelta(hours=1), doc_id="0000999102-26-000004", market="NYSE")
+    again = _run(database)
+    assert again["run_id"] != first["run_id"]
+    for market, symbol in (("NASDAQ", "AAPL"), ("NYSE", "KO"), ("B3", "PETR4")):
+        rerun, original = database.list_valuation_decisions(market, symbol)
+        assert {rerun["run_id"], original["run_id"]} == {first["run_id"], again["run_id"]} and rerun["row_sha256"] != original["row_sha256"]
+        assert decisor.replay_sha256(rerun) == decisor.replay_sha256(original) and rerun["inputs_sha256"] == original["inputs_sha256"]
+    assert database.list_valuation_decisions("NASDAQ", "AAPL")[0]["reason_codes"] == [decisor.TP_STALE_AFTER_FILING]
+    # a run after the clear decides something else, and its content hash says so
+    _run(database, now=RUN + timedelta(hours=2))
+    newest, rerun, original = database.list_valuation_decisions("NASDAQ", "AAPL")
+    assert newest["verdict"] == decisor.COMPRA_PERMITIDA and decisor.replay_sha256(newest) != decisor.replay_sha256(original)
 
 
 # ------------------------------------------------------------------ PostgreSQL shape, migration, worker

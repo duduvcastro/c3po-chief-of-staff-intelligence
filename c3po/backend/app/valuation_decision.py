@@ -4,8 +4,10 @@ Per name per night, one verdict with its reason codes, over the generation of th
 
 * ``COMPRA_PERMITIDA`` — every gate passed: the name may be bought;
 * ``OBSERVAR`` — the TP is trustworthy but there is no permission: no margin today (``PRICE_ABOVE_BUY_IN``,
-  ``TP_MARGIN_INSUFFICIENT``) or an input of the margin is not measured yet (``E_PROFILE_WARMING_UP``,
-  ``E_PROFILE_UNAVAILABLE``, ``MARKET_RATE_UNAVAILABLE``) — no permission while the producers' calibration warms up;
+  ``TP_MARGIN_INSUFFICIENT``), an input of the margin is not measured yet (``E_PROFILE_WARMING_UP``,
+  ``E_PROFILE_UNAVAILABLE``, ``MARKET_RATE_UNAVAILABLE``) — no permission while the producers' calibration warms up —,
+  or (US) the TP awaits the revaluation a filing accepted after it triggered (``TP_STALE_AFTER_FILING``) or that
+  question cannot be answered (``STALENESS_SOURCE_UNAVAILABLE``);
 * ``VETO`` — the TP or its data cannot be trusted now (freshness, quality, data defects). A VETO lists every failing
   code, the OBSERVAR codes included: the record is the full picture, the verdict its strictest class.
 
@@ -31,6 +33,13 @@ The rules (every number in ``DecisorThresholds``, the ONE settings block the PRE
   behind is never decided on the session nobody observed — a cycle published after that close, or a fresh quote, is).
 * quality (VETO): not validated (``tp_validation_status`` when the producer emits it — B3 —, else ``signal_quality`` —
   US); method dispersion above the limit (or unknown); confidence below the limit (or unknown); any data-defect mark.
+* staleness after a filing (OBSERVAR; US only — migration 053 marks the US TPs against SEC filings, B3 is
+  ``not_applicable``): a ``stale`` mark of the name KNOWN AT the run's clock (``valuation_asfiled.us_staleness_at``:
+  only marks recorded — and inserted — by then, the latest state per filing; a ``cleared`` written later never reaches
+  an earlier night) → ``TP_STALE_AFTER_FILING``, the filings (053 mark id, accession, form, acceptance) named in the
+  record; the table absent (053 not applied) → ``STALENESS_SOURCE_UNAVAILABLE`` for every US name: fail closed, as
+  every unmeasured input of a permission is (``E_PROFILE_UNAVAILABLE``, ``MARKET_RATE_UNAVAILABLE``). OBSERVAR, not
+  VETO: the TP is not defective — it waits for the cut that revalues it.
 
 Records (``valuation_decisions``) carry the discipline of ``valuation_predictions``: two clocks (``prediction_instant`` = the
 run's clock; ``published_at`` read immediately before the insert, never before it), the session of the verdict (the last
@@ -67,6 +76,7 @@ from uuid import uuid4
 from . import valuation_env
 from . import valuation_official as official
 from .config import get_settings
+from .valuation_asfiled import us_staleness_at
 from .valuation_official import (MARKETS, CalendarUnavailable, canonical_sha256, current_generation, cycle_rows, generation_at, official_row, official_rows,
                                  session_date_of)
 from .valuation_v3_macro import ValuationV3MacroDataError, package_hash_is_valid, validate_us_curve_package
@@ -93,7 +103,14 @@ VETO_CODES: tuple[str, ...] = (
 )
 OBSERVAR_CODES: tuple[str, ...] = (
     "E_PROFILE_WARMING_UP", "E_PROFILE_UNAVAILABLE", "MARKET_RATE_UNAVAILABLE", "PRICE_ABOVE_BUY_IN", "TP_MARGIN_INSUFFICIENT",
+    "TP_STALE_AFTER_FILING", "STALENESS_SOURCE_UNAVAILABLE",
 )
+TP_STALE_AFTER_FILING = "TP_STALE_AFTER_FILING"  # a pending 053 'stale' mark known at the run's clock (US)
+STALENESS_SOURCE_UNAVAILABLE = "STALENESS_SOURCE_UNAVAILABLE"  # the 053 table absent: no US name is permitted (fail closed)
+
+STALENESS_SOURCE = "valuation_tp_staleness"  # migration 053, read causally by valuation_asfiled.us_staleness_at
+STALENESS_CLEAR, STALENESS_STALE, STALENESS_UNAVAILABLE, STALENESS_NOT_APPLICABLE = "clear", "stale", "unavailable", "not_applicable"
+US_STALENESS_MARKETS = ("NASDAQ", "NYSE", "US")  # 053 marks only the US TPs (SEC filings); a US row is never 'not_applicable'
 
 RATE_B3_CYCLE_SELIC = "b3_cycle_selic"  # outputs.macro.selic of the generation's B3 universe cycle (the producer's effective Selic; UNDATED)
 RATE_BCB_SGS_432 = "bcb_sgs_432"  # valuation_macro_history/B3_SELIC_REGIME (hashed package, dated observations)
@@ -412,14 +429,44 @@ def _price_observation(row: Mapping[str, Any], *, market: str, symbol: str, at: 
             "reference": _text(row.get("official_cycle_id")), "quote_refused": refused}
 
 
+def _filing_reference(mark: Mapping[str, Any]) -> dict[str, Any]:
+    """What a record keeps of one 053 mark: its own id, the filing (accession, form, items, acceptance), when the trigger
+    recorded it, why, and what the TP has to reach — enough to find the mark again, nothing the table does not hold."""
+    return {"mark_id": _text(mark.get("id")), "doc_id": _text(mark.get("doc_id")), "form": _text(mark.get("form")), "items": _text(mark.get("items")),
+            "accepted_at": _utc(mark["accepted_at"]).isoformat() if mark.get("accepted_at") else None,
+            "recorded_at": _utc(mark["recorded_at"]).isoformat() if mark.get("recorded_at") else None, "reason": _text(mark.get("reason")),
+            "expected_period_end": _text(mark.get("expected_period_end")), "official_cycle_id": _text(mark.get("official_cycle_id"))}
+
+
+def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str) -> dict[str, Any]:
+    """What ``decide`` reads about ONE name from the causal read of migration 053 (``valuation_asfiled.us_staleness_at``
+    at the run's clock, ``source``): B3 → ``not_applicable`` (053 marks US TPs against SEC filings only); a US name →
+    ``stale`` with the pending filings, ``clear``, or ``unavailable`` (no read, or the table absent) — with the read's
+    own provenance (when it was known at, how many marks were known, the newest of them)."""
+    if market not in US_STALENESS_MARKETS:
+        return {"status": STALENESS_NOT_APPLICABLE, "source": None, "detail": "migration 053 marks US TPs only (SEC filings)", "filings": []}
+    read = source or {}
+    base = {"source": STALENESS_SOURCE, "known_at": read.get("known_at"), "marks_known": read.get("marks_known"),
+            "latest_recorded_at": read.get("latest_recorded_at")}
+    if read.get("status") != "ok":
+        return {**base, "status": STALENESS_UNAVAILABLE, "detail": _text(read.get("detail")) or "the staleness source was not read", "filings": []}
+    pending = read.get("pending") if isinstance(read.get("pending"), Mapping) else {}
+    marks = [mark for mark in (pending or {}).get(symbol) or [] if isinstance(mark, Mapping)]
+    return {**base, "status": STALENESS_STALE if marks else STALENESS_CLEAR, "detail": None, "filings": [_filing_reference(mark) for mark in marks]}
+
+
 # ------------------------------------------------------------------ the verdict (pure)
 
 
 def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind: int, price: Mapping[str, Any] | None,
-           error: Mapping[str, Any], rate: Mapping[str, Any], thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
+           error: Mapping[str, Any], rate: Mapping[str, Any], staleness: Mapping[str, Any],
+           thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
     """The verdict of ONE served official row — pure: everything it reads is an argument. Returns ``verdict``,
     ``reason_codes`` (every failing gate, in evaluation order; ``[ALL_GATES_PASSED]`` for a permission), ``checks`` (each
-    gate's numbers and outcome) and the numbers the record keeps (``price``, ``e_profile``, ``h_market``)."""
+    gate's numbers and outcome) and the numbers the record keeps (``price``, ``e_profile``, ``h_market``). ``staleness``
+    is the name's 053 state (``name_staleness``): ``clear`` and ``not_applicable`` pass, ``stale`` is
+    ``TP_STALE_AFTER_FILING``, anything else ``STALENESS_SOURCE_UNAVAILABLE`` — and a row served for a US market is never
+    ``not_applicable`` (it fails closed)."""
     codes: list[str] = []
     checks: dict[str, Any] = {}
     tp_value, buy_in = _positive(row.get("our_tp")), _positive(row.get("buy_in"))
@@ -428,6 +475,16 @@ def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind:
     checks["tp_stale_flag"] = {"pass": not _marked(stale_flag), "value": stale_flag}
     if _marked(stale_flag):
         codes.append("TP_STALE_FLAG")
+    staleness_status = str(staleness.get("status") or "")
+    if staleness_status == STALENESS_NOT_APPLICABLE and str(row.get("official_market") or "").strip().upper() in US_STALENESS_MARKETS:
+        staleness_status = STALENESS_UNAVAILABLE  # a US TP is never exempt from the filings question
+    filings = [dict(item) for item in staleness.get("filings") or [] if isinstance(item, Mapping)]
+    checks["tp_staleness"] = {"pass": None if staleness_status == STALENESS_NOT_APPLICABLE else staleness_status == STALENESS_CLEAR,
+                              "status": staleness_status, "filings": filings, "detail": staleness.get("detail")}
+    if staleness_status == STALENESS_STALE:
+        codes.append(TP_STALE_AFTER_FILING)
+    elif staleness_status not in (STALENESS_CLEAR, STALENESS_NOT_APPLICABLE):
+        codes.append(STALENESS_SOURCE_UNAVAILABLE)
     checks["tp_session_age"] = {"pass": tp_sessions_behind <= thresholds.max_tp_age_sessions, "sessions_behind": tp_sessions_behind,
                                 "limit": thresholds.max_tp_age_sessions, "tp_session": row.get("official_session_date"), "expected_session": expected_session}
     if tp_sessions_behind > thresholds.max_tp_age_sessions:
@@ -584,6 +641,17 @@ def stored_decision(record: Mapping[str, Any]) -> dict[str, Any] | None:
     return copy.deepcopy(dict(record))
 
 
+REPLAY_EXCLUDED_KEYS = ("id", "row_sha256", "run_id", "published_at")  # the run's identity and its wall clock
+
+
+def replay_sha256(record: Mapping[str, Any]) -> str:
+    """The hash of what a verdict DECIDED — every key of the record but the run's identity (``id``, ``run_id``), the wall
+    clock of its insert (``published_at``) and ``row_sha256`` (which covers those): a re-run of a night at the same clock
+    has the same one, whatever was published or marked after that clock (every read is causal: the generation, the
+    cycles, the calibration, the rate packages and the 053 marks as of the run's clock)."""
+    return canonical_sha256({key: value for key, value in record.items() if key not in REPLAY_EXCLUDED_KEYS})
+
+
 # ------------------------------------------------------------------ the nightly shadow run
 
 
@@ -617,8 +685,9 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
     ``_price_observation``) are for a dry run, so nothing intraday replaces the nightly verdicts in the lab's reads. ``now``
     is the run's clock (the wall clock by default); ``published_at`` is the later of it and the wall clock read
     immediately before the insert. A served row predicted after the run's clock is not decided (counted in
-    ``tp_after_run_instant``). The receipt is aggregate (per market: decided, verdicts, reasons, unrecordable, refused
-    quotes) — it names no symbol. Nothing is decided without a generation, under a generation whose source is unknown, or
+    ``tp_after_run_instant``). The US names read migration 053 ONCE, at the run's clock (``us_staleness_at``). The receipt
+    is aggregate (per market: decided, verdicts, reasons, unrecordable, refused quotes, the 053 source's status) — it
+    names no symbol and no filing. Nothing is decided without a generation, under a generation whose source is unknown, or
     under a thresholds block other than the one the PREREG froze (``ValueError``)."""
     if write and quotes:
         raise ValueError("a run on a caller's quotes is a dry run (write=False): the nightly verdicts are decided on the official cut and the cycles "
@@ -643,9 +712,11 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
     drafts: list[tuple[str, str, str, dict[str, Any], dict[str, Any], dict[str, Any]]] = []
     rates: dict[str, dict[str, Any]] = {}
     errors: dict[tuple[str, str], dict[str, Any]] = {}
+    us_staleness: dict[str, Any] | None = None  # migration 053 read ONCE per run, at the run's clock, for both US markets
     for market in MARKETS:
         stats: dict[str, Any] = {"decided": 0, "verdicts": {verdict: 0 for verdict in VERDICTS}, "reasons": {}, "unrecordable": 0,
-                                 "tp_after_run_instant": 0, "quotes_refused": 0, "expected_session": None, "calendar_unavailable": False}
+                                 "tp_after_run_instant": 0, "quotes_refused": 0, "expected_session": None, "calendar_unavailable": False,
+                                 "tp_staleness_source": STALENESS_NOT_APPLICABLE}
         receipt["markets"][market] = stats
         try:
             expected = session_date_of(market, instant)
@@ -656,6 +727,10 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
         group = "B3" if market == "B3" else "US"
         if group not in rates:
             rates[group] = market_rate(database, market, at=instant, generation=generation, thresholds=thresholds)
+        if group == "US":
+            if us_staleness is None:
+                us_staleness = us_staleness_at(database, instant)
+            stats["tp_staleness_source"] = str(us_staleness.get("status"))
         latest_universe = database.analysis_snapshot_at_or_before(official.UNIVERSE_ANALYSIS, f"{market}_UNIVERSE", instant)
         for symbol, row in sorted(_served_rows(database, market, generation).items()):
             if _utc(row["prediction_instant"]) > instant:  # causal: a TP predicted after the run's clock is not one this run could read
@@ -676,8 +751,9 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
                                        thresholds=thresholds)
             if price["quote_refused"]:
                 stats["quotes_refused"] += 1
+            staleness = name_staleness(us_staleness if group == "US" else None, market, symbol)
             outcome = decide(row, expected_session=expected, tp_sessions_behind=behind, price=price, error=errors[(market, profile)],
-                             rate=rates[group], thresholds=thresholds)
+                             rate=rates[group], staleness=staleness, thresholds=thresholds)
             inputs = {
                 "generation": {"generation_id": generation["generation_id"], "source": generation.get("source"), "activated_at": generation.get("activated_at")},
                 "tp_record": {"source": row.get("tp_source"), "source_version": row.get("tp_source_version"), "cycle_id": row.get("official_cycle_id"),
@@ -688,6 +764,7 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
                 "price": price,
                 "e_profile": errors[(market, profile)],
                 "market_rate": rates[group],
+                "tp_staleness": staleness,
                 "expected_session": expected,
                 "thresholds_sha256": digest,
                 "prereg_frozen": frozen,

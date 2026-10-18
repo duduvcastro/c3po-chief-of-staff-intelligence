@@ -3,6 +3,7 @@ trigger (migration 053) and its wiring — Investor Relations polling, the IR va
 the US producer's shadow hook. Everything behind C3PO_VALUATION_ASFILED_ENABLED, default off. No network."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -420,6 +421,75 @@ def test_the_nightly_cut_records_its_revaluation_only_behind_the_flag(monkeypatc
 
     monkeypatch.setattr(valuation_worker, "evaluate_us_filings", broken)
     valuation_worker.run_nightly(database, investor_relations, screener, us_screener, asfiled_enabled=True)  # type: ignore[arg-type]
+
+
+def _staleness(doc_id: str, symbol: str, state: str, recorded_at: datetime, *, accepted_at: datetime | None = None) -> dict[str, Any]:
+    return {"market": "NASDAQ" if state != "untracked" else "US", "symbol": symbol, "issuer_key": fx.CIK, "doc_id": doc_id, "form": "10-Q",
+            "items": "", "accepted_at": accepted_at or datetime(2026, 2, 20, 21, 30, tzinfo=UTC), "period_of_report": date(2025, 12, 31),
+            "state": state, "reason": {"stale": "tp_predates_acceptance", "cleared": "revalued_by_cut", "untracked": "no_official_tp"}[state],
+            "official_cycle_id": None, "prediction_instant": None, "fundamentals_as_of": None, "expected_period_end": date(2025, 12, 31),
+            "covers_period": None, "queued_for_cut_at": None, "recorded_at": recorded_at}
+
+
+def test_the_causal_reader_knows_only_the_marks_of_its_clock_and_the_latest_state_of_each_filing() -> None:
+    database = Database(_settings())
+    t0 = datetime(2026, 2, 20, 22, 0, tzinfo=UTC)
+    absent = asfiled.us_staleness_at(database, t0)
+    assert absent["status"] == "unavailable" and "migration 053" in absent["detail"] and not hasattr(database, "_valuation_tp_staleness")
+    store = asfiled.TpStalenessStore(database)
+    assert asfiled.us_staleness_at(database, t0) == {"status": "ok", "known_at": t0.isoformat(), "marks_known": 0, "latest_recorded_at": None, "pending": {}}
+    store.append([_staleness("A-1", "SYNT", "untracked", t0), _staleness("A-1", "SYNT", "stale", t0 + timedelta(hours=1)),
+                  _staleness("A-1", "SYNT", "cleared", t0 + timedelta(hours=5)),
+                  _staleness("B-2", "SYNT", "stale", t0 + timedelta(hours=2), accepted_at=datetime(2026, 2, 12, 21, 5, tzinfo=UTC))])
+    early = asfiled.us_staleness_at(database, t0 + timedelta(minutes=30))
+    assert early["pending"] == {} and early["marks_known"] == 1  # untracked: not a stale TP
+    assert [mark["doc_id"] for mark in asfiled.us_staleness_at(database, t0 + timedelta(hours=1))["pending"]["SYNT"]] == ["A-1"]
+    both = asfiled.us_staleness_at(database, t0 + timedelta(hours=3))
+    assert [mark["doc_id"] for mark in both["pending"]["SYNT"]] == ["B-2", "A-1"]  # oldest acceptance first
+    assert both["latest_recorded_at"] == (t0 + timedelta(hours=2)).isoformat() and both["marks_known"] == 3
+    assert [mark["doc_id"] for mark in asfiled.us_staleness_at(database, t0 + timedelta(hours=5))["pending"]["SYNT"]] == ["B-2"]
+    assert list(asfiled.stale_us_tps(database)) == ["SYNT"]  # the non-causal read: everything the table holds now
+    # a tie on recorded_at (the trigger never writes one) resolves to the stricter state
+    store.append([_staleness("C-3", "WWWW", "stale", t0 + timedelta(hours=6)), _staleness("C-3", "WWWW", "cleared", t0 + timedelta(hours=6))])
+    assert "WWWW" in asfiled.us_staleness_at(database, t0 + timedelta(hours=6))["pending"]
+    # a row inserted after the clock is not known at it, whatever clock its pass carried (a replayed pass, a straddling one)
+    database._valuation_tp_staleness.append({**_staleness("D-4", "ZZZZ", "stale", t0 + timedelta(hours=1)), "id": "late",  # type: ignore[attr-defined]
+                                             "created_at": t0 + timedelta(hours=7)})
+    assert "ZZZZ" not in asfiled.us_staleness_at(database, t0 + timedelta(hours=6, minutes=30))["pending"]
+    assert "ZZZZ" in asfiled.us_staleness_at(database, t0 + timedelta(hours=7))["pending"]
+
+
+def test_the_causal_reader_on_postgresql_asks_for_the_table_and_filters_both_clocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    pg = Database(_settings(database_url="postgresql://configured"))
+    clock = datetime(2026, 2, 21, 4, 30, tzinfo=UTC)
+    statements: list[tuple[str, Any]] = []
+    table: list[Any] = [None]
+    stored = _staleness("A-1", "SYNT", "stale", clock - timedelta(hours=7))
+
+    class Recording:
+        def execute(self, query: str, params: Any = None) -> "Recording":
+            statements.append((" ".join(query.split()), params))
+            return self
+
+        def fetchone(self) -> Any:
+            return (table[0],)
+
+        def fetchall(self) -> list[Any]:
+            return [tuple("m-1" if key == "id" else stored.get(key) for key in asfiled._STALENESS_KEYS)]
+
+    @contextmanager
+    def fake_connection() -> Any:
+        yield Recording()
+
+    monkeypatch.setattr(pg, "connection", fake_connection)
+    assert asfiled.us_staleness_at(pg, clock)["status"] == "unavailable"  # to_regclass is NULL: migration 053 not applied
+    assert statements == [("SELECT to_regclass(%s)::text", ("valuation_tp_staleness",))]
+    table[0] = "valuation_tp_staleness"
+    read = asfiled.us_staleness_at(pg, clock)
+    query, params = statements[-1]
+    assert "FROM valuation_tp_staleness WHERE recorded_at <= %s AND created_at <= %s" in query and params == (clock, clock)
+    assert "id::text" in query and "ORDER BY recorded_at, doc_id, symbol, state" in query
+    assert read["status"] == "ok" and read["marks_known"] == 1 and [mark["id"] for mark in read["pending"]["SYNT"]] == ["m-1"]
 
 
 def test_migration_053_is_append_only_and_marks_each_state_once() -> None:
