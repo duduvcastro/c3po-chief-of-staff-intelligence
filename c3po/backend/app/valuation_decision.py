@@ -61,7 +61,7 @@ import logging
 import math
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, cast
 from uuid import uuid4
 
 from . import valuation_env
@@ -248,8 +248,10 @@ def profile_error(database: Any, market: str, profile: str, *, at: datetime, thr
     if not snapshot:
         return {**base, "detail": "no calibration snapshot"}
     published = _utc(snapshot["published_at"])
-    outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), Mapping) else {}
-    metrics = outputs.get("metrics") if isinstance(outputs.get("metrics"), Mapping) else {}
+    raw_outputs = snapshot.get("outputs")
+    outputs: Mapping[str, Any] = raw_outputs if isinstance(raw_outputs, Mapping) else {}
+    raw_metrics = outputs.get("metrics")
+    metrics: Mapping[str, Any] = raw_metrics if isinstance(raw_metrics, Mapping) else {}
     horizon = _number(outputs.get("observed_horizon_days"))
     base.update({"snapshot_id": str(snapshot.get("id")), "published_at": published.isoformat(), "calibration_status": outputs.get("status"),
                  "observed_horizon_days": horizon})
@@ -348,7 +350,7 @@ def market_rate(database: Any, market: str, *, at: datetime, generation: Mapping
             if at - observed > timedelta(days=thresholds.market_rate_max_age_days):
                 candidate["detail"] = f"observation older than {thresholds.market_rate_max_age_days} days"
             else:
-                rate = float(candidate["annual_rate"])
+                rate = float(cast(float, candidate["annual_rate"]))  # checked not None above
                 hurdle = (1 + rate) ** thresholds.tp_horizon_years - 1 + thresholds.market_premium
                 return {"status": "ok", **candidate, "undated": bool(candidate.get("undated")), "h_market": hurdle,
                         "tp_horizon_years": thresholds.tp_horizon_years, "market_premium": thresholds.market_premium, "tried": tried}
