@@ -4917,20 +4917,6 @@ class Database:
             ).fetchall()
         return [dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row)) for row in rows]
 
-    def latest_analysis_snapshot_published_at(self, analysis_type: str, entity_key: str) -> datetime | None:
-        """When the latest snapshot of ``analysis_type``/``entity_key`` was published — the clock only (a phase's
-        ``last_completed_at`` read on every worker wake, without decoding the snapshot)."""
-        if not self.database_url:
-            stamps = [item["published_at"] for item in self._analysis_snapshots
-                      if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key]
-            return max(stamps) if stamps else None
-        with self.connection() as connection:
-            row = connection.execute(
-                "SELECT max(published_at) FROM analysis_snapshots WHERE analysis_type = %s AND entity_key = %s",
-                (analysis_type, entity_key),
-            ).fetchone()
-        return row[0] if row and row[0] is not None else None
-
     def v2_forward_eps_at_or_before(self, market: str, symbols: list[str], cutoff: datetime) -> dict[str, Any] | None:
         """The consensus EPS term structure (``fy1_estimate``, ``forward_estimates``) of ``symbols`` in the latest
         ``valuation_v2_data/<market>_V2_DATA`` snapshot published at or before ``cutoff`` — only those keys of only those

@@ -113,13 +113,16 @@ def test_the_consensus_reader_extracts_only_the_term_structure_of_the_names_aske
 def test_the_calendar_readers_read_published_clocks_only(pg: tuple[Database, Any]) -> None:
     database, connection = pg
     outputs = {"schema": calendar_module.SCHEMA, "request": {"from": "2026-10-07", "to": "2026-11-13"}, "events": [], "rows": 0}
+    oldest = _snapshot(connection, calendar_module.ANALYSIS_TYPE, calendar_module.ENTITY_KEY, outputs, D - timedelta(hours=50))
     first = _snapshot(connection, calendar_module.ANALYSIS_TYPE, calendar_module.ENTITY_KEY, outputs, D - timedelta(hours=40))
+    edge = _snapshot(connection, calendar_module.ANALYSIS_TYPE, calendar_module.ENTITY_KEY, outputs, D - timedelta(hours=36))  # the window's first instant
     second = _snapshot(connection, calendar_module.ANALYSIS_TYPE, calendar_module.ENTITY_KEY, outputs, D - timedelta(hours=10))
     _snapshot(connection, calendar_module.ANALYSIS_TYPE, calendar_module.ENTITY_KEY, outputs, D - timedelta(seconds=30))
     connection.commit()
     read = calendar_module.calendars_at(database, D, recent_hours=36, margin_seconds=60)
-    assert [item["snapshot_id"] for item in read["recent"]] == [second] and read["latest"]["snapshot_id"] == second
-    assert calendar_module.calendars_at(database, D - timedelta(hours=11), recent_hours=36, margin_seconds=60)["latest"]["snapshot_id"] == first
+    assert [item["snapshot_id"] for item in read["recent"]] == [edge, second] and read["older"]["snapshot_id"] == first
+    earlier = calendar_module.calendars_at(database, D - timedelta(hours=11), recent_hours=36, margin_seconds=60)
+    assert [item["snapshot_id"] for item in earlier["recent"]] == [first, edge] and earlier["older"]["snapshot_id"] == oldest
     assert database.latest_analysis_snapshot_published_at(calendar_module.ANALYSIS_TYPE, calendar_module.ENTITY_KEY) == D - timedelta(seconds=30)
 
 

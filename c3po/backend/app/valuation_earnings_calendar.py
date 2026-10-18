@@ -195,16 +195,16 @@ def _parsed(snapshot: Mapping[str, Any]) -> dict[str, Any] | None:
 
 
 def calendars_at(database: Database, at: datetime, *, recent_hours: int, margin_seconds: int) -> dict[str, Any]:
-    """The calendars a decision at ``at`` may read: every snapshot RECEIVED in [``at`` − ``recent_hours``, ``at`` − margin]
-    (``recent``, oldest first) and the latest one received by ``at`` − margin whatever its age (``latest``) — a snapshot
+    """The calendars a decision at ``at`` reads: every snapshot RECEIVED in [``at`` − ``recent_hours``, ``at`` − margin]
+    (``recent``, oldest first) and the latest one received BEFORE that window (``older``, whatever its age) — a snapshot
     inserted later, or received inside the last ``margin_seconds``, never reaches the decision."""
     cutoff = _utc(at) - timedelta(seconds=margin_seconds)
     since = _utc(at) - timedelta(hours=recent_hours)
     recent = [parsed for snapshot in database.analysis_snapshots_published_between(ANALYSIS_TYPE, ENTITY_KEY, since, cutoff)
               if (parsed := _parsed(snapshot)) is not None]
-    latest_snapshot = database.analysis_snapshot_at_or_before(ANALYSIS_TYPE, ENTITY_KEY, cutoff)
-    latest = _parsed(latest_snapshot) if latest_snapshot else None
-    return {"known_at": cutoff.isoformat(), "recent_hours": recent_hours, "recent": recent, "latest": latest}
+    older_snapshot = database.analysis_snapshot_at_or_before(ANALYSIS_TYPE, ENTITY_KEY, min(since, cutoff) - timedelta(microseconds=1))
+    older = _parsed(older_snapshot) if older_snapshot else None
+    return {"known_at": cutoff.isoformat(), "recent_hours": recent_hours, "recent": recent, "older": older}
 
 
 def _filings_present(database: Database) -> bool:

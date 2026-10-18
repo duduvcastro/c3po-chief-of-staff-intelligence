@@ -82,22 +82,28 @@ relatório somente-leitura comparar com e sem o portão.
     para AMC ou horário desconhecido (o provedor não marca DAY: sem marca é desconhecido). Por isso um AMC (ou sem
     horário) em T conta: o preço com que a noite decide é o fechamento de T, que ainda não viu o resultado — **risco de
     gap** na abertura de T+1. Um BMO em T já está no fechamento de T.
-    * **Calendários lidos**: todos os snapshots (fase `earnings_calendar`, abaixo) **recebidos** em [D − 36 h, D − ε] e
-      o último recebido até D − ε, qualquer que seja a idade — a **união conservadora** dos eventos: evento na janela de
-      **qualquer** um deles segura a permissão (a idade só enfraquece o "nenhum evento").
-    * **"Nenhum evento"** só vem de um calendário recebido em [D − 36 h, D − ε] que seja **utilizável**: ao menos
-      `earnings_calendar_min_us_events` = 100 eventos US dentro da janela pedida (menos é calendário parcial — inclusive
-      zero), linhas inválidas sem dono ≤ `earnings_calendar_max_invalid_share` = 5 % das linhas (acima é lixo), janela
-      pedida cobrindo [T+1, T+N] e nenhuma linha inválida do nome. **Por que 100**: a janela que a fase pede é de 37 dias
-      corridos [hoje − 7, hoje + 30]; mesmo fora de temporada (meados de dezembro a meados de janeiro, ou o começo de
-      junho e de setembro) reportam os emissores de ano fiscal fora do calendário (~30 % dos ~4.000 operacionais
-      listados nos EUA, 4 resultados por ano cada, espalhados pelos meses) e os retardatários de dezembro — da ordem de
-      centenas de anúncios em qualquer janela de 37 dias, várias vezes o piso. Abaixo disso a resposta é parcial; a
-      confirmar com os primeiros snapshots reais (`counts.by_exchange.US`).
-    * Calendário utilizável que **lista** o nome fora da janela → `calendar`, sem portão. Utilizável **sem linha do
-      nome** → a estimativa da 051 ainda segura a permissão quando alcança a janela (`EARNINGS_DATE_ESTIMATED`).
-    * **Sem calendário utilizável** → a estimativa responde (`EARNINGS_DATE_ESTIMATED`); sem nenhuma das duas → sem
-      portão, marca `EARNINGS_CALENDAR_UNAVAILABLE` (regra de abstenção: falhar aberto é aceitável, e fica registrado).
+    * **A regra, exatamente** (revisada em 18/10 após a verificação independente; fecha um caso que falhava aberto):
+      * **Calendários lidos**: todos os snapshots (fase `earnings_calendar`, abaixo) **recebidos** em [D − 36 h, D − ε]
+        **e** o último recebido **antes** dessa janela (qualquer que seja a idade; os anteriores a ele não são lidos).
+      * **PORTÃO** se **qualquer** calendário lido — utilizável ou não, recente ou não — tem um evento do nome cuja sessão
+        do anúncio ou de reação cai em [T+1, T+N].
+      * Senão, "**nenhum evento**" só pode ser respondido pelo **calendário utilizável mais novo** da janela, e só se ele
+        tem uma linha **válida** do nome (fora da janela) **e nenhum** calendário lido tem linha inválida do nome.
+        Utilizável: recebido em [D − 36 h, D − ε], ao menos `earnings_calendar_min_us_events` = 100 eventos US dentro da
+        janela pedida (menos é calendário parcial — inclusive zero), linhas inválidas **sem dono** ≤
+        `earnings_calendar_max_invalid_share` = 5 % das linhas (acima é lixo; linhas inválidas atribuídas a um nome
+        valem só para aquele nome) e janela pedida cobrindo [T+1, T+N] (as pontas incluídas).
+      * **Em todo outro caso** — nenhum calendário utilizável; o utilizável mais novo **sem linha do nome**; linha
+        inválida do nome em **qualquer** calendário lido — a **estimativa da 051** responde: alcança a janela → portão
+        (`EARNINGS_DATE_ESTIMATED`); não alcança → sem portão (`EARNINGS_DATE_ESTIMATED`, com o motivo); sem estimativa →
+        sem portão, marca `EARNINGS_CALENDAR_UNAVAILABLE` com o motivo (regra de abstenção: falhar aberto é aceitável,
+        e fica registrado). O registro guarda cada calendário lido (recusa, se lista o nome, se tem linha inválida dele)
+        e qual respondeu (`answering`).
+    * **Por que 100**: a janela que a fase pede é de 37 dias corridos [hoje − 7, hoje + 30]; mesmo fora de temporada
+      (meados de dezembro a meados de janeiro, ou o começo de junho e de setembro) reportam os emissores de ano fiscal fora
+      do calendário (~30 % dos ~4.000 operacionais listados nos EUA, 4 resultados por ano cada, espalhados pelos meses) e
+      os retardatários de dezembro — da ordem de centenas de anúncios em qualquer janela de 37 dias, várias vezes o piso.
+      Abaixo disso a resposta é parcial; a confirmar com os primeiros snapshots reais (`counts.by_exchange.US`).
     * **Estimativa por cadência** (só EUA; filings da 051 **originais** — 8-K com item 2.02, 10-Q, 10-K; emendas `/A`
       nunca —, aceitos até D e **registrados** (`first_seen_at`) até D − ε, nos últimos `earnings_filings_lookback_days` =
       400 dias; a base é sempre a **aceitação** em dia de Nova York, nunca o registro): (1) **sazonal** — o trimestre
@@ -107,8 +113,8 @@ relatório somente-leitura comparar com e sem o portão.
       último 10-Q e o último 10-K: 8-K ou 10-Q → aceitação + 91 dias; 10-K → fim do período + 91 dias + a defasagem do
       último 10-Q do emissor (aceitação − fim do período; sem 10-Q, 45 dias). A data estimada, sem horário, conta pela
       sessão do anúncio ou pela de reação, na janela alargada em 7 dias de cada lado (`earnings_estimate_tolerance_days`).
-    * O mercado do portão vem dos fatos do evento, senão de `official_market` da linha; sem nenhum dos dois, o portão
-      vale (falha fechada). **B3 só informativa**: a cobertura do calendário EODHD para a B3 não foi verificada (o
+    * O mercado do portão vem dos fatos do evento, senão de `official_market` da linha; `US` (as duas bolsas) vale como
+      NASDAQ/NYSE; sem nenhum dos dois, o portão vale (falha fechada). **B3 só informativa**: a cobertura do calendário EODHD para a B3 não foi verificada (o
       snapshot conta eventos por bolsa em `counts.by_exchange` para a mesa julgar) e não há estimativa CVM equivalente.
   * **`CONSENSUS_EPS_CUT_30D`** (marca): ln(EPS de consenso FY1 no último `valuation_v2_data/<M>_V2_DATA` publicado até
     D − ε ÷ FY1 no último publicado até D − 30 d − ε) < −0,05 (`consensus_eps_cut_log`, `consensus_lookback_days` = 30),
@@ -218,7 +224,7 @@ snapshots existente, sem migração nova) datado pelo `received_at`, com o SHA-2
 corpo em si não é guardado. Resposta não 200, tipo não JSON, corpo inválido, acima do teto ou fora do prazo não grava
 nada; nenhum erro carrega a URL (ela leva o token). A fase é **consultiva** (`VALUATION_WORKER_ADVISORY_PHASES`): falha
 não dispara push `job_failure` nem marca falha no check do worker, e no painel de saúde aparece como **atenção**, nunca
-offline (falhou, ou ainda não rodou no ciclo); tenta no máximo **3 vezes por noite** (`MAX_FAILURES_PER_NIGHT`) e espera
+offline (falhou, ainda não rodou no ciclo, ou ficou presa em `running` — morta no meio do download); tenta no máximo **3 vezes por noite** (`MAX_FAILURES_PER_NIGHT`) e espera
 a noite seguinte. `last_run_at` lê só o relógio do último snapshot. A fase `decisor_shadow` mantém o comportamento de
 antes (falha avisa).
 
@@ -260,6 +266,12 @@ marcas do registro), sem efeito no veredicto.
 * **053 no host**: aplicada **automaticamente** na partida do container — `Database.initialize()` executa toda migração
   numerada de `db/` sob trava consultiva (`IF NOT EXISTS`, idempotente); nenhuma ação manual. `STALENESS_SOURCE_UNAVAILABLE`
   só aparece se a inicialização falhar ou numa janela de deploy.
+* **Replay de uma noite anterior à 053 com poll vivo** (resíduo declarado): com o poll vivo e a 053 ainda não aplicada,
+  a noite registrou `STALENESS_SOURCE_UNAVAILABLE`; depois que a 053 chega, um replay da mesma noite lê a tabela (vazia
+  até D) e registra `clear` — o veredicto e o `replay_sha256` diferem. Só D não diz quando a migração foi aplicada (a
+  053 não guarda a própria data de criação), então o leitor não distingue "ausente em D" de "ausente agora". Sem poll
+  vivo, as duas leituras coincidem (o poll é julgado primeiro). A 053 é aplicada na partida do container, então a
+  janela é a do primeiro deploy com ela.
 * **Vivacidade ≠ gatilho**: o poll `sec_asfiled` bem-sucedido prova que os protocolos estão sendo registrados, não que o
   gatilho (`evaluate_us_filings`, no processador de IR e no corte) rodou — uma falha do gatilho é só log, sem execução
   gravada. Se a mesa quiser a prova exata, o gatilho passa a gravar a própria execução e o bloco aponta para ela.

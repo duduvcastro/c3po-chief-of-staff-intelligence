@@ -654,6 +654,19 @@ def test_valuation_worker_phase_health_expects_the_earnings_calendar_only_when_e
     both = _service(valuation_phase_states={**states, v2: {**states[v2], "last_status": "failed", "last_error": "boom"}})
     item = both._valuation_worker_phase_health(now)
     assert item.status == "offline" and "v2_data: boom" in (item.detail or "") and "Advisory · earnings_calendar" in (item.detail or "")
+    # after every window (12:00 BRT): an advisory phase stuck running (killed mid-download) or last successful days ago is
+    # attention, never offline
+    noon = datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
+    fresh = {code_: {**state, "started_at": noon, "completed_at": noon, "last_success_at": noon} for code_, state in states.items()}
+    stuck = _service(valuation_phase_states={**fresh, code: {**fresh[VALUATION_WORKER_PHASES["canonical"]["code"]], "last_status": "running",
+                                                             "completed_at": None, "last_success_at": None}})
+    item = stuck._valuation_worker_phase_health(noon)
+    assert item.status == "attention" and "Advisory · earnings_calendar: running" in (item.detail or "")
+    old = noon - timedelta(days=2)
+    behind = _service(valuation_phase_states={**fresh, code: {**fresh[VALUATION_WORKER_PHASES["canonical"]["code"]], "started_at": old, "completed_at": old,
+                                                              "last_success_at": old}})
+    item = behind._valuation_worker_phase_health(noon)
+    assert item.status == "attention" and "earnings_calendar: not run yet for this cycle" in (item.detail or "")
 
 
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:

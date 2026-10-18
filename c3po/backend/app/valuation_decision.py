@@ -47,17 +47,21 @@ The rules (every number in ``DecisorThresholds``, the ONE settings block the PRE
   D − ε; without one every US name is ``STALENESS_SOURCE_STALE`` whether or not the table exists (fail closed).
 * events (the block's ``event_gates`` says which withhold a permission; every other event code is a MARK — recorded in
   ``checks.events.marks``, never a verdict): ``EARNINGS_WITHIN_N`` — an announcement known at D whose report OR reaction
-  session (AfterMarket and untimed releases react on the next session: an AMC on T counts) falls in [T+1, T+N]: any
-  calendar received by D − ε gates with its in-window events (the union over [D − 36 h, D − ε] and the latest before);
-  "no event" needs a USABLE calendar of that window (≥ ``earnings_calendar_min_us_events`` US events, unattributed
-  invalid rows ≤ ``earnings_calendar_max_invalid_share``, covering the window); a usable calendar without the name's row,
-  or no usable calendar, defers to the 051 cadence estimate (``EARNINGS_DATE_ESTIMATED``); neither →
-  ``EARNINGS_CALENDAR_UNAVAILABLE``, no gate — a gate on the US exchanges, a mark on B3. ``CONSENSUS_EPS_CUT_30D`` and
-  ``NEWS_SENTIMENT_NEGATIVE`` are marks (the latter never a gate: ``NEVER_GATES``). Every record keeps
-  ``checks.counterfactual.verdict_without_events``: the verdict with the event gates off.
-* ε (``insert_margin_seconds``): every read on an insert clock — the poll's completion, 053 ``created_at``, a
-  snapshot's publication, 051 ``first_seen_at``, the sentiment row's publication, the served record's publication —
-  stops at D − ε; a served record published after D − ε is not decided (``tp_published_after_run_instant``).
+  session (AfterMarket and untimed releases react on the next session: an AMC on T counts) falls in [T+1, T+N]. The
+  calendars read are every one received in [D − 36 h, D − ε] and the latest one received before that window: ANY of
+  them with an in-window event of the name gates; otherwise "no event" is answered ONLY by the NEWEST USABLE calendar of
+  the window (≥ ``earnings_calendar_min_us_events`` US events, unattributed invalid rows ≤
+  ``earnings_calendar_max_invalid_share``, covering the window), and only when it lists the name and no calendar read
+  has an invalid row of the name; in every other case the 051 cadence estimate answers (``EARNINGS_DATE_ESTIMATED``,
+  within → gate); without one ``EARNINGS_CALENDAR_UNAVAILABLE``, no gate — a gate on the US exchanges (market ``US``
+  included), a mark on B3. ``CONSENSUS_EPS_CUT_30D`` and ``NEWS_SENTIMENT_NEGATIVE`` are marks (the latter never a gate:
+  ``NEVER_GATES``). Every record keeps ``checks.counterfactual.verdict_without_events``: the verdict with the event gates
+  off.
+* ε (``insert_margin_seconds``): every read the event and 053 rules make on an insert clock — the poll's completion, 053
+  ``created_at``, the calendar and consensus snapshots' publication, 051 ``first_seen_at``, the sentiment row's
+  publication, the served record's publication — stops at D − ε; a served record published after D − ε is not decided
+  (``tp_published_after_run_instant``). The decisor's other reads (the generation, the cycles, the calibration, the rate
+  packages) stop at D, as they did before these rules.
 
 Records (``valuation_decisions``) carry the discipline of ``valuation_predictions``: two clocks (``prediction_instant`` = the
 run's clock; ``published_at`` read immediately before the insert, never before it), the session of the verdict (the last
@@ -135,7 +139,7 @@ STALENESS_SOURCE_STALE = "STALENESS_SOURCE_STALE"  # no live as-filed poll obser
 # events (the block's ``event_gates`` says which withhold a permission; the others are MARKS: recorded, never a verdict)
 EARNINGS_WITHIN_N = "EARNINGS_WITHIN_N"  # an announcement known at D on sessions [T+1, T+N] (a gate in earnings_gate_markets)
 EARNINGS_DATE_ESTIMATED = "EARNINGS_DATE_ESTIMATED"  # the 051 cadence estimate answered (no usable calendar, or no calendar row for the name)
-EARNINGS_CALENDAR_UNAVAILABLE = "EARNINGS_CALENDAR_UNAVAILABLE"  # neither a usable calendar nor an estimate: no gate (an abstention rule)
+EARNINGS_CALENDAR_UNAVAILABLE = "EARNINGS_CALENDAR_UNAVAILABLE"  # no calendar answer for the name and no estimate: no gate (an abstention rule)
 CONSENSUS_EPS_CUT_30D = "CONSENSUS_EPS_CUT_30D"  # FY1 consensus EPS cut over the last 30 days beyond the block's limit
 NEWS_SENTIMENT_NEGATIVE = "NEWS_SENTIMENT_NEGATIVE"  # the weekly Finnhub sentiment read at D is bearish beyond the block's limit (never a gate)
 EVENT_CODES: tuple[str, ...] = (EARNINGS_WITHIN_N, EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_30D,
@@ -684,66 +688,68 @@ def _estimate_within(market: str, estimate: Mapping[str, Any], window: list[str]
 def name_earnings(calendars: Mapping[str, Any] | None, filings: Mapping[str, Any] | None, market: str, symbol: str, *, at: datetime,
                   expected_session: str, thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
     """The earnings facts of ONE name at the run's clock ``at`` — ``within`` when an announcement reaches sessions
-    [T+1, T+N] (N = ``earnings_window_sessions``): its report session or its reaction session (``reaction_sessions``:
-    an AfterMarket or untimed release on T reacts on T+1 and counts).
+    [T+1, T+N] (N = ``earnings_window_sessions``) by its report session or its reaction session (``reaction_sessions``:
+    an AfterMarket or untimed release on T reacts on T+1 and counts). The calendars read
+    (``valuation_earnings_calendar.calendars_at``) are every one received in [D − ``earnings_calendar_max_age_hours``,
+    D − ε] and the latest one received before that window:
 
-    * every calendar the run may read (``valuation_earnings_calendar.calendars_at``: those received in
-      [D − ``earnings_calendar_max_age_hours``, D − ε] and the latest before, whatever its age) — the conservative UNION
-      of their events: an in-window event of ANY of them gates (staleness only weakens "no event");
-    * "no event" needs a calendar received in the window that is USABLE (``_calendar_usable``) with no invalid row for
-      the name; if it lists the name (out of the window) → ``calendar``, no gate; if it has NO row for the name, the
-      051 cadence estimate (``cadence_estimate``, US) still gates when it reaches the window (``estimated``);
-    * no usable calendar: the estimate answers (``estimated``, the window widened by ``earnings_estimate_tolerance_days``);
-      neither → ``unavailable`` (no gate: an abstention rule fails open, and says so)."""
+    1. GATE (``calendar``, within) when ANY calendar read — usable or not, recent or not — has an event of the name whose
+       report or reaction session is in the window;
+    2. otherwise "no event" (``calendar``, not within) is answered ONLY by the NEWEST USABLE calendar of the window
+       (``_calendar_usable``), and only when it has a valid row of the name (out of the window) and NO calendar read has
+       an invalid row of the name;
+    3. in every other case (no usable calendar; the newest usable one without a row of the name; an invalid row of the
+       name anywhere) the 051 cadence estimate (``cadence_estimate``, US) answers: ``estimated`` — within → gate, else no
+       gate; without an estimate ``unavailable``, no gate (an abstention rule fails open, and says why)."""
     window = _calendar_sessions(market, expected_session, thresholds.earnings_window_sessions)
     base: dict[str, Any] = {"window": window, "window_sessions": thresholds.earnings_window_sessions, "calendars": [], "estimate": None,
                             "events": [], "within": False}
     if window is None:
         return {**base, "status": "unavailable", "detail": "the exchange calendar cannot name sessions T+1..T+N"}
     read = calendars or {}
-    recent = [item for item in read.get("recent") or [] if isinstance(item, Mapping)]
-    latest = read.get("latest") if isinstance(read.get("latest"), Mapping) else None
-    pool = {str(item["snapshot_id"]): item for item in [*recent, *([latest] if latest else [])]}
+    recent = sorted((item for item in read.get("recent") or [] if isinstance(item, Mapping)), key=lambda item: str(item.get("received_at")))
+    older = read.get("older") if isinstance(read.get("older"), Mapping) else None
+    pool = [*([older] if older else []), *recent]  # oldest first
+    recent_ids = {str(item["snapshot_id"]) for item in recent}
     codes = _provider_codes(market, symbol)
     events: list[dict[str, Any]] = []
-    seen: set[tuple[Any, ...]] = set()
-    for snapshot_id, calendar in sorted(pool.items(), key=lambda entry: str(entry[1].get("received_at"))):
+    for calendar in pool:
         for code in codes:
             for event in (calendar.get("by_code") or {}).get(code) or []:
                 report_date, timing = str(event.get("report_date") or ""), event.get("timing")
-                identity = (code, report_date, timing, event.get("fiscal_period_end"))
-                if identity in seen:
-                    continue
-                seen.add(identity)
                 report, reaction = reaction_sessions(market, report_date, timing)
                 events.append({"code": code, "report_date": report_date, "fiscal_period_end": event.get("fiscal_period_end"), "timing": timing,
-                               "report_session": report, "reaction_session": reaction, "snapshot_id": snapshot_id,
+                               "report_session": report, "reaction_session": reaction, "snapshot_id": str(calendar["snapshot_id"]),
                                "in_window": any(session is not None and session in window for session in (report, reaction))})
+    blocked = [str(calendar["snapshot_id"]) for calendar in pool if any((calendar.get("blocking_codes") or {}).get(code) for code in codes)]
     judged = []
-    recent_ids = {str(item["snapshot_id"]) for item in recent}
-    for snapshot_id, calendar in pool.items():
+    for calendar in pool:
+        snapshot_id = str(calendar["snapshot_id"])
         refused = _calendar_usable(calendar, window, thresholds)
         if refused is None and snapshot_id not in recent_ids:
             refused = f"received more than {thresholds.earnings_calendar_max_age_hours} h before the run's clock"
-        if refused is None and any((calendar.get("blocking_codes") or {}).get(code) for code in codes):
-            refused = "an invalid row for the name"
         judged.append({**{key: calendar.get(key) for key in ("snapshot_id", "received_at", "payload_sha256", "request_from", "request_to",
-                                                            "us_events", "invalid_share")}, "refused": refused})
-    base.update({"calendars": sorted(judged, key=lambda item: str(item.get("received_at"))), "events": events})
+                                                            "us_events", "invalid_share")},
+                       "refused": refused, "lists_name": any((calendar.get("by_code") or {}).get(code) for code in codes),
+                       "invalid_row_of_name": snapshot_id in blocked})
+    usable = [item for item in judged if item["refused"] is None]
+    newest = usable[-1] if usable else None  # judged follows the pool: oldest first
+    base.update({"calendars": judged, "events": events, "answering": newest["snapshot_id"] if newest else None})
     estimate_raw = None
     if market in US_STALENESS_MARKETS and (filings or {}).get("status") == "ok":
         estimate_raw = cadence_estimate(list(((filings or {}).get("by_symbol") or {}).get(symbol) or []), thresholds)
     estimate = _estimate_within(market, estimate_raw, window, thresholds) if estimate_raw and window else None
     base["estimate"] = estimate
-    if any(item["in_window"] for item in events):
+    if any(item["in_window"] for item in events):  # 1. any calendar's in-window event gates
         return {**base, "status": "calendar", "within": True, "detail": None}
-    answering = [str(item["snapshot_id"]) for item in judged if item["refused"] is None]
-    if answering:
-        listed = any((pool[snapshot_id].get("by_code") or {}).get(code) for snapshot_id in answering for code in codes)
-        if listed or not (estimate and estimate["within"]):
-            return {**base, "status": "calendar", "within": False, "detail": None if listed else "no calendar row for the name"}
-        return {**base, "status": "estimated", "within": True, "detail": "a usable calendar has no row for the name; the 051 estimate reaches the window"}
-    why = "; ".join(f"{item['snapshot_id']}: {item['refused']}" for item in judged) or "no calendar snapshot received by the run's clock"
+    if newest is not None and newest["lists_name"] and not blocked:  # 2. the newest usable calendar lists the name, nobody contradicts it
+        return {**base, "status": "calendar", "within": False, "detail": None}
+    if blocked:  # 3. the estimate answers — and why
+        why = f"an invalid row of the name in {', '.join(blocked)}"
+    elif newest is not None:
+        why = f"the newest usable calendar ({newest['snapshot_id']}) has no row of the name"
+    else:
+        why = "no usable calendar: " + ("; ".join(f"{item['snapshot_id']}: {item['refused']}" for item in judged) or "none received by the run's clock")
     if estimate is not None:
         return {**base, "status": "estimated", "within": bool(estimate["within"]), "detail": why}
     tail = "no 051 earnings filing known for the name" if market in US_STALENESS_MARKETS else "no estimate outside the US"
@@ -929,7 +935,9 @@ def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind:
     raised, event_checks = _event_codes(events, thresholds)
     market = _text(events.get("market")) or _text(row.get("official_market"))
     market = market.strip().upper() if market else None
-    gated_market = market is None or market in thresholds.earnings_gate_markets  # a row whose market nobody named fails closed
+    # a row whose market nobody named fails closed; "US" (both US exchanges) gates when either of them does
+    gated_market = market is None or market in thresholds.earnings_gate_markets or (
+        market == "US" and any(exchange in thresholds.earnings_gate_markets for exchange in ("NASDAQ", "NYSE")))
     gates = [code for code in raised if code in thresholds.event_gates and code not in NEVER_GATES and (code != EARNINGS_WITHIN_N or gated_market)]
     marks = [code for code in raised if code not in gates]
     checks["events"] = {**event_checks, "market": market, "raised": raised, "gates": gates, "marks": marks}
@@ -1059,8 +1067,8 @@ def replay_sha256(record: Mapping[str, Any]) -> str:
     """The hash of what a verdict DECIDED — every key of the record but the run's identity (``id``, ``run_id``), the wall
     clock of its insert (``published_at``) and the hashes that cover those (``row_sha256``, ``inputs_sha256``): a re-run
     of a night at the same clock has the same one, whatever was published or marked after that clock (every read is
-    causal and stops at D − ε on an insert clock: the generation, the served records, the cycles, the calibration, the
-    rate packages, the 053 marks and the poll, the calendars, the 051 filings, the consensus snapshots) — with ONE
+    causal: the generation, the cycles, the calibration and the rate packages at ≤ D; the served records, the 053 marks
+    and the poll, the calendars, the 051 filings and the consensus snapshots at D − ε on their insert clocks) — with ONE
     declared exception left out of it: the Finnhub sentiment (``inputs.events.sentiment``, ``checks.events.sentiment`` and
     the ``NEWS_SENTIMENT_NEGATIVE`` mark). Its source overwrites the week's row on every poll, so a replay cannot see the
     value read at D; that value stays in the record, and the code is never a gate (``NEVER_GATES``)."""
@@ -1144,7 +1152,7 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
         stats: dict[str, Any] = {"decided": 0, "verdicts": {verdict: 0 for verdict in VERDICTS}, "reasons": {}, "unrecordable": 0,
                                  "tp_after_run_instant": 0, "tp_published_after_run_instant": 0, "quotes_refused": 0, "expected_session": None,
                                  "calendar_unavailable": False, "tp_staleness_source": STALENESS_NOT_APPLICABLE,
-                                 "earnings_calendars": {"recent": len(calendars["recent"]), "latest": calendars["latest"] is not None},
+                                 "earnings_calendars": {"recent": len(calendars["recent"]), "older": calendars["older"] is not None},
                                  "marks": {}, "verdicts_without_events": {verdict: 0 for verdict in VERDICTS}}
         receipt["markets"][market] = stats
         try:

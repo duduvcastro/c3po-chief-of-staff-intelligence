@@ -1458,8 +1458,8 @@ class SystemHealthService:
                 error = str(state.get("last_error") or "unknown error").replace("\n", " ")[:120]
                 (advisory if is_advisory else failed).append(f"{phase}: {error}")
                 continue
-            if status == "running":
-                running.append(phase)
+            if status == "running":  # an advisory phase stuck running (killed mid-download) is attention too, never offline
+                (advisory if is_advisory else running).append(f"{phase}: running" if is_advisory else phase)
                 continue
             if not isinstance(last_success, datetime):
                 (advisory if is_advisory else pending).append(f"{phase}: not run yet" if is_advisory else phase)

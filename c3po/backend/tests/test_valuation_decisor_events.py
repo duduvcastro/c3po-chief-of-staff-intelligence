@@ -128,10 +128,12 @@ def _us_row(symbol: str = "AAPL", **extra: Any) -> dict[str, Any]:
 
 
 def _calendars(by_code: dict[str, list[dict[str, Any]]], *, received: datetime = RECEIVED, us_events: int = 150, share: float = 0.0,
-               start: str = "2026-10-07", end: str = "2026-11-13", snapshot_id: str = "cal-1") -> dict[str, Any]:
+               start: str = "2026-10-07", end: str = "2026-11-13", snapshot_id: str = "cal-1",
+               blocking: dict[str, list[str]] | None = None) -> dict[str, Any]:
     calendar = {"snapshot_id": snapshot_id, "received_at": received.isoformat(), "payload_sha256": "f" * 64, "request_from": start, "request_to": end,
-                "by_code": by_code, "blocking_codes": {}, "us_events": us_events, "rows": us_events, "unattributed_invalid_rows": 0, "invalid_share": share}
-    return {"recent": [calendar], "latest": calendar}
+                "by_code": by_code, "blocking_codes": blocking or {}, "us_events": us_events, "rows": us_events, "unattributed_invalid_rows": 0,
+                "invalid_share": share}
+    return {"recent": [calendar], "older": None}
 
 
 # ------------------------------------------------------------------ B. the 053 source must be alive at D
@@ -280,12 +282,14 @@ def test_on_b3_an_announcement_is_a_mark_and_never_withholds_the_permission() ->
     receipt = _run(database)
     petr = _record(database, "B3", "PETR4")
     assert petr["verdict"] == decisor.COMPRA_PERMITIDA and petr["checks"]["events"]["marks"] == [decisor.EARNINGS_WITHIN_N]
-    assert petr["checks"]["events"]["gates"] == [] and receipt["markets"]["B3"]["marks"] == {decisor.EARNINGS_WITHIN_N: 1}
+    assert petr["checks"]["events"]["gates"] == []  # VALE3 is not in the calendar and B3 has no estimate: unavailable, said so
+    assert receipt["markets"]["B3"]["marks"] == {decisor.EARNINGS_WITHIN_N: 1, decisor.EARNINGS_CALENDAR_UNAVAILABLE: 1}
     assert decisor.latest_verdict(database, "B3", "PETR4", now=datetime(2026, 10, 14, 15, 0, tzinfo=UTC))["marks"] == [decisor.EARNINGS_WITHIN_N]  # type: ignore[index]
 
 
 def test_the_gate_takes_the_rows_market_when_the_events_omit_it_and_fails_closed_without_one() -> None:
     within = {"status": "calendar", "within": True}
+    assert _decide(_us_row(), events={"market": "US", "earnings": within})["reason_codes"] == [decisor.EARNINGS_WITHIN_N]  # both US exchanges
     assert _decide(_us_row(official_market="NASDAQ"), staleness=US_CLEAR, events={"earnings": within})["reason_codes"] == [decisor.EARNINGS_WITHIN_N]
     assert _decide(_us_row(), events={"earnings": within})["reason_codes"] == [decisor.EARNINGS_WITHIN_N]  # nobody named the market
     assert _decide(_us_row(official_market="B3"), events={"earnings": within})["verdict"] == decisor.COMPRA_PERMITIDA  # B3: a mark
@@ -319,18 +323,42 @@ def test_an_empty_partial_or_garbled_calendar_says_nothing_and_the_estimate_answ
     assert ko["checks"]["events"]["earnings"]["status"] == "unavailable" and ko["checks"]["events"]["marks"] == [decisor.EARNINGS_CALENDAR_UNAVAILABLE]
 
 
-def test_the_garbled_share_is_a_strict_limit() -> None:
-    calendars = _calendars({}, share=0.05)
-    assert decisor.name_earnings(calendars, None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)["status"] == "calendar"
-    calendars = _calendars({}, share=0.0501)
-    assert decisor.name_earnings(calendars, None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)["status"] == "unavailable"
-    calendars = _calendars({}, us_events=100)
-    assert decisor.name_earnings(calendars, None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)["status"] == "calendar"
-    calendars = _calendars({}, us_events=99)
-    assert decisor.name_earnings(calendars, None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)["status"] == "unavailable"
-    short = decisor.name_earnings(_calendars({}, end="2026-10-14"), None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)  # T+2 not asked
+OUT_OF_WINDOW = {"AAPL.US": [{"code": "AAPL.US", "report_date": "2026-10-29", "timing": "BeforeMarket", "fiscal_period_end": "2026-09-30"}]}
+
+
+def _status(calendars: dict[str, Any]) -> str:
+    return str(decisor.name_earnings(calendars, None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)["status"])
+
+
+def test_the_usability_limits_of_a_calendar_are_exact() -> None:
+    assert _status(_calendars(OUT_OF_WINDOW, share=0.05)) == "calendar"  # the share limit is inclusive...
+    assert _status(_calendars(OUT_OF_WINDOW, share=0.0501)) == "unavailable"  # ...and strict above it
+    assert _status(_calendars(OUT_OF_WINDOW, us_events=100)) == "calendar"
+    assert _status(_calendars(OUT_OF_WINDOW, us_events=99)) == "unavailable"
+    # coverage: the request window must include T+1 and T+N, its own ends included
+    assert _status(_calendars(OUT_OF_WINDOW, start="2026-10-14")) == "calendar"
+    assert _status(_calendars(OUT_OF_WINDOW, end="2026-10-15")) == "calendar"
+    short = decisor.name_earnings(_calendars(OUT_OF_WINDOW, end="2026-10-14"), None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)
     assert short["status"] == "unavailable" and "does not cover sessions T+1..T+N" in short["calendars"][0]["refused"]
-    assert decisor.name_earnings(_calendars({}, start="2026-10-15"), None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)["status"] == "unavailable"
+    assert _status(_calendars(OUT_OF_WINDOW, start="2026-10-15")) == "unavailable"
+
+
+def test_a_calendar_is_judged_by_its_us_events_inside_its_request_window_and_its_unattributed_rows() -> None:
+    def parsed(**outputs: Any) -> dict[str, Any]:
+        result = calendar_module._parsed({"id": "s", "published_at": RUN, "outputs": {"schema": calendar_module.SCHEMA,
+                                                                                         "request": {"from": "2026-10-07", "to": "2026-11-13"}, **outputs}})
+        assert result is not None
+        return result
+
+    outside = [{"code": f"X{index}.US", "report_date": "2026-12-01"} for index in range(150)]  # US, outside the request window
+    brazil = [{"code": f"Y{index}.SA", "report_date": "2026-10-20"} for index in range(150)]  # inside, not US
+    inside = [{"code": f"Z{index}.US", "report_date": date_} for index, date_ in enumerate(["2026-10-07", "2026-11-13", "2026-10-20"])]
+    assert parsed(events=[*outside, *brazil, *inside], rows=303)["us_events"] == 3  # only US events inside the window, its ends included
+    # the share counts UNATTRIBUTED invalid rows only: names with an invalid row are judged one by one
+    attributed = parsed(events=inside, rows=200, invalid_rows=100, unattributed_invalid_rows=0, blocking_codes={"Q.US": ["DATE_INVALID"]})
+    assert attributed["invalid_share"] == 0.0
+    assert parsed(events=inside, rows=100, invalid_rows=10, unattributed_invalid_rows=6)["invalid_share"] == 0.06
+    assert parsed(events=[], rows=0)["invalid_share"] == 1.0  # an empty calendar is all doubt
 
 
 def test_a_stale_calendars_in_window_event_still_gates_but_its_silence_says_nothing() -> None:
@@ -345,7 +373,7 @@ def test_a_stale_calendars_in_window_event_still_gates_but_its_silence_says_noth
     # the edge: received exactly 36 h before, it may still say "no event"
     database = _database()
     _night(database)
-    _calendar(database, [], received=RUN - timedelta(hours=36))
+    _calendar(database, [_row("KO.US", "2026-10-28")], received=RUN - timedelta(hours=36))
     _run(database)
     assert _record(database, "NYSE", "KO")["checks"]["events"]["earnings"]["status"] == "calendar"
 
@@ -358,6 +386,63 @@ def test_the_union_of_the_windows_calendars_gates_on_any_of_them() -> None:
     _run(database)
     aapl = _record(database, "NASDAQ", "AAPL")
     assert aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N] and len(aapl["checks"]["events"]["earnings"]["calendars"]) == 2
+
+
+INVALID_AAPL = {**_row("AAPL.US", "2026-10-14"), "report_date": "2026-10-14T00:00"}  # a row of the name the parser refuses
+JULY_RELEASE = ("AAPL", "0000999201-26-000001", "8-K", datetime(2026, 7, 15, 20, 30, tzinfo=UTC))  # + 91 d = 10-14 (T+1)
+
+
+def _aapl_after(*calendars: tuple[list[Any], datetime], estimate: bool = False) -> dict[str, Any]:
+    database = _database()
+    _night(database)
+    for rows, received in calendars:
+        _calendar(database, rows, received=received)
+    if estimate:
+        _filing(database, *JULY_RELEASE, items="2.02")
+    _run(database)
+    return _record(database, "NASDAQ", "AAPL")
+
+
+def test_any_calendar_read_gates_and_only_the_newest_usable_one_says_no_event() -> None:
+    # P1: the latest calendar before the window lists AAPL in the window; the recent usable one omits it; no estimate
+    aapl = _aapl_after(([_row("AAPL.US", "2026-10-14", "BeforeMarket")], RUN - timedelta(hours=40)), ([_row("KO.US", "2026-10-28")], RUN - timedelta(hours=2)))
+    assert aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N] and aapl["checks"]["events"]["earnings"]["status"] == "calendar"
+    assert [item["snapshot_id"] for item in aapl["checks"]["events"]["earnings"]["calendars"]] and len(aapl["checks"]["events"]["earnings"]["calendars"]) == 2
+    # only the LATEST calendar before the window is read: an even older one is not
+    aapl = _aapl_after(([_row("AAPL.US", "2026-10-14", "BeforeMarket")], RUN - timedelta(hours=50)), ([_row("KO.US", "2026-10-28")], RUN - timedelta(hours=40)),
+                       ([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=2)))
+    assert aapl["verdict"] == decisor.COMPRA_PERMITIDA and len(aapl["checks"]["events"]["earnings"]["calendars"]) == 2
+    # P2: the newest calendar has an INVALID row of AAPL; an older recent one lists AAPL out of the window — it cannot answer
+    for estimate, verdict, status in ((False, decisor.COMPRA_PERMITIDA, "unavailable"), (True, decisor.OBSERVAR, "estimated")):
+        aapl = _aapl_after(([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=20)), ([INVALID_AAPL], RUN - timedelta(hours=1)), estimate=estimate)
+        earnings = aapl["checks"]["events"]["earnings"]
+        assert (aapl["verdict"], earnings["status"]) == (verdict, status) and "an invalid row of the name" in earnings["detail"], estimate
+        assert [item["invalid_row_of_name"] for item in earnings["calendars"]] == [False, True]
+    # P10: the newest usable calendar has NO row of AAPL; an older one lists it out of the window — the estimate answers
+    for estimate, verdict, status in ((True, decisor.OBSERVAR, "estimated"), (False, decisor.COMPRA_PERMITIDA, "unavailable")):
+        aapl = _aapl_after(([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=20)), ([_row("KO.US", "2026-10-28")], RUN - timedelta(hours=1)),
+                           estimate=estimate)
+        earnings = aapl["checks"]["events"]["earnings"]
+        assert (aapl["verdict"], earnings["status"]) == (verdict, status) and "has no row of the name" in earnings["detail"], estimate
+        assert earnings["answering"] is not None
+    # an invalid row of the name in the calendar before the window still forbids "no event"
+    aapl = _aapl_after(([INVALID_AAPL], RUN - timedelta(hours=40)), ([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=1)), estimate=True)
+    assert aapl["checks"]["events"]["earnings"]["status"] == "estimated" and aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N]
+    # the newest USABLE calendar answers, not the newest one: a later partial calendar says nothing
+    aapl = _aapl_after(([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=20)), estimate=True)
+    assert aapl["checks"]["events"]["earnings"]["status"] == "calendar" and aapl["verdict"] == decisor.COMPRA_PERMITIDA
+    database = _database()
+    _night(database)
+    _calendar(database, [_row("AAPL.US", "2026-10-29")], received=RUN - timedelta(hours=20))
+    _calendar(database, [_row("KO.US", "2026-10-28")], received=RUN - timedelta(hours=1), filler=10)  # partial: 11 US events
+    _filing(database, *JULY_RELEASE, items="2.02")
+    _run(database)
+    earnings = _record(database, "NASDAQ", "AAPL")["checks"]["events"]["earnings"]
+    assert earnings["status"] == "calendar" and earnings["calendars"][1]["refused"].startswith("partial")
+    # a share class's invalid row is found under the provider's spelling too
+    blocked = decisor.name_earnings(_calendars({"BRK-B.US": [{"code": "BRK-B.US", "report_date": "2026-10-29", "timing": None}]},
+                                               blocking={"BRK-B.US": ["DATE_INVALID"]}), None, "NYSE", "BRK.B", at=RUN, expected_session=SESSION)
+    assert blocked["status"] == "unavailable" and "an invalid row of the name" in blocked["detail"]
 
 
 def test_a_usable_calendar_without_the_names_row_still_gates_on_the_estimate() -> None:
@@ -394,7 +479,7 @@ def test_a_name_with_an_invalid_calendar_row_falls_back_to_its_estimate() -> Non
     _run(database)
     aapl = _record(database, "NASDAQ", "AAPL")
     earnings = aapl["checks"]["events"]["earnings"]
-    assert earnings["status"] == "estimated" and "invalid row for the name" in earnings["detail"] and earnings["estimate"]["estimated_date"] == "2026-10-15"
+    assert earnings["status"] == "estimated" and "an invalid row of the name" in earnings["detail"] and earnings["estimate"]["estimated_date"] == "2026-10-15"
     assert aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N] and aapl["checks"]["events"]["marks"] == [decisor.EARNINGS_DATE_ESTIMATED]
 
 
@@ -415,6 +500,24 @@ def test_the_estimate_is_seasonal_first_from_the_same_quarter_a_year_earlier() -
     assert decisor._estimate_within("NASDAQ", {**estimate, "estimated_date": "2026-10-05"}, WINDOW, decisor.THRESHOLDS)["within"] is False
     # without its release, the prior quarter's own 10-Q is the base
     assert decisor.cadence_estimate([item for item in filings if item["doc_id"] != "q3-25-release"])["estimated_date"] == "2026-11-04"  # type: ignore[index]
+
+
+def test_the_seasonal_base_edges() -> None:
+    latest = _ref("10-Q", "2026-08-05T21:00:00+00:00", period="2026-06-30")  # upcoming quarter 2026-09-30, a year before: 2025-10-01
+    # a release accepted ON the prior period's last day (New York) is not that quarter's release: the 10-Q is the base
+    on_the_day = [_ref("8-K", "2025-09-30T20:00:00+00:00", items="2.02", doc="same-day"), _ref("10-Q", "2025-11-05T21:00:00+00:00", period="2025-09-30",
+                                                                                              doc="q3-25"), latest]
+    estimate = decisor.cadence_estimate(on_the_day)
+    assert estimate is not None and estimate["rule"] == "seasonal" and estimate["basis"]["doc_id"] == "q3-25"
+    # ...and one accepted after the next quarter ended is not either; one the day after the period end is
+    late = [_ref("8-K", "2026-01-02T20:00:00+00:00", items="2.02", doc="late"), *on_the_day[1:]]
+    assert decisor.cadence_estimate(late)["basis"]["doc_id"] == "q3-25"  # type: ignore[index]
+    next_day = [_ref("8-K", "2025-10-01T20:00:00+00:00", items="2.02", doc="next-day"), *on_the_day[1:]]
+    assert decisor.cadence_estimate(next_day)["basis"]["doc_id"] == "next-day"  # type: ignore[index]
+    # the prior quarter is found within 10 days of a year before (2025-10-01): 2025-09-21 is, 2025-09-20 is not
+    for period, rule in (("2025-09-21", "seasonal"), ("2025-09-20", "recent"), ("2025-10-11", "seasonal"), ("2025-10-12", "recent")):
+        prior = _ref("10-Q", "2025-11-05T21:00:00+00:00", period=period, doc="prior")
+        assert decisor.cadence_estimate([prior, latest])["rule"] == rule, period  # type: ignore[index]
 
 
 def test_without_a_seasonal_base_the_most_recent_original_filing_answers() -> None:
@@ -575,6 +678,16 @@ def test_a_served_record_published_after_the_clock_is_not_decided(monkeypatch: p
     assert receipt["markets"]["NASDAQ"]["tp_published_after_run_instant"] == 1 and receipt["markets"]["NASDAQ"]["decided"] == 0
     assert database.list_valuation_decisions("NASDAQ", "AAPL") == [] and len(database.list_valuation_decisions("NYSE", "KO")) == 1
 
+    def at_the_edge(db: Any, market: str, generation: Any) -> dict[str, dict[str, Any]]:
+        rows = served_rows(db, market, generation)
+        if "AAPL" in rows:
+            rows["AAPL"]["official_published_at"] = (RUN - EPSILON).isoformat()  # exactly D − ε: known
+        return rows
+
+    monkeypatch.setattr(decisor, "_served_rows", at_the_edge)
+    receipt = _run(database)
+    assert receipt["markets"]["NASDAQ"]["tp_published_after_run_instant"] == 0 and receipt["markets"]["NASDAQ"]["decided"] == 1
+
 
 def test_the_counterfactual_keeps_every_code_but_the_event_gates() -> None:
     stale = {"status": "stale", "source_status": "ok", "filings": [{"mark_id": "m", "doc_id": "d"}]}
@@ -683,6 +796,10 @@ def test_the_download_has_a_byte_cap_a_deadline_and_never_leaks_the_url() -> Non
         calendar_module.fetch_calendar("https://provider.invalid", "secret-token", start=date(2026, 10, 7), end=date(2026, 11, 13), timeout=5,
                                        transport=httpx.MockTransport(slow_stream), monotonic=lambda: next(clock))
     assert len(served) < 10  # the download stopped at the deadline, never read to the end
+    late = iter([0.0, 100.0, 500.0])  # the only chunk arrives in time; the call as a whole ends past the deadline
+    with pytest.raises(calendar_module.EarningsCalendarError, match="exceeded 180 s"):
+        calendar_module.fetch_calendar("https://provider.invalid", "secret-token", start=date(2026, 10, 7), end=date(2026, 11, 13), timeout=5,
+                                       transport=httpx.MockTransport(ok), monotonic=lambda: next(late))
     for broken in (lambda request: (_ for _ in ()).throw(httpx.ConnectError("down", request=request)),
                    lambda request: (_ for _ in ()).throw(httpx.ReadError("cut", request=request))):
         with pytest.raises(calendar_module.EarningsCalendarError) as caught:
@@ -731,6 +848,13 @@ def test_the_calendar_phase_never_pages_and_stops_after_three_failed_attempts_a_
         statuses.append(result.phase_statuses["earnings_calendar"])
     assert statuses == ["failed", "failed", "failed", "retry_cap", "retry_cap"] and len(attempts) == 3
     assert ping.pings == [] and push.sent == []  # never paged, never failing the worker's check
+    # a failed advisory attempt still wakes the worker to retry inside the window (up to the cap)
+    retry = run_worker_iteration(_database(), now=local, canonical_due=False, canonical_operation=lambda: None, offhours_phases=(phase,))
+    assert retry.phase_statuses == {"earnings_calendar": "failed"} and retry.next_wake_at == local + timedelta(minutes=30)
+    # the next night starts a new count
+    next_night = run_worker_iteration(database, now=local + timedelta(days=1), canonical_due=False, canonical_operation=lambda: None,
+                                      offhours_phases=(phase,))
+    assert next_night.phase_statuses == {"earnings_calendar": "failed"} and len(attempts) == 5
     # the decisor's phase keeps its behaviour: a failure pages
     decisor_phase = OffhoursPhase("decisor_shadow", lambda: None, failing)
     run_worker_iteration(database, now=local, canonical_due=False, canonical_operation=lambda: None, offhours_phases=(decisor_phase,),
