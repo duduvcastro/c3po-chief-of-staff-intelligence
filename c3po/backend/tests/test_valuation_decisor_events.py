@@ -412,12 +412,35 @@ def test_any_calendar_read_gates_and_only_the_newest_usable_one_says_no_event() 
     aapl = _aapl_after(([_row("AAPL.US", "2026-10-14", "BeforeMarket")], RUN - timedelta(hours=50)), ([_row("KO.US", "2026-10-28")], RUN - timedelta(hours=40)),
                        ([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=2)))
     assert aapl["verdict"] == decisor.COMPRA_PERMITIDA and len(aapl["checks"]["events"]["earnings"]["calendars"]) == 2
-    # P2: the newest calendar has an INVALID row of AAPL; an older recent one lists AAPL out of the window — it cannot answer
-    for estimate, verdict, status in ((False, decisor.COMPRA_PERMITIDA, "unavailable"), (True, decisor.OBSERVAR, "estimated")):
+    # P2: the newest calendar has an INVALID row of AAPL; an older recent one lists AAPL out of the window — it cannot answer.
+    # Without an estimate the unreadable row FAILS CLOSED; with one, the estimate answers and the row is a mark
+    for estimate, codes, marks, status in ((False, [decisor.EARNINGS_CALENDAR_ROW_INVALID], [], "row_invalid"),
+                                           (True, [decisor.EARNINGS_WITHIN_N], [decisor.EARNINGS_CALENDAR_ROW_INVALID, decisor.EARNINGS_DATE_ESTIMATED],
+                                            "estimated")):
         aapl = _aapl_after(([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=20)), ([INVALID_AAPL], RUN - timedelta(hours=1)), estimate=estimate)
         earnings = aapl["checks"]["events"]["earnings"]
-        assert (aapl["verdict"], earnings["status"]) == (verdict, status) and "an invalid row of the name" in earnings["detail"], estimate
+        assert (aapl["verdict"], aapl["reason_codes"], aapl["checks"]["events"]["marks"], earnings["status"]) == (decisor.OBSERVAR, codes, marks, status)
+        assert "an invalid row of the name" in earnings["detail"] and earnings["row_invalid"] is True, estimate
         assert [item["invalid_row_of_name"] for item in earnings["calendars"]] == [False, True]
+        assert aapl["checks"]["counterfactual"]["verdict_without_events"] == decisor.COMPRA_PERMITIDA  # an event gate, off in the counterfactual
+    # ...and when the estimate says "not within", no gate: the invalid row is recorded as a mark
+    database = _database()
+    _night(database)
+    _calendar(database, [_row("AAPL.US", "2026-10-29")], received=RUN - timedelta(hours=20))
+    _calendar(database, [INVALID_AAPL], received=RUN - timedelta(hours=1))
+    _filing(database, "AAPL", "0000999201-26-000009", "10-Q", datetime(2026, 8, 20, 20, 30, tzinfo=UTC))  # + 91 d = 11-19: not within
+    _run(database)
+    aapl = _record(database, "NASDAQ", "AAPL")
+    assert aapl["verdict"] == decisor.COMPRA_PERMITIDA and aapl["checks"]["events"]["earnings"]["status"] == "estimated"
+    assert aapl["checks"]["events"]["marks"] == [decisor.EARNINGS_CALENDAR_ROW_INVALID, decisor.EARNINGS_DATE_ESTIMATED]
+    # on B3 (informative) the fail-closed branch is a mark too
+    database = _database()
+    _night(database)
+    _calendar(database, [{**_row("PETR4.SA", "2026-10-14", currency="BRL"), "report_date": "2026-10-14T00:00"}])
+    _run(database)
+    petr = _record(database, "B3", "PETR4")
+    assert petr["verdict"] == decisor.COMPRA_PERMITIDA and petr["checks"]["events"]["marks"] == [decisor.EARNINGS_CALENDAR_ROW_INVALID]
+    assert petr["checks"]["events"]["earnings"]["status"] == "row_invalid"
     # P10: the newest usable calendar has NO row of AAPL; an older one lists it out of the window — the estimate answers
     for estimate, verdict, status in ((True, decisor.OBSERVAR, "estimated"), (False, decisor.COMPRA_PERMITIDA, "unavailable")):
         aapl = _aapl_after(([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=20)), ([_row("KO.US", "2026-10-28")], RUN - timedelta(hours=1)),
@@ -428,6 +451,8 @@ def test_any_calendar_read_gates_and_only_the_newest_usable_one_says_no_event() 
     # an invalid row of the name in the calendar before the window still forbids "no event"
     aapl = _aapl_after(([INVALID_AAPL], RUN - timedelta(hours=40)), ([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=1)), estimate=True)
     assert aapl["checks"]["events"]["earnings"]["status"] == "estimated" and aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N]
+    aapl = _aapl_after(([INVALID_AAPL], RUN - timedelta(hours=40)), ([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=1)))
+    assert aapl["reason_codes"] == [decisor.EARNINGS_CALENDAR_ROW_INVALID]
     # the newest USABLE calendar answers, not the newest one: a later partial calendar says nothing
     aapl = _aapl_after(([_row("AAPL.US", "2026-10-29")], RUN - timedelta(hours=20)), estimate=True)
     assert aapl["checks"]["events"]["earnings"]["status"] == "calendar" and aapl["verdict"] == decisor.COMPRA_PERMITIDA
@@ -442,7 +467,7 @@ def test_any_calendar_read_gates_and_only_the_newest_usable_one_says_no_event() 
     # a share class's invalid row is found under the provider's spelling too
     blocked = decisor.name_earnings(_calendars({"BRK-B.US": [{"code": "BRK-B.US", "report_date": "2026-10-29", "timing": None}]},
                                                blocking={"BRK-B.US": ["DATE_INVALID"]}), None, "NYSE", "BRK.B", at=RUN, expected_session=SESSION)
-    assert blocked["status"] == "unavailable" and "an invalid row of the name" in blocked["detail"]
+    assert blocked["status"] == "row_invalid" and "an invalid row of the name" in blocked["detail"]
 
 
 def test_a_usable_calendar_without_the_names_row_still_gates_on_the_estimate() -> None:
@@ -480,7 +505,8 @@ def test_a_name_with_an_invalid_calendar_row_falls_back_to_its_estimate() -> Non
     aapl = _record(database, "NASDAQ", "AAPL")
     earnings = aapl["checks"]["events"]["earnings"]
     assert earnings["status"] == "estimated" and "an invalid row of the name" in earnings["detail"] and earnings["estimate"]["estimated_date"] == "2026-10-15"
-    assert aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N] and aapl["checks"]["events"]["marks"] == [decisor.EARNINGS_DATE_ESTIMATED]
+    assert aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N]
+    assert aapl["checks"]["events"]["marks"] == [decisor.EARNINGS_CALENDAR_ROW_INVALID, decisor.EARNINGS_DATE_ESTIMATED]
 
 
 # ------------------------------------------------------------------ A. the 051 estimate
@@ -717,7 +743,7 @@ def test_the_block_is_pinned_until_the_freeze_and_every_rule_is_in_it() -> None:
     assert set(changed) <= set(block)
     for field, value in changed.items():
         assert decisor.thresholds_sha256(replace(decisor.THRESHOLDS, **{field: value})) != decisor.thresholds_sha256(), field
-    assert set(decisor.EVENT_CODES) == {*decisor.MARK_CODES, decisor.EARNINGS_WITHIN_N}
+    assert set(decisor.EVENT_CODES) == {*decisor.MARK_CODES, decisor.EARNINGS_WITHIN_N, decisor.EARNINGS_CALENDAR_ROW_INVALID}
     codes = (set(decisor.VETO_CODES), set(decisor.OBSERVAR_CODES), set(decisor.MARK_CODES))
     assert not (codes[0] & codes[1] or codes[0] & codes[2] or codes[1] & codes[2])
     no_gates = _decide(_us_row(official_market="NASDAQ"), staleness=US_CLEAR,

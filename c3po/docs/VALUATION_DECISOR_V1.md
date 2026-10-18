@@ -9,12 +9,12 @@ toca tabelas, ordens ou posições do R2D2. Código: `backend/app/valuation_deci
 | Veredicto | Quando |
 |---|---|
 | `COMPRA_PERMITIDA` | todos os portões passaram (`reason_codes = ["ALL_GATES_PASSED"]`) |
-| `OBSERVAR` | TP confiável, mas sem permissão: sem margem hoje (`PRICE_ABOVE_BUY_IN`, `TP_MARGIN_INSUFFICIENT`), insumo da margem ainda não medido (`E_PROFILE_WARMING_UP`, `E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`), nos EUA TP à espera da reavaliação que um protocolo aceito depois dele disparou (`TP_STALE_AFTER_FILING`) ou pergunta sem resposta (`STALENESS_SOURCE_UNAVAILABLE`, `STALENESS_SOURCE_STALE`), ou resultado anunciado nas próximas N sessões (`EARNINGS_WITHIN_N`, só EUA) |
+| `OBSERVAR` | TP confiável, mas sem permissão: sem margem hoje (`PRICE_ABOVE_BUY_IN`, `TP_MARGIN_INSUFFICIENT`), insumo da margem ainda não medido (`E_PROFILE_WARMING_UP`, `E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`), nos EUA TP à espera da reavaliação que um protocolo aceito depois dele disparou (`TP_STALE_AFTER_FILING`) ou pergunta sem resposta (`STALENESS_SOURCE_UNAVAILABLE`, `STALENESS_SOURCE_STALE`), ou resultado anunciado nas próximas N sessões (`EARNINGS_WITHIN_N`, só EUA) ou linha ilegível do calendário sobre o nome sem estimativa (`EARNINGS_CALENDAR_ROW_INVALID`, só EUA) |
 | `VETO` | o TP ou seus dados não são confiáveis agora (frescor, qualidade, defeito de dado); lista **todos** os códigos que falharam, inclusive os de OBSERVAR |
 
 **Marcas** (`checks.events.marks`; nunca mudam o veredicto): `EARNINGS_DATE_ESTIMATED`, `EARNINGS_CALENDAR_UNAVAILABLE`,
 `CONSENSUS_EPS_CUT_30D`, `NEWS_SENTIMENT_NEGATIVE` (nunca portão, mesmo listado em `event_gates`: `NEVER_GATES`) — e
-`EARNINGS_WITHIN_N` na B3. Todo registro guarda também o
+`EARNINGS_WITHIN_N` / `EARNINGS_CALENDAR_ROW_INVALID` na B3, e `EARNINGS_CALENDAR_ROW_INVALID` ao lado de uma estimativa. Todo registro guarda também o
 **contrafactual** `checks.counterfactual.verdict_without_events` (o veredicto com os portões de evento desligados), para um
 relatório somente-leitura comparar com e sem o portão.
 
@@ -95,10 +95,16 @@ relatório somente-leitura comparar com e sem o portão.
         valem só para aquele nome) e janela pedida cobrindo [T+1, T+N] (as pontas incluídas).
       * **Em todo outro caso** — nenhum calendário utilizável; o utilizável mais novo **sem linha do nome**; linha
         inválida do nome em **qualquer** calendário lido — a **estimativa da 051** responde: alcança a janela → portão
-        (`EARNINGS_DATE_ESTIMATED`); não alcança → sem portão (`EARNINGS_DATE_ESTIMATED`, com o motivo); sem estimativa →
-        sem portão, marca `EARNINGS_CALENDAR_UNAVAILABLE` com o motivo (regra de abstenção: falhar aberto é aceitável,
-        e fica registrado). O registro guarda cada calendário lido (recusa, se lista o nome, se tem linha inválida dele)
-        e qual respondeu (`answering`).
+        (`EARNINGS_DATE_ESTIMATED`); não alcança → sem portão (`EARNINGS_DATE_ESTIMATED`, com o motivo).
+      * **Sem estimativa**: se algum calendário lido tem **linha inválida do nome** → **falha fechada**: OBSERVAR com
+        `EARNINGS_CALENDAR_ROW_INVALID` (decisão da coordenação de 18/10: uma linha ilegível do provedor sobre o nome é
+        um aviso, não prova de que não há evento); senão → sem portão, marca `EARNINGS_CALENDAR_UNAVAILABLE` com o motivo
+        (regra de abstenção: falhar aberto é aceitável, e fica registrado).
+      * Linha inválida do nome **com** estimativa (dentro ou fora da janela): a estimativa decide e
+        `EARNINGS_CALENDAR_ROW_INVALID` fica como **marca**. `EARNINGS_CALENDAR_ROW_INVALID` é o ramo de falha fechada do
+        portão de resultados: vale como portão onde `EARNINGS_WITHIN_N` vale (EUA; marca na B3), sem campo novo no bloco,
+        e sai no contrafactual `verdict_without_events` junto com ele. O registro guarda cada calendário lido (recusa, se
+        lista o nome, se tem linha inválida dele), qual respondeu (`answering`) e `row_invalid`.
     * **Por que 100**: a janela que a fase pede é de 37 dias corridos [hoje − 7, hoje + 30]; mesmo fora de temporada
       (meados de dezembro a meados de janeiro, ou o começo de junho e de setembro) reportam os emissores de ano fiscal fora
       do calendário (~30 % dos ~4.000 operacionais listados nos EUA, 4 resultados por ano cada, espalhados pelos meses) e

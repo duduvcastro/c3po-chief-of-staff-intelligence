@@ -8,7 +8,8 @@ Per name per night, one verdict with its reason codes, over the generation of th
   ``E_PROFILE_UNAVAILABLE``, ``MARKET_RATE_UNAVAILABLE``) — no permission while the producers' calibration warms up —,
   (US) the TP awaits the revaluation a filing accepted after it triggered (``TP_STALE_AFTER_FILING``) or that question
   cannot be answered (``STALENESS_SOURCE_UNAVAILABLE``: no 053 table; ``STALENESS_SOURCE_STALE``: no live as-filed poll),
-  or (US) an earnings announcement reaches the next N sessions (``EARNINGS_WITHIN_N``);
+  or (US) an earnings announcement reaches the next N sessions (``EARNINGS_WITHIN_N``) or a calendar row of the name is
+  unreadable and nothing else answers (``EARNINGS_CALENDAR_ROW_INVALID``);
 * ``VETO`` — the TP or its data cannot be trusted now (freshness, quality, data defects). A VETO lists every failing
   code, the OBSERVAR codes included: the record is the full picture, the verdict its strictest class.
 
@@ -53,8 +54,9 @@ The rules (every number in ``DecisorThresholds``, the ONE settings block the PRE
   the window (≥ ``earnings_calendar_min_us_events`` US events, unattributed invalid rows ≤
   ``earnings_calendar_max_invalid_share``, covering the window), and only when it lists the name and no calendar read
   has an invalid row of the name; in every other case the 051 cadence estimate answers (``EARNINGS_DATE_ESTIMATED``,
-  within → gate); without one ``EARNINGS_CALENDAR_UNAVAILABLE``, no gate — a gate on the US exchanges (market ``US``
-  included), a mark on B3. ``CONSENSUS_EPS_CUT_30D`` and ``NEWS_SENTIMENT_NEGATIVE`` are marks (the latter never a gate:
+  within → gate); without one, an invalid row of the name fails closed (``EARNINGS_CALENDAR_ROW_INVALID``, a gate; a mark
+  next to an estimate) and otherwise ``EARNINGS_CALENDAR_UNAVAILABLE``, no gate — gates on the US exchanges (market
+  ``US`` included), marks on B3. ``CONSENSUS_EPS_CUT_30D`` and ``NEWS_SENTIMENT_NEGATIVE`` are marks (the latter never a gate:
   ``NEVER_GATES``). Every record keeps ``checks.counterfactual.verdict_without_events``: the verdict with the event gates
   off.
 * ε (``insert_margin_seconds``): every read the event and 053 rules make on an insert clock — the poll's completion, 053
@@ -131,7 +133,7 @@ VETO_CODES: tuple[str, ...] = (
 )
 OBSERVAR_CODES: tuple[str, ...] = (
     "E_PROFILE_WARMING_UP", "E_PROFILE_UNAVAILABLE", "MARKET_RATE_UNAVAILABLE", "PRICE_ABOVE_BUY_IN", "TP_MARGIN_INSUFFICIENT",
-    "TP_STALE_AFTER_FILING", "STALENESS_SOURCE_UNAVAILABLE", "STALENESS_SOURCE_STALE", "EARNINGS_WITHIN_N",
+    "TP_STALE_AFTER_FILING", "STALENESS_SOURCE_UNAVAILABLE", "STALENESS_SOURCE_STALE", "EARNINGS_WITHIN_N", "EARNINGS_CALENDAR_ROW_INVALID",
 )
 TP_STALE_AFTER_FILING = "TP_STALE_AFTER_FILING"  # a pending 053 'stale' mark known at the run's clock (US)
 STALENESS_SOURCE_UNAVAILABLE = "STALENESS_SOURCE_UNAVAILABLE"  # the 053 table absent: no US name is permitted (fail closed)
@@ -140,10 +142,13 @@ STALENESS_SOURCE_STALE = "STALENESS_SOURCE_STALE"  # no live as-filed poll obser
 EARNINGS_WITHIN_N = "EARNINGS_WITHIN_N"  # an announcement known at D on sessions [T+1, T+N] (a gate in earnings_gate_markets)
 EARNINGS_DATE_ESTIMATED = "EARNINGS_DATE_ESTIMATED"  # the 051 cadence estimate answered (no usable calendar, or no calendar row for the name)
 EARNINGS_CALENDAR_UNAVAILABLE = "EARNINGS_CALENDAR_UNAVAILABLE"  # no calendar answer for the name and no estimate: no gate (an abstention rule)
+# a calendar read has an invalid row of the name: with no 051 estimate a GATE wherever EARNINGS_WITHIN_N gates (fail closed:
+# an unreadable provider row about the name is a warning, not evidence of no event); with an estimate, a mark
+EARNINGS_CALENDAR_ROW_INVALID = "EARNINGS_CALENDAR_ROW_INVALID"
 CONSENSUS_EPS_CUT_30D = "CONSENSUS_EPS_CUT_30D"  # FY1 consensus EPS cut over the last 30 days beyond the block's limit
 NEWS_SENTIMENT_NEGATIVE = "NEWS_SENTIMENT_NEGATIVE"  # the weekly Finnhub sentiment read at D is bearish beyond the block's limit (never a gate)
-EVENT_CODES: tuple[str, ...] = (EARNINGS_WITHIN_N, EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_30D,
-                                NEWS_SENTIMENT_NEGATIVE)
+EVENT_CODES: tuple[str, ...] = (EARNINGS_WITHIN_N, EARNINGS_CALENDAR_ROW_INVALID, EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE,
+                                CONSENSUS_EPS_CUT_30D, NEWS_SENTIMENT_NEGATIVE)
 MARK_CODES: tuple[str, ...] = (EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_30D, NEWS_SENTIMENT_NEGATIVE)
 NEVER_GATES: tuple[str, ...] = (NEWS_SENTIMENT_NEGATIVE,)  # its source overwrites the week: a verdict on it could not be replayed
 
@@ -700,10 +705,12 @@ def name_earnings(calendars: Mapping[str, Any] | None, filings: Mapping[str, Any
        an invalid row of the name;
     3. in every other case (no usable calendar; the newest usable one without a row of the name; an invalid row of the
        name anywhere) the 051 cadence estimate (``cadence_estimate``, US) answers: ``estimated`` — within → gate, else no
-       gate; without an estimate ``unavailable``, no gate (an abstention rule fails open, and says why)."""
+       gate; without an estimate ``row_invalid`` when a calendar read has an invalid row of the name (fail closed:
+       ``EARNINGS_CALENDAR_ROW_INVALID``), else ``unavailable``, no gate (an abstention rule fails open, and says why).
+       ``row_invalid`` (the flag) records an invalid row of the name whatever answered."""
     window = _calendar_sessions(market, expected_session, thresholds.earnings_window_sessions)
     base: dict[str, Any] = {"window": window, "window_sessions": thresholds.earnings_window_sessions, "calendars": [], "estimate": None,
-                            "events": [], "within": False}
+                            "events": [], "within": False, "row_invalid": False}
     if window is None:
         return {**base, "status": "unavailable", "detail": "the exchange calendar cannot name sessions T+1..T+N"}
     read = calendars or {}
@@ -734,7 +741,7 @@ def name_earnings(calendars: Mapping[str, Any] | None, filings: Mapping[str, Any
                        "invalid_row_of_name": snapshot_id in blocked})
     usable = [item for item in judged if item["refused"] is None]
     newest = usable[-1] if usable else None  # judged follows the pool: oldest first
-    base.update({"calendars": judged, "events": events, "answering": newest["snapshot_id"] if newest else None})
+    base.update({"calendars": judged, "events": events, "answering": newest["snapshot_id"] if newest else None, "row_invalid": bool(blocked)})
     estimate_raw = None
     if market in US_STALENESS_MARKETS and (filings or {}).get("status") == "ok":
         estimate_raw = cadence_estimate(list(((filings or {}).get("by_symbol") or {}).get(symbol) or []), thresholds)
@@ -753,6 +760,8 @@ def name_earnings(calendars: Mapping[str, Any] | None, filings: Mapping[str, Any
     if estimate is not None:
         return {**base, "status": "estimated", "within": bool(estimate["within"]), "detail": why}
     tail = "no 051 earnings filing known for the name" if market in US_STALENESS_MARKETS else "no estimate outside the US"
+    if blocked:  # an unreadable provider row about the name and nothing else to say: fail closed (EARNINGS_CALENDAR_ROW_INVALID)
+        return {**base, "status": "row_invalid", "within": False, "detail": f"{why}; {tail}"}
     return {**base, "status": "unavailable", "within": False, "detail": f"{why}; {tail}"}
 
 
@@ -938,7 +947,17 @@ def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind:
     # a row whose market nobody named fails closed; "US" (both US exchanges) gates when either of them does
     gated_market = market is None or market in thresholds.earnings_gate_markets or (
         market == "US" and any(exchange in thresholds.earnings_gate_markets for exchange in ("NASDAQ", "NYSE")))
-    gates = [code for code in raised if code in thresholds.event_gates and code not in NEVER_GATES and (code != EARNINGS_WITHIN_N or gated_market)]
+    earnings_status = (events.get("earnings") or {}).get("status") if isinstance(events.get("earnings"), Mapping) else None
+
+    def gates_here(code: str) -> bool:
+        if code in NEVER_GATES:
+            return False
+        if code == EARNINGS_CALENDAR_ROW_INVALID:  # the earnings gate's fail-closed branch: it gates where that gate does, and only
+            # when nothing else answered (no estimate); next to an estimate it is a mark
+            return earnings_status == "row_invalid" and (EARNINGS_WITHIN_N in thresholds.event_gates or code in thresholds.event_gates) and gated_market
+        return code in thresholds.event_gates and (code != EARNINGS_WITHIN_N or gated_market)
+
+    gates = [code for code in raised if gates_here(code)]
     marks = [code for code in raised if code not in gates]
     checks["events"] = {**event_checks, "market": market, "raised": raised, "gates": gates, "marks": marks}
     verdict_without, codes_without = _verdict_of(codes)
@@ -959,16 +978,19 @@ def _verdict_of(codes: list[str]) -> tuple[str, list[str]]:
 
 def _event_codes(events: Mapping[str, Any], thresholds: DecisorThresholds) -> tuple[list[str], dict[str, Any]]:
     """The event codes the facts raise, in a fixed order, and each rule's numbers: ``EARNINGS_WITHIN_N`` (the facts'
-    ``within``), ``EARNINGS_DATE_ESTIMATED`` / ``EARNINGS_CALENDAR_UNAVAILABLE`` (which source answered),
+    ``within``), ``EARNINGS_CALENDAR_ROW_INVALID`` (an invalid row of the name), ``EARNINGS_DATE_ESTIMATED`` /
+    ``EARNINGS_CALENDAR_UNAVAILABLE`` (which source answered),
     ``CONSENSUS_EPS_CUT_30D`` (ln change below −``consensus_eps_cut_log``, or FY1 turned non-positive) and
     ``NEWS_SENTIMENT_NEGATIVE`` (bearish ≥ the limit over at least the minimum articles, in a row no older than the limit)."""
     raised: list[str] = []
     earnings = events.get("earnings") if isinstance(events.get("earnings"), Mapping) else {}
     if (earnings or {}).get("within") is True:
         raised.append(EARNINGS_WITHIN_N)
+    if (earnings or {}).get("status") == "row_invalid" or (earnings or {}).get("row_invalid") is True:
+        raised.append(EARNINGS_CALENDAR_ROW_INVALID)
     if (earnings or {}).get("status") == "estimated":
         raised.append(EARNINGS_DATE_ESTIMATED)
-    elif (earnings or {}).get("status") != "calendar":
+    elif (earnings or {}).get("status") not in ("calendar", "row_invalid"):
         raised.append(EARNINGS_CALENDAR_UNAVAILABLE)
     consensus = dict(events.get("consensus") or {}) if isinstance(events.get("consensus"), Mapping) else {}
     change = _number(consensus.get("log_change"))
