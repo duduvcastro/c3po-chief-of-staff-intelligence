@@ -62,6 +62,25 @@ This mirrors `METHODOLOGY_GOVERNANCE.md`'s rule for R2D2's trading
 constants: a metric without a stated sample size is not evidence, it's a
 single number dressed up as one.
 
+## Realized accuracy of the official TP sources (PREREG_VALUATION_DECISOR_V1)
+
+The calls above are the legacy `valuation_change_records`. The official
+sources (`official_blend_v1`, `official_internal_v1`) are graded by
+`app/valuation_accuracy_report.py` against the immutable
+`valuation_predictions` records and the persisted
+`valuation_price_history` vintages, through the §7.3 panel's machinery
+(admissibility, live cohort, basis check, attrition): rank IC of the
+nightly upside against the T → T+h total return (and the executable
+T+1 → T+1+h return), decile spread, log-MSE of the TP pro-rated to the
+horizon against the random walk and the persisted consensus, and the
+buy-list proxy against the universe, with block standard errors for the
+overlapping horizons and the pre-registered verdict on the holdout. The
+protocol, thresholds and stopping rule are in
+`c3po/docs/PREREG_VALUATION_DECISOR_V1.md` (hashed before any holdout
+reading); the production run is the dispatch-only, read-only workflow
+`.github/workflows/valuation-readonly-report.yml`, which uploads the
+aggregate receipt only (no symbols).
+
 ## What this does NOT do
 
 - It does not distinguish a target price that was *revised* (a new call
