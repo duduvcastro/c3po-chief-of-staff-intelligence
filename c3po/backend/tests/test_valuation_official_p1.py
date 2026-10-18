@@ -1185,3 +1185,134 @@ def test_f3_the_rating_mirrors_the_pinned_one_pager_rule() -> None:
     assert expected in (APP / "one_pager.py").read_text(encoding="utf-8")
     assert [official.one_pager_rating(value) for value in (25.0, 24.99, 10.0, 9.99, -10.0, -10.01, None, float("nan"), "12")] == \
         ["COMPRA", "ACUMULAR", "ACUMULAR", "NEUTRO", "NEUTRO", "REDUZIR", None, None, "ACUMULAR"]
+
+
+# ------------------------------------------------------------------ the read-only workflow (report=before-after)
+WORKFLOW = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "valuation-readonly-report.yml"
+BACKEND = Path(__file__).resolve().parents[1]
+
+
+def _workflow_steps() -> dict[str, dict[str, Any]]:
+    import yaml
+
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    return {step["name"]: step for job in jobs.values() for step in job.get("steps", []) if step.get("name")}
+
+
+def _runner_script(step: dict[str, Any]) -> str:
+    """The Python a runner step carries in its ``<<'PY'`` heredoc, exactly as the workflow file has it."""
+    return str(step["run"]).split("<<'PY' || exit 1\n", 1)[1].split("\nPY\n", 1)[0]
+
+
+def test_the_readonly_workflow_publishes_the_before_after_receipt_aggregate_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                                capsys: pytest.CaptureFixture[str]) -> None:
+    """``report=before-after`` of ``valuation-readonly-report.yml``: the receipt the CLI prints (``--before-after
+    --keep-internal-targeted``) passes the workflow's own verifier (exact aggregate keys, ``report_sha256`` recomputed); the
+    second read-only exec renders ``before_after_markdown`` from that aggregate alone; the summary verifier binds it to the
+    verified hash and to a commit; nothing written for upload or the step summary names a symbol. Each script is run here as
+    the workflow file carries it."""
+    import subprocess
+    import sys
+
+    steps = _workflow_steps()
+    database = _database()
+    _three_markets(database)
+    _targeted(database, "ITSA4", _row("ITSA4", tp=12.0, buy_in=10.0, price=11.0, internal_tp=11.8, internal_buy_in=9.8), _wall())
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
+    printed = capsys.readouterr().out
+    symbols = ("PETR4", "VALE3", "AAPL", "KO", "ITSA4")
+    assert printed.count("\n") == 1 and not any(symbol in printed for symbol in symbols)
+
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    raw.mkdir()
+    out.mkdir()
+    (raw / "before_after.json").write_text(printed, encoding="utf-8")
+    verify = _runner_script(steps["Verify the before/after receipt and keep the aggregate only"])
+
+    def verified(text: str) -> subprocess.CompletedProcess[str]:
+        (raw / "before_after.json").write_text(text, encoding="utf-8")
+        return subprocess.run([sys.executable, "-", str(raw / "before_after.json"), str(out)], input=verify, text=True, capture_output=True)
+
+    accepted = verified(printed)
+    assert accepted.returncode == 0, accepted.stderr
+    receipt = json.loads(printed)
+    assert json.loads((out / "report.json").read_text(encoding="utf-8")) == receipt and receipt["after_targeted_count"] == 1
+    assert receipt["report_sha256"] in accepted.stdout and not any(symbol in accepted.stdout for symbol in symbols)
+
+    # the second exec, as the remote script carries it: the aggregate in (stdin), the markdown and the deployed revision out
+    remote = str(steps["Render the Portuguese summary in the running api container, read-only"]["run"])
+    render = remote.split("render='", 1)[1].split("'\n", 1)[0]
+    rendered = subprocess.run([sys.executable, "-c", render], input=(out / "report.json").read_text(encoding="utf-8"), text=True, capture_output=True,
+                              cwd=BACKEND, env={**os.environ, "PYTHONPATH": str(BACKEND), "C3PO_BUILD_SHA": "b" * 40})
+    assert rendered.returncode == 0, rendered.stderr
+    assert json.loads(rendered.stdout) == {"markdown": official.before_after_markdown(receipt), "build_sha": "b" * 40}
+    (raw / "summary.json").write_text(rendered.stdout, encoding="utf-8")
+    summarize = _runner_script(steps["Verify the summary and keep aggregates only"])
+    env = {**os.environ, "RUN_ID": "7", "REVISION": "c" * 40, "GITHUB_STEP_SUMMARY": str(tmp_path / "step_summary.md")}
+
+    def summarized(text: str) -> subprocess.CompletedProcess[str]:
+        (raw / "summary.json").write_text(text, encoding="utf-8")
+        return subprocess.run([sys.executable, "-", str(raw / "summary.json"), str(out)], input=summarize, text=True, capture_output=True, env=env)
+
+    done = summarized(rendered.stdout)
+    assert done.returncode == 0, done.stderr
+    metadata = json.loads((out / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata == {"run_id": "7", "workflow_revision": "c" * 40, "deployed_build_sha": "b" * 40, "report": "before-after",
+                        "schema": official.BEFORE_AFTER_SCHEMA, "report_sha256": receipt["report_sha256"], "generation_id": receipt["generation_id"],
+                        "generation_source": SOURCE_BLEND, "after_source_version": receipt["after_source_version"]}
+    assert (out / "summary.md").read_text(encoding="utf-8") == official.before_after_markdown(receipt)
+    assert receipt["report_sha256"] in (tmp_path / "step_summary.md").read_text(encoding="utf-8")
+    published = [path.read_text(encoding="utf-8") for path in out.iterdir()] + [(tmp_path / "step_summary.md").read_text(encoding="utf-8"), done.stdout]
+    assert not any(symbol in text for text in published for symbol in symbols)
+
+    # the verifier refuses what is not exactly the aggregate, or does not recompute — before anything is uploaded
+    detail = {**receipt, "detail": {"B3": ["PETR4"]}}
+    tampered = {**receipt, "targeted_cycles": receipt["targeted_cycles"] + 1}
+    keyed = {**receipt, "markets": {**receipt["markets"], "B3": {**receipt["markets"]["B3"], "pairs": {"PETR4": {}}}}}
+    for text, message in ((json.dumps(detail), "keys are not exactly the aggregate's"), (json.dumps(tampered), "does not recompute"),
+                          (json.dumps(keyed), "keys are not exactly the aggregate's"), (json.dumps({**receipt, "schema": "VALUATION_P1_BEFORE_AFTER_V2"}), "not Valuation P1 rev 9"),
+                          (json.dumps({**receipt, "cycles": {"PETR4": "x"}}), "keyed by something other than a market"),
+                          ("not json", "not a single JSON document"), (" " * 70000, "larger than an aggregate")):
+        refused = verified(text)
+        assert refused.returncode != 0 and message in refused.stderr, (message, refused.stderr)
+        assert not any(symbol in refused.stdout + refused.stderr for symbol in symbols)
+    assert verified(printed).returncode == 0  # the accepted receipt back in place for the summary checks
+    unattributed = summarized(json.dumps({"markdown": official.before_after_markdown(receipt), "build_sha": "development"}))
+    assert unattributed.returncode != 0 and "not a commit sha" in unattributed.stderr
+    other = summarized(json.dumps({"markdown": official.before_after_markdown({**receipt, "report_sha256": "f" * 64}), "build_sha": "b" * 40}))
+    assert other.returncode != 0 and "not rendered from this receipt" in other.stderr
+
+
+def test_the_readonly_workflow_runs_the_before_after_read_only_and_never_writes_a_detail() -> None:
+    """The dispatch input chooses the report (``accuracy`` by default, the PREREG reading unchanged); ``before-after`` runs
+    the receipt's command exactly, both execs in the running api container under PGOPTIONS read-only, with the same four
+    deploy secrets as the accuracy path — never ``--private-detail``, never a ``--markdown`` path inside the container."""
+    import yaml
+
+    text = WORKFLOW.read_text(encoding="utf-8")
+    parsed = yaml.safe_load(text)
+    trigger = parsed[True]
+    assert set(trigger) == {"workflow_dispatch"}
+    report_input = trigger["workflow_dispatch"]["inputs"]["report"]
+    assert report_input["type"] == "choice" and report_input["default"] == "accuracy" and report_input["options"] == ["accuracy", "before-after"]
+    steps = _workflow_steps()
+    gated = {name: step.get("if") for name, step in steps.items()}
+    for name in ("Run the report in the running api container, read-only", "Verify the receipt and keep aggregates only", "Publish the aggregate receipt"):
+        assert gated[name] == "steps.inputs.outputs.report == 'accuracy'"
+    for name in ("Run the before/after receipt in the running api container, read-only", "Verify the before/after receipt and keep the aggregate only",
+                 "Render the Portuguese summary in the running api container, read-only", "Verify the summary and keep aggregates only",
+                 "Publish the before/after receipt"):
+        assert gated[name] == "steps.inputs.outputs.report == 'before-after'"
+    receipt_run = str(steps["Run the before/after receipt in the running api container, read-only"]["run"])
+    render_run = str(steps["Render the Portuguese summary in the running api container, read-only"]["run"])
+    assert "api python -m app.valuation_official --before-after --keep-internal-targeted </dev/null" in receipt_run
+    for run in (receipt_run, render_run):
+        assert "exec -T \\\n  -e 'PGOPTIONS=-c default_transaction_read_only=on' \\\n  api python" in run
+        assert "/run/c3po-security/reboot.pending" in run and "remote stderr lines (kept private, not printed)" in run
+    commands = "\n".join(str(step.get("run") or "") for step in steps.values())
+    assert "--private-detail" not in commands and "--markdown" not in commands  # only the header comment names them, to forbid them
+    secrets = sorted(set(__import__("re").findall(r"secrets\.([A-Z0-9_]+)", text)))
+    assert secrets == ["C3PO_AWS_HOST", "C3PO_AWS_KNOWN_HOSTS", "C3PO_AWS_SSH_KEY", "C3PO_AWS_USER"]
+    assert steps["Publish the before/after receipt"]["with"]["path"] == "${{ runner.temp }}/valuation-p1-before-after"
