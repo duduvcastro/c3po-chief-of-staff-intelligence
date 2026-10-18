@@ -69,7 +69,11 @@ RESULTS_FORMS = frozenset({"10-Q", "10-K", "10-Q/A", "10-K/A"})
 EARNINGS_RELEASE_FORMS = frozenset({"8-K", "8-K/A"})
 EARNINGS_RELEASE_ITEM = "2.02"  # Results of Operations and Financial Condition
 
-VINTAGE_LOOKBACK_DAYS = 6 * 366  # facts whose period ended earlier are not ingested (every publication of a kept fact is)
+VINTAGE_LOOKBACK_DAYS = 10 * 366  # facts whose period ended earlier are not ingested (every publication of a kept fact is)
+# Ten years, not six: a point-in-time re-execution ~2 years back must still see the five fiscal years the V3 history
+# models need (valuation_v2_engine.MIN_HISTORY_YEARS). The paced backfill never revisits a widened window (the gap check
+# reads only the newest original 10-Q/10-K); older facts would arrive only with each issuer's next ingestion (a new or
+# pending statement), outside the backfill budget — so it is set before the first backfill.
 DETECTION_LOOKBACK_DAYS = 10  # a filing accepted earlier than this is history (companyfacts), not a new-filing event
 PENDING_FACTS_DAYS = 3  # a registered statement document whose facts are not in companyfacts yet is retried this long
 PENDING_RETRY = timedelta(hours=1)

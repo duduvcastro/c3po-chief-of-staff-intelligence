@@ -379,6 +379,16 @@ def test_a_header_failure_defers_that_document_and_every_later_one() -> None:
     assert stored == {"0000999001-24-000030", "0000999001-25-000005"}  # only the documents before the gap
 
 
+def test_the_backfill_keeps_ten_years_of_facts() -> None:
+    # Polled in mid-2033 the fixture's facts (periods ending 2023–2025) are 7.5–9.5 years old: ten years keeps them, six
+    # would keep none — the point-in-time re-executor needs five fiscal years ~2 years back (MIN_HISTORY_YEARS).
+    assert sec_xbrl.VINTAGE_LOOKBACK_DAYS == 10 * 366
+    database = Database(_settings())
+    _, result = _poll_once(database, fx.EdgarFake(), datetime(2033, 6, 1, tzinfo=UTC))
+    rows = StatementVintageStore(database).vintages("US", fx.CIK)
+    assert result.issuers_backfilled == 1 and rows and min(row["period_end"] for row in rows) == date(2023, 12, 31)
+
+
 ALL_DOCUMENTS = {doc["accession"] for doc in fx.DOCUMENTS}
 
 

@@ -6,9 +6,11 @@ Este documento cobre a frente EUA (fonte de registro aprovada pelo dono): vintag
 as-of com reconciliação em sombra e o gatilho de reavaliação dos TPs dos EUA.
 
 **Nada aqui muda número servido.** Tudo roda atrás de `C3PO_VALUATION_ASFILED_ENABLED` (padrão **desligado**): com a
-chave desligada nada é buscado na SEC, nenhuma tabela nova é escrita e nenhuma linha servida muda. As únicas mudanças
+chave desligada nada é buscado na SEC, nenhuma tabela nova é escrita por esta frente e nenhuma linha servida muda. As únicas mudanças
 sem chave são (1) a correção do relógio do JSON de submissions nos eventos SEC de Investor Relations e (2) o
-espaçamento das requisições SEC do cliente de Investor Relations pelo limitador do processo (abaixo).
+espaçamento das requisições SEC do cliente de Investor Relations pelo limitador do processo (abaixo). A tabela 051 em si
+não é exclusiva desta frente: a captura CVM da frente B3 (`C3PO_CVM_STATEMENTS_CAPTURE_ENABLED`, ligada por padrão,
+`VALUATION_CVM_STATEMENTS_V1.md`) grava documentos e fatos B3 nela sem esta chave — sombra, sem número servido.
 
 ## Relógio de aceitação: o cabeçalho manda
 
@@ -94,8 +96,14 @@ instante real **mais** o deslocamento UTC de Nova York.
 | PL | `StockholdersEquity`, `StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest` |
 | ações em circulação | `dei:EntityCommonStockSharesOutstanding` (por classe → somadas) |
 
-* Só documentos da família 10-Q/10-K (`10-Q`, `10-K`, `…/A`, `…T`); fatos de períodos terminados há mais de seis anos
-  não entram (toda publicação de um fato mantido entra).
+* Só documentos da família 10-Q/10-K (`10-Q`, `10-K`, `…/A`, `…T`); fatos de períodos terminados há mais de **dez anos**
+  não entram (toda publicação de um fato mantido entra). Dez e não seis: com seis, um reexecutor ponto-no-tempo ~2 anos
+  para trás veria só quatro exercícios, e os modelos de histórico do V3 exigem cinco (`MIN_HISTORY_YEARS`). Necessário,
+  não suficiente: os rácios por exercício do reexecutor também precisam do fecho no fim de cada exercício, e a safra de
+  preços cobre 36 meses por padrão — cinco exercícios anos para trás pedem uma safra longa (`valuation_price_history
+  --backfill --months`, teto 120, fixada com `--price-pinned-at`). Alargar depois não volta ao backfill pausado (o reparo
+  de lacuna só olha o 10-Q/10-K original mais recente): os fatos antigos só entrariam na próxima ingestão de cada emissor
+  (protocolo novo ou pendente), fora do orçamento — por isso o valor vale desde o primeiro backfill.
 * Repetição idêntica dentro do documento colapsa; contagem de ações por classe (mesmo documento e data de capa) é
   somada; qualquer outro conflito descarta o fato (contado em `conflicting`), nunca chuta.
 * Trimestres (`discrete_quarters`): fato de três meses é trimestre reportado; YTD com mesmo início dá os demais por
@@ -186,9 +194,24 @@ Valor ilegível volta ao padrão (chave: desligada); número fora da faixa é tr
 ## Operação
 
 1. Host: `C3PO_SEC_CONTACT` configurado (contato real, fora do repositório); opcional `C3PO_SEC_MAX_REQUESTS_PER_SECOND`.
+   **Pelo deploy:** o passo `Stage host env settings` do `c3po-pipeline.yml` grava na `.env` do host, antes do
+   `docker compose up -d`, o secret `C3PO_SEC_CONTACT` (só o e-mail, sem espaço nem quebra de linha) e as variáveis
+   `C3PO_VALUATION_ASFILED_ENABLED` (`true`/`false`, minúsculas) e `C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL`
+   (0 a 200), do repositório ou do environment `production` (que prevalece). Valor vazio não grava nada: a `.env`
+   mantém o que tem — **apagar a variável não desliga**; para desligar, defina `C3PO_VALUATION_ASFILED_ENABLED=false`.
+   Mudar secret/variável não dispara deploy; o próximo (push na `main` ou dispatch com `deploy`) aplica. Valor
+   inválido — inclusive com quebra de linha — falha o deploy antes de qualquer mudança na `.env` ou nos containers (o
+   pacote da release já foi copiado para o `/tmp` do host pelo passo anterior) e bloqueia todo deploy até ser
+   corrigido ou apagado (`tests/test_valuation_host_env_pipeline.py`). Definir o secret e as variáveis é ato do dono.
 2. Ligar `C3PO_VALUATION_ASFILED_ENABLED=true` nos workers de IR e de valuation (e no produtor EUA, mesmo container do
-   worker de valuation). O primeiro dia faz o backfill (~30 requisições por emissor, 10 emissores por poll; a 2,5/s
-   cada poll leva ~2 min de backfill mais ~4 min das submissions do universo).
+   worker de valuation). O primeiro dia faz o backfill (com dez anos, ~43 requisições por emissor — 1 companyfacts +
+   ~42 cabeçalhos —, ~17 s por emissor a 2,5/s, mais ~4 min das submissions do universo a cada poll). Com o padrão
+   de 10 emissores por poll o universo (~550 emissores) leva ~1 dia; com
+   `C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL=30`, ~10 h (poll de ~13 min). O orçamento é lido na partida do
+   processo: mudar exige recriar o container (`up -d`), não `restart`. Protocolo novo não espera o orçamento: ligar na
+   temporada de resultados faz o primeiro poll ingerir sem teto todo emissor com 10-Q/10-K aceito nos últimos 10 dias (no
+   pico, ~200–300 × ~43 requisições ≈ 1–1,5 h num só poll, com o laço do worker de IR e a execução `sec_asfiled` ocupados
+   esse tempo; o reboot de segurança espera). Nada falha; só atrasa.
 3. Conferir: execuções `sec_asfiled` (`ingestion_runs`) sem `json_clock_mismatches`; `statement_vintages` crescendo;
    snapshot de reconciliação por mercado; `valuation_tp_staleness` com marcas.
 4. Desligar a chave volta tudo ao comportamento anterior; as tabelas ficam (append-only).
