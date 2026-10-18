@@ -65,7 +65,7 @@ from . import valuation_price_history as price_history_module
 from .config import Settings, get_settings
 from .database import Database
 from .market_data.http import JsonHttpClient
-from .valuation_official import CalendarUnavailable, canonical_sha256, session_date_of
+from .valuation_official import SOURCE_V3_2_SHADOW, CalendarUnavailable, canonical_sha256, session_date_of
 from .valuation_price_history import LABEL_ADJUSTMENT_UNKNOWN, PriceHistoryService
 
 logger = logging.getLogger(__name__)
@@ -99,6 +99,9 @@ CONSENSUS_PRESENT = "present"
 CONSENSUS_ABSENT = "absent"  # no tp
 CONSENSUS_UNATTESTED = "consensus_unattested"  # prefix: ``consensus_unattested:<field>`` — the FIRST of the five fields of PROMO-2 (c) missing (source, horizon, currency, published_at, payload_sha256), or ``:instant_unparseable``
 CONSENSUS_FIELDS: tuple[str, ...] = ("source", "horizon", "currency", "published_at", "payload_sha256")  # PROMO-2 (c): all five persisted, else not the consensus that existed
+UNATTESTED_HORIZONS: tuple[str, ...] = ("N/D",)  # a horizon literal that attests nothing (the PIT re-executor's consensus, design §3): ``consensus_unattested:horizon``, as None/""
+SUPERSEDED_RUN = "superseded_run"  # v3_2_shadow only: the record's provenance.run_key was superseded by a later run of the same (market, T) — never served
+PIT_RERUN_ANALYSIS_TYPE = "valuation_pit_rerun"  # the re-executor's one-snapshot-per-run (inputs: run_key, market, as_of, supersedes?)
 COHORT_LIVE = "live"
 COHORT_RETROSPECTIVE = "retrospective"  # R3(a): published after the live deadline — diagnostic apart, never in the decision
 COHORT_UNKNOWN = "cohort_unknown"  # the calendar could not place the deadline: not shown to be live, never in the decision
@@ -351,6 +354,43 @@ def admissible_records(records: Iterable[Mapping[str, Any]], *, cut: datetime, s
     return kept, _counts(refusals)
 
 
+def superseded_run_keys(database: Database, *, market: str, as_of: str) -> set[str]:
+    """The ``run_key`` chain the LATEST ``valuation_pit_rerun`` run of ``(market, T)`` supersedes, transitively
+    (``inputs.supersedes`` of the latest run, then of the run it names, …): every run of that T but the current one —
+    a rerun after changed inputs, or a partial cycle whose inputs changed before it was completed. Read-only, through
+    the existing snapshot API (``latest_analysis_snapshot_by_inputs``); a cycle in the chain stops it."""
+    chain: set[str] = set()
+    snapshot = database.latest_analysis_snapshot_by_inputs(PIT_RERUN_ANALYSIS_TYPE, {"market": market, "as_of": as_of})
+    while snapshot is not None:
+        superseded = str(_mapping(snapshot.get("inputs")).get("supersedes") or "")
+        if not superseded or superseded in chain:
+            break
+        chain.add(superseded)
+        snapshot = database.latest_analysis_snapshot_by_inputs(PIT_RERUN_ANALYSIS_TYPE, {"run_key": superseded})
+    return chain
+
+
+def refuse_superseded_runs(records: Iterable[Mapping[str, Any]], *, database: Database, market: str) -> tuple[list[dict[str, Any]], int]:
+    """``v3_2_shadow`` only (P2-2): a record whose ``provenance.run_key`` lies in the supersedes chain of its
+    ``(market, prediction_instant)`` is ``superseded_run`` — refused BEFORE the one-per-session dedup, so the earliest
+    published (superseded) cycle never shadows the current one. Returns the surviving records and the count refused."""
+    chains: dict[str, set[str]] = {}
+    kept: list[dict[str, Any]] = []
+    refused = 0
+    for record in records:
+        instant = _parse_instant(record.get("prediction_instant"))
+        run_key = str(_mapping(_mapping(record.get("decomposition")).get("provenance")).get("run_key") or "")
+        if instant is not None and run_key:
+            as_of = instant.isoformat()
+            if as_of not in chains:
+                chains[as_of] = superseded_run_keys(database, market=market, as_of=as_of)
+            if run_key in chains[as_of]:
+                refused += 1
+                continue
+        kept.append(dict(record))
+    return kept, refused
+
+
 # ------------------------------------------------------------------ one observation (i, T)
 def _consensus_of(record: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     """The consensus block the record PERSISTED (``decomposition.consensus``: tp, source, horizon, currency, instant,
@@ -372,8 +412,8 @@ def _consensus_of(record: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     if tp is None:
         return consensus, CONSENSUS_ABSENT
     for field in CONSENSUS_FIELDS:  # PROMO-2 (c): the five persisted fields; the first missing names the cause
-        if consensus[field] in (None, ""):
-            return consensus, f"{CONSENSUS_UNATTESTED}:{field}"
+        if consensus[field] in (None, "") or (field == "horizon" and consensus[field] in UNATTESTED_HORIZONS):
+            return consensus, f"{CONSENSUS_UNATTESTED}:{field}"  # a horizon ``N/D`` attests nothing (the PIT re-executor's block, design §3): never compared
     consensus_instant, prediction_instant = _parse_instant(consensus["published_at"]), _parse_instant(record.get("prediction_instant"))
     if consensus_instant is None or prediction_instant is None:
         return consensus, f"{CONSENSUS_UNATTESTED}:instant_unparseable"
@@ -739,7 +779,11 @@ class PanelService:
         (no symbol) and the observations (the detail). ``reader`` is the run's price reader (a fresh memo per run)."""
         reader = reader if reader is not None else self._reader()
         records = self.database.list_valuation_predictions_in_window(market, source=source, since=since, until=until)
-        kept, refusals = admissible_records(records, cut=cut, since=since, until=until)
+        current, superseded = (refuse_superseded_runs(records, database=self.database, market=market) if source == SOURCE_V3_2_SHADOW
+                               else (records, 0))  # P2-2: a superseded PIT run is refused before the one-per-session dedup
+        kept, refusals = admissible_records(current, cut=cut, since=since, until=until)
+        if superseded:
+            refusals = _counts(Counter({**refusals, SUPERSEDED_RUN: superseded}))
         calendar_close = calendar_horizon(market)
         bars_by_symbol: dict[str, dict[str, dict[str, Any]]] = {}
         observations: list[dict[str, Any]] = []
