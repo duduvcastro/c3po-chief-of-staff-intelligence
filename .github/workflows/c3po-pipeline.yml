@@ -599,19 +599,41 @@ jobs:
             "/tmp/c3po-images-${{ steps.revision.outputs.sha }}.tar.gz.sha256" \
             "$USER@$HOST:/tmp/"
 
-      - name: Stage push notification configuration
+      - name: Stage host env settings (push notifications, valuation as-filed)
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
           PUSH_PRIVATE: ${{ secrets.C3PO_PUSH_VAPID_PRIVATE_KEY }}
           PUSH_PUBLIC: ${{ secrets.C3PO_PUSH_VAPID_PUBLIC_KEY }}
+          # Optional valuation settings (c3po/docs/VALUATION_ASFILED_US_V1.md): an empty value writes nothing and the host
+          # .env keeps what it has. The SEC contact is a secret (never in the repository); the switches are variables.
+          SEC_CONTACT: ${{ secrets.C3PO_SEC_CONTACT }}
+          ASFILED_ENABLED: ${{ vars.C3PO_VALUATION_ASFILED_ENABLED }}
+          ASFILED_BACKFILL: ${{ vars.C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL }}
+          LC_ALL: C  # the regex character ranges compare bytes on any runner image
         run: |
           test -n "$PUSH_PRIVATE"
           test -n "$PUSH_PUBLIC"
+          # Each optional value must match exactly (whole string, so no newline can add a line to .env); never echoed.
+          if [ -n "$SEC_CONTACT" ] && ! [[ "$SEC_CONTACT" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+            echo "C3PO_SEC_CONTACT is not a single e-mail address" >&2
+            exit 1
+          fi
+          if [ -n "$ASFILED_ENABLED" ] && ! [[ "$ASFILED_ENABLED" =~ ^(true|false)$ ]]; then
+            echo "C3PO_VALUATION_ASFILED_ENABLED must be true or false" >&2
+            exit 1
+          fi
+          if [ -n "$ASFILED_BACKFILL" ] && ! { [[ "$ASFILED_BACKFILL" =~ ^[0-9]{1,3}$ ]] && [ "$ASFILED_BACKFILL" -le 200 ]; }; then
+            echo "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL must be an integer from 0 to 200" >&2
+            exit 1
+          fi
           umask 077
           {
             printf 'C3PO_PUSH_VAPID_PRIVATE_KEY=%s\n' "$PUSH_PRIVATE"
             printf 'C3PO_PUSH_VAPID_PUBLIC_KEY=%s\n' "$PUSH_PUBLIC"
+            if [ -n "$SEC_CONTACT" ]; then printf 'C3PO_SEC_CONTACT=%s\n' "$SEC_CONTACT"; fi
+            if [ -n "$ASFILED_ENABLED" ]; then printf 'C3PO_VALUATION_ASFILED_ENABLED=%s\n' "$ASFILED_ENABLED"; fi
+            if [ -n "$ASFILED_BACKFILL" ]; then printf 'C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL=%s\n' "$ASFILED_BACKFILL"; fi
           } > /tmp/c3po-push.env
           scp -i ~/.ssh/c3po_deploy \
             /tmp/c3po-push.env \

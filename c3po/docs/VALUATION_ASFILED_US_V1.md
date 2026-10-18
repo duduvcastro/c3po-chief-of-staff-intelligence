@@ -194,6 +194,15 @@ Valor ilegível volta ao padrão (chave: desligada); número fora da faixa é tr
 ## Operação
 
 1. Host: `C3PO_SEC_CONTACT` configurado (contato real, fora do repositório); opcional `C3PO_SEC_MAX_REQUESTS_PER_SECOND`.
+   **Pelo deploy:** o passo `Stage host env settings` do `c3po-pipeline.yml` grava na `.env` do host, antes do
+   `docker compose up -d`, o secret `C3PO_SEC_CONTACT` (só o e-mail, sem espaço nem quebra de linha) e as variáveis
+   `C3PO_VALUATION_ASFILED_ENABLED` (`true`/`false`, minúsculas) e `C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL`
+   (0 a 200), do repositório ou do environment `production` (que prevalece). Valor vazio não grava nada: a `.env`
+   mantém o que tem — **apagar a variável não desliga**; para desligar, defina `C3PO_VALUATION_ASFILED_ENABLED=false`.
+   Mudar secret/variável não dispara deploy; o próximo (push na `main` ou dispatch com `deploy`) aplica. Valor
+   inválido — inclusive com quebra de linha — falha o deploy antes de qualquer mudança na `.env` ou nos containers (o
+   pacote da release já foi copiado para o `/tmp` do host pelo passo anterior) e bloqueia todo deploy até ser
+   corrigido ou apagado (`tests/test_valuation_host_env_pipeline.py`). Definir o secret e as variáveis é ato do dono.
 2. Ligar `C3PO_VALUATION_ASFILED_ENABLED=true` nos workers de IR e de valuation (e no produtor EUA, mesmo container do
    worker de valuation). O primeiro dia faz o backfill (com dez anos, ~43 requisições por emissor — 1 companyfacts +
    ~42 cabeçalhos —, ~17 s por emissor a 2,5/s, mais ~4 min das submissions do universo a cada poll). Com o padrão
