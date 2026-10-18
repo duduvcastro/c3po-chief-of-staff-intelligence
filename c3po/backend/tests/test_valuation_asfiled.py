@@ -452,6 +452,10 @@ def test_the_causal_reader_knows_only_the_marks_of_its_clock_and_the_latest_stat
     # a tie on recorded_at (the trigger never writes one) resolves to the stricter state
     store.append([_staleness("C-3", "WWWW", "stale", t0 + timedelta(hours=6)), _staleness("C-3", "WWWW", "cleared", t0 + timedelta(hours=6))])
     assert "WWWW" in asfiled.us_staleness_at(database, t0 + timedelta(hours=6))["pending"]
+    # the latest state is the latest by recorded_at, never the last row read (PostgreSQL orders them; the reader does not rely on it)
+    store.append([_staleness("E-5", "VVVV", "cleared", t0 + timedelta(hours=3)), _staleness("E-5", "VVVV", "stale", t0 + timedelta(hours=1))])
+    assert "VVVV" in asfiled.us_staleness_at(database, t0 + timedelta(hours=2))["pending"]
+    assert "VVVV" not in asfiled.us_staleness_at(database, t0 + timedelta(hours=4))["pending"]
     # a row inserted after the clock is not known at it, whatever clock its pass carried (a replayed pass, a straddling one)
     database._valuation_tp_staleness.append({**_staleness("D-4", "ZZZZ", "stale", t0 + timedelta(hours=1)), "id": "late",  # type: ignore[attr-defined]
                                              "created_at": t0 + timedelta(hours=7)})

@@ -9,7 +9,7 @@ toca tabelas, ordens ou posições do R2D2. Código: `backend/app/valuation_deci
 | Veredicto | Quando |
 |---|---|
 | `COMPRA_PERMITIDA` | todos os portões passaram (`reason_codes = ["ALL_GATES_PASSED"]`) |
-| `OBSERVAR` | TP confiável, mas sem permissão: sem margem hoje (`PRICE_ABOVE_BUY_IN`, `TP_MARGIN_INSUFFICIENT`) ou insumo da margem ainda não medido (`E_PROFILE_WARMING_UP`, `E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`) |
+| `OBSERVAR` | TP confiável, mas sem permissão: sem margem hoje (`PRICE_ABOVE_BUY_IN`, `TP_MARGIN_INSUFFICIENT`), insumo da margem ainda não medido (`E_PROFILE_WARMING_UP`, `E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`) ou, nos EUA, TP à espera da reavaliação que um protocolo aceito depois dele disparou (`TP_STALE_AFTER_FILING`) ou pergunta sem resposta (`STALENESS_SOURCE_UNAVAILABLE`) |
 | `VETO` | o TP ou seus dados não são confiáveis agora (frescor, qualidade, defeito de dado); lista **todos** os códigos que falharam, inclusive os de OBSERVAR |
 
 ## Regras
@@ -42,6 +42,19 @@ toca tabelas, ordens ou posições do R2D2. Código: `backend/app/valuation_deci
 * **Qualidade (VETO)**: não validado (`tp_validation_status` quando o produtor emite — B3 —, senão `signal_quality` — US);
   dispersão de métodos acima do limite ou desconhecida; confiança abaixo do limite ou desconhecida; qualquer marca de
   defeito de dado (`data_defect`, `data_defects`).
+* **Reavaliação após protocolo (OBSERVAR; só EUA)**: a migração 053 (`valuation_tp_staleness`, frente as-filed) marca o
+  TP oficial dos EUA contra os protocolos da SEC (10-Q/10-K e emendas, 8-K 2.02). O decisor a lê **uma vez por rodada,
+  no relógio da rodada** (`valuation_asfiled.us_staleness_at`): só marcas com `recorded_at` ≤ relógio **e**, no
+  PostgreSQL, `created_at` ≤ relógio (inseridas até ali); por par (protocolo, símbolo) vale o estado mais recente entre
+  elas (empate de `recorded_at`, que o gatilho nunca grava, resolve para o mais estrito). Par cujo último estado é
+  `stale` → `TP_STALE_AFTER_FILING`, e o registro nomeia o(s) protocolo(s) (id da marca 053, accession, formulário,
+  itens, aceitação, `recorded_at`, motivo, `expected_period_end`). `cleared` e `untracked` não bloqueiam. Um `cleared`
+  gravado depois do relógio nunca volta para uma noite anterior: o replay da noite decide o mesmo. Tabela ausente
+  (053 não aplicada; `to_regclass` nulo) → `STALENESS_SOURCE_UNAVAILABLE` em **todo** nome dos EUA: falha fechada,
+  como todo insumo não medido de uma permissão (`E_PROFILE_UNAVAILABLE`, `MARKET_RATE_UNAVAILABLE`); erro de leitura
+  derruba a rodada, como qualquer outra leitura do decisor. **B3: não se aplica** (`not_applicable`; a 053 só marca os
+  EUA) — e linha servida para mercado dos EUA nunca é `not_applicable` (falha fechada). OBSERVAR, não VETO: o TP não
+  tem defeito, ele espera o corte que o reavalia.
 
 ## Bloco de limiares (a congelar no PREREG)
 
@@ -71,12 +84,15 @@ com qualquer outro bloco é recusada (`ValueError`) e os registros passam a dize
 Mesma disciplina de `valuation_predictions`: dois relógios (`prediction_instant` = relógio da rodada; `published_at` lido
 imediatamente antes do insert, nunca antes — CHECK), sessão do veredicto pelo calendário da bolsa (nunca data civil),
 identidade do TP lido (geração, fonte, ciclo, hash da linha, instante), `inputs` com a procedência de cada insumo
-(calibração, taxa, preço, campos da linha) + `inputs_sha256`, `checks` com os números de cada portão, `row_sha256`
-canônico recomputado por todo leitor (linha que não confere não é servida). Append-only (UPDATE/DELETE/TRUNCATE recusados),
-idempotente por `(run_id, market, symbol)`, `mode` só `shadow`: veredicto que age exige migração e ordem novas.
+(calibração, taxa, preço, campos da linha, marcas 053 em `tp_staleness`) + `inputs_sha256`, `checks` com os números de
+cada portão (`tp_staleness`: estado e protocolos), `row_sha256` canônico recomputado por todo leitor (linha que não
+confere não é servida). Append-only (UPDATE/DELETE/TRUNCATE recusados), idempotente por `(run_id, market, symbol)`,
+`mode` só `shadow`: veredicto que age exige migração e ordem novas.
 Causal: o TP vem da geração **em vigor no relógio da rodada** (`generation_at`, nunca uma posterior — um replay decide o
-que aquela noite viu), e linha servida com `prediction_instant` depois do relógio não é decidida
-(`tp_after_run_instant` no recibo).
+que aquela noite viu), linha servida com `prediction_instant` depois do relógio não é decidida
+(`tp_after_run_instant` no recibo) e as marcas 053 são as conhecidas no relógio. `replay_sha256(registro)` é o hash do
+que o veredicto decidiu, sem a identidade da rodada (`id`, `run_id`, `published_at`, `row_sha256`): rodar de novo a
+mesma noite no mesmo relógio dá o mesmo hash, o que quer que tenha sido publicado ou marcado depois.
 
 ## Fase noturna
 
@@ -84,7 +100,8 @@ que aquela noite viu), e linha servida com `prediction_instant` depois do relóg
 último entre as fases off-hours (depois do corte oficial e de toda fase existente; nunca atrasa uma delas). A noite está
 feita quando a última rodada decidiu sobre a geração em vigor: uma geração ativada depois, dentro da janela (retry do
 canônico), é decidida de novo. O recibo da rodada é agregado (contagens por mercado, veredicto e código, cotações
-recusadas) — não nomeia símbolo. CLI: `python -m app.valuation_decision --dry-run` (nada gravado), `--run` (recusado com a
+recusadas, estado da fonte 053 em `tp_staleness_source`) — não nomeia símbolo nem protocolo. CLI:
+`python -m app.valuation_decision --dry-run` (nada gravado), `--run` (recusado com a
 flag desligada), `--verdict MERCADO:SÍMBOLO`.
 
 `run_shadow` é **dry run por padrão**; grava só com `write=True` **e** a flag ligada (quem quer que chame — senão
@@ -116,14 +133,23 @@ que não é current sai com `effective_verdict = VETO` e `effective_reason_codes
   por fase noturna. Sem ele, todo nome B3 fica `OBSERVAR` (`MARKET_RATE_UNAVAILABLE`). O PREREG escolhe: atualização
   noturna do pacote no servidor, o produtor B3 passar a gravar a data de observação da Selic, ou admitir a Selic sem data
   do ciclo (`undated_rate_sources_admitted`) sabendo do risco da constante.
-* **Portões ainda inertes**: nenhum produtor emite hoje `tp_stale`, `data_defect` ou `data_defects` — `TP_STALE_FLAG` e
-  `DATA_DEFECT` passam todo nome em produção. O PREREG não os conta como checagens até a frente XBRL (migração 053) ou
-  outro produtor gravar a marca; se ela vier em outra estrutura, o decisor precisa de um leitor para ela. **Estado na
-  integração de 17/10:** a frente as-filed grava a marca dos EUA em outra estrutura — `valuation_tp_staleness`
-  (053, `state = stale`, lida por `valuation_asfiled.stale_us_tps`) — e o decisor **ainda não a lê**: com
-  `C3PO_VALUATION_ASFILED_ENABLED` e `C3PO_VALUATION_DECISOR_SHADOW` ligadas, um TP anterior a um 8-K 2.02 ou 10-Q/10-K
-  aceito depois do corte não é vetado por isso (sai `COMPRA_PERMITIDA` se o resto passar). O leitor tem de ser
-  causal (marcas com `recorded_at` ≤ relógio da rodada e sem `cleared` até ele; `stale_us_tps` hoje lê tudo o que
-  existe) e entra como código de veto antes do recibo de congelamento do decisor.
+* **Portões ainda inertes**: nenhum produtor emite hoje `tp_stale`, `data_defect` ou `data_defects` na linha servida —
+  `TP_STALE_FLAG` e `DATA_DEFECT` passam todo nome em produção, e o PREREG não os conta como checagens até um produtor
+  gravar a marca. A marca dos EUA veio em outra estrutura (053) e **agora tem leitor causal**: `TP_STALE_AFTER_FILING`
+  (regra acima). Ela só é evidência quando o gatilho roda: com `C3PO_VALUATION_ASFILED_ENABLED` desligada nos workers
+  de IR e de valuation a tabela fica vazia e todo nome dos EUA passa nesse portão (ausência de marca não prova
+  ausência de protocolo). **Decisão em aberto para o PREREG/mesa:** (a) se a 053 sem gatilho ativo deve falhar fechada
+  como a tabela ausente (hoje não: a rodada só registra `marks_known` e `latest_recorded_at` da leitura); (b) a classe
+  do código — OBSERVAR, como entregue (TP à espera de reavaliação, não defeituoso), ou VETO, como a família de frescor
+  (`TP_STALE_FLAG`) e o texto anterior desta pendência previam; trocar é mover o código de tupla, sem migração.
+* **053 no host**: enquanto a migração 053 não for aplicada no servidor, uma rodada com o decisor ligado registra
+  `STALENESS_SOURCE_UNAVAILABLE` em todo nome dos EUA (nenhuma permissão nos EUA; B3 inalterada). Aplicar a 053 antes
+  de ligar `C3PO_VALUATION_DECISOR_SHADOW`, ou aceitar esse estado declarado.
+* **Resíduos do leitor 053** (declarados): (1) uma passagem do gatilho cuja transação começa antes do relógio da rodada
+  e confirma depois da leitura (milissegundos; o gatilho noturno roda antes da fase do decisor, só o poll de IR pode
+  coincidir) é vista por um replay e não pela rodada original — o `inputs_sha256` diverge e mostra; (2) um `cleared` é
+  terminal no gatilho: um rollback da geração para um TP anterior ao protocolo, depois do `cleared`, não volta a
+  marcar o nome (rollback é ato explícito da mesa); (3) marca `stale` pendente de um TP já reavaliado por um corte
+  cujo gatilho falhou mantém o nome em OBSERVAR até o próximo passe — erro do lado seguro.
 * Preço depois do corte: hoje vem de ciclo de universo publicado depois do fechamento; a série de preços da V3.2
   (`valuation_price_bars`, migração 049, fase desligada por padrão) é a próxima fonte natural de fechamento por sessão.
