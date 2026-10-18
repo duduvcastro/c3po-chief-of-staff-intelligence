@@ -21,6 +21,7 @@ from .official_fundamentals import ensure_builtin_official_fundamentals
 from .observability import HealthcheckPing, init_sentry
 from .r2d2_cash_yield import R2D2CashYieldService
 from .push_notifications import PushNotificationService
+from .valuation_asfiled import evaluate_us_filings
 from .valuation_decision import last_run_at as decision_last_run_at, run_shadow as run_decisor_shadow
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
@@ -311,6 +312,8 @@ def run_nightly(
     investor_relations: InvestorRelationsService,
     screener: B3ScreenerService,
     us_screener: USScreeningService,
+    *,
+    asfiled_enabled: bool = False,
 ) -> None:
     started_at = datetime.now(SAO_PAULO)
     logger.info("Starting nightly CVM First valuation cycle at %s", started_at.isoformat())
@@ -326,6 +329,11 @@ def run_nightly(
     )
     us_counts = us_screener.refresh_all()
     logger.info("US canonical valuation complete: %s", us_counts)
+    if asfiled_enabled:  # Valuation as-filed: this cut revalues the US TPs a filing marked stale; record it (migration 053)
+        try:
+            logger.info("US as-filed revaluation after the cut: %s", evaluate_us_filings(database))
+        except Exception:
+            logger.exception("US as-filed revaluation after the cut failed; the IR worker re-checks on its next poll")
 
 
 def main() -> None:
@@ -446,6 +454,7 @@ def main() -> None:
                     investor_relations,
                     screener,
                     us_screener,
+                    asfiled_enabled=settings.valuation_asfiled_enabled,
                 ),
                 offhours_phases=offhours_phases,
                 healthchecks=healthchecks,

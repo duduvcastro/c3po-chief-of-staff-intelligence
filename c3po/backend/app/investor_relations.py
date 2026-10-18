@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import html
 import io
 import json
 import logging
@@ -13,9 +12,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from difflib import SequenceMatcher
 from html.parser import HTMLParser
 from pathlib import Path
-from threading import Lock
-from time import monotonic, sleep
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
@@ -38,6 +35,19 @@ from .market_data.finnhub import FinnhubClient
 from .market_data.http import JsonHttpClient
 from .official_fundamentals import save_official_fundamentals
 from .official_statements import save_official_statements
+from .sec_xbrl import (
+    FILING_SOURCE as SEC_FILING_SOURCE,
+    NEW_YORK,
+    SecContactMissing,
+    SecThrottled,
+    SecXbrlClient,
+    SecXbrlIngestor,
+    acceptance_from_submissions_json,
+    is_sec_host,
+    process_rate_limiter,
+)
+from .statement_vintages import StatementVintageStore
+from .valuation_asfiled import us_valuation_universe
 from .schemas import (
     InvestorRelationsEvent,
     InvestorRelationsResponse,
@@ -49,23 +59,20 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
-NEW_YORK = ZoneInfo("America/New_York")
 # Defect (e), verified 2026-10-17: the submissions JSON `acceptanceDateTime` is NOT true UTC. AAPL 0000320193-26-000018:
 # header ACCEPTANCE-DATETIME 20260730163028 (New York) vs JSON 2026-07-31T00:30:28.000Z; 0000320193-26-000005: header
 # 20260129163033 vs JSON 2026-01-30T02:30:33Z — the JSON is the true instant PLUS the New York UTC offset. The filing
-# header (…/<accession>-index-headers.html, New York wall clock) is the source of truth; the corrected JSON reading is
-# the fallback while a header is not (yet) read, and each event says which one it carries.
+# header (…/<accession>-index-headers.html, New York wall clock) is the source of truth; the corrected JSON reading
+# (sec_xbrl.acceptance_from_submissions_json) is the fallback while a header is not (yet) read, and each event says
+# which one it carries. Headers are read through sec_xbrl.SecXbrlClient (contact, fair-access limiter, parser).
 SEC_ACCEPTANCE_FROM_HEADER = "filing_header"
 SEC_ACCEPTANCE_FROM_SUBMISSIONS = "submissions_json_ny_corrected"
-SEC_HEADER_ACCEPTANCE_PATTERN = re.compile(r"<ACCEPTANCE-DATETIME>\s*(\d{14})")
-SEC_MAX_REQUESTS_PER_SECOND = 8  # SEC fair access: at most 10/s per user; this process stays below it
 SEC_HEADER_READS_PER_SYNC = 40  # newest first; the rest keep the corrected JSON reading until a later sync reads them
 # A header read that fails waits 1 h, then 2 h, 4 h … up to a day before it is tried again, so a header that never
 # answers cannot keep one of the newest-first slots on every sync. 403/429 is the SEC throttling: no more header reads
 # in that sync at all.
 SEC_HEADER_RETRY_BASE = timedelta(hours=1)
 SEC_HEADER_RETRY_MAX = timedelta(days=1)
-SEC_THROTTLE_STATUSES = frozenset({403, 429})
 SEC_FORMS = {"8-K", "10-Q", "10-K", "6-K", "20-F", "40-F", "8-K/A", "10-Q/A", "10-K/A", "6-K/A", "20-F/A"}
 SEC_FULLTEXT_KEYWORDS = (
     "guidance", "acquisition", "merger", "restatement", "material weakness",
@@ -142,59 +149,6 @@ def date_at_midnight(value: str) -> datetime:
     return datetime.combine(date.fromisoformat(value[:10]), time.min, tzinfo=SAO_PAULO)
 
 
-def sec_submissions_acceptance(value: str) -> datetime:
-    """A submissions JSON ``acceptanceDateTime`` read with its real semantics (defect e): the value labelled UTC is the
-    true acceptance instant plus the New York UTC offset in force at that instant (4 h under EDT, 5 h under EST), so the
-    instant is the label minus the offset that makes the result consistent. EDGAR accepts nothing in the hour around a
-    DST switch (Sunday ~02:00 ET), where this reading would be ambiguous."""
-    labelled = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    if labelled.tzinfo is None:
-        labelled = labelled.replace(tzinfo=timezone.utc)
-    for hours in (4, 5):
-        candidate = labelled - timedelta(hours=hours)
-        if candidate.astimezone(NEW_YORK).utcoffset() == timedelta(hours=-hours):
-            return candidate
-    return labelled + (labelled.astimezone(NEW_YORK).utcoffset() or timedelta())
-
-
-def sec_header_acceptance(text: str) -> datetime | None:
-    """The EDGAR acceptance instant from a filing header (``<ACCEPTANCE-DATETIME>YYYYMMDDHHMMSS``, a New York wall
-    clock; the ``-index-headers.html`` page may HTML-escape the tag), in UTC. ``None`` when the header carries none."""
-    match = SEC_HEADER_ACCEPTANCE_PATTERN.search(html.unescape(text or ""))
-    if not match:
-        return None
-    try:
-        local = datetime.strptime(match.group(1), "%Y%m%d%H%M%S")
-    except ValueError:
-        return None
-    return local.replace(tzinfo=NEW_YORK).astimezone(timezone.utc)
-
-
-class SecRateLimiter:
-    """SEC fair access for this process: consecutive requests at least ``1 / rate`` seconds apart."""
-
-    def __init__(
-        self,
-        rate: float = SEC_MAX_REQUESTS_PER_SECOND,
-        *,
-        clock: Callable[[], float] = monotonic,
-        pause: Callable[[float], None] = sleep,
-    ) -> None:
-        self.interval = 1.0 / rate
-        self.clock = clock
-        self.pause = pause
-        self._lock = Lock()
-        self._next_at = 0.0
-
-    def wait(self) -> None:
-        with self._lock:
-            now = self.clock()
-            if now < self._next_at:
-                self.pause(self._next_at - now)
-                now = self._next_at
-            self._next_at = now + self.interval
-
-
 class LinkCollector(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -236,19 +190,36 @@ class InvestorRelationsService:
             timeout=httpx.Timeout(30.0),
             follow_redirects=True,
             headers={"User-Agent": settings.sec_user_agent, "Accept-Encoding": "gzip, deflate"},
+            event_hooks={"request": [self._sec_fair_access]},
         )
-        # Defect (e): only the process that passes read_sec_headers=True (the IR worker, a single container) requests
-        # filing headers, so their 8 req/s pacing holds for the whole host; every other process (API, valuation and
-        # R2D2 workers) reuses the header instants already stored and never calls the SEC for them.
+        # Defect (e) and the as-filed front: only the process that passes read_sec_headers=True (the IR worker, a single
+        # container) requests filing headers — the sync_sec header step and the as-filed poll, both through one
+        # sec_client; every other process (API, valuation and R2D2 workers) reuses the header instants already stored
+        # and never calls the SEC for them.
         self.read_sec_headers = read_sec_headers
-        self.sec_rate = SecRateLimiter()  # paces the filing-header reads (defect e)
+        self.sec_client: SecXbrlClient | None = None  # built on the first header read (refuses without C3PO_SEC_CONTACT)
         self._sec_header_failures: dict[str, tuple[int, datetime]] = {}  # accession -> (failed reads, next attempt)
         self._sec_contact_warned = False
+        self._asfiled_ingestor: SecXbrlIngestor | None = None
         self.finnhub = FinnhubClient(settings.finnhub_base_url, settings.finnhub_api_token, self.client)
         self.eodhd = EodhdClient(
             settings.eodhd_base_url, settings.eodhd_api_token,
             JsonHttpClient(timeout=30.0, max_retries=2, client=self.client),
         )
+
+    def _sec_fair_access(self, request: httpx.Request) -> None:
+        """Every SEC request of this client waits on the process-wide fair-access limiter shared with the as-filed
+        client (sec_xbrl.process_rate_limiter): one pace per process, whatever path calls EDGAR."""
+        if is_sec_host(request.url.host):
+            process_rate_limiter(self.settings.sec_max_requests_per_second).acquire()
+
+    def _sec_header_client(self) -> SecXbrlClient:
+        """The process's one SEC filing-header client (contact in the User-Agent, paced by the process limiter, the
+        header parser of app/sec_xbrl.py), shared by the sync_sec header step and the as-filed poll. Raises
+        ``SecContactMissing`` without C3PO_SEC_CONTACT: the SEC is never called without a contact."""
+        if self.sec_client is None:
+            self.sec_client = SecXbrlClient(self.settings)
+        return self.sec_client
 
     def register_b3_universe(self, catalog: list[dict[str, Any]]) -> None:
         companies = []
@@ -328,6 +299,8 @@ class InvestorRelationsService:
                     source_read, source_written = self.sync_ri()
                 elif code == "finnhub":
                     source_read, source_written = self.sync_finnhub_news()
+                elif code == "sec_asfiled":
+                    source_read, source_written = self.sync_sec_asfiled()
                 else:
                     raise ValueError(f"Unsupported Investor Relations source: {code}")
                 read += source_read
@@ -650,12 +623,14 @@ class InvestorRelationsService:
 
     def _apply_sec_header_acceptances(self, events: list[dict[str, Any]]) -> None:
         """Defect (e): give each SEC filing event its EDGAR acceptance instant from the filing header — the source of
-        truth. A header already read by an earlier sync is reused from storage (never read twice, never downgraded to
-        the JSON reading); the others are read newest first, at most ``SEC_HEADER_READS_PER_SYNC`` per sync, paced by
-        ``sec_rate``, only in the process built with ``read_sec_headers=True`` and only with ``C3PO_SEC_CONTACT``
-        configured (the SEC is never called without a contact). An event whose header is not read keeps the corrected
-        submissions-JSON instant and says so in ``raw_metadata``. Insider events (also ``source_code = "sec"``) carry no
-        acceptance reading and are left alone.
+        truth. A header instant already known is reused without calling the SEC: one this sync stored on an earlier run
+        (``Database.stored_sec_acceptances``), else one the as-filed poll registered (``statement_filings``, migration
+        051) — never read twice, never downgraded to the JSON reading. The others are read newest first, at most
+        ``SEC_HEADER_READS_PER_SYNC`` per sync, through the process's one SEC header client (``_sec_header_client``:
+        fair-access limiter, contact in the User-Agent), only in the process built with ``read_sec_headers=True`` and
+        only with ``C3PO_SEC_CONTACT`` configured (the SEC is never called without a contact). An event whose header is
+        not read keeps the corrected submissions-JSON instant and says so in ``raw_metadata``. Insider events (also
+        ``source_code = "sec"``) carry no acceptance reading and are left alone.
         Best-effort, like the full-text enrichment: any failure here (the stored-instant lookup included) leaves the
         events with the corrected submissions-JSON instant and never fails sync_sec, whose Finnhub/EODHD insider events
         R2D2's risk source reads (RC-4)."""
@@ -672,19 +647,21 @@ class InvestorRelationsService:
         ]
         if not filings:
             return
-        stored = self.database.stored_sec_acceptances(
-            [event["external_id"] for event in filings], acceptance_source=SEC_ACCEPTANCE_FROM_HEADER,
-        )
+        accessions = [str(event["external_id"]) for event in filings]
+        stored = self.database.stored_sec_acceptances(accessions, acceptance_source=SEC_ACCEPTANCE_FROM_HEADER)
+        registered = self._registered_sec_acceptances([accession for accession in accessions if accession not in stored])
         pending: list[dict[str, Any]] = []
         for event in filings:
-            if event["external_id"] in stored:
-                self._set_sec_header_acceptance(event, stored[event["external_id"]])
+            accepted = stored.get(str(event["external_id"])) or registered.get(str(event["external_id"]))
+            if accepted is not None:
+                self._set_sec_header_acceptance(event, accepted)
             else:
                 pending.append(event)
         if not pending or not self.read_sec_headers:
             return
-        contact = clean_text(self.settings.sec_contact)
-        if not contact:
+        try:
+            reader = self._sec_header_client()
+        except SecContactMissing:
             if not self._sec_contact_warned:  # once per process: the IR worker syncs every 15 minutes
                 self._sec_contact_warned = True
                 logger.warning(
@@ -702,19 +679,16 @@ class InvestorRelationsService:
         for event in sorted(due, key=lambda item: item["published_at"], reverse=True)[:SEC_HEADER_READS_PER_SYNC]:
             accession = str(event["external_id"])
             try:
-                accepted = self._sec_header_acceptance(event, contact)
+                accepted = reader.filing_header(str(event.get("regulator_id") or ""), accession)["accepted_at"]
+            except SecThrottled as exc:
+                logger.warning("SEC answered %d to filing header %s: no more header reads in this sync",
+                               exc.status_code, accession)
+                return
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code in SEC_THROTTLE_STATUSES:
-                    logger.warning("SEC answered %d to filing header %s: no more header reads in this sync",
-                                   exc.response.status_code, accession)
-                    return
                 self._defer_sec_header(accession, now, f"HTTP {exc.response.status_code}")
                 continue
-            except Exception as exc:
+            except Exception as exc:  # network, no ACCEPTANCE-DATETIME (SecHeaderError), a header naming another accession
                 self._defer_sec_header(accession, now, type(exc).__name__)
-                continue
-            if accepted is None:
-                self._defer_sec_header(accession, now, "no ACCEPTANCE-DATETIME")
                 continue
             self._sec_header_failures.pop(accession, None)
             if accepted != event["published_at"] and not semantics_warned:
@@ -726,6 +700,19 @@ class InvestorRelationsService:
                 )
             self._set_sec_header_acceptance(event, accepted)
 
+    def _registered_sec_acceptances(self, accessions: list[str]) -> dict[str, datetime]:
+        """Header instants the as-filed poll already registered (``statement_filings``; filled only behind
+        C3PO_VALUATION_ASFILED_ENABLED, every row read from a filing header). Best-effort on its own: a failed lookup
+        only means these filings are read (or keep the corrected JSON time) like the others."""
+        if not accessions:
+            return {}
+        try:
+            return StatementVintageStore(self.database).filing_acceptances("US", accessions, source=SEC_FILING_SOURCE)
+        except Exception as exc:
+            logger.warning("As-filed filing registry not read (%s); its header instants are not reused in this sync",
+                           type(exc).__name__)
+            return {}
+
     def _defer_sec_header(self, accession: str, now: datetime, reason: str) -> None:
         """A failed header read waits ``SEC_HEADER_RETRY_BASE`` doubled per consecutive failure (at most
         ``SEC_HEADER_RETRY_MAX``); kept in memory, so a worker restart simply tries it again."""
@@ -735,26 +722,50 @@ class InvestorRelationsService:
         logger.info("SEC filing header %s not read (%s, failure %d); it keeps the corrected submissions-JSON time and "
                     "is retried after %s", accession, reason, failures, delay)
 
-    def _sec_header_acceptance(self, event: dict[str, Any], contact: str) -> datetime | None:
-        """One filing header read (``…/Archives/edgar/data/<cik>/<accession digits>/<accession>-index-headers.html``),
-        paced for SEC fair access and identified by the configured contact."""
-        accession = str(event["external_id"])
-        cik = str(event.get("regulator_id") or "").lstrip("0") or "0"
-        url = (
-            f"{self.settings.sec_archives_base_url.rstrip('/')}/Archives/edgar/data/{cik}/"
-            f"{accession.replace('-', '')}/{accession}-index-headers.html"
-        )
-        self.sec_rate.wait()
-        response = self.client.get(url, headers={"User-Agent": f"C3PO Chief of Staff Intelligence {contact}"})
-        response.raise_for_status()
-        return sec_header_acceptance(response.text)
-
     @staticmethod
     def _set_sec_header_acceptance(event: dict[str, Any], accepted: datetime) -> None:
         event["published_at"] = accepted
         metadata = event.setdefault("raw_metadata", {})
         metadata["acceptance_time_source"] = SEC_ACCEPTANCE_FROM_HEADER
         metadata["acceptance_datetime_header"] = accepted.astimezone(NEW_YORK).strftime("%Y%m%d%H%M%S")
+
+    def sync_sec_asfiled(self) -> tuple[int, int]:
+        """Valuation as-filed (owner 2026-10-17): the SEC polling extended to the US valuation universe. Every newly
+        accepted 10-Q/10-K (and amendments) and 8-K carrying item 2.02 is registered with its filing header's acceptance
+        clock, and the issuer's companyfacts are ingested into statement vintages (app/sec_xbrl.py). Off unless
+        C3PO_VALUATION_ASFILED_ENABLED, and only in the header-reading process (``read_sec_headers=True``, the Investor
+        Relations worker; anywhere else it does nothing); refuses to call the SEC without C3PO_SEC_CONTACT (the run
+        fails, naming it). Not part of sync("all"): only the Investor Relations worker polls it, so one process carries
+        the heavy pass."""
+        if not self.settings.valuation_asfiled_enabled or not self.read_sec_headers:
+            return 0, 0
+        run_id = self.database.begin_ingestion_run(
+            "sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure", {"operation": "valuation_universe"},
+        )
+        try:
+            if self._asfiled_ingestor is None:  # kept across polls: it holds the retry state of pending documents
+                self._asfiled_ingestor = SecXbrlIngestor(
+                    self.database,
+                    self._sec_header_client(),
+                    backfill_per_poll=self.settings.valuation_asfiled_backfill_issuers_per_poll,
+                )
+            ingestor = self._asfiled_ingestor
+            universe = us_valuation_universe(self.database)
+            tickers = ingestor.client.company_tickers()
+            result = ingestor.poll(universe, tickers, now=datetime.now(timezone.utc))
+            written = result.filings_registered + result.vintages_written
+            warning = None
+            if result.errors or result.header_failures or result.json_clock_mismatches:
+                warning = (
+                    f"{'SEC throttled the pass; ' if result.throttled else ''}"
+                    f"{len(result.errors)} issuer errors, {result.header_failures} header failures, "
+                    f"{result.json_clock_mismatches} JSON/header clock mismatches: {'; '.join(result.errors[:10])}"
+                )
+            self.database.finish_ingestion_run(run_id, "succeeded", result.submissions_read, written, warning)
+            return result.submissions_read, written
+        except Exception as exc:
+            self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
+            raise
 
     def _enrich_with_sec_fulltext(self, events: list[dict[str, Any]]) -> None:
         """Cross-reference recently-discovered SEC filings against EDGAR's full-
@@ -1661,8 +1672,10 @@ class InvestorRelationsService:
         company: dict[str, Any] | None,
         cutoff: datetime,
     ) -> dict[str, Any] | None:
+        # the submissions JSON acceptanceDateTime is NOT true UTC (verified 2026-10-17 against the filing headers: it is
+        # the real instant plus the New York UTC offset); sync_sec replaces it by the header instant (defect e)
         raw_acceptance = str(recent["acceptanceDateTime"][index])
-        accepted = sec_submissions_acceptance(raw_acceptance)  # never the label as UTC (defect e); the header may replace it
+        accepted = acceptance_from_submissions_json(raw_acceptance)
         if accepted < cutoff:
             return None
         accession = str(recent["accessionNumber"][index])

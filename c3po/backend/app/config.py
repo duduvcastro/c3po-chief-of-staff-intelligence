@@ -156,9 +156,15 @@ class Settings(BaseSettings):
     sec_archives_base_url: str = "https://www.sec.gov"
     sec_fulltext_base_url: str = "https://efts.sec.gov"
     sec_user_agent: str = "C3PO Chief of Staff Intelligence eu@eduardocastro.com.br"
-    # C3PO_SEC_CONTACT: the SEC fair-access contact (an e-mail), configured on the host only — never committed. The
-    # filing-header reads (exact EDGAR acceptance times) refuse to call the SEC without it.
+    # C3PO_SEC_CONTACT: the SEC fair-access contact (an e-mail), configured on the host only — never committed. Sent in
+    # the User-Agent of every filing-header read (exact EDGAR acceptance times) and of the as-filed client
+    # (app/sec_xbrl.SecXbrlClient), which refuses to call the SEC without it.
     sec_contact: str = Field(default="", repr=False)
+    # SEC fair access: at most 8 requests/second from the HOST. One limiter per process (sec_xbrl.process_rate_limiter)
+    # paces every SEC request of that process; three processes call EDGAR (the API — One Pager and
+    # /investor-relations/sync —, the Investor Relations worker and the nightly valuation worker), so the default is
+    # 2.5/s each: 3 × 2.5 = 7.5 ≤ 8. Filing headers are read by the Investor Relations worker only.
+    sec_max_requests_per_second: float = Field(default=2.5, gt=0.0, le=8.0)
     investor_relations_poll_minutes: int = 15
     investor_relations_cvm_poll_minutes: int = 120
     investor_relations_ri_poll_minutes: int = 60
@@ -276,6 +282,12 @@ class Settings(BaseSettings):
     valuation_price_history_backfill_months: int = Field(default=36, ge=1, le=120)
     # Valuation Decisor V1 (migration 052): OFF by default; the nightly shadow phase records verdicts only when the mesa enables it
     valuation_decisor_shadow: bool = False
+    # Valuation as-filed (owner 2026-10-17): SEC XBRL statement vintages, new-filing detection for the US valuation
+    # universe, the as-of bridge with its shadow reconciliation and the US revaluation trigger. OFF by default: nothing is
+    # fetched and no served number changes. Uses the SEC contact (C3PO_SEC_CONTACT) and the per-process SEC limiter
+    # (C3PO_SEC_MAX_REQUESTS_PER_SECOND) above; the poll runs in the Investor Relations worker only.
+    valuation_asfiled_enabled: bool = False
+    valuation_asfiled_backfill_issuers_per_poll: int = Field(default=10, ge=0, le=200)
     r2d2_fmp_prefilter_enabled: bool = True
     r2d2_fmp_prefilter_cache_seconds: int = 15
     r2d2_fmp_prefilter_max_quote_age_seconds: int = 120

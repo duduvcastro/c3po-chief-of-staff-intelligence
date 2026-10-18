@@ -13,17 +13,20 @@ a correção é o comportamento novo). O defeito de overlay/EBITDA da CVM fica c
 
 ## Notas de operação
 
-- **C3PO_SEC_CONTACT** (novo; só no host, nunca no repositório): o contato de fair access da SEC. Sem ele o header
-  **não é lido** (a SEC não é chamada) e o evento fica com a leitura corrigida do JSON, com um aviso no log por
-  processo. Com ele, os headers são lidos do mais novo para o mais antigo, no máximo 40 por sincronização, a ≤ 8 req/s, e
-  um header já lido é reaproveitado do banco (`Database.stored_sec_acceptances`) — nunca relido, nunca rebaixado à
-  leitura do JSON. Se um header divergir da leitura corrigida do JSON, o log avisa que a semântica verificada em 17/10
-  deixou de valer.
+- **C3PO_SEC_CONTACT** (novo; só no host, nunca no repositório; a mesma variável da frente as-filed): o contato de fair
+  access da SEC. Sem ele o header **não é lido** (a SEC não é chamada) e o evento fica com a leitura corrigida do JSON,
+  com um aviso no log por processo. Com ele, os headers são lidos do mais novo para o mais antigo, no máximo 40 por
+  sincronização, pelo `SecXbrlClient` de `app/sec_xbrl.py` (contato no User-Agent, parser do header). Um header já lido
+  é reaproveitado — do próprio evento gravado (`Database.stored_sec_acceptances`) ou do registro da frente as-filed
+  (`statement_filings`, quando ligada) — nunca relido, nunca rebaixado à leitura do JSON. Se um header divergir da
+  leitura corrigida do JSON (`sec_xbrl.acceptance_from_submissions_json`, a única correção do código), o log avisa que a
+  semântica verificada em 17/10 deixou de valer.
 - **Só o `investor-relations-worker` lê headers** (`InvestorRelationsService(..., read_sec_headers=True)`; um único
-  contêiner), então o ritmo de 8 req/s dessas leituras vale para o host inteiro. API, `valuation-worker` e `r2d2-worker`
-  só reaproveitam os instantes já gravados. As chamadas SEC que já existiam (`company_tickers`, submissions, full-text)
-  continuam sem esse limitador: um limitador compartilhado pelo host fica pendente para antes de a frente XBRL ganhar o
-  próprio cliente SEC.
+  contêiner, com um único cliente SEC para estes headers e para o poll as-filed). API, `valuation-worker` e
+  `r2d2-worker` só reaproveitam os instantes já gravados. **Toda** requisição SEC de cada processo — headers,
+  `company_tickers`, submissions, full-text, as-filed — passa por um único limitador por processo
+  (`sec_xbrl.process_rate_limiter`, `C3PO_SEC_MAX_REQUESTS_PER_SECOND`, padrão 2,5/s, teto 8/s): três processos chamam o
+  EDGAR, 3 × 2,5 ≤ 8 req/s no host.
 - **Falhas.** Um 403/429 da SEC interrompe as leituras de header daquela sincronização. Um header que falha (erro HTTP,
   rede, ou sem `ACCEPTANCE-DATETIME`) espera 1 h, depois 2 h, 4 h… até no máximo 1 dia antes de nova tentativa. Assim
   ele não ocupa toda vez uma das 40 vagas. Essa espera fica em memória e zera quando o worker reinicia. O passo inteiro

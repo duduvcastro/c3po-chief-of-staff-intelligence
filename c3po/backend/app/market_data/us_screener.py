@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import statistics
 from datetime import datetime, time, timedelta, timezone
@@ -11,6 +12,7 @@ from ..config import Settings
 from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
 from ..valuation_official import current_generation, item_stamp, official_row, official_rows, official_stamp, provenance_sha256
+from ..valuation_asfiled import record_us_reconciliation
 from ..valuation_official_engine import official_buy_in_v1, official_entry_discount_v1
 from ..valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
@@ -21,6 +23,8 @@ from .realtime import RealtimeMarketsService
 if TYPE_CHECKING:
     from ..one_pager import OnePagerService
 
+
+logger = logging.getLogger(__name__)
 
 USMarket = Literal["NASDAQ", "NYSE"]
 STOCK_LIMIT = 300
@@ -336,6 +340,11 @@ class USScreeningService:
             rows.append(row)
             audit["calculated_tp"] += 1
 
+        if self.settings.valuation_asfiled_enabled:
+            self._record_asfiled_reconciliation(
+                market, fundamentals, [quote.symbol for _, quote, metadata in selected if not self._is_etf(metadata)], eodhd_fetched_at,
+            )
+
         risk_cutoff = self._risk_cutoff(rows)
         tp_cutoff = self._tp_cutoff(risk_free_rate)
         for row in rows:
@@ -358,6 +367,19 @@ class USScreeningService:
         self._coverage[market] = audit
         self._persist(market)
         return rows
+
+    def _record_asfiled_reconciliation(
+        self, market: USMarket, fundamentals: dict[str, dict[str, Any]], symbols: list[str], fetched_at: datetime,
+    ) -> None:
+        """Valuation as-filed, in SHADOW (C3PO_VALUATION_ASFILED_ENABLED): the per-field agreement of the SEC as-filed
+        inputs known when EODHD answered with the EODHD fundamentals THIS build consumed, persisted as its own snapshot
+        (valuation_asfiled.record_us_reconciliation). Nothing of it reaches a row; a failure never fails the build."""
+        try:
+            record_us_reconciliation(
+                self.database, market, {symbol: fundamentals[symbol] for symbol in symbols if fundamentals.get(symbol)}, as_of=fetched_at,
+            )
+        except Exception:
+            logger.exception("US as-filed reconciliation failed for %s; the build continues", market)
 
     def _analyze_stock(
         self,

@@ -32,12 +32,13 @@ def main() -> None:
         init_sentry(settings, service_name="investor-relations-worker")
         database = Database(settings)
         database.initialize()
-        # the only process that reads SEC filing headers (one container): their pacing then holds host-wide
+        # the only process that reads SEC filing headers (one container): sync_sec's header step and the as-filed poll
         service = InvestorRelationsService(settings, database, read_sec_headers=True)
         market_data = MarketDataService(settings, database)
         valuation_processor = InvestorRelationsValuationProcessor(
             database,
             B3ScreenerService(settings, database, market_data.http),
+            asfiled_enabled=settings.valuation_asfiled_enabled,
         )
         next_cvm = datetime.min.replace(tzinfo=timezone.utc)
         next_ri = datetime.min.replace(tzinfo=timezone.utc)
@@ -49,6 +50,8 @@ def main() -> None:
                 continue
             now = datetime.now(timezone.utc)
             sources = ["sec"]
+            if settings.valuation_asfiled_enabled:  # Valuation as-filed: the SEC poll extended to the US valuation universe
+                sources.append("sec_asfiled")
             if now >= next_cvm:
                 sources.insert(0, "cvm")
                 next_cvm = now + timedelta(minutes=max(settings.investor_relations_cvm_poll_minutes, 30))
