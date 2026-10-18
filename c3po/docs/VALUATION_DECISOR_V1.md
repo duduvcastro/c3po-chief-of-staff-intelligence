@@ -118,6 +118,12 @@ que não é current sai com `effective_verdict = VETO` e `effective_reason_codes
   do ciclo (`undated_rate_sources_admitted`) sabendo do risco da constante.
 * **Portões ainda inertes**: nenhum produtor emite hoje `tp_stale`, `data_defect` ou `data_defects` — `TP_STALE_FLAG` e
   `DATA_DEFECT` passam todo nome em produção. O PREREG não os conta como checagens até a frente XBRL (migração 053) ou
-  outro produtor gravar a marca; se ela vier em outra estrutura, o decisor precisa de um leitor para ela.
+  outro produtor gravar a marca; se ela vier em outra estrutura, o decisor precisa de um leitor para ela. **Estado na
+  integração de 17/10:** a frente as-filed grava a marca dos EUA em outra estrutura — `valuation_tp_staleness`
+  (053, `state = stale`, lida por `valuation_asfiled.stale_us_tps`) — e o decisor **ainda não a lê**: com
+  `C3PO_VALUATION_ASFILED_ENABLED` e `C3PO_VALUATION_DECISOR_SHADOW` ligadas, um TP anterior a um 8-K 2.02 ou 10-Q/10-K
+  aceito depois do corte não é vetado por isso (sai `COMPRA_PERMITIDA` se o resto passar). O leitor tem de ser
+  causal (marcas com `recorded_at` ≤ relógio da rodada e sem `cleared` até ele; `stale_us_tps` hoje lê tudo o que
+  existe) e entra como código de veto antes do recibo de congelamento do decisor.
 * Preço depois do corte: hoje vem de ciclo de universo publicado depois do fechamento; a série de preços da V3.2
   (`valuation_price_bars`, migração 049, fase desligada por padrão) é a próxima fonte natural de fechamento por sessão.

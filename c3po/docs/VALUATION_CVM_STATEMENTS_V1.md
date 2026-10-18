@@ -118,6 +118,15 @@ para a próxima corrida no `error_summary`, e emite um `logger.error` (evento no
 O teste de integração com o store real (`test_capture_against_the_real_051_store_once_merged`) é pulado até o merge
 e passa a correr sozinho depois; foi exercitado contra o rascunho da frente XBRL de 17/10 e passou.
 
+**Com a frente XBRL no mesmo deploy, a captura deixa de ser no-op no primeiro arranque.** `Database.initialize()`
+aplica a 051 em todo processo que sobe, e `C3PO_CVM_STATEMENTS_CAPTURE_ENABLED` vem **ligada**: o primeiro laço do
+worker de IR depois do deploy roda `cvm_statements` (nenhuma corrida bem-sucedida → vence já). Essa primeira corrida
+é a maior — quatro zips da CVM e todas as linhas de nível ≤ 2 de todo emissor B3 mapeado —, grava linhas B3 em
+`statement_filings`/`statement_vintages` que os gatilhos tornam **permanentes** (sem UPDATE, DELETE nem TRUNCATE;
+`is_first_publication` fixado na inserção) e atrasa, pelo tempo que levar, a próxima volta de 15 min do SEC/insiders
+no mesmo laço. Nenhum número servido muda com o overlay desligado. Se a mesa não aprovou começar a guardar as safras
+B3 no deploy, definir `C3PO_CVM_STATEMENTS_CAPTURE_ENABLED=false` no host antes de subir.
+
 ## Limites conhecidos
 
 - Exercício social fora do ano civil: DVA/DFC (só acumulados) não são trimestralizados; a DRE só pelos avulsos.

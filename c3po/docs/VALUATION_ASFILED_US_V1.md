@@ -161,7 +161,8 @@ instante real **mais** o deslocamento UTC de Nova York.
     passe, então um TP que entre na geração depois (ex.: ciclo das 00:00 promovido após um protocolo das 16:30) ainda é
     marcado.
 * Marca `stale` pendente é reconferida a cada passe, qualquer que seja a idade. `stale_us_tps` devolve as pendentes por
-  símbolo — o que a frente de decisão (052) deve ler antes de confiar num TP dos EUA.
+  símbolo — o que a frente de decisão (052) deve ler antes de confiar num TP dos EUA. **Ainda sem leitor:** o decisor V1
+  lê só `tp_stale` da linha servida (portão inerte); o leitor causal da 053 está pendente (`VALUATION_DECISOR_V1.md`).
 
 ## Chaves (variáveis de ambiente, não `Settings`)
 

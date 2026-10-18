@@ -712,7 +712,7 @@ Fact = tuple[str, float, date, date | None]  # (concept, value, period_end, peri
 
 @pytest.fixture
 def front() -> Iterator[Any]:
-    """The as-filed front's REAL modules (the tree's, else the byte-identical snapshot of fable/val-xbrl): see tests/asfiled_front.py."""
+    """The as-filed front's REAL modules (the tree's): see tests/asfiled_front.py."""
     with asfiled_front.installed() as modules:
         yield modules
 
