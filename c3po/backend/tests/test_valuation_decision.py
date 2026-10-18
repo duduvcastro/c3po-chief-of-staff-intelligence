@@ -669,7 +669,15 @@ def test_the_filings_gate_is_pure_us_only_and_never_exempts_a_us_row() -> None:
                                  "recorded_at": RUN.isoformat(), "reason": "tp_predates_acceptance", "expected_period_end": "2026-09-30",
                                  "official_cycle_id": None}]
     assert decisor.name_staleness(read, "NYSE", "KO")["status"] == "clear"
-    assert decisor.name_staleness(None, "NYSE", "KO")["status"] == decisor.name_staleness({"status": "unavailable"}, "NYSE", "KO")["status"] == "unavailable"
+    # the poll is judged first: without a live one an absent table reads as an empty one (stale source, no marks)...
+    for absent in (None, {"status": "unavailable", "known_at": RUN.isoformat()}):
+        unread = decisor.name_staleness(absent, "NYSE", "KO")
+        assert (unread["status"], unread["source_status"], unread["marks_known"]) == ("clear", "stale", 0), absent
+    # ...and with a live poll the absent table is what it is: unavailable
+    live = {"source_code": "sec_asfiled", "run_id": "r", "records_read": 9, "started_at": (RUN - timedelta(hours=1)).isoformat(),
+            "completed_at": (RUN - timedelta(minutes=50)).isoformat()}
+    absent = decisor.name_staleness({"status": "unavailable", "known_at": RUN.isoformat(), "trigger_poll": live}, "NYSE", "KO")
+    assert (absent["status"], absent["source_status"]) == ("unavailable", "unavailable")
 
 
 def test_a_stale_mark_known_at_the_runs_clock_is_observar_and_the_record_names_the_filing() -> None:

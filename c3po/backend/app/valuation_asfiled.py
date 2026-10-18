@@ -498,23 +498,25 @@ class TpStalenessStore:
             ).fetchall()
         return [dict(zip(_STALENESS_KEYS, row)) for row in rows]
 
-    def rows_known_at(self, at: datetime) -> list[dict[str, Any]]:
+    def rows_known_at(self, at: datetime, *, margin_seconds: int = 0) -> list[dict[str, Any]]:
         """The marks a reader at ``at`` could have read: written by a pass whose clock (``recorded_at``) is at or before
-        ``at`` AND — PostgreSQL — inserted by then (``created_at``, the insert's transaction clock). A mark a later pass
-        wrote, a pass replayed with a past clock, or a pass that straddles ``at`` and inserts after it never reaches a
-        decision taken at ``at``: a replay of an old night reads what that night could read. The memory double keeps no
+        ``at`` AND — PostgreSQL — inserted (``created_at``, the insert's transaction clock) at least ``margin_seconds``
+        before it. A mark a later pass wrote, a pass replayed with a past clock, or a pass that straddles ``at`` and
+        inserts after it never reaches a decision taken at ``at``: a replay of an old night reads what that night could
+        read, and the margin keeps a commit racing the decision's read out of both. The memory double keeps no
         ``created_at`` (a test row may carry one: then it is applied too)."""
         clock = utc_instant(at)
+        inserted_by = clock - timedelta(seconds=margin_seconds)
         if not self.database.database_url:
             return [
                 dict(row) for row in self.database._valuation_tp_staleness  # type: ignore[attr-defined]
-                if utc_instant(row["recorded_at"]) <= clock and (row.get("created_at") is None or utc_instant(row["created_at"]) <= clock)
+                if utc_instant(row["recorded_at"]) <= clock and (row.get("created_at") is None or utc_instant(row["created_at"]) <= inserted_by)
             ]
         with self.database.connection() as connection:
             rows = connection.execute(
                 f"SELECT {', '.join(key if key != 'id' else 'id::text' for key in _STALENESS_KEYS)} FROM valuation_tp_staleness "
                 "WHERE recorded_at <= %s AND created_at <= %s ORDER BY recorded_at, doc_id, symbol, state",
-                (clock, clock),
+                (clock, inserted_by),
             ).fetchall()
         return [dict(zip(_STALENESS_KEYS, row)) for row in rows]
 
@@ -699,7 +701,7 @@ def stale_us_tps(database: Database, *, since: datetime | None = None) -> dict[s
     return pending
 
 
-def us_staleness_at(database: Database, at: datetime) -> dict[str, Any]:
+def us_staleness_at(database: Database, at: datetime, *, margin_seconds: int = 0) -> dict[str, Any]:
     """The causal reader of migration 053 for a decision taken at ``at`` (the decisor's run clock): the state of every
     (filing, symbol) AS KNOWN AT ``at`` — only the marks ``TpStalenessStore.rows_known_at`` returns; per pair the latest
     of them by ``recorded_at`` (a tie, which the trigger never writes, resolves to the stricter state) — and the pairs
@@ -712,7 +714,7 @@ def us_staleness_at(database: Database, at: datetime) -> dict[str, Any]:
     clock = utc_instant(at)
     if not staleness_table_present(database):
         return {"status": "unavailable", "known_at": clock.isoformat(), "detail": f"{STALENESS_TABLE} absent (migration 053 not applied)"}
-    known = TpStalenessStore(database).rows_known_at(clock)
+    known = TpStalenessStore(database).rows_known_at(clock, margin_seconds=margin_seconds)
     latest: dict[tuple[str, str], dict[str, Any]] = {}
     for row in known:
         key = (str(row["doc_id"]), str(row["symbol"]))

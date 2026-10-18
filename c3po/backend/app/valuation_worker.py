@@ -24,7 +24,7 @@ from .r2d2_cash_yield import R2D2CashYieldService
 from .push_notifications import PushNotificationService
 from .valuation_asfiled import evaluate_us_filings
 from .valuation_decision import last_run_at as decision_last_run_at, run_shadow as run_decisor_shadow
-from .valuation_earnings_calendar import EarningsCalendarService
+from .valuation_earnings_calendar import MAX_FAILURES_PER_NIGHT as EARNINGS_CALENDAR_MAX_FAILURES, EarningsCalendarService
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
@@ -32,6 +32,7 @@ from .valuation_v2_shadow import ValuationV2ShadowService
 from .valuation_v3_shadow import ValuationV3ShadowService
 from .valuation_price_history import PriceHistoryService
 from .valuation_worker_contract import (
+    VALUATION_WORKER_ADVISORY_PHASES,
     VALUATION_WORKER_CANONICAL_PHASE,
     VALUATION_WORKER_PHASES,
     VALUATION_WORKER_SOURCE_TYPE,
@@ -59,6 +60,12 @@ class OffhoursPhase:
     operation: Callable[[], Any]
     start_hour: int = OFFHOURS_START_HOUR
     end_hour: int = OFFHOURS_END_HOUR
+    max_failures: int | None = None  # failed attempts per scheduled night after which the phase waits for the next one
+
+    @property
+    def advisory(self) -> bool:
+        """An advisory phase never pages: its failure neither fails the worker's check nor pushes a job failure."""
+        return self.key in VALUATION_WORKER_ADVISORY_PHASES
 
 
 @dataclass(frozen=True)
@@ -257,7 +264,12 @@ def run_worker_iteration(
             phase_statuses[phase.key] = "pending"
             continue
         if now < phase_window_end:
-            start_worker_healthcheck()
+            if phase.max_failures is not None and database.count_ingestion_runs(
+                    VALUATION_WORKER_PHASES[phase.key]["code"], "failed", scheduled_for=phase_due_at.isoformat()) >= phase.max_failures:
+                phase_statuses[phase.key] = "retry_cap"  # this night's attempts are spent: the next night tries again
+                continue
+            if not phase.advisory:
+                start_worker_healthcheck()
             if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                 cash_yield_healthcheck.ping("start")
             try:
@@ -278,6 +290,12 @@ def run_worker_iteration(
                     cash_yield_healthcheck.ping("success")
             except Exception as exc:
                 phase_statuses[phase.key] = "failed"
+                if phase.advisory:  # recorded (its ingestion run), retried inside the window up to its cap, never paged
+                    logger.warning("%s failed (advisory, not paged): %s", VALUATION_WORKER_PHASES[phase.key]["name"], type(exc).__name__)
+                    retry_at = now + OFFHOURS_RETRY_DELAY
+                    if retry_at < phase_window_end:
+                        wake_targets.append(retry_at)
+                    continue
                 failed_work = True
                 if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                     cash_yield_healthcheck.ping("fail")
@@ -414,7 +432,7 @@ def main() -> None:
                 ),
             ) if settings.r2d2_cash_yield_accounting_enabled else ()),
             # Decisor V1 events: ONE EODHD whole-market earnings-calendar call, before the decisor reads it; dormant until the mesa enables it
-            *((OffhoursPhase("earnings_calendar", earnings_calendar.last_run_at, earnings_calendar.run),)
+            *((OffhoursPhase("earnings_calendar", earnings_calendar.last_run_at, earnings_calendar.run, max_failures=EARNINGS_CALENDAR_MAX_FAILURES),)
               if valuation_env.earnings_calendar_enabled() else ()),
             # Decisor V1 (migration 052): LAST, after the official cut and every existing phase — it never delays one; dormant until the mesa enables it
             *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True)),)

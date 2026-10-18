@@ -461,6 +461,9 @@ def test_the_causal_reader_knows_only_the_marks_of_its_clock_and_the_latest_stat
                                              "created_at": t0 + timedelta(hours=7)})
     assert "ZZZZ" not in asfiled.us_staleness_at(database, t0 + timedelta(hours=6, minutes=30))["pending"]
     assert "ZZZZ" in asfiled.us_staleness_at(database, t0 + timedelta(hours=7))["pending"]
+    # the insert margin: a row inserted inside the last ε before the clock is out of the read (and of every replay)
+    assert "ZZZZ" not in asfiled.us_staleness_at(database, t0 + timedelta(hours=7, seconds=59), margin_seconds=60)["pending"]
+    assert "ZZZZ" in asfiled.us_staleness_at(database, t0 + timedelta(hours=7, seconds=60), margin_seconds=60)["pending"]
 
 
 def test_the_causal_reader_on_postgresql_asks_for_the_table_and_filters_both_clocks(monkeypatch: pytest.MonkeyPatch) -> None:

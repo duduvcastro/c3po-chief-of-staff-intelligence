@@ -170,12 +170,14 @@ instante real **mais** o deslocamento UTC de Nova York.
     marcado.
 * Marca `stale` pendente é reconferida a cada passe, qualquer que seja a idade. `stale_us_tps` devolve as pendentes por
   símbolo com tudo o que a tabela tem agora (operação, testes). **Leitor da decisão:** `us_staleness_at(database, at)` —
-  causal: só marcas com `recorded_at` ≤ `at` e, no PostgreSQL, `created_at` ≤ `at`; por (protocolo, símbolo) o estado
+  causal: só marcas com `recorded_at` ≤ `at` e, no PostgreSQL, `created_at` ≤ `at` − margem; por (protocolo, símbolo) o estado
   mais recente entre elas; tabela ausente → `unavailable` (nada é criado). O decisor V1 o lê uma vez por rodada no
   relógio da rodada: TP dos EUA com marca `stale` pendente sai `OBSERVAR` / `TP_STALE_AFTER_FILING` com o protocolo
-  nomeado no registro; sem a tabela, todo nome dos EUA sai `OBSERVAR` / `STALENESS_SOURCE_UNAVAILABLE`; sem um poll
-  `sec_asfiled` bem-sucedido concluído nas 6 h antes do relógio, `OBSERVAR` / `STALENESS_SOURCE_STALE` — tabela vazia
-  não é evidência enquanto ninguém olha (`VALUATION_DECISOR_V1.md`). A 053 é aplicada na partida do container
+  nomeado no registro. O poll é julgado **primeiro**: sem uma execução `sec_asfiled` bem-sucedida e com progresso
+  (`records_read` > 0; um passe limitado pela SEC é gravado `partial`), iniciada em D − 6 h ou depois e concluída até
+  D − ε (60 s), todo nome dos EUA sai `OBSERVAR` / `STALENESS_SOURCE_STALE`, exista a tabela ou não — tabela vazia não é
+  evidência enquanto ninguém olha; com poll vivo e sem a tabela, `OBSERVAR` / `STALENESS_SOURCE_UNAVAILABLE`
+  (`VALUATION_DECISOR_V1.md`); a margem do decisor é ε. A 053 é aplicada na partida do container
   (`Database.initialize()`).
 
 ## Chaves (variáveis de ambiente, não `Settings`)

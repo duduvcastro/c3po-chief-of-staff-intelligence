@@ -2358,33 +2358,57 @@ class Database:
             for row in rows
         }
 
-    def ingestion_run_completed_at_or_before(self, source_code: str, cutoff: datetime, *, status: str = "succeeded") -> dict[str, Any] | None:
-        """The latest run of ``source_code`` with ``status`` that COMPLETED at or before ``cutoff`` — a causal read for the
-        Decisor V1 (the as-filed poll's liveness): a run still running at the cutoff, or completed after it, is not seen."""
+    def ingestion_run_completed_at_or_before(self, source_code: str, cutoff: datetime, *, status: str = "succeeded",
+                                             min_records_read: int = 0) -> dict[str, Any] | None:
+        """The latest run of ``source_code`` with ``status`` and at least ``min_records_read`` records read that COMPLETED at
+        or before ``cutoff`` — a causal read for the Decisor V1 (the as-filed poll's liveness): a run still running at the
+        cutoff, completed after it, failed, partial or without progress is not seen."""
         if not self.database_url:
             matches = [
                 run for run in self._ingestion_runs.values()
                 if run.get("source_code") == source_code and run.get("status") == status
+                and int(run.get("records_read") or 0) >= min_records_read
                 and isinstance(run.get("completed_at"), datetime) and run["completed_at"] <= cutoff
             ]
             if not matches:
                 return None
             run = max(matches, key=lambda item: item["completed_at"])
-            return {"id": str(run["id"]), "status": run["status"], "started_at": run.get("started_at"), "completed_at": run["completed_at"]}
+            return {"id": str(run["id"]), "status": run["status"], "started_at": run.get("started_at"), "completed_at": run["completed_at"],
+                    "records_read": int(run.get("records_read") or 0)}
         with self.connection() as connection:
             row = connection.execute(
                 """
-                SELECT run.id::text, run.status, run.started_at, run.completed_at
+                SELECT run.id::text, run.status, run.started_at, run.completed_at, COALESCE(run.records_read, 0)
                 FROM ingestion_runs run
                 JOIN data_sources source ON source.id = run.source_id
-                WHERE source.code = %s AND run.status = %s AND run.completed_at IS NOT NULL AND run.completed_at <= %s
+                WHERE source.code = %s AND run.status = %s AND COALESCE(run.records_read, 0) >= %s
+                  AND run.completed_at IS NOT NULL AND run.completed_at <= %s
                 ORDER BY run.completed_at DESC LIMIT 1
                 """,
-                (source_code, status, cutoff),
+                (source_code, status, min_records_read, cutoff),
             ).fetchone()
         if not row:
             return None
-        return dict(zip(("id", "status", "started_at", "completed_at"), row))
+        return dict(zip(("id", "status", "started_at", "completed_at", "records_read"), row))
+
+    def count_ingestion_runs(self, source_code: str, status: str, *, scheduled_for: str) -> int:
+        """How many runs of ``source_code`` ended with ``status`` for ONE scheduled cycle (``metadata.scheduled_for``, the
+        valuation worker's phase clock) — the retry cap of an advisory phase."""
+        if not self.database_url:
+            return sum(1 for run in self._ingestion_runs.values()
+                       if run.get("source_code") == source_code and run.get("status") == status
+                       and (run.get("metadata") or {}).get("scheduled_for") == scheduled_for)
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT count(*)
+                FROM ingestion_runs run
+                JOIN data_sources source ON source.id = run.source_id
+                WHERE source.code = %s AND run.status = %s AND run.metadata->>'scheduled_for' = %s
+                """,
+                (source_code, status, scheduled_for),
+            ).fetchone()
+        return int(row[0]) if row else 0
 
     def list_portfolio_events(self) -> list[dict[str, Any]]:
         if not self.database_url:
@@ -4871,12 +4895,48 @@ class Database:
             return None
         return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
 
+    def analysis_snapshots_published_between(self, analysis_type: str, entity_key: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Every snapshot of ``analysis_type``/``entity_key`` published in [``start``, ``end``], oldest first (the Decisor V1
+        reads the union of the earnings calendars received in its window)."""
+        if not self.database_url:
+            matches = [
+                copy.deepcopy(item) for item in self._analysis_snapshots
+                if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
+                and start <= item.get("published_at") <= end
+            ]
+            return sorted(matches, key=lambda item: item["published_at"])
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text
+                FROM analysis_snapshots
+                WHERE analysis_type = %s AND entity_key = %s AND published_at >= %s AND published_at <= %s
+                ORDER BY published_at
+                """,
+                (analysis_type, entity_key, start, end),
+            ).fetchall()
+        return [dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row)) for row in rows]
+
+    def latest_analysis_snapshot_published_at(self, analysis_type: str, entity_key: str) -> datetime | None:
+        """When the latest snapshot of ``analysis_type``/``entity_key`` was published — the clock only (a phase's
+        ``last_completed_at`` read on every worker wake, without decoding the snapshot)."""
+        if not self.database_url:
+            stamps = [item["published_at"] for item in self._analysis_snapshots
+                      if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key]
+            return max(stamps) if stamps else None
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT max(published_at) FROM analysis_snapshots WHERE analysis_type = %s AND entity_key = %s",
+                (analysis_type, entity_key),
+            ).fetchone()
+        return row[0] if row and row[0] is not None else None
+
     def v2_forward_eps_at_or_before(self, market: str, symbols: list[str], cutoff: datetime) -> dict[str, Any] | None:
         """The consensus EPS term structure (``fy1_estimate``, ``forward_estimates``) of ``symbols`` in the latest
         ``valuation_v2_data/<market>_V2_DATA`` snapshot published at or before ``cutoff`` — only those keys of only those
         packets (the snapshot also carries ten years of ratios per name: PostgreSQL extracts, nothing else is decoded).
         ``{"snapshot_id", "published_at", "packets": {symbol: {...}}}``, or ``None`` without a snapshot (Decisor V1,
-        ``CONSENSUS_EPS_CUT_SINCE_TP``)."""
+        ``CONSENSUS_EPS_CUT_30D``)."""
         wanted = sorted({symbol.upper() for symbol in symbols if symbol})
         entity_key = f"{market}_V2_DATA"
         if not self.database_url:

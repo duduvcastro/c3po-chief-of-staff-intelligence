@@ -13,7 +13,8 @@ toca tabelas, ordens ou posições do R2D2. Código: `backend/app/valuation_deci
 | `VETO` | o TP ou seus dados não são confiáveis agora (frescor, qualidade, defeito de dado); lista **todos** os códigos que falharam, inclusive os de OBSERVAR |
 
 **Marcas** (`checks.events.marks`; nunca mudam o veredicto): `EARNINGS_DATE_ESTIMATED`, `EARNINGS_CALENDAR_UNAVAILABLE`,
-`CONSENSUS_EPS_CUT_SINCE_TP`, `NEWS_SENTIMENT_NEGATIVE` — e `EARNINGS_WITHIN_N` na B3. Todo registro guarda também o
+`CONSENSUS_EPS_CUT_30D`, `NEWS_SENTIMENT_NEGATIVE` (nunca portão, mesmo listado em `event_gates`: `NEVER_GATES`) — e
+`EARNINGS_WITHIN_N` na B3. Todo registro guarda também o
 **contrafactual** `checks.counterfactual.verdict_without_events` (o veredicto com os portões de evento desligados), para um
 relatório somente-leitura comparar com e sem o portão.
 
@@ -64,35 +65,68 @@ relatório somente-leitura comparar com e sem o portão.
   na linha (o produtor declara a linha não confiável, sem reavaliação agendada), na família de frescor junto com
   `TP_SESSION_STALE` e `FUNDAMENTALS_STALE`, e o teste da família a trata como veto; esta é uma inferência nossa com
   resolução conhecida (o próximo corte).
-  * **Vivacidade da fonte**: tabela vazia não é evidência enquanto ninguém olha. A 053 só conta com uma execução
-    **bem-sucedida** do poll as-filed (`ingestion_runs`, fonte `sec_asfiled`, `InvestorRelationsService.sync_sec_asfiled`)
-    **concluída** em [D − 6 h, D] (`staleness_poll_max_age_hours`, no bloco); só execuções com `completed_at` ≤ D são lidas
-    (uma ainda rodando em D, ou concluída depois, não conta; uma falha também não). Sem ela, **todo** nome dos EUA sai
-    `STALENESS_SOURCE_STALE` (falha fechada; distinto de `STALENESS_SOURCE_UNAVAILABLE`), e um nome com marca pendente
-    leva os dois códigos. O registro nomeia o poll em que confiou (`trigger_poll`: fonte, id, conclusão).
+  * **Vivacidade da fonte** (julgada **primeiro**): tabela vazia não é evidência enquanto ninguém olha. A 053 só conta com
+    uma execução do poll as-filed (`ingestion_runs`, fonte `sec_asfiled`, `InvestorRelationsService.sync_sec_asfiled`)
+    **bem-sucedida e com progresso** (`records_read` > 0; um passe que a SEC limitou é gravado `partial` e não conta),
+    **iniciada** em D − 6 h ou depois (o que ela observou tem no máximo 6 h: `staleness_poll_max_age_hours`) e
+    **concluída** até D − ε. Execução ainda rodando, concluída dentro da margem ou depois, falha, parcial ou sem progresso
+    não é lida. Sem ela, **todo** nome dos EUA sai `STALENESS_SOURCE_STALE` (falha fechada; distinto de
+    `STALENESS_SOURCE_UNAVAILABLE`) **exista a tabela ou não** — a tabela ausente lê como vazia, então uma noite de antes
+    da 053 se reproduz igual depois que ela chega; um nome com marca pendente leva os dois códigos. Com poll vivo e sem
+    tabela: `STALENESS_SOURCE_UNAVAILABLE`. O registro nomeia o poll em que confiou (`trigger_poll`: fonte, id, linhas
+    lidas, início, conclusão).
 * **Eventos** (`event_gates` no bloco diz quais seguram a permissão; todo outro código de evento é marca):
-  * **`EARNINGS_WITHIN_N`** (portão → OBSERVAR nos EUA; **marca** na B3): resultado conhecido em D anunciado nas sessões
-    [T+1, T+N] do calendário da bolsa (T = última sessão completa, N = 2). DAY, BMO e AMC contam igual (um AMC em T+1 está
-    dentro); data que não é sessão vale pela próxima sessão; um AMC em T já foi anunciado quando a noite decide. Fonte:
-    o snapshot do calendário EODHD (fase `earnings_calendar`, abaixo) **recebido** até D e com no máximo 36 h, cuja janela
-    pedida cobre [T+1, T+N] e sem linha inválida do nome. Senão (calendário ausente, velho, curto ou com linha inválida
-    do nome), nos EUA, a **estimativa por cadência** da 051: o último 8-K 2.02 (senão o último 10-Q/10-K) **aceito e
-    registrado** (`first_seen_at`) até D + 91 dias, contada quando a sessão estimada cai na janela alargada em 7 dias
-    de cada lado — marcada `EARNINGS_DATE_ESTIMATED`. Sem nenhuma das duas → sem portão, marca
-    `EARNINGS_CALENDAR_UNAVAILABLE` (regra de abstenção: falhar aberto é aceitável, e fica registrado). **B3 só
-    informativa**: a cobertura do calendário EODHD para a B3 não foi verificada (o snapshot conta eventos por bolsa em
-    `counts.by_exchange` para a mesa julgar) e não há estimativa CVM equivalente.
-  * **`CONSENSUS_EPS_CUT_SINCE_TP`** (marca): ln(EPS de consenso FY1 no último `valuation_v2_data/<M>_V2_DATA` publicado até
-    D ÷ FY1 no snapshot da hora do TP) < −0,05, comparando o **mesmo** ano fiscal (o FY1 do TP procurado na estrutura
-    atual), ou FY1 que virou não positivo. O TP oficial **não registra** o snapshot V2 que usou (o produtor oficial não lê a
-    V2): usa-se o snapshot publicado mais perto **antes** da publicação do registro do TP (`official_published_at`, senão
-    `prediction_instant`), nunca depois do relógio da rodada. Ano fiscal que rolou ou EPS não positivo na hora do TP →
-    `not_comparable`, sem marca.
-  * **`NEWS_SENTIMENT_NEGATIVE`** (marca): o sentimento semanal Finnhub (`ir_events`, `News Sentiment`) lido em D — a linha
-    com `published_at` ≤ D — com bearish ≥ 60 %, pelo menos 5 artigos na semana do provedor e no máximo 8 dias de idade;
-    o valor fica gravado na linha da decisão. **A fonte sobrescreve a linha da semana a cada poll** (mantém a primeira
-    publicação e troca os números): um replay depois de um poll da mesma semana lê outros números — só o valor gravado
-    na nossa linha é reprodutível (o veredicto não muda: é marca). Só EUA (B3 `not_applicable`).
+  * **`EARNINGS_WITHIN_N`** (portão → OBSERVAR nos EUA; **marca** na B3): resultado conhecido em D cuja **sessão do
+    anúncio ou sessão de reação** cai em [T+1, T+N] (T = última sessão completa, N = 2). Sessão do anúncio = a data, ou a
+    próxima sessão quando a data não é sessão; sessão de reação (a que o preço sente) = a mesma para BMO, a **seguinte**
+    para AMC ou horário desconhecido (o provedor não marca DAY: sem marca é desconhecido). Por isso um AMC (ou sem
+    horário) em T conta: o preço com que a noite decide é o fechamento de T, que ainda não viu o resultado — **risco de
+    gap** na abertura de T+1. Um BMO em T já está no fechamento de T.
+    * **Calendários lidos**: todos os snapshots (fase `earnings_calendar`, abaixo) **recebidos** em [D − 36 h, D − ε] e
+      o último recebido até D − ε, qualquer que seja a idade — a **união conservadora** dos eventos: evento na janela de
+      **qualquer** um deles segura a permissão (a idade só enfraquece o "nenhum evento").
+    * **"Nenhum evento"** só vem de um calendário recebido em [D − 36 h, D − ε] que seja **utilizável**: ao menos
+      `earnings_calendar_min_us_events` = 100 eventos US dentro da janela pedida (menos é calendário parcial — inclusive
+      zero), linhas inválidas sem dono ≤ `earnings_calendar_max_invalid_share` = 5 % das linhas (acima é lixo), janela
+      pedida cobrindo [T+1, T+N] e nenhuma linha inválida do nome. **Por que 100**: a janela que a fase pede é de 37 dias
+      corridos [hoje − 7, hoje + 30]; mesmo fora de temporada (meados de dezembro a meados de janeiro, ou o começo de
+      junho e de setembro) reportam os emissores de ano fiscal fora do calendário (~30 % dos ~4.000 operacionais
+      listados nos EUA, 4 resultados por ano cada, espalhados pelos meses) e os retardatários de dezembro — da ordem de
+      centenas de anúncios em qualquer janela de 37 dias, várias vezes o piso. Abaixo disso a resposta é parcial; a
+      confirmar com os primeiros snapshots reais (`counts.by_exchange.US`).
+    * Calendário utilizável que **lista** o nome fora da janela → `calendar`, sem portão. Utilizável **sem linha do
+      nome** → a estimativa da 051 ainda segura a permissão quando alcança a janela (`EARNINGS_DATE_ESTIMATED`).
+    * **Sem calendário utilizável** → a estimativa responde (`EARNINGS_DATE_ESTIMATED`); sem nenhuma das duas → sem
+      portão, marca `EARNINGS_CALENDAR_UNAVAILABLE` (regra de abstenção: falhar aberto é aceitável, e fica registrado).
+    * **Estimativa por cadência** (só EUA; filings da 051 **originais** — 8-K com item 2.02, 10-Q, 10-K; emendas `/A`
+      nunca —, aceitos até D e **registrados** (`first_seen_at`) até D − ε, nos últimos `earnings_filings_lookback_days` =
+      400 dias; a base é sempre a **aceitação** em dia de Nova York, nunca o registro): (1) **sazonal** — o trimestre
+      seguinte ao último período protocolado, um ano antes (o período encontrado a até 10 dias de um ano antes): o
+      release dele (o primeiro 8-K 2.02 aceito depois do fim daquele trimestre e antes do fim do seguinte; senão o
+      próprio 10-Q/10-K) + 364 dias, mantendo o dia da semana; (2) senão o **mais recente** entre o último 8-K 2.02, o
+      último 10-Q e o último 10-K: 8-K ou 10-Q → aceitação + 91 dias; 10-K → fim do período + 91 dias + a defasagem do
+      último 10-Q do emissor (aceitação − fim do período; sem 10-Q, 45 dias). A data estimada, sem horário, conta pela
+      sessão do anúncio ou pela de reação, na janela alargada em 7 dias de cada lado (`earnings_estimate_tolerance_days`).
+    * O mercado do portão vem dos fatos do evento, senão de `official_market` da linha; sem nenhum dos dois, o portão
+      vale (falha fechada). **B3 só informativa**: a cobertura do calendário EODHD para a B3 não foi verificada (o
+      snapshot conta eventos por bolsa em `counts.by_exchange` para a mesa julgar) e não há estimativa CVM equivalente.
+  * **`CONSENSUS_EPS_CUT_30D`** (marca): ln(EPS de consenso FY1 no último `valuation_v2_data/<M>_V2_DATA` publicado até
+    D − ε ÷ FY1 no último publicado até D − 30 d − ε) < −0,05 (`consensus_eps_cut_log`, `consensus_lookback_days` = 30),
+    comparando o **mesmo** ano fiscal (o FY1 de 30 dias atrás procurado na estrutura atual), ou FY1 que virou não
+    positivo. Substitui a comparação com "o snapshot da hora do TP": o TP é recortado toda noite, então aquela era uma
+    revisão de ~24 h. Ano fiscal que rolou ou EPS passado não positivo → `not_comparable`, sem marca.
+  * **`NEWS_SENTIMENT_NEGATIVE`** (marca, **nunca portão**): o sentimento semanal Finnhub (`ir_events`, `News Sentiment`)
+    lido em D — a linha com `published_at` ≤ D − ε — com bearish ≥ 60 %, pelo menos 5 artigos na semana do provedor e no
+    máximo 8 dias de idade; o valor fica gravado na linha da decisão. **A fonte sobrescreve a linha da semana a cada
+    poll** (mantém a primeira publicação e troca os números): um replay depois de um poll da mesma semana lê outros
+    números — só o valor gravado na nossa linha guarda o que foi lido, e por isso o sentimento fica **fora** do
+    `replay_sha256`. Só EUA (B3 `not_applicable`).
+* **Margem de inserção ε** (`insert_margin_seconds` = 60): toda leitura sobre um relógio de inserção — conclusão do poll,
+  `created_at` da 053, publicação de um snapshot (calendário, consenso), `first_seen_at` da 051, publicação da linha de
+  sentimento e do registro servido — para em D − ε: um commit que corre junto com a leitura da rodada fica fora da
+  original **e** de todo replay. Registro servido publicado depois de D − ε não é decidido
+  (`tp_published_after_run_instant` no recibo, agregado). As leituras anteriores do decisor (geração, ciclos,
+  calibração, pacotes de taxa) continuam em ≤ D.
 
 ## Bloco de limiares (a congelar no PREREG)
 
@@ -113,20 +147,27 @@ Todos em `DecisorThresholds` (um único bloco, com hash `thresholds_sha256` grav
 | `undated_rate_sources_admitted` | vazio (a Selic do ciclo não conta) |
 | `market_rate_max_age_days` | 10 |
 | `tp_horizon_years` / `market_premium` | 1,0 / 0,0 |
-| `staleness_poll_source` / `staleness_poll_max_age_hours` | `sec_asfiled` / 6 |
+| `insert_margin_seconds` (ε) | 60 |
+| `staleness_poll_source` / `staleness_poll_max_age_hours` | `sec_asfiled` / 6 (início do poll ≥ D − 6 h) |
 | `earnings_window_sessions` (N) / `earnings_gate_markets` | 2 / NASDAQ, NYSE (B3 só marca) |
 | `earnings_calendar_max_age_hours` | 36 |
-| `earnings_estimate_offset_days` / `earnings_estimate_tolerance_days` | 91 / 7 |
-| `consensus_eps_cut_log` | 0,05 |
+| `earnings_calendar_min_us_events` / `earnings_calendar_max_invalid_share` | 100 / 0,05 |
+| `earnings_filings_lookback_days` | 400 |
+| `earnings_estimate_seasonal_days` / `earnings_estimate_period_match_days` | 364 / 10 |
+| `earnings_estimate_offset_days` / `earnings_estimate_default_10q_lag_days` | 91 / 45 |
+| `earnings_estimate_tolerance_days` | 7 |
+| `consensus_eps_cut_log` / `consensus_lookback_days` | 0,05 / 30 |
 | `news_sentiment_bearish_min_percent` / `news_sentiment_min_articles` / `news_sentiment_max_age_days` | 60,0 / 5 / 8 |
-| `event_gates` | `EARNINGS_WITHIN_N` |
+| `event_gates` | `EARNINGS_WITHIN_N` (`NEWS_SENTIMENT_NEGATIVE` nunca) |
 
 Congelamento: o commit que cita o PREREG grava `PREREG_THRESHOLDS_SHA256 = thresholds_sha256()`; a partir daí uma rodada
 com qualquer outro bloco é recusada (`ValueError`) e os registros passam a dizer `prereg_frozen = true`. As regras de
 evento e a vivacidade da 053 entraram no bloco **antes** do recibo de congelamento (previsto para 24–25/10): o hash do
-bloco passou de `172bfda63759e07e2de5c41f55d867de2b996fd4374e8aa485635ae7c988c4ca` para
-`bd7b8357a7dcdeb814906602482c520905f90f29df591c9cb4101278ce114a10`; `PREREG_THRESHOLDS_SHA256` continua `None` (nada
-congelado ainda, nenhum pino a atualizar).
+bloco passou de `172bfda63759e07e2de5c41f55d867de2b996fd4374e8aa485635ae7c988c4ca` (só o 053) para
+`bd7b8357a7dcdeb814906602482c520905f90f29df591c9cb4101278ce114a10` (eventos) e, com as correções das três revisões de
+17/10, para **`98ee0a62c9951202e7e5d039dc1c15fc4a93e543a2aa97bbbcb94c2f46c822ed`** — fixado literalmente num teste
+(`tests/test_valuation_decisor_events.py`) até o congelamento. `PREREG_THRESHOLDS_SHA256` continua `None` (nada congelado
+ainda).
 
 ## Registros (`valuation_decisions`, migração 052)
 
@@ -141,10 +182,13 @@ inalterada). Append-only (UPDATE/DELETE/TRUNCATE recusados), idempotente por `(r
 `mode` só `shadow`: veredicto que age exige migração e ordem novas.
 Causal: o TP vem da geração **em vigor no relógio da rodada** (`generation_at`, nunca uma posterior — um replay decide o
 que aquela noite viu), linha servida com `prediction_instant` depois do relógio não é decidida
-(`tp_after_run_instant` no recibo) e as marcas 053, o poll, o calendário, os filings 051, o consenso e o sentimento
-são os conhecidos no relógio. `replay_sha256(registro)` é o hash do
-que o veredicto decidiu, sem a identidade da rodada (`id`, `run_id`, `published_at`, `row_sha256`): rodar de novo a
-mesma noite no mesmo relógio dá o mesmo hash, o que quer que tenha sido publicado ou marcado depois.
+(`tp_after_run_instant` no recibo), nem registro publicado depois de D − ε (`tp_published_after_run_instant`), e as
+marcas 053, o poll, os calendários, os filings 051, o consenso e o sentimento são os conhecidos no relógio (D − ε nos
+relógios de inserção). `replay_sha256(registro)` é o hash do que o veredicto decidiu, sem a identidade da rodada (`id`,
+`run_id`, `published_at`) e sem os hashes que a cobrem (`row_sha256`, `inputs_sha256`): rodar de novo a mesma noite no
+mesmo relógio dá o mesmo hash, o que quer que tenha sido publicado ou marcado depois — **com uma exceção declarada**: o
+sentimento Finnhub (`inputs.events.sentiment`, `checks.events.sentiment` e a marca `NEWS_SENTIMENT_NEGATIVE`) fica fora,
+porque a fonte sobrescreve a semana e um replay não vê o valor lido em D; esse valor fica no registro.
 
 ## Fase noturna
 
@@ -166,12 +210,23 @@ noturnos que o laboratório lê. Cotação sem `as_of` legível, com `as_of` dep
 **Fase `earnings_calendar`** (`valuation_earnings_calendar.py`): **desligada por padrão**
 (`C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=true` liga; ambiente, não `Settings`), roda antes de `decisor_shadow`. Faz UMA
 chamada EODHD `/api/calendar/earnings` para a janela de mercado inteira [hoje − 7 d, hoje + 30 d] (sem lista de
-símbolos), valida com o parser do R2D2 V2 (`r2d2_v2_earnings_source.parse_earnings_response`, importado, não modificado,
-fora do pacote de fingerprint do R2D2 V2) e grava um snapshot append-only `valuation_earnings_calendar/EODHD_EARNINGS_CALENDAR`
-(tabela de snapshots existente, sem migração nova) datado pelo `received_at`, com o SHA-256 do corpo e os eventos
-analisados (código, data, período fiscal, BMO/AMC). O corpo em si não é guardado. Resposta não 200, tipo não JSON ou
-corpo inválido não grava nada: a fase falha (o motivo fica na execução) e repete dentro da janela. O token nunca sai do
-pedido.
+símbolos), em **streaming** com teto de bytes (o `MAX_BODY_BYTES` do parser, 64 MiB) e prazo total de 180 s, valida com o
+parser do R2D2 V2 (`r2d2_v2_earnings_source.parse_earnings_response`, importado, não modificado, fora do pacote de
+fingerprint do R2D2 V2) e grava um snapshot append-only `valuation_earnings_calendar/EODHD_EARNINGS_CALENDAR` (tabela de
+snapshots existente, sem migração nova) datado pelo `received_at`, com o SHA-256 do corpo, os eventos analisados
+(código, data, período fiscal, BMO/AMC) e as contagens de linhas (`rows`, `invalid_rows`, `unattributed_invalid_rows`). O
+corpo em si não é guardado. Resposta não 200, tipo não JSON, corpo inválido, acima do teto ou fora do prazo não grava
+nada; nenhum erro carrega a URL (ela leva o token). A fase é **consultiva** (`VALUATION_WORKER_ADVISORY_PHASES`): falha
+não dispara push `job_failure` nem marca falha no check do worker, e no painel de saúde aparece como **atenção**, nunca
+offline (falhou, ou ainda não rodou no ciclo); tenta no máximo **3 vezes por noite** (`MAX_FAILURES_PER_NIGHT`) e espera
+a noite seguinte. `last_run_at` lê só o relógio do último snapshot. A fase `decisor_shadow` mantém o comportamento de
+antes (falha avisa).
+
+**Como ligar** (deploy): as variáveis de repositório `C3PO_VALUATION_DECISOR_SHADOW` e
+`C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED` (valores exatamente `true` ou `false`) são escritas no `.env` do host pelo passo
+"Stage host env settings (push notifications, valuation as-filed)" do `c3po-pipeline.yml` no **próximo deploy**; valor
+fora de `^(true|false)$` derruba o deploy antes de qualquer escrita. **Apagar a variável não desliga**: valor vazio não
+escreve nada e o `.env` do host mantém o que tinha — para desligar, defina `false` e faça deploy.
 
 ## Leitura pelo laboratório do R2D2
 
@@ -208,10 +263,16 @@ marcas do registro), sem efeito no veredicto.
 * **Vivacidade ≠ gatilho**: o poll `sec_asfiled` bem-sucedido prova que os protocolos estão sendo registrados, não que o
   gatilho (`evaluate_us_filings`, no processador de IR e no corte) rodou — uma falha do gatilho é só log, sem execução
   gravada. Se a mesa quiser a prova exata, o gatilho passa a gravar a própria execução e o bloco aponta para ela.
-* **Eventos — decisões em aberto para o PREREG/mesa**: (a) a tolerância de 7 dias da estimativa por cadência (o produtor
-  de earnings do R2D2 usa 15; com 0 a estimativa vira ponto); (b) cobertura do calendário na B3 antes de virar portão lá;
-  (c) os limiares de sentimento (60 % / 5 artigos / 8 dias) e de consenso (−0,05 em log) são propostas; (d) o snapshot V2
-  "da hora do TP" é aproximado (o TP oficial não registra o seu).
+* **Eventos — decisões em aberto para o PREREG/mesa**: (a) o piso de 100 eventos US do calendário (justificado acima,
+  a confirmar com os primeiros snapshots reais); (b) a tolerância de 7 dias da estimativa (o produtor de earnings do R2D2
+  usa 15; com 0 a estimativa vira ponto); (c) cobertura do calendário na B3 antes de virar portão lá; (d) os limiares de
+  sentimento (60 % / 5 artigos / 8 dias) e de consenso (−0,05 em log em 30 dias) são propostas; (e) a regra 10-K
+  (período + 91 + defasagem do 10-Q) erra para depois quando o emissor anuncia antes do 10-Q — a regra sazonal, com um
+  ano de 051, cobre esse caso.
+* **Leitores PostgreSQL**: `tests/test_valuation_decisor_postgres.py` executa as consultas novas (extração JSONB do
+  consenso, sentimento, poll, 051, 053 com a margem) num PostgreSQL local descartável
+  (`C3PO_VALUATION_DECISOR_TEST_DSN` ou `C3PO_PROVIDER_HEALTH_TEST_DSN`, soquete em `/tmp`); sem DSN, é pulado — a
+  integração de 17/10 não tinha um PostgreSQL local para rodá-lo.
 * **Resíduos do leitor 053** (declarados): (1) uma passagem do gatilho cuja transação começa antes do relógio da rodada
   e confirma depois da leitura (milissegundos; o gatilho noturno roda antes da fase do decisor, só o poll de IR pode
   coincidir) é vista por um replay e não pela rodada original — o `inputs_sha256` diverge e mostra; (2) um `cleared` é

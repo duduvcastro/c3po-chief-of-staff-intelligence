@@ -762,7 +762,9 @@ class InvestorRelationsService:
                     f"{len(result.errors)} issuer errors, {result.header_failures} header failures, "
                     f"{result.json_clock_mismatches} JSON/header clock mismatches: {'; '.join(result.errors[:10])}"
                 )
-            self.database.finish_ingestion_run(run_id, "succeeded", result.submissions_read, written, warning)
+            # a pass the SEC throttled is 'partial' (migration 001 admits it): it did not look at the whole universe, so the
+            # Decisor V1 never counts it as the as-filed poll being alive (valuation_decision.name_staleness)
+            self.database.finish_ingestion_run(run_id, "partial" if result.throttled else "succeeded", result.submissions_read, written, warning)
             return result.submissions_read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))

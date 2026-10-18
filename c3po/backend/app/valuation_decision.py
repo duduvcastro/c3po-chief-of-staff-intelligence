@@ -6,8 +6,9 @@ Per name per night, one verdict with its reason codes, over the generation of th
 * ``OBSERVAR`` — the TP is trustworthy but there is no permission: no margin today (``PRICE_ABOVE_BUY_IN``,
   ``TP_MARGIN_INSUFFICIENT``), an input of the margin is not measured yet (``E_PROFILE_WARMING_UP``,
   ``E_PROFILE_UNAVAILABLE``, ``MARKET_RATE_UNAVAILABLE``) — no permission while the producers' calibration warms up —,
-  or (US) the TP awaits the revaluation a filing accepted after it triggered (``TP_STALE_AFTER_FILING``) or that
-  question cannot be answered (``STALENESS_SOURCE_UNAVAILABLE``);
+  (US) the TP awaits the revaluation a filing accepted after it triggered (``TP_STALE_AFTER_FILING``) or that question
+  cannot be answered (``STALENESS_SOURCE_UNAVAILABLE``: no 053 table; ``STALENESS_SOURCE_STALE``: no live as-filed poll),
+  or (US) an earnings announcement reaches the next N sessions (``EARNINGS_WITHIN_N``);
 * ``VETO`` — the TP or its data cannot be trusted now (freshness, quality, data defects). A VETO lists every failing
   code, the OBSERVAR codes included: the record is the full picture, the verdict its strictest class.
 
@@ -41,14 +42,22 @@ The rules (every number in ``DecisorThresholds``, the ONE settings block the PRE
   every unmeasured input of a permission is (``E_PROFILE_UNAVAILABLE``, ``MARKET_RATE_UNAVAILABLE``). OBSERVAR, not
   VETO: the TP is not defective — it waits for the cut that revalues it (``TP_STALE_FLAG``, the producer's own mark on
   its row, stays a VETO: the producer declares that row untrustworthy, with no revaluation scheduled). An empty 053 is
-  evidence only while the as-filed poll is alive: without a SUCCESSFUL ``sec_asfiled`` run completed in
-  [D − ``staleness_poll_max_age_hours``, D] every US name is ``STALENESS_SOURCE_STALE`` (fail closed).
+  evidence only while the as-filed poll is alive, judged FIRST: a SUCCESSFUL ``sec_asfiled`` run with progress (a
+  throttled pass is recorded ``partial``) that STARTED at or after D − ``staleness_poll_max_age_hours`` and completed by
+  D − ε; without one every US name is ``STALENESS_SOURCE_STALE`` whether or not the table exists (fail closed).
 * events (the block's ``event_gates`` says which withhold a permission; every other event code is a MARK — recorded in
-  ``checks.events.marks``, never a verdict): ``EARNINGS_WITHIN_N`` — an announcement known at D on sessions [T+1, T+N]
-  (the EODHD calendar snapshot received by D and at most 36 h old, else the 051 cadence estimate, marked
-  ``EARNINGS_DATE_ESTIMATED``; neither → ``EARNINGS_CALENDAR_UNAVAILABLE``, no gate) — a gate on the US exchanges, a mark
-  on B3; ``CONSENSUS_EPS_CUT_SINCE_TP`` and ``NEWS_SENTIMENT_NEGATIVE`` are marks. Every record keeps
+  ``checks.events.marks``, never a verdict): ``EARNINGS_WITHIN_N`` — an announcement known at D whose report OR reaction
+  session (AfterMarket and untimed releases react on the next session: an AMC on T counts) falls in [T+1, T+N]: any
+  calendar received by D − ε gates with its in-window events (the union over [D − 36 h, D − ε] and the latest before);
+  "no event" needs a USABLE calendar of that window (≥ ``earnings_calendar_min_us_events`` US events, unattributed
+  invalid rows ≤ ``earnings_calendar_max_invalid_share``, covering the window); a usable calendar without the name's row,
+  or no usable calendar, defers to the 051 cadence estimate (``EARNINGS_DATE_ESTIMATED``); neither →
+  ``EARNINGS_CALENDAR_UNAVAILABLE``, no gate — a gate on the US exchanges, a mark on B3. ``CONSENSUS_EPS_CUT_30D`` and
+  ``NEWS_SENTIMENT_NEGATIVE`` are marks (the latter never a gate: ``NEVER_GATES``). Every record keeps
   ``checks.counterfactual.verdict_without_events``: the verdict with the event gates off.
+* ε (``insert_margin_seconds``): every read on an insert clock — the poll's completion, 053 ``created_at``, a
+  snapshot's publication, 051 ``first_seen_at``, the sentiment row's publication, the served record's publication —
+  stops at D − ε; a served record published after D − ε is not decided (``tp_published_after_run_instant``).
 
 Records (``valuation_decisions``) carry the discipline of ``valuation_predictions``: two clocks (``prediction_instant`` = the
 run's clock; ``published_at`` read immediately before the insert, never before it), the session of the verdict (the last
@@ -58,7 +67,9 @@ provenance of every input and its ``inputs_sha256``, ``checks`` with every gate'
 canonical ``row_sha256`` — recomputed and verified by every reader (``stored_decision``). Append-only; idempotent per
 ``(run_id, market, symbol)``; ``mode`` is ``shadow`` (the migration admits nothing else). Causal: the TP is read from the
 generation IN FORCE AT the run's clock (``generation_at``, never a later one — a replay decides what that night saw), and
-a served row predicted after the clock is not decided.
+a served row predicted after the clock, or published after D − ε, is not decided. ``replay_sha256`` hashes what a
+verdict decided without the run's identity: a re-run of the night reproduces it, the Finnhub sentiment excepted (its
+source overwrites the week: the value read stays in the record, outside that hash).
 
 The nightly phase (``valuation_worker``, flag ``C3PO_VALUATION_DECISOR_SHADOW``, default OFF) runs LAST, after the official
 cut and every existing phase, and never writes the selection or any served number. ``run_shadow`` writes only when asked
@@ -86,8 +97,9 @@ from zoneinfo import ZoneInfo
 from . import valuation_env
 from . import valuation_official as official
 from .config import get_settings
-from .valuation_asfiled import us_staleness_at
-from .valuation_earnings_calendar import calendar_at, filings_known_at
+from .sec_xbrl import EARNINGS_RELEASE_ITEM
+from .valuation_asfiled import next_quarter_end, us_staleness_at
+from .valuation_earnings_calendar import calendars_at, filings_known_at
 from .valuation_official import (MARKETS, CalendarUnavailable, canonical_sha256, current_generation, cycle_rows, generation_at, official_row, official_rows,
                                  session_date_of)
 from .valuation_v3_macro import ValuationV3MacroDataError, package_hash_is_valid, validate_us_curve_package
@@ -119,16 +131,17 @@ OBSERVAR_CODES: tuple[str, ...] = (
 )
 TP_STALE_AFTER_FILING = "TP_STALE_AFTER_FILING"  # a pending 053 'stale' mark known at the run's clock (US)
 STALENESS_SOURCE_UNAVAILABLE = "STALENESS_SOURCE_UNAVAILABLE"  # the 053 table absent: no US name is permitted (fail closed)
-STALENESS_SOURCE_STALE = "STALENESS_SOURCE_STALE"  # no successful as-filed poll in [D − 6 h, D]: an empty 053 is no evidence (fail closed)
+STALENESS_SOURCE_STALE = "STALENESS_SOURCE_STALE"  # no live as-filed poll observed in [D − 6 h, D − ε]: an empty 053 is no evidence (fail closed)
 # events (the block's ``event_gates`` says which withhold a permission; the others are MARKS: recorded, never a verdict)
 EARNINGS_WITHIN_N = "EARNINGS_WITHIN_N"  # an announcement known at D on sessions [T+1, T+N] (a gate in earnings_gate_markets)
-EARNINGS_DATE_ESTIMATED = "EARNINGS_DATE_ESTIMATED"  # the calendar was absent/stale: the 051 cadence estimate answered
-EARNINGS_CALENDAR_UNAVAILABLE = "EARNINGS_CALENDAR_UNAVAILABLE"  # neither the calendar nor an estimate: no gate (an abstention rule)
-CONSENSUS_EPS_CUT_SINCE_TP = "CONSENSUS_EPS_CUT_SINCE_TP"  # FY1 consensus EPS cut since the TP's day beyond the block's limit
-NEWS_SENTIMENT_NEGATIVE = "NEWS_SENTIMENT_NEGATIVE"  # the weekly Finnhub sentiment read at D is bearish beyond the block's limit
-EVENT_CODES: tuple[str, ...] = (EARNINGS_WITHIN_N, EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_SINCE_TP,
+EARNINGS_DATE_ESTIMATED = "EARNINGS_DATE_ESTIMATED"  # the 051 cadence estimate answered (no usable calendar, or no calendar row for the name)
+EARNINGS_CALENDAR_UNAVAILABLE = "EARNINGS_CALENDAR_UNAVAILABLE"  # neither a usable calendar nor an estimate: no gate (an abstention rule)
+CONSENSUS_EPS_CUT_30D = "CONSENSUS_EPS_CUT_30D"  # FY1 consensus EPS cut over the last 30 days beyond the block's limit
+NEWS_SENTIMENT_NEGATIVE = "NEWS_SENTIMENT_NEGATIVE"  # the weekly Finnhub sentiment read at D is bearish beyond the block's limit (never a gate)
+EVENT_CODES: tuple[str, ...] = (EARNINGS_WITHIN_N, EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_30D,
                                 NEWS_SENTIMENT_NEGATIVE)
-MARK_CODES: tuple[str, ...] = (EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_SINCE_TP, NEWS_SENTIMENT_NEGATIVE)
+MARK_CODES: tuple[str, ...] = (EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_30D, NEWS_SENTIMENT_NEGATIVE)
+NEVER_GATES: tuple[str, ...] = (NEWS_SENTIMENT_NEGATIVE,)  # its source overwrites the week: a verdict on it could not be replayed
 
 STALENESS_SOURCE = "valuation_tp_staleness"  # migration 053, read causally by valuation_asfiled.us_staleness_at
 STALENESS_CLEAR, STALENESS_STALE, STALENESS_UNAVAILABLE, STALENESS_NOT_APPLICABLE = "clear", "stale", "unavailable", "not_applicable"
@@ -170,20 +183,32 @@ class DecisorThresholds:
     market_rate_max_age_days: int = 10
     tp_horizon_years: float = 1.0  # a 12-month TP: h_market = (1 + rate) ** years - 1 + premium
     market_premium: float = 0.0
+    # every read on an INSERT clock (the poll's completion, 053 created_at, a snapshot's publication, 051 first_seen_at, the
+    # sentiment row's publication, the TP record's publication) stops at D − ε: a commit racing the run's read is out of the
+    # original AND of every replay
+    insert_margin_seconds: int = 60
     # US filings (053): the marks are evidence only while the as-filed poll is alive at D
     staleness_poll_source: str = "sec_asfiled"  # the ingestion_runs source of the as-filed poll (InvestorRelationsService.sync_sec_asfiled)
-    staleness_poll_max_age_hours: int = 6  # a SUCCESSFUL poll completed in [D − 6 h, D], else STALENESS_SOURCE_STALE
+    staleness_poll_max_age_hours: int = 6  # a SUCCESSFUL poll with progress, STARTED at or after D − 6 h and completed by D − ε
     # events
-    earnings_window_sessions: int = 2  # N: an announcement on sessions [T+1, T+N] of the market (T = the last completed session)
+    earnings_window_sessions: int = 2  # N: an announcement reaching sessions [T+1, T+N] of the market (T = the last completed session)
     earnings_gate_markets: tuple[str, ...] = ("NASDAQ", "NYSE")  # EARNINGS_WITHIN_N withholds the permission here; elsewhere (B3) it is a mark
-    earnings_calendar_max_age_hours: int = 36  # a calendar received longer before D is stale: the 051 estimate answers
-    earnings_estimate_offset_days: int = 91  # the estimate: the last 8-K 2.02 (else 10-Q/10-K) accepted + 91 days...
-    earnings_estimate_tolerance_days: int = 7  # ...counted when it falls in the window widened by this many days on each side
-    consensus_eps_cut_log: float = 0.05  # CONSENSUS_EPS_CUT_SINCE_TP: ln(FY1 at D / FY1 at the TP) < −0.05 (or turned non-positive)
+    earnings_calendar_max_age_hours: int = 36  # only a calendar received in [D − 36 h, D − ε] may say "no event"; any calendar's events gate
+    earnings_calendar_min_us_events: int = 100  # a calendar with fewer US events in its request window is partial: it says nothing
+    earnings_calendar_max_invalid_share: float = 0.05  # ...nor one whose unattributed invalid rows exceed this share of its rows
+    earnings_filings_lookback_days: int = 400  # the 051 filings the estimate reads (a year of quarters, plus the seasonal base)
+    earnings_estimate_seasonal_days: int = 364  # the estimate: the same fiscal quarter's release one year earlier + 364 days...
+    earnings_estimate_period_match_days: int = 10  # ...that quarter found by its period end within this many days of a year before
+    earnings_estimate_offset_days: int = 91  # else the most recent original 8-K 2.02 / 10-Q acceptance + 91 days (a 10-K: period end + 91 + lag)
+    earnings_estimate_default_10q_lag_days: int = 45  # a 10-K base adds the issuer's latest 10-Q filing lag, else this
+    earnings_estimate_tolerance_days: int = 7  # an estimate counts when it reaches the window widened by this many days on each side
+    consensus_eps_cut_log: float = 0.05  # CONSENSUS_EPS_CUT_30D: ln(FY1 at D / FY1 at D − 30 d) < −0.05 (or turned non-positive)
+    consensus_lookback_days: int = 30
     news_sentiment_bearish_min_percent: float = 60.0  # NEWS_SENTIMENT_NEGATIVE: bearish ≥ 60 %...
     news_sentiment_min_articles: int = 5  # ...over at least 5 articles in the provider's last week...
     news_sentiment_max_age_days: int = 8  # ...in a weekly row read at D, first published at most 8 days before it
     event_gates: tuple[str, ...] = (EARNINGS_WITHIN_N,)  # the event codes that withhold a permission (OBSERVAR); every other one is a mark
+    # (NEWS_SENTIMENT_NEGATIVE is a mark whatever this lists: NEVER_GATES)
 
 
 THRESHOLDS = DecisorThresholds()
@@ -475,39 +500,53 @@ def _filing_reference(mark: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def poll_reference(run: Mapping[str, Any] | None, source_code: str) -> dict[str, Any] | None:
-    """What a record keeps of the as-filed poll it relied on: the source, the run id and its completion instant."""
+    """What a record keeps of the as-filed poll it relied on: the source, the run id, what it read and when it ran."""
     if not run or not run.get("completed_at"):
         return None
-    return {"source_code": source_code, "run_id": _text(run.get("id")), "completed_at": _utc(run["completed_at"]).isoformat()}
+    return {"source_code": source_code, "run_id": _text(run.get("id")), "records_read": int(run.get("records_read") or 0),
+            "started_at": _utc(run["started_at"]).isoformat() if run.get("started_at") else None, "completed_at": _utc(run["completed_at"]).isoformat()}
+
+
+def _poll_fresh(poll: Mapping[str, Any] | None, known_at: Any, thresholds: DecisorThresholds) -> bool:
+    """The as-filed poll is alive at the read's clock D: a SUCCESSFUL run with progress (the reader already asked for
+    both) that STARTED at or after D − ``staleness_poll_max_age_hours`` — its observations are that recent — and completed
+    by D − ε (the reader's cutoff)."""
+    if not poll or not poll.get("started_at") or not poll.get("completed_at") or not known_at:
+        return False
+    clock = _utc(known_at)
+    started, completed = _utc(poll["started_at"]), _utc(poll["completed_at"])
+    return (clock - timedelta(hours=thresholds.staleness_poll_max_age_hours) <= started <= completed
+            <= clock - timedelta(seconds=thresholds.insert_margin_seconds))
 
 
 def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str, *, thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
     """What ``decide`` reads about ONE name from the causal read of migration 053 (``valuation_asfiled.us_staleness_at``
     at the run's clock, ``source``, with the as-filed poll it relied on in ``trigger_poll``): B3 → ``not_applicable``
-    (053 marks US TPs against SEC filings only); a US name → ``stale`` with the pending filings, ``clear``, or
-    ``unavailable`` (no read, or the table absent) — and ``source_status``: ``ok`` only when a SUCCESSFUL poll completed
-    at most ``staleness_poll_max_age_hours`` before the read's clock (an empty table is no evidence while nobody looks:
-    ``stale`` otherwise) — with the read's own provenance."""
+    (053 marks US TPs against SEC filings only). A US name: the poll is judged FIRST — no live poll (``_poll_fresh``)
+    → ``source_status`` ``stale`` whether or not the table exists (an absent table then reads as an empty one: a night
+    from before 053 replays identically once it lands), the marks known still listed; a live poll and no table →
+    ``unavailable``; else ``ok``. ``status``: ``stale`` with the pending filings, ``clear``, or ``unavailable``."""
     if market not in US_STALENESS_MARKETS:
         return {"status": STALENESS_NOT_APPLICABLE, "source_status": None, "source": None, "detail": "migration 053 marks US TPs only (SEC filings)",
                 "filings": []}
-    read = source or {}
+    read = dict(source or {})
     poll = read.get("trigger_poll") if isinstance(read.get("trigger_poll"), Mapping) else None
+    fresh = _poll_fresh(poll, read.get("known_at"), thresholds)
+    table = read.get("status") == "ok"
+    if not fresh and not table:  # nobody looked, and nothing was there to look at: the same record as an empty table
+        read.update({"marks_known": 0, "latest_recorded_at": None, "pending": {}})
     base = {"source": STALENESS_SOURCE, "known_at": read.get("known_at"), "marks_known": read.get("marks_known"),
             "latest_recorded_at": read.get("latest_recorded_at"), "trigger_poll": dict(poll) if poll else None,
             "poll_max_age_hours": thresholds.staleness_poll_max_age_hours}
-    if read.get("status") != "ok":
+    if fresh and not table:
         return {**base, "status": STALENESS_UNAVAILABLE, "source_status": STALENESS_UNAVAILABLE,
                 "detail": _text(read.get("detail")) or "the staleness source was not read", "filings": []}
-    fresh = False
-    if poll and poll.get("completed_at") and read.get("known_at"):
-        age = _utc(read["known_at"]) - _utc(poll["completed_at"])
-        fresh = timedelta(0) <= age <= timedelta(hours=thresholds.staleness_poll_max_age_hours)
     pending = read.get("pending") if isinstance(read.get("pending"), Mapping) else {}
     marks = [mark for mark in (pending or {}).get(symbol) or [] if isinstance(mark, Mapping)]
     return {**base, "status": STALENESS_STALE if marks else STALENESS_CLEAR, "source_status": "ok" if fresh else STALENESS_STALE,
-            "detail": None if fresh else f"no successful {thresholds.staleness_poll_source} poll in the {thresholds.staleness_poll_max_age_hours} h "
-                                         "before the run's clock: the marks known are kept, their absence is no evidence",
+            "detail": None if fresh else f"no live {thresholds.staleness_poll_source} poll (successful, with progress, started in the "
+                                         f"{thresholds.staleness_poll_max_age_hours} h before the run's clock): the marks known are kept, "
+                                         "their absence is no evidence",
             "filings": [_filing_reference(mark) for mark in marks]}
 
 
@@ -536,115 +575,222 @@ def _session_on_or_after(market: str, day: str) -> str | None:
         return None
 
 
+def reaction_sessions(market: str, report_date: str, timing: str | None) -> tuple[str | None, str | None]:
+    """(report session, reaction session) of an announcement: the report session is the date's session (the next one
+    for a date that is no session); the session whose PRICE reacts is that same session for a BeforeMarket release, the
+    NEXT session after the date for an AfterMarket release or an unknown timing (the provider's day-only rows) — the gap
+    risk: the price the night decides on has not seen the news yet."""
+    report = _session_on_or_after(market, report_date)
+    if report is None:
+        return None, None
+    if timing == "BeforeMarket":
+        return report, report
+    if report != report_date:  # a date that is no session: the next session is both
+        return report, report
+    try:
+        return report, official._calendar(market).next_session(report_date).date().isoformat()
+    except Exception:
+        return report, None
+
+
 def _provider_codes(market: str, symbol: str) -> list[str]:
     """The calendar's codes of a symbol: ``<S>.SA`` on B3; ``<S>.US`` on the US exchanges (also with ``.`` → ``-``, the
-    provider's spelling of share classes)."""
+    provider's spelling of share classes: BRK.B → BRK-B.US)."""
     if market == "B3":
         return [f"{symbol}.SA"]
     return list(dict.fromkeys([f"{symbol}.US", f"{symbol.replace('.', '-')}.US"]))
 
 
-def name_earnings(calendar: Mapping[str, Any] | None, filings: Mapping[str, Any] | None, market: str, symbol: str, *, at: datetime,
-                  expected_session: str, thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
-    """The earnings facts of ONE name at the run's clock ``at`` — ``within`` when an announcement falls on sessions
-    [T+1, T+N] (N = ``earnings_window_sessions``; DAY, BMO and AMC alike: an AMC on T+1 counts; a date that is no session
-    reaches the next one):
+def _calendar_usable(calendar: Mapping[str, Any], window: list[str], thresholds: DecisorThresholds) -> str | None:
+    """Why a calendar cannot say "no event" (``None`` when it can): partial (fewer US events in its request window than
+    ``earnings_calendar_min_us_events``), garbled (unattributed invalid rows above ``earnings_calendar_max_invalid_share``)
+    or not covering [T+1, T+N]."""
+    if int(calendar.get("us_events") or 0) < max(thresholds.earnings_calendar_min_us_events, 1):
+        return f"partial: {int(calendar.get('us_events') or 0)} US events in its window (< {thresholds.earnings_calendar_min_us_events})"
+    if float(calendar.get("invalid_share") or 0.0) > thresholds.earnings_calendar_max_invalid_share:
+        return f"garbled: unattributed invalid rows above {thresholds.earnings_calendar_max_invalid_share:.0%} of its rows"
+    if window and not (str(calendar.get("request_from") or "9999") <= window[0] and window[-1] <= str(calendar.get("request_to") or "")):
+        return "its request window does not cover sessions T+1..T+N"
+    return None
 
-    * ``calendar`` — the calendar snapshot (``valuation_earnings_calendar.calendar_at``) received at most
-      ``earnings_calendar_max_age_hours`` before ``at``, whose request window covers [T+1, T+N] and with no invalid row
-      of the name: its events decide;
-    * ``estimated`` — otherwise (US): the last 8-K 2.02 (else 10-Q/10-K) known at ``at`` (``filings_known_at``) +
-      ``earnings_estimate_offset_days``, counted when its session falls in the window widened by
-      ``earnings_estimate_tolerance_days`` on each side;
-    * ``unavailable`` — neither (no gate: an abstention rule fails open, and says so)."""
+
+def _add_days(day: date, days: int) -> str:
+    return (day + timedelta(days=days)).isoformat()
+
+
+def cadence_estimate(filings: list[Mapping[str, Any]], thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any] | None:
+    """The next earnings date the name's ORIGINAL filings (8-K 2.02, 10-Q, 10-K; amendments never) suggest, ``None``
+    without any:
+
+    * ``seasonal`` — the quarter after the latest statement period, one year earlier: its release (the first 8-K 2.02
+      accepted after that period ended and before the next quarter ended; else its own 10-Q/10-K) + 364 days, the
+      weekday kept; the period found within ``earnings_estimate_period_match_days`` of a year before;
+    * ``recent`` — else the MORE RECENT of the last 8-K 2.02 / 10-Q / 10-K: an 8-K or 10-Q acceptance + 91 days; a 10-K
+      period end + 91 days + the issuer's latest 10-Q filing lag (acceptance − period end; else the default lag).
+
+    Acceptance days are New York's; the base is the ACCEPTANCE, never the registration (a backfill moves nothing)."""
+    def accepted_day(item: Mapping[str, Any]) -> date:
+        return _utc(item["accepted_at"]).astimezone(NEW_YORK).date()
+
+    def period(item: Mapping[str, Any]) -> date | None:
+        try:
+            return date.fromisoformat(str(item.get("period_of_report"))[:10]) if item.get("period_of_report") else None
+        except ValueError:
+            return None
+
+    originals = [item for item in filings if str(item.get("form") or "") in ("8-K", "10-Q", "10-K")]
+    releases = sorted((item for item in originals if item["form"] == "8-K" and EARNINGS_RELEASE_ITEM in str(item.get("items") or "").split(",")),
+                      key=lambda item: _utc(item["accepted_at"]))
+    statements = sorted((item for item in originals if item["form"] in ("10-Q", "10-K") and period(item) is not None),
+                        key=lambda item: _utc(item["accepted_at"]))
+    if statements:
+        latest_period = max(cast(date, period(item)) for item in statements)
+        upcoming = next_quarter_end(latest_period)
+        target = upcoming - timedelta(days=thresholds.earnings_estimate_seasonal_days)
+        prior = [item for item in statements if abs((cast(date, period(item)) - target).days) <= thresholds.earnings_estimate_period_match_days]
+        if prior:
+            statement = min(prior, key=lambda item: abs((cast(date, period(item)) - target).days))
+            prior_end = cast(date, period(statement))
+            following = next_quarter_end(prior_end)
+            release = next((item for item in releases if prior_end < accepted_day(item) <= following), None)
+            base = release or statement
+            return {"rule": "seasonal", "basis": dict(base), "prior_period_end": prior_end.isoformat(), "upcoming_period_end": upcoming.isoformat(),
+                    "days": thresholds.earnings_estimate_seasonal_days, "estimated_date": _add_days(accepted_day(base), thresholds.earnings_estimate_seasonal_days)}
+    candidates = [item for item in (releases[-1] if releases else None,
+                                    next((item for item in reversed(statements) if item["form"] == "10-Q"), None),
+                                    next((item for item in reversed(statements) if item["form"] == "10-K"), None)) if item is not None]
+    if not candidates:
+        return None
+    base = max(candidates, key=lambda item: _utc(item["accepted_at"]))
+    if base["form"] == "10-K" and period(base) is not None:
+        quarterly = next((item for item in reversed(statements) if item["form"] == "10-Q"), None)
+        lag = (accepted_day(quarterly) - cast(date, period(quarterly))).days if quarterly else thresholds.earnings_estimate_default_10q_lag_days
+        return {"rule": "recent", "basis": dict(base), "lag_days": lag, "lag_basis": quarterly["doc_id"] if quarterly else "default",
+                "days": thresholds.earnings_estimate_offset_days,
+                "estimated_date": _add_days(cast(date, period(base)), thresholds.earnings_estimate_offset_days + lag)}
+    return {"rule": "recent", "basis": dict(base), "days": thresholds.earnings_estimate_offset_days,
+            "estimated_date": _add_days(accepted_day(base), thresholds.earnings_estimate_offset_days)}
+
+
+def _estimate_within(market: str, estimate: Mapping[str, Any], window: list[str], thresholds: DecisorThresholds) -> dict[str, Any]:
+    report, reaction = reaction_sessions(market, str(estimate["estimated_date"]), None)  # an estimate has no timing: unknown
+    low = _add_days(date.fromisoformat(window[0]), -thresholds.earnings_estimate_tolerance_days)
+    high = _add_days(date.fromisoformat(window[-1]), thresholds.earnings_estimate_tolerance_days)
+    within = any(session is not None and low <= session <= high for session in (report, reaction))
+    return {**dict(estimate), "report_session": report, "reaction_session": reaction, "tolerance_days": thresholds.earnings_estimate_tolerance_days,
+            "range": [low, high], "within": within}
+
+
+def name_earnings(calendars: Mapping[str, Any] | None, filings: Mapping[str, Any] | None, market: str, symbol: str, *, at: datetime,
+                  expected_session: str, thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
+    """The earnings facts of ONE name at the run's clock ``at`` — ``within`` when an announcement reaches sessions
+    [T+1, T+N] (N = ``earnings_window_sessions``): its report session or its reaction session (``reaction_sessions``:
+    an AfterMarket or untimed release on T reacts on T+1 and counts).
+
+    * every calendar the run may read (``valuation_earnings_calendar.calendars_at``: those received in
+      [D − ``earnings_calendar_max_age_hours``, D − ε] and the latest before, whatever its age) — the conservative UNION
+      of their events: an in-window event of ANY of them gates (staleness only weakens "no event");
+    * "no event" needs a calendar received in the window that is USABLE (``_calendar_usable``) with no invalid row for
+      the name; if it lists the name (out of the window) → ``calendar``, no gate; if it has NO row for the name, the
+      051 cadence estimate (``cadence_estimate``, US) still gates when it reaches the window (``estimated``);
+    * no usable calendar: the estimate answers (``estimated``, the window widened by ``earnings_estimate_tolerance_days``);
+      neither → ``unavailable`` (no gate: an abstention rule fails open, and says so)."""
     window = _calendar_sessions(market, expected_session, thresholds.earnings_window_sessions)
-    base: dict[str, Any] = {"window": window, "window_sessions": thresholds.earnings_window_sessions, "calendar": None, "estimate": None,
+    base: dict[str, Any] = {"window": window, "window_sessions": thresholds.earnings_window_sessions, "calendars": [], "estimate": None,
                             "events": [], "within": False}
     if window is None:
         return {**base, "status": "unavailable", "detail": "the exchange calendar cannot name sessions T+1..T+N"}
-    read = calendar or {}
+    read = calendars or {}
+    recent = [item for item in read.get("recent") or [] if isinstance(item, Mapping)]
+    latest = read.get("latest") if isinstance(read.get("latest"), Mapping) else None
+    pool = {str(item["snapshot_id"]): item for item in [*recent, *([latest] if latest else [])]}
     codes = _provider_codes(market, symbol)
-    refused: str | None = None
-    if read.get("status") != "ok":
-        refused = "no calendar snapshot received by the run's clock"
-    else:
-        base["calendar"] = {key: read.get(key) for key in ("snapshot_id", "received_at", "payload_sha256", "request_from", "request_to")}
-        age = _utc(at) - _utc(read["received_at"])
-        if age > timedelta(hours=thresholds.earnings_calendar_max_age_hours):
-            refused = f"calendar received more than {thresholds.earnings_calendar_max_age_hours} h before the run's clock"
-        elif window and not (str(read.get("request_from") or "9999") <= window[0] and window[-1] <= str(read.get("request_to") or "")):
-            refused = "the calendar's request window does not cover sessions T+1..T+N"
-        elif any((read.get("blocking_codes") or {}).get(code) for code in codes):
-            refused = "the calendar has an invalid row for the name"
-    if refused is None:
-        events = []
+    events: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for snapshot_id, calendar in sorted(pool.items(), key=lambda entry: str(entry[1].get("received_at"))):
         for code in codes:
-            for event in (read.get("by_code") or {}).get(code) or []:
-                session = _session_on_or_after(market, str(event.get("report_date") or ""))
-                events.append({"code": code, "report_date": event.get("report_date"), "fiscal_period_end": event.get("fiscal_period_end"),
-                               "timing": event.get("timing"), "session": session, "in_window": session is not None and session in (window or [])})
-        return {**base, "status": "calendar", "events": events, "within": any(item["in_window"] for item in events), "detail": None}
-    latest = ((filings or {}).get("latest") or {}).get(symbol) if market in US_STALENESS_MARKETS and (filings or {}).get("status") == "ok" else None
-    basis_name = "release" if latest and latest.get("release") else "statement" if latest and latest.get("statement") else None
-    if basis_name is None or not window:
-        detail = f"{refused}; {'no 051 earnings filing known for the name' if market in US_STALENESS_MARKETS else 'no estimate outside the US'}"
-        return {**base, "status": "unavailable", "detail": detail}
-    filing = dict((latest or {})[basis_name])
-    accepted_day = _utc(filing["accepted_at"]).astimezone(NEW_YORK).date()
-    estimated = accepted_day + timedelta(days=thresholds.earnings_estimate_offset_days)
-    session = _session_on_or_after(market, estimated.isoformat())
-    low = date.fromisoformat(window[0]) - timedelta(days=thresholds.earnings_estimate_tolerance_days)
-    high = date.fromisoformat(window[-1]) + timedelta(days=thresholds.earnings_estimate_tolerance_days)
-    within = session is not None and low <= date.fromisoformat(session) <= high
-    return {**base, "status": "estimated", "within": within, "detail": refused,
-            "estimate": {"basis": basis_name, "filing": filing, "offset_days": thresholds.earnings_estimate_offset_days, "estimated_date": estimated.isoformat(),
-                         "session": session, "tolerance_days": thresholds.earnings_estimate_tolerance_days, "range": [low.isoformat(), high.isoformat()]}}
+            for event in (calendar.get("by_code") or {}).get(code) or []:
+                report_date, timing = str(event.get("report_date") or ""), event.get("timing")
+                identity = (code, report_date, timing, event.get("fiscal_period_end"))
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                report, reaction = reaction_sessions(market, report_date, timing)
+                events.append({"code": code, "report_date": report_date, "fiscal_period_end": event.get("fiscal_period_end"), "timing": timing,
+                               "report_session": report, "reaction_session": reaction, "snapshot_id": snapshot_id,
+                               "in_window": any(session is not None and session in window for session in (report, reaction))})
+    judged = []
+    recent_ids = {str(item["snapshot_id"]) for item in recent}
+    for snapshot_id, calendar in pool.items():
+        refused = _calendar_usable(calendar, window, thresholds)
+        if refused is None and snapshot_id not in recent_ids:
+            refused = f"received more than {thresholds.earnings_calendar_max_age_hours} h before the run's clock"
+        if refused is None and any((calendar.get("blocking_codes") or {}).get(code) for code in codes):
+            refused = "an invalid row for the name"
+        judged.append({**{key: calendar.get(key) for key in ("snapshot_id", "received_at", "payload_sha256", "request_from", "request_to",
+                                                            "us_events", "invalid_share")}, "refused": refused})
+    base.update({"calendars": sorted(judged, key=lambda item: str(item.get("received_at"))), "events": events})
+    estimate_raw = None
+    if market in US_STALENESS_MARKETS and (filings or {}).get("status") == "ok":
+        estimate_raw = cadence_estimate(list(((filings or {}).get("by_symbol") or {}).get(symbol) or []), thresholds)
+    estimate = _estimate_within(market, estimate_raw, window, thresholds) if estimate_raw and window else None
+    base["estimate"] = estimate
+    if any(item["in_window"] for item in events):
+        return {**base, "status": "calendar", "within": True, "detail": None}
+    answering = [str(item["snapshot_id"]) for item in judged if item["refused"] is None]
+    if answering:
+        listed = any((pool[snapshot_id].get("by_code") or {}).get(code) for snapshot_id in answering for code in codes)
+        if listed or not (estimate and estimate["within"]):
+            return {**base, "status": "calendar", "within": False, "detail": None if listed else "no calendar row for the name"}
+        return {**base, "status": "estimated", "within": True, "detail": "a usable calendar has no row for the name; the 051 estimate reaches the window"}
+    why = "; ".join(f"{item['snapshot_id']}: {item['refused']}" for item in judged) or "no calendar snapshot received by the run's clock"
+    if estimate is not None:
+        return {**base, "status": "estimated", "within": bool(estimate["within"]), "detail": why}
+    tail = "no 051 earnings filing known for the name" if market in US_STALENESS_MARKETS else "no estimate outside the US"
+    return {**base, "status": "unavailable", "within": False, "detail": f"{why}; {tail}"}
 
 
 def _eps(row: Any) -> float | None:
     return _number(row.get("eps_avg")) if isinstance(row, Mapping) else None
 
 
-def name_consensus(current: Mapping[str, Any] | None, at_tp: Mapping[str, Any] | None, symbol: str, *, tp_clock: datetime) -> dict[str, Any]:
-    """The FY1 consensus EPS of ONE name at the TP and at the run's clock (``Database.v2_forward_eps_at_or_before``):
-    ``at_tp`` is the ``valuation_v2_data`` snapshot published closest before the TP's publication (``tp_clock``) — the
-    official TP records no V2 snapshot of its own — and ``current`` the latest one published by the run's clock. The
-    SAME fiscal year is compared (the TP's FY1, looked up in the current term structure). ``status`` ``ok`` (with
-    ``log_change`` = ln(now / at the TP), or ``turned_non_positive``), ``not_comparable`` or ``unavailable``."""
-    base: dict[str, Any] = {"source": "valuation_v2_data", "basis": "the snapshot published closest before the TP's publication",
-                            "tp_clock": _utc(tp_clock).isoformat(), "tp_snapshot_id": None, "current_snapshot_id": None, "fiscal_year_end": None,
-                            "tp_eps": None, "current_eps": None, "log_change": None, "turned_non_positive": False}
-    if at_tp:
-        base["tp_snapshot_id"] = _text(at_tp.get("snapshot_id"))
-    if current:
-        base["current_snapshot_id"] = _text(current.get("snapshot_id"))
-    if not current or not at_tp:
-        return {**base, "status": "unavailable", "detail": "no V2 consensus snapshot at the TP's publication or by the run's clock"}
-    tp_packet = (at_tp.get("packets") or {}).get(symbol) or {}
-    tp_fy1 = tp_packet.get("fy1_estimate") if isinstance(tp_packet, Mapping) else None
-    tp_eps = _eps(tp_fy1)
-    if tp_eps is None:
-        return {**base, "status": "unavailable", "detail": "no FY1 consensus EPS at the TP"}
-    fiscal = _text((tp_fy1 or {}).get("fiscal_year_end"))
+def name_consensus(current: Mapping[str, Any] | None, past: Mapping[str, Any] | None, symbol: str, *,
+                   thresholds: DecisorThresholds = THRESHOLDS) -> dict[str, Any]:
+    """The FY1 consensus EPS of ONE name now and ``consensus_lookback_days`` ago (``Database.v2_forward_eps_at_or_before``:
+    ``current`` the latest ``valuation_v2_data`` snapshot published by D − ε, ``past`` the latest by D − 30 d − ε) — a
+    30-day revision, never the ~24 h one the nightly re-cut of the TP would give. The SAME fiscal year is compared (the
+    past FY1, looked up in the current term structure). ``status`` ``ok`` (with ``log_change`` = ln(now / then), or
+    ``turned_non_positive``), ``not_comparable`` or ``unavailable``."""
+    base: dict[str, Any] = {"source": "valuation_v2_data", "lookback_days": thresholds.consensus_lookback_days,
+                            "past_snapshot_id": _text((past or {}).get("snapshot_id")), "current_snapshot_id": _text((current or {}).get("snapshot_id")),
+                            "fiscal_year_end": None, "past_eps": None, "current_eps": None, "log_change": None, "turned_non_positive": False}
+    if not current or not past:
+        return {**base, "status": "unavailable", "detail": f"no V2 consensus snapshot by the run's clock or {thresholds.consensus_lookback_days} days before it"}
+    past_packet = (past.get("packets") or {}).get(symbol) or {}
+    past_fy1 = past_packet.get("fy1_estimate") if isinstance(past_packet, Mapping) else None
+    past_eps = _eps(past_fy1)
+    if past_eps is None:
+        return {**base, "status": "unavailable", "detail": f"no FY1 consensus EPS {thresholds.consensus_lookback_days} days before"}
+    fiscal = _text((past_fy1 or {}).get("fiscal_year_end"))
     packet = (current.get("packets") or {}).get(symbol) or {}
     rows = [packet.get("fy1_estimate"), *(packet.get("forward_estimates") or [])] if isinstance(packet, Mapping) else []
     same = next((row for row in rows if isinstance(row, Mapping) and _text(row.get("fiscal_year_end")) == fiscal and _eps(row) is not None), None)
-    base.update({"fiscal_year_end": fiscal, "tp_eps": tp_eps})
+    base.update({"fiscal_year_end": fiscal, "past_eps": past_eps})
     if same is None:
-        return {**base, "status": "not_comparable", "detail": "the TP's FY1 is not in the current consensus term structure"}
+        return {**base, "status": "not_comparable", "detail": "the past FY1 is not in the current consensus term structure"}
     current_eps = _eps(same)
     base["current_eps"] = current_eps
-    if tp_eps <= 0:
-        return {**base, "status": "not_comparable", "detail": "the FY1 consensus EPS at the TP is not positive"}
+    if past_eps <= 0:
+        return {**base, "status": "not_comparable", "detail": "the past FY1 consensus EPS is not positive"}
     if current_eps is None or current_eps <= 0:
         return {**base, "status": "ok", "turned_non_positive": True, "detail": None}
-    return {**base, "status": "ok", "log_change": math.log(current_eps / tp_eps), "detail": None}
+    return {**base, "status": "ok", "log_change": math.log(current_eps / past_eps), "detail": None}
 
 
 def name_sentiment(read: Mapping[str, Any] | None, market: str, symbol: str, *, at: datetime) -> dict[str, Any]:
     """The weekly Finnhub news sentiment of ONE US name as read at ``at`` (``Database.news_sentiment_at``) — the values
-    recorded here are the only reproducible ones (the source overwrites the week's row on every poll). B3:
-    ``not_applicable`` (a US-only source)."""
+    recorded here are the only copy of what was read (the source overwrites the week's row on every poll: a replay
+    reads other numbers, so ``replay_sha256`` leaves them out and the code is never a gate). B3: ``not_applicable``."""
     if market not in US_STALENESS_MARKETS:
         return {"status": "not_applicable", "detail": "the Finnhub sentiment is a US source"}
     if not read:
@@ -674,9 +820,9 @@ def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind:
     ``staleness`` is the name's 053 state (``name_staleness``): ``not_applicable`` passes (B3); ``clear`` passes only with
     ``source_status`` ``ok``; ``stale`` is ``TP_STALE_AFTER_FILING``; a stale poll adds ``STALENESS_SOURCE_STALE``; anything
     else is ``STALENESS_SOURCE_UNAVAILABLE`` — and a row served for a US market is never ``not_applicable`` (it fails
-    closed). ``events`` carries ``market`` and the facts of ``name_earnings``/``name_consensus``/``name_sentiment``: the
-    codes they raise are gates when listed in ``event_gates`` (``EARNINGS_WITHIN_N`` only inside ``earnings_gate_markets``),
-    marks otherwise."""
+    closed). ``events`` carries ``market`` (else the row's ``official_market``; unknown → the gate applies: fail closed)
+    and the facts of ``name_earnings``/``name_consensus``/``name_sentiment``: the codes they raise are gates when listed in
+    ``event_gates`` (``EARNINGS_WITHIN_N`` only inside ``earnings_gate_markets``; ``NEVER_GATES`` never), marks otherwise."""
     codes: list[str] = []
     checks: dict[str, Any] = {}
     tp_value, buy_in = _positive(row.get("our_tp")), _positive(row.get("buy_in"))
@@ -781,8 +927,10 @@ def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind:
     checks["tp_margin"] = margin
 
     raised, event_checks = _event_codes(events, thresholds)
-    market = _text(events.get("market"))
-    gates = [code for code in raised if code in thresholds.event_gates and (code != EARNINGS_WITHIN_N or market in thresholds.earnings_gate_markets)]
+    market = _text(events.get("market")) or _text(row.get("official_market"))
+    market = market.strip().upper() if market else None
+    gated_market = market is None or market in thresholds.earnings_gate_markets  # a row whose market nobody named fails closed
+    gates = [code for code in raised if code in thresholds.event_gates and code not in NEVER_GATES and (code != EARNINGS_WITHIN_N or gated_market)]
     marks = [code for code in raised if code not in gates]
     checks["events"] = {**event_checks, "market": market, "raised": raised, "gates": gates, "marks": marks}
     verdict_without, codes_without = _verdict_of(codes)
@@ -804,7 +952,7 @@ def _verdict_of(codes: list[str]) -> tuple[str, list[str]]:
 def _event_codes(events: Mapping[str, Any], thresholds: DecisorThresholds) -> tuple[list[str], dict[str, Any]]:
     """The event codes the facts raise, in a fixed order, and each rule's numbers: ``EARNINGS_WITHIN_N`` (the facts'
     ``within``), ``EARNINGS_DATE_ESTIMATED`` / ``EARNINGS_CALENDAR_UNAVAILABLE`` (which source answered),
-    ``CONSENSUS_EPS_CUT_SINCE_TP`` (ln change below −``consensus_eps_cut_log``, or FY1 turned non-positive) and
+    ``CONSENSUS_EPS_CUT_30D`` (ln change below −``consensus_eps_cut_log``, or FY1 turned non-positive) and
     ``NEWS_SENTIMENT_NEGATIVE`` (bearish ≥ the limit over at least the minimum articles, in a row no older than the limit)."""
     raised: list[str] = []
     earnings = events.get("earnings") if isinstance(events.get("earnings"), Mapping) else {}
@@ -819,7 +967,7 @@ def _event_codes(events: Mapping[str, Any], thresholds: DecisorThresholds) -> tu
     cut = consensus.get("status") == "ok" and (consensus.get("turned_non_positive") is True
                                                or (change is not None and change < -thresholds.consensus_eps_cut_log))
     if cut:
-        raised.append(CONSENSUS_EPS_CUT_SINCE_TP)
+        raised.append(CONSENSUS_EPS_CUT_30D)
     sentiment = dict(events.get("sentiment") or {}) if isinstance(events.get("sentiment"), Mapping) else {}
     bearish, articles, age = (_number(sentiment.get(key)) for key in ("bearish_percent", "articles_last_week", "age_days"))
     negative = (sentiment.get("status") == "ok" and bearish is not None and articles is not None and age is not None
@@ -904,15 +1052,27 @@ def stored_decision(record: Mapping[str, Any]) -> dict[str, Any] | None:
     return copy.deepcopy(dict(record))
 
 
-REPLAY_EXCLUDED_KEYS = ("id", "row_sha256", "run_id", "published_at")  # the run's identity and its wall clock
+REPLAY_EXCLUDED_KEYS = ("id", "row_sha256", "run_id", "published_at", "inputs_sha256")  # the run's identity, its wall clock, the hashes over them
 
 
 def replay_sha256(record: Mapping[str, Any]) -> str:
     """The hash of what a verdict DECIDED — every key of the record but the run's identity (``id``, ``run_id``), the wall
-    clock of its insert (``published_at``) and ``row_sha256`` (which covers those): a re-run of a night at the same clock
-    has the same one, whatever was published or marked after that clock (every read is causal: the generation, the
-    cycles, the calibration, the rate packages and the 053 marks as of the run's clock)."""
-    return canonical_sha256({key: value for key, value in record.items() if key not in REPLAY_EXCLUDED_KEYS})
+    clock of its insert (``published_at``) and the hashes that cover those (``row_sha256``, ``inputs_sha256``): a re-run
+    of a night at the same clock has the same one, whatever was published or marked after that clock (every read is
+    causal and stops at D − ε on an insert clock: the generation, the served records, the cycles, the calibration, the
+    rate packages, the 053 marks and the poll, the calendars, the 051 filings, the consensus snapshots) — with ONE
+    declared exception left out of it: the Finnhub sentiment (``inputs.events.sentiment``, ``checks.events.sentiment`` and
+    the ``NEWS_SENTIMENT_NEGATIVE`` mark). Its source overwrites the week's row on every poll, so a replay cannot see the
+    value read at D; that value stays in the record, and the code is never a gate (``NEVER_GATES``)."""
+    content = copy.deepcopy({key: value for key, value in record.items() if key not in REPLAY_EXCLUDED_KEYS})
+    for part in ("inputs", "checks"):
+        events = (content.get(part) or {}).get("events") if isinstance(content.get(part), Mapping) else None
+        if isinstance(events, dict):
+            events.pop("sentiment", None)
+            for listing in ("raised", "marks"):
+                if isinstance(events.get(listing), list):
+                    events[listing] = [code for code in events[listing] if code != NEWS_SENTIMENT_NEGATIVE]
+    return canonical_sha256(content)
 
 
 # ------------------------------------------------------------------ the nightly shadow run
@@ -977,11 +1137,14 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
     errors: dict[tuple[str, str], dict[str, Any]] = {}
     us_staleness: dict[str, Any] | None = None  # migration 053 read ONCE per run, at the run's clock, for both US markets
     us_filings: dict[str, Any] | None = None  # the 051 fallback of the earnings rule, read once (US)
-    earnings_calendar = calendar_at(database, instant)  # the calendar snapshot received by the run's clock, read once
+    margin = timedelta(seconds=thresholds.insert_margin_seconds)  # ε: every read on an insert clock stops at D − ε
+    calendars = calendars_at(database, instant, recent_hours=thresholds.earnings_calendar_max_age_hours,
+                             margin_seconds=thresholds.insert_margin_seconds)  # the calendars this run may read, once
     for market in MARKETS:
         stats: dict[str, Any] = {"decided": 0, "verdicts": {verdict: 0 for verdict in VERDICTS}, "reasons": {}, "unrecordable": 0,
-                                 "tp_after_run_instant": 0, "quotes_refused": 0, "expected_session": None, "calendar_unavailable": False,
-                                 "tp_staleness_source": STALENESS_NOT_APPLICABLE, "earnings_calendar": earnings_calendar.get("status"),
+                                 "tp_after_run_instant": 0, "tp_published_after_run_instant": 0, "quotes_refused": 0, "expected_session": None,
+                                 "calendar_unavailable": False, "tp_staleness_source": STALENESS_NOT_APPLICABLE,
+                                 "earnings_calendars": {"recent": len(calendars["recent"]), "latest": calendars["latest"] is not None},
                                  "marks": {}, "verdicts_without_events": {verdict: 0 for verdict in VERDICTS}}
         receipt["markets"][market] = stats
         try:
@@ -994,22 +1157,29 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
         if group not in rates:
             rates[group] = market_rate(database, market, at=instant, generation=generation, thresholds=thresholds)
         if group == "US":
-            if us_staleness is None:
-                poll = database.ingestion_run_completed_at_or_before(thresholds.staleness_poll_source, instant)
-                us_staleness = {**us_staleness_at(database, instant), "trigger_poll": poll_reference(poll, thresholds.staleness_poll_source)}
-                us_filings = filings_known_at(database, instant)
+            if us_staleness is None:  # the poll first (a SUCCESSFUL run with progress, completed by D − ε), then the table
+                poll = database.ingestion_run_completed_at_or_before(thresholds.staleness_poll_source, instant - margin, min_records_read=1)
+                us_staleness = {**us_staleness_at(database, instant, margin_seconds=thresholds.insert_margin_seconds),
+                                "trigger_poll": poll_reference(poll, thresholds.staleness_poll_source)}
+                us_filings = filings_known_at(database, instant, lookback_days=thresholds.earnings_filings_lookback_days,
+                                              margin_seconds=thresholds.insert_margin_seconds)
             stats["tp_staleness_source"] = str(us_staleness.get("status"))
         latest_universe = database.analysis_snapshot_at_or_before(official.UNIVERSE_ANALYSIS, f"{market}_UNIVERSE", instant)
         served = _served_rows(database, market, generation)
         symbols = sorted(served)
-        consensus_now = database.v2_forward_eps_at_or_before(market, symbols, instant)
-        consensus_at_tp: dict[datetime, dict[str, Any] | None] = {}  # by the TP's publication clock: one read per distinct clock
-        sentiment = database.news_sentiment_at(symbols, instant) if group == "US" else {}
+        consensus_now = database.v2_forward_eps_at_or_before(market, symbols, instant - margin)
+        consensus_past = database.v2_forward_eps_at_or_before(market, symbols, instant - timedelta(days=thresholds.consensus_lookback_days) - margin)
+        sentiment = database.news_sentiment_at(symbols, instant - margin) if group == "US" else {}
         for symbol, row in sorted(served.items()):
             if _utc(row["prediction_instant"]) > instant:  # causal: a TP predicted after the run's clock is not one this run could read
                 logger.warning("valuation_decision: %s/%s not decided — its TP was predicted at %s, after the run's clock %s", market, symbol,
                                _utc(row["prediction_instant"]).isoformat(), instant.isoformat())
                 stats["tp_after_run_instant"] += 1
+                continue
+            if row.get("official_published_at") and _utc(row["official_published_at"]) > instant - margin:
+                # a record published after the run's clock (a bootstrap of old cycles) was not there to be read: a replay of an
+                # earlier night never decides on it (counted, aggregate)
+                stats["tp_published_after_run_instant"] += 1
                 continue
             try:
                 behind = _sessions_behind(market, str(row.get("official_session_date") or ""), expected)
@@ -1025,15 +1195,10 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
             if price["quote_refused"]:
                 stats["quotes_refused"] += 1
             staleness = name_staleness(us_staleness if group == "US" else None, market, symbol, thresholds=thresholds)
-            # the TP's publication (its prediction instant for a record without one), never later than the run's clock: a record
-            # published after it (a bootstrap of old cycles) must not let a later consensus snapshot into an earlier night
-            tp_clock = min(_utc(row.get("official_published_at") or row["prediction_instant"]), instant)
-            if tp_clock not in consensus_at_tp:
-                consensus_at_tp[tp_clock] = database.v2_forward_eps_at_or_before(market, symbols, tp_clock)
             events = {"market": market,
-                      "earnings": name_earnings(earnings_calendar, us_filings if group == "US" else None, market, symbol, at=instant,
+                      "earnings": name_earnings(calendars, us_filings if group == "US" else None, market, symbol, at=instant,
                                                 expected_session=expected, thresholds=thresholds),
-                      "consensus": name_consensus(consensus_now, consensus_at_tp[tp_clock], symbol, tp_clock=tp_clock),
+                      "consensus": name_consensus(consensus_now, consensus_past, symbol, thresholds=thresholds),
                       "sentiment": name_sentiment(sentiment.get(symbol), market, symbol, at=instant)}
             outcome = decide(row, expected_session=expected, tp_sessions_behind=behind, price=price, error=errors[(market, profile)],
                              rate=rates[group], staleness=staleness, events=events, thresholds=thresholds)
