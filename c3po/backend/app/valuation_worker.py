@@ -5,6 +5,7 @@ from datetime import datetime, time as wall_time, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from . import valuation_env
 from .chewie_fundamentals import ChewieFundamentalsService
 from .maintenance_gate import job, startup_job
 from .config import Settings, get_settings
@@ -411,8 +412,8 @@ def main() -> None:
                 ),
             ) if settings.r2d2_cash_yield_accounting_enabled else ()),
             # Decisor V1 (migration 052): LAST, after the official cut and every existing phase — it never delays one; dormant until the mesa enables it
-            *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True, settings=settings)),)
-              if settings.valuation_decisor_shadow else ()),
+            *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True)),)
+              if valuation_env.decisor_shadow_enabled() else ()),
         )
 
     while True:
@@ -454,7 +455,7 @@ def main() -> None:
                     investor_relations,
                     screener,
                     us_screener,
-                    asfiled_enabled=settings.valuation_asfiled_enabled,
+                    asfiled_enabled=valuation_env.asfiled_enabled(),
                 ),
                 offhours_phases=offhours_phases,
                 healthchecks=healthchecks,

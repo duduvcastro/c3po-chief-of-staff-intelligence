@@ -88,7 +88,8 @@ recusadas) — não nomeia símbolo. CLI: `python -m app.valuation_decision --dr
 flag desligada), `--verdict MERCADO:SÍMBOLO`.
 
 `run_shadow` é **dry run por padrão**; grava só com `write=True` **e** a flag ligada (quem quer que chame — senão
-`ValueError`). Rodada com cotações de quem chama (`quotes`) é sempre dry run: nada intradiário substitui os veredictos
+`ValueError`). A flag é lida do ambiente do processo (`app/valuation_env.py`, não `Settings`: `config.py` entra no hash do
+pacote do R2D2 V2); `run_shadow(enabled=…)` a fixa só para quem chama explicitamente (testes). Rodada com cotações de quem chama (`quotes`) é sempre dry run: nada intradiário substitui os veredictos
 noturnos que o laboratório lê. Cotação sem `as_of` legível, com `as_of` depois do relógio da rodada ou mais velha que
 `max_quote_age_minutes` é recusada (`quote_refused` na procedência) e a fonte noturna responde.
 

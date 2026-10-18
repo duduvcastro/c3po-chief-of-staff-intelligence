@@ -64,8 +64,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
+from . import valuation_env
 from . import valuation_official as official
-from .config import Settings, get_settings
+from .config import get_settings
 from .valuation_official import (MARKETS, CalendarUnavailable, canonical_sha256, current_generation, cycle_rows, generation_at, official_row, official_rows,
                                  session_date_of)
 from .valuation_v3_macro import ValuationV3MacroDataError, package_hash_is_valid, validate_us_curve_package
@@ -604,11 +605,12 @@ ROW_INPUT_KEYS = ("valuation_profile", "fundamentals_as_of", "as_of", "tp_valida
 
 
 def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
-               thresholds: DecisorThresholds = THRESHOLDS, write: bool = False, settings: Settings | None = None) -> dict[str, Any]:
+               thresholds: DecisorThresholds = THRESHOLDS, write: bool = False, enabled: bool | None = None) -> dict[str, Any]:
     """One decision run over the generation IN FORCE AT the run's clock (``generation_at``: a replay with a past ``now``
     reads what that night saw, never a later selection): a verdict per served name. A dry run by default (the receipt
     only); ``write=True`` records every verdict in ONE append (idempotent per ``(run_id, market, symbol)``) — refused
-    (``ValueError``, nothing read) while ``C3PO_VALUATION_DECISOR_SHADOW`` is off (``settings``, else the process's) and
+    (``ValueError``, nothing read) while ``C3PO_VALUATION_DECISOR_SHADOW`` is off (``enabled``, else the process's environment,
+    ``valuation_env.decisor_shadow_enabled``) and
     for a run on ``quotes``: a caller's quotes (``(market, symbol) → {price, ask, as_of, source}``, fresh ones only — see
     ``_price_observation``) are for a dry run, so nothing intraday replaces the nightly verdicts in the lab's reads. ``now``
     is the run's clock (the wall clock by default); ``published_at`` is the later of it and the wall clock read
@@ -619,7 +621,7 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
     if write and quotes:
         raise ValueError("a run on a caller's quotes is a dry run (write=False): the nightly verdicts are decided on the official cut and the cycles "
                          "published after it, and nothing intraday replaces them")
-    if write and not (settings if settings is not None else get_settings()).valuation_decisor_shadow:
+    if write and not (enabled if enabled is not None else valuation_env.decisor_shadow_enabled()):
         raise ValueError("C3PO_VALUATION_DECISOR_SHADOW is off: the decisor records nothing (a dry run decides without writing)")
     frozen = _prereg_frozen(thresholds)
     digest = thresholds_sha256(thresholds)
@@ -785,7 +787,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     from .database import Database
     settings = get_settings()
-    if args.run and not settings.valuation_decisor_shadow:
+    if args.run and not valuation_env.decisor_shadow_enabled():
         parser.error("C3PO_VALUATION_DECISOR_SHADOW is off: the decisor records nothing (use --dry-run)")
     database = Database(settings)
     if args.verdict:
@@ -794,7 +796,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--verdict expects MARKET:SYMBOL")
         result: Any = latest_verdict(database, market.strip().upper(), symbol)
     else:
-        result = run_shadow(database, write=args.run, settings=settings)
+        result = run_shadow(database, write=args.run)
     print(json.dumps(result, sort_keys=True, default=str))
     return 0
 

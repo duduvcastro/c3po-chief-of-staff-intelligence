@@ -8,6 +8,7 @@ from threading import Lock, RLock
 from typing import Any, Literal, TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from .. import valuation_env
 from ..config import Settings
 from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
@@ -340,7 +341,7 @@ class USScreeningService:
             rows.append(row)
             audit["calculated_tp"] += 1
 
-        if self.settings.valuation_asfiled_enabled:
+        if valuation_env.asfiled_enabled():
             self._record_asfiled_reconciliation(
                 market, fundamentals, [quote.symbol for _, quote, metadata in selected if not self._is_etf(metadata)], eodhd_fetched_at,
             )

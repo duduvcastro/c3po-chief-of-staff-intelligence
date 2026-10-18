@@ -46,6 +46,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from . import valuation_env
 from .config import Settings
 from .database import Database
 from .statement_vintages import StatementVintageStore, as_date, utc_instant
@@ -474,8 +475,8 @@ class SecXbrlClient:
     paced, contact in the User-Agent."""
 
     def __init__(self, settings: Settings, *, http: httpx.Client | None = None, limiter: SecRateLimiter | None = None) -> None:
-        self.user_agent = sec_user_agent(settings.sec_contact)
-        self.limiter = limiter or process_rate_limiter(settings.sec_max_requests_per_second)
+        self.user_agent = sec_user_agent(valuation_env.sec_contact())  # the host's environment, never Settings (app/valuation_env.py)
+        self.limiter = limiter or process_rate_limiter(valuation_env.sec_max_requests_per_second())
         self.data_base_url = settings.sec_data_base_url.rstrip("/")
         self.archives_base_url = settings.sec_archives_base_url.rstrip("/")
         self.http = http or httpx.Client(timeout=httpx.Timeout(30.0), follow_redirects=True)

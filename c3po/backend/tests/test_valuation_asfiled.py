@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from app import valuation_asfiled as asfiled
-from app import valuation_worker
+from app import valuation_env, valuation_worker
 from app.config import Settings
 from app.database import Database
 from app.investor_relations import SEC_ACCEPTANCE_FROM_HEADER, SEC_ACCEPTANCE_FROM_SUBMISSIONS, InvestorRelationsService
@@ -39,9 +39,15 @@ class NoWaitLimiter(SecRateLimiter):
         return None
 
 
+@pytest.fixture(autouse=True)
+def _host_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The host's SEC contact and the as-filed switch: environment, never Settings (app/valuation_env.py)."""
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "contact-placeholder.invalid")
+    monkeypatch.setenv(valuation_env.ASFILED_ENABLED_ENV, "true")
+
+
 def _settings(**overrides: Any) -> Settings:
-    values: dict[str, Any] = {"database_url": "", "sec_contact": "contact-placeholder.invalid", "valuation_asfiled_enabled": True,
-                              "auth_cookie_secure": False}
+    values: dict[str, Any] = {"database_url": "", "auth_cookie_secure": False}
     values.update(overrides)
     return Settings(**values)
 
@@ -248,7 +254,7 @@ def test_the_us_producer_hook_is_shadow_only_and_never_fails_the_build(monkeypat
     screener._record_asfiled_reconciliation("NASDAQ", {"SYNT": {"totalRevenue": 1.0}, "EMPTY": {}}, ["SYNT", "EMPTY", "GONE"], fetched_at)
     assert calls == [("NASDAQ", {"SYNT": {"totalRevenue": 1.0}}, fetched_at)]  # the exception was logged, not raised
     source = (Path(__file__).resolve().parents[1] / "app" / "market_data" / "us_screener.py").read_text(encoding="utf-8")
-    assert "if self.settings.valuation_asfiled_enabled:\n            self._record_asfiled_reconciliation(" in source
+    assert "if valuation_env.asfiled_enabled():\n            self._record_asfiled_reconciliation(" in source
 
 
 # -- the US revaluation trigger ----------------------------------------------------------------------------------------
@@ -492,23 +498,27 @@ def test_the_ir_worker_never_rereads_a_registered_header_and_survives_a_registry
 def test_every_sec_request_of_the_ir_client_waits_on_the_process_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
     acquired: list[str] = []
     monkeypatch.setattr("app.investor_relations.process_rate_limiter", lambda rate: SimpleNamespace(acquire=lambda: acquired.append(str(rate))))
-    ir, _ = _ir(sec_max_requests_per_second=3.0)
+    monkeypatch.setenv(valuation_env.SEC_MAX_REQUESTS_PER_SECOND_ENV, "3.0")
+    ir, _ = _ir()
     ir._sec_fair_access(httpx.Request("GET", "https://data.sec.gov/submissions/CIK0000999001.json"))
     ir._sec_fair_access(httpx.Request("GET", "https://efts.sec.gov/LATEST/search-index"))
     ir._sec_fair_access(httpx.Request("GET", "https://finnhub.io/api/v1/news"))
     assert acquired == ["3.0", "3.0"]
 
 
-def test_the_asfiled_poll_is_off_by_default_and_refuses_without_the_sec_contact() -> None:
-    ir, database = _ir(valuation_asfiled_enabled=False, read_sec_headers=True)
+def test_the_asfiled_poll_is_off_by_default_and_refuses_without_the_sec_contact(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(valuation_env.ASFILED_ENABLED_ENV)
+    ir, database = _ir(read_sec_headers=True)
     assert ir.sync("sec_asfiled").sources == {"sec_asfiled": "ok · 0 records"}
     assert not any(run.get("source_code") == "sec_asfiled" for run in database._ingestion_runs.values())
     # enabled, but not the header-reading process (API, valuation and R2D2 workers): no pass, no SEC client, no run
+    monkeypatch.setenv(valuation_env.ASFILED_ENABLED_ENV, "true")
     elsewhere, database = _ir()
     assert elsewhere.sync("sec_asfiled").sources == {"sec_asfiled": "ok · 0 records"}
     assert elsewhere.sec_client is None and elsewhere._asfiled_ingestor is None
     assert not any(run.get("source_code") == "sec_asfiled" for run in database._ingestion_runs.values())
-    refused, database = _ir(sec_contact="", read_sec_headers=True)
+    monkeypatch.delenv(valuation_env.SEC_CONTACT_ENV)
+    refused, database = _ir(read_sec_headers=True)
     state = refused.sync("sec_asfiled").sources["sec_asfiled"]
     assert state.startswith("error · C3PO_SEC_CONTACT is not configured")
     runs = [run for run in database._ingestion_runs.values() if run.get("source_code") == "sec_asfiled"]
@@ -519,6 +529,7 @@ def test_the_asfiled_poll_extends_the_sec_polling_to_the_valuation_universe(monk
     fake = fx.EdgarFake()
     monkeypatch.setattr("app.investor_relations.SecXbrlClient", lambda settings: _client(fake))
     monkeypatch.setattr("app.investor_relations.datetime", _FrozenDatetime)
+    monkeypatch.setenv(valuation_env.ASFILED_BACKFILL_ENV, "3")  # the host's environment, never Settings
     ir, database = _ir(read_sec_headers=True)
     _publish(database, "NASDAQ", [_universe_row("SYNT", fundamentals_as_of="2025-09-30")], datetime(2026, 2, 20, 5, tzinfo=UTC))
     selected: list[str] = []
@@ -537,3 +548,4 @@ def test_the_asfiled_poll_extends_the_sec_polling_to_the_valuation_universe(monk
     assert runs[-1]["status"] == "succeeded"
     assert ir._asfiled_ingestor is not None and original()[1] == 0  # the second poll reuses the ingestor and writes nothing new
     assert ir._asfiled_ingestor.client is ir.sec_client  # one SEC header client per process: the sync_sec step's and the poll's
+    assert ir._asfiled_ingestor.backfill_per_poll == 3

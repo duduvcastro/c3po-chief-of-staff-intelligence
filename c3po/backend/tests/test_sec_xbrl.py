@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from app import sec_xbrl
+from app import sec_xbrl, valuation_env
 from app.config import Settings
 from app.database import Database
 from app.sec_xbrl import (
@@ -47,8 +47,15 @@ class NoWaitLimiter(SecRateLimiter):
         self.acquired += 1
 
 
+@pytest.fixture(autouse=True)
+def _host_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The host's SEC contact and the as-filed switch: environment, never Settings (app/valuation_env.py)."""
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "contact-placeholder.invalid")
+    monkeypatch.setenv(valuation_env.ASFILED_ENABLED_ENV, "true")
+
+
 def _settings(**overrides: Any) -> Settings:
-    values: dict[str, Any] = {"database_url": "", "sec_contact": "contact-placeholder.invalid", "valuation_asfiled_enabled": True}
+    values: dict[str, Any] = {"database_url": ""}
     values.update(overrides)
     return Settings(**values)
 
@@ -97,11 +104,16 @@ def test_recent_filings_keep_the_raw_json_clock_and_its_correction() -> None:
 
 # -- the client --------------------------------------------------------------------------------------------------------
 
-def test_the_client_refuses_to_exist_without_the_sec_contact() -> None:
+def test_the_client_refuses_to_exist_without_the_sec_contact(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert "contact-placeholder" not in repr(_settings())  # the contact is never part of Settings, so never of its repr/log
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "   ")
     with pytest.raises(SecContactMissing, match="C3PO_SEC_CONTACT"):
-        SecXbrlClient(_settings(sec_contact="   "))
-    assert Settings().sec_contact == "" and Settings().valuation_asfiled_enabled is False  # nothing ships enabled or with a contact
-    assert "sec_contact" not in repr(_settings())  # the contact never lands in a settings repr/log
+        SecXbrlClient(_settings())
+    monkeypatch.delenv(valuation_env.SEC_CONTACT_ENV)
+    monkeypatch.delenv(valuation_env.ASFILED_ENABLED_ENV)
+    with pytest.raises(SecContactMissing, match="C3PO_SEC_CONTACT"):
+        SecXbrlClient(_settings())
+    assert valuation_env.sec_contact() == "" and valuation_env.asfiled_enabled() is False  # nothing ships enabled or with a contact
 
 
 def test_the_client_sends_the_contact_user_agent_and_only_calls_the_sec() -> None:
@@ -148,7 +160,8 @@ def test_the_process_limiter_is_shared_and_only_ever_lowered(monkeypatch: pytest
     assert sec_xbrl.process_rate_limiter(3.0) is first and first.rate == 3.0
     # the limiter is per process and three processes call EDGAR (API, IR worker, valuation worker): the default keeps the
     # host under the 8/s fair-access ceiling even when all three run at once
-    assert 3 * Settings().sec_max_requests_per_second <= sec_xbrl.SEC_FAIR_ACCESS_MAX_PER_SECOND
+    monkeypatch.delenv(valuation_env.SEC_MAX_REQUESTS_PER_SECOND_ENV, raising=False)
+    assert 3 * valuation_env.sec_max_requests_per_second() <= sec_xbrl.SEC_FAIR_ACCESS_MAX_PER_SECOND
     assert sec_xbrl.is_sec_host("data.sec.gov") and sec_xbrl.is_sec_host("www.sec.gov") and not sec_xbrl.is_sec_host("sec.gov.example.com")
 
 

@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app import valuation_decision as decisor
+from app import valuation_env
 from app import valuation_official as official
 from app.config import Settings
 from app.database import Database
@@ -29,7 +30,6 @@ ROOT = Path(__file__).resolve().parents[2]
 CUT = datetime(2026, 10, 14, 3, 5, tzinfo=timezone.utc)  # 00:05 BRT Wednesday: the official cut after Tuesday's sessions
 RUN = datetime(2026, 10, 14, 4, 30, tzinfo=timezone.utc)  # 01:30 BRT: the decisor's off-hours phase
 SESSION = "2026-10-13"
-ENABLED = Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False, valuation_decisor_shadow=True)
 
 
 def _database() -> Database:
@@ -37,8 +37,8 @@ def _database() -> Database:
 
 
 def _run(database: Database, *, now: datetime = RUN, **extra: Any) -> dict[str, Any]:
-    """A RECORDED run: writes need the flag on (the worker and the CLI pass the process's settings)."""
-    return decisor.run_shadow(database, now=now, write=True, settings=ENABLED, **extra)
+    """A RECORDED run: writes need the flag on (the worker and the CLI read the process's environment, ``valuation_env``)."""
+    return decisor.run_shadow(database, now=now, write=True, enabled=True, **extra)
 
 
 @contextmanager
@@ -430,7 +430,7 @@ def test_a_newer_universe_cycle_is_the_price_and_a_targeted_admission_is_decided
     assert len(database.list_valuation_decisions("B3", "PETR4")) == 1  # a dry run writes nothing
 
 
-def test_a_callers_quote_is_for_a_dry_run_only_and_a_stale_one_is_refused() -> None:
+def test_a_callers_quote_is_for_a_dry_run_only_and_a_stale_one_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     database = _database()
     _night(database)
     live = {("B3", "PETR4"): {"price": 33.0, "ask": 33.1, "as_of": RUN, "source": "eodhd_live"}}
@@ -439,7 +439,10 @@ def test_a_callers_quote_is_for_a_dry_run_only_and_a_stale_one_is_refused() -> N
         _run(database, quotes=live)
     # and no run records while the flag is off — whoever calls
     with pytest.raises(ValueError, match="C3PO_VALUATION_DECISOR_SHADOW is off"):
-        decisor.run_shadow(database, now=RUN, write=True, settings=Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+        decisor.run_shadow(database, now=RUN, write=True, enabled=False)
+    monkeypatch.delenv(valuation_env.DECISOR_SHADOW_ENV, raising=False)  # the process's own flag (the worker's and the CLI's): off by default
+    with pytest.raises(ValueError, match="C3PO_VALUATION_DECISOR_SHADOW is off"):
+        decisor.run_shadow(database, now=RUN, write=True)
     assert database._valuation_decisions == [] and decisor.last_run_at(database) is None
     # a quote older than the block's limit, from after the run's clock, or undated is refused: the nightly sources answer
     for refused in ({"price": 33.0, "as_of": RUN - timedelta(minutes=16)}, {"price": 33.0, "as_of": RUN + timedelta(minutes=1)}, {"price": 33.0},
@@ -678,12 +681,15 @@ def test_the_phase_decides_once_per_generation_inside_the_worker_iteration() -> 
     assert second.phase_statuses == {} and len(database._valuation_decisions) == 4
 
 
-def test_the_nightly_phase_is_flagged_off_and_runs_last() -> None:
-    assert Settings().valuation_decisor_shadow is False
+def test_the_nightly_phase_is_flagged_off_and_runs_last(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(valuation_env.DECISOR_SHADOW_ENV, raising=False)
+    assert valuation_env.decisor_shadow_enabled() is False and "valuation_decisor_shadow" not in Settings.model_fields  # the environment, never config.py
+    monkeypatch.setenv(valuation_env.DECISOR_SHADOW_ENV, "true")
+    assert valuation_env.decisor_shadow_enabled() is True
     assert VALUATION_WORKER_PHASES["decisor_shadow"]["code"] == "valuation-worker-decisor-shadow"
     assert "decisor_shadow" not in VALUATION_WORKER_OFFHOURS_PHASES  # flag-gated, like price_history
     source = (ROOT / "backend" / "app" / "valuation_worker.py").read_text(encoding="utf-8")
     phases = source[source.index("offhours_phases = ("):source.index("while True:")]
     assert phases.index("OffhoursPhase(\"decisor_shadow\"") > max(phases.index("CASH_YIELD_PHASE_KEY"), phases.index("\"price_history\""))
-    assert "if settings.valuation_decisor_shadow else ()" in phases
-    assert "run_decisor_shadow(database, write=True, settings=settings)" in phases  # the phase records; run_shadow refuses it with the flag off
+    assert "if valuation_env.decisor_shadow_enabled() else ()" in phases
+    assert "run_decisor_shadow(database, write=True)" in phases  # the phase records; run_shadow refuses it with the flag off

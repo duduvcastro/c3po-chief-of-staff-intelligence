@@ -163,6 +163,25 @@ instante real **mais** o deslocamento UTC de Nova York.
 * Marca `stale` pendente é reconferida a cada passe, qualquer que seja a idade. `stale_us_tps` devolve as pendentes por
   símbolo — o que a frente de decisão (052) deve ler antes de confiar num TP dos EUA.
 
+## Chaves (variáveis de ambiente, não `Settings`)
+
+`config.py` entra no hash do pacote de implementação do R2D2 V2 (`r2d2_v2_earnings_package.PACKAGE_FILES`): um campo
+novo ali muda o `implementation_package_sha` amarrado à release, ao coletor sombra
+(`COLLECTOR_IMPLEMENTATION_PACKAGE_MISMATCH`) e à configuração de capacidade (`CAPACITY_CONFIG_PACKAGE`). Por isso o
+contato e o ritmo da SEC e as chaves desta frente e do decisor são lidos do ambiente, no momento da chamada, por
+`app/valuation_env.py` — como as chaves da frente CVM (`official_statements`) e dos produtores do R2D2 V2. O `env_file`
+do compose põe os valores do host no ambiente do processo; os nomes são os mesmos.
+
+| variável | padrão | quem lê |
+|---|---|---|
+| `C3PO_SEC_CONTACT` | vazio (nenhuma chamada de cabeçalho nem as-filed) | `SecXbrlClient` (User-Agent) |
+| `C3PO_SEC_MAX_REQUESTS_PER_SECOND` | 2,5 (0 < taxa ≤ 8) | o limitador SEC de cada processo |
+| `C3PO_VALUATION_ASFILED_ENABLED` | desligada | poll do worker de IR, gatilho de reavaliação, corte noturno, gancho sombra do produtor EUA |
+| `C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL` | 10 (0 a 200) | backfill do poll as-filed |
+| `C3PO_VALUATION_DECISOR_SHADOW` | desligada | fase noturna do decisor, gravação e saúde da fase |
+
+Valor ilegível volta ao padrão (chave: desligada); número fora da faixa é trazido para dentro dela.
+
 ## Operação
 
 1. Host: `C3PO_SEC_CONTACT` configurado (contato real, fora do repositório); opcional `C3PO_SEC_MAX_REQUESTS_PER_SECOND`.

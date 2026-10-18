@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import httpx
 import pytest
 
+from app import valuation_env
 from app.config import Settings
 from app.cvm_fundamentals import extract_itr_official_fundamentals
 from app.database import Database
@@ -1135,7 +1136,7 @@ def test_sec_rate_limiter_keeps_requests_at_or_below_eight_per_second():
     for _ in range(4):
         limiter.acquire()
     assert pauses == pytest.approx([0.125, 0.25, 0.375])  # four requests at one instant leave 1/8 s between each
-    assert SecRateLimiter(50.0).rate == 8.0 and Settings().sec_max_requests_per_second <= 8.0  # never above 8/s
+    assert SecRateLimiter(50.0).rate == 8.0 and valuation_env.sec_max_requests_per_second() <= 8.0  # never above 8/s
 
 
 class _SecResponse:
@@ -1190,12 +1191,12 @@ def _serve(ir: InvestorRelationsService, archive: _SecArchive) -> _PacedLimiter:
     contact is configured, its one SEC header client (without a contact that client refuses to exist)."""
     ir.client = archive
     limiter = _PacedLimiter()
-    if ir.settings.sec_contact.strip():
+    if valuation_env.sec_contact():
         ir.sec_client = SecXbrlClient(ir.settings, http=archive, limiter=limiter)  # type: ignore[arg-type]
     return limiter
 
 
-def test_sync_sec_takes_the_filing_header_once_and_never_calls_the_sec_without_a_contact(tmp_path, caplog):
+def test_sync_sec_takes_the_filing_header_once_and_never_calls_the_sec_without_a_contact(tmp_path, caplog, monkeypatch):
     accepted_local = datetime.combine(date.today() - timedelta(days=3), time(16, 30, 28), tzinfo=NEW_YORK)
     accepted = accepted_local.astimezone(timezone.utc)
     label = (accepted - accepted_local.utcoffset()).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # the JSON: true instant + NY offset
@@ -1207,6 +1208,7 @@ def test_sync_sec_takes_the_filing_header_once_and_never_calls_the_sec_without_a
     database = Database(Settings(**base))
 
     # 1) no C3PO_SEC_CONTACT: no header is requested; the corrected JSON reading is stored and labelled as such
+    monkeypatch.delenv(valuation_env.SEC_CONTACT_ENV, raising=False)
     without_contact = InvestorRelationsService(Settings(**base), database, read_sec_headers=True)
     archive = _SecArchive(payload, header)
     _serve(without_contact, archive)
@@ -1217,9 +1219,8 @@ def test_sync_sec_takes_the_filing_header_once_and_never_calls_the_sec_without_a
     assert stored["published_at"] == accepted and stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
 
     # 2) with a contact: the header is read once, paced, identified by the contact, and its instant becomes the event's
-    with_contact = InvestorRelationsService(
-        Settings(**base, sec_contact="C3PO test desk"), database, read_sec_headers=True,
-    )
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")  # the host's environment, never Settings
+    with_contact = InvestorRelationsService(Settings(**base), database, read_sec_headers=True)
     archive = _SecArchive(payload, header)
     limiter = _serve(with_contact, archive)
     with_contact.sync_sec()
@@ -1242,9 +1243,9 @@ def test_sync_sec_takes_the_filing_header_once_and_never_calls_the_sec_without_a
     assert database._ir_events[("sec", accession)]["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
 
 
-def test_sec_header_wins_over_the_json_and_a_semantics_change_is_reported(tmp_path, caplog):
+def test_sec_header_wins_over_the_json_and_a_semantics_change_is_reported(tmp_path, caplog, monkeypatch):
     ir, database = service(tmp_path)
-    ir.settings.sec_contact = "C3PO test desk"
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
     ir.read_sec_headers = True
     payload, recent = _submissions(["2026-07-31T00:30:28.000Z"], ["0000320193-26-000018"])
     event = ir._sec_event(payload, recent, 0, None, datetime(2025, 10, 1, tzinfo=timezone.utc))
@@ -1327,11 +1328,12 @@ def _header_reader(settings: Settings, database: Database, archive: _SecArchive,
     return ir
 
 
-def test_a_failing_header_step_never_fails_sync_sec_nor_the_insider_events_r2d2_reads(tmp_path, caplog):
+def test_a_failing_header_step_never_fails_sync_sec_nor_the_insider_events_r2d2_reads(tmp_path, caplog, monkeypatch):
     """sync_sec also ingests the Finnhub/EODHD insider events of R2D2's risk source (RC-4): the header step must be
     best-effort like the full-text enrichment. Its stored-instant lookup used to raise straight out of sync_sec, failing
     the run and dropping that sync's insider events."""
-    settings = _sec_settings(tmp_path, finnhub_api_token="test-token", sec_contact="C3PO test desk")
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path, finnhub_api_token="test-token")
     database = Database(settings)
     payload, accessions, accepted = _recent_sec_filings(1)
     ir = _header_reader(settings, database, _SecHeaders(payload), read_sec_headers=True)
@@ -1352,10 +1354,11 @@ def test_a_failing_header_step_never_fails_sync_sec_nor_the_insider_events_r2d2_
     assert "acceptance step skipped (RuntimeError)" in caplog.text
 
 
-def test_only_the_header_reader_process_requests_headers_the_others_reuse_what_it_stored(tmp_path):
+def test_only_the_header_reader_process_requests_headers_the_others_reuse_what_it_stored(tmp_path, monkeypatch):
     """Four processes build their own service; only the IR worker's (read_sec_headers=True) calls the SEC for headers,
     so its 8 req/s pacing is the host's. The API's sync reuses the stored header instant and never downgrades it."""
-    settings = _sec_settings(tmp_path, sec_contact="C3PO test desk")
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path)
     database = Database(settings)
     payload, accessions, accepted = _recent_sec_filings(2)
 
@@ -1378,10 +1381,11 @@ def test_only_the_header_reader_process_requests_headers_the_others_reuse_what_i
 
 
 @pytest.mark.parametrize("status", [403, 429])
-def test_sec_throttling_stops_the_header_reads_of_that_sync(tmp_path, caplog, status):
+def test_sec_throttling_stops_the_header_reads_of_that_sync(tmp_path, caplog, status, monkeypatch):
     """A 403/429 is the SEC throttling this host: the rest of the sync's header reads are skipped (they used to go on,
     up to 40 more requests), nothing is penalised, and the next sync reads them."""
-    settings = _sec_settings(tmp_path, sec_contact="C3PO test desk")
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path)
     database = Database(settings)
     payload, accessions, _ = _recent_sec_filings(3)
 
@@ -1405,7 +1409,8 @@ def test_a_failing_header_backs_off_and_no_longer_holds_the_newest_slot(tmp_path
     """Reads go newest first: a header that keeps failing (an HTTP error, or no ACCEPTANCE-DATETIME) used to take a slot
     again on every sync. It now waits 1 h, 2 h, 4 h … (at most a day) and the next filings get read meanwhile."""
     monkeypatch.setattr("app.investor_relations.SEC_HEADER_READS_PER_SYNC", 1)
-    settings = _sec_settings(tmp_path, sec_contact="C3PO test desk")
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path)
     database = Database(settings)
     payload, accessions, accepted = _recent_sec_filings(2)
     archive = _SecHeaders(payload, {accessions[0]: failure})
@@ -1435,7 +1440,8 @@ def test_a_failing_header_backs_off_and_no_longer_holds_the_newest_slot(tmp_path
     assert ir._sec_header_failures[accessions[0]][1] - datetime.now(timezone.utc) <= timedelta(days=1)
 
 
-def test_a_missing_sec_contact_is_reported_once_per_process(tmp_path, caplog):
+def test_a_missing_sec_contact_is_reported_once_per_process(tmp_path, caplog, monkeypatch):
+    monkeypatch.delenv(valuation_env.SEC_CONTACT_ENV, raising=False)
     settings = _sec_settings(tmp_path)
     payload, _, _ = _recent_sec_filings(1)
     archive = _SecHeaders(payload)

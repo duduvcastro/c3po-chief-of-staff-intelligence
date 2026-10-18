@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from curl_cffi import requests as curl_requests
 
+from . import valuation_env
 from .config import Settings
 from .cvm_fundamentals import (
     CvmPackage,
@@ -211,7 +212,7 @@ class InvestorRelationsService:
         """Every SEC request of this client waits on the process-wide fair-access limiter shared with the as-filed
         client (sec_xbrl.process_rate_limiter): one pace per process, whatever path calls EDGAR."""
         if is_sec_host(request.url.host):
-            process_rate_limiter(self.settings.sec_max_requests_per_second).acquire()
+            process_rate_limiter(valuation_env.sec_max_requests_per_second()).acquire()
 
     def _sec_header_client(self) -> SecXbrlClient:
         """The process's one SEC filing-header client (contact in the User-Agent, paced by the process limiter, the
@@ -737,7 +738,7 @@ class InvestorRelationsService:
         Relations worker; anywhere else it does nothing); refuses to call the SEC without C3PO_SEC_CONTACT (the run
         fails, naming it). Not part of sync("all"): only the Investor Relations worker polls it, so one process carries
         the heavy pass."""
-        if not self.settings.valuation_asfiled_enabled or not self.read_sec_headers:
+        if not valuation_env.asfiled_enabled() or not self.read_sec_headers:
             return 0, 0
         run_id = self.database.begin_ingestion_run(
             "sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure", {"operation": "valuation_universe"},
@@ -747,7 +748,7 @@ class InvestorRelationsService:
                 self._asfiled_ingestor = SecXbrlIngestor(
                     self.database,
                     self._sec_header_client(),
-                    backfill_per_poll=self.settings.valuation_asfiled_backfill_issuers_per_poll,
+                    backfill_per_poll=valuation_env.asfiled_backfill_issuers_per_poll(),
                 )
             ingestor = self._asfiled_ingestor
             universe = us_valuation_universe(self.database)
