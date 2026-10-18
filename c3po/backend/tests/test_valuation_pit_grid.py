@@ -36,12 +36,22 @@ CATALOGUE_PIN = VINTAGE_AT
 SYMBOLS = [symbol for symbols in US.values() for symbol in symbols]
 
 
-@pytest.fixture(autouse=True)
+REAL_VOLUME_CHECK = grid.volume_check
+DECIDED = {"events": 3, "as_traded_like": 3, "split_adjusted_like": 0, "decision": "as_traded", "field": "dollar_volume_median_20", "series_read": 10}
+
+
+@pytest.fixture(autouse=True, name="short_grid_fixture")
+def short_grid_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    short_grid(monkeypatch)
+
+
 def short_grid(monkeypatch: pytest.MonkeyPatch) -> None:
     """The fixture's vintage spans 2023-06-01 … 2024-07-31: the grid starts on 2024-06-03 (200 prior sessions) and ends 22
-    sessions before 2024-07-31 — four instants at a step of 5."""
+    sessions before 2024-07-31 — four instants at a step of 5. Its series hold no split: the volume check is decided here
+    (``DECIDED``) and read for real in its own test."""
     monkeypatch.setattr(backtest, "GRID_START", date(2024, 6, 3))
     monkeypatch.setattr(backtest, "MIN_PRIOR_SESSIONS", 200)
+    monkeypatch.setattr(grid, "volume_check", lambda *args, **kwargs: dict(DECIDED))
 
 
 def _publish_prices(database: Database, *, end: date = date(2024, 7, 31), at: datetime = VINTAGE_AT, scale: float = 1.0) -> None:
@@ -121,7 +131,7 @@ def test_the_plan_is_the_report_modules_grid_and_a_vintage_that_cannot_start_it_
     assert sources["NASDAQ"]["catalogue_rows"] == 5 and sources["NASDAQ"]["pit_sources"] == 5 and len(sources["NASDAQ"]["expected"]) == 10  # EODHD + FMP (absent)
     with pytest.raises(grid.GridError, match="no NASDAQ catalogue published before"):
         grid.resolve_sources(database, backtest.MARKETS, VINTAGE_AT - timedelta(days=1))
-    assert grid.ENGINE_FILES == pit.IMPLEMENTATION_FILES and grid.producer()["engine_files_sha256"] == official.canonical_sha256(grid.engine_files())
+    assert grid.ENGINE_FILES == pit.IMPLEMENTATION_FILES and grid.producer()["engine_sha256"] == official.canonical_sha256({"files": grid.engine_files(), "objects": grid.engine_objects()})
 
 
 def test_the_grid_runs_both_exchanges_per_t_writes_the_manifest_and_resumes_without_recomputing(tmp_path: Path, capsys: pytest.CaptureFixture[str],
@@ -265,11 +275,16 @@ def test_the_stop_window_is_checked_before_every_run_by_clock_and_by_prediction_
     assert grid.main(_args(path, "--stop-before", stop.isoformat()), database=database, settings=_settings(), clock=clock) == 0
     stopped = _manifest(path)
     assert stopped["stopped"] == {"reason": "stop_before", "at": "2024-06-04T04:00:00+00:00", "market": "NYSE"} and stopped["grid"] == [] and len(_runs(database)) == 1
-    # by prediction: the slowest computed instant took 500 s; the next would end after the stop → not started
-    steps = iter(range(0, 10_000, 100))
+    # by prediction, before any instant is measured: 300 s per run, two runs per T, × 1.5 = 900 s → a stop 800 s away starts nothing
+    run = grid.GridRun(database, _settings(), market_group="US", price_pinned_at=PIN, catalogue_pinned_at=CATALOGUE_PIN, statements="provider", step=5,
+                       clock=lambda: now, monotonic=lambda: 0.0, emit=lambda line: None)
+    prior = run.run(start=None, end=None, max_runs=None, stop_before=now + timedelta(seconds=800), recompute_existing=True, owner_order_sha256=None)
+    assert prior["stopped"] == {"reason": "stop_before_predicted", "at": "2024-06-04T04:00:00+00:00"} and prior["grid"] == []
+    # by prediction, measured: the first instant (900 s predicted < 1,200 s) took 1,000 s; the next (1.5 × 1,000 s) would end after the stop → not started
+    steps = iter(range(0, 100_000, 200))
     run = grid.GridRun(database, _settings(), market_group="US", price_pinned_at=PIN, catalogue_pinned_at=CATALOGUE_PIN, statements="provider", step=5,
                        clock=lambda: now, monotonic=lambda: float(next(steps)), emit=lambda line: None)
-    predicted = run.run(start=None, end=None, max_runs=None, stop_before=now + timedelta(seconds=600), recompute_existing=True, owner_order_sha256=None)
+    predicted = run.run(start=None, end=None, max_runs=None, stop_before=now + timedelta(seconds=1200), recompute_existing=True, owner_order_sha256=None)
     assert predicted["stopped"] == {"reason": "stop_before_predicted", "at": "2024-06-11T04:00:00+00:00"} and len(predicted["grid"]) == 2
     # SIGTERM during a run: the run completes, the next one is not started, the manifest is written, the handler restored
     fresh = _store()
@@ -302,11 +317,10 @@ def test_the_manifest_is_printed_before_it_is_written_and_the_producer_can_be_re
     printed = _lines(capsys.readouterr().out)[-1]
     assert printed["kind"] == "manifest" and printed["manifest"]["manifest_sha256"] == printed["manifest_sha256"]  # nothing lost when the write fails
     monkeypatch.undo()
-    monkeypatch.setattr(backtest, "GRID_START", date(2024, 6, 3))
-    monkeypatch.setattr(backtest, "MIN_PRIOR_SESSIONS", 200)
+    short_grid(monkeypatch)
     with pytest.raises(SystemExit):
         grid.main(_args(tmp_path / "x.json", "--expect-producer-sha256", "0" * 64), database=database, settings=_settings())
-    assert grid.main(_args(tmp_path / "y.json", "--to", "2024-06-03", "--expect-producer-sha256", grid.producer()["engine_files_sha256"]),
+    assert grid.main(_args(tmp_path / "y.json", "--to", "2024-06-03", "--expect-producer-sha256", grid.producer()["engine_sha256"]),
                      database=database, settings=_settings()) == 0
     with pytest.raises(SystemExit):
         grid.main(_args(tmp_path / "absent" / "z.json"), database=database, settings=_settings())  # the directory must exist: nothing runs
@@ -333,6 +347,10 @@ def test_reuse_requires_the_same_code_pin_mode_and_a_complete_cycle(tmp_path: Pa
         other_engine = {**grid.engine_files(), "valuation_v3_engine.py": "0" * 64}
         patch.setattr(grid, "engine_files", lambda: other_engine)
         assert not reusable()  # another engine
+    with monkeypatch.context() as patch:
+        other_readers = {**grid.engine_objects(), "app.database.Database.price_bars": "0" * 64}
+        patch.setattr(grid, "engine_objects", lambda: other_readers)
+        assert not reusable()  # another store reader
     original = database.valuation_predictions_for_cycle
     with monkeypatch.context() as patch:
         patch.setattr(database, "valuation_predictions_for_cycle", lambda cycle_id, *, source: dict(list(original(cycle_id, source=source).items())[1:]))
@@ -371,14 +389,93 @@ def test_the_cli_refuses_what_would_not_be_the_pre_registered_grid_and_the_dry_r
     assert printed["price_pin"]["NASDAQ"]["publication_id"] and printed["catalogue_pin"]["NYSE"]["catalogue_rows"] == 5
     assert len(database._analysis_snapshots) == count and os.environ["PGOPTIONS"].endswith(accuracy.READ_ONLY_PGOPTION)
     monkeypatch.setenv("PGOPTIONS", "")
-    database.begin_ingestion_run("synthetic-source", "Synthetic", "test", {})
+    database.begin_ingestion_run("synthetic-source", "Synthetic", "regulatory_disclosure", {})  # an investor-relations poll: seconds long
     assert grid.main(["--market", "US", "--host-check"], database=database, settings=_settings()) == 0
     checked = json.loads(capsys.readouterr().out)
     assert checked["kind"] == "host_check" and checked["publications"]["NYSE"]["symbols"] == 5 and checked["publications"]["NYSE"]["from"] == "2023-06-01"
     assert checked["coverage"] == {"mode": "vintages", "table_present": False, "NASDAQ": {"catalogue": 5, "covered_in_catalogue": 0},
                                    "NYSE": {"catalogue": 5, "covered_in_catalogue": 0}}
-    assert checked["ingestion_runs_running_12h"] == 1 and checked["producer"]["engine_files"] == grid.engine_files()
+    assert checked["ingestion_runs"] == {"running": 1, "blocking": 0} and checked["producer"]["engine_files"] == grid.engine_files()
+    assert checked["producer"]["engine_objects"] == grid.engine_objects()
     assert len(database._analysis_snapshots) == count and not any(symbol in json.dumps(checked) for symbol in SYMBOLS)
-    assert grid.running_ingestions(database, datetime.now(UTC) + timedelta(hours=13)) == 0  # older than 12 h: not a running ingestion of this window
+    later = datetime.now(UTC) + timedelta(minutes=31)
+    assert grid.running_ingestions(database, later) == {"running": 1, "blocking": 1}  # running for more than 30 min: whatever its source, it blocks
+    assert grid.running_ingestions(database, datetime.now(UTC) + timedelta(hours=13)) == {"running": 0, "blocking": 0}  # older than 12 h: abandoned
+    database.begin_ingestion_run("valuation-nightly", "Valuation worker", grid.NIGHTLY_SOURCE_TYPE, {})
+    assert grid.running_ingestions(database, datetime.now(UTC)) == {"running": 2, "blocking": 1}  # the nightly worker blocks from its start
     with pytest.raises(SystemExit):
         grid.main(["--market", "US", "--host-check", "--price-pinned-at", PIN.isoformat()], database=database, settings=_settings())
+
+
+def test_every_disagreement_of_a_run_with_the_grids_inputs_is_named_on_its_own() -> None:
+    resolved = {"catalogue_snapshot_id": "catalogue-1", "classification_sha256": "c" * 64, "treasury_snapshot_id": "treasury-1",
+                "expected": {f"{pit.PROVIDER_EODHD}:{'s' * 16}": "2026-09-11T03:00:00+00:00"}}
+    run = {"sources": [{"role": "catalogue", "classification_sha256": "c" * 64},
+                       {"role": pit.PROVIDER_EODHD, "market": "NASDAQ", "symbol_sha256": "s" * 16, "published_at": "2026-09-11T03:00:00+00:00"}],
+           "macro": {"curve": {"snapshot_id": "treasury-1"}}}
+    assert grid.check_sources(run, resolved, market="NASDAQ", catalogue_snapshot_id="catalogue-1") == []
+    assert grid.check_sources(run, resolved, market="NASDAQ", catalogue_snapshot_id="catalogue-2") == ["catalogue_snapshot"]  # the same content, another snapshot
+    other = {**run, "sources": [{"role": "catalogue", "classification_sha256": "d" * 64}, run["sources"][1]]}
+    assert grid.check_sources(other, resolved, market="NASDAQ", catalogue_snapshot_id="catalogue-1") == ["catalogue_classification"]  # the pinned id, other rows
+    assert grid.check_sources({**run, "macro": {"curve": {"snapshot_id": "treasury-2"}}}, resolved, market="NASDAQ",
+                              catalogue_snapshot_id="catalogue-1") == ["treasury_snapshot"]
+    later = {**run, "sources": [run["sources"][0], {**run["sources"][1], "published_at": "2026-09-12T03:00:00+00:00"}]}
+    assert grid.check_sources(later, resolved, market="NASDAQ", catalogue_snapshot_id="catalogue-1") == [f"pit_source:{pit.PROVIDER_EODHD}"]
+
+
+def test_an_error_outside_a_run_still_prints_and_writes_the_manifest_of_what_was_done(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    database = _store()
+    original = grid.reusable_run
+    calls: list[str] = []
+
+    def failing_lookup(*args: Any, **kwargs: Any) -> Any:
+        calls.append(args[1])
+        if len(calls) > 2:  # the second T's reuse lookup: outside any run
+            raise RuntimeError("the store went away while reading AAA")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(grid, "reusable_run", failing_lookup)
+    path = tmp_path / "lookup.json"
+    with pytest.raises(RuntimeError):
+        grid.main(_args(path), database=database, settings=_settings())
+    out = capsys.readouterr().out
+    manifest = _manifest(path)
+    assert manifest["stopped"] == {"reason": "error", "at": "2024-06-11T04:00:00+00:00", "market": "NASDAQ", "error": "RuntimeError"}
+    assert len(manifest["grid"]) == 2 and manifest["complete"] is False and "AAA" not in out and _lines(out)[-1]["kind"] == "manifest"
+
+
+def _split_bars(symbol: str, sessions: list[date], *, at: int | None, factor: float, adjusted_volume: bool) -> list[dict[str, Any]]:
+    """A series with a ``factor``:1 split at session index ``at``: the as-traded close is ``factor`` × the adjusted one before
+    it; the volume is in traded shares (it jumps by ``factor`` at the split) or split-adjusted (it does not)."""
+    rows = _bars_for(symbol, sessions, base=50.0)
+    out = []
+    for index, row in enumerate(rows):
+        before = at is not None and index < at
+        traded = 1000.0 if before else 1000.0 * (factor if at is not None else 1.0)
+        out.append({**row, "close": round(row["adjusted_close"] * (factor if before else 1.0), 4),
+                    "volume": 1000.0 * factor if adjusted_volume and at is not None else traded})
+    return out
+
+
+def test_the_volume_check_reads_the_capital_events_of_the_pinned_vintages_and_an_undetermined_one_runs_nothing(tmp_path: Path,
+                                                                                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    sessions = _sessions("2023-06-01", "2024-07-31")
+    for adjusted, decision in ((False, "as_traded"), (True, "split_adjusted")):
+        database = Database(_settings())
+        for offset, (market, symbols) in enumerate(US.items()):
+            bars = {f"{symbol}.US": _split_bars(symbol, sessions, at=60 + 40 * index if market == "NASDAQ" and index < 3 else None, factor=2.0 + index,
+                                                adjusted_volume=adjusted) for index, symbol in enumerate(symbols)}
+            http = ScriptedHttp({f"/api/eod/{key}": rows for key, rows in bars.items()})
+            producer = series.PriceHistoryService(_settings(), database, http, eodhd=EodhdClient("https://eodhd.com", "secret", http))  # type: ignore[arg-type]
+            producer.persist_run(market, start=date(2023, 6, 1), end=date(2024, 7, 31), symbols=list(symbols), now=VINTAGE_AT + timedelta(minutes=offset))
+            _catalogue(database, market, symbols, VINTAGE_AT - timedelta(hours=1))
+        pins = grid.resolve_pins(database, _settings(), backtest.MARKETS, PIN)
+        checked = REAL_VOLUME_CHECK(database, _settings(), pins, backtest.MARKETS, CATALOGUE_PIN)
+        assert checked == {"events": 3, "as_traded_like": 0 if adjusted else 3, "split_adjusted_like": 3 if adjusted else 0, "decision": decision,
+                           "field": backtest.VOLUME_BASES[decision], "series_read": 10}, adjusted
+    monkeypatch.setattr(grid, "volume_check", lambda *args, **kwargs: {**DECIDED, "decision": "undetermined", "field": None})
+    store = _store()
+    with pytest.raises(SystemExit):
+        grid.main(_args(tmp_path / "undetermined.json"), database=store, settings=_settings())
+    assert _runs(store) == [] and not (tmp_path / "undetermined.json").exists()

@@ -93,7 +93,8 @@ ALPHA = 0.05  # one-sided, single look: p_greater <= ALPHA
 ALPHA_NEGATIVE = 0.05  # p_less <= ALPHA_NEGATIVE → NEGATIVE
 ATTRITION_CAP = accuracy.ATTRITION_CAP
 # the persistence co-condition of the pass: the same per-session values in blocks of 63 calendar sessions; the factor is the exact one of the triangular
-# model (21-session overlap) for this grid's sampling (every 5th session, the last block partial): 1 + 2ρ₁ with ρ₁ ≈ 0.07 — prereg §6.5
+# model (21-session overlap) for this grid's sampling (every 5th session, the last block partial): adjacent 63-block means correlate at ρ₁ ≈ 0.06;
+# with the partial last block the exact factor is 1.14 — prereg §6.5
 PERSISTENCE_BLOCK_SESSIONS = 63
 PERSISTENCE_VARIANCE_FACTOR = 1.14
 # the point-in-time screen of the decisory cross-section: the 2026 screener's rules (market_data.us_screener) applied at T
@@ -102,9 +103,17 @@ SCREEN_MIN_CLOSE = 3.0
 SCREEN_MIN_MARKET_CAP = 750_000_000.0
 SCREEN_MIN_DOLLAR_VOLUME = 20_000_000.0
 SCREEN_TOP_PER_EXCHANGE = 300
+# the screen's dollar volume: the provider's volume may be split-adjusted while the close is as-traded; the volume check of the pinned vintages
+# (volume_split_check, prereg §2) decides the basis ONCE per grid and the manifest records it: "as_traded" → close × volume, "split_adjusted" →
+# adjusted_close × volume (the rerun records both medians)
+VOLUME_BASES: dict[str, str] = {"as_traded": "dollar_volume_median_20", "split_adjusted": "adjusted_dollar_volume_median_20"}
+VOLUME_CHECK_MIN_FACTOR = 1.5  # a capital event of the check: the close/adjusted-close ratio moves by ≥ this factor between two valid sessions
+VOLUME_CHECK_WINDOW = 20  # valid sessions of volume before and from the event (no other event inside)
+VOLUME_CHECK_MIN_EVENTS = 3
+VOLUME_CHECK_MIN_AGREEMENT = 2 / 3  # the share of the events that must agree for a decision; else "undetermined" (the grid refuses to run)
 # the coverage floor: below it the reading does not measure the pre-registered cross-section (UNMEASURED)
 COVERAGE_MIN_RECORDS_SHARE = 0.60  # US records / US catalogue stocks, over the grid
-COVERAGE_MIN_SCREENED_NAMES = 150  # median per session of screened names with an executable return at h = 21
+COVERAGE_MIN_SCREENED_NAMES = 150  # median over EVERY grid session (zero included) of screened names with an executable return at h = 21
 ALLOWED_REFUSALS: tuple[str, ...] = ("duplicate_across_exchanges", "run_not_in_manifest")  # any other refused record VOIDs the reading
 HISTORY_MODEL = "own_history"  # the engine's own-history model (P/E, P/B: >= 5 fiscal years) — its coverage is read, never decisory
 READ_ONLY_PGOPTION = accuracy.READ_ONLY_PGOPTION
@@ -126,7 +135,7 @@ DESIGN_SEED = 20261023
 DESIGN_REPS = 20000
 DESIGN_SDS: tuple[float, ...] = (0.06, 0.08, 0.10, 0.12, 0.15, 0.20)
 DESIGN_ICS: tuple[float, ...] = (-0.03, 0.0, 0.02, 0.03, 0.04, 0.05, 0.065, 0.08)
-DESIGN_BLOCKS: tuple[int, ...] = (12, 24, 64)  # the 2021-06 → 2026-09 grid holds 64 blocks of 21 sessions (the last with one instant)
+DESIGN_INSTANTS: tuple[int, ...] = (51, 101, 266)  # grids of 12, 24 and 64 blocks of 21 sessions; 266 = the 2021-06 → 2026-09 grid (last block: one instant)
 
 
 class ManifestError(ValueError):
@@ -148,7 +157,11 @@ def protocol() -> dict[str, Any]:
         "screen": {"security_type": SCREEN_SECURITY_TYPE, "min_close": SCREEN_MIN_CLOSE, "min_market_cap": SCREEN_MIN_MARKET_CAP,
                    "min_dollar_volume_median_20": SCREEN_MIN_DOLLAR_VOLUME, "top_per_exchange": SCREEN_TOP_PER_EXCHANGE,
                    "rank": "median as-traded close x volume of the last 20 sessions <= T, descending; ties by symbol",
-                   "applies_to": "every verdict condition; the unscreened catalogue is descriptive"},
+                   "applies_to": "every verdict condition; the unscreened catalogue is descriptive",
+                   "volume_basis": {"rule": "volume_split_check of the pinned vintages, decided once per grid and recorded in the manifest",
+                                    "as_traded": "close x volume", "split_adjusted": "adjusted_close x volume", "min_factor": VOLUME_CHECK_MIN_FACTOR,
+                                    "window_sessions": VOLUME_CHECK_WINDOW, "min_events": VOLUME_CHECK_MIN_EVENTS,
+                                    "min_agreement": VOLUME_CHECK_MIN_AGREEMENT, "undetermined": "the grid does not run; a manifest without a decision is VOID"}},
         "step_sessions": STEP_SESSIONS,
         "grid_start": GRID_START.isoformat(),
         "min_prior_sessions": MIN_PRIOR_SESSIONS,
@@ -160,6 +173,7 @@ def protocol() -> dict[str, Any]:
         "t_clock": f"{T_HOUR:02d}:00 {T_ZONE.key} of the civil day after session D (session_date = D)",
         "price_pin": "one --price-pinned-at for the whole grid; labels read from the same pinned publication of each exchange (cut = available_at + 1 µs)",
         "catalogue_pin": "one --catalogue-pinned-at for the whole grid: one catalogue (classification hash) per exchange across every run",
+        "statements_stability": "statements.coverage.covered_in_catalogue (the pinned catalogue's as-filed coverage) equal across the runs of an exchange",
         "horizons_sessions": list(HORIZONS),
         "primary_horizon": PRIMARY_HORIZON,
         "execution_lag_sessions": EXECUTION_LAG_SESSIONS,
@@ -180,7 +194,8 @@ def protocol() -> dict[str, Any]:
         "attrition_decisory": "executable pair: denominator = target T + 1 + h closed before the label cut; unavailable = either label of the pair missing",
         "coverage_floor": {"min_records_share": COVERAGE_MIN_RECORDS_SHARE, "min_screened_names_median": COVERAGE_MIN_SCREENED_NAMES,
                            "records_share": "US records / US catalogue stocks over the grid",
-                           "screened_names_median": "median per session of screened names with an executable return at the primary horizon"},
+                           "screened_names_median": "median over every grid session (zero included) of screened names with an executable return at the "
+                                                    "primary horizon"},
         "allowed_refusals": list(ALLOWED_REFUSALS),
         "halves": "the first floor(B/2) and the last floor(B/2) complete blocks of the decisory statistic (the middle block out when B is odd)",
         "pass": "B >= min_blocks, IC estimate >= ic_min, p_greater <= alpha, executable decile spread estimate > 0, IC estimate > 0 in both halves, "
@@ -277,6 +292,20 @@ def prereg_grid(bounds: Mapping[str, Any], *, step: int | None = None) -> list[d
 
 
 # ------------------------------------------------------------------ the manifest (shared with valuation_pit_grid)
+def producer_of(run_manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """A run's producer as its manifest names it: the files (``engine.implementation_file_sha256``) and the ``Database``
+    methods its readers call (``engine.implementation_object_sha256``)."""
+    engine = panel._mapping(run_manifest.get("engine"))
+    return {"files": engine.get("implementation_file_sha256"), "objects": engine.get("implementation_object_sha256")}
+
+
+def volume_basis(manifest: Mapping[str, Any]) -> str | None:
+    """The screen's dollar-volume basis the grid decided (``volume_split_check`` of the pinned vintages, recorded in the
+    manifest): ``as_traded`` or ``split_adjusted``; ``None`` when the manifest records no decision (the reading is VOID)."""
+    decision = panel._mapping(manifest.get("volume_basis")).get("decision")
+    return str(decision) if decision in VOLUME_BASES else None
+
+
 def manifest_sha256(manifest: Mapping[str, Any]) -> str:
     """The canonical sha256 of a manifest without its own ``manifest_sha256`` field."""
     return canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_sha256"})
@@ -330,16 +359,66 @@ def load_manifest(text: str) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ the point-in-time screen (pure)
-def screen(inputs: Mapping[str, Mapping[str, Any]]) -> tuple[set[str], Counter[str]]:
+def volume_split_votes(bars: Mapping[str, Mapping[str, Any]]) -> Counter[str]:
+    """The votes of ONE series (``{session: bar}`` of the pinned vintage) on the provider's volume: whether its ``volume``
+    is in traded shares or split-adjusted, read on its capital events (no symbol is named: prereg §2). An event is a
+    session where the ratio ``close / adjusted_close`` moves by at least ``VOLUME_CHECK_MIN_FACTOR`` from the previous valid
+    session (a split of factor ``f`` = the ratio before ÷ the ratio after); with ``VOLUME_CHECK_WINDOW`` valid volumes
+    before it and from it (no other event inside), the log change ``v`` of the median volume is compared with ``ln f``:
+    traded shares move by the split factor (``v`` closer to ``ln f`` than to 0: ``as_traded``), split-adjusted volumes do
+    not (``split_adjusted``)."""
+    window = VOLUME_CHECK_WINDOW
+    votes: Counter[str] = Counter()
+    valid = [(close / adjusted, panel._positive(bars[session].get("volume"))) for session in sorted(bars)
+             if (close := panel._positive(bars[session].get("close"))) is not None and (adjusted := panel._positive(bars[session].get("adjusted_close"))) is not None]
+    events = [index for index in range(1, len(valid)) if max(valid[index - 1][0] / valid[index][0], valid[index][0] / valid[index - 1][0]) >= VOLUME_CHECK_MIN_FACTOR]
+    for position, index in enumerate(events):
+        if (position and index - events[position - 1] <= window) or (position + 1 < len(events) and events[position + 1] - index <= window):
+            continue  # another event inside a window: not a clean reading
+        before = [volume for _ratio, volume in valid[max(0, index - window):index] if volume is not None]
+        after = [volume for _ratio, volume in valid[index:index + window] if volume is not None]
+        if index < window or len(before) < window or len(after) < window:
+            continue
+        change, split = math.log(statistics.median(after) / statistics.median(before)), math.log(valid[index - 1][0] / valid[index][0])
+        votes["as_traded" if abs(change - split) < abs(change) else "split_adjusted"] += 1
+    return votes
+
+
+def volume_split_decision(votes: Mapping[str, int]) -> dict[str, Any]:
+    """The screen's volume basis from the votes of every series of the pinned vintages: the leading reading when at least
+    ``VOLUME_CHECK_MIN_EVENTS`` clean events voted and at least ``VOLUME_CHECK_MIN_AGREEMENT`` of them agree, else
+    ``undetermined`` (the grid does not run). Both branches are pre-registered: ``as_traded`` → close × volume,
+    ``split_adjusted`` → adjusted_close × volume (``VOLUME_BASES``)."""
+    events = int(sum(votes.values()))
+    as_traded, split_adjusted = int(votes.get("as_traded", 0)), int(votes.get("split_adjusted", 0))
+    decision = "undetermined"
+    if events >= VOLUME_CHECK_MIN_EVENTS:
+        leader, count = ("as_traded", as_traded) if as_traded >= split_adjusted else ("split_adjusted", split_adjusted)
+        if count / events >= VOLUME_CHECK_MIN_AGREEMENT:
+            decision = leader
+    return {"events": events, "as_traded_like": as_traded, "split_adjusted_like": split_adjusted, "decision": decision, "field": VOLUME_BASES.get(decision)}
+
+
+def volume_split_check(series: Iterable[Mapping[str, Mapping[str, Any]]]) -> dict[str, Any]:
+    """``volume_split_decision`` of the votes of every series."""
+    votes: Counter[str] = Counter()
+    for bars in series:
+        votes.update(volume_split_votes(bars))
+    return volume_split_decision(votes)
+
+
+def screen(inputs: Mapping[str, Mapping[str, Any]], *, basis: str = "as_traded") -> tuple[set[str], Counter[str]]:
     """The decisory names of ONE exchange at ONE ``T`` from the run's screen inputs (``valuation_pit_rerun`` outputs.screen,
     every evaluated name): a stock, close ≥ ``SCREEN_MIN_CLOSE``, market cap at ``T`` ≥ ``SCREEN_MIN_MARKET_CAP``, median
-    dollar volume of the last 20 sessions ≥ ``SCREEN_MIN_DOLLAR_VOLUME``, then the ``SCREEN_TOP_PER_EXCHANGE`` most liquid
-    (ties by symbol). Returns the names kept and the names removed by their FIRST failed rule."""
+    dollar volume of the last 20 sessions ≥ ``SCREEN_MIN_DOLLAR_VOLUME`` (on the grid's volume basis: ``VOLUME_BASES``),
+    then the ``SCREEN_TOP_PER_EXCHANGE`` most liquid (ties by symbol). Returns the names kept and the names removed by
+    their FIRST failed rule."""
+    field = VOLUME_BASES[basis]
     removed: Counter[str] = Counter()
     eligible: list[tuple[float, str]] = []
     for symbol in sorted(inputs):
         item = inputs[symbol]
-        close, cap, volume = panel._positive(item.get("close")), panel._positive(item.get("market_cap")), panel._positive(item.get("dollar_volume_median_20"))
+        close, cap, volume = panel._positive(item.get("close")), panel._positive(item.get("market_cap")), panel._positive(item.get(field))
         if item.get("security_type") != SCREEN_SECURITY_TYPE:
             removed["not_a_stock"] += 1
         elif close is None or close < SCREEN_MIN_CLOSE:
@@ -473,43 +552,47 @@ def verdict(primary: Mapping[str, Any] | None, split: Mapping[str, Any] | None, 
 
 # ------------------------------------------------------------------ the design: operating characteristics of the single look (prereg §8)
 def design_table(*, reps: int = DESIGN_REPS, seed: int = DESIGN_SEED, sds: Sequence[float] = DESIGN_SDS, ics: Sequence[float] = DESIGN_ICS,
-                 blocks: Sequence[int] = DESIGN_BLOCKS) -> dict[str, Any]:
+                 instants: Sequence[int] = DESIGN_INSTANTS) -> dict[str, Any]:
     """P(PASS) and P(NEGATIVE) of the pre-registered look under the overlap model of PREREG_VALUATION_DECISOR_V1 §5: the
     daily executable IC is ``ic + sd · N_t``, ``N_t`` the normalised moving sum of ``h`` independent standard normals
-    (autocorrelation ``1 − k/h``), SAMPLED every ``STEP_SESSIONS`` sessions from the anchor; blocks of ``h`` calendar
-    sessions and, for the persistence co-condition, of ``PERSISTENCE_BLOCK_SESSIONS``; the verdict's own rule on ``B``
-    complete blocks (estimate ≥ ``IC_MIN``, ``t ≥`` the critical value of ``ALPHA``, both halves > 0, the 63-session ``t ≥``
-    its critical value; NEGATIVE when ``t ≤ −`` the critical value of ``ALPHA_NEGATIVE``). Neither attrition, the coverage
-    floor nor the decile-spread condition is modelled (PASS probabilities are upper bounds). Common random numbers across
-    cells; deterministic for a seed."""
-    if reps <= 0 or not blocks or min(blocks) < 2 or min(sds) <= 0.0:
-        raise ValueError("reps, blocks (>= 2) and sds must be positive")
+    (autocorrelation ``1 − k/h``), SAMPLED every ``STEP_SESSIONS`` sessions from the anchor on a grid of ``instants``
+    instants (``266`` = the pre-registered grid: 64 blocks of 21 calendar sessions, the last holding ONE instant, 22
+    blocks of 63); blocks of ``h`` calendar sessions and, for the persistence co-condition, of
+    ``PERSISTENCE_BLOCK_SESSIONS``; the verdict's own rule on the ``B`` blocks (estimate ≥ ``IC_MIN``, ``t ≥`` the
+    critical value of ``ALPHA``, both halves > 0, the 63-session ``t ≥`` its critical value; NEGATIVE when ``t ≤ −`` the
+    critical value of ``ALPHA_NEGATIVE``). Neither attrition, the coverage floor nor the decile-spread condition is
+    modelled (PASS probabilities are upper bounds). Common random numbers across cells; deterministic for a seed."""
+    if reps <= 0 or not instants or min(sds) <= 0.0:
+        raise ValueError("reps, instants and sds must be positive")
     h, step, long = PRIMARY_HORIZON, STEP_SESSIONS, PERSISTENCE_BLOCK_SESSIONS
-    rng = random.Random(seed)
-    sessions = max(blocks) * h
-    sampled = list(range(0, sessions, step))
-    long_blocks = {b: len({t // long for t in sampled if t < b * h}) for b in blocks}
-    critical = {b: accuracy.student_t_isf(ALPHA, b - 1) for b in blocks}
-    critical_negative = {b: accuracy.student_t_isf(ALPHA_NEGATIVE, b - 1) for b in blocks}
-    critical_long = {b: accuracy.student_t_isf(ALPHA, long_blocks[b] - 1) if long_blocks[b] >= 2 else math.inf for b in blocks}
+    grids = {n: [k * step for k in range(n)] for n in instants}
+    blocks = {n: len({t // h for t in grids[n]}) for n in instants}
+    long_blocks = {n: len({t // long for t in grids[n]}) for n in instants}
+    if min(blocks.values()) < 2:
+        raise ValueError("every design grid needs at least two blocks")
+    critical = {n: accuracy.student_t_isf(ALPHA, blocks[n] - 1) for n in instants}
+    critical_negative = {n: accuracy.student_t_isf(ALPHA_NEGATIVE, blocks[n] - 1) for n in instants}
+    critical_long = {n: accuracy.student_t_isf(ALPHA, long_blocks[n] - 1) if long_blocks[n] >= 2 else math.inf for n in instants}
     factor, factor_long, root = math.sqrt(accuracy.ADJACENT_BLOCK_VARIANCE_FACTOR), math.sqrt(PERSISTENCE_VARIANCE_FACTOR), math.sqrt(h)
+    sessions = max(grids[n][-1] for n in instants) + 1
     passed: Counter[tuple[int, float, float]] = Counter()
     negative: Counter[tuple[int, float, float]] = Counter()
+    rng = random.Random(seed)
     for _ in range(reps):
         walk, total = [0.0], 0.0
         for _step in range(sessions + h - 1):
             total += rng.gauss(0.0, 1.0)
             walk.append(total)
-        values = {t: (walk[t + h] - walk[t]) / root for t in sampled}
-        for b in blocks:
-            inside = [t for t in sampled if t < b * h]
+        for n in instants:
             by_block: dict[int, list[float]] = {}
             by_long: dict[int, list[float]] = {}
-            for t in inside:
-                by_block.setdefault(t // h, []).append(values[t])
-                by_long.setdefault(t // long, []).append(values[t])
+            for t in grids[n]:
+                value = (walk[t + h] - walk[t]) / root
+                by_block.setdefault(t // h, []).append(value)
+                by_long.setdefault(t // long, []).append(value)
             window = [math.fsum(items) / len(items) for _block, items in sorted(by_block.items())]
             long_means = [math.fsum(items) / len(items) for _block, items in sorted(by_long.items())]
+            b = len(window)
             count = b // 2
             center = math.fsum(window) / b
             spread = math.sqrt(math.fsum((m - center) ** 2 for m in window) / (b - 1))
@@ -523,17 +606,17 @@ def design_table(*, reps: int = DESIGN_REPS, seed: int = DESIGN_SEED, sds: Seque
                     continue
                 for ic in ics:
                     estimate = ic + sd * center
-                    t = estimate / se
-                    if t <= -critical_negative[b]:
-                        negative[(b, sd, ic)] += 1
-                    elif (estimate >= IC_MIN and t >= critical[b] and ic + sd * first > 0.0 and ic + sd * second > 0.0
-                          and se_long > 0.0 and (ic + sd * long_center) / se_long >= critical_long[b]):
-                        passed[(b, sd, ic)] += 1
-    cells = [{"blocks": b, "sd": sd, "ic": ic, "pass": passed[(b, sd, ic)] / reps, "negative": negative[(b, sd, ic)] / reps}
-             for b in blocks for sd in sds for ic in ics]
+                    t_value = estimate / se
+                    if t_value <= -critical_negative[n]:
+                        negative[(n, sd, ic)] += 1
+                    elif (estimate >= IC_MIN and t_value >= critical[n] and ic + sd * first > 0.0 and ic + sd * second > 0.0
+                          and se_long > 0.0 and (ic + sd * long_center) / se_long >= critical_long[n]):
+                        passed[(n, sd, ic)] += 1
+    cells = [{"instants": n, "blocks": blocks[n], "persistence_blocks": long_blocks[n], "sd": sd, "ic": ic, "pass": passed[(n, sd, ic)] / reps,
+              "negative": negative[(n, sd, ic)] / reps} for n in instants for sd in sds for ic in ics]
     return {"model": "daily IC = ic + sd * normalised moving sum of h normals, sampled every step sessions", "reps": reps, "seed": seed, "horizon": h,
             "step_sessions": step, "persistence_block_sessions": long, "alpha": ALPHA, "alpha_negative": ALPHA_NEGATIVE, "ic_min": IC_MIN,
-            "persistence_blocks": long_blocks, "cells": cells}
+            "blocks": {blocks[n]: n for n in instants}, "persistence_blocks": {blocks[n]: long_blocks[n] for n in instants}, "cells": cells}
 
 
 # ------------------------------------------------------------------ the code binding (prereg §15): the accuracy report's machinery, this module's pins
@@ -708,6 +791,8 @@ class PitBacktestReportService:
             void.append(f"manifest_statements_not_{STATEMENTS}")
         if manifest.get("step_sessions") != STEP_SESSIONS:
             void.append(f"manifest_step_not_{STEP_SESSIONS}")
+        if volume_basis(manifest) is None:
+            void.append("manifest_volume_basis_not_decided")
         return void
 
     @staticmethod
@@ -800,7 +885,7 @@ class PitBacktestReportService:
                 continue
             status["current"] += 1
             current[run_key] = {**latest, "market": market}
-        engines = {json.dumps(panel._mapping(run["inputs"]["manifest"].get("engine")).get("implementation_file_sha256"), sort_keys=True) for run in current.values()}
+        engines = {json.dumps(producer_of(run["inputs"]["manifest"]), sort_keys=True) for run in current.values()}
         versions = Counter(str(run["inputs"].get("source_version")) for run in current.values())
         uniform = len(engines) == 1 and len(versions) == 1
         void = [f"runs_{name}:{count}" for name, count in sorted(status.items()) if name != "current" and count]
@@ -812,15 +897,19 @@ class PitBacktestReportService:
         for market in MARKETS:
             runs = [run for run in current.values() if run["market"] == market]
             hashes = {json.dumps(sorted(str(ref.get("classification_sha256")) for ref in run["inputs"]["manifest"].get("catalogue") or []), sort_keys=True) for run in runs}
-            covered = {json.dumps(panel._mapping(panel._mapping(run["outputs"]["summary"].get("statements")).get("coverage")).get("covered")) for run in runs}
+            # the as-filed coverage OF THE PINNED CATALOGUE (never ``covered``: the whole store, which the live poll keeps growing with the live
+            # universe's new names — invisible to the grid, whose facts are accepted after every T); a catalogue issuer backfilled mid-grid changes it
+            covered = {json.dumps(panel._mapping(panel._mapping(run["outputs"]["summary"].get("statements")).get("coverage")).get("covered_in_catalogue"))
+                       for run in runs}
             if len(hashes) > 1:
                 void.append(f"catalogue_not_uniform:{market}")
             if len(covered) > 1:
                 void.append(f"statements_table_not_stable:{market}")
-            catalogues[market] = {"classification_hashes": len(hashes), "covered_values": len(covered)}
+            catalogues[market] = {"classification_hashes": len(hashes), "covered_in_catalogue_values": len(covered)}
         aggregate = {"entries": len(manifest["grid"]), "status": panel._counts(status), "mismatch_reasons": panel._counts(mismatch), "catalogues": catalogues,
                      "producer": {"uniform": uniform, "source_versions": panel._counts(versions),
-                                  "engine_files": json.loads(next(iter(engines))) if uniform else None, "engine_identities": len(engines)}}
+                                  "engine_files": json.loads(next(iter(engines)))["files"] if uniform else None,
+                                  "engine_objects": json.loads(next(iter(engines)))["objects"] if uniform else None, "engine_identities": len(engines)}}
         return aggregate, current, void
 
     @staticmethod
@@ -923,7 +1012,7 @@ class PitBacktestReportService:
         return kept_records, {"read": read, "refused": panel._counts(refused), "admissible": len(kept_records)}, incomplete
 
     @staticmethod
-    def _screen(records: Sequence[Mapping[str, Any]], current: Mapping[str, Mapping[str, Any]]) -> tuple[set[tuple[str, str, str]], dict[str, Any]]:
+    def _screen(records: Sequence[Mapping[str, Any]], current: Mapping[str, Mapping[str, Any]], *, basis: str) -> tuple[set[tuple[str, str, str]], dict[str, Any]]:
         """The point-in-time screen of every current run (``screen``), the records it keeps (``(market, session, symbol)``)
         and its aggregate: names removed by rule over the grid, and per session the records, the screened ones and the
         share removed. No label is read here."""
@@ -931,7 +1020,7 @@ class PitBacktestReportService:
         removed: Counter[str] = Counter()
         for run in current.values():
             session = str(run["inputs"]["manifest"].get("session_date"))
-            names, reasons = screen(run["outputs"]["screen"])
+            names, reasons = screen(run["outputs"]["screen"], basis=basis)
             removed.update(reasons)
             kept.update((str(run["market"]), session, symbol) for symbol in names)
         per_session: dict[str, list[int]] = {}
@@ -942,7 +1031,7 @@ class PitBacktestReportService:
             pair[1] += (str(record["market"]), session, str(record["symbol"])) in kept
         rows = [{"session": session, "records": total, "screened": screened, "removed_share": panel._finite(1.0 - screened / total) if total else None}
                 for session, (total, screened) in sorted(per_session.items())]
-        return kept, {"removed_by_rule": panel._counts(removed), "per_session": rows,
+        return kept, {"volume_basis": basis, "removed_by_rule": panel._counts(removed), "per_session": rows,
                       "removed_share": _distribution([row["removed_share"] for row in rows if row["removed_share"] is not None]),
                       "records": len(records), "screened": sum(row["screened"] for row in rows)}
 
@@ -1026,7 +1115,8 @@ class PitBacktestReportService:
             counts["refused"] = panel._counts(Counter({**counts["refused"], "outside_grid_calendar": len(outside)}))
         records = [record for record in records if str(record["session_date"])[:10] in index_of]
         void += [f"records_refused:{cause}:{count}" for cause, count in sorted(counts["refused"].items()) if cause not in ALLOWED_REFUSALS and count]
-        kept, screened = self._screen(records, current)
+        basis = volume_basis(manifest)
+        kept, screened = self._screen(records, current, basis=basis or "as_traded") if basis is not None else (set(), {"volume_basis": None})
         coverage = self._coverage(current)
         records_share = coverage[MARKET_GROUP]["records_share"]
         payload: dict[str, Any] = {
@@ -1057,7 +1147,7 @@ class PitBacktestReportService:
                                           partition_last=partition_last)
         persistence = {**persistence_test([mean for _block, mean in long_means]), "first_block": long_means[0][0] if long_means else None,
                        "last_block": long_means[-1][0] if long_means else None}
-        names = self._names_per_session(by_session)
+        names = self._names_per_session(by_session, [session.isoformat() for session in expected])
         realized_sd = panel._finite(statistics.stdev([value for _index, value in values])) if len(values) >= 2 else None
         payload.update({"horizons": horizons, "halves": split, "persistence": persistence, "names_per_session": names, "realized_sd_per_session": realized_sd,
                         "descriptive": self._descriptive(rows, decisory, by_session, values, index_of=index_of, mature_through=mature_through,
@@ -1082,9 +1172,11 @@ class PitBacktestReportService:
         return result
 
     @staticmethod
-    def _names_per_session(by_session: Mapping[str, Sequence[Mapping[str, Any]]]) -> dict[str, Any]:
-        counts = [float(sum(1 for item in items if item["return_executable"] is not None)) for _session, items in sorted(by_session.items())]
-        return {"executable_h_primary": _distribution([count for count in counts if count > 0])}
+    def _names_per_session(by_session: Mapping[str, Sequence[Mapping[str, Any]]], sessions: Sequence[str]) -> dict[str, Any]:
+        """The screened names with an executable return at the primary horizon on EVERY session of the grid — a session
+        without any counts zero (the coverage floor's median)."""
+        counts = [float(sum(1 for item in by_session.get(session, []) if item["return_executable"] is not None)) for session in sessions]
+        return {"executable_h_primary": _distribution(counts)}
 
     @staticmethod
     def _descriptive(rows: Sequence[Mapping[str, Any]], decisory: Sequence[Mapping[str, Any]], by_session: Mapping[str, Sequence[Mapping[str, Any]]],

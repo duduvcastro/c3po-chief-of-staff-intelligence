@@ -11,8 +11,10 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +24,7 @@ import yaml
 from app import valuation_official as official
 from app import valuation_pit_backtest_report as backtest
 from app import valuation_pit_rerun as pit
-from tests.test_valuation_pit_backtest_report import ENGINE, PREREG_PATH, Synthetic, _positive, _settings, small  # noqa: F401  (small: a fixture)
+from tests.test_valuation_pit_backtest_report import PREREG_PATH, PRODUCER, Synthetic, _positive, _settings, small  # noqa: F401  (small: a fixture)
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "valuation-pit-backtest.yml"
@@ -63,15 +65,21 @@ def test_the_workflow_is_dispatch_only_and_guards_the_host() -> None:
         assert '"${readonly_session[@]}"' in remote.split(mode, 1)[1].split(";;", 1)[0] or mode == "host-check", mode
     assert 'exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check' in remote
     assert "flock -s -n 9" in remote and 'exec 9>>"$APP_DIR/runtime/security/deployment.lock"' in remote  # a SHARED deploy lock, never waited for
-    assert 'run=(timeout -s TERM -k 120 "$DEADLINE" nice -n 10 python -m)' in remote and remote.count('"${run[@]}"') == 4
+    # ONE deadline: the end is fixed once on the host; every process runs under what is left of it (writing legs: 60 s; the dry run: 10 min)
+    assert remote.count("end=$(( $(date +%s) + DEADLINE ))") == 1 and remote.count("timeout -s TERM -k 120") == 1
+    assert 'api timeout -s TERM -k 120 "$left" nice -n 10 python -m "$@"' in remote and remote.count("leg 60 app.") == 4 and remote.count("leg 600 app.") == 1
+    assert "exec \"${compose[@]}\" exec -T api" not in remote  # no process outside a leg but the read-only host check
     assert "--backfill --months 120" in remote and "--market NYSE --fetch --no-macro" in remote and '--stop-before "$STOP_BEFORE"' in remote
     assert '--expect-producer-sha256 "$PRODUCER"' in remote and '--catalogue-pinned-at "$CATALOGUE_PIN"' in remote and "--statements vintages --step-sessions 5" in remote
     for guard in ("/var/run/reboot-required", "/run/c3po-security/reboot.pending", "systemctl list-units --type=timer", "--state=active,activating,reloading",
-                  "'r2d2*' 'c3po-massive*'", "NextElapseUSecRealtime", "ingestion_runs_running_12h", "6291456 + reserve", "3145728", "MAX_RUNS * 2 * 10240",
-                  "price-backfill) reserve=2097152", "fetch) reserve=524288", "/mnt/day-d-data", "MemAvailable"):
+                  "'r2d2*' 'c3po-massive*'", "NextElapseUSecRealtime", '["ingestion_runs"]["blocking"]', "6291456 + reserve", "3145728",
+                  "MAX_RUNS * 2 * 10240", "price-backfill) reserve=2097152", "fetch) reserve=524288", "/mnt/day-d-data", "MemAvailable"):
         assert guard in remote, guard
+    assert remote.index('if [ "$MODE" = host-check ]') < remote.index("the backtest must wait for recovery")  # the host check is exempt from the reboot refusal
+    assert "cannot be parsed: refused (fail closed)" in remote and "+%s 2>/dev/null) || continue" not in remote  # an unreadable timer refuses
     report = _step("Run the report on the host")["run"]
     assert '< "$RUNNER_TEMP/manifest/manifest.json"' in report and "--manifest -" in report
+    assert '[ "$left" -ge 600 ]' in report and "api timeout -s TERM -k 120 $left nice -n 10 python -m app.valuation_pit_backtest_report" in report
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "MANIFEST_B64" not in text and "base64" not in text  # the manifest travels on stdin, never in argv or the environment
     assert "set -e\n" not in text and "set -euo" not in text  # every guard explicit
@@ -79,10 +87,13 @@ def test_the_workflow_is_dispatch_only_and_guards_the_host() -> None:
     assert secret_steps == {"Configure deployment SSH key", "Run on the host", "Run the report on the host", "Stop the host process on cancel or failure"}
     assert "stderr.log" in remote and "cat \"$raw/stderr.log\"" not in remote  # the remote stderr is counted, never printed
     stop = _step("Stop the host process on cancel or failure")
-    assert stop["if"].startswith("(cancelled() || failure())") and "pkill -TERM -f 'app.valuation_(pit_grid|price_history|pit_rerun)'" in stop["run"]
+    assert stop["if"].startswith("(cancelled() || failure() || (inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc) != '0')")
+    assert "inputs.mode != 'host-check'" in stop["if"] and "pkill -TERM -f 'app.valuation_(pit_grid|price_history|pit_rerun|pit_backtest_report)'" in stop["run"]
     producer_step = _step("Read the pre-registration and the producer at the prereg commit")["run"]
     listed = producer_step.split("for name in", 1)[1].split("; do", 1)[0].replace("\\", " ").split()
     assert tuple(listed) == pit.IMPLEMENTATION_FILES  # the producer the workflow checks is the run manifest's, file for file
+    objects = producer_step.split("objects=(", 1)[1].split(")", 1)[0].split()
+    assert tuple(f"app.database.{name}" for name in objects) == pit.IMPLEMENTATION_OBJECTS  # and reader for reader
     assert "cmp -s" in producer_step and "changed since the commit of its hash receipt" in producer_step
 
 
@@ -99,7 +110,12 @@ def test_the_operating_window_starts_at_half_past_eleven_in_sao_paulo() -> None:
     assert evening.returncode == 0, evening.stderr
     values = dict(line.split("=", 1) for line in evening.stdout.splitlines())
     assert values["stop_before"] == "2026-10-19T02:10:00+00:00" and values["next_window"] == "2026-10-19T02:30:00+00:00"  # 23:10 and 23:30 São Paulo
-    assert values["deadline_seconds"] == str(80 * 60)  # the process ends 10 minutes before the window
+    assert values["deadline_epoch"] == str(int(datetime(2026, 10, 19, 2, 20, tzinfo=timezone.utc).timestamp()))  # ONE end: 10 minutes before the window
+    # the boundaries: 08:15 São Paulo opens, 09:00 New York closes, 16:30 New York opens again
+    for mode, now, allowed in (("dry-run", "2026-10-19T08:14:59-03:00", False), ("dry-run", "2026-10-19T08:15:00-03:00", True),
+                               ("dry-run", "2026-10-19T08:59:59-04:00", True), ("dry-run", "2026-10-19T09:00:00-04:00", False),
+                               ("dry-run", "2026-10-19T16:29:59-04:00", False), ("dry-run", "2026-10-19T16:30:00-04:00", True)):
+        assert (_window(mode, now).returncode == 0) is allowed, (mode, now)
     assert _window("grid", "2026-10-19T11:00:00-04:00").returncode != 0  # Monday 11:00 New York: the session
     assert _window("fetch", "2026-10-18T21:00:00-03:00").returncode == 0  # 150 minutes before the window: room for the fetch
     short = _window("fetch", "2026-10-18T22:00:00-03:00")
@@ -155,6 +171,29 @@ def test_the_owners_order_binds_the_mode_the_pins_the_flag_the_cap_and_the_deadl
     path = tampered_root / "c3po" / "ops" / "owner-orders" / f"{tampered}.json"
     path.write_bytes(path.read_bytes() + b" ")
     assert "does not hash to owner_order_sha256" in _verify_order(tampered_root, tampered).stderr
+    # the file of THIS checkout: no symbolic link anywhere on its path — neither the file nor a directory
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    linked_root, linked = _order(tmp_path / "l")
+    linked_path = linked_root / "c3po" / "ops" / "owner-orders" / f"{linked}.json"
+    linked_path.rename(elsewhere / linked_path.name)
+    linked_path.symlink_to(elsewhere / linked_path.name)
+    assert "holds a symbolic link" in _verify_order(linked_root, linked).stderr
+    folder_root, in_folder = _order(tmp_path / "f")
+    (folder_root / "c3po" / "ops" / "owner-orders").rename(tmp_path / "orders-elsewhere")
+    (folder_root / "c3po" / "ops" / "owner-orders").symlink_to(tmp_path / "orders-elsewhere")
+    assert "holds a symbolic link" in _verify_order(folder_root, in_folder).stderr
+    # modes: a JSON list of exact names — never a string whose substring names the mode
+    for modes, message in (("grid-later", "must be a JSON list of mode names"), (["grid-later", "fetch"], "does not authorise mode grid"),
+                           ([["grid"]], "must be a JSON list of mode names")):
+        modes_root, digest_of = _order(tmp_path / f"m-{len(str(modes))}", modes=modes)
+        result = _verify_order(modes_root, digest_of)
+        assert result.returncode != 0 and message in result.stderr, (modes, result.stderr)
+    listed_root = tmp_path / "list"
+    (listed_root / "c3po" / "ops" / "owner-orders").mkdir(parents=True)
+    content = json.dumps([{"schema": "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1"}]).encode()
+    (listed_root / "c3po" / "ops" / "owner-orders" / f"{hashlib.sha256(content).hexdigest()}.json").write_bytes(content)
+    assert "is not a JSON object" in _verify_order(listed_root, hashlib.sha256(content).hexdigest()).stderr
 
 
 def test_the_report_reads_only_a_successful_grid_run_of_this_workflow_once(tmp_path: Path) -> None:
@@ -204,9 +243,18 @@ def test_the_report_reads_only_a_successful_grid_run_of_this_workflow_once(tmp_p
     look = _python("Check the single look", str(previous), str(PREREG_PATH), env={"EXPECTED": "b" * 64})
     assert look.returncode != 0 and "the single look was spent" in look.stderr
     assert _python("Check the single look", str(previous), str(PREREG_PATH), env={"EXPECTED": "a" * 64}).returncode == 0  # the same look, repeated
+    # a VOID reading read no label: it spends no look (a new revision may follow it)
+    voided = tmp_path / "voided"
+    (voided / "9").mkdir(parents=True)
+    (voided / "9" / "metadata.json").write_text(json.dumps({"prereg_sha256": prereg_sha, "manifest_sha256": "a" * 64, "verdict": "VOID"}), encoding="utf-8")
+    assert _python("Check the single look", str(voided), str(PREREG_PATH), env={"EXPECTED": "b" * 64}).returncode == 0
+    # the artifact's manifest is bounded before it is parsed
+    huge = {**manifest, "padding": "x" * (8 * 1024 * 1024)}
+    huge["manifest_sha256"] = backtest.manifest_sha256(huge)
+    assert "too large" in artifact(huge, expected=huge["manifest_sha256"]).stderr
 
 
-def _verify(tmp_path: Path, mode: str, stdout: str, *, prereg: Path = PREREG_PATH, at_commit: bytes | None = None, producer: dict[str, str] | None = None,
+def _verify(tmp_path: Path, mode: str, stdout: str, *, prereg: Path = PREREG_PATH, at_commit: bytes | None = None, producer: dict[str, Any] | None = None,
             expected_manifest: str = "", order: str = "", rc: str = "0") -> subprocess.CompletedProcess[str]:
     raw = tmp_path / "stdout.txt"
     raw.write_text(stdout, encoding="utf-8")
@@ -217,10 +265,13 @@ def _verify(tmp_path: Path, mode: str, stdout: str, *, prereg: Path = PREREG_PAT
     commit_copy = tmp_path / "prereg-at-commit.md"
     commit_copy.write_bytes(prereg.read_bytes() if at_commit is None else at_commit)
     producer_path = tmp_path / "producer.json"
-    producer_path.write_text(json.dumps(ENGINE if producer is None else producer), encoding="utf-8")
+    producer_path.write_text(json.dumps(PRODUCER if producer is None else producer), encoding="utf-8")
+    marker = tmp_path / "verify-failed"
+    if marker.exists():
+        marker.unlink()
     env = {"MODE": mode, "ORDER": order, "RC": rc, "EXPECTED_MANIFEST": expected_manifest, "PREREG_COMMIT": "c" * 40, "RUN_ID": "7", "REVISION": "d" * 40,
            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md")}
-    return _python("Verify and keep aggregates only", str(raw), str(out), str(prereg), str(commit_copy), str(producer_path), env=env)
+    return _python("Verify and keep aggregates only", str(raw), str(out), str(prereg), str(commit_copy), str(producer_path), str(marker), env=env)
 
 
 def _real_receipt(store: Synthetic, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], manifest: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
@@ -258,7 +309,8 @@ def test_a_real_receipt_is_accepted_and_every_invalid_reading_is_refused(small: 
         "the deployed code is not the pinned code": (tampered(code={**receipt["payload"]["code"], "files": {}}), {}),
         "not computed over the published grid manifest": (out, {"expected_manifest": "0" * 64}),
         "changed since the commit of its hash receipt": (out, {"at_commit": b"another prereg\n"}),
-        "is not the code of the prereg commit": (out, {"producer": {**ENGINE, "valuation_pit_rerun.py": "1" * 64}}),
+        "is not the prereg commit's": (out, {"producer": {**PRODUCER, "files": {**PRODUCER["files"], "valuation_pit_rerun.py": "1" * 64}}}),
+        "reader objects of its runs": (out, {"producer": {**PRODUCER, "objects": {**PRODUCER["objects"], "app.database.Database.price_bars": "1" * 64}}}),
         "unexpected receipt shape": (json.dumps({k: v for k, v in receipt.items() if k != "provenance"}), {}),
     }
     for message, (text, options) in cases.items():
@@ -298,6 +350,13 @@ def test_the_grid_manifest_is_checked_and_the_host_outputs_are_reduced_to_aggreg
     assert partial.returncode == 0 and json.loads((tmp_path / "out" / "metadata.json").read_text(encoding="utf-8"))["partial"] is True
     nothing = _verify(tmp_path, "grid", json.dumps(lines[0]) + "\n", order="a" * 64, rc="137")
     assert nothing.returncode == 0 and not (tmp_path / "out" / "manifest.json").exists()  # killed before its manifest: receipts only, partial
+    # killed while printing its last line: that line is dropped, the rest published as partial, and the job fails
+    cut = json.dumps(lines[0]) + "\n" + json.dumps(lines[1])[:40] + "\n"
+    truncated = _verify(tmp_path, "grid", cut, order="a" * 64)
+    assert truncated.returncode == 0 and (tmp_path / "verify-failed").read_text(encoding="utf-8").strip() == "truncated_last_line"
+    assert json.loads((tmp_path / "out" / "metadata.json").read_text(encoding="utf-8"))["partial"] is True and (tmp_path / "out" / "receipts.jsonl").exists()
+    middle = _verify(tmp_path, "grid", json.dumps(lines[1])[:40] + "\n" + json.dumps(lines[0]) + "\n", order="a" * 64)
+    assert middle.returncode != 0 and "is not JSON" in middle.stderr  # only the LAST line may be cut
     bad = {**manifest, "complete": True}
     refused = _verify(tmp_path, "grid", json.dumps({"kind": "manifest", "manifest_sha256": manifest["manifest_sha256"], "manifest": bad}) + "\n", order="a" * 64)
     assert refused.returncode != 0 and "does not recompute" in refused.stderr
@@ -318,11 +377,90 @@ def test_the_grid_manifest_is_checked_and_the_host_outputs_are_reduced_to_aggreg
     half = _verify(tmp_path, "fetch", json.dumps({"market": "NASDAQ", "fundamentals_persisted": 300}) + "\n", rc="15")
     assert half.returncode == 0 and json.loads((tmp_path / "out" / "fetch.json").read_text(encoding="utf-8")) == [{"market": "NASDAQ", "fundamentals_persisted": 300}]
     # the host check: disk and memory parsed; below 6 GiB for the database, the check itself fails
-    host = ("DISK 9437184 41943040 /\nMEM MemTotal 8000000\nMEM MemAvailable 5000000\nMEM SwapTotal 0\nMEM SwapFree 0\n"
-            + json.dumps({"kind": "host_check", "publications": {"NASDAQ": None}, "coverage": {}, "ingestion_runs_running_12h": 0}) + "\n")
+    host = ("REBOOT absent /run/c3po-security/reboot.pending\nREBOOT pending /var/run/reboot-required\n"
+            "DISK 9437184 41943040 /\nMEM MemTotal 8000000\nMEM MemAvailable 5000000\nMEM SwapTotal 0\nMEM SwapFree 0\n"
+            + json.dumps({"kind": "host_check", "publications": {"NASDAQ": None}, "coverage": {}, "ingestion_runs": {"running": 1, "blocking": 0}}) + "\n")
     checked = _verify(tmp_path, "host-check", host)
     assert checked.returncode == 0, checked.stderr
     result = json.loads((tmp_path / "out" / "host-check.json").read_text(encoding="utf-8"))
     assert result["disk"] == [{"available_kb": 9437184, "size_kb": 41943040, "mount": "/"}] and result["memory_kb"]["MemAvailable"] == 5000000
+    assert result["reboot"] == {"/run/c3po-security/reboot.pending": "absent", "/var/run/reboot-required": "pending"} and not (tmp_path / "verify-failed").exists()
+    # below 6 GiB for the database: the host check is PUBLISHED as an error (metadata and summary), then the job fails
     low = _verify(tmp_path, "host-check", host.replace("DISK 9437184", "DISK 6000000"))
-    assert low.returncode != 0 and "less than 6 GiB free" in low.stderr
+    assert low.returncode == 0 and (tmp_path / "verify-failed").read_text(encoding="utf-8").strip() == "disk_below_6_gib"
+    low_metadata = json.loads((tmp_path / "out" / "metadata.json").read_text(encoding="utf-8"))
+    assert low_metadata["disk_below_6_gib"] is True and low_metadata["errors"] == ["disk_below_6_gib"] and (tmp_path / "out" / "host-check.json").exists()
+    assert "less than 6 GiB free" in (tmp_path / "summary.md").read_text(encoding="utf-8")
+    fail_step = _step("Fail when the host step failed")["run"]
+    assert '[ -e "$RUNNER_TEMP/verify-failed" ]' in fail_step
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is needed to run the host script's leg")
+def test_every_host_process_runs_under_what_is_left_of_one_deadline() -> None:
+    """MAJOR 1 of the verification: the second leg of a price backfill or a fetch never gets a fresh timeout — every leg
+    runs under ``end − now`` of ONE end fixed on the host, and a leg with less than its floor left does not start."""
+    remote = _step("Run on the host")["run"]
+    leg = remote.split("# >>> leg", 1)[1].split("# <<< leg", 1)[0]
+    script = "\n".join([
+        "set -uo pipefail", 'date() { echo "$FAKE_NOW"; }', "compose=(echo docker compose)", "leg_env=()", "end=1000", "# >>> leg" + leg,
+        'FAKE_NOW=100 leg 60 app.valuation_price_history --market NASDAQ --backfill --months 120; echo "rc=$?"',
+        'FAKE_NOW=950 leg 60 app.valuation_price_history --market NYSE --backfill --months 120; echo "rc=$?"',
+        "leg_env=(-e PGOPTIONS=read-only)",
+        'FAKE_NOW=500 leg 600 app.valuation_pit_grid --dry-run; echo "rc=$?"',
+        'FAKE_NOW=300 leg 600 app.valuation_pit_grid --dry-run; echo "rc=$?"',
+    ])
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    assert result.stdout.splitlines() == [
+        "docker compose exec -T api timeout -s TERM -k 120 900 nice -n 10 python -m app.valuation_price_history --market NASDAQ --backfill --months 120", "rc=0",
+        "rc=25",  # 50 s left: the NYSE leg does not start (a fresh timeout would have given it the whole window again)
+        "rc=25",  # the dry run needs 10 minutes
+        "docker compose exec -T -e PGOPTIONS=read-only api timeout -s TERM -k 120 700 nice -n 10 python -m app.valuation_pit_grid --dry-run", "rc=0"], result.stderr
+    assert "only 50 s left before the next window (60 s needed): not started" in result.stderr
+    backfill = remote.rsplit("price-backfill)\n", 1)[1].split(";;", 1)[0]
+    assert "for market in NASDAQ NYSE; do" in backfill and 'leg 60 app.valuation_price_history --market "$market"' in backfill and "end=" not in backfill
+
+
+@pytest.mark.skipif(shutil.which("git") is None or shutil.which("bash") is None or shutil.which("sha256sum") is None, reason="git, bash and sha256sum")
+def test_the_prereg_commit_is_the_last_that_changed_the_prereg_and_the_producer_is_the_grids(tmp_path: Path) -> None:
+    """MINOR 2 and 3: the workflow reads the prereg and the producer at ``prereg_commit``, which must be the LAST commit
+    that changed the prereg at the run's revision; its producer — the files and the Database reader methods, hashed from the
+    commit's text — is exactly the grid's ``producer()`` (the ``--expect-producer-sha256`` the host compares)."""
+    from app import valuation_pit_grid as grid
+    repo = tmp_path / "repo"
+    app_dir, docs = repo / "c3po" / "backend" / "app", repo / "c3po" / "docs"
+    app_dir.mkdir(parents=True)
+    docs.mkdir(parents=True)
+    for name in (*pit.IMPLEMENTATION_FILES, "database.py", "source_identity.py"):
+        shutil.copyfile(ROOT / "c3po" / "backend" / "app" / name, app_dir / name)
+    shutil.copyfile(PREREG_PATH, docs / PREREG_PATH.name)
+    identity = {"GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "", "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "", "GIT_CONFIG_NOSYSTEM": "1",
+                "HOME": str(tmp_path)}
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-c", "user.useConfigOnly=false", *args], cwd=repo, check=True, capture_output=True, text=True,
+                              env={**os.environ, **identity}).stdout.strip()
+
+    git("init", "-q")
+    git("add", ".")
+    git("commit", "-q", "-m", "the prereg and its producer")
+    first = git("rev-parse", "HEAD")
+    step = _step("Read the pre-registration and the producer at the prereg commit")["run"]
+
+    def run(commit: str) -> tuple[subprocess.CompletedProcess[str], dict[str, str]]:
+        runner = tmp_path / f"runner-{commit[:8]}"
+        runner.mkdir(exist_ok=True)
+        output = runner / "output"
+        output.write_text("", encoding="utf-8")
+        result = subprocess.run(["bash", "-c", step], cwd=repo, capture_output=True, text=True,
+                                env={**os.environ, "PREREG_COMMIT": commit, "RUNNER_TEMP": str(runner), "GITHUB_OUTPUT": str(output)})
+        return result, dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines() if "=" in line)
+
+    result, outputs = run(first)
+    assert result.returncode == 0, result.stderr
+    assert outputs["producer_sha256"] == grid.producer()["engine_sha256"]  # the workflow's producer IS the grid's, files and reader objects
+    producer = json.loads((tmp_path / f"runner-{first[:8]}" / "producer.json").read_text(encoding="utf-8"))
+    assert producer == {"files": grid.engine_files(), "objects": grid.engine_objects()}
+    (repo / "c3po" / "docs" / PREREG_PATH.name).write_text(PREREG_PATH.read_text(encoding="utf-8") + "\nrevisão\n", encoding="utf-8")
+    git("commit", "-q", "-am", "a new revision")
+    stale, _ = run(first)
+    assert stale.returncode != 0 and "is not the last commit that changed the pre-registration" in stale.stderr

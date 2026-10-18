@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import exchange_calendars as xcals
 import pytest
 
+from app import valuation_accuracy_report as accuracy
 from app import valuation_official as official
 from app import valuation_panel as panel
 from app import valuation_pit_panel as pit_panel
@@ -1577,9 +1578,18 @@ def test_a_catalogue_pin_gives_a_grid_one_catalogue_and_without_it_nothing_chang
     aaa = plain_run.resolver.per_symbol["AAA"]["row"]
     bars = plain_run.resolver.prices.bars("AAA")
     expected = sorted(bar["close"] * bar["volume"] for bar in (bars[s] for s in sorted(bars)[-20:]))
+    adjusted = sorted(bar["adjusted_close"] * bar["volume"] for bar in (bars[s] for s in sorted(bars)[-20:]))
     assert screen["AAA"] == {"security_type": "Stock", "close": aaa["price"], "price_session": aaa["price_session"], "market_cap": aaa["price"] * aaa["shares"],
-                             "dollar_volume_median_20": pytest.approx((expected[9] + expected[10]) / 2)}
-    assert plain_run.resolver.prices.dollar_volume_median("AAA", sessions=100_000) is None  # fewer bars than asked: no liquidity reading
+                             "dollar_volume_median_20": pytest.approx((expected[9] + expected[10]) / 2),
+                             "adjusted_dollar_volume_median_20": pytest.approx((adjusted[9] + adjusted[10]) / 2)}
+    prices = plain_run.resolver.prices
+    assert prices.dollar_volume_median("AAA", sessions=100_000) is None  # fewer bars than asked: no liquidity reading
+    # the two bases read two prices: the as-traded close (traded shares) and the adjusted close (split-adjusted volumes)
+    prices._bars["ZZQ"] = {f"2024-05-{day:02d}": {"close": 10.0, "adjusted_close": 5.0, "volume": 1_000.0 * day} for day in range(1, 21)}
+    assert prices.dollar_volume_median("ZZQ") == pytest.approx(10.0 * 1_000.0 * 10.5)
+    assert prices.dollar_volume_median("ZZQ", field="adjusted_close") == pytest.approx(5.0 * 1_000.0 * 10.5)
+    with pytest.raises(ValueError):
+        prices.dollar_volume_median("ZZQ", field="volume")
 
 
 def test_the_run_names_every_producer_module_in_its_manifest() -> None:
@@ -1588,5 +1598,42 @@ def test_the_run_names_every_producer_module_in_its_manifest() -> None:
     run = service.compute("NASDAQ", as_of=T, prices=service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW))
     files = run.manifest["engine"]["implementation_file_sha256"]
     assert tuple(files) == pit.IMPLEMENTATION_FILES and files == {name: pit._file_sha256(name) for name in pit.IMPLEMENTATION_FILES}
-    for name in ("valuation_v2_engine.py", "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py"):
-        assert name in files  # the record writer, the buy-in rule and the as-filed reader are part of the producer
+    for name in ("valuation_v2_engine.py", "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py",
+                 "valuation_price_history.py"):
+        assert name in files  # the record writer, the buy-in rule, the as-filed reader and the price series reader are part of the producer
+    # the Database methods the readers call, hashed from database.py's text exactly as a §17 object pin hashes the live object
+    objects = run.manifest["engine"]["implementation_object_sha256"]
+    assert tuple(objects) == pit.IMPLEMENTATION_OBJECTS and objects == pit.implementation_objects()
+    for qualified, digest in objects.items():
+        assert digest == accuracy._object_sha256(getattr(Database, qualified.rsplit(".", 1)[1])), qualified
+    for reader in ("latest_analysis_snapshot", "latest_analysis_snapshot_before", "latest_analysis_snapshot_by_inputs", "analysis_snapshot_by_id", "price_bars",
+                   "valuation_predictions_for_cycle"):
+        assert f"app.database.Database.{reader}" in objects
+
+
+def test_the_catalogue_counts_are_its_rows_and_its_stocks_without_the_etfs() -> None:
+    database = _ready()
+    first = database.latest_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE")
+    assert first is not None
+    rows = [*first["outputs"]["rows"], {"symbol": "ETFX", "sector": SECTOR, "security_type": "ETF"}]
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7}, {"rows": rows}, VINTAGE_AT)
+    receipt, _run = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    stored = database.latest_analysis_snapshot(pit.ANALYSIS_TYPE, receipt["entity_key"])
+    assert stored is not None and stored["outputs"]["catalogue_counts"] == {"rows": 7, "stocks": 6}
+
+
+def test_the_sibling_catalogue_of_the_coverage_check_is_the_pinned_one_too(front: Any) -> None:
+    """The format-drift check reads the SIBLING exchange's catalogue too: with a catalogue pin, the pinned one — a sibling
+    catalogue published after the pin never decides whether the table's symbols are the catalogue's."""
+    database = _ready()
+    _file(front, database, "AAA", "sibling", _accepted("2024-05-15"), [(REVENUE, 10.0, date(2024, 3, 31), date(2024, 1, 1))])
+    database._statement_filings[0]["symbols"] = ["ZZZ"]  # type: ignore[attr-defined]  # a name of the NYSE catalogue, not of NASDAQ's
+    database.save_analysis_snapshot("valuation_universe", "NYSE_UNIVERSE", "mv-cat", {}, {"rows": [{"symbol": "ZZZ", "sector": SECTOR}]}, VINTAGE_AT)
+    database.save_analysis_snapshot("valuation_universe", "NYSE_UNIVERSE", "mv-cat", {}, {"rows": [{"symbol": "YYY", "sector": SECTOR}]},
+                                    VINTAGE_AT + timedelta(hours=2))
+    service = _service(database)
+    pinned = service.compute("NASDAQ", as_of=T, prices=service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW), statements="auto",
+                             catalogue_pinned_at=VINTAGE_AT + timedelta(hours=1))
+    assert pinned.resolver.vintages_coverage["covered"] == 1 and pinned.resolver.vintages_coverage["covered_in_catalogue"] == 0
+    with pytest.raises(pit.PitRerunInputError, match="none of the NASDAQ catalogue's"):  # unpinned: the latest NYSE catalogue no longer holds it
+        service.compute("NASDAQ", as_of=T, prices=service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW), statements="auto")

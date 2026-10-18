@@ -39,7 +39,9 @@ SOURCE_VERSION = "pit-rerun-v1+synthetic000"
 ENGINE = {name: hashlib.sha256(name.encode()).hexdigest() for name in ("valuation_v3_engine.py", "valuation_v3_inputs.py", "valuation_v3_macro.py",
                                                                        "valuation_v3_shadow.py", "valuation_pit_rerun.py", "valuation_v2_engine.py",
                                                                        "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py",
-                                                                       "valuation_asfiled.py", "statement_vintages.py")}
+                                                                       "valuation_asfiled.py", "statement_vintages.py", "valuation_price_history.py")}
+OBJECTS = {name: hashlib.sha256(name.encode()).hexdigest() for name in ("app.database.Database.latest_analysis_snapshot", "app.database.Database.price_bars")}
+PRODUCER = {"files": ENGINE, "objects": OBJECTS}  # what the workflow computes from the prereg commit
 
 
 def _names(count: int = 30) -> list[tuple[str, str]]:
@@ -140,6 +142,49 @@ def test_the_point_in_time_screen_applies_the_screeners_rules_at_t(monkeypatch: 
     monkeypatch.setattr(backtest, "SCREEN_TOP_PER_EXCHANGE", 1)
     kept, removed = backtest.screen({"AAA": item(volume=5e7), "BBB": item(volume=5e7), "CCC": item(volume=4e7)})
     assert kept == {"AAA"} and removed == {"beyond_top_per_exchange": 2}  # the most liquid; a tie goes to the first symbol
+    # the volume basis the grid decided picks the dollar volume: as traded (close × volume) or split-adjusted (adjusted close × volume)
+    monkeypatch.setattr(backtest, "SCREEN_TOP_PER_EXCHANGE", 300)
+    both = {"AAA": {**item(volume=5e7), "adjusted_dollar_volume_median_20": 1e7}, "BBB": {**item(volume=1e7), "adjusted_dollar_volume_median_20": 5e7}}
+    assert backtest.screen(both)[0] == {"AAA"} and backtest.screen(both, basis="as_traded")[0] == {"AAA"}
+    assert backtest.screen(both, basis="split_adjusted")[0] == {"BBB"}
+    with pytest.raises(KeyError):
+        backtest.screen(both, basis="undetermined")
+
+
+def _series(*, at: int | None, factor: float, adjusted_volume: bool, sessions: int = 80) -> dict[str, dict[str, float]]:
+    """A synthetic series with a ``factor``:1 split at index ``at`` (none with ``None``): the as-traded close is ``factor`` ×
+    the adjusted close before it; the volume in traded shares jumps by ``factor`` there, a split-adjusted one does not."""
+    rows: dict[str, dict[str, float]] = {}
+    for index in range(sessions):
+        before = at is not None and index < at
+        traded = 1_000.0 * (1.0 if before or at is None else factor) * (1.0 + 0.05 * ((index * 7) % 5 - 2))
+        rows[(date(2024, 1, 1) + timedelta(days=index)).isoformat()] = {
+            "close": 20.0 * (factor if before else 1.0), "adjusted_close": 20.0,
+            "volume": traded * (factor if adjusted_volume and before else 1.0)}
+    return rows
+
+
+def test_the_volume_check_reads_split_factors_from_the_vintage_and_decides_only_with_agreement() -> None:
+    raw = [_series(at=40, factor=f, adjusted_volume=False) for f in (2.0, 3.0, 0.25)]  # two splits and a 1:4 reverse split
+    assert backtest.volume_split_check(raw) == {"events": 3, "as_traded_like": 3, "split_adjusted_like": 0, "decision": "as_traded",
+                                                "field": "dollar_volume_median_20"}
+    adjusted = [_series(at=40, factor=f, adjusted_volume=True) for f in (2.0, 3.0, 0.25)]
+    assert backtest.volume_split_check(adjusted)["decision"] == "split_adjusted" and backtest.volume_split_check(adjusted)["field"] == "adjusted_dollar_volume_median_20"
+    assert backtest.volume_split_check(raw[:2])["decision"] == "undetermined"  # fewer than three clean events
+    assert backtest.volume_split_check([*raw[:2], *adjusted[:2]])["decision"] == "undetermined"  # no two-thirds agreement
+    assert backtest.volume_split_votes(_series(at=None, factor=2.0, adjusted_volume=False)) == {}  # no event, no vote
+    assert backtest.volume_split_votes(_series(at=10, factor=2.0, adjusted_volume=False)) == {}  # fewer than 20 valid volumes before the event
+    crowded = _series(at=40, factor=2.0, adjusted_volume=False)
+    for session in sorted(crowded)[50:]:
+        crowded[session]["close"] = crowded[session]["close"] * 2.0  # a second event ten sessions later: neither is a clean reading
+    assert backtest.volume_split_votes(crowded) == {}
+
+
+def test_the_median_of_screened_names_counts_every_grid_session_even_an_empty_one() -> None:
+    items = [{"return_executable": 0.01}, {"return_executable": None}, {"return_executable": 0.02}]
+    names = backtest.PitBacktestReportService._names_per_session({"2025-01-07": items, "2025-01-09": [{"return_executable": None}]},
+                                                                  ["2025-01-07", "2025-01-09", "2025-01-13"])
+    assert names == {"executable_h_primary": {"n": 3, "min": 0.0, "median": 0.0, "max": 2.0}}
 
 
 def test_the_within_exchange_rank_ic_ranks_the_upside_inside_each_exchange() -> None:
@@ -223,10 +268,13 @@ def test_the_bounds_and_the_grid_follow_the_pinned_vintages_and_start_at_the_pre
 
 
 # ------------------------------------------------------------------ the manifest
+VOLUME_BASIS = {"events": 4, "as_traded_like": 4, "split_adjusted_like": 0, "decision": "as_traded", "field": "dollar_volume_median_20", "series_read": 30}
+
+
 def _manifest(entries: list[dict[str, Any]], pins: dict[str, dict[str, Any]], **changes: Any) -> dict[str, Any]:
     manifest: dict[str, Any] = {"schema": backtest.MANIFEST_SCHEMA, "market": "US", "markets": ["NASDAQ", "NYSE"], "price_pin": {"requested_at": "x", **pins},
                                 "catalogue_pin": {"requested_at": "x"}, "statements": "vintages", "step_sessions": backtest.STEP_SESSIONS,
-                                "grid_start": backtest.GRID_START.isoformat(), "grid": entries, "complete": True}
+                                "grid_start": backtest.GRID_START.isoformat(), "grid": entries, "complete": True, "volume_basis": dict(VOLUME_BASIS)}
     manifest.update(changes)
     manifest["manifest_sha256"] = backtest.manifest_sha256(manifest)
     return manifest
@@ -270,6 +318,8 @@ def test_the_protocol_is_the_prereg() -> None:
     assert constants["persistence"]["block_sessions"] == 63 and constants["persistence"]["variance_factor"] == 1.14
     assert constants["coverage_floor"]["min_records_share"] == 0.60 and constants["coverage_floor"]["min_screened_names_median"] == 150
     assert constants["screen"]["top_per_exchange"] == 300 and constants["allowed_refusals"] == ["duplicate_across_exchanges", "run_not_in_manifest"]
+    assert constants["screen"]["volume_basis"]["min_events"] == 3 and constants["screen"]["volume_basis"]["min_factor"] == 1.5
+    assert "covered_in_catalogue" in constants["statements_stability"] and "zero included" in constants["coverage_floor"]["screened_names_median"]
     assert constants["decisory_statistic"] == "ic_executable" and constants["statements"] == "vintages" and constants["markets"] == ["NASDAQ", "NYSE"]
     assert constants["t_clock"] == "01:00 America/Sao_Paulo of the civil day after session D (session_date = D)" and constants["look"] == "single"
     assert constants["verdict_order"] == ["VOID", "UNMEASURED", "NEGATIVE", "PASS", "FAIL"] and constants["adjacent_block_variance_factor"] == 1.5
@@ -281,7 +331,9 @@ def test_the_protocol_is_the_prereg() -> None:
                    "PERSISTENCE_VARIANCE_FACTOR = 1,14", "COVERAGE_MIN_RECORDS_SHARE = 0,60", "COVERAGE_MIN_SCREENED_NAMES = 150",
                    "SCREEN_TOP_PER_EXCHANGE = 300", "PRICE_VINTAGE_FROM_LATEST = 2016-12-01", "01:00 America/Sao_Paulo", "--statements vintages",
                    "--catalogue-pinned-at", "23:30", "ic_executable", f"DESIGN_SEED = {backtest.DESIGN_SEED}", f"DESIGN_REPS = {backtest.DESIGN_REPS}",
-                   "GRID_START = 2021-06-01", "--months 120", "own_history", "vintages_coverage"):
+                   "GRID_START = 2021-06-01", "--months 120", "own_history", "vintages_coverage", "covered_in_catalogue", "VOLUME_CHECK_MIN_FACTOR = 1,5",
+                   "VOLUME_CHECK_MIN_EVENTS = 3", "não-`VOID`", "DESIGN_INSTANTS = (51, 101, 266)", "valuation_price_history.py", "implementation_object_sha256",
+                   "git log -1 --format=%H", "manifest_volume_basis_not_decided", "≈ 1,51"):
         assert needle in text, needle
 
 
@@ -297,17 +349,20 @@ def test_the_prereg_pins_exactly_the_code_at_head() -> None:
 
 
 def test_the_design_simulation_has_the_size_and_the_power_shape_the_prereg_declares() -> None:
-    table = backtest.design_table(reps=1500, seed=5, sds=(0.10,), ics=(-0.05, 0.0, 0.05, 0.10), blocks=(12, 24))
+    table = backtest.design_table(reps=1500, seed=5, sds=(0.10,), ics=(-0.05, 0.0, 0.05, 0.10), instants=(51, 101))
     cells = {(cell["blocks"], cell["ic"]): cell for cell in table["cells"]}
-    assert table["persistence_blocks"] == {12: 4, 24: 8}
+    assert table["blocks"] == {12: 51, 24: 101} and table["persistence_blocks"] == {12: 4, 24: 8}
     for blocks in (12, 24):
         assert cells[(blocks, 0.0)]["pass"] <= 0.07 and cells[(blocks, 0.0)]["negative"] <= 0.07  # a one-sided 0.05 test (1500 paths: 3 sd of noise)
-        assert cells[(blocks, -0.05)]["pass"] == 0.0 and cells[(blocks, -0.05)]["negative"] > cells[(blocks, 0.0)]["negative"]
+        assert cells[(blocks, -0.05)]["pass"] <= 0.005 and cells[(blocks, -0.05)]["negative"] > cells[(blocks, 0.0)]["negative"]
         assert cells[(blocks, 0.0)]["pass"] < cells[(blocks, 0.05)]["pass"] < cells[(blocks, 0.10)]["pass"]
     assert cells[(24, 0.05)]["pass"] > cells[(12, 0.05)]["pass"]  # more blocks, more power
-    assert backtest.design_table(reps=200, seed=5, sds=(0.10,), ics=(0.05,), blocks=(12,)) == backtest.design_table(reps=200, seed=5, sds=(0.10,), ics=(0.05,), blocks=(12,))
+    assert backtest.design_table(reps=200, seed=5, sds=(0.10,), ics=(0.05,), instants=(51,)) == backtest.design_table(reps=200, seed=5, sds=(0.10,), ics=(0.05,),
+                                                                                                                    instants=(51,))
+    real = backtest.design_table(reps=2, seed=5, sds=(0.10,), ics=(0.0,), instants=(266,))["cells"][0]
+    assert (real["instants"], real["blocks"], real["persistence_blocks"]) == (266, 64, 22) and backtest.DESIGN_INSTANTS[-1] == 266  # the pre-registered grid
     with pytest.raises(ValueError):
-        backtest.design_table(reps=10, blocks=(1,))
+        backtest.design_table(reps=10, instants=(4,))  # one block
 
 
 def test_the_store_exposes_readers_only() -> None:
@@ -406,7 +461,8 @@ class Synthetic:
 
     def run(self, market: str, day: date, upsides: dict[str, float], *, run_key: str | None = None, supersedes: str | None = None,
             engine: dict[str, str] | None = None, statements: str = "vintages", extra_identity: bool = False, published: datetime | None = None,
-            publication_id: str | None = None, scope: str = "universe", catalogue: str = "c" * 64, covered: int = 40, stocks: int | None = None,
+            publication_id: str | None = None, scope: str = "universe", catalogue: str = "c" * 64, covered: int = 40, covered_in_catalogue: int | None = None,
+            stocks: int | None = None, objects: dict[str, str] | None = None,
             session_date: date | None = None) -> dict[str, Any]:
         """One synthetic run of (market, T): its records and its snapshot, as valuation_pit_rerun writes them."""
         instant = backtest.t_instant(day)
@@ -426,17 +482,20 @@ class Synthetic:
         inputs: dict[str, Any] = {"run_key": run_key, "market": market, "as_of": instant.isoformat(), "source": official.SOURCE_V3_2_SHADOW, "source_version": SOURCE_VERSION,
                                   "price_pin": {"mode": "explicit", "requested_at": "x", "resolved_publication_id": publication_id or self.pins[market]["publication_id"]},
                                   "catalogue_pin": {"mode": "explicit", "requested_at": "x", "resolved_snapshot_id": "catalogue-1"},
-                                  "manifest": {"session_date": (session_date or day).isoformat(), "engine": {"implementation_file_sha256": engine or ENGINE},
+                                  "manifest": {"session_date": (session_date or day).isoformat(),
+                                               "engine": {"implementation_file_sha256": engine or ENGINE, "implementation_object_sha256": objects or OBJECTS},
                                                "price_vintage": {}, "sources": [{"role": "catalogue", "market": market, "classification_sha256": catalogue, "rows": 18},
                                                                                 {"role": "EODHD_FUNDAMENTALS", "symbol_sha256": "s" * 16}]}}
         if supersedes:
             inputs["supersedes"] = supersedes
         screen = {symbol: {"security_type": "Stock", "close": self.closes[symbol][day], "price_session": day.isoformat(),
-                           "market_cap": 1e8 if symbol in self.small_caps else 5e9, "dollar_volume_median_20": 1e8 + index}
+                           "market_cap": 1e8 if symbol in self.small_caps else 5e9, "dollar_volume_median_20": 1e8 + index,
+                           "adjusted_dollar_volume_median_20": 1e6 + index}
                   for index, symbol in enumerate(sorted(upsides))}
         outputs = {"summary": {"evaluated": len(records) + 1, "with_internal_tp": len(records), "not_evaluable": {"statement_vintages_missing": 2},
                                "statements": {"mode": statements, "table_present": True, "basis": {"statement_vintages": len(records) + 1},
-                                              "coverage": {"covered": covered, "covered_in_catalogue": len(records) + 1, "covered_without_rows_by_T": 0}},
+                                              "coverage": {"covered": covered, "covered_in_catalogue": 16 if covered_in_catalogue is None else covered_in_catalogue,
+                                                           "covered_without_rows_by_T": 0}},
                                "price_basis_evidence": {"symbols_read": len(records) + 3}},
                    "prediction_identities": identities, "screen": screen, "catalogue_counts": {"rows": len(records) + 3, "stocks": stocks or len(records)},
                    "rows": {symbol: {"models": {"own_history": {"tp": 1.0}} if index % 3 else {"peer_comps": {"tp": 1.0}}} for index, symbol in enumerate(sorted(upsides))}}
@@ -491,7 +550,9 @@ def test_a_true_positive_ic_passes_and_the_receipt_is_aggregate_deterministic_an
     assert payload["grid"]["status"] == "PREREG" and payload["grid"]["expected_sessions"] == len(store.grid_sessions) == 58
     assert payload["runs"]["status"] == {"current": 116} and payload["runs"]["incomplete"] == 0 and payload["runs"]["producer"]["uniform"] is True
     assert payload["runs"]["producer"]["engine_files"] == ENGINE and payload["runs"]["producer"]["source_versions"] == {SOURCE_VERSION: 116}
-    assert payload["runs"]["catalogues"] == {"NASDAQ": {"classification_hashes": 1, "covered_values": 1}, "NYSE": {"classification_hashes": 1, "covered_values": 1}}
+    assert payload["runs"]["catalogues"] == {"NASDAQ": {"classification_hashes": 1, "covered_in_catalogue_values": 1},
+                                             "NYSE": {"classification_hashes": 1, "covered_in_catalogue_values": 1}}
+    assert payload["runs"]["producer"]["engine_objects"] == OBJECTS and payload["screen"]["volume_basis"] == "as_traded"
     assert payload["records"]["read"] == 58 * 30 and payload["records"]["observations"] == 58 * 30 and payload["records"]["refused"] == {}
     assert payload["records"]["cohort"] == {"retrospective": 58 * 30}  # every PIT record is retrospective: counted, never filtered
     assert payload["screen"]["screened"] == 58 * 30 and payload["screen"]["removed_by_rule"] == {} and payload["screen"]["removed_share"]["max"] == 0.0
@@ -588,6 +649,8 @@ def test_the_decisory_cross_section_is_the_point_in_time_screen_and_the_coverage
     assert payload["horizons"]["10"]["observations_executable"]["n"] == 30 * 58  # the screened set decides
     unscreened = payload["descriptive"]["unscreened"]["10"]["ic_executable"]["blocks"]["estimate"]
     assert decided["status"] == "PASS" and unscreened < decided["ic_estimate"] - 0.2  # the small caps (anti-signal) only move the descriptive IC
+    persistence = payload["persistence"]["estimate"]
+    assert abs(persistence - decided["ic_estimate"]) < 0.1 and persistence > unscreened + 0.2  # the persistence co-condition reads the SCREENED set too
     assert decided["coverage_screened_names_median"] == 30.0
     # the floor: too few screened names per session, or too few records per catalogue stock → UNMEASURED
     monkeypatch.setattr(backtest, "COVERAGE_MIN_SCREENED_NAMES", 31)
@@ -623,6 +686,9 @@ def test_only_the_manifests_current_complete_runs_are_read_and_every_integrity_f
                                                            f"records_refused:no_current_run:{len(store.entries) * 15}"]  # the runs say vintages
     assert void(store.manifest(step_sessions=5)) == ["manifest_step_not_2"]
     assert void(store.manifest(grid_start="2025-01-02")) == ["manifest_grid_start_not_prereg:2025-01-02"]
+    assert void(store.manifest(volume_basis={**VOLUME_BASIS, "decision": "undetermined"})) == ["manifest_volume_basis_not_decided"]
+    unstated = {key: value for key, value in store.manifest().items() if key not in ("volume_basis", "manifest_sha256")}
+    assert void({**unstated, "manifest_sha256": backtest.manifest_sha256(unstated)}) == ["manifest_volume_basis_not_decided"]
     other_pin = {"requested_at": "x", "NASDAQ": {**store.pins["NASDAQ"], "publication_id": "other"}, "NYSE": store.pins["NYSE"]}
     assert void(store.manifest(price_pin=other_pin))[:2] == ["label_vintage_not_the_pinned_one:NASDAQ", f"runs_mismatched:{len(store.entries) // 2}"]
     other_bars = {"requested_at": "x", "NASDAQ": {**store.pins["NASDAQ"], "bars_sha256": "0" * 64}, "NYSE": store.pins["NYSE"]}
@@ -639,12 +705,19 @@ def test_only_the_manifests_current_complete_runs_are_read_and_every_integrity_f
         (lambda s: s.run("NYSE", s.grid_sessions[2], {x: 0.0 for m, x in s.names if m == "NYSE"}, engine={**ENGINE, "valuation_v3_engine.py": "9" * 64}),
          ["producer_not_uniform"]),
         (lambda s: s.run("NYSE", s.grid_sessions[2], {x: 0.0 for m, x in s.names if m == "NYSE"}, catalogue="d" * 64), ["catalogue_not_uniform:NYSE"]),
-        (lambda s: s.run("NASDAQ", s.grid_sessions[3], {x: 0.0 for m, x in s.names if m == "NASDAQ"}, covered=41), ["statements_table_not_stable:NASDAQ"]),
+        (lambda s: s.run("NASDAQ", s.grid_sessions[3], {x: 0.0 for m, x in s.names if m == "NASDAQ"}, covered_in_catalogue=17),
+         ["statements_table_not_stable:NASDAQ"]),
+        (lambda s: s.run("NYSE", s.grid_sessions[1], {x: 0.0 for m, x in s.names if m == "NYSE"}, objects={**OBJECTS, "app.database.Database.price_bars": "9" * 64}),
+         ["producer_not_uniform"]),
         (lambda s: s.run("NASDAQ", s.grid_sessions[3], {x: 0.0 for m, x in s.names if m == "NASDAQ"}, scope="targeted"), ["records_refused:scope_not_universe:15"]),
     ]
     for build, reasons in cases:
         fresh = Synthetic(_positive, seed=18, count=60)
         assert void(fresh.manifest(fresh.replaced(build(fresh))), of=fresh) == reasons
+    # the live as-filed poll keeps adding the live universe's names to the store (``covered``): invisible to the grid, never a VOID
+    fresh = Synthetic(_positive, seed=18, count=60)
+    grown = fresh.run("NASDAQ", fresh.grid_sessions[3], {x: 0.0 for m, x in fresh.names if m == "NASDAQ"}, covered=41)
+    assert fresh.report(fresh.manifest(fresh.replaced(grown)))["payload"]["verdict"]["status"] != "VOID"
     fresh = Synthetic(_positive, seed=18, count=60)
     moved = fresh.run("NYSE", fresh.grid_sessions[1], {x: 0.0 for m, x in fresh.names if m == "NYSE"}, session_date=fresh.grid_sessions[2])
     cell = fresh.report(fresh.manifest(fresh.replaced(moved)))["payload"]

@@ -60,8 +60,9 @@ computed set is an integrity failure. Changed inputs → a new ``run_key`` namin
 
 Grids (the US backtest): ``--catalogue-pinned-at`` pins the universe catalogue as ``--price-pinned-at`` pins the vintage (a
 pointer, outside ``run_key``; without it nothing changes); every run records the inputs of a point-in-time screen of the
-cross-section (``outputs.screen``: security type, close and market cap at T, 20-session median dollar volume — never an
-engine input) and names every producer module in its manifest (``IMPLEMENTATION_FILES``).
+cross-section (``outputs.screen``: security type, close and market cap at T, the 20-session median dollar volume on the
+as-traded and on the adjusted close — never an engine input) and names its producer in its manifest: every module
+(``IMPLEMENTATION_FILES``) and the ``Database`` methods its readers call (``IMPLEMENTATION_OBJECTS``).
 
 Phases (§5): ``--fetch`` (one read per symbol through the existing provider HTTP clients, persisted as dated, hashed
 ``valuation_pit_source`` snapshots; nothing nominal on stdout; requires the owner's authorization, never during a
@@ -93,6 +94,7 @@ from .database import Database
 from .market_data.eodhd import EodhdClient
 from .market_data.fmp import FmpClient
 from .market_data.http import JsonHttpClient
+from .source_identity import object_sha256
 from .valuation_official import (
     SESSION_ZONES,
     SOURCE_V3_2_SHADOW,
@@ -211,9 +213,18 @@ DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and
 }
 IMPLEMENTATION_FILES: tuple[str, ...] = (  # the producer a run names in its manifest (engine.implementation_file_sha256: in run_key) — every module whose
     # bytes can move a recorded number: the V3 engine and its inputs/macro, the shadow path it runs through, the V2 engine it extends, this re-executor,
-    # the record writer and the buy-in rule, and the as-filed reader's pieces (SEC concept ladder and quarters, the as-of bridge, the 051 store)
+    # the record writer and the buy-in rule, the as-filed reader's pieces (SEC concept ladder and quarters, the as-of bridge, the 051 store) and the
+    # price series reader (hashed only: valuation_price_history.py is pinned by PREREG_VALUATION_DECISOR_V1 §17 and never edited for this)
     "valuation_v3_engine.py", "valuation_v3_inputs.py", "valuation_v3_macro.py", "valuation_v3_shadow.py", "valuation_pit_rerun.py", "valuation_v2_engine.py",
-    "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py",
+    "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py", "valuation_price_history.py",
+)
+IMPLEMENTATION_OBJECTS: tuple[str, ...] = (  # the Database methods the run's READERS call (engine.implementation_object_sha256: in run_key) — catalogue,
+    # source, macro and calibration snapshots, the price publication and its bars, the previous runs and the cycle's records — hashed as the §17
+    # object pins are (source_identity: the lines inspect.getsource returns), from database.py's text
+    "app.database.Database.latest_analysis_snapshot", "app.database.Database.latest_analysis_snapshot_before",
+    "app.database.Database.latest_analysis_snapshot_by_inputs", "app.database.Database.analysis_snapshot_by_id", "app.database.Database.price_bars",
+    "app.database.Database._price_bar_instant", "app.database.Database.valuation_predictions_for_cycle", "app.database.Database._prediction_record",
+    "app.database.Database._stored_prediction",
 )
 CATALOGUE_ANALYSIS_TYPE = "valuation_universe"
 SCREEN_DOLLAR_VOLUME_SESSIONS = 20  # the point-in-time liquidity of a name: the median as-traded close × volume of its last 20 valid sessions ≤ T
@@ -305,6 +316,17 @@ def _catalogue_symbols(database: Database, market: str, *, before: datetime | No
 
 def _file_sha256(name: str) -> str:
     return hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+
+
+def _object_sha256(qualified: str) -> str:
+    """``app.<module>.<Class>.<method>`` hashed from the module's text (``source_identity``: the workflow does the same on
+    the runner from the prereg commit's file)."""
+    _package, module, rest = qualified.split(".", 2)
+    return object_sha256(Path(__file__).with_name(f"{module}.py").read_text(encoding="utf-8"), rest)
+
+
+def implementation_objects() -> dict[str, str]:
+    return {name: _object_sha256(name) for name in IMPLEMENTATION_OBJECTS}
 
 
 def module_sha256() -> str:
@@ -939,12 +961,15 @@ class PinnedPrices:
             return None, None
         return _positive(bars[session].get(PRICE_LEVEL_FIELD)), session
 
-    def dollar_volume_median(self, symbol: str, sessions: int = SCREEN_DOLLAR_VOLUME_SESSIONS) -> float | None:
-        """The median as-traded ``close × volume`` of the symbol's last ``sessions`` bars ≤ T with a positive close and volume
-        (the pinned vintage): its point-in-time dollar liquidity; ``None`` with fewer such bars. A screen input, never an
-        engine input."""
+    def dollar_volume_median(self, symbol: str, sessions: int = SCREEN_DOLLAR_VOLUME_SESSIONS, *, field: str = PRICE_LEVEL_FIELD) -> float | None:
+        """The median ``price × volume`` of the symbol's last ``sessions`` bars ≤ T with a positive price and volume (the
+        pinned vintage): its point-in-time dollar liquidity; ``None`` with fewer such bars. ``field`` is the as-traded
+        ``close`` (a volume in traded shares) or ``adjusted_close`` (a volume the provider split-adjusted: the backtest's
+        volume check decides which, prereg §2). A screen input, never an engine input."""
+        if field not in (PRICE_LEVEL_FIELD, RETURN_FIELD):
+            raise ValueError(f"unknown price field {field!r}")
         bars = self.bars(symbol)
-        values = [close * volume for session in sorted(bars) if (close := _positive(bars[session].get(PRICE_LEVEL_FIELD))) is not None
+        values = [price * volume for session in sorted(bars) if (price := _positive(bars[session].get(field))) is not None
                   and (volume := _positive(bars[session].get("volume"))) is not None][-sessions:]
         return statistics.median(values) if len(values) == sessions else None
 
@@ -1122,6 +1147,7 @@ class PitSourceResolver:
         self.catalogue_snapshot_id: str | None = None  # a pointer for the reader; NOT part of the manifest hashed into run_key
         self.catalogue_pinned_at = _utc(catalogue_pinned_at) if catalogue_pinned_at is not None else None
         self.catalogue_pin: dict[str, Any] | None = None  # --catalogue-pinned-at: a pointer like the price pin (the content is in run_key by its hash)
+        self.catalogue_rows = 0
         self.catalogue_stocks = 0
 
     # ---- catalogue (the only current fields admitted: classification)
@@ -1134,6 +1160,7 @@ class PitSourceResolver:
                 raise PitRerunInputError(f"no {market} catalogue published before the catalogue pin {self.catalogue_pinned_at.isoformat()}")
             return []
         catalogue = admitted_catalogue(snapshot)
+        self.catalogue_rows = len(catalogue)
         self.catalogue_stocks = sum(1 for row in catalogue if row.get("security_type") == "Stock")
         if self.catalogue_pinned_at is not None:
             self.catalogue_pin = {"mode": "explicit", "requested_at": self.catalogue_pinned_at.isoformat(), "resolved_snapshot_id": str(snapshot["id"])}
@@ -1494,7 +1521,8 @@ class PitComputation:
         for symbol in sorted(self.resolver.per_symbol):
             row = self.resolver.per_symbol[symbol]["row"]
             screen[symbol] = {"security_type": row.get("security_type"), "close": row.get("price"), "price_session": row.get("price_session"),
-                              "market_cap": row.get("market_cap"), "dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol)}
+                              "market_cap": row.get("market_cap"), "dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol),
+                              "adjusted_dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol, field=RETURN_FIELD)}
         return screen
 
     def summary(self) -> dict[str, Any]:
@@ -1563,7 +1591,8 @@ class PitRerunService:
         manifest: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION, "market": market, "as_of": _utc(as_of).isoformat(), "economic_date": resolver.economic_date.isoformat(),
             "session_date": prices.session_date, "engine": {"identity": engine_identity(), "engine_version": ENGINE_VERSION,
-                                                            "implementation_file_sha256": {name: _file_sha256(name) for name in IMPLEMENTATION_FILES}},
+                                                            "implementation_file_sha256": {name: _file_sha256(name) for name in IMPLEMENTATION_FILES},
+                                                            "implementation_object_sha256": implementation_objects()},
             "buy_in_rule": {"identity": buy_in_identity(), "risk_score": ENTRY_RISK_SCORE, "valuation_confidence": ENTRY_CONFIDENCE},
             "sources": sorted(resolver.references, key=lambda item: json.dumps(item, sort_keys=True)),
             "price_vintage": prices.manifest(), "price_basis": dict(PRICE_BASIS), "macro": macro.references, "calibration": calibration,
@@ -1608,7 +1637,7 @@ class PitRerunService:
                            "rows": computation.results, "summary": computation.summary(), "not_evaluable": dict(computation.resolver.not_evaluable),
                            "prediction_identities": [[record["symbol"], record["row_sha256"]] for record in records],
                            "screen": computation.screen_inputs(),
-                           "catalogue_counts": {"rows": computation.resolver.price_basis_evidence.get("symbols_read", 0), "stocks": computation.resolver.catalogue_stocks},
+                           "catalogue_counts": {"rows": computation.resolver.catalogue_rows, "stocks": computation.resolver.catalogue_stocks},
                            "governance": {"diagnostic_only": True, "decision_consumer": False, "official_tp_replacement_authorized": False, "external_api_calls": 0}}
                 self.database.save_analysis_snapshot(ANALYSIS_TYPE, computation.entity_key, methodology_id, inputs, outputs, published_at, snapshot_id=cycle_id)
             expected = {(str(record["symbol"]), str(record["row_sha256"])): record for record in records}

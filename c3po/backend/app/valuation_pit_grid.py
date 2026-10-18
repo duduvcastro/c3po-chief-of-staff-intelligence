@@ -17,23 +17,28 @@ the report reads (``VALUATION-PIT-GRID-MANIFEST-v1``).
   hash), the US Treasury history snapshot and the latest PIT source snapshot of every catalogue name; every run — reused or
   computed — must carry exactly those (else ``GridError``), and the latest run of its ``(exchange, T)`` must be the run
   just accounted for (an A → B → A sequence of inputs would leave the store's latest run another one: ``GridError``).
+* **The volume basis of the screen** is decided once per invocation from the pinned publications (``volume_check``: the
+  capital events of every catalogue name's series vote on whether the provider's volume is in traded shares or
+  split-adjusted) and recorded in the manifest; an undetermined check runs nothing (``GridError``).
 * **Each T runs NASDAQ then NYSE** (the re-executor loads one exchange per run; the report unions both runs of a ``T``). A
-  ``(exchange, T)`` whose LATEST run already has this code (``source_version`` and the producer files), this price pin's
+  ``(exchange, T)`` whose LATEST run already has this code (``source_version``, the producer files and reader objects), this price pin's
   publication and this statements mode, and whose cycle holds exactly its prediction identities, is REUSED without
   recomputation; ``--recompute-existing`` re-runs every ``T`` through the public API instead. Sequential; ``--max-runs N``
   caps the ``T`` COMPUTED in one invocation (reused ones are free); before EVERY exchange's run (reused ones included) the
   invocation stops at/after ``--stop-before``, and before computing an instant it stops when now + 1.5 × the slowest
-  computed instant reaches it; a SIGTERM stops it between runs (``stopped.reason = terminated``). The next invocation
-  resumes. ``--expect-producer-sha256`` refuses to run when the producer files are not the expected ones.
+  computed instant (before any is measured: 300 s per run) reaches it; a SIGTERM stops it between runs
+  (``stopped.reason = terminated``). The next invocation resumes. ``--expect-producer-sha256`` refuses to run when the
+  producer (files and reader objects: ``producer()["engine_sha256"]``) is not the expected one.
 * **Output**: stdout carries JSON lines, aggregates only — one line per ``T`` (both runs: run_key, cycle, idempotent,
   reused, evaluated, records, not evaluable by reason, statements basis and coverage, the own-history model count, the
   elapsed seconds and the process's peak RSS) and a final ``manifest`` line with the whole manifest, printed BEFORE the
   manifest is written to ``--manifest-out`` (``O_EXCL | O_NOFOLLOW``, mode 0600: a NEW path in an existing directory),
   with ``manifest_sha256`` = the canonical sha256 of the manifest without that field. On an error the manifest of what
-  was done is printed and written (``stopped``: the error's type, never its message) and the error is re-raised.
-  ``--dry-run`` prints the grid, the pins, the as-filed coverage and how many runs are reusable; ``--host-check`` prints
-  the price publications a cut now sees, the as-filed coverage and the ingestion runs still running — both write
-  nothing, in a read-only session.
+  was done is printed and written (``stopped``: the error's type, never its message) and the error is re-raised — an error
+  outside a run (a reuse lookup, a check) included. ``--dry-run`` prints the grid, the pins, the as-filed coverage, how
+  many runs are reusable and the volume check; ``--host-check`` prints the price publications a cut now sees, the as-filed
+  coverage and the ingestion runs still running (``blocking``: the nightly valuation worker's, and any running for more
+  than 30 minutes) — both write nothing, in a read-only session.
 """
 from __future__ import annotations
 
@@ -44,6 +49,7 @@ import resource
 import signal
 import sys
 import time
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, cast
@@ -58,10 +64,14 @@ from .valuation_panel import _NoNetworkHttp
 from .valuation_price_history import PriceHistoryService
 
 MARKET_GROUPS: dict[str, tuple[str, ...]] = {backtest.MARKET_GROUP: backtest.MARKETS}
-ENGINE_FILES: tuple[str, ...] = pit.IMPLEMENTATION_FILES  # = the run manifest's engine.implementation_file_sha256: the producer
+ENGINE_FILES: tuple[str, ...] = pit.IMPLEMENTATION_FILES  # = the run manifest's engine.implementation_file_sha256: the producer's files
+ENGINE_OBJECTS: tuple[str, ...] = pit.IMPLEMENTATION_OBJECTS  # = engine.implementation_object_sha256: the Database methods its readers call
 PIT_SOURCE_PROVIDERS: tuple[str, ...] = (pit.PROVIDER_EODHD, pit.PROVIDER_FMP)
 PREDICTIVE_STOP_FACTOR = 1.5  # stop before an instant when now + 1.5 × the slowest computed instant reaches --stop-before
+PRIOR_SECONDS_PER_RUN = 300.0  # until an instant has been measured, one run is assumed to take 300 s (an instant: one run per exchange)
 INGESTION_WINDOW = timedelta(hours=12)
+INGESTION_LONG_RUNNING = timedelta(minutes=30)  # a run `running` this long blocks a write whatever its source (an IR poll lasts seconds)
+NIGHTLY_SOURCE_TYPE = "valuation_worker"  # the nightly valuation worker's runs block a write from their start
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -70,13 +80,21 @@ class GridError(RuntimeError):
 
 
 def engine_files() -> dict[str, str]:
-    """The producer of this code: the sha256 of the files a run manifest names in ``engine.implementation_file_sha256``."""
+    """The producer's files in this code: the sha256 a run manifest names in ``engine.implementation_file_sha256``."""
     return {name: pit._file_sha256(name) for name in ENGINE_FILES}
 
 
+def engine_objects() -> dict[str, str]:
+    """The producer's ``Database`` reader methods in this code, as ``engine.implementation_object_sha256`` names them."""
+    return pit.implementation_objects()
+
+
 def producer() -> dict[str, Any]:
-    files = engine_files()
-    return {"source_version": pit.source_version(), "engine_files": files, "engine_files_sha256": canonical_sha256(files)}
+    """The producer of this code: its files and reader objects, and ``engine_sha256`` = the canonical sha256 of
+    ``{files, objects}`` (what ``--expect-producer-sha256`` and the workflow compute from the prereg commit)."""
+    files, objects = engine_files(), engine_objects()
+    return {"source_version": pit.source_version(), "engine_files": files, "engine_objects": objects,
+            "engine_sha256": canonical_sha256({"files": files, "objects": objects})}
 
 
 def _peak_rss_kb() -> int:
@@ -96,6 +114,25 @@ def resolve_pins(database: Database, settings: Settings, markets: Sequence[str],
         pins[market] = {"status": "ok", "publication_id": str(vintage["publication_id"]), "price_snapshot_id": vintage["price_snapshot_id"],
                         "available_at": vintage["available_at"], "bars_sha256": vintage["bars_sha256"], "from": vintage["from"], "to": vintage["to"]}
     return pins
+
+
+def volume_check(database: Database, settings: Settings, pins: Mapping[str, Mapping[str, Any]], markets: Sequence[str],
+                 catalogue_pinned_at: datetime | None) -> dict[str, Any]:
+    """The screen's volume basis (prereg §2), decided ONCE per invocation from the PINNED publications (read only): the
+    votes of every catalogue name's series on whether the provider's volume is in traded shares or split-adjusted
+    (``valuation_pit_backtest_report.volume_split_votes``), one series in memory at a time; aggregates only."""
+    reader = PriceHistoryService(settings, database, _NoNetworkHttp())
+    votes: Counter[str] = Counter()
+    series_read = 0
+    for market in markets:
+        cut = pit._utc(pit._instant(pins[market]["available_at"])) + timedelta(microseconds=1)
+        for symbol in pit._catalogue_symbols(database, market, before=catalogue_pinned_at):
+            series = reader.series(market, symbol, available_before=cut)
+            if series["status"] != "ok" or str(series.get("publication_id")) != str(pins[market]["publication_id"]):
+                continue
+            series_read += 1
+            votes.update(backtest.volume_split_votes(series["bars"]))
+    return {**backtest.volume_split_decision(votes), "series_read": series_read}
 
 
 def resolve_sources(database: Database, markets: Sequence[str], catalogue_pinned_at: datetime) -> dict[str, dict[str, Any]]:
@@ -158,7 +195,7 @@ def reusable_run(database: Database, market: str, as_of: datetime, *, publicatio
     inputs, outputs = pit._mapping(snapshot.get("inputs")), pit._mapping(snapshot.get("outputs"))
     if str(inputs.get("source_version")) != pit.source_version():
         return None
-    if pit._mapping(pit._mapping(inputs.get("manifest")).get("engine")).get("implementation_file_sha256") != engine_files():
+    if backtest.producer_of(pit._mapping(inputs.get("manifest"))) != {"files": engine_files(), "objects": engine_objects()}:
         return None
     if str(pit._mapping(inputs.get("price_pin")).get("resolved_publication_id")) != publication_id:
         return None
@@ -193,16 +230,23 @@ def check_sources(manifest: Mapping[str, Any], resolved: Mapping[str, Any], *, m
     return problems
 
 
-def running_ingestions(database: Database, now: datetime) -> int:
-    """The ingestion runs still ``running`` that started in the last ``INGESTION_WINDOW`` (read only): a write of the grid
-    never overlaps a producer's run."""
-    since = pit._utc(now) - INGESTION_WINDOW
+def running_ingestions(database: Database, now: datetime) -> dict[str, int]:
+    """The ingestion runs still ``running`` that started in the last ``INGESTION_WINDOW`` (read only): ``running`` (all of
+    them) and ``blocking`` — the nightly valuation worker's (``NIGHTLY_SOURCE_TYPE``) and any running for more than
+    ``INGESTION_LONG_RUNNING`` (never an investor-relations poll of a few seconds): a write of the grid never overlaps them."""
+    since, long_ago = pit._utc(now) - INGESTION_WINDOW, pit._utc(now) - INGESTION_LONG_RUNNING
     if not database.database_url:
         runs = cast(dict[str, dict[str, Any]], getattr(database, "_ingestion_runs", {}))
-        return sum(1 for run in runs.values() if run.get("status") == "running" and pit._utc(pit._instant(run["started_at"])) >= since)
+        sources = {str(source.get("id")): str(source.get("source_type")) for source in cast(dict[str, dict[str, Any]], getattr(database, "_data_sources", {})).values()}
+        active = [run for run in runs.values() if run.get("status") == "running" and pit._utc(pit._instant(run["started_at"])) >= since]
+        blocking = [run for run in active if sources.get(str(run.get("source_id"))) == NIGHTLY_SOURCE_TYPE or pit._utc(pit._instant(run["started_at"])) <= long_ago]
+        return {"running": len(active), "blocking": len(blocking)}
     with database.connection() as connection:
-        row = connection.execute("SELECT count(*) FROM ingestion_runs WHERE status = 'running' AND started_at >= %s", (since,)).fetchone()
-    return int(row[0]) if row else 0
+        row = connection.execute(
+            "SELECT count(*), count(*) FILTER (WHERE source.source_type = %s OR run.started_at <= %s) FROM ingestion_runs run "
+            "LEFT JOIN data_sources source ON source.id = run.source_id WHERE run.status = 'running' AND run.started_at >= %s",
+            (NIGHTLY_SOURCE_TYPE, long_ago, since)).fetchone()
+    return {"running": int(row[0]) if row else 0, "blocking": int(row[1]) if row else 0}
 
 
 def asfiled_coverage(database: Database, markets: Sequence[str], statements: str, *, before: datetime | None = None) -> dict[str, Any]:
@@ -232,7 +276,7 @@ def host_check(database: Database, settings: Settings, *, markets: Sequence[str]
             "status": vintage["status"], "publication_id": vintage["publication_id"], "available_at": vintage["available_at"], "from": vintage["from"],
             "to": vintage["to"], "symbols": len(vintage["series_sha256"]), "bars": sum(int(count) for count in vintage["series_bars"].values())}
     return {"kind": "host_check", "now": pit._utc(now).isoformat(), "publications": publications, "coverage": asfiled_coverage(database, markets, backtest.STATEMENTS),
-            "ingestion_runs_running_12h": running_ingestions(database, now), "producer": producer()}
+            "ingestion_runs": running_ingestions(database, now), "producer": producer()}
 
 
 def _entry(*, as_of: datetime, session: date, market: str, run_key: str, cycle_id: str, idempotent: bool, reused: bool, supersedes: str | None,
@@ -264,7 +308,7 @@ class GridRun:
                 raise GridError(f"the {name} pin must carry a time zone")
         if statements not in pit.STATEMENTS_MODES:
             raise GridError(f"unknown statements mode {statements!r}")
-        if expect_producer_sha256 is not None and producer()["engine_files_sha256"] != expect_producer_sha256:
+        if expect_producer_sha256 is not None and producer()["engine_sha256"] != expect_producer_sha256:
             raise GridError("the producer files of this code are not the expected ones (--expect-producer-sha256): nothing runs")
         self.database = database
         self.settings = settings
@@ -284,6 +328,7 @@ class GridRun:
                 raise GridError(f"the {name} pin {pin.isoformat()} is in the future: it would resolve something else when repeated")
         self.pins = resolve_pins(database, settings, self.markets, self.price_pinned_at)
         self.sources = resolve_sources(database, self.markets, self.catalogue_pinned_at) if self.catalogue_pinned_at is not None else None
+        self.volume_basis = volume_check(database, settings, self.pins, self.markets, self.catalogue_pinned_at)
         self.failure: BaseException | None = None  # the error that stopped run(), re-raised by the caller once the manifest is written
         self.terminated = False
 
@@ -310,7 +355,7 @@ class GridRun:
                 "prereg_grid_sessions": len(full),
                 "grid": {"count": len(sessions), "first": sessions[0].isoformat() if sessions else None, "last": sessions[-1].isoformat() if sessions else None,
                          "sessions": [session.isoformat() for session in sessions]},
-                "reusable": {"runs": reusable_runs, "t_complete": reusable_t},
+                "reusable": {"runs": reusable_runs, "t_complete": reusable_t}, "volume_basis": dict(self.volume_basis),
                 "coverage": asfiled_coverage(self.database, self.markets, self.statements, before=self.catalogue_pinned_at), "producer": producer()}
 
     def _terminate(self, _signum: int, _frame: Any) -> None:
@@ -341,35 +386,40 @@ class GridRun:
 
     def run(self, *, start: date | None, end: date | None, max_runs: int | None, stop_before: datetime | None, recompute_existing: bool,
             owner_order_sha256: str | None) -> dict[str, Any]:
-        """The runs of the sub-range, in grid order, then the manifest (returned; printed and written by the caller). A run
-        that raises stops the invocation: ``stopped`` names the ``T``, the exchange and the error's TYPE; the error is
-        re-raised by the caller after the manifest is written (``self.failure``). A SIGTERM stops it between runs."""
+        """The runs of the sub-range, in grid order, then the manifest (returned; printed and written by the caller). Any
+        error once the grid has started — a run, a reuse lookup, a check — stops the invocation: ``stopped`` names the
+        ``T``, the exchange and the error's TYPE; the error is re-raised by the caller after the manifest is written
+        (``self.failure``). A SIGTERM stops it between runs. An undetermined volume basis runs nothing (``GridError``)."""
         bounds, full, sessions = plan(self.pins, step=self.step, start=start, end=end, grid_start=self.grid_start)
+        if self.volume_basis["decision"] not in backtest.VOLUME_BASES:
+            raise GridError(f"the volume check of the pinned vintages is undetermined ({self.volume_basis['events']} clean capital events, "
+                            f"{self.volume_basis['as_traded_like']} as traded, {self.volume_basis['split_adjusted_like']} split-adjusted): nothing runs")
         self.failure = None
         self.terminated = False
         entries: list[dict[str, Any]] = []
         computed = 0
-        slowest: float | None = None
+        slowest: float | None = None  # the slowest computed instant so far; before the first, PRIOR_SECONDS_PER_RUN per run
         stopped: dict[str, Any] | None = None
         previous = signal.signal(signal.SIGTERM, self._terminate)
         try:
             for session in sessions:
                 as_of = backtest.t_instant(session)
-                found = {market: (None if recompute_existing else reusable_run(self.database, market, as_of, publication_id=self.pins[market]["publication_id"],
-                                                                               statements=self.statements)) for market in self.markets}
-                needs_run = any(snapshot is None for snapshot in found.values())
-                if needs_run and max_runs is not None and computed >= max_runs:
-                    stopped = {"reason": "max_runs", "at": as_of.isoformat()}
-                    break
-                reason = self._stop_reason(stop_before, predict=slowest if needs_run else None)
-                if reason is not None:
-                    stopped = {"reason": reason, "at": as_of.isoformat()}
-                    break
-                line: dict[str, Any] = {"kind": "t", "as_of": as_of.isoformat(), "session_date": session.isoformat(), "runs": {}}
-                started = self.monotonic()
-                pending: list[dict[str, Any]] = []
                 market = self.markets[0]
                 try:
+                    found = {market: (None if recompute_existing else reusable_run(self.database, market, as_of, publication_id=self.pins[market]["publication_id"],
+                                                                                   statements=self.statements)) for market in self.markets}
+                    needs_run = any(snapshot is None for snapshot in found.values())
+                    if needs_run and max_runs is not None and computed >= max_runs:
+                        stopped = {"reason": "max_runs", "at": as_of.isoformat()}
+                        break
+                    expected = slowest if slowest is not None else PRIOR_SECONDS_PER_RUN * len(self.markets)
+                    reason = self._stop_reason(stop_before, predict=expected if needs_run else None)
+                    if reason is not None:
+                        stopped = {"reason": reason, "at": as_of.isoformat()}
+                        break
+                    line: dict[str, Any] = {"kind": "t", "as_of": as_of.isoformat(), "session_date": session.isoformat(), "runs": {}}
+                    started = self.monotonic()
+                    pending: list[dict[str, Any]] = []
                     for market in self.markets:
                         reason = self._stop_reason(stop_before, predict=None)
                         if reason is not None:  # before EVERY exchange's run: a half-done instant is never listed (its runs are reused next time)
@@ -401,19 +451,19 @@ class GridRun:
                                            records=int(receipt["records"]["expected"]), history_active=_history_active(computation.results))
                         pending.append(entry)
                         line["runs"][market] = _line(entry, summary, self.monotonic() - tick)
+                    if stopped is not None:
+                        break
+                    entries.extend(pending)
+                    elapsed = self.monotonic() - started
+                    if needs_run:
+                        computed += 1
+                        slowest = elapsed if slowest is None else max(slowest, elapsed)
+                    line.update({"elapsed_seconds": round(elapsed, 3), "peak_rss_kb": _peak_rss_kb()})
+                    self.emit(line)
                 except Exception as error:  # the type only: a message may name a symbol
                     self.failure = error
                     stopped = {"reason": "error", "at": as_of.isoformat(), "market": market, "error": type(error).__name__}
                     break
-                if stopped is not None:
-                    break
-                entries.extend(pending)
-                elapsed = self.monotonic() - started
-                if needs_run:
-                    computed += 1
-                    slowest = elapsed if slowest is None else max(slowest, elapsed)
-                line.update({"elapsed_seconds": round(elapsed, 3), "peak_rss_kb": _peak_rss_kb()})
-                self.emit(line)
         finally:
             signal.signal(signal.SIGTERM, previous)
         done = {entry["session_date"] for entry in entries}
@@ -424,7 +474,7 @@ class GridRun:
             "range": {"from": sessions[0].isoformat() if sessions else None, "to": sessions[-1].isoformat() if sessions else None},
             "prereg_grid_sessions": len(full), "grid": entries,
             "complete": all(session.isoformat() in done for session in full), "remaining": sum(1 for session in full if session.isoformat() not in done),
-            "stopped": stopped, "producer": producer(), "owner_order_sha256": owner_order_sha256,
+            "stopped": stopped, "producer": producer(), "volume_basis": dict(self.volume_basis), "owner_order_sha256": owner_order_sha256,
         }
         manifest["manifest_sha256"] = backtest.manifest_sha256(manifest)
         return manifest
