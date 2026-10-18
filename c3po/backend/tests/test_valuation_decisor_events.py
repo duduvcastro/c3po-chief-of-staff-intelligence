@@ -899,3 +899,14 @@ def test_the_calendar_phase_is_flagged_off_runs_before_the_decisor_and_is_expect
     phases = source[source.index("offhours_phases = ("):source.index("while True:")]
     assert phases.index('OffhoursPhase("earnings_calendar"') < phases.index('OffhoursPhase("decisor_shadow"')
     assert "max_failures=EARNINGS_CALENDAR_MAX_FAILURES" in phases and "if valuation_env.earnings_calendar_enabled() else ()" in phases
+
+
+def test_the_aggregate_us_market_reads_the_xnys_calendar_like_its_exchanges() -> None:
+    # name_earnings is called with NASDAQ/NYSE by run_shadow; "US" (the decide() aggregate) must not lose its sessions
+    # and silently read every name as "no calendar answer" (verifier, 18/10).
+    in_window = _calendars({"AAPL.US": [{"code": "AAPL.US", "report_date": "2026-10-14", "timing": "BeforeMarket"}]})
+    for calendars in (in_window, _calendars(OUT_OF_WINDOW)):
+        us = decisor.name_earnings(calendars, None, "US", "AAPL", at=RUN, expected_session=SESSION)
+        nasdaq = decisor.name_earnings(calendars, None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)
+        assert us == nasdaq and us["window"]
+    assert decisor.name_earnings(in_window, None, "US", "AAPL", at=RUN, expected_session=SESSION)["within"] is True

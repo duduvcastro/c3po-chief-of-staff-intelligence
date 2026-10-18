@@ -140,7 +140,7 @@ STALENESS_SOURCE_UNAVAILABLE = "STALENESS_SOURCE_UNAVAILABLE"  # the 053 table a
 STALENESS_SOURCE_STALE = "STALENESS_SOURCE_STALE"  # no live as-filed poll observed in [D − 6 h, D − ε]: an empty 053 is no evidence (fail closed)
 # events (the block's ``event_gates`` says which withhold a permission; the others are MARKS: recorded, never a verdict)
 EARNINGS_WITHIN_N = "EARNINGS_WITHIN_N"  # an announcement known at D on sessions [T+1, T+N] (a gate in earnings_gate_markets)
-EARNINGS_DATE_ESTIMATED = "EARNINGS_DATE_ESTIMATED"  # the 051 cadence estimate answered (no usable calendar, or no calendar row for the name)
+EARNINGS_DATE_ESTIMATED = "EARNINGS_DATE_ESTIMATED"  # the 051 cadence estimate answered (no usable calendar, no calendar row for the name, or an invalid row of it)
 EARNINGS_CALENDAR_UNAVAILABLE = "EARNINGS_CALENDAR_UNAVAILABLE"  # no calendar answer for the name and no estimate: no gate (an abstention rule)
 # a calendar read has an invalid row of the name: with no 051 estimate a GATE wherever EARNINGS_WITHIN_N gates (fail closed:
 # an unreadable provider row about the name is a warning, not evidence of no event); with an estimate, a mark
@@ -562,12 +562,17 @@ def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str, *
 # ------------------------------------------------------------------ inputs: events (earnings, consensus, sentiment)
 
 
+def _exchange_calendar(market: str) -> Any:
+    """The exchange calendar of a market; the aggregate ``US`` (NASDAQ ∪ NYSE) reads XNYS like both of its exchanges."""
+    return official._calendar("NYSE" if market == "US" else market)
+
+
 def _calendar_sessions(market: str, expected_session: str, count: int) -> list[str] | None:
     """Sessions T+1 … T+count of the market's exchange calendar (T = ``expected_session``); ``None`` when it cannot say."""
     if count <= 0:
         return []
     try:
-        window = official._calendar(market).sessions_window(expected_session, count + 1)
+        window = _exchange_calendar(market).sessions_window(expected_session, count + 1)
         sessions = [stamp.date().isoformat() for stamp in window]
     except Exception:
         return None
@@ -579,7 +584,7 @@ def _calendar_sessions(market: str, expected_session: str, count: int) -> list[s
 def _session_on_or_after(market: str, day: str) -> str | None:
     """The session an announcement dated ``day`` reaches: ``day`` itself when it is a session, else the next one."""
     try:
-        return official._calendar(market).date_to_session(day, direction="next").date().isoformat()
+        return _exchange_calendar(market).date_to_session(day, direction="next").date().isoformat()
     except Exception:
         return None
 
@@ -597,7 +602,7 @@ def reaction_sessions(market: str, report_date: str, timing: str | None) -> tupl
     if report != report_date:  # a date that is no session: the next session is both
         return report, report
     try:
-        return report, official._calendar(market).next_session(report_date).date().isoformat()
+        return report, _exchange_calendar(market).next_session(report_date).date().isoformat()
     except Exception:
         return report, None
 
