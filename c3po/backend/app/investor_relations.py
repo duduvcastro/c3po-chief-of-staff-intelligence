@@ -23,13 +23,21 @@ import httpx
 from curl_cffi import requests as curl_requests
 
 from .config import Settings
-from .cvm_fundamentals import extract_itr_official_fundamentals
+from .cvm_fundamentals import (
+    CvmPackage,
+    CvmPackageScan,
+    extract_cvm_official_statements,
+    extract_itr_official_fundamentals,
+    scan_cvm_package,
+)
+from .cvm_statement_vintages import CvmVintageCapture
 from .database import Database
 from .investor_relations_pdf import InvestorRelationsPdf
 from .market_data.eodhd import EodhdClient
 from .market_data.finnhub import FinnhubClient
 from .market_data.http import JsonHttpClient
 from .official_fundamentals import save_official_fundamentals
+from .official_statements import save_official_statements
 from .schemas import (
     InvestorRelationsEvent,
     InvestorRelationsResponse,
@@ -312,6 +320,8 @@ class InvestorRelationsService:
             try:
                 if code == "cvm":
                     source_read, source_written = self.sync_cvm()
+                elif code == "cvm_statements":
+                    source_read, source_written = self.sync_cvm_statements()
                 elif code == "sec":
                     source_read, source_written = self.sync_sec()
                 elif code == "ri":
@@ -403,6 +413,87 @@ class InvestorRelationsService:
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
+
+    def sync_cvm_statements(self) -> tuple[int, int]:
+        """Complete CVM statements of every mapped B3 issuer -- ITR of this and last year, DFP of the two previous
+        years: income, D&A (DVA), cash flow, balance and capital, individual only when no consolidated exists --
+        saved under their own analysis type (served only through the field-by-field overlay switch), and the
+        as-filed vintages of each document. The open-data dumps keep only the latest version of a document, so a
+        re-filed original survives only in statement_vintages (a no-op until migration 051 and its store land).
+        Packages go oldest first, so the store sees each issuer's filings in acceptance order."""
+        run_id = self.database.begin_ingestion_run(
+            "cvm_statements",
+            "CVM Dados Abertos - demonstrações completas",
+            "regulatory_disclosure",
+            {"operation": "itr_dfp_statements"},
+        )
+        try:
+            year = datetime.now(SAO_PAULO).year
+            companies = self.database.list_ir_companies("B3")
+            company_index = {item["name_key"]: item for item in companies}
+            company_by_tax_id = {item["tax_id"]: item for item in companies if item.get("tax_id") and item.get("symbols")}
+            vintages = CvmVintageCapture.open(self.database)
+            scans: list[CvmPackageScan] = []
+            issuers: dict[str, dict[str, Any]] = {}
+            matches: dict[str, dict[str, Any] | None] = {}  # one name match per CNPJ across the four packages
+            records_read = 0
+            for document_type, package_year in (("dfp", year - 2), ("itr", year - 1), ("dfp", year - 1), ("itr", year)):
+                index_rows, payload, url = self._cvm_structured_package(document_type, package_year, date.min)
+                if not payload:
+                    continue
+                package_issuers = self._cvm_statement_issuers(index_rows, company_index, company_by_tax_id, matches)
+                for tax_id, issuer in package_issuers.items():
+                    issuers.setdefault(tax_id, issuer)
+                records_read += len(index_rows)
+                scans.append(scan_cvm_package(
+                    CvmPackage(document_type, package_year, payload, url),
+                    package_issuers,
+                    vintage_sink=vintages.write if vintages.enabled else None,
+                ))
+                vintages.finish_package()
+            overlays = extract_cvm_official_statements(scans, issuers=issuers)
+            written = save_official_statements(self.database, overlays)
+            warning = vintages.summary()
+            if vintages.degraded:  # the store refused writes: a partial run and an error event, not a quiet summary
+                logger.error("CVM statements run %s: %s", run_id, warning)
+            self.database.finish_ingestion_run(
+                run_id, "partial" if vintages.degraded else "succeeded", records_read, written, warning
+            )
+            return records_read, written
+        except Exception as exc:
+            self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
+            raise
+
+    def _cvm_statement_issuers(
+        self,
+        rows: list[dict[str, str]],
+        company_index: dict[str, dict[str, Any]],
+        company_by_tax_id: dict[str, dict[str, Any]],
+        matches: dict[str, dict[str, Any] | None] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Issuers of a package mapped to listed symbols: by CNPJ first, by name only when the matched company does
+        not carry a different CNPJ (a holding and its operating subsidiary often share most of a name)."""
+        matches = {} if matches is None else matches
+        issuers: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            tax_id = clean_text(row.get("CNPJ_CIA", ""))
+            if not tax_id or tax_id in issuers:
+                continue
+            company_name = clean_text(row.get("DENOM_CIA", ""))
+            if tax_id not in matches:
+                company = company_by_tax_id.get(tax_id) or self._match_company(company_name, company_index)
+                if not company or not company.get("symbols") or (company.get("tax_id") and company["tax_id"] != tax_id):
+                    company = None
+                matches[tax_id] = company
+            company = matches[tax_id]
+            if company is None:
+                continue
+            issuers[tax_id] = {
+                "symbols": company["symbols"],
+                "company_name": company_name or company.get("company_name"),
+                "regulator_id": clean_text(row.get("CD_CVM", "")) or company.get("regulator_id"),
+            }
+        return issuers
 
     def _cvm_insider_transactions(self, year: int, cutoff: date) -> list[dict[str, str]]:
         """Row-level insider buy/sell disclosures -- art. 11 of CVM

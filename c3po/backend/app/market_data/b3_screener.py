@@ -12,6 +12,7 @@ from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
 from ..investor_relations import normalize_company_name
 from ..official_fundamentals import apply_official_fundamentals_map
+from ..official_statements import apply_official_statements_map, fieldwise_overlay_enabled
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
@@ -755,7 +756,9 @@ class B3ScreenerService:
                 self.database.finish_ingestion_run(run_id, "failed", len(missing_symbols), 0, str(exc))
         cache = self._eodhd_cache  # one attribute load: a concurrent expiry rebinding the dict cannot split the reads below
         entries = {symbol: entry for symbol in clean_symbols if (entry := cache.get(symbol)) is not None}  # one dict read per symbol: the pair
-        fundamentals = apply_official_fundamentals_map(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
+        # C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED (default off): complete CVM statements overlaid field by field
+        overlay = apply_official_statements_map if fieldwise_overlay_enabled() else apply_official_fundamentals_map
+        fundamentals = overlay(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
         return fundamentals, {symbol: entry[1] for symbol, entry in entries.items()}
 
     def _eodhd_receipts(self, symbols: list[str]) -> dict[str, datetime]:
