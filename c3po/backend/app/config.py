@@ -274,6 +274,8 @@ class Settings(BaseSettings):
     # Valuation V3.2 price series (rev 7 §2.2): OFF by default; the nightly phase runs only when enabled by the mesa
     valuation_price_history_enabled: bool = False
     valuation_price_history_backfill_months: int = Field(default=36, ge=1, le=120)
+    # Valuation Decisor V1 (migration 052): OFF by default; the nightly shadow phase records verdicts only when the mesa enables it
+    valuation_decisor_shadow: bool = False
     r2d2_fmp_prefilter_enabled: bool = True
     r2d2_fmp_prefilter_cache_seconds: int = 15
     r2d2_fmp_prefilter_max_quote_age_seconds: int = 120

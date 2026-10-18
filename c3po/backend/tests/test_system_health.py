@@ -609,6 +609,22 @@ def test_valuation_worker_phase_health_survives_an_enabled_price_history_success
     assert service._valuation_worker_phase_health(now).status != "offline"  # dormant: neither expected nor pending
 
 
+def test_valuation_worker_phase_health_expects_the_decisor_only_when_enabled() -> None:
+    # Decisor V1 (migration 052): dormant by default — never expected, never pending, until the mesa enables the shadow phase
+    now = datetime.now(timezone.utc)
+    states = {
+        definition["code"]: {"last_status": "succeeded", "started_at": now, "completed_at": now, "last_success_at": now, "last_error": None,
+                             "metadata": {"phase": phase}}
+        for phase, definition in VALUATION_WORKER_PHASES.items()
+        if phase != "decisor_shadow"
+    }
+    service = _service(valuation_phase_states=states)
+    assert service.settings.valuation_decisor_shadow is False
+    assert "decisor_shadow" not in (service._valuation_worker_phase_health(now).detail or "")
+    service.settings.valuation_decisor_shadow = True
+    assert "pending/stale: decisor_shadow" in (service._valuation_worker_phase_health(now).detail or "")
+
+
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
     now = datetime.now(timezone.utc)
     states = {

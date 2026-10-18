@@ -1,3 +1,4 @@
+import statistics
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -719,6 +720,35 @@ def test_valuation_calibration_uses_mature_price_return_samples(tmp_path) -> Non
     assert calibration and calibration["outputs"]["status"] == "active"
     assert 1.0 < calibration["outputs"]["factors"]["global"] <= 1.05
     assert calibration["outputs"]["metrics"]["global"]["samples"] == 40
+    # Decisor V1 reads e_profile from this metric: the median ABSOLUTE error (equal samples here: the mean equals it)
+    global_metrics = calibration["outputs"]["metrics"]["global"]
+    assert global_metrics["median_absolute_error_percent"] == global_metrics["mean_absolute_error_percent"] > 0
+
+
+def test_valuation_calibration_publishes_the_decisors_median_absolute_error(tmp_path) -> None:
+    # Decisor V1's e_profile: the median of the ABSOLUTE price-only errors (the expected dividend out, as the factor's) —
+    # uneven, mixed-sign errors tell it apart from the mean absolute error and from the signed median
+    settings = Settings(database_url="", migrations_dir=tmp_path)
+    database = Database(settings)
+    service = B3ScreenerService(settings, database, StubHttp({}))  # type: ignore[arg-type]
+    methodology_id = database.ensure_methodology_version("test", 1, {}, "test")
+    generated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    moves = [-0.30, -0.12, 0.0, 0.03, 0.05, 0.08, 0.10, 0.14, 0.25, 0.40] * 4  # the two middle absolute errors sit on the same side
+    prior_rows = [
+        {"symbol": f"T{index:03d}3", "price": 100.0, "expected_total_return_percent": 15.0, "expected_dividend": 5.0, "valuation_profile": "general"}
+        for index in range(len(moves))
+    ]
+    current_rows = [{"symbol": row["symbol"], "price": 100.0 * (1 + move), "valuation_profile": "general"} for row, move in zip(prior_rows, moves)]
+    database.save_analysis_snapshot("valuation_universe", "B3_UNIVERSE", methodology_id, {}, {"rows": prior_rows}, generated_at - timedelta(days=90))
+
+    service._persist_calibration(methodology_id, generated_at, current_rows)
+    metrics = database.latest_analysis_snapshot("valuation_calibration", "B3_POWER_MODEL")["outputs"]["metrics"]  # type: ignore[index]
+
+    expected = 1.10 ** (90 / 365) - 1  # 15 % total minus the 5 % expected dividend
+    for profile in ("global", "general"):
+        assert metrics[profile]["median_absolute_error_percent"] == round(statistics.median(abs(move - expected) for move in moves) * 100, 2) == 9.62
+        assert metrics[profile]["mean_absolute_error_percent"] == round(statistics.mean(abs(move - expected) for move in moves) * 100, 2) != 9.62
+        assert abs(metrics[profile]["median_forecast_error_percent"]) != 9.62
 
 
 def test_eodhd_history_keeps_volume_for_b3_fallback() -> None:

@@ -78,6 +78,7 @@ class Database:
         self._official_cycle_cache: dict[str, dict[str, Any]] = {}
         self._cycle_records_cache: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}  # (cycle_id, source) → records by symbol (Passo 1)
         self._price_bars: list[dict[str, Any]] = []  # V3.2 price series (in-memory mirror of valuation_price_bars)
+        self._valuation_decisions: list[dict[str, Any]] = []  # Decisor V1 (shadow): in-memory mirror of the append-only valuation_decisions
         self._price_history_locks: dict[str, threading.RLock] = {}  # one critical section per market (C394-9); PostgreSQL: advisory lock
         self._price_history_locks_guard = threading.Lock()
         self._valuation_changes: list[dict[str, Any]] = []
@@ -3937,6 +3938,160 @@ class Database:
                 (generation_id,),
             ).fetchone()
         return self._selection_record(row)
+
+    # ------------------------------------------------------------------ Valuation decisor V1 (shadow; migration 052)
+
+    _DECISION_KEYS = ("id", "schema", "decisor_version", "mode", "run_id", "market", "symbol", "session_date", "prediction_instant", "published_at",
+                      "verdict", "reason_codes", "generation_id", "tp_source", "tp_cycle_id", "tp_row_sha256", "tp_prediction_instant", "tp", "buy_in",
+                      "price", "e_profile", "h_market", "thresholds_sha256", "inputs", "inputs_sha256", "checks", "row_sha256")
+    # the SELECT column list in _DECISION_KEYS order (the stored schema lives in record_schema)
+    _DECISION_COLUMNS = ("id::text, record_schema, decisor_version, mode, run_id::text, market, symbol, session_date::text, prediction_instant, published_at, "
+                         "verdict, reason_codes, generation_id::text, tp_source, tp_cycle_id::text, tp_row_sha256, tp_prediction_instant, tp, buy_in, "
+                         "price, e_profile, h_market, thresholds_sha256, inputs, inputs_sha256, checks, row_sha256")
+    _DECISION_ORDER = "prediction_instant DESC, published_at DESC, created_at DESC"
+    _DECISION_VERDICTS = ("COMPRA_PERMITIDA", "OBSERVAR", "VETO")  # migration 052: CHECK (verdict IN (...)) — pinned to valuation_decision.VERDICTS by a test
+
+    def insert_valuation_decisions(self, records: list[dict[str, Any]]) -> int:
+        """Append-only, idempotent per ``(run_id, market, symbol)`` (the UNIQUE of migration 052). The double mirrors the
+        table's NOT NULL columns and CHECKs — the verdict, the ``shadow`` mode, ``published_at >= prediction_instant`` —
+        refusing the WHOLE batch (``ValueError``) as PostgreSQL refuses the statement, and stores DEEP COPIES."""
+        if not records:
+            return 0
+        if not self.database_url:
+            for record in records:
+                missing = [key for key in self._DECISION_KEYS if key not in ("price", "e_profile", "h_market") and record.get(key) is None]
+                if missing:
+                    raise ValueError(f"valuation_decisions NOT NULL violated by {record.get('market')}/{record.get('symbol')}: {', '.join(missing)}")
+                if record["verdict"] not in self._DECISION_VERDICTS or record["mode"] != "shadow":
+                    raise ValueError(f"valuation_decisions CHECK violated by {record['market']}/{record['symbol']}: verdict {record['verdict']!r}, mode {record['mode']!r}")
+                if self._selection_instant(record["published_at"]) < self._selection_instant(record["prediction_instant"]):
+                    raise ValueError(f"valuation_decisions CHECK (published_at >= prediction_instant) violated by {record['market']}/{record['symbol']}")
+            existing = {(str(r["run_id"]), r["market"], r["symbol"]) for r in self._valuation_decisions}
+            added: list[dict[str, Any]] = []
+            for record in records:
+                key = (str(record["run_id"]), record["market"], record["symbol"])
+                if key not in existing:
+                    existing.add(key)
+                    added.append(copy.deepcopy(record))
+            self._valuation_decisions.extend(added)
+            return len(added)
+        inserted = 0
+        with self.connection() as connection:
+            for record in records:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO valuation_decisions
+                        (id, record_schema, decisor_version, mode, run_id, market, symbol, session_date, prediction_instant, published_at,
+                         verdict, reason_codes, generation_id, tp_source, tp_cycle_id, tp_row_sha256, tp_prediction_instant, tp, buy_in,
+                         price, e_profile, h_market, thresholds_sha256, inputs, inputs_sha256, checks, row_sha256)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s)
+                    ON CONFLICT (run_id, market, symbol) DO NOTHING
+                    """,
+                    (record["id"], record["schema"], record["decisor_version"], record["mode"], record["run_id"], record["market"], record["symbol"],
+                     record["session_date"], record["prediction_instant"], record["published_at"], record["verdict"], json.dumps(record["reason_codes"]),
+                     record["generation_id"], record["tp_source"], record["tp_cycle_id"], record["tp_row_sha256"], record["tp_prediction_instant"],
+                     self._numeric_param(record["tp"]), self._numeric_param(record["buy_in"]), self._numeric_param(record.get("price")),
+                     self._numeric_param(record.get("e_profile")), self._numeric_param(record.get("h_market")), record["thresholds_sha256"],
+                     json.dumps(record["inputs"]), record["inputs_sha256"], json.dumps(record["checks"]), record["row_sha256"]),
+                )
+                inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+            connection.commit()
+        return inserted
+
+    def _decision_record(self, row: Any) -> dict[str, Any] | None:
+        """A PostgreSQL row (``_DECISION_COLUMNS``) rebuilt into EXACTLY the canonical shape
+        ``valuation_decision.decision_record`` hashed: NUMERIC → float, DATE → ISO text, TIMESTAMPTZ → UTC ISO text whatever
+        the session time zone, JSONB decoded — then verified (``valuation_decision.stored_decision``: ``None`` when either hash
+        does not recompute). Change it together with the writer."""
+        from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+        record = dict(zip(self._DECISION_KEYS, row))
+        for key in ("tp", "buy_in", "price", "e_profile", "h_market"):
+            record[key] = float(record[key]) if record[key] is not None else None
+        for key in ("id", "run_id", "generation_id", "tp_cycle_id", "session_date"):
+            record[key] = str(record[key])
+        for key in ("prediction_instant", "published_at", "tp_prediction_instant"):
+            instant = record[key]
+            if isinstance(instant, datetime):
+                record[key] = (instant.astimezone(timezone.utc) if instant.tzinfo else instant.replace(tzinfo=timezone.utc)).isoformat()
+        for key in ("reason_codes", "inputs", "checks"):
+            if isinstance(record[key], str):
+                record[key] = json.loads(record[key])
+        return stored_decision(record)
+
+    def _decision_order_key(self, index: int, record: dict[str, Any]) -> tuple[datetime, datetime, int]:
+        return self._selection_instant(record["prediction_instant"]), self._selection_instant(record["published_at"]), index
+
+    def latest_valuation_decisions(self, market: str, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        """The newest decision of each REQUESTED symbol of ``market`` (``_DECISION_ORDER``), keyed by symbol — the reader of
+        the R2D2 lab's helper; it never enumerates a market. A newest row whose identity does not verify leaves its symbol
+        absent: nothing older is served in its place (as the prediction readers). Copies."""
+        wanted = sorted({str(symbol) for symbol in symbols if symbol})
+        if not wanted:
+            return {}
+        if not self.database_url:
+            from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+            latest: dict[str, tuple[tuple[datetime, datetime, int], dict[str, Any]]] = {}
+            for index, record in enumerate(self._valuation_decisions):
+                if record["market"] != market or record["symbol"] not in wanted:
+                    continue
+                key = self._decision_order_key(index, record)
+                held = latest.get(record["symbol"])
+                if held is None or key > held[0]:
+                    latest[record["symbol"]] = (key, record)
+            served = ((symbol, stored_decision(record)) for symbol, (_, record) in latest.items())
+            return {symbol: record for symbol, record in served if record is not None}
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT DISTINCT ON (symbol) {self._DECISION_COLUMNS}
+                FROM valuation_decisions
+                WHERE market = %s AND symbol = ANY(%s)
+                ORDER BY symbol, {self._DECISION_ORDER}
+                """,
+                (market, wanted),
+            ).fetchall()
+        return {str(record["symbol"]): record for record in (self._decision_record(row) for row in rows) if record is not None}
+
+    def list_valuation_decisions(self, market: str, symbol: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        """History of one symbol's decisions, newest first (``_DECISION_ORDER``) — for the studies that grade the verdicts.
+        Copies; a row whose identity does not verify is absent."""
+        if not self.database_url:
+            from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+            matches = [(self._decision_order_key(index, r), r) for index, r in enumerate(self._valuation_decisions) if r["market"] == market and r["symbol"] == symbol]
+            matches.sort(key=lambda entry: entry[0], reverse=True)
+            return [record for record in (stored_decision(r) for _, r in matches[:limit]) if record is not None]
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT {self._DECISION_COLUMNS}
+                FROM valuation_decisions
+                WHERE market = %s AND symbol = %s
+                ORDER BY {self._DECISION_ORDER} LIMIT %s
+                """,
+                (market, symbol, int(limit)),
+            ).fetchall()
+        return [record for record in (self._decision_record(row) for row in rows) if record is not None]
+
+    def latest_valuation_decision_run(self) -> dict[str, Any] | None:
+        """The latest decision run (``run_id``, ``generation_id``, both clocks as UTC ISO) by publication — what the nightly
+        phase compares with the generation in force (``valuation_decision.last_run_at``)."""
+        if not self.database_url:
+            if not self._valuation_decisions:
+                return None
+            index, record = max(enumerate(self._valuation_decisions), key=lambda entry: (self._selection_instant(entry[1]["published_at"]), entry[0]))
+            return {key: str(record[key]) for key in ("run_id", "generation_id", "prediction_instant", "published_at")}
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT run_id::text, generation_id::text, prediction_instant, published_at
+                FROM valuation_decisions
+                ORDER BY published_at DESC, created_at DESC LIMIT 1
+                """
+            ).fetchone()
+        if not row:
+            return None
+        return {"run_id": str(row[0]), "generation_id": str(row[1]), "prediction_instant": self._selection_instant(row[2]).isoformat(),
+                "published_at": self._selection_instant(row[3]).isoformat()}
 
     # ------------------------------------------------------------------ V3.2 price series (rev 7 §2.2; migration 049)
 

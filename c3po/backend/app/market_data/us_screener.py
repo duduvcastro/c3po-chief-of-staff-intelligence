@@ -876,6 +876,10 @@ class USScreeningService:
                 if isinstance(row, dict) and row.get("symbol")
             }
             grouped: dict[str, list[tuple[float, float]]] = {"global": []}
+            # Decisor V1: the price-only absolute error behind median_absolute_error_percent. The US expected total return
+            # is upside + dividend yield while the realized return is price-only; B3 takes the dividend out of the
+            # expectation, so the decisor's metric does the same here (upside_percent) — the factor keeps its own samples (grouped)
+            price_errors: dict[str, list[float]] = {"global": []}
             if horizon_days is not None:
                 for row in current_rows:
                     symbol = str(row.get("symbol") or "")
@@ -893,6 +897,11 @@ class USScreeningService:
                     sample = (realized, expected_period)
                     grouped["global"].append(sample)
                     grouped.setdefault(str((old or {}).get("valuation_profile") or "general"), []).append(sample)
+                    upside = number((old or {}).get("upside_percent"))
+                    price_annual = clamp((upside if upside is not None else expected_annual) / 100, -0.90, 3.0)  # no upside: no dividend known, as B3
+                    price_error = abs(realized - ((1 + price_annual) ** (horizon_days / 365) - 1))
+                    price_errors["global"].append(price_error)
+                    price_errors.setdefault(str((old or {}).get("valuation_profile") or "general"), []).append(price_error)
 
             global_factor = 1.0
             for profile, samples in grouped.items():
@@ -920,6 +929,8 @@ class USScreeningService:
                     "samples": len(samples),
                     "median_forecast_error_percent": round(statistics.median(errors) * 100, 2) if errors else None,
                     "mean_absolute_error_percent": round(statistics.mean(absolute_errors) * 100, 2) if absolute_errors else None,
+                    # Decisor V1 (valuation_decision): e_profile is this measured median absolute PRICE-ONLY error — a diagnostic, no factor reads it
+                    "median_absolute_error_percent": round(statistics.median(price_errors[profile]) * 100, 2) if price_errors.get(profile) else None,
                     "directional_accuracy_percent": round(statistics.mean(directional) * 100, 2) if directional else None,
                     "factor": round(factor, 5),
                 }

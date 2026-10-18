@@ -365,6 +365,40 @@ def test_us_valuation_calibration_uses_mature_price_return_samples() -> None:
     assert calibration and calibration["outputs"]["status"] == "active"
     assert 1.0 < calibration["outputs"]["factors"]["global"] <= 1.05
     assert calibration["outputs"]["metrics"]["global"]["samples"] == 40
+    # Decisor V1 reads e_profile from this metric: the median ABSOLUTE error (equal samples here: the mean equals it)
+    global_metrics = calibration["outputs"]["metrics"]["global"]
+    assert global_metrics["median_absolute_error_percent"] == global_metrics["mean_absolute_error_percent"] > 0
+
+
+def test_us_calibration_publishes_the_decisors_price_only_median_absolute_error() -> None:
+    """Decisor V1's e_profile: the median of the ABSOLUTE price-only errors — uneven, mixed-sign errors tell it apart from the
+    mean absolute error and from the signed median; the expected total return's dividend yield (upside 10 % + dividend 2 %)
+    is out of the expectation, as B3 takes its expected dividend out, while the factor keeps its own samples."""
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+    generated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    moves = [-0.30, -0.12, 0.0, 0.03, 0.05, 0.08, 0.10, 0.14, 0.25, 0.40] * 4  # the two middle absolute errors sit on the same side
+    prior_rows = [
+        {"symbol": f"T{index:03d}", "price": 100.0, "expected_total_return_percent": 12.0, "upside_percent": 10.0, "valuation_profile": "general"}
+        for index in range(len(moves))
+    ]
+    current_rows = [{"symbol": row["symbol"], "price": 100.0 * (1 + move), "valuation_profile": "general"} for row, move in zip(prior_rows, moves)]
+    svc.database.save_analysis_snapshot(
+        "valuation_universe", "NASDAQ_UNIVERSE", methodology_id, {}, {"rows": prior_rows}, generated_at - timedelta(days=90),
+    )
+
+    svc._persist_calibration("NASDAQ", methodology_id, generated_at, current_rows)
+    metrics = svc.database.latest_analysis_snapshot("valuation_calibration", "NASDAQ_POWER_MODEL")["outputs"]["metrics"]
+
+    price_only = 1.10 ** (90 / 365) - 1
+    with_dividend = 1.12 ** (90 / 365) - 1
+    for profile in ("global", "general"):
+        assert metrics[profile]["median_absolute_error_percent"] == round(statistics.median(abs(move - price_only) for move in moves) * 100, 2) == 9.62
+        assert metrics[profile]["median_absolute_error_percent"] != metrics[profile]["mean_absolute_error_percent"]
+        assert metrics[profile]["median_absolute_error_percent"] != abs(metrics[profile]["median_forecast_error_percent"])
+        # the factor's metrics keep the total-return expectation (no served number moves)
+        assert metrics[profile]["mean_absolute_error_percent"] == round(statistics.mean(abs(move - with_dividend) for move in moves) * 100, 2)
+    assert round(statistics.median(abs(move - with_dividend) for move in moves) * 100, 2) == 9.17  # the dividend in the expectation would have biased it
 
 
 def test_us_valuation_calibration_warms_up_without_a_mature_prior_snapshot() -> None:
