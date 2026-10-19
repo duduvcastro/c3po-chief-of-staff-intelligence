@@ -42,6 +42,9 @@ ENGINE = {name: hashlib.sha256(name.encode()).hexdigest() for name in ("valuatio
                                                                        "valuation_asfiled.py", "statement_vintages.py", "valuation_price_history.py")}
 OBJECTS = {name: hashlib.sha256(name.encode()).hexdigest() for name in ("app.database.Database.latest_analysis_snapshot", "app.database.Database.price_bars")}
 PRODUCER = {"files": ENGINE, "objects": OBJECTS}  # what the workflow computes from the prereg commit
+SERVED_ENGINE = {"one_pager.py": "1" * 64, "market_data/us_screener.py": "2" * 64}
+SERVED_PRODUCER = {"files": SERVED_ENGINE, "objects": OBJECTS}  # rev 2: the served producer the workflow computes from the prereg commit
+SERVED_VERSION = "pit-served-v1+synthetic000"
 
 
 def _names(count: int = 30) -> list[tuple[str, str]]:
@@ -415,7 +418,9 @@ class Synthetic:
     return, total return, z)``; names in ``small_caps`` fail the point-in-time screen (market cap below the floor)."""
 
     def __init__(self, rule: Rule, *, count: int = 130, seed: int = 11, jump: float = 0.0, drop_from: dict[str, int] | None = None, names: int = 30,
-                 small_caps: frozenset[str] = frozenset()) -> None:
+                 small_caps: frozenset[str] = frozenset(), served_sign: float = 1.0) -> None:
+        self.served_sign = served_sign  # rev 2: beside every V3 run, the served run of the same (exchange, T) with the V3 upside x served_sign
+        self.served_of: dict[str, dict[str, Any]] = {}  # V3 run_key -> the manifest entry of its served sibling
         self.rng = random.Random(seed)
         self.names = _names(names)
         self.small_caps = small_caps
@@ -466,8 +471,9 @@ class Synthetic:
             engine: dict[str, str] | None = None, statements: str = "vintages", extra_identity: bool = False, published: datetime | None = None,
             publication_id: str | None = None, scope: str = "universe", catalogue: str = "c" * 64, covered: int = 40, covered_in_catalogue: int | None = None,
             stocks: int | None = None, objects: dict[str, str] | None = None,
-            session_date: date | None = None) -> dict[str, Any]:
-        """One synthetic run of (market, T): its records and its snapshot, as valuation_pit_rerun writes them."""
+            session_date: date | None = None, served: bool = True) -> dict[str, Any]:
+        """One synthetic run of (market, T): its records and its snapshot, as valuation_pit_rerun writes them — and (rev 2)
+        its served sibling, as valuation_pit_served writes it, with the SAME screen inputs, catalogue and coverage."""
         instant = backtest.t_instant(day)
         run_key = run_key or hashlib.sha256(f"{market}|{day.isoformat()}|{uuid4()}".encode()).hexdigest()
         cycle_id = str(uuid4())
@@ -504,14 +510,62 @@ class Synthetic:
                    "rows": {symbol: {"models": {"own_history": {"tp": 1.0}} if index % 3 else {"peer_comps": {"tp": 1.0}}} for index, symbol in enumerate(sorted(upsides))}}
         self.database.save_analysis_snapshot(backtest.RUN_ANALYSIS_TYPE, f"{market}_PIT_{run_key[:16]}", "mv-pit", inputs, outputs, published, snapshot_id=cycle_id)
         assert self.database.insert_valuation_predictions(records) == len(records)
+        if served:
+            self.served_of[run_key] = self.served_run(market, day, {s: u * self.served_sign for s, u in upsides.items()}, v3_run_key=run_key,
+                                                      inputs=inputs, outputs=outputs, scope=scope, published=published)
         return {"as_of": instant.isoformat(), "session_date": day.isoformat(), "market": market, "run_key": run_key, "cycle_id": cycle_id, "idempotent": False,
                 "reused": False, "evaluated": len(records) + 1, "records": len(records), "not_evaluable": {"statement_vintages_missing": 2}}
+
+    def served_run(self, market: str, day: date, upsides: dict[str, float], *, v3_run_key: str, inputs: dict[str, Any], outputs: dict[str, Any],
+                   scope: str = "universe", published: datetime | None = None, tamper: str | None = None, screen: dict[str, Any] | None = None) -> dict[str, Any]:
+        """The served sibling of a V3 run (``inputs``/``outputs`` of that run): its records INSIDE its snapshot (the internal
+        record shape relabelled ``official_internal_pit``), the V3 run's pins, session, catalogue reference, coverage and
+        screen inputs (or ``screen``); ``tamper``: ``tp`` (a record not re-hashed) or ``source`` (a record claiming the V3 source)."""
+        from app import valuation_pit_served as served
+        instant = backtest.t_instant(day)
+        run_key = hashlib.sha256(f"served|{market}|{day.isoformat()}|{uuid4()}".encode()).hexdigest()
+        cycle_id = str(uuid4())
+        published = published or (self.published + timedelta(seconds=len(self.database._analysis_snapshots)))
+        records = []
+        for symbol, upside in sorted(upsides.items()):
+            price = self.closes[symbol][day]
+            tp = price * (1.0 + upside)
+            record = official.prediction_from_row({"symbol": symbol, "internal_tp": tp, "internal_buy_in": tp * 0.8, "price": price, "status": "retrospective"},
+                                                  market=market, scope=scope, cycle_id=cycle_id, source_version=SERVED_VERSION, prediction_instant=instant,
+                                                  published_at=published, source=official.SOURCE_INTERNAL, extra_provenance={"run_key": run_key})
+            assert record is not None
+            records.append(served.relabelled(record))
+        if tamper == "tp":
+            records[0] = {**records[0], "tp": records[0]["tp"] * 2}  # not re-hashed
+        elif tamper == "source":
+            core = {k: v for k, v in records[0].items() if k not in ("id", "row_sha256")}
+            core["source"] = official.SOURCE_V3_2_SHADOW
+            records[0] = {**core, "id": records[0]["id"], "row_sha256": official.canonical_sha256(core)}
+        served_inputs = {"run_key": run_key, "market": market, "as_of": instant.isoformat(), "source": served.SOURCE, "source_version": SERVED_VERSION,
+                         "price_pin": dict(inputs["price_pin"]), "catalogue_pin": dict(inputs["catalogue_pin"]),
+                         "manifest": {"session_date": inputs["manifest"]["session_date"], "engine": {"implementation_file_sha256": SERVED_ENGINE,
+                                                                                                     "implementation_object_sha256": OBJECTS},
+                                      "price_vintage": {}, "sources": [ref for ref in inputs["manifest"]["sources"] if ref.get("role") == "catalogue"]}}
+        served_outputs = {"summary": json.loads(json.dumps(outputs["summary"])), "records": records,
+                          "prediction_identities": [[r["symbol"], r["row_sha256"]] for r in records],
+                          "screen": json.loads(json.dumps(outputs["screen"] if screen is None else screen)),
+                          "catalogue_counts": dict(outputs["catalogue_counts"]), "rows": {}}
+        self.database.save_analysis_snapshot(backtest.SERVED_RUN_ANALYSIS_TYPE, f"{market}_PITSERVED_{run_key[:16]}", "mv-pit", served_inputs, served_outputs,
+                                             published, snapshot_id=cycle_id)
+        return {"as_of": instant.isoformat(), "session_date": day.isoformat(), "market": market, "run_key": run_key, "cycle_id": cycle_id, "idempotent": False,
+                "reused": False, "evaluated": len(records), "records": len(records), "not_evaluable": {}, "v3_run_key": v3_run_key}
 
     def replaced(self, entry: dict[str, Any]) -> list[dict[str, Any]]:
         return [entry if (old["market"], old["session_date"]) == (entry["market"], entry["session_date"]) else old for old in self.entries]
 
-    def manifest(self, entries: list[dict[str, Any]] | None = None, **changes: Any) -> dict[str, Any]:
-        return _manifest(self.entries if entries is None else entries, self.pins, **changes)
+    def manifest(self, entries: list[dict[str, Any]] | None = None, *, with_served: bool = True, **changes: Any) -> dict[str, Any]:
+        """The grid manifest of ``entries`` (default: the grid's) — rev 2: with the served siblings of those V3 runs (``served_grid``) and
+        both sources, unless ``with_served`` is false (a rev-1 manifest) or ``served_grid`` is given."""
+        entries = self.entries if entries is None else entries
+        if with_served:
+            changes = {"sources": ["v3_2_shadow", "official_internal_pit"],
+                       "served_grid": [self.served_of[entry["run_key"]] for entry in entries if entry["run_key"] in self.served_of], **changes}
+        return _manifest(entries, self.pins, **changes)
 
     def service(self) -> backtest.PitBacktestReportService:
         return backtest.PitBacktestReportService(backtest.ReadOnlyStore(self.database), settings=_settings())  # type: ignore[arg-type]
@@ -522,8 +576,13 @@ class Synthetic:
         receipt = service.report(manifest or self.manifest(), **bound)
         assert service.http is not None and service.http.calls == 0  # never the network
         assert not any(symbol in json.dumps(receipt) for _m, symbol in self.names)  # aggregates only
-        if receipt["payload"]["verdict"]["status"] == "VOID":  # S3: a void reading read no label and published no statistic
-            assert service.labels_read == 0 and receipt["payload"]["horizons"] is None and receipt["payload"]["descriptive"] is None
+        verdicts = receipt["payload"]["verdicts"]
+        if verdicts["served_internal_tp"]["status"] == verdicts["v3_shadow"]["status"] == "VOID":  # S3: a void reading read no label, published no statistic
+            assert service.labels_read == 0 and receipt["payload"]["served_internal_tp"]["horizons"] is None
+        if receipt["payload"]["verdict"]["status"] == "VOID":
+            assert receipt["payload"]["horizons"] is None and receipt["payload"]["descriptive"] is None
+        if verdicts["served_internal_tp"]["status"] == "VOID":  # rev 2: the primary void voids the whole reading
+            assert verdicts["v3_shadow"]["status"] == "VOID" and service.labels_read == 0
         return receipt
 
 

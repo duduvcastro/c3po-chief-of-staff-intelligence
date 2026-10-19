@@ -329,7 +329,7 @@ jobs:
           # rev 2: the SERVED internal TP's producer at the prereg commit (valuation_pit_served.IMPLEMENTATION_FILES; the same reader objects)
           printf '{' > "$RUNNER_TEMP/served-producer-files.json" || exit 1
           separator=''
-          for name in valuation_pit_served.py one_pager.py market_data/us_screener.py market_data/eodhd.py valuation_official.py valuation_official_engine.py \
+          for name in valuation_pit_served.py one_pager.py market_data/us_screener.py market_data/eodhd.py market_data/models.py valuation_official.py valuation_official_engine.py \
                       valuation_pit_rerun.py valuation_v3_macro.py sec_xbrl.py valuation_asfiled.py statement_vintages.py valuation_price_history.py; do
             digest=$(git show "$PREREG_COMMIT:c3po/backend/app/$name" | sha256sum | cut -d' ' -f1) || exit 1
             [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
@@ -461,9 +461,11 @@ jobs:
               verdicts = metadata.get("verdicts") if isinstance(metadata.get("verdicts"), dict) else {}
               if metadata.get("verdict") == "VOID" and all(verdicts.get(name, "VOID") == "VOID" for name in ("served_internal_tp", "v3_shadow")):
                   continue  # a reading whose verdicts are ALL VOID read no label and published no statistic: it spent no look
-              if metadata.get("prereg_sha256") == prereg and metadata.get("manifest_sha256") not in (None, os.environ["EXPECTED"]):
+              if metadata.get("prereg_sha256") != prereg:  # rev 2: the look is ONE across revisions — a revision after a published reading is refused
+                  sys.exit("a previous non-VOID reading published another revision of this pre-registration: the single look was spent")
+              if metadata.get("manifest_sha256") not in (None, os.environ["EXPECTED"]):
                   sys.exit("a previous non-VOID reading published this pre-registration over another manifest: the single look was spent")
-          print("no previous non-VOID reading of this pre-registration over another manifest")
+          print("no previous non-VOID reading of this pre-registration (any revision) over another manifest")
           PY
 
       - name: Configure deployment SSH key

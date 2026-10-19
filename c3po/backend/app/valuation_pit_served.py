@@ -14,16 +14,16 @@ producer at each grid ``T``:
   (the resolver's refusals are this run's refusals) and the same screen inputs are recorded.
 * **The provider shape, rebuilt from PIT data only** — an EODHD-shaped payload (``General`` from the catalogue,
   ``Highlights``/``Valuation``/``Technicals``/``SharesStats`` recomputed from the statements eligible at ``T`` and the price at
-  ``T``, ``Financials`` = the eligible rows only, ``Earnings.History`` = the dated rows reported by the session of ``T`` when
-  the statements payload carries them) normalised by the LIVE normaliser (``EodhdClient._normalize_fundamentals``), then
+  ``T``, ``Financials`` = the eligible rows only — a field the One Pager sums over four quarters kept only when those four
+  are consecutive and complete, else the rebuilt TTM serves —, no ``Earnings`` block) normalised by the LIVE normaliser (``EodhdClient._normalize_fundamentals``), then
   the LIVE producer (``USScreeningService._analyze_stock`` on a store view that answers the calibration snapshot published
   before ``T``) — by import, never a copy of a formula.
 * **Peer medians at ``T``** — ``OnePagerService._us_peer_medians`` over the PIT fundamentals of the run's own stocks (one
   exchange, as the live build of that exchange).
 * **Absent, declared and counted** (``PIT_ABSENT_INPUTS``): analyst estimates (forward EPS → the One Pager's trailing EPS,
   earnings trend, EPS revisions), the consensus and the ratings (never inside the internal TP anyway), news sentiment,
-  insider activity, institutional positions, recent grades; the earnings surprise when the statements payload carries no
-  dated history (always under ``--statements vintages``: the as-filed payload has none).
+  insider activity, institutional positions, recent grades; the earnings surprise (``Earnings.History`` is a current provider
+  block, never read in either statements mode; as filed there is none).
 
 Records (``SOURCE`` = ``official_internal_pit``): the canonical record shape of ``valuation_official.prediction_from_row``
 for the INTERNAL source (``tp`` = the internal TP, ``buy_in`` = its own buy-in, consensus weight 0), relabelled to this
@@ -77,7 +77,8 @@ YOY_DAYS = (350, 380)  # the quarter one year before the latest one (EODHD's Qua
 IMPLEMENTATION_FILES: tuple[str, ...] = (  # the producer a served run names (engine.implementation_file_sha256, in run_key): this module, the live producer
     # it calls (one_pager.py and market_data/us_screener.py — hashed only, one_pager.py is pinned by ORIGIN_ONE_PAGER_SHA256), the live normaliser,
     # the record writer and the buy-in rule, and the re-executor's resolver with its as-filed reader pieces, macro and price reader
-    "valuation_pit_served.py", "one_pager.py", "market_data/us_screener.py", "market_data/eodhd.py", "valuation_official.py", "valuation_official_engine.py",
+    "valuation_pit_served.py", "one_pager.py", "market_data/us_screener.py", "market_data/eodhd.py", "market_data/models.py", "valuation_official.py",
+    "valuation_official_engine.py",
     "valuation_pit_rerun.py", "valuation_v3_macro.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py", "valuation_price_history.py",
 )
 IMPLEMENTATION_OBJECTS: tuple[str, ...] = pit.IMPLEMENTATION_OBJECTS  # the same Database readers (catalogue, sources, macro, calibration, prices, runs)
@@ -89,7 +90,7 @@ PIT_ABSENT_INPUTS: dict[str, str] = {  # what the live producer reads and no poi
     "insider_activity": "the insider net signal: risk score -> risk_adjustment of methods 3 and 5 (neutral 0 here)",
     "institutional_positions": "the 13F conviction signal: risk score -> risk_adjustment (neutral 0 here)",
     "recent_grades": "the broker grades momentum: risk score -> risk_adjustment (neutral 0 here)",
-    "earnings_surprise": "Earnings.History: only the rows reported by the session of T, when the statements payload carries them (never as filed: surprise 0)",
+    "earnings_surprise": "Earnings.History is never read (a current provider block; as filed there is none): surprise 0 in method 4",
 }
 SERVED_ASSUMPTIONS: dict[str, str] = {  # how the provider shape is rebuilt from point-in-time data (declared, in the manifest)
     "provider_shape": "an EODHD-shaped payload rebuilt from PIT data only (General from the pinned catalogue; Highlights, Valuation, Technicals and "
@@ -107,6 +108,9 @@ SERVED_ASSUMPTIONS: dict[str, str] = {  # how the provider shape is rebuilt from
     "peer_medians": "OnePagerService._us_peer_medians over the PIT fundamentals of the run's own stocks (one exchange, as the live build of an exchange)",
     "calibration": "the US screener's valuation_calibration/<M>_POWER_MODEL snapshot published strictly before T, read by its own loader "
                    "(USScreeningService._load_calibration_factors); none -> absent_at_T, factor 1.0",
+    "ttm_sums": "the One Pager sums ebitda and freeCashFlow over the four newest quarterly rows: a field is kept on the quarterly rows only when "
+                "those four quarters are consecutive and all carry it, else stripped (served_ttm_sum_incomplete:<field>) so the producer reads the "
+                "rebuilt TTM (Highlights.EBITDA; freeCashflow = the TTM free cash flow), with its fiscal-year fallback",
     "history": "the price history is not passed to the producer: it feeds volatility_90d only (never the TP, never recorded)",
     "watchlist_inputs": "live, a watchlist name may also carry news sentiment and grades (+/-): the PIT version is the fundamentals-only served TP",
 }
@@ -175,33 +179,32 @@ def _ratio(numerator: float | None, denominator: float | None) -> float | None:
     return numerator / denominator if numerator is not None and denominator is not None and denominator > 0 else None
 
 
-def earnings_history_at(payload: Mapping[str, Any], *, session_date: str, excluded: Counter[str]) -> dict[str, Any]:
-    """The dated earnings history the statements payload carries (``Earnings.History``, the provider payload only — the
-    as-filed payload has none), restricted to the rows REPORTED by the session of ``T`` (``reportDate ≤ session``); a row
-    without a report date is dropped and counted. ``{}`` (absent, counted) otherwise."""
-    history = pit._mapping(pit._mapping(payload.get("Earnings")).get("History"))
-    if not history:
-        excluded["earnings_surprise:no_dated_history_in_the_statements_payload"] += 1
-        return {}
-    kept: dict[str, Any] = {}
-    for key, entry in history.items():
-        data = pit._mapping(entry)
-        reported = pit._parse_date(data.get("reportDate"))
-        if reported is None:
-            excluded["earnings_surprise:row_without_report_date"] += 1
-        elif reported.isoformat() > session_date:
-            excluded["earnings_surprise:reported_after_T"] += 1
-        else:
-            kept[str(key)] = dict(data)
-    return kept
+ONE_PAGER_TTM_SUMS: tuple[tuple[str, str, str], ...] = (  # the fields the One Pager sums over the 4 newest quarterly rows (_sum_rows), by statement,
+    ("Income_Statement", "ebitda", "ebitda"),  # with the TTM key of pit_fundamentals the fallback reads: EBITDA (Highlights.EBITDA → "ebitda")
+    ("Cash_Flow", "freeCashFlow", "free_cash_flow"),  # free cash flow (→ the normalised "freeCashflow")
+)
 
 
-def provider_payload_at(symbol: str, payload: Mapping[str, Any], item: Mapping[str, Any], *, market: str, economic_date: date, session_date: str,
-                        excluded: Counter[str]) -> dict[str, Any]:
+def _summable(rows: list[dict[str, Any]], field: str) -> bool:
+    """Whether the One Pager's ``_sum_rows(rows, field, 4)`` would be a TTM: the four newest eligible quarters are
+    CONSECUTIVE and all four carry the field (else it would sum fewer quarters, or quarters around a gap, as a year)."""
+    newest = rows[:pit.TTM_QUARTERS]
+    return (len(newest) == pit.TTM_QUARTERS and pit._consecutive_quarters(newest)
+            and all(pit._number(row["data"].get(field)) is not None for row in newest))
+
+
+def provider_payload_at(symbol: str, payload: Mapping[str, Any], item: Mapping[str, Any], *, market: str, economic_date: date,
+                        excluded: Counter[str]) -> tuple[dict[str, Any], dict[str, float | None]]:
     """The EODHD-shaped payload of ONE name at ``T``, from point-in-time data only (``SERVED_ASSUMPTIONS``): the statements
     payload the resolver read (as filed, or the provider's), cut to the rows eligible at ``T`` by the re-executor's own rule
     (``eligible_statements``), and the derived blocks recomputed from them and from the resolver's row (price at ``T``,
-    shares, EPS, book value, ROE, beta, P/E, EV/EBITDA). No current block of any provider payload is read."""
+    shares, EPS, book value, ROE, beta, P/E, EV/EBITDA). No current block of any provider payload is read — ``Earnings``
+    included (``earnings_surprise:not_read``).
+
+    A field the One Pager sums over the four newest quarterly rows (``ONE_PAGER_TTM_SUMS``) is kept on the quarterly rows only
+    when those quarters are consecutive and all carry it; otherwise it is STRIPPED from every quarterly row
+    (``served_ttm_sum_incomplete:<field>``) and the One Pager falls back to the rebuilt TTM (its fiscal-year fallback
+    included): returned as the overrides of the normalised fundamentals."""
     statements = pit.eligible_statements(payload, market=market, economic_date=economic_date, excluded=Counter())  # the resolver already counted them
     fundamentals = pit.pit_fundamentals(payload, market=market, economic_date=economic_date)
     row = item["row"]
@@ -209,23 +212,33 @@ def provider_payload_at(symbol: str, payload: Mapping[str, Any], item: Mapping[s
     income_q = statements["Income_Statement"]["quarterly"]
     financials = {statement: {frequency: {entry["period_end"].isoformat(): dict(entry["data"]) for entry in rows} for frequency, rows in by_frequency.items()}
                   for statement, by_frequency in statements.items()}
+    overrides: dict[str, float | None] = {}
+    for statement, field, ttm_key in ONE_PAGER_TTM_SUMS:
+        if _summable(statements[statement]["quarterly"], field):
+            continue
+        excluded[f"served_ttm_sum_incomplete:{field}"] += 1
+        for data in financials[statement]["quarterly"].values():
+            data.pop(field, None)
+        if statement == "Cash_Flow":
+            overrides["freeCashflow"] = fundamentals["cash_flow_ttm"].get(ttm_key)
+    excluded["earnings_surprise:not_read"] += 1
     highlights = {"MarketCapitalization": row.get("market_cap"), "DilutedEpsTTM": row.get("eps"), "BookValue": row.get("book_value"),
                   "ReturnOnEquityTTM": row.get("roe"), "ProfitMargin": _ratio(ttm.get("net_income"), ttm.get("revenue")),
                   "OperatingMarginTTM": _ratio(ttm.get("operating_income"), ttm.get("revenue")), "EBITDA": ttm.get("ebitda"), "RevenueTTM": ttm.get("revenue"),
                   "QuarterlyRevenueGrowthYOY": _quarter_year_before(income_q, pit.INCOME_FIELDS["revenue"]),
                   "QuarterlyEarningsGrowthYOY": _quarter_year_before(income_q, pit.INCOME_FIELDS["net_income"])}
-    return {"General": {"Code": symbol, "Name": symbol, "Sector": row.get("sector") or "", "Industry": row.get("industry") or "", "Type": _PROVIDER_TYPE},
-            "Highlights": highlights, "Valuation": {"TrailingPE": row.get("pe"), "EnterpriseValueEbitda": row.get("ev_ebitda")},
-            "Technicals": {"Beta": row.get("beta")}, "SharesStats": {"SharesOutstanding": row.get("shares")}, "AnalystRatings": {},
-            "Earnings": {"History": earnings_history_at(payload, session_date=session_date, excluded=excluded)}, "Financials": financials}
+    return ({"General": {"Code": symbol, "Name": symbol, "Sector": row.get("sector") or "", "Industry": row.get("industry") or "", "Type": _PROVIDER_TYPE},
+             "Highlights": highlights, "Valuation": {"TrailingPE": row.get("pe"), "EnterpriseValueEbitda": row.get("ev_ebitda")},
+             "Technicals": {"Beta": row.get("beta")}, "SharesStats": {"SharesOutstanding": row.get("shares")}, "AnalystRatings": {},
+             "Earnings": {}, "Financials": financials}, overrides)
 
 
-def fundamentals_at(symbol: str, payload: Mapping[str, Any], item: Mapping[str, Any], *, market: str, economic_date: date, session_date: str,
+def fundamentals_at(symbol: str, payload: Mapping[str, Any], item: Mapping[str, Any], *, market: str, economic_date: date,
                     excluded: Counter[str]) -> dict[str, Any]:
     """The provider-normalised fundamentals the live producer reads (``EodhdClient._normalize_fundamentals``, by import) of
-    the point-in-time payload (``provider_payload_at``)."""
-    return EodhdClient._normalize_fundamentals(provider_payload_at(symbol, payload, item, market=market, economic_date=economic_date,
-                                                                   session_date=session_date, excluded=excluded))
+    the point-in-time payload (``provider_payload_at``), with its TTM overrides."""
+    raw, overrides = provider_payload_at(symbol, payload, item, market=market, economic_date=economic_date, excluded=excluded)
+    return {**EodhdClient._normalize_fundamentals(raw), **overrides}
 
 
 # ------------------------------------------------------------------ the live producer, on point-in-time inputs
@@ -438,7 +451,7 @@ class PitServedService:
                 not_evaluable[symbol] = "not_a_stock:the_etf_path_is_not_re_executed"
                 continue
             fundamentals[symbol] = fundamentals_at(symbol, resolver.payloads[symbol], item, market=market, economic_date=resolver.economic_date,
-                                                   session_date=prices.session_date, excluded=excluded)
+                                                   excluded=excluded)
             fundamentals_as_of[symbol] = pit._mapping(item.get("fundamentals")).get("fundamentals_as_of")
         peer_medians = OnePagerService._us_peer_medians(fundamentals)
         screener = live_producer(calibration_factors={market: factors})
@@ -454,6 +467,8 @@ class PitServedService:
                 results[symbol] = analyze(screener, market, symbol, float(resolver.per_symbol[symbol]["row"]["price"]), normalized, as_of=as_of,
                                           risk_free_rate=risk_free["rate"], peer_medians=peer_medians)
                 profiles[symbol] = one_pager_profile(normalized)
+            except (AttributeError, NameError, KeyError):  # a programming error of this path, never a gate: re-raised
+                raise
             except Exception as error:  # the live build's fundamental_quality_gate: the name has no row (counted by the error's type, never its message)
                 not_evaluable[symbol] = "producer_refused"
                 excluded[f"producer_refused:{type(error).__name__}"] += 1

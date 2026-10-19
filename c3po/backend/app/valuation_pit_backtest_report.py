@@ -6,7 +6,8 @@ Rev 2 (owner, 19/10/2026): the receipt carries TWO verdicts, the same rule compu
 point-in-time by ``valuation_pit_served``; its records live in the ``valuation_pit_served`` run snapshots of the manifest's
 ``served_grid``) and ``v3_shadow`` (secondary: the rev-1 reading below, unchanged, still at the payload's top level). Each
 is its own pre-registered decision at ``ALPHA`` (no multiplicity correction: different questions); a shared failure voids
-both, a source's own runs or records void its verdict only; labels are read once per (symbol, session).
+both, the primary source's own failure voids the WHOLE reading (no label read), a V3 failure the secondary verdict only; both
+verdicts read ONE decisory cross-section (the V3 runs' screen, the served runs' siblings checked); labels are read once per (symbol, session).
 
 Question: does the internal TP of the V3 engine (no consensus inside), RE-EXECUTED point-in-time by
 ``valuation_pit_rerun`` from as-filed SEC statements (``--statements vintages``) on a grid of past instants ``T``, rank
@@ -171,7 +172,13 @@ def protocol() -> dict[str, Any]:
                      "served_runs": SERVED_RUN_ANALYSIS_TYPE, "served_records": "the records inside the served run snapshots of the manifest's served_grid",
                      "rule": "the same verdict (every condition of the single look) computed separately for each source, each its own pre-registered "
                              "decision at alpha; no multiplicity correction between them (they answer different questions); both always reported",
-                     "void": "a shared failure (code, manifest parameters, label vintages, grid) voids both; a source's own runs or records void its verdict only",
+                     "void": "a shared failure (code, manifest parameters, label vintages, grid) voids both; a failure of the PRIMARY source's own runs or "
+                             "records (served:...) voids the WHOLE reading — no label read, no statistic, both verdicts VOID (primary_verdict_void); a "
+                             "failure of the V3 runs voids the secondary verdict only",
+                     "decisory_set": "ONE decisory cross-section for both verdicts: the V3 runs' point-in-time screen; every served run must have its V3 "
+                                     "sibling (same exchange and session, the v3_run_key its served_grid entry names, the same catalogue and as-filed "
+                                     "coverage, identical screen inputs), else served:v3_sibling_mismatch / served:screen_not_the_v3_runs",
+                     "one_per_pair": "one record per (symbol, session) across the exchanges, the exchange decided once for both sources",
                      "look": "a reading spends the single look when any verdict is not VOID"},
         "statements": STATEMENTS,
         "universe": "the catalogue of each exchange pinned for the whole grid (the 2026 screener's output: selected on the outcome), screened point-in-time",
@@ -1011,8 +1018,8 @@ class PitBacktestReportService:
                  ) -> tuple[list[dict[str, Any]], dict[str, Any], int]:
         """Per exchange and per T of the manifest: the ``v3_2_shadow`` records of that instant, those of the manifest's runs
         only (``run_not_in_manifest``), reduced (``_stub``); then the PIT rules (superseded runs refused, unattested horizon
-        read as missing), the panel's admissibility, the universe scope and one record per (symbol, session) across the
-        exchanges. No label is read here. Returns the admissible records (with symbols: never printed), the record counts
+        read as missing), the panel's admissibility and the universe scope (one record per (symbol, session) across the
+        exchanges: ``_one_per_pair``, once for both sources). No label is read here. Returns the admissible records (with symbols: never printed), the record counts
         and the number of current runs whose records are not exactly their identities."""
         run_keys = {str(entry["run_key"]) for entry in manifest["grid"]}
         instants_by_market: dict[str, set[str]] = {market: set() for market in MARKETS}
@@ -1022,7 +1029,6 @@ class PitBacktestReportService:
         refused: Counter[str] = Counter()
         identities: dict[str, set[tuple[str, str]]] = {}
         kept_records: list[dict[str, Any]] = []
-        seen: set[tuple[str, str]] = set()
         for market in MARKETS:
             stubs: list[dict[str, Any]] = []
             for as_of in sorted(instants_by_market[market]):
@@ -1045,13 +1051,9 @@ class PitBacktestReportService:
             admissible, refusals = panel.admissible_records(unattested, cut=records_cut)
             refused.update(refusals)
             for record in admissible:
-                key = (str(record["symbol"]), str(record["session_date"])[:10])
                 if str(record.get("scope") or "") != accuracy.SCOPE:
                     refused["scope_not_universe"] += 1
-                elif key in seen:
-                    refused["duplicate_across_exchanges"] += 1
                 else:
-                    seen.add(key)
                     kept_records.append(record)
         incomplete = sum(1 for run_key, run in current.items()
                          if identities.get(run_key, set()) != {(str(symbol), str(digest)) for symbol, digest in run["outputs"]["prediction_identities"]})
@@ -1062,16 +1064,22 @@ class PitBacktestReportService:
         """The served internal TP's records: those INSIDE the current served runs of the manifest (no other record exists —
         they are never in ``valuation_predictions``), each refused unless its identity recomputes (``identity_not_verified``)
         and it is of its run (source, ``run_key``, cycle, exchange, ``T``: ``record_not_of_its_run``); then the PIT
-        unattested-horizon rule, the panel's admissibility, the universe scope and one record per (symbol, session) across
-        the exchanges — exactly the V3 records' path. No label is read here."""
+        unattested-horizon rule, the panel's admissibility and the universe scope — exactly the V3 records' path (one
+        record per (symbol, session): ``_one_per_pair``). A run holding two records of one symbol refuses the second
+        (``duplicate_symbol_in_run``). No label is read here."""
         read = 0
         refused: Counter[str] = Counter()
         identities: dict[str, set[tuple[str, str]]] = {}
         by_market: dict[str, list[dict[str, Any]]] = {market: [] for market in MARKETS}
         for run_key, run in current.items():
             as_of = panel._utc(run["inputs"]["as_of"]).isoformat() if run["inputs"].get("as_of") else None
+            symbols: set[str] = set()
             for stub in run["outputs"].get("records") or []:
                 read += 1
+                if str(stub.get("symbol")) in symbols:
+                    refused["duplicate_symbol_in_run"] += 1
+                    continue
+                symbols.add(str(stub.get("symbol")))
                 if not stub.get("verified"):
                     refused["identity_not_verified"] += 1
                     continue
@@ -1084,7 +1092,6 @@ class PitBacktestReportService:
                 identities.setdefault(run_key, set()).add((str(stub.get("symbol")), str(stub.get("row_sha256"))))
                 by_market[str(run["market"])].append({key: value for key, value in stub.items() if key != "verified"})
         kept_records: list[dict[str, Any]] = []
-        seen: set[tuple[str, str]] = set()
         for market in MARKETS:
             unattested = [pit_panel._as_missing_horizon(stub) if pit_panel._unattested_horizon(stub) is not None else stub for stub in by_market[market]]
             if records_cut is None:
@@ -1093,17 +1100,63 @@ class PitBacktestReportService:
             admissible, refusals = panel.admissible_records(unattested, cut=records_cut)
             refused.update(refusals)
             for record in admissible:
-                key = (str(record["symbol"]), str(record["session_date"])[:10])
                 if str(record.get("scope") or "") != accuracy.SCOPE:
                     refused["scope_not_universe"] += 1
-                elif key in seen:
-                    refused["duplicate_across_exchanges"] += 1
                 else:
-                    seen.add(key)
                     kept_records.append(record)
         incomplete = sum(1 for run_key, run in current.items()
                          if identities.get(run_key, set()) != {(str(symbol), str(digest)) for symbol, digest in run["outputs"]["prediction_identities"]})
         return kept_records, {"read": read, "refused": panel._counts(refused), "admissible": len(kept_records)}, incomplete
+
+    @staticmethod
+    def _one_per_pair(*readings: tuple[list[dict[str, Any]], dict[str, Any]]) -> None:
+        """One record per (symbol, session) across the exchanges, decided ONCE for every source: the exchange kept for a
+        pair is the first of ``MARKETS`` holding it in ANY source; every other record of the pair is
+        ``duplicate_across_exchanges`` (counted, allowed). In place: the records and their counts."""
+        chosen: dict[tuple[str, str], int] = {}
+        for records, _counts in readings:
+            for record in records:
+                key, index = (str(record["symbol"]), str(record["session_date"])[:10]), MARKETS.index(str(record["market"]))
+                chosen[key] = min(index, chosen.get(key, index))
+        for records, counts in readings:
+            kept: list[dict[str, Any]] = []
+            seen: set[tuple[str, str]] = set()
+            duplicates = 0
+            for record in records:
+                key = (str(record["symbol"]), str(record["session_date"])[:10])
+                if MARKETS.index(str(record["market"])) != chosen[key] or key in seen:
+                    duplicates += 1
+                else:
+                    seen.add(key)
+                    kept.append(record)
+            records[:] = kept
+            if duplicates:
+                counts["refused"] = panel._counts(Counter({**counts["refused"], "duplicate_across_exchanges": duplicates}))
+            counts["admissible"] = len(kept)
+
+    @staticmethod
+    def _siblings(manifest: Mapping[str, Any], current: Mapping[str, Mapping[str, Any]], served_current: Mapping[str, Mapping[str, Any]]) -> list[str]:
+        """The served runs against their V3 siblings — ONE decisory set for both verdicts: per served run, the current V3
+        run of the same (exchange, session) must exist, be the ``v3_run_key`` its ``served_grid`` entry names, read the same
+        catalogue (classification hashes) and as-filed coverage of the catalogue, and carry the IDENTICAL screen inputs
+        (``canonical_sha256(outputs.screen)``); else ``served:v3_sibling_mismatch:<n>`` / ``served:screen_not_the_v3_runs:<n>``."""
+        by_slot = {(str(run["market"]), str(run["inputs"]["manifest"].get("session_date"))): (run_key, run) for run_key, run in current.items()}
+        named = {str(entry["run_key"]): str(entry.get("v3_run_key") or "") for entry in manifest.get("served_grid") or []}
+
+        def catalogue(run: Mapping[str, Any]) -> list[str]:
+            return sorted(str(ref.get("classification_sha256")) for ref in run["inputs"]["manifest"].get("catalogue") or [])
+
+        def covered(run: Mapping[str, Any]) -> Any:
+            return panel._mapping(panel._mapping(run["outputs"]["summary"].get("statements")).get("coverage")).get("covered_in_catalogue")
+
+        mismatched = screens = 0
+        for run_key, run in served_current.items():
+            slot = by_slot.get((str(run["market"]), str(run["inputs"]["manifest"].get("session_date"))))
+            if slot is None or named.get(run_key) != slot[0] or catalogue(run) != catalogue(slot[1]) or covered(run) != covered(slot[1]):
+                mismatched += 1
+            elif canonical_sha256(run["outputs"]["screen"]) != canonical_sha256(slot[1]["outputs"]["screen"]):
+                screens += 1
+        return ([f"served:v3_sibling_mismatch:{mismatched}"] if mismatched else []) + ([f"served:screen_not_the_v3_runs:{screens}"] if screens else [])
 
     @staticmethod
     def _screen(records: Sequence[Mapping[str, Any]], current: Mapping[str, Mapping[str, Any]], *, basis: str) -> tuple[set[tuple[str, str, str]], dict[str, Any]]:
@@ -1213,6 +1266,8 @@ class PitBacktestReportService:
         served_runs["incomplete"] = served_incomplete
         if served_incomplete:
             served_void.append(f"served:runs_incomplete:{served_incomplete}")
+        served_void += self._siblings(manifest, current, served_current)  # BLOCKER of the review of d41f1ef: one decisory set for both verdicts
+        self._one_per_pair((records, counts), (served_records, served_counts))  # one exchange per (symbol, session), the same for both sources
         # the calendar index from the grid's first session (expected grid; the manifest's own first session without one) — no label read
         manifest_sessions = sorted({str(entry["session_date"])[:10] for entry in manifest["grid"]})
         anchor = expected[0] if expected else (date.fromisoformat(manifest_sessions[0]) if manifest_sessions else None)
@@ -1242,10 +1297,15 @@ class PitBacktestReportService:
         void += [f"records_refused:{cause}:{count}" for cause, count in sorted(counts["refused"].items()) if cause not in ALLOWED_REFUSALS and count]
         served_void += [f"served:records_refused:{cause}:{count}" for cause, count in sorted(served_counts["refused"].items())
                         if cause not in ALLOWED_REFUSALS and count]
+        # the PRIMARY verdict's own failure voids the WHOLE reading (no label for either source, no statistic): a served defect never spends
+        # the single look on the secondary; a V3 failure voids the secondary only
+        if served_void:
+            void += ["primary_verdict_void"] if not void else []
         served_void = shared + served_void
         basis = volume_basis(manifest)
-        kept, screened = self._screen(records, current, basis=basis or "as_traded") if basis is not None else (set(), {"volume_basis": None})
-        served_kept, served_screened = (self._screen(served_records, served_current, basis=basis) if basis is not None else (set(), {"volume_basis": None}))
+        # ONE decisory set: the V3 runs' point-in-time screen, applied to both sources (the served runs carry identical screen inputs: _siblings)
+        kept, screened = self._screen(records, current, basis=basis) if basis is not None else (set(), {"volume_basis": None})
+        served_kept, served_screened = (self._screen(served_records, current, basis=basis) if basis is not None else (set(), {"volume_basis": None}))
         coverage = self._coverage(current)
         served_coverage = self._coverage(served_current)
         records_share = coverage[MARKET_GROUP]["records_share"]

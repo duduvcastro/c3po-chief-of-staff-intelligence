@@ -24,7 +24,7 @@ import yaml
 from app import valuation_official as official
 from app import valuation_pit_backtest_report as backtest
 from app import valuation_pit_rerun as pit
-from tests.test_valuation_pit_backtest_report import PREREG_PATH, PRODUCER, Synthetic, _positive, _settings, small  # noqa: F401  (small: a fixture)
+from tests.test_valuation_pit_backtest_report import PREREG_PATH, PRODUCER, SERVED_PRODUCER, Synthetic, _positive, _settings, small  # noqa: F401  (small: a fixture)
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "valuation-pit-backtest.yml"
@@ -267,7 +267,7 @@ def test_the_report_reads_only_a_successful_grid_run_of_this_workflow_once(tmp_p
 
 
 def _verify(tmp_path: Path, mode: str, stdout: str, *, prereg: Path = PREREG_PATH, at_commit: bytes | None = None, producer: dict[str, Any] | None = None,
-            expected_manifest: str = "", order: str = "", rc: str = "0") -> subprocess.CompletedProcess[str]:
+            expected_manifest: str = "", order: str = "", rc: str = "0", served_producer: dict[str, Any] | None = SERVED_PRODUCER) -> subprocess.CompletedProcess[str]:
     raw = tmp_path / "stdout.txt"
     raw.write_text(stdout, encoding="utf-8")
     out = tmp_path / "out"
@@ -278,6 +278,11 @@ def _verify(tmp_path: Path, mode: str, stdout: str, *, prereg: Path = PREREG_PAT
     commit_copy.write_bytes(prereg.read_bytes() if at_commit is None else at_commit)
     producer_path = tmp_path / "producer.json"
     producer_path.write_text(json.dumps(PRODUCER if producer is None else producer), encoding="utf-8")
+    served_path = tmp_path / "served-producer.json"  # rev 2: the served producer at the prereg commit, beside the V3 one (absent: None)
+    if served_producer is None:
+        served_path.unlink(missing_ok=True)
+    else:
+        served_path.write_text(json.dumps(served_producer), encoding="utf-8")
     marker = tmp_path / "verify-failed"
     if marker.exists():
         marker.unlink()

@@ -439,7 +439,7 @@ class GridRun:
                     if needs_run and max_runs is not None and computed >= max_runs:
                         stopped = {"reason": "max_runs", "at": as_of.isoformat()}
                         break
-                    expected = slowest if slowest is not None else PRIOR_SECONDS_PER_RUN * len(self.markets)
+                    expected = slowest if slowest is not None else PRIOR_SECONDS_PER_RUN * len(self.markets) * (2 if self.served else 1)  # a served run per V3 run
                     reason = self._stop_reason(stop_before, predict=expected if needs_run else None)
                     if reason is not None:
                         stopped = {"reason": reason, "at": as_of.isoformat()}
@@ -483,6 +483,10 @@ class GridRun:
                         pending.append(entry)
                         line["runs"][market] = _line(entry, summary, self.monotonic() - tick)
                         if self.served:
+                            reason = self._stop_reason(stop_before, predict=None)
+                            if reason is not None:  # between the V3 run and its served run too: the half-done instant is never listed
+                                stopped = {"reason": reason, "at": as_of.isoformat(), "market": market, "source": backtest.SERVED_SOURCE}
+                                break
                             tick = self.monotonic()
                             served_entry, served_summary = self._served_run(market, as_of, session, served_found[market], computation, v3_run_key=entry["run_key"])
                             served_pending.append(served_entry)
