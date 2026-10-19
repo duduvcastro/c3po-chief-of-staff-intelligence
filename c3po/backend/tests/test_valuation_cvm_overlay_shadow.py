@@ -25,8 +25,10 @@ from app.official_statements import (
     SOURCE_FIELDS,
     apply_official_statements,
     apply_official_statements_map,
+    available_at,
     fieldwise_sources,
     official_overlays,
+    provider_cash_flow_ttm,
     save_official_statements,
 )
 from app.schemas import NormalizedQuote
@@ -162,6 +164,126 @@ def test_a_provider_quarter_is_never_served_as_a_trailing_year() -> None:
     assert fieldwise_sources(provider, statements)["freeCashflow"] == "eodhd"
 
 
+Q = [f"{YEAR}-06-30", f"{YEAR}-03-31", f"{PREVIOUS}-12-31", f"{PREVIOUS}-09-30"]
+
+
+def _cash_flow_provider(values: tuple[float, ...], dates: list[str] = Q, **extra: Any) -> dict[str, Any]:
+    """Reviewer probe (rv-cvm1/probe_numbers.py): EODHD-shaped, top-level cash flow = the latest QUARTER."""
+    return {"financialsAsOf": dates[0], "marketCap": 1e9, "sharesOutstanding": 1e6, "ebitda": 4e8, "freeCashflow": values[0],
+            "operatingCashflow": values[0] * 2,
+            "quarterlyIncome": [{"date": period, "totalRevenue": 100.0, "ebitda": 25.0, "netIncome": 10.0} for period in Q],
+            "quarterlyCashFlow": [{"date": period, "freeCashFlow": value, "totalCashFromOperatingActivities": value * 2}
+                                  for period, value in zip(dates, values)],
+            "quarterlyBalance": [], **extra}
+
+
+def test_the_provider_ttm_guard_refuses_year_to_date_rows() -> None:
+    """MAJOR of the review: if EODHD .SA cash-flow rows were year-to-date (as the CVM DFC is), four of them would sum
+    Q1 + H1 + 9M + FY. Probe values 20/10/40/30 (H1, Q1, FY, 9M): served 100 against a true TTM of 30 — now refused."""
+    fresh = {"as_of": f"{YEAR}-06-30", "quarterlyIncome": [], "quarterlyCashFlow": [], "quarterlyBalance": []}
+    cumulative = _cash_flow_provider((20.0, 10.0, 40.0, 30.0))
+    assert provider_cash_flow_ttm(cumulative, "freeCashFlow") == (None, "cumulative")
+    from app.official_statements import cash_flow_guard
+
+    assert cash_flow_guard(cumulative, fresh) == {"operatingCashflow": "cumulative", "freeCashflow": "cumulative"}
+    with_cvm = {**fresh, "quarterlyCashFlow": [{"date": Q[0], "freeCashFlow": 5.0, "totalCashFromOperatingActivities": 9.0}]}
+    assert "freeCashflow" not in apply_official_statements(cumulative, with_cvm)  # nor mixed with year-to-date provider quarters
+    served = apply_official_statements(cumulative, fresh)
+    assert "freeCashflow" not in served and "operatingCashflow" not in served
+    assert fieldwise_sources(cumulative, fresh)["freeCashflow"] == "absent"
+    single = _cash_flow_provider((12.0, 9.0, 10.0, 11.0))  # single quarters: no year-to-date pattern (3Q > 4Q)
+    assert provider_cash_flow_ttm(single, "freeCashFlow") == (42.0, "complete")
+    assert apply_official_statements(single, fresh)["freeCashflow"] == 42.0
+
+
+def test_a_provider_ttm_ending_at_the_fiscal_year_needs_the_annual_figure_within_five_percent() -> None:
+    december = [f"{PREVIOUS}-12-31", f"{PREVIOUS}-09-30", f"{PREVIOUS}-06-30", f"{PREVIOUS}-03-31"]
+    rows = (12.0, 9.0, 11.0, 10.0)
+    no_annual = _cash_flow_provider(rows, december)
+    assert provider_cash_flow_ttm(no_annual, "freeCashFlow") == (None, "annual_missing")  # today's normalized payload carries none
+    agreeing = _cash_flow_provider(rows, december, annualCashFlow=[{"date": f"{PREVIOUS}-12-31", "freeCashFlow": 43.0}])
+    assert provider_cash_flow_ttm(agreeing, "freeCashFlow") == (42.0, "complete")
+    raw = _cash_flow_provider(rows, december, Financials={"Cash_Flow": {"yearly": {f"{PREVIOUS}-12-31": {"freeCashFlow": 42.0}}}})
+    assert provider_cash_flow_ttm(raw, "freeCashFlow") == (42.0, "complete")
+    far = _cash_flow_provider(rows, december, annualCashFlow=[{"date": f"{PREVIOUS}-12-31", "freeCashFlow": 46.0}])
+    assert provider_cash_flow_ttm(far, "freeCashFlow") == (None, "annual_mismatch")
+    same_year_rising = _cash_flow_provider((40.0, 30.0, 20.0, 10.0), december)  # Q1..Q4 of one year, rising: year-to-date
+    assert provider_cash_flow_ttm(same_year_rising, "freeCashFlow") == (None, "cumulative")
+
+
+def test_the_quarter_is_not_served_as_a_year_when_the_overlay_does_not_apply() -> None:
+    """Reviewer probe (a): with no overlay, or one older than the provider, the provider's quarter used to stay."""
+    stale = {"as_of": f"{YEAR}-03-31", "quarterlyIncome": [], "quarterlyCashFlow": [], "quarterlyBalance": []}
+    three = _cash_flow_provider((10.0, 10.0, 10.0), Q[:3])
+    for overlay in (None, stale):
+        served = apply_official_statements(three, overlay)
+        assert "freeCashflow" not in served and "operatingCashflow" not in served
+        assert fieldwise_sources(three, overlay)["freeCashflow"] == "absent"
+    four = _cash_flow_provider((12.0, 9.0, 10.0, 11.0))
+    assert apply_official_statements(four, None)["freeCashflow"] == 42.0 and fieldwise_sources(four, None)["freeCashflow"] == "eodhd"
+
+
+def test_capex_is_labelled_from_the_complete_window_only() -> None:
+    """Reviewer probe (b): capexTtm is served only from a complete window (magnitude); otherwise it is absent."""
+    fresh = {"as_of": f"{YEAR}-06-30", "quarterlyIncome": [], "quarterlyCashFlow": [], "quarterlyBalance": []}
+    three = _cash_flow_provider((10.0, 10.0, 10.0), Q[:3])
+    for row in three["quarterlyCashFlow"]:
+        row["capitalExpenditures"] = -10.0
+    assert apply_official_statements(three, fresh)["officialMetrics"]["capexTtm"] is None
+    assert fieldwise_sources(three, fresh)["capexTtm"] == "absent"
+    three["quarterlyCashFlow"].append({"date": Q[3], "capitalExpenditures": 10.0})
+    assert apply_official_statements(three, fresh)["officialMetrics"]["capexTtm"] == 40.0
+    assert fieldwise_sources(three, fresh)["capexTtm"] == "eodhd"
+    assert fieldwise_sources(three, None)["capexTtm"] == "absent"  # no overlay: never set
+
+
+def test_cvm_shares_off_by_a_hundredfold_are_skipped_and_counted(tmp_path: Path) -> None:
+    from app.official_statements import shares_scale_skipped
+
+    provider = _provider_one_quarter_behind()
+    provider["sharesOutstanding"] = 990_000.0  # the CVM fixture files 990: a thousands/units mix-up
+    statements = _statements()["INDS3"]
+    served = apply_official_statements(provider, statements)
+    assert served["sharesOutstanding"] == 990_000.0 and shares_scale_skipped(provider, statements)
+    assert fieldwise_sources(provider, statements)["sharesOutstanding"] == "eodhd"
+    provider["sharesOutstanding"] = 1_000.0
+    assert apply_official_statements(provider, statements)["sharesOutstanding"] == 990 and not shares_scale_skipped(provider, statements)
+
+
+def test_a_stale_overlay_is_counted_as_stale_not_as_statements(tmp_path: Path) -> None:
+    """Reviewer probe (e): statements older than the provider never apply; the origin says so."""
+    database = _database(tmp_path)
+    old = copy.deepcopy(_statements()["INDS3"])
+    old["as_of"] = f"{YEAR}-03-31"
+    save_official_statements(database, [old])
+    capture = shadow.ShadowCapture()
+    provider = {"INDS3": _cash_flow_provider((12.0, 9.0, 10.0, 11.0))}
+    capture.add(database, provider, provider, served_overlay="legacy")
+    assert capture.origins == {"INDS3": "stale"} and "officialFundamentals" not in capture.shadow["INDS3"]
+
+
+def test_a_tiny_negative_ratio_is_never_stored_as_negative_zero(tmp_path: Path) -> None:
+    """Reviewer probe (rv-cvm2/negzero.py): ``round(-1e-12, 8)`` is ``-0.0``; PostgreSQL numeric reads it back as ``0.0``,
+    the stored aggregate no longer recomputed and the receipt refused its own snapshot."""
+    assert json.dumps(shadow.ratio_stats([-1e-12, -1e-12, 0.3])["median"]) == "0.0"
+    database = _database(tmp_path)
+    capture = shadow.ShadowCapture()
+    provider = {"INDS3": _provider_one_quarter_behind()}
+    save_official_statements(database, [_statements()["INDS3"]])
+    capture.add(database, provider, provider, served_overlay="legacy")
+    served = [{"symbol": symbol, "internal_tp": 10.0, "internal_buy_in": 8.0} for symbol in ("INDS3", "X1", "X2")]
+    after = [{"symbol": "INDS3", "internal_tp": 10.0 * (1 - 1e-12), "internal_buy_in": 8.0},
+             {"symbol": "X1", "internal_tp": 10.0 * (1 - 1e-12), "internal_buy_in": 8.0}, {"symbol": "X2", "internal_tp": 13.0, "internal_buy_in": 8.0}]
+    outputs = shadow.build_shadow_outputs(capture, served_rows=served, before_rows=served, cash_flow_fix_rows=served, after_rows=after,
+                                          universe_symbols=["INDS3"], cycle_id="00000000-0000-4000-8000-000000000002",
+                                          basis_at=datetime(YEAR, 10, 19, 3, tzinfo=timezone.utc), producer_build_sha="a" * 40)
+    assert "-0.0" not in json.dumps(outputs["aggregate"])
+    shadow.save_shadow_snapshot(database, outputs, published_at=datetime(YEAR, 10, 19, 3, 5, tzinfo=timezone.utc))
+    snapshot = database._analysis_snapshots[-1]
+    snapshot["outputs"] = json.loads(json.dumps(snapshot["outputs"]).replace("-0.0", "0.0"))  # what PostgreSQL gives back
+    assert shadow.before_after_receipt(database, reader_build_sha="b" * 40)["report_sha256"] == outputs["report_sha256"]
+
+
 def test_units_cvm_thousands_and_units_scale_to_the_same_reais() -> None:
     """ESCALA_MOEDA = MIL multiplies VL_CONTA by 1,000; UNIDADE leaves it: the same quarter filed both ways is the same
     number of reais, the unit the provider's figures are in."""
@@ -199,37 +321,69 @@ def test_a_restated_document_replaces_the_original_and_dates_it_by_its_own_recei
     assert restated["ebitda"] == 134_000
 
 
-def test_point_in_time_only_documents_received_by_the_build_instant(tmp_path: Path) -> None:
-    """A snapshot stored after the cut, or holding a document received after the cut's date in Sao Paulo, is never read:
-    the symbol falls back to the legacy overlay received by then (or to the provider). Live builds read snapshots the IR
-    worker wrote before them, so nothing is dropped there."""
+def _legacy(symbol: str = "INDS3", **extra: Any) -> dict[str, Any]:
+    return {"market": "B3", "symbol": symbol, "as_of": f"{YEAR}-06-30", "source_name": "CVM Dados Abertos - ITR consolidado",
+            "quarterlyIncome": [{"date": f"{YEAR}-06-30", "totalRevenue": 150_000.0}], "quarterlyCashFlow": [], "quarterlyBalance": [],
+            "official_metrics": {}, **extra}
+
+
+def test_the_receipt_guard_uses_the_end_of_the_receipt_day_in_sao_paulo(tmp_path: Path) -> None:
+    """A GUARD, not a point-in-time read: the latest snapshot is refused while it was stored after the cut or while any
+    contributing document is not yet available — the END of its CVM receipt day in Sao Paulo, the producer's convention."""
     database = _database(tmp_path)
-    legacy_payload = {
-        "market": "B3", "symbol": "INDS3", "as_of": f"{YEAR}-06-30", "source_name": "CVM Dados Abertos - ITR consolidado",
-        "quarterlyIncome": [{"date": f"{YEAR}-06-30", "totalRevenue": 150_000.0}], "quarterlyCashFlow": [], "quarterlyBalance": [],
-        "official_metrics": {},
-    }
     stored_at = datetime(YEAR, 8, 3, 12, tzinfo=timezone.utc)
-    database.save_analysis_snapshot("official_fundamentals", "B3:INDS3", "mv", {}, legacy_payload, stored_at)
+    database.save_analysis_snapshot("official_fundamentals", "B3:INDS3", "mv", {}, _legacy(), stored_at)
     database.save_analysis_snapshot("official_statements", "B3:INDS3", "mv", {}, _statements()["INDS3"], stored_at)
-
-    # receivedOn of 2Q is 2026-08-02: at 2026-08-02 02:00 UTC it is still 1 August in Sao Paulo
-    before_receipt = official_overlays(database, ["INDS3"], market="B3", as_of=datetime(YEAR, 8, 2, 2, tzinfo=timezone.utc))["INDS3"]
-    assert before_receipt.overlay is None and before_receipt.pit_excluded  # nor the legacy one: it was stored on 3 August
-    after_receipt_before_storage = official_overlays(database, ["INDS3"], market="B3", as_of=datetime(YEAR, 8, 2, 23, tzinfo=timezone.utc))["INDS3"]
-    assert after_receipt_before_storage.overlay is None and after_receipt_before_storage.pit_excluded
+    # 2Q was received on 2 August: available at 2 August 23:59:59.999999 in Sao Paulo (= 3 August 02:59:59 UTC)
     stored = official_overlays(database, ["INDS3"], market="B3", as_of=stored_at)["INDS3"]
-    assert stored.origin == "statements" and not stored.pit_excluded
+    assert stored.origin == "statements" and not stored.receipt_guard_excluded
+    same_day = official_overlays(database, ["INDS3"], market="B3", as_of=datetime(YEAR, 8, 2, 23, tzinfo=timezone.utc))["INDS3"]
+    assert same_day.overlay is None and same_day.receipt_guard_excluded  # 20:00 in Sao Paulo, and nothing was stored yet anyway
+    assert available_at(f"{YEAR}-08-02") == datetime(YEAR, 8, 3, 2, 59, 59, 999999, tzinfo=timezone.utc)
 
-    future = copy.deepcopy(_statements()["INDS3"])
-    future["official_metrics"]["periodDocuments"][f"{YEAR}-06-30"]["receivedOn"] = f"{YEAR}-08-04"  # dated after its storage
-    database.save_analysis_snapshot("official_statements", "B3:INDS3", "mv", {}, future, stored_at + timedelta(minutes=1))
+
+def test_every_contributing_document_is_checked_dva_included(tmp_path: Path) -> None:
+    database = _database(tmp_path)
+    stored_at = datetime(YEAR, 8, 20, 12, tzinfo=timezone.utc)
+    database.save_analysis_snapshot("official_fundamentals", "B3:INDS3", "mv", {}, _legacy(), stored_at)
+    statements = copy.deepcopy(_statements()["INDS3"])
+    period = statements["official_metrics"]["periodDocuments"][f"{YEAR}-06-30"]
+    period["contributing"].append({"document": "ITR", "referenceDate": f"{YEAR}-06-30", "version": 3, "receivedOn": f"{YEAR}-08-25"})  # e.g. a DVA re-filed later
+    database.save_analysis_snapshot("official_statements", "B3:INDS3", "mv", {}, statements, stored_at)
     excluded = official_overlays(database, ["INDS3"], market="B3", as_of=stored_at + timedelta(hours=1))["INDS3"]
-    assert excluded.pit_excluded and excluded.origin == "legacy" and excluded.overlay is not None
-    assert excluded.overlay["source_name"] == legacy_payload["source_name"]
-    served = apply_official_statements_map(database, {"INDS3": _provider_one_quarter_behind()}, market="B3", as_of=stored_at + timedelta(hours=1))
-    assert served["INDS3"]["officialFundamentals"]["sourceName"] == legacy_payload["source_name"]
-    assert official_overlays(database, ["INDS3"], market="B3", as_of=datetime(YEAR, 8, 5, tzinfo=timezone.utc))["INDS3"].origin == "statements"
+    assert excluded.receipt_guard_excluded and excluded.origin == "legacy"
+    assert official_overlays(database, ["INDS3"], market="B3", as_of=datetime(YEAR, 8, 26, 3, tzinfo=timezone.utc))["INDS3"].origin == "statements"
+
+
+def test_a_refused_latest_snapshot_gives_way_to_the_earlier_one_never_to_a_legacy_swing(tmp_path: Path) -> None:
+    database = _database(tmp_path)
+    first = datetime(YEAR, 8, 5, 12, tzinfo=timezone.utc)
+    database.save_analysis_snapshot("official_fundamentals", "B3:INDS3", "mv", {}, _legacy(), first)
+    database.save_analysis_snapshot("official_statements", "B3:INDS3", "mv", {}, _statements()["INDS3"], first)
+    newer = copy.deepcopy(_statements()["INDS3"])
+    newer["official_metrics"]["periodDocuments"][f"{YEAR}-06-30"]["receivedOn"] = f"{YEAR}-09-10"  # received today, stored today
+    newer["quarterlyIncome"][0]["ebitda"] = 1.0
+    today = datetime(YEAR, 9, 10, 15, tzinfo=timezone.utc)
+    database.save_analysis_snapshot("official_statements", "B3:INDS3", "mv", {}, newer, today)
+    chosen = official_overlays(database, ["INDS3"], market="B3", as_of=today + timedelta(hours=1))["INDS3"]
+    assert chosen.receipt_guard_excluded and chosen.origin == "statements" and chosen.overlay is not None
+    assert chosen.overlay["quarterlyIncome"][0]["ebitda"] == 37_000  # the earlier statements, not the new ones, not the legacy rows
+
+
+def test_a_legacy_snapshot_is_guarded_on_its_own_receipt(tmp_path: Path) -> None:
+    """Reviewer probe (d): statements with a future receipt fell back to a legacy snapshot whose receipt was never checked."""
+    database = _database(tmp_path)
+    future = copy.deepcopy(_statements()["INDS3"])
+    future["official_metrics"]["periodDocuments"][f"{YEAR}-06-30"]["receivedOn"] = "2099-01-01"
+    save_official_statements(database, [future])
+    save_official_fundamentals(database, [_legacy(published_at="2099-01-01T12:00:00+00:00")])
+    chosen = official_overlays(database, ["INDS3"], market="B3")["INDS3"]
+    assert chosen.receipt_guard_excluded and chosen.overlay is None and chosen.origin is None
+    date_only = _database(tmp_path)
+    date_only.save_analysis_snapshot("official_fundamentals", "B3:INDS3", "mv", {}, _legacy(published_at=f"{YEAR}-08-02"),
+                                     datetime(YEAR, 8, 1, tzinfo=timezone.utc))
+    assert official_overlays(date_only, ["INDS3"], market="B3", as_of=datetime(YEAR, 8, 2, 20, tzinfo=timezone.utc))["INDS3"].overlay is None
+    assert official_overlays(date_only, ["INDS3"], market="B3", as_of=datetime(YEAR, 8, 3, 3, tzinfo=timezone.utc))["INDS3"].origin == "legacy"
 
 
 # ------------------------------------------------------------------ the shadow
@@ -263,30 +417,39 @@ def test_the_aggregate_names_no_symbol_and_counts_the_corrections(tmp_path: Path
     served_rows = [{"symbol": "INDS3", "internal_tp": 10.0, "internal_buy_in": 8.0, "internal_tp_validation_status": "validated"},
                    {"symbol": "PLAIN3", "internal_tp": 20.0, "internal_buy_in": 16.0, "internal_tp_validation_status": "validated"},
                    {"symbol": "GONE3", "internal_tp": 5.0, "internal_buy_in": 4.0}]
-    shadow_rows = [{"symbol": "INDS3", "internal_tp": 12.5, "internal_buy_in": 9.0, "internal_tp_validation_status": "review_required"},
-                   {"symbol": "PLAIN3", "internal_tp": 20.0, "internal_buy_in": 16.0, "internal_tp_validation_status": "validated"}]
-    outputs = shadow.build_shadow_outputs(capture, served_rows=served_rows, shadow_rows=shadow_rows, universe_symbols=["INDS3", "PLAIN3"],
+    before_rows = [*served_rows[:2], {"symbol": "GONE3", "internal_tp": 5.5, "internal_buy_in": 4.0}]  # GONE3 moved since the cycle
+    fix_rows = [{"symbol": "INDS3", "internal_tp": 11.0, "internal_buy_in": 8.5}, served_rows[1]]
+    after_rows = [{"symbol": "INDS3", "internal_tp": 12.5, "internal_buy_in": 9.0, "internal_tp_validation_status": "review_required"},
+                  {"symbol": "PLAIN3", "internal_tp": 20.0, "internal_buy_in": 16.0, "internal_tp_validation_status": "validated"}]
+    outputs = shadow.build_shadow_outputs(capture, served_rows=served_rows, before_rows=before_rows, cash_flow_fix_rows=fix_rows,
+                                          after_rows=after_rows, universe_symbols=["INDS3", "PLAIN3"],
                                           cycle_id="00000000-0000-4000-8000-000000000001", basis_at=datetime(YEAR, 10, 19, 3, tzinfo=timezone.utc),
                                           producer_build_sha="a" * 40)
     aggregate = outputs["aggregate"]
     assert tuple(aggregate) == shadow.AGGREGATE_KEYS and outputs["report_sha256"] == shadow.canonical_sha256(aggregate)
     text = json.dumps(aggregate)
     assert not any(symbol in text for symbol in ("INDS3", "PLAIN3", "GONE3"))
-    assert aggregate["names"] == {"served": 3, "shadow": 2, "pairs": 2, "only_served": 1, "only_shadow": 0}
+    assert aggregate["names"] == {"served_rows": 3, "before": 3, "before_matches_served": 2, "after": 2, "pairs": 2, "only_before": 1, "only_after": 0}
     assert aggregate["internal_tp"]["n"] == 2 and aggregate["internal_tp"]["changed"] == 1 and aggregate["internal_tp"]["over_20_percent"] == 1
     assert aggregate["internal_tp"]["median"] == pytest.approx(0.125) and aggregate["internal_tp"]["p90"] == pytest.approx(0.225)
     assert aggregate["internal_buy_in"]["abs_p90"] == pytest.approx(0.1125)
-    assert aggregate["internal_validation"] == {"served_validated": 2, "shadow_validated": 1, "changed": 1}
+    assert aggregate["internal_validation"] == {"before_validated": 2, "after_validated": 1, "changed": 1}
+    # the decomposition: INDS3 10 -> 11 by the cash-flow fix alone, 11 -> 12.5 by the CVM rows
+    assert aggregate["cash_flow_fix_internal_tp"]["median"] == pytest.approx(0.05) and aggregate["cash_flow_fix_internal_tp"]["n"] == 2
+    assert aggregate["cvm_rows_internal_tp"]["p90"] == pytest.approx((12.5 / 11 - 1) * 0.9)
     assert aggregate["ebitda"] == {"changed": 1, "legacy_partial_window": 1, "corrected": 1}
     assert aggregate["field_sources"]["ebitda"] == {"cvm": 1, "eodhd": 1, "mixed": 0, "absent": 0}
-    assert aggregate["overlay_origin"] == {"statements": 1, "legacy": 0, "none": 1} and aggregate["served_overlay"] == "legacy"
-    assert aggregate["shares_scale_suspect"] == 0  # 990 CVM shares against 1,000 provider shares
+    assert aggregate["overlay_origin"] == {"statements": 1, "legacy": 0, "stale": 0, "none": 1} and aggregate["served_overlay"] == "legacy"
+    assert aggregate["shares_scale_skipped"] == 0  # 990 CVM shares against 1,000 provider shares
+    assert aggregate["cash_flow_guard"] == {"cumulative": 0, "annual_missing": 0, "annual_mismatch": 0}
     assert outputs["private_detail"]["INDS3"]["internal_tp_after"] == 12.5
     assert aggregate["private_detail_sha256"] == shadow.canonical_sha256(outputs["private_detail"])
 
     snapshot_id = shadow.save_shadow_snapshot(database, outputs, published_at=datetime(YEAR, 10, 19, 3, 5, tzinfo=timezone.utc))
     stored = database.latest_analysis_snapshot(shadow.ANALYSIS_TYPE, shadow.ENTITY_KEY)
     assert stored["id"] == snapshot_id and stored["outputs"]["aggregate"] == aggregate  # JSONB round trip: the hash still recomputes
+    assert outputs["private_detail"]["INDS3"]["internal_tp_fix"] == 11.0 and outputs["private_detail"]["INDS3"]["internal_tp_served"] == 10.0
+    assert outputs["attestation_sha256"] == shadow.canonical_sha256({"aggregate": aggregate, "producer_build_sha": "a" * 40})
     assert database.valuation_predictions_for_cycle(snapshot_id, source="official_blend_v1") == {}  # never a prediction record
 
 
@@ -308,12 +471,12 @@ class _Http:
                             for index, symbol in enumerate(SYMBOLS)]}
 
 
-def _service(database: Database) -> Any:
+def _service(database: Database, *, nightly: bool = True) -> Any:
     from app.market_data.b3_screener import B3ScreenerService
 
     now = datetime.now(timezone.utc)
     settings = Settings(brapi_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
-    service = B3ScreenerService(settings, database, _Http())  # type: ignore[arg-type]
+    service = B3ScreenerService(settings, database, _Http(), nightly_cvm_shadow=nightly)  # type: ignore[arg-type]
     quotes = {symbol: NormalizedQuote(provider="brapi", symbol=symbol, provider_symbol=symbol, exchange="B3", currency="BRL", price=20 + index,
                                       change_percent=0.1, volume=2_000_000, market_cap=2_000_000_000 + index * 50_000_000, as_of=now,
                                       collected_at=now, quality_score=94)
@@ -392,6 +555,8 @@ def test_the_nightly_build_records_one_shadow_snapshot_and_serves_exactly_what_i
     assert aggregate["field_sources"]["ebitda"]["cvm"] == 1 and aggregate["field_sources"]["ebitda"]["eodhd"] == len(SYMBOLS) - 1
     assert aggregate["ebitda"]["changed"] == 1 and aggregate["ebitda"]["corrected"] == 0  # the provider's figure was not a halved legacy sum
     assert aggregate["names"]["pairs"] == len(on._matrix_rows) and aggregate["internal_tp"]["n"] == len(on._matrix_rows)
+    assert aggregate["names"]["before_matches_served"] == aggregate["names"]["served_rows"] == len(on._matrix_rows)  # same moment, same rows
+    assert aggregate["cash_flow_fix_internal_tp"]["n"] == len(on._matrix_rows)
     assert aggregate["internal_tp"]["changed"] >= 1  # the corrected EBITDA moves that name's internal TP
     assert not any(symbol in json.dumps(aggregate) for symbol in SYMBOLS)
     assert outputs["private_detail"][SYMBOLS[0]]["ebitda_after"] == 800_000_000.0
@@ -401,6 +566,53 @@ def test_the_nightly_build_records_one_shadow_snapshot_and_serves_exactly_what_i
     on.screen(refresh=True)
     identity = on_database.latest_analysis_snapshot(shadow.ANALYSIS_TYPE, shadow.ENTITY_KEY)["outputs"]["aggregate"]
     assert identity["served_overlay"] == "fieldwise" and identity["internal_tp"]["changed"] == 0 and identity["ebitda"]["changed"] == 0
+    assert identity["names"]["before_matches_served"] == identity["names"]["served_rows"]
+
+
+def test_the_shadow_runs_only_in_the_nightly_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not in another process's full build (the IR worker's screener is not the nightly producer), and not in
+    refresh_symbols' cold build even in the valuation worker."""
+    monkeypatch.delenv(FIELDWISE_OVERLAY_ENV, raising=False)
+    monkeypatch.setenv(valuation_env.CVM_OVERLAY_SHADOW_ENV, "true")
+    other = _service(_database(), nightly=False)
+    other.screen(refresh=True)
+    assert other.database.latest_analysis_snapshot(shadow.ANALYSIS_TYPE, shadow.ENTITY_KEY) is None
+    nightly = _service(_database())
+    nightly._build_targeted_valuation = lambda symbol: None  # type: ignore[method-assign]
+    nightly.refresh_symbols([SYMBOLS[0]])  # no matrix yet: a cold full build on behalf of one symbol
+    assert nightly._matrix_rows and nightly.database.latest_analysis_snapshot(shadow.ANALYSIS_TYPE, shadow.ENTITY_KEY) is None
+    nightly.screen(refresh=True)
+    assert nightly.database.latest_analysis_snapshot(shadow.ANALYSIS_TYPE, shadow.ENTITY_KEY) is not None
+
+
+def test_with_the_shadow_on_everything_served_and_stored_is_identical(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reviewer probe (identity): the response, the matrix rows, every other snapshot and the prediction records are the
+    same with the shadow on and off, field for field (instants and ids aside); the shadow adds exactly one snapshot."""
+    volatile = {"generated_at", "appliedAt", "published_at", "prediction_instant", "id", "cycle_id", "basis_at", "row_sha256",
+                "consensus_published_at", "as_of", "payload_sha256", "source_manifest_sha256", "official_cycle_id", "official_generation_id",
+                "activated_at", "generation_id", "snapshot_id", "applied_at", "updated_at"}
+
+    def scrub(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: scrub(item) for key, item in sorted(value.items()) if key not in volatile}
+        if isinstance(value, (list, tuple)):
+            return [scrub(item) for item in value]
+        return value
+
+    def run(on: bool) -> tuple[str, int]:
+        monkeypatch.setenv(valuation_env.CVM_OVERLAY_SHADOW_ENV, "true" if on else "")
+        database = _database()
+        service = _service(database)
+        response = service.screen(refresh=True)
+        snapshots = [(item["analysis_type"], item["entity_key"], item["outputs"]) for item in database._analysis_snapshots
+                     if item["analysis_type"] != shadow.ANALYSIS_TYPE]
+        predictions = getattr(database, "_valuation_predictions", None)
+        state = scrub([json.loads(response.model_dump_json()), service._matrix_rows, snapshots, list(predictions) if predictions is not None else None])
+        return json.dumps(state, sort_keys=True, default=str), len(database._analysis_snapshots)
+
+    monkeypatch.delenv(FIELDWISE_OVERLAY_ENV, raising=False)
+    (off, off_count), (on, on_count) = run(False), run(True)
+    assert on == off and on_count == off_count + 1
 
 
 def test_a_failing_shadow_never_breaks_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -447,9 +659,10 @@ def _shadow_database(producer: str = "a" * 40) -> Database:
     provider = {"INDS3": _provider_one_quarter_behind()}
     save_official_statements(database, [_statements()["INDS3"]])
     capture.add(database, provider, provider, served_overlay="legacy")
+    served = [{"symbol": "INDS3", "internal_tp": 10.0, "internal_buy_in": 8.0}]
     outputs = shadow.build_shadow_outputs(
-        capture, served_rows=[{"symbol": "INDS3", "internal_tp": 10.0, "internal_buy_in": 8.0}],
-        shadow_rows=[{"symbol": "INDS3", "internal_tp": 11.0, "internal_buy_in": 8.5}], universe_symbols=["INDS3"],
+        capture, served_rows=served, before_rows=served, cash_flow_fix_rows=served,
+        after_rows=[{"symbol": "INDS3", "internal_tp": 11.0, "internal_buy_in": 8.5}], universe_symbols=["INDS3"],
         cycle_id="00000000-0000-4000-8000-000000000002", basis_at=datetime(YEAR, 10, 19, 3, tzinfo=timezone.utc), producer_build_sha=producer)
     shadow.save_shadow_snapshot(database, outputs, published_at=datetime(YEAR, 10, 19, 3, 5, tzinfo=timezone.utc))
     return database
@@ -466,6 +679,10 @@ def test_the_receipt_rehashes_the_stored_aggregate_and_binds_both_builds() -> No
     markdown = shadow.before_after_markdown(receipt)
     assert receipt["report_sha256"] in markdown and receipt["receipt_sha256"] in markdown and "a" * 40 in markdown and "INDS3" not in markdown
 
+    database._analysis_snapshots[-1]["outputs"]["producer_build_sha"] = "d" * 40  # re-attributed after it was stored
+    with pytest.raises(ValueError, match="attestation_sha256"):
+        shadow.before_after_receipt(database, reader_build_sha="b" * 40)
+    database._analysis_snapshots[-1]["outputs"]["producer_build_sha"] = "a" * 40
     database._analysis_snapshots[-1]["outputs"]["aggregate"]["universe"] = 99  # altered after the producer hashed it
     with pytest.raises(ValueError, match="does not recompute"):
         shadow.before_after_receipt(database, reader_build_sha="b" * 40)
@@ -533,9 +750,18 @@ def test_the_readonly_workflow_publishes_the_cvm_receipt_aggregate_only(tmp_path
         return json.dumps({**body, "receipt_sha256": shadow.canonical_sha256(body)})
 
     keyed = {**receipt, "names": {**receipt["names"], "INDS3": 1}}
+    smuggled_bool = {**receipt, "field_sources": {**receipt["field_sources"], "ebitda": {**receipt["field_sources"]["ebitda"], "cvm": True}}}
     for text, message in (
         (json.dumps({**receipt, "detail": {"INDS3": {}}}), "keys are not exactly the aggregate's"),
         (json.dumps(keyed), "unexpected names block"),
+        (reattested({"field_sources": smuggled_bool["field_sources"]}), "unexpected field_sources block"),
+        (reattested({"ebitda": {**receipt["ebitda"], "changed": True}}), "unexpected ebitda block"),
+        (reattested({"served_overlay": "PETR4"}), "unexpected overlay names"),
+        (reattested({"cycle_id": "PETR4"}), "not a snapshot id"),
+        (reattested({"basis_at": receipt["basis_at"] + " PETR4"}), "not an ISO-8601 instant"),
+        (reattested({"statements_as_of": receipt["statements_as_of"] + "\nPETR4"}), "not an ISO-8601 instant"),
+        (reattested({"universe": "PETR4"}), "not a count"),
+        (reattested({"internal_tp": {**receipt["internal_tp"], "median": ["PETR4"]}}), "unexpected internal_tp block"),
         (json.dumps({**receipt, "field_sources": {**receipt["field_sources"], "INDS3": {"cvm": 1, "eodhd": 0, "mixed": 0, "absent": 0}}}),
          "unexpected field_sources block"),
         (json.dumps({**receipt, "universe": receipt["universe"] + 1}), "report_sha256 does not recompute"),
@@ -543,7 +769,7 @@ def test_the_readonly_workflow_publishes_the_cvm_receipt_aggregate_only(tmp_path
         (json.dumps({**receipt, "producer_build_sha": "d" * 40}), "receipt_sha256 does not recompute"),
         (reattested({"producer_build_sha": "development"}), "not a commit sha"),
         (reattested({"reader_build_sha": None}), "not a commit sha"),
-        (json.dumps({**receipt, "schema": "VALUATION_P1_BEFORE_AFTER_V3"}), "not the CVM overlay receipt V1"),
+        (json.dumps({**receipt, "schema": "VALUATION_P1_BEFORE_AFTER_V3"}), "not the CVM overlay receipt V2"),
         ("not json", "not a single JSON document"),
         (" " * 70000, "larger than an aggregate"),
     ):

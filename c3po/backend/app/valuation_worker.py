@@ -352,7 +352,7 @@ def main() -> None:
             logger.warning("valuation_official bootstrap failed: %s", type(exc).__name__)
         investor_relations = InvestorRelationsService(settings, database)
         market_data = MarketDataService(settings, database)
-        screener = B3ScreenerService(settings, database, market_data.http)
+        screener = B3ScreenerService(settings, database, market_data.http, nightly_cvm_shadow=True)  # the nightly cycle's producer
         realtime = RealtimeMarketsService(
             settings,
             database,

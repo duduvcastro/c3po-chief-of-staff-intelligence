@@ -14,7 +14,7 @@ from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixP
 from ..investor_relations import normalize_company_name
 from ..official_fundamentals import apply_official_fundamentals_map
 from ..official_statements import apply_official_statements_map, fieldwise_overlay_enabled
-from .. import valuation_cvm_overlay_shadow as cvm_shadow
+from .. import valuation_cvm_overlay_shadow as cvm_shadow_module
 from ..valuation_env import cvm_overlay_shadow_enabled
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
@@ -178,8 +178,12 @@ def batches(values: list[str], size: int = BATCH_SIZE) -> list[list[str]]:
 
 
 class B3ScreenerService:
-    def __init__(self, settings: Settings, database: Database, http: JsonHttpClient) -> None:
+    def __init__(self, settings: Settings, database: Database, http: JsonHttpClient, *, nightly_cvm_shadow: bool = False) -> None:
         self.settings = settings
+        # the CVM field-wise overlay shadow runs only in the valuation worker's nightly build (and only under its switch):
+        # never in another process's full build, never in refresh_symbols' cold build
+        self._nightly_cvm_shadow = nightly_cvm_shadow
+        self._cvm_shadow_suppressed = False
         self.database = database
         self.http = http
         self._lock = RLock()
@@ -218,7 +222,7 @@ class B3ScreenerService:
             with self._lock:
                 now = datetime.now(timezone.utc)
                 self._load_calibration_factors()
-                response = self._build(now)
+                response = self._build(now, cvm_shadow=self._nightly_cvm_shadow and not self._cvm_shadow_suppressed)
                 self._cached = response
                 self._cache_expires_at = None
                 return response
@@ -362,7 +366,11 @@ class B3ScreenerService:
         with self._lock:
             self._hydrate_persisted_state(force=True)
             if not self._matrix_rows:
-                self.screen(refresh=True)
+                self._cvm_shadow_suppressed = True  # a cold full build on behalf of a few symbols is not the nightly cycle
+                try:
+                    self.screen(refresh=True)
+                finally:
+                    self._cvm_shadow_suppressed = False
             existing_symbols = {str(row.get("symbol") or "") for row in self._matrix_rows}
             for symbol in clean_symbols:
                 self._eodhd_cache.pop(symbol, None)
@@ -557,7 +565,7 @@ class B3ScreenerService:
                 if number(factor) is not None
             }
 
-    def _build(self, generated_at: datetime) -> B3CandidateResponse:
+    def _build(self, generated_at: datetime, *, cvm_shadow: bool = False) -> B3CandidateResponse:
         if not self.settings.brapi_token:
             raise RuntimeError("Brapi credential is not configured")
 
@@ -608,7 +616,7 @@ class B3ScreenerService:
             eodhd_map: dict[str, dict[str, Any]] = {}
             eodhd_receipts: dict[str, datetime] = {}
             # C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW (default off): the same EODHD payloads, overlaid field by field too
-            cvm_capture = cvm_shadow.ShadowCapture() if cvm_overlay_shadow_enabled() else None
+            cvm_capture = cvm_shadow_module.ShadowCapture() if cvm_shadow and cvm_overlay_shadow_enabled() else None
             if self.settings.eodhd_api_token and symbols:
                 # EODHD must run before the quality gate so it can rescue missing
                 # Brapi fields instead of only confirming rows that already passed.
@@ -699,7 +707,7 @@ class B3ScreenerService:
 
     def _persist_cvm_overlay_shadow(
         self,
-        capture: "cvm_shadow.ShadowCapture",
+        capture: "cvm_shadow_module.ShadowCapture",
         *,
         generated_at: datetime,
         served_rows: list[dict[str, Any]],
@@ -721,17 +729,24 @@ class B3ScreenerService:
                 return
             catalog, quotes, statistics_map, financial_map, historical_map, macro = prepare_inputs
             reference_quotes, reference_financial, reference_fetched_at = references
-            shadow_map = dict(capture.shadow)
-            shadow_references = self._consensus_reference_rows(reference_quotes, reference_financial, shadow_map,
-                                                               consensus_fetched_at=reference_fetched_at)
-            shadow_rows = self._prepare_rows(catalog, quotes, statistics_map, financial_map, historical_map, macro, shadow_map,
-                                             shadow_references, consensus_fetched_at=consensus_fetched_at)
-            outputs = cvm_shadow.build_shadow_outputs(
-                capture, served_rows=served_rows, shadow_rows=shadow_rows, universe_symbols=universe_symbols,
-                cycle_id=getattr(self, "_published_cycle_id", None), basis_at=generated_at,
+
+            def valued(fundamentals: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+                references_rows = self._consensus_reference_rows(reference_quotes, reference_financial, fundamentals,
+                                                                 consensus_fetched_at=reference_fetched_at)
+                return self._prepare_rows(catalog, quotes, statistics_map, financial_map, historical_map, macro, fundamentals,
+                                          references_rows, consensus_fetched_at=consensus_fetched_at)
+
+            # the three variants in ONE call, at the same moment: before (the served fundamentals, recomputed here and
+            # compared with the published rows), the cash-flow fix alone (no CVM row) and after (the field-wise overlay)
+            before_rows = valued(dict(capture.served))
+            cash_flow_fix_rows = valued(dict(capture.cash_flow_fixed))
+            after_rows = valued(dict(capture.shadow))
+            outputs = cvm_shadow_module.build_shadow_outputs(
+                capture, served_rows=served_rows, before_rows=before_rows, cash_flow_fix_rows=cash_flow_fix_rows, after_rows=after_rows,
+                universe_symbols=universe_symbols, cycle_id=getattr(self, "_published_cycle_id", None), basis_at=generated_at,
                 producer_build_sha=os.environ.get("C3PO_BUILD_SHA"),  # the build of THIS process, the one that computed the aggregate
             )
-            cvm_shadow.save_shadow_snapshot(self.database, outputs, published_at=datetime.now(timezone.utc))
+            cvm_shadow_module.save_shadow_snapshot(self.database, outputs, published_at=datetime.now(timezone.utc))
         except Exception:
             logger.exception("CVM field-wise overlay shadow failed; the served B3 cycle is unaffected")
 
@@ -787,7 +802,7 @@ class B3ScreenerService:
         self,
         symbols: list[str],
         *,
-        shadow: "cvm_shadow.ShadowCapture | None" = None,
+        shadow: "cvm_shadow_module.ShadowCapture | None" = None,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, datetime]]:
         """EODHD fundamentals for ``symbols`` AND the receipt instant of each — the instant the provider's answer carrying
         that payload arrived (a cache read keeps it; a failed re-fetch keeps the old pair). Payload and receipt are ONE
