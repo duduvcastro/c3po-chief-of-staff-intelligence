@@ -4,8 +4,15 @@ The legacy overlay (``official_fundamentals.apply_official_fundamentals``) repla
 official row wholesale and sums whatever rows carry a field. A CVM ITR row carries no EBITDA, so two official quarters
 plus two provider quarters gave half a TTM EBITDA and twice the EV/EBITDA. Here an official row overrides only the
 fields it carries, and every trailing-twelve-month figure needs four consecutive quarters that ALL carry the field;
-otherwise the provider's own figure stays. ``official_fundamentals.py`` is pinned byte for byte by the R2D2 V2 risk
-differential (``r2d2_v2_risk_differential.ORIGIN_PINS``) and keeps its behaviour for every caller that imports it.
+otherwise the provider's own figure stays — except EODHD's top-level operating and free cash flow, which are ONE quarter
+(``PROVIDER_QUARTERLY_TOP_LEVEL``): those fall back to the provider's own complete TTM, else are left out.
+``official_fundamentals.py`` is pinned byte for byte by the R2D2 V2 risk differential
+(``r2d2_v2_risk_differential.ORIGIN_PINS``) and keeps its behaviour for every caller that imports it.
+
+Point in time (``official_overlays``): a snapshot is read only if it was stored by the build instant and every document
+behind it was received (CVM ``DT_RECEB``) by that instant's date in Sao Paulo. ``fieldwise_sources`` says, per served
+field, whether it came from the CVM, the provider or both; the nightly shadow (``valuation_cvm_overlay_shadow``,
+``C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW``) aggregates it.
 
 Switches. ``config.py`` is hashed into the R2D2 V2 implementation package (``r2d2_v2_earnings_package.PACKAGE_FILES``),
 so these are read from the environment here, as the R2D2 V2 producers read theirs, rather than added to ``Settings``:
@@ -21,7 +28,8 @@ import copy
 import math
 import os
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NamedTuple
+from zoneinfo import ZoneInfo
 
 from .database import Database
 from .official_fundamentals import (
@@ -40,6 +48,7 @@ METHODOLOGY_VERSION = 1
 FIELDWISE_OVERLAY_ENV = "C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED"
 STATEMENTS_CAPTURE_ENV = "C3PO_CVM_STATEMENTS_CAPTURE_ENABLED"
 STATEMENTS_INTERVAL_ENV = "C3PO_CVM_STATEMENTS_INTERVAL_HOURS"
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 STATEMENT_FIELDS = ("quarterlyIncome", "quarterlyCashFlow", "quarterlyBalance")
 HISTORY_QUARTERS = 8  # kept per statement across runs: two years covers every TTM and year-over-year read
 AS_OF_DOCUMENT_FIELDS = ("published_at", "source_url")  # describe the as_of document only: never inherited from another
@@ -114,21 +123,88 @@ def apply_official_statements_map(
     fundamentals_by_symbol: dict[str, dict[str, Any]],
     *,
     market: str,
+    as_of: datetime | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Field-by-field counterpart of ``official_fundamentals.apply_official_fundamentals_map``: the complete
-    statements whenever the symbol has them, else the legacy overlay itself."""
-    keys = [_entity_key(market, symbol.upper()) for symbol in fundamentals_by_symbol]
-    statements = database.latest_analysis_snapshots(ANALYSIS_TYPE, keys)
-    legacy = database.latest_analysis_snapshots(LEGACY_ANALYSIS_TYPE, keys)
-    output: dict[str, dict[str, Any]] = {}
-    for symbol, fundamentals in fundamentals_by_symbol.items():
-        key = _entity_key(market, symbol.upper())
-        overlay = select_official_overlay(
-            (statements.get(key) or {}).get("outputs"),
-            (legacy.get(key) or {}).get("outputs"),
-        )
-        output[symbol] = apply_official_statements(fundamentals, overlay)
+    statements whenever the symbol has them, else the legacy overlay itself — only what was received by ``as_of``
+    (default: now; ``official_overlays``)."""
+    overlays = official_overlays(database, list(fundamentals_by_symbol), market=market, as_of=as_of)
+    return {
+        symbol: apply_official_statements(fundamentals, overlays[symbol].overlay)
+        for symbol, fundamentals in fundamentals_by_symbol.items()
+    }
+
+
+class OfficialOverlay(NamedTuple):
+    """The one overlay a symbol gets (``select_official_overlay``), where it came from (``statements``, ``legacy`` or
+    ``None``) and whether complete statements were set aside because a document in them post-dates ``as_of``."""
+
+    overlay: dict[str, Any] | None
+    origin: str | None
+    pit_excluded: bool
+
+
+def official_overlays(
+    database: Database,
+    symbols: list[str],
+    *,
+    market: str,
+    as_of: datetime | None = None,
+) -> dict[str, OfficialOverlay]:
+    """The overlay of each symbol as of ``as_of`` (point in time). A snapshot is a candidate only if it was stored by
+    ``as_of`` and every document behind it was received (CVM ``DT_RECEB``, a date) by ``as_of``'s date in Sao Paulo:
+    a live build reads snapshots the IR worker wrote before it, so this never drops anything there; it makes the rule
+    explicit and refuses a future-dated filing, or a snapshot written after the cut, instead of serving it."""
+    instant = _aware(as_of) or datetime.now(timezone.utc)
+    keys = {symbol: _entity_key(market, symbol.upper()) for symbol in symbols}
+    statements = database.latest_analysis_snapshots(ANALYSIS_TYPE, list(keys.values()))
+    legacy = database.latest_analysis_snapshots(LEGACY_ANALYSIS_TYPE, list(keys.values()))
+    output: dict[str, OfficialOverlay] = {}
+    for symbol, key in keys.items():
+        statements_snapshot = statements.get(key) or {}
+        legacy_snapshot = legacy.get(key) or {}
+        statements_outputs = statements_snapshot.get("outputs") if isinstance(statements_snapshot.get("outputs"), dict) else None
+        pit_excluded = statements_outputs is not None and not _received_by(statements_snapshot, instant)
+        legacy_outputs = legacy_snapshot.get("outputs") if _stored_by(legacy_snapshot, instant) else None
+        overlay = select_official_overlay(None if pit_excluded else statements_outputs, legacy_outputs)
+        origin = None
+        if overlay is not None:
+            origin = "statements" if statements_outputs is not None and not pit_excluded and _valid_date(statements_outputs.get("as_of")) else "legacy"
+        output[symbol] = OfficialOverlay(overlay, origin, pit_excluded)
     return output
+
+
+def _aware(value: Any) -> datetime | None:
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _stored_by(snapshot: dict[str, Any], instant: datetime) -> bool:
+    """The snapshot was stored by ``instant`` (a snapshot without a readable instant is trusted: the store always has one)."""
+    stored = _aware(snapshot.get("published_at"))
+    return stored is None or stored <= instant
+
+
+def _received_by(snapshot: dict[str, Any], instant: datetime) -> bool:
+    """Stored by ``instant`` and every period document received by ``instant``'s calendar date in Sao Paulo (CVM files a
+    receipt DATE; a document received that day is one the IR worker could only have collected on or after it)."""
+    if not _stored_by(snapshot, instant):
+        return False
+    outputs = snapshot.get("outputs")
+    metrics = outputs.get("official_metrics") if isinstance(outputs, dict) else None
+    cut = instant.astimezone(SAO_PAULO).date().isoformat()
+    documents = metrics.get("periodDocuments") if isinstance(metrics, dict) else None
+    for document in documents.values() if isinstance(documents, dict) else []:
+        received = _valid_date((document or {}).get("receivedOn")) if isinstance(document, dict) else None
+        if received is not None and received > cut:
+            return False
+    return True
 
 
 def select_official_overlay(statements: Any, legacy: Any) -> dict[str, Any] | None:
@@ -153,15 +229,23 @@ def select_official_overlay(statements: Any, legacy: Any) -> dict[str, Any] | No
     return copy.deepcopy(legacy) if legacy_period and isinstance(legacy, dict) else None
 
 
+def _applied_period(fundamentals: dict[str, Any], overlay: dict[str, Any] | None) -> str | None:
+    """The overlay's period when it applies at all: a dated overlay not older than the provider's own quarter."""
+    if not isinstance(overlay, dict) or not overlay.get("as_of"):
+        return None
+    base_period = _valid_date(fundamentals.get("financialsAsOf"))
+    official_period = _valid_date(overlay.get("as_of"))
+    if not official_period or (base_period and official_period < base_period):
+        return None
+    return official_period
+
+
 def apply_official_statements(
     fundamentals: dict[str, Any],
     overlay: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    if not isinstance(overlay, dict) or not overlay.get("as_of"):
-        return dict(fundamentals)
-    base_period = _valid_date(fundamentals.get("financialsAsOf"))
-    official_period = _valid_date(overlay.get("as_of"))
-    if not official_period or (base_period and official_period < base_period):
+    official_period = _applied_period(fundamentals, overlay)
+    if official_period is None or overlay is None:
         return dict(fundamentals)
 
     result = copy.deepcopy(fundamentals)
@@ -200,8 +284,13 @@ def apply_official_statements(
     })
     _set_if_number(result, "totalRevenue", revenue)
     _set_if_number(result, "ebitda", ebitda)
-    _set_if_number(result, "operatingCashflow", operating_cash)
-    _set_if_number(result, "freeCashflow", free_cash_flow)
+    provider_cash_flow = merge_rows_fieldwise(fundamentals.get("quarterlyCashFlow"), None)
+    for key, value in (("operatingCashflow", operating_cash), ("freeCashflow", free_cash_flow)):
+        if value is None:  # EODHD's top-level cash flow is its latest QUARTER (eodhd._latest_statement): never served as a year
+            value = complete_ttm(provider_cash_flow, PROVIDER_QUARTERLY_TOP_LEVEL[key])  # the provider's own TTM, when complete
+            if value is None:
+                result.pop(key, None)
+        _set_if_number(result, key, value)
     _set_if_number(result, "totalCash", total_cash)
     _set_if_number(result, "totalDebt", total_debt)
     _set_if_number(result, "totalEquity", total_equity)
@@ -266,6 +355,91 @@ def complete_ttm(rows: list[dict[str, Any]], field: str, *, magnitude: bool = Fa
     if len(clean) < 4:
         return None
     return sum(abs(value) for value in clean) if magnitude else sum(clean)
+
+
+SOURCE_OFFICIAL = "cvm"
+SOURCE_PROVIDER = "eodhd"
+SOURCE_MIXED = "mixed"
+SOURCE_ABSENT = "absent"
+SOURCES = (SOURCE_OFFICIAL, SOURCE_PROVIDER, SOURCE_MIXED, SOURCE_ABSENT)
+# Every field ``apply_official_statements`` can set (or that its ratios are derived from): (statement, column, magnitude)
+# for the trailing-twelve-month figures, the balance-sheet column(s) for the point figures.
+TTM_SOURCE_FIELDS: dict[str, tuple[str, str, bool]] = {
+    "totalRevenue": ("quarterlyIncome", "totalRevenue", False),
+    "netIncome": ("quarterlyIncome", "netIncome", False),
+    "ebitda": ("quarterlyIncome", "ebitda", False),
+    "operatingCashflow": ("quarterlyCashFlow", "totalCashFromOperatingActivities", False),
+    "freeCashflow": ("quarterlyCashFlow", "freeCashFlow", False),
+    "capexTtm": ("quarterlyCashFlow", "capitalExpenditures", True),
+}
+BALANCE_SOURCE_FIELDS: dict[str, tuple[str, ...]] = {
+    "totalCash": ("cashAndShortTermInvestments",),
+    "totalDebt": ("shortLongTermDebtTotal",),
+    "totalEquity": ("totalStockholderEquity", "totalEquity"),  # the order apply_official_statements reads them in
+}
+SOURCE_FIELDS: tuple[str, ...] = (*TTM_SOURCE_FIELDS, *BALANCE_SOURCE_FIELDS, "sharesOutstanding")
+# Provider top-level figures that are ONE QUARTER, not a trailing year (``eodhd._normalize_fundamentals`` reads them from the
+# latest quarterly cash-flow statement): without a complete window they fall back to the provider's own complete TTM, else
+# they are left out — never a quarter read as a year once the screener takes the overlay's figures.
+PROVIDER_QUARTERLY_TOP_LEVEL: dict[str, str] = {"operatingCashflow": "totalCashFromOperatingActivities", "freeCashflow": "freeCashFlow"}
+
+
+def fieldwise_sources(fundamentals: dict[str, Any], overlay: dict[str, Any] | None) -> dict[str, str]:
+    """Where each field ``apply_official_statements(fundamentals, overlay)`` serves comes from: ``cvm`` (every quarter of
+    the TTM window, or the balance/share figure, from the official rows), ``mixed`` (a complete window of official and
+    provider quarters), ``eodhd`` (the provider's: a window without the official field, or no complete window — then the
+    provider's own figure stays) or ``absent`` (neither has it). Mirrors that function's reads exactly; it serves nothing."""
+
+    def provided(field: str) -> bool:
+        if field == "netIncome":  # not a top-level provider field: the ratios built on it stay the provider's
+            return any(isinstance(row, dict) and _number(row.get("netIncome")) is not None for row in fundamentals.get("quarterlyIncome") or [])
+        if field == "capexTtm":
+            return any(isinstance(row, dict) and _number(row.get("capitalExpenditures")) is not None for row in fundamentals.get("quarterlyCashFlow") or [])
+        return _number(fundamentals.get(field)) is not None
+
+    def fallback(field: str) -> str:
+        return SOURCE_PROVIDER if provided(field) else SOURCE_ABSENT
+
+    if _applied_period(fundamentals, overlay) is None or overlay is None:
+        return {field: fallback(field) for field in SOURCE_FIELDS}
+    official: dict[str, dict[str, dict[str, Any]]] = {}
+    merged: dict[str, list[dict[str, Any]]] = {}
+    for statement in STATEMENT_FIELDS:
+        rows = overlay.get(statement)
+        official[statement] = {
+            period: row for row in (rows if isinstance(rows, list) else [])
+            if isinstance(row, dict) and (period := _valid_date(row.get("date")))
+        }
+        merged[statement] = merge_rows_fieldwise(fundamentals.get(statement), overlay.get(statement))
+
+    output: dict[str, str] = {}
+    for field, (statement, column, magnitude) in TTM_SOURCE_FIELDS.items():
+        rows = merged[statement]
+        if complete_ttm(rows, column, magnitude=magnitude) is None:
+            if field in PROVIDER_QUARTERLY_TOP_LEVEL:
+                provider_rows = merge_rows_fieldwise(fundamentals.get(statement), None)
+                output[field] = SOURCE_PROVIDER if complete_ttm(provider_rows, column) is not None else SOURCE_ABSENT
+            else:
+                output[field] = fallback(field)
+            continue
+        carried = sum(1 for row in rows[:4] if official[statement].get(_valid_date(row.get("date")) or "", {}).get(column) is not None)
+        output[field] = SOURCE_OFFICIAL if carried == 4 else SOURCE_PROVIDER if carried == 0 else SOURCE_MIXED
+
+    balance = merged["quarterlyBalance"]
+    latest = balance[0] if balance else {}
+    latest_official = official["quarterlyBalance"].get(_valid_date(latest.get("date")) or "", {})
+    for field, columns in BALANCE_SOURCE_FIELDS.items():
+        # ``a or b`` as apply_official_statements reads it: the first column with a non-zero number wins, else the last
+        chosen = next((column for column in columns if _number(latest.get(column))), columns[-1])
+        if _number(latest.get(chosen)) is None:
+            output[field] = fallback(field)
+        else:
+            output[field] = SOURCE_OFFICIAL if latest_official.get(chosen) is not None else SOURCE_PROVIDER
+    if _number(overlay.get("sharesOutstanding")):
+        output["sharesOutstanding"] = SOURCE_OFFICIAL
+    else:
+        output["sharesOutstanding"] = fallback("sharesOutstanding")
+    return output
 
 
 def _merge_statement_payloads(base: Any, incoming: dict[str, Any]) -> dict[str, Any]:

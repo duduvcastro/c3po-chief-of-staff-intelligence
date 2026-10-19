@@ -1,5 +1,6 @@
 import logging
 import math
+import os
 import re
 import statistics
 from datetime import date, datetime, timedelta, timezone
@@ -13,6 +14,8 @@ from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixP
 from ..investor_relations import normalize_company_name
 from ..official_fundamentals import apply_official_fundamentals_map
 from ..official_statements import apply_official_statements_map, fieldwise_overlay_enabled
+from .. import valuation_cvm_overlay_shadow as cvm_shadow
+from ..valuation_env import cvm_overlay_shadow_enabled
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
@@ -604,10 +607,12 @@ class B3ScreenerService:
             historical_map = self._historical_map(symbols)
             eodhd_map: dict[str, dict[str, Any]] = {}
             eodhd_receipts: dict[str, datetime] = {}
+            # C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW (default off): the same EODHD payloads, overlaid field by field too
+            cvm_capture = cvm_shadow.ShadowCapture() if cvm_overlay_shadow_enabled() else None
             if self.settings.eodhd_api_token and symbols:
                 # EODHD must run before the quality gate so it can rescue missing
                 # Brapi fields instead of only confirming rows that already passed.
-                eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts(symbols)  # payload and receipt from the same pairs
+                eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts(symbols, shadow=cvm_capture)  # payload and receipt from the same pairs
                 missing_history = [
                     symbol for symbol in symbols
                     if historical_map.get(symbol, {}).get("history_days", 0) < MIN_HISTORY_DAYS
@@ -639,7 +644,7 @@ class B3ScreenerService:
             reference_brapi_at = datetime.now(timezone.utc)  # FACT: brapi's financial data for the reference units received
             reference_receipts: dict[str, datetime] = {}
             if self.settings.eodhd_api_token and reference_quotes:
-                reference_eodhd, reference_receipts = self._eodhd_fundamentals_with_receipts(list(reference_quotes))
+                reference_eodhd, reference_receipts = self._eodhd_fundamentals_with_receipts(list(reference_quotes), shadow=cvm_capture)
                 eodhd_map.update(reference_eodhd)
                 eodhd_receipts.update(reference_receipts)  # a unit re-read here overwrites BOTH maps from the same pairs (never payload2 with receipt1)
             consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map,
@@ -680,7 +685,55 @@ class B3ScreenerService:
         methodology_id = self._persist_universe(generated_at, macro)  # the cycle is published (records → generation) BEFORE anything is served
         response = self._candidate_response(generated_at, len(symbols), rows, macro)
         self._persist_candidates(response, macro, methodology_id)
+        if cvm_capture is not None:  # after the served cycle and its candidates: the shadow can only add a snapshot of its own
+            self._persist_cvm_overlay_shadow(
+                cvm_capture,
+                generated_at=generated_at,
+                served_rows=rows,
+                universe_symbols=symbols,
+                prepare_inputs=(catalog, quotes, statistics_map, financial_map, historical_map, macro),
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
+                references=(reference_quotes, reference_financial, {"brapi": reference_brapi_at, "eodhd": reference_receipts}),
+            )
         return response
+
+    def _persist_cvm_overlay_shadow(
+        self,
+        capture: "cvm_shadow.ShadowCapture",
+        *,
+        generated_at: datetime,
+        served_rows: list[dict[str, Any]],
+        universe_symbols: list[str],
+        prepare_inputs: tuple[Any, ...],
+        consensus_fetched_at: dict[str, Any],
+        references: tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, Any]],
+    ) -> None:
+        """The CVM field-wise overlay shadow of this cycle (``valuation_cvm_overlay_shadow``): the universe valued again —
+        same catalog, quotes, Brapi data, history, macro and consensus receipts — over the field-wise overlay of the very
+        EODHD payloads the served build consumed, then ONE aggregate snapshot. Nothing served, recorded or cached changes;
+        any failure is logged and swallowed (the served cycle is already published)."""
+        try:
+            if capture.failure is not None:
+                logger.warning("CVM field-wise overlay shadow skipped this cycle: overlaying failed (%s)", capture.failure)
+                return
+            if capture.statements_as_of is None:  # no EODHD payload was consumed (no token, no symbol): nothing to compare
+                logger.warning("CVM field-wise overlay shadow skipped this cycle: the build consumed no EODHD fundamentals")
+                return
+            catalog, quotes, statistics_map, financial_map, historical_map, macro = prepare_inputs
+            reference_quotes, reference_financial, reference_fetched_at = references
+            shadow_map = dict(capture.shadow)
+            shadow_references = self._consensus_reference_rows(reference_quotes, reference_financial, shadow_map,
+                                                               consensus_fetched_at=reference_fetched_at)
+            shadow_rows = self._prepare_rows(catalog, quotes, statistics_map, financial_map, historical_map, macro, shadow_map,
+                                             shadow_references, consensus_fetched_at=consensus_fetched_at)
+            outputs = cvm_shadow.build_shadow_outputs(
+                capture, served_rows=served_rows, shadow_rows=shadow_rows, universe_symbols=universe_symbols,
+                cycle_id=getattr(self, "_published_cycle_id", None), basis_at=generated_at,
+                producer_build_sha=os.environ.get("C3PO_BUILD_SHA"),  # the build of THIS process, the one that computed the aggregate
+            )
+            cvm_shadow.save_shadow_snapshot(self.database, outputs, published_at=datetime.now(timezone.utc))
+        except Exception:
+            logger.exception("CVM field-wise overlay shadow failed; the served B3 cycle is unaffected")
 
     def _candidate_response(
         self,
@@ -730,12 +783,19 @@ class B3ScreenerService:
     def _eodhd_fundamental_map(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
         return self._eodhd_fundamentals_with_receipts(symbols)[0]
 
-    def _eodhd_fundamentals_with_receipts(self, symbols: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, datetime]]:
+    def _eodhd_fundamentals_with_receipts(
+        self,
+        symbols: list[str],
+        *,
+        shadow: "cvm_shadow.ShadowCapture | None" = None,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, datetime]]:
         """EODHD fundamentals for ``symbols`` AND the receipt instant of each — the instant the provider's answer carrying
         that payload arrived (a cache read keeps it; a failed re-fetch keeps the old pair). Payload and receipt are ONE
         immutable pair per symbol, installed by a single assignment after the answer arrives and read as one object, so
         the receipt a row is stamped with belongs to the payload the row consumed even when a targeted build installs a
-        newer answer concurrently (F398-2). Symbols never received are absent from both maps: no instant is invented."""
+        newer answer concurrently (F398-2). Symbols never received are absent from both maps: no instant is invented.
+        ``shadow`` (the nightly build, under C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW) also receives these very payloads
+        overlaid field by field; it never raises and never changes what is returned."""
         now = datetime.now(timezone.utc)
         clean_symbols = list(dict.fromkeys(symbol.upper() for symbol in symbols if symbol))
         cache_is_fresh = bool(self._eodhd_cache_expires_at and now < self._eodhd_cache_expires_at)
@@ -762,8 +822,12 @@ class B3ScreenerService:
         cache = self._eodhd_cache  # one attribute load: a concurrent expiry rebinding the dict cannot split the reads below
         entries = {symbol: entry for symbol in clean_symbols if (entry := cache.get(symbol)) is not None}  # one dict read per symbol: the pair
         # C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED (default off): complete CVM statements overlaid field by field
-        overlay = apply_official_statements_map if fieldwise_overlay_enabled() else apply_official_fundamentals_map
-        fundamentals = overlay(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
+        fieldwise = fieldwise_overlay_enabled()
+        overlay = apply_official_statements_map if fieldwise else apply_official_fundamentals_map
+        payloads = {symbol: entry[0] for symbol, entry in entries.items()}
+        fundamentals = overlay(self.database, payloads, market="B3")
+        if shadow is not None:
+            shadow.add(self.database, payloads, fundamentals, served_overlay="fieldwise" if fieldwise else "legacy", market="B3")
         return fundamentals, {symbol: entry[1] for symbol, entry in entries.items()}
 
     def _eodhd_receipts(self, symbols: list[str]) -> dict[str, datetime]:
@@ -3126,7 +3190,7 @@ class B3ScreenerService:
         # response/basis clock) which precedes those answers. _matrix_basis_at follows it (staleness compares like with like).
         published_at = datetime.now(timezone.utc)
         self._matrix_basis_at = published_at
-        self.database.save_analysis_snapshot(
+        self._published_cycle_id = self.database.save_analysis_snapshot(
             "valuation_universe",
             "B3_UNIVERSE",
             methodology_id,

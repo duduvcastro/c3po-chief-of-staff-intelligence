@@ -1,13 +1,19 @@
 name: Valuation read-only accuracy report
 run-name: Valuation read-only ${{ inputs.report }} report
 
-# Dispatch only. Two read-only reports, chosen by the `report` input:
+# Dispatch only. Three read-only reports, chosen by the `report` input:
 #   - `accuracy` (default): app.valuation_accuracy_report (PREREG_VALUATION_DECISOR_V1);
 #   - `before-after`: the Valuation P1 before/after receipt
 #     (app.valuation_official --before-after --keep-internal-targeted, VALUATION_P1_INTERNAL_TP.md),
 #     then a second read-only exec renders its Portuguese summary (before_after_markdown) from
 #     that aggregate. Only the aggregate (no symbols) and its report_sha256 leave the host:
 #     never --private-detail, never a --markdown path inside the container.
+#   - `cvm-before-after`: the B3 CVM field-wise overlay before/after receipt
+#     (app.valuation_cvm_overlay_shadow --before-after, VALUATION_CVM_STATEMENTS_V1.md, Rollout): the
+#     latest nightly shadow snapshot's aggregate, re-hashed, then its Portuguese summary rendered by a
+#     second read-only exec. The snapshot's per-symbol detail never leaves the database. The receipt
+#     names the build that PRODUCED the aggregate (the nightly worker's) and the build that read it;
+#     the summary must be rendered by that same reading build, or nothing is published.
 # Both run inside the running api container of the production host through the deploy SSH
 # transport of c3po-pipeline.yml, READ-ONLY:
 #   - no file is copied to or written on the host, no container is created, restarted or
@@ -37,13 +43,14 @@ on:
         required: true
         type: string
       report:
-        description: accuracy (PREREG_VALUATION_DECISOR_V1) or before-after (Valuation P1 receipt, aggregate only)
+        description: accuracy (PREREG_VALUATION_DECISOR_V1), before-after (Valuation P1 receipt) or cvm-before-after (B3 CVM overlay receipt); aggregates only
         required: true
         default: accuracy
         type: choice
         options:
           - accuracy
           - before-after
+          - cvm-before-after
       as_of:
         description: accuracy only — cut C, ISO-8601 with zone (e.g. 2026-10-24T12:00:00-03:00); empty = now (UTC)
         required: false
@@ -90,16 +97,16 @@ jobs:
           REPORT=${REPORT:-accuracy}
           case "$REPORT" in
             accuracy) ;;
-            before-after)
+            before-after|cvm-before-after)
               if [ -n "$AS_OF" ] || [ -n "$HOLDOUT_START" ]; then
-                echo 'as_of and holdout_start apply to the accuracy report only: the before/after receipt reads the official head and has no cut' >&2
+                echo 'as_of and holdout_start apply to the accuracy report only: the before/after receipts read the latest state and have no cut' >&2
                 exit 2
               fi
               printf 'report=%s\n' "$REPORT" >> "$GITHUB_OUTPUT" || exit 1
               exit 0
               ;;
             *)
-              echo 'report must be accuracy or before-after' >&2
+              echo 'report must be accuracy, before-after or cvm-before-after' >&2
               exit 2
               ;;
           esac
@@ -472,5 +479,241 @@ jobs:
         with:
           name: valuation-p1-before-after-${{ github.run_id }}
           path: ${{ runner.temp }}/valuation-p1-before-after
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Run the CVM before/after receipt in the running api container, read-only
+        if: steps.inputs.outputs.report == 'cvm-before-after'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "bash -s" \
+            > "$raw/cvm_before_after.json" 2> "$raw/cvm_before_after.stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo 'Security reboot pending; the report must wait for recovery' >&2
+            exit 11
+          fi
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          exec "${compose[@]}" exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' \
+            api python -m app.valuation_cvm_overlay_shadow --before-after </dev/null
+          REMOTE
+          lines=$(wc -l < "$raw/cvm_before_after.stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          [ "$rc" -eq 0 ] || exit 1
+
+      - name: Verify the CVM before/after receipt and keep the aggregate only
+        if: steps.inputs.outputs.report == 'cvm-before-after'
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/valuation-cvm-before-after"
+          mkdir -p "$out" || exit 1
+          python3 - "$RUNNER_TEMP/raw/cvm_before_after.json" "$out" <<'PY' || exit 1
+          import hashlib
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          source, out = Path(sys.argv[1]), Path(sys.argv[2])
+          SCHEMA = "VALUATION_CVM_BEFORE_AFTER_V1"
+          # the aggregate's keys, exactly, down to every nested block: a key the receipt grows is reviewed here before it can
+          # reach a public artifact, and no block can be keyed by a symbol
+          AGGREGATE = {"schema", "market", "cycle_id", "basis_at", "statements_as_of", "served_overlay", "shadow_overlay", "universe",
+                       "overlay_origin", "pit_excluded", "names", "internal_tp", "internal_buy_in", "internal_validation", "field_sources",
+                       "ebitda", "shares_scale_suspect", "private_detail_sha256"}
+          ATTESTATION = {"report_sha256", "snapshot_id", "snapshot_published_at", "producer_build_sha", "reader_build_sha", "receipt_sha256"}
+          BLOCKS = {
+              "overlay_origin": {"statements", "legacy", "none"},
+              "names": {"served", "shadow", "pairs", "only_served", "only_shadow"},
+              "internal_tp": {"n", "median", "p90", "abs_median", "abs_p90", "changed", "over_5_percent", "over_20_percent"},
+              "internal_buy_in": {"n", "median", "p90", "abs_median", "abs_p90", "changed", "over_5_percent", "over_20_percent"},
+              "internal_validation": {"served_validated", "shadow_validated", "changed"},
+              "ebitda": {"changed", "legacy_partial_window", "corrected"},
+          }
+          FIELDS = {"totalRevenue", "netIncome", "ebitda", "operatingCashflow", "freeCashflow", "capexTtm", "totalCash", "totalDebt",
+                    "totalEquity", "sharesOutstanding"}
+          SOURCES = {"cvm", "eodhd", "mixed", "absent"}
+          if source.stat().st_size > 65536:
+              sys.exit("the report output is larger than an aggregate can be (content not printed)")
+          try:
+              report = json.loads(source.read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit("the report output is not a single JSON document (content not printed)")
+          if not isinstance(report, dict) or set(report) != AGGREGATE | ATTESTATION:
+              sys.exit("unexpected receipt shape: the keys are not exactly the aggregate's")
+          if report["schema"] != SCHEMA or report["market"] != "B3":
+              sys.exit("unexpected schema: the deployed code is not the CVM overlay receipt V1")
+
+          def number(value):
+              return value is None or (isinstance(value, (int, float)) and not isinstance(value, bool))
+
+          for name, keys in BLOCKS.items():
+              block = report[name]
+              if not isinstance(block, dict) or set(block) != keys or not all(number(value) for value in block.values()):
+                  sys.exit(f"unexpected {name} block: the keys are not exactly the aggregate's")
+          sources = report["field_sources"]
+          if not isinstance(sources, dict) or set(sources) != FIELDS or any(
+                  not isinstance(counts, dict) or set(counts) != SOURCES or not all(isinstance(count, int) for count in counts.values())
+                  for counts in sources.values()):
+              sys.exit("unexpected field_sources block: the keys are not exactly the aggregate's")
+          for name in ("universe", "pit_excluded", "shares_scale_suspect"):
+              if not isinstance(report[name], int) or isinstance(report[name], bool):
+                  sys.exit(f"{name} is not a count")
+          if report["served_overlay"] not in {"legacy", "fieldwise"} or report["shadow_overlay"] != "fieldwise":
+              sys.exit("unexpected overlay names")
+          INSTANT = r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})"
+          for name in ("basis_at", "statements_as_of", "snapshot_published_at"):
+              if not isinstance(report[name], str) or re.fullmatch(INSTANT, report[name]) is None:
+                  sys.exit(f"{name} is not an ISO-8601 instant")
+          for name in ("cycle_id", "snapshot_id"):
+              if not isinstance(report[name], str) or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", report[name]) is None:
+                  sys.exit(f"{name} is not a snapshot id")
+          for name in ("report_sha256", "receipt_sha256", "private_detail_sha256"):
+              if not isinstance(report[name], str) or re.fullmatch(r"[0-9a-f]{64}", report[name]) is None:
+                  sys.exit(f"{name} is not a sha256")
+          for name in ("producer_build_sha", "reader_build_sha"):
+              if not isinstance(report[name], str) or re.fullmatch(r"[0-9a-f]{40}", report[name]) is None:
+                  sys.exit(f"the build that {'produced' if name == 'producer_build_sha' else 'read'} the receipt is not a commit sha ({name}, C3PO_BUILD_SHA): it cannot be attributed")
+
+          def canonical_sha256(value):
+              return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+          if canonical_sha256({key: value for key, value in report.items() if key in AGGREGATE}) != report["report_sha256"]:
+              sys.exit("report_sha256 does not recompute over the aggregate")
+          if canonical_sha256({key: value for key, value in report.items() if key != "receipt_sha256"}) != report["receipt_sha256"]:
+              sys.exit("receipt_sha256 does not recompute over the aggregate, its snapshot and its builds")
+          (out / "report.json").write_text(json.dumps(report, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+          print(f"report_sha256 {report['report_sha256']} (schema {SCHEMA}, cycle {report['cycle_id']}, served {report['served_overlay']}); "
+                f"produced by {report['producer_build_sha']}, read by {report['reader_build_sha']} (receipt_sha256 {report['receipt_sha256']})")
+          PY
+
+      - name: Render the CVM Portuguese summary in the running api container, read-only
+        if: steps.inputs.outputs.report == 'cvm-before-after'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          REPORT_B64=$(base64 -w0 "$RUNNER_TEMP/valuation-cvm-before-after/report.json") || exit 1
+          [ -n "$REPORT_B64" ] || { echo 'the verified receipt is empty' >&2; exit 1; }
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "REPORT_B64='$REPORT_B64' bash -s" \
+            > "$raw/cvm_summary.json" 2> "$raw/cvm_summary.stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo 'Security reboot pending; the report must wait for recovery' >&2
+            exit 11
+          fi
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          # the aggregate in, the markdown out: before_after_markdown reads nothing but its argument; the renderer's build is
+          # returned only to be compared with the receipt's reader_build_sha
+          render='import json, os, sys
+          from app.valuation_cvm_overlay_shadow import before_after_markdown
+          report = json.load(sys.stdin)
+          json.dump({"markdown": before_after_markdown(report), "renderer_build_sha": os.environ.get("C3PO_BUILD_SHA")}, sys.stdout)'
+          printf '%s' "$REPORT_B64" | base64 -d | "${compose[@]}" exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' \
+            api python -c "$render"
+          REMOTE
+          lines=$(wc -l < "$raw/cvm_summary.stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          [ "$rc" -eq 0 ] || exit 1
+
+      - name: Verify the CVM summary and keep aggregates only
+        if: steps.inputs.outputs.report == 'cvm-before-after'
+        env:
+          RUN_ID: ${{ github.run_id }}
+          REVISION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/valuation-cvm-before-after"
+          python3 - "$RUNNER_TEMP/raw/cvm_summary.json" "$out" <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          source, out = Path(sys.argv[1]), Path(sys.argv[2])
+          report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+          producer, reader = report.get("producer_build_sha"), report.get("reader_build_sha")
+          for name, value in (("producer_build_sha", producer), ("reader_build_sha", reader)):
+              if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
+                  sys.exit(f"{name} is not a commit sha: the receipt cannot be attributed")
+          attested = {key: value for key, value in report.items() if key != "receipt_sha256"}
+          canonical = json.dumps(attested, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+          if hashlib.sha256(canonical).hexdigest() != report.get("receipt_sha256"):
+              sys.exit("receipt_sha256 does not recompute over the aggregate, its snapshot and its builds")
+          try:
+              rendered = json.loads(source.read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit("the summary output is not a single JSON document (content not printed)")
+          if not isinstance(rendered, dict) or set(rendered) != {"markdown", "renderer_build_sha"} or not isinstance(rendered["markdown"], str):
+              sys.exit("unexpected summary shape")
+          markdown, renderer = rendered["markdown"], rendered["renderer_build_sha"]
+          if report["report_sha256"] not in markdown or report["receipt_sha256"] not in markdown or producer not in markdown:
+              sys.exit("the summary does not quote the verified receipt and its producer: it was not rendered from this receipt")
+          if not isinstance(renderer, str) or re.fullmatch(r"[0-9a-f]{40}", renderer) is None:
+              sys.exit("the build that rendered the summary is not a commit sha (C3PO_BUILD_SHA): nothing is published")
+          if renderer != reader:
+              sys.exit(f"the deployed build changed between the receipt and its summary (receipt read by {reader}, summary rendered by "
+                       f"{renderer}): nothing is published — dispatch the report again")
+          (out / "summary.md").write_text(markdown, encoding="utf-8")
+          metadata = {
+              "run_id": os.environ["RUN_ID"],
+              "workflow_revision": os.environ["REVISION"],
+              "report": "cvm-before-after",
+              "schema": report["schema"],
+              "report_sha256": report["report_sha256"],
+              "receipt_sha256": report["receipt_sha256"],
+              "producer_build_sha": producer,
+              "reader_build_sha": reader,
+              "cycle_id": report["cycle_id"],
+              "snapshot_id": report["snapshot_id"],
+              "served_overlay": report["served_overlay"],
+          }
+          (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(markdown + f"\n- Agregado produzido pela revisão `{producer}`; recibo lido e resumo renderizado pela revisão implantada `{reader}`; "
+                            f"workflow `{os.environ['REVISION']}`.\n")
+          print(f"report_sha256 {report['report_sha256']}; receipt_sha256 {report['receipt_sha256']}; produced by {producer}, read and rendered by {reader}")
+          PY
+          (cd "$out" && sha256sum report.json summary.md metadata.json > SHA256SUMS) || exit 1
+
+      - name: Publish the CVM before/after receipt
+        if: steps.inputs.outputs.report == 'cvm-before-after'
+        uses: actions/upload-artifact@v4
+        with:
+          name: valuation-cvm-before-after-${{ github.run_id }}
+          path: ${{ runner.temp }}/valuation-cvm-before-after
           if-no-files-found: error
           retention-days: 30

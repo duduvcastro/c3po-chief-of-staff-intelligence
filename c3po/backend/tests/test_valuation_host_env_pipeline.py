@@ -1,6 +1,7 @@
-"""The deploy stages the optional valuation settings into the host .env (VALUATION_ASFILED_US_V1.md, Operação): the SEC
-contact from a secret, the as-filed switch and backfill budget from repository variables. Every value is validated as a
-whole string before it is written, so no value can add a line to .env, and an empty value writes nothing."""
+"""The deploy stages the optional valuation settings into the host .env (VALUATION_ASFILED_US_V1.md, Operação; the B3 CVM
+overlay keys of VALUATION_CVM_STATEMENTS_V1.md, Rollout): the SEC contact from a secret, the as-filed switch and backfill
+budget and the two CVM field-wise overlay switches (shadow, serving) from repository variables. Every value is validated as
+a whole string before it is written, so no value can add a line to .env, and an empty value writes nothing."""
 
 from __future__ import annotations
 
@@ -29,6 +30,8 @@ def test_the_step_reads_the_contact_from_a_secret_and_the_switches_from_variable
     assert env["SEC_CONTACT"] == "${{ secrets.C3PO_SEC_CONTACT }}"
     assert env["ASFILED_ENABLED"] == "${{ vars.C3PO_VALUATION_ASFILED_ENABLED }}"
     assert env["ASFILED_BACKFILL"] == "${{ vars.C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL }}"
+    assert env["CVM_OVERLAY_SHADOW"] == "${{ vars.C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW }}"
+    assert env["CVM_OVERLAY_ENABLED"] == "${{ vars.C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED }}"
 
 
 def test_the_step_cannot_be_skipped_and_runs_right_before_the_host_merge() -> None:
@@ -72,6 +75,27 @@ def test_valid_values_are_staged_and_empty_values_write_nothing(tmp_path: Path) 
 
 
 @bash_missing
+@pytest.mark.parametrize(("shadow", "enabled"), [("true", ""), ("true", "true"), ("false", "true"), ("", "false")])
+def test_the_cvm_overlay_switches_are_staged_as_given(tmp_path: Path, shadow: str, enabled: str) -> None:
+    """Each rollout step of the B3 CVM overlay is one pair of repository variables (shadow → receipt → owner → enable)."""
+    code, staged, _ = _run(tmp_path, CVM_OVERLAY_SHADOW=shadow, CVM_OVERLAY_ENABLED=enabled)
+    expected = ["C3PO_PUSH_VAPID_PRIVATE_KEY=p", "C3PO_PUSH_VAPID_PUBLIC_KEY=q"]
+    if shadow:
+        expected.append(f"C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW={shadow}")
+    if enabled:
+        expected.append(f"C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED={enabled}")
+    assert code == 0 and staged.splitlines() == expected
+
+
+def test_the_staged_names_are_the_names_the_code_reads() -> None:
+    from app import official_statements, valuation_env
+
+    run = str(_step()["run"])
+    assert f"printf '{valuation_env.CVM_OVERLAY_SHADOW_ENV}=%s\\n'" in run
+    assert f"printf '{official_statements.FIELDWISE_OVERLAY_ENV}=%s\\n'" in run
+
+
+@bash_missing
 @pytest.mark.parametrize(
     "values",
     [
@@ -86,6 +110,19 @@ def test_valid_values_are_staged_and_empty_values_write_nothing(tmp_path: Path) 
         {"SEC_CONTACT": "x\nC3PO_INJECTED=ops@example.com"},
         {"ASFILED_ENABLED": "x\nC3PO_INJECTED=true"},
         {"ASFILED_BACKFILL": "x\nC3PO_INJECTED=30"},
+        {"CVM_OVERLAY_SHADOW": "yes"},
+        {"CVM_OVERLAY_SHADOW": "TRUE"},
+        {"CVM_OVERLAY_SHADOW": "1"},
+        {"CVM_OVERLAY_SHADOW": "true\nC3PO_INJECTED=1"},
+        {"CVM_OVERLAY_SHADOW": "x\nC3PO_INJECTED=true"},
+        {"CVM_OVERLAY_SHADOW": "true "},
+        {"CVM_OVERLAY_SHADOW": "true\r"},
+        {"CVM_OVERLAY_ENABLED": "on"},
+        {"CVM_OVERLAY_ENABLED": "True"},
+        {"CVM_OVERLAY_ENABLED": "false\nC3PO_INJECTED=1"},
+        {"CVM_OVERLAY_ENABLED": "x\nC3PO_INJECTED=false"},
+        {"CVM_OVERLAY_ENABLED": "true\u2028C3PO_INJECTED=1"},
+        {"CVM_OVERLAY_SHADOW": "true", "CVM_OVERLAY_ENABLED": "true;C3PO_INJECTED=1"},
         {"SEC_CONTACT": "ops@example.com\r"},
         {"SEC_CONTACT": "ops@example.com\u2028C3PO_INJECTED=1"},
     ],

@@ -1378,7 +1378,7 @@ def test_the_readonly_workflow_runs_the_before_after_read_only_and_never_writes_
     trigger = parsed[True]
     assert set(trigger) == {"workflow_dispatch"}
     report_input = trigger["workflow_dispatch"]["inputs"]["report"]
-    assert report_input["type"] == "choice" and report_input["default"] == "accuracy" and report_input["options"] == ["accuracy", "before-after"]
+    assert report_input["type"] == "choice" and report_input["default"] == "accuracy" and report_input["options"] == ["accuracy", "before-after", "cvm-before-after"]
     steps = _workflow_steps()
     gated = {name: step.get("if") for name, step in steps.items()}
     for name in ("Run the report in the running api container, read-only", "Verify the receipt and keep aggregates only", "Publish the aggregate receipt"):
