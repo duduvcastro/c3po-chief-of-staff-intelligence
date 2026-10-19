@@ -326,6 +326,32 @@ jobs:
           digest=$(cat "$RUNNER_TEMP/producer.sha256") || exit 1
           [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
           printf 'producer_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT" || exit 1
+          # rev 2: the SERVED internal TP's producer at the prereg commit (valuation_pit_served.IMPLEMENTATION_FILES; the same reader objects)
+          printf '{' > "$RUNNER_TEMP/served-producer-files.json" || exit 1
+          separator=''
+          for name in valuation_pit_served.py one_pager.py market_data/us_screener.py market_data/eodhd.py valuation_official.py valuation_official_engine.py \
+                      valuation_pit_rerun.py valuation_v3_macro.py sec_xbrl.py valuation_asfiled.py statement_vintages.py valuation_price_history.py; do
+            digest=$(git show "$PREREG_COMMIT:c3po/backend/app/$name" | sha256sum | cut -d' ' -f1) || exit 1
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+            printf '%s"%s":"%s"' "$separator" "$name" "$digest" >> "$RUNNER_TEMP/served-producer-files.json" || exit 1
+            separator=','
+          done
+          printf '}\n' >> "$RUNNER_TEMP/served-producer-files.json" || exit 1
+          python3 -I - "$RUNNER_TEMP/served-producer-files.json" "$RUNNER_TEMP/producer-objects.json" "$RUNNER_TEMP/served-producer.json" \
+            > "$RUNNER_TEMP/served-producer.sha256" <<'PY' || exit 1
+          import hashlib
+          import json
+          import sys
+
+          files = json.load(open(sys.argv[1], encoding="utf-8"))
+          objects = {f"app.database.{name}": digest for name, digest in json.load(open(sys.argv[2], encoding="utf-8")).items()}
+          producer = {"files": files, "objects": objects}
+          json.dump(producer, open(sys.argv[3], "w", encoding="utf-8"), sort_keys=True)
+          print(hashlib.sha256(json.dumps(producer, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest())
+          PY
+          digest=$(cat "$RUNNER_TEMP/served-producer.sha256") || exit 1
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          printf 'served_producer_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT" || exit 1
 
       - name: Check the grid run's provenance
         if: inputs.mode == 'report'
@@ -432,8 +458,9 @@ jobs:
                   metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
               except (OSError, ValueError):
                   continue
-              if metadata.get("verdict") == "VOID":  # a VOID reading read no label and published no statistic: it spent no look
-                  continue
+              verdicts = metadata.get("verdicts") if isinstance(metadata.get("verdicts"), dict) else {}
+              if metadata.get("verdict") == "VOID" and all(verdicts.get(name, "VOID") == "VOID" for name in ("served_internal_tp", "v3_shadow")):
+                  continue  # a reading whose verdicts are ALL VOID read no label and published no statistic: it spent no look
               if metadata.get("prereg_sha256") == prereg and metadata.get("manifest_sha256") not in (None, os.environ["EXPECTED"]):
                   sys.exit("a previous non-VOID reading published this pre-registration over another manifest: the single look was spent")
           print("no previous non-VOID reading of this pre-registration over another manifest")
@@ -465,6 +492,7 @@ jobs:
           STOP_BEFORE: ${{ steps.window.outputs.stop_before }}
           DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
           PRODUCER: ${{ steps.prereg.outputs.producer_sha256 }}
+          SERVED_PRODUCER: ${{ steps.prereg.outputs.served_producer_sha256 }}
           RUN_ID: ${{ github.run_id }}
           RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
@@ -479,10 +507,11 @@ jobs:
           DEADLINE=$(( DEADLINE_AT - now ))  # what is left of the window's deadline now; the host fixes ONE end from it
           [ "$DEADLINE" -gt 0 ] || DEADLINE=0
           [ -z "$PRODUCER" ] || [[ "$PRODUCER" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          [ -z "$SERVED_PRODUCER" ] || [[ "$SERVED_PRODUCER" =~ ^[0-9a-f]{64}$ ]] || exit 1
           rc=0
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' CATALOGUE_PIN='$CATALOGUE_PIN' MAX_RUNS='$MAX_RUNS' RECOMPUTE='$RECOMPUTE' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' PRODUCER='$PRODUCER' RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' bash -s" \
+            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' CATALOGUE_PIN='$CATALOGUE_PIN' MAX_RUNS='$MAX_RUNS' RECOMPUTE='$RECOMPUTE' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' PRODUCER='$PRODUCER' SERVED_PRODUCER='$SERVED_PRODUCER' RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' bash -s" \
             > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
           set -uo pipefail
           # every query of the preflight fails CLOSED with its own status: a command that cannot answer refuses the run
@@ -621,7 +650,7 @@ jobs:
               [ "$RECOMPUTE" != true ] || recompute=(--recompute-existing)
               leg 60 app.valuation_pit_grid --market US --price-pinned-at "$PIN" --catalogue-pinned-at "$CATALOGUE_PIN" \
                 --statements vintages --step-sessions 5 --max-runs "$MAX_RUNS" --stop-before "$STOP_BEFORE" --owner-order-sha256 "$ORDER" \
-                --expect-producer-sha256 "$PRODUCER" ${recompute[@]+"${recompute[@]}"} --manifest-out "/tmp/valuation-pit-grid-$RUN_ID.json" || exit $?
+                --expect-producer-sha256 "$PRODUCER" --expect-served-producer-sha256 "$SERVED_PRODUCER" ${recompute[@]+"${recompute[@]}"} --manifest-out "/tmp/valuation-pit-grid-$RUN_ID.json" || exit $?
               ;;
             report)
               echo 'PREFLIGHT report ok'
@@ -848,19 +877,30 @@ jobs:
                   ran_producer = (payload.get("runs") or {}).get("producer") or {}
                   if not producer or {"files": ran_producer.get("engine_files"), "objects": ran_producer.get("engine_objects")} != producer:
                       sys.exit("the grid's producer (the producer files and reader objects of its runs) is not the prereg commit's: the reading is void")
+                  served_block = payload.get("served_internal_tp") or {}
+                  served_decided = served_block.get("verdict") or {"status": "VOID", "reasons": ["served:not_in_the_receipt"]}
+                  if served_decided.get("status") != "VOID":  # rev 2: a served verdict is read only from the served producer of the prereg commit
+                      served_path = producer_path.with_name("served-producer.json")
+                      expected_served = json.loads(served_path.read_text(encoding="utf-8")) if served_path.exists() else {}
+                      ran_served = (served_block.get("runs") or {}).get("producer") or {}
+                      if not expected_served or {"files": ran_served.get("engine_files"), "objects": ran_served.get("engine_objects")} != expected_served:
+                          sys.exit("the served producer of the grid's served runs is not the prereg commit's: the reading is void")
                   (out / "report.json").write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
                   decided = payload["verdict"]
                   metadata.update({"deployed_build_sha": build_sha, "payload_sha256": receipt["payload_sha256"], "prereg_sha256": workflow_prereg,
                                    "prereg_commit": os.environ["PREREG_COMMIT"], "manifest_sha256": os.environ["EXPECTED_MANIFEST"],
-                                   "code_pins_verified": len(pinned), "verdict": decided["status"]})
+                                   "code_pins_verified": len(pinned), "verdict": decided["status"],
+                                   "verdicts": {"primary": "served_internal_tp", "served_internal_tp": served_decided["status"], "v3_shadow": decided["status"]}})
                   summary.append(f"- payload_sha256 `{receipt['payload_sha256']}`; prereg `{workflow_prereg}` (commit `{os.environ['PREREG_COMMIT']}`); "
                                  f"{len(pinned)} code pins verified; deployed revision `{build_sha}`")
-                  if decided["status"] == "VOID":  # a VOID reading shows no statistic, here either
-                      summary.append(f"- **verdict VOID** — reasons {decided['reasons']}")
-                  else:
-                      summary.append(f"- **verdict {decided['status']}** — IC executable h=21 {decided['ic_estimate']} (p_greater {decided['ic_p_greater']}), blocks "
-                                     f"{decided['blocks']}, halves {decided['halves']}, persistence p {decided['persistence_p_greater']}, coverage "
-                                     f"{decided['coverage_records_share']} / {decided['coverage_screened_names_median']}, reasons {decided['reasons']}")
+                  for label, cell in (("served_internal_tp (PRIMARY: the TP served)", served_decided), ("v3_shadow (secondary)", decided)):
+                      summary.append(f"- {label}:")
+                      if cell["status"] == "VOID":  # a VOID reading shows no statistic, here either
+                          summary.append(f"  - **verdict VOID** — reasons {cell['reasons']}")
+                      else:
+                          summary.append(f"  - **verdict {cell['status']}** — IC executable h=21 {cell['ic_estimate']} (p_greater {cell['ic_p_greater']}), "
+                                         f"blocks {cell['blocks']}, halves {cell['halves']}, persistence p {cell['persistence_p_greater']}, coverage "
+                                         f"{cell['coverage_records_share']} / {cell['coverage_screened_names_median']}, reasons {cell['reasons']}")
           else:
               sys.exit("unknown mode")
           if errors:

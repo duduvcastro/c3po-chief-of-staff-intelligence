@@ -1,5 +1,12 @@
-"""The US point-in-time backtest of the Valuation V3.2 internal TP — PREREG_VALUATION_PIT_BACKTEST_US_V1
-(``c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md``), rev 1: ONE look, read-only.
+"""The US point-in-time backtest of the SERVED internal TP and of the Valuation V3.2 internal TP —
+PREREG_VALUATION_PIT_BACKTEST_US_V1 (``c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md``), rev 2: ONE look, read-only.
+
+Rev 2 (owner, 19/10/2026): the receipt carries TWO verdicts, the same rule computed separately per source —
+``served_internal_tp`` (PRIMARY: ``official_internal_v1``, the One Pager producer served from 20/10, re-executed
+point-in-time by ``valuation_pit_served``; its records live in the ``valuation_pit_served`` run snapshots of the manifest's
+``served_grid``) and ``v3_shadow`` (secondary: the rev-1 reading below, unchanged, still at the payload's top level). Each
+is its own pre-registered decision at ``ALPHA`` (no multiplicity correction: different questions); a shared failure voids
+both, a source's own runs or records void its verdict only; labels are read once per (symbol, session).
 
 Question: does the internal TP of the V3 engine (no consensus inside), RE-EXECUTED point-in-time by
 ``valuation_pit_rerun`` from as-filed SEC statements (``--statements vintages``) on a grid of past instants ``T``, rank
@@ -68,9 +75,16 @@ from .valuation_price_history import PriceHistoryService
 SCHEMA_VERSION = "VALUATION-PIT-BACKTEST-REPORT-v1"
 MANIFEST_SCHEMA = "VALUATION-PIT-GRID-MANIFEST-v1"
 PREREG = "PREREG_VALUATION_PIT_BACKTEST_US_V1"
-PREREG_REVISION = 1
+PREREG_REVISION = 2
 SOURCE = SOURCE_V3_2_SHADOW
 RUN_ANALYSIS_TYPE = pit_panel.PIT_RERUN_ANALYSIS_TYPE  # one snapshot per valuation_pit_rerun run
+# rev 2 (owner, 19/10/2026: the Friday verdict must be about the TP SERVED from 20/10): the served internal TP (official_internal_v1) re-executed
+# point-in-time by valuation_pit_served on the same PIT inputs — its records live in its run snapshots (never in valuation_predictions)
+SERVED_SOURCE = "official_internal_pit"  # = valuation_pit_served.SOURCE (pinned by test)
+SERVED_RUN_ANALYSIS_TYPE = "valuation_pit_served"  # = valuation_pit_served.ANALYSIS_TYPE: one snapshot per served run, its records inside
+SERVED_TP_SOURCE = "official_internal_v1"  # the source the served runs re-execute
+VERDICTS: dict[str, str] = {"served_internal_tp": SERVED_SOURCE, "v3_shadow": SOURCE}  # verdict → source; each its own pre-registered decision at ALPHA
+PRIMARY_VERDICT = "served_internal_tp"  # the answer the owner asked for; v3_shadow is secondary — both always reported, no multiplicity correction
 # --- protocol constants, pre-registered (prereg §13); every one of them travels inside the hashed payload
 MARKET_GROUP = "US"
 MARKETS: tuple[str, ...] = ("NASDAQ", "NYSE")  # one cross-section per XNYS session: the union of both exchanges' runs of the same T
@@ -153,6 +167,12 @@ def protocol() -> dict[str, Any]:
         "markets": list(MARKETS),
         "calendar": dict(panel.CALENDARS)[CALENDAR_MARKET],
         "source": SOURCE,
+        "verdicts": {"primary": PRIMARY_VERDICT, "sources": dict(VERDICTS), "served_tp_source": SERVED_TP_SOURCE,
+                     "served_runs": SERVED_RUN_ANALYSIS_TYPE, "served_records": "the records inside the served run snapshots of the manifest's served_grid",
+                     "rule": "the same verdict (every condition of the single look) computed separately for each source, each its own pre-registered "
+                             "decision at alpha; no multiplicity correction between them (they answer different questions); both always reported",
+                     "void": "a shared failure (code, manifest parameters, label vintages, grid) voids both; a source's own runs or records void its verdict only",
+                     "look": "a reading spends the single look when any verdict is not VOID"},
         "statements": STATEMENTS,
         "universe": "the catalogue of each exchange pinned for the whole grid (the 2026 screener's output: selected on the outcome), screened point-in-time",
         "screen": {"security_type": SCREEN_SECURITY_TYPE, "min_close": SCREEN_MIN_CLOSE, "min_market_cap": SCREEN_MIN_MARKET_CAP,
@@ -340,6 +360,17 @@ def load_manifest(text: str) -> dict[str, Any]:
         pin = pins.get(market)
         if not isinstance(pin, dict) or not pin.get("publication_id") or panel._parse_instant(pin.get("available_at")) is None:
             raise ManifestError(f"the grid manifest has no usable price pin for {market}")
+    served_grid = manifest.get("served_grid")
+    if served_grid is not None and not isinstance(served_grid, list):
+        raise ManifestError("the grid manifest's served_grid is not a list")
+    for entries in (grid, served_grid or []):  # rev 2: the served runs' entries hold the same shape, each (T, exchange) and run_key once
+        _check_entries(entries)
+    return manifest
+
+
+def _check_entries(grid: list[Any]) -> None:
+    """Every entry of a grid list (``grid`` or ``served_grid``): the fields the report reads, a zoned ``as_of``, a known
+    exchange, a 64-hex ``run_key``, each ``(T, exchange)`` and ``run_key`` once."""
     seen: set[tuple[str, str]] = set()
     run_keys: set[str] = set()
     for entry in grid:
@@ -359,7 +390,6 @@ def load_manifest(text: str) -> dict[str, Any]:
             raise ManifestError("a (T, exchange) or a run_key appears twice in the grid manifest")
         seen.add(key)
         run_keys.add(entry["run_key"])
-    return manifest
 
 
 # ------------------------------------------------------------------ the point-in-time screen (pure)
@@ -662,7 +692,7 @@ class ReadOnlyStore:
         raise AttributeError(f"valuation_pit_backtest_report is read-only: {name!r} is not one of its readers {ReadOnlyStore.READERS}")
 
 
-def _trim_run(snapshot: Mapping[str, Any] | None) -> dict[str, Any] | None:
+def _trim_run(snapshot: Mapping[str, Any] | None, *, served: bool = False) -> dict[str, Any] | None:
     """A run snapshot reduced to what the report and the PIT panel's superseded chain read (the engine's per-symbol rows are
     counted, never kept): identity, clocks, pins, producer, catalogue reference, summary, prediction identities, screen
     inputs, catalogue counts, the own-history model count."""
@@ -676,16 +706,26 @@ def _trim_run(snapshot: Mapping[str, Any] | None) -> dict[str, Any] | None:
     sources: list[Any] = raw_sources if isinstance(raw_sources, list) else []
     kept_inputs["manifest"] = {"engine": manifest.get("engine"), "price_vintage": manifest.get("price_vintage"), "session_date": manifest.get("session_date"),
                                "catalogue": [ref for ref in sources if isinstance(ref, dict) and ref.get("role") == "catalogue"]}
-    return {"id": str(snapshot.get("id")), "published_at": panel._utc(snapshot["published_at"]), "inputs": copy.deepcopy(kept_inputs),
-            "outputs": {"summary": copy.deepcopy(panel._mapping(outputs.get("summary"))), "prediction_identities": copy.deepcopy(outputs.get("prediction_identities") or []),
-                        "screen": copy.deepcopy(panel._mapping(outputs.get("screen"))), "catalogue_counts": copy.deepcopy(panel._mapping(outputs.get("catalogue_counts"))),
-                        "history_model": {"evaluated": len(rows), "active": sum(1 for row in rows.values() if HISTORY_MODEL in panel._mapping(panel._mapping(row).get("models")))}}}
+    trimmed = {"id": str(snapshot.get("id")), "published_at": panel._utc(snapshot["published_at"]), "inputs": copy.deepcopy(kept_inputs),
+               "outputs": {"summary": copy.deepcopy(panel._mapping(outputs.get("summary"))), "prediction_identities": copy.deepcopy(outputs.get("prediction_identities") or []),
+                           "screen": copy.deepcopy(panel._mapping(outputs.get("screen"))), "catalogue_counts": copy.deepcopy(panel._mapping(outputs.get("catalogue_counts"))),
+                           "history_model": {"evaluated": len(rows), "active": sum(1 for row in rows.values() if HISTORY_MODEL in panel._mapping(panel._mapping(row).get("models")))}}}
+    if served:  # the served run's records live in its snapshot: each reduced (``_stub``), with whether its identity recomputes
+        raw = outputs.get("records")
+        trimmed["outputs"]["records"] = [{**_stub(record), "verified": _record_verifies(record)} for record in (raw if isinstance(raw, list) else []) if isinstance(record, dict)]
+    return trimmed
+
+
+def _record_verifies(record: Mapping[str, Any]) -> bool:
+    """Whether a snapshot-resident record's ``row_sha256`` recomputes from its own fields (``valuation_pit_served.record_verifies``)."""
+    core = {key: value for key, value in record.items() if key not in ("id", "row_sha256")}
+    return bool(record.get("row_sha256")) and canonical_sha256(core) == record.get("row_sha256")
 
 
 class _RunSnapshots:
-    """``latest_analysis_snapshot_by_inputs`` for the run analysis type, memoised for ONE report (the store is append-only:
-    every caller — this report and ``valuation_pit_panel.superseded_run_keys`` — sees one answer per key) and trimmed
-    (``_trim_run``). Everything else is delegated untouched."""
+    """``latest_analysis_snapshot_by_inputs`` for the run analysis types (the V3 runs and the served runs), memoised for ONE
+    report (the store is append-only: every caller — this report and ``valuation_pit_panel.superseded_run_keys`` — sees one
+    answer per key) and trimmed (``_trim_run``). Everything else is delegated untouched."""
 
     def __init__(self, database: Any) -> None:
         self._database = database
@@ -696,12 +736,13 @@ class _RunSnapshots:
         return getattr(self._database, name)
 
     def latest_analysis_snapshot_by_inputs(self, analysis_type: str, inputs_match: dict[str, str]) -> dict[str, Any] | None:
-        if analysis_type != RUN_ANALYSIS_TYPE:
+        if analysis_type not in (RUN_ANALYSIS_TYPE, SERVED_RUN_ANALYSIS_TYPE):
             return self._database.latest_analysis_snapshot_by_inputs(analysis_type, inputs_match)
-        key = json.dumps(sorted(inputs_match.items()))
+        key = json.dumps([analysis_type, sorted(inputs_match.items())])
         if key not in self._memo:
             self.reads += 1
-            self._memo[key] = _trim_run(self._database.latest_analysis_snapshot_by_inputs(analysis_type, inputs_match))
+            self._memo[key] = _trim_run(self._database.latest_analysis_snapshot_by_inputs(analysis_type, inputs_match),
+                                        served=analysis_type == SERVED_RUN_ANALYSIS_TYPE)
         return copy.deepcopy(self._memo[key])
 
 
@@ -858,7 +899,8 @@ class PitBacktestReportService:
                 "last_session": wanted[-1] if wanted else None}, void
 
     @staticmethod
-    def _runs(store: _RunSnapshots, manifest: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[str]]:
+    def _runs(store: _RunSnapshots, manifest: Mapping[str, Any], *, entries_key: str = "grid", analysis_type: str = RUN_ANALYSIS_TYPE
+              ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[str]]:
         """Every manifest entry against the store: ``current`` (the latest run of its (exchange, T) IS it), ``superseded`` (it
         exists, a later run of the same (exchange, T) superseded it), ``missing``; a current run whose cycle, pin, statements
         mode or session disagrees with the manifest is ``mismatched``. Across the current runs of an exchange: one producer,
@@ -867,12 +909,12 @@ class PitBacktestReportService:
         status: Counter[str] = Counter()
         mismatch: Counter[str] = Counter()
         current: dict[str, dict[str, Any]] = {}
-        for entry in manifest["grid"]:
+        for entry in manifest.get(entries_key) or []:
             market, run_key = str(entry["market"]), str(entry["run_key"])
             as_of = panel._utc(entry["as_of"]).isoformat()
-            latest = store.latest_analysis_snapshot_by_inputs(RUN_ANALYSIS_TYPE, {"market": market, "as_of": as_of})
+            latest = store.latest_analysis_snapshot_by_inputs(analysis_type, {"market": market, "as_of": as_of})
             if latest is None or str(latest["inputs"].get("run_key")) != run_key:
-                status["superseded" if store.latest_analysis_snapshot_by_inputs(RUN_ANALYSIS_TYPE, {"run_key": run_key}) is not None else "missing"] += 1
+                status["superseded" if store.latest_analysis_snapshot_by_inputs(analysis_type, {"run_key": run_key}) is not None else "missing"] += 1
                 continue
             reasons = []
             if latest["id"] != str(entry["cycle_id"]):
@@ -910,7 +952,7 @@ class PitBacktestReportService:
             if len(covered) > 1:
                 void.append(f"statements_table_not_stable:{market}")
             catalogues[market] = {"classification_hashes": len(hashes), "covered_in_catalogue_values": len(covered)}
-        aggregate = {"entries": len(manifest["grid"]), "status": panel._counts(status), "mismatch_reasons": panel._counts(mismatch), "catalogues": catalogues,
+        aggregate = {"entries": len(manifest.get(entries_key) or []), "status": panel._counts(status), "mismatch_reasons": panel._counts(mismatch), "catalogues": catalogues,
                      "producer": {"uniform": uniform, "source_versions": panel._counts(versions),
                                   "engine_files": json.loads(next(iter(engines)))["files"] if uniform else None,
                                   "engine_objects": json.loads(next(iter(engines)))["objects"] if uniform else None, "engine_identities": len(engines)}}
@@ -1016,6 +1058,54 @@ class PitBacktestReportService:
         return kept_records, {"read": read, "refused": panel._counts(refused), "admissible": len(kept_records)}, incomplete
 
     @staticmethod
+    def _served_records(current: Mapping[str, Mapping[str, Any]], records_cut: datetime | None) -> tuple[list[dict[str, Any]], dict[str, Any], int]:
+        """The served internal TP's records: those INSIDE the current served runs of the manifest (no other record exists —
+        they are never in ``valuation_predictions``), each refused unless its identity recomputes (``identity_not_verified``)
+        and it is of its run (source, ``run_key``, cycle, exchange, ``T``: ``record_not_of_its_run``); then the PIT
+        unattested-horizon rule, the panel's admissibility, the universe scope and one record per (symbol, session) across
+        the exchanges — exactly the V3 records' path. No label is read here."""
+        read = 0
+        refused: Counter[str] = Counter()
+        identities: dict[str, set[tuple[str, str]]] = {}
+        by_market: dict[str, list[dict[str, Any]]] = {market: [] for market in MARKETS}
+        for run_key, run in current.items():
+            as_of = panel._utc(run["inputs"]["as_of"]).isoformat() if run["inputs"].get("as_of") else None
+            for stub in run["outputs"].get("records") or []:
+                read += 1
+                if not stub.get("verified"):
+                    refused["identity_not_verified"] += 1
+                    continue
+                provenance = panel._mapping(panel._mapping(stub.get("decomposition")).get("provenance"))
+                instant = panel._parse_instant(stub.get("prediction_instant"))
+                if (stub.get("source") != SERVED_SOURCE or str(provenance.get("run_key") or "") != run_key or str(stub.get("cycle_id")) != run["id"]
+                        or stub.get("market") != run["market"] or instant is None or instant.isoformat() != as_of):
+                    refused["record_not_of_its_run"] += 1
+                    continue
+                identities.setdefault(run_key, set()).add((str(stub.get("symbol")), str(stub.get("row_sha256"))))
+                by_market[str(run["market"])].append({key: value for key, value in stub.items() if key != "verified"})
+        kept_records: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for market in MARKETS:
+            unattested = [pit_panel._as_missing_horizon(stub) if pit_panel._unattested_horizon(stub) is not None else stub for stub in by_market[market]]
+            if records_cut is None:
+                refused["no_current_run"] += len(unattested)
+                continue
+            admissible, refusals = panel.admissible_records(unattested, cut=records_cut)
+            refused.update(refusals)
+            for record in admissible:
+                key = (str(record["symbol"]), str(record["session_date"])[:10])
+                if str(record.get("scope") or "") != accuracy.SCOPE:
+                    refused["scope_not_universe"] += 1
+                elif key in seen:
+                    refused["duplicate_across_exchanges"] += 1
+                else:
+                    seen.add(key)
+                    kept_records.append(record)
+        incomplete = sum(1 for run_key, run in current.items()
+                         if identities.get(run_key, set()) != {(str(symbol), str(digest)) for symbol, digest in run["outputs"]["prediction_identities"]})
+        return kept_records, {"read": read, "refused": panel._counts(refused), "admissible": len(kept_records)}, incomplete
+
+    @staticmethod
     def _screen(records: Sequence[Mapping[str, Any]], current: Mapping[str, Mapping[str, Any]], *, basis: str) -> tuple[set[tuple[str, str, str]], dict[str, Any]]:
         """The point-in-time screen of every current run (``screen``), the records it keeps (``(market, session, symbol)``)
         and its aggregate: names removed by rule over the grid, and per session the records, the screened ones and the
@@ -1042,30 +1132,41 @@ class PitBacktestReportService:
     # ---- phase B: the labels (only for a valid reading)
     def _label(self, reader: PriceHistoryService, records: Sequence[Mapping[str, Any]], kept: set[tuple[str, str, str]], cuts: Mapping[str, datetime]
                ) -> tuple[list[dict[str, Any]], Counter[str]]:
-        """One observation per record with the labels of its exchange's pinned publication — symbol after symbol, one series
-        read per symbol — compacted, with its exchange and its screen flag."""
-        rows: list[dict[str, Any]] = []
-        cohort: Counter[str] = Counter()
+        """One observation per record with the labels of its exchange's pinned publication (``_label_many`` of one source)."""
+        return self._label_many(reader, {SOURCE: (records, kept)}, cuts)[SOURCE]
+
+    def _label_many(self, reader: PriceHistoryService, sources: Mapping[str, tuple[Sequence[Mapping[str, Any]], set[tuple[str, str, str]]]],
+                    cuts: Mapping[str, datetime]) -> dict[str, tuple[list[dict[str, Any]], Counter[str]]]:
+        """Per source, one observation per record with the labels of its exchange's pinned publication — symbol after symbol,
+        one series read per symbol, the labels of a (symbol, session) read ONCE whatever the number of sources holding a
+        record of it — compacted, with its exchange and its screen flag (the source's own screen)."""
+        result: dict[str, tuple[list[dict[str, Any]], Counter[str]]] = {name: ([], Counter()) for name in sources}
         horizons = label_horizons()
         for market in MARKETS:
             calendar_close = panel.calendar_horizon(market)
             cut = cuts[market]
+            by_pair: dict[tuple[str, str], list[tuple[str, Mapping[str, Any]]]] = {}
+            for name, (records, _kept) in sources.items():
+                for record in records:
+                    if record["market"] == market:
+                        by_pair.setdefault((str(record["symbol"]), str(record["session_date"])[:10]), []).append((name, record))
             current_symbol: str | None = None
             bars: dict[str, dict[str, Any]] = {}
-            for record in sorted((r for r in records if r["market"] == market), key=lambda r: (str(r["symbol"]), str(r["session_date"]))):
-                symbol = str(record["symbol"])
-                session = date.fromisoformat(str(record["session_date"])[:10])
+            for (symbol, day), held in sorted(by_pair.items()):
+                session = date.fromisoformat(day)
                 if symbol != current_symbol:
                     bars, current_symbol = reader.bars(market, symbol, available_before=cut), symbol
                 labels = {horizon: panel.resolve_label(reader.label_bar(market, symbol, session, horizon, available_before=cut), cut=cut, calendar_close=calendar_close)
                           for horizon in horizons}
                 self.labels_read += len(horizons)
-                row = panel.observation(record, bars.get(session.isoformat()), labels, deadline=panel.live_deadline(market, panel._utc(record["prediction_instant"])))
-                row.update({"scope": str(record.get("scope") or ""), "producer_status": panel._mapping(record.get("decomposition")).get("status"),
-                            "market": market, "screened": (market, session.isoformat(), symbol) in kept})
-                cohort[str(row["cohort"])] += 1
-                rows.append(_compact(row))
-        return rows, cohort
+                for name, record in held:
+                    row = panel.observation(record, bars.get(session.isoformat()), labels, deadline=panel.live_deadline(market, panel._utc(record["prediction_instant"])))
+                    row.update({"scope": str(record.get("scope") or ""), "producer_status": panel._mapping(record.get("decomposition")).get("status"),
+                                "market": market, "screened": (market, session.isoformat(), symbol) in sources[name][1]})
+                    rows, cohort = result[name]
+                    cohort[str(row["cohort"])] += 1
+                    rows.append(_compact(row))
+        return result
 
     # ---- the receipt
     def report(self, manifest: Mapping[str, Any], *, prereg_sha256: str | None = None, code_pins: Mapping[str, str] | None = None,
@@ -1089,6 +1190,7 @@ class PitBacktestReportService:
         expected = prereg_grid(bounds)
         grid, grid_void = self._grid(manifest, expected, bounds)
         void += grid_void
+        shared = list(void)  # code, manifest parameters, label vintages, grid: a shared failure voids BOTH verdicts
         runs, current, runs_void = self._runs(store, manifest)
         void += runs_void
         published = [panel._utc(run["published_at"]) for run in current.values()]
@@ -1097,6 +1199,20 @@ class PitBacktestReportService:
         runs["incomplete"] = incomplete
         if incomplete:
             void.append(f"runs_incomplete:{incomplete}")
+        # the served internal TP (rev 2): its own runs (served_grid), records (inside its snapshots), grid and integrity — its own VOID reasons
+        served_void: list[str] = []
+        if "served_grid" not in manifest or SERVED_SOURCE not in list(manifest.get("sources") or []):
+            served_void.append("served:source_not_in_manifest")
+        served_grid, served_grid_void = self._grid({"grid": manifest.get("served_grid") or []}, expected, bounds)
+        served_void += [f"served:{reason}" for reason in served_grid_void if reason not in grid_void]
+        served_runs, served_current, served_runs_void = self._runs(store, manifest, entries_key="served_grid", analysis_type=SERVED_RUN_ANALYSIS_TYPE)
+        served_void += [f"served:{reason}" for reason in served_runs_void]
+        served_published = [panel._utc(run["published_at"]) for run in served_current.values()]
+        served_cut = max(served_published) + timedelta(microseconds=1) if served_published else None
+        served_records, served_counts, served_incomplete = self._served_records(served_current, served_cut)
+        served_runs["incomplete"] = served_incomplete
+        if served_incomplete:
+            served_void.append(f"served:runs_incomplete:{served_incomplete}")
         # the calendar index from the grid's first session (expected grid; the manifest's own first session without one) — no label read
         manifest_sessions = sorted({str(entry["session_date"])[:10] for entry in manifest["grid"]})
         anchor = expected[0] if expected else (date.fromisoformat(manifest_sessions[0]) if manifest_sessions else None)
@@ -1114,15 +1230,26 @@ class PitBacktestReportService:
             for horizon in label_horizons():
                 through = accuracy._mature_through(CALENDAR_MARKET, label_cut, horizon)
                 mature_through[horizon] = None if through is None or through < anchor else sum(1 for session in calendar if session <= through.isoformat()) - 1
-        outside = [record for record in records if str(record["session_date"])[:10] not in index_of]
-        if outside:
-            counts["refused"] = panel._counts(Counter({**counts["refused"], "outside_grid_calendar": len(outside)}))
-        records = [record for record in records if str(record["session_date"])[:10] in index_of]
+
+        def inside(found: list[dict[str, Any]], tally: dict[str, Any]) -> list[dict[str, Any]]:
+            outside = [record for record in found if str(record["session_date"])[:10] not in index_of]
+            if outside:
+                tally["refused"] = panel._counts(Counter({**tally["refused"], "outside_grid_calendar": len(outside)}))
+            return [record for record in found if str(record["session_date"])[:10] in index_of]
+
+        records = inside(records, counts)
+        served_records = inside(served_records, served_counts)
         void += [f"records_refused:{cause}:{count}" for cause, count in sorted(counts["refused"].items()) if cause not in ALLOWED_REFUSALS and count]
+        served_void += [f"served:records_refused:{cause}:{count}" for cause, count in sorted(served_counts["refused"].items())
+                        if cause not in ALLOWED_REFUSALS and count]
+        served_void = shared + served_void
         basis = volume_basis(manifest)
         kept, screened = self._screen(records, current, basis=basis or "as_traded") if basis is not None else (set(), {"volume_basis": None})
+        served_kept, served_screened = (self._screen(served_records, served_current, basis=basis) if basis is not None else (set(), {"volume_basis": None}))
         coverage = self._coverage(current)
+        served_coverage = self._coverage(served_current)
         records_share = coverage[MARKET_GROUP]["records_share"]
+        served_share = served_coverage[MARKET_GROUP]["records_share"]
         payload: dict[str, Any] = {
             "schema": SCHEMA_VERSION, "protocol": protocol(), "prereg_sha256": prereg_sha256, "code": code, "code_binding": binding,
             "manifest": {"manifest_sha256": manifest["manifest_sha256"], "schema": manifest["schema"], "market": manifest.get("market"),
@@ -1134,12 +1261,40 @@ class PitBacktestReportService:
             "anchor": anchor.isoformat() if anchor else None, "partition_last_index": partition_last,
             "horizons": None, "halves": None, "persistence": None, "names_per_session": None, "realized_sd_per_session": None, "descriptive": None,
         }
-        if void:  # S3 of the review: a reading that is not valid reads no label and publishes no statistic
-            payload["verdict"] = verdict(None, None, coverage={"records_share": records_share, "screened_names_median": None}, void=void)
-            return {"schema": SCHEMA_VERSION, "payload": payload, "payload_sha256": canonical_sha256(payload)}
-        rows, cohort = self._label(reader, records, kept, cuts)
-        counts["cohort"] = panel._counts(cohort)
-        counts["observations"] = len(rows)
+        served_block: dict[str, Any] = {
+            "source": SERVED_SOURCE, "re_executes": SERVED_TP_SOURCE, "entries": len(manifest.get("served_grid") or []), "sources": manifest.get("sources"),
+            "records_cut": served_cut.isoformat() if served_cut else None, "grid": served_grid, "runs": served_runs, "coverage": served_coverage,
+            "records": served_counts, "screen": served_screened,
+            "horizons": None, "halves": None, "persistence": None, "names_per_session": None, "realized_sd_per_session": None, "descriptive": None,
+        }
+        readings = {name: reading for name, reading, valid in ((SOURCE, (records, kept), not void), (SERVED_SOURCE, (served_records, served_kept), not served_void))
+                    if valid}
+        labelled = self._label_many(reader, readings, cuts) if readings else {}
+        # S3 of the review: a reading that is not valid reads no label and publishes no statistic — per verdict
+        if SOURCE in labelled:
+            statistics_block, decided = self._statistics(*labelled[SOURCE], expected=expected, index_of=index_of, mature_through=mature_through,
+                                                         partition_last=partition_last, records_share=records_share)
+            counts.update(statistics_block.pop("counts"))
+            payload.update(statistics_block)
+        else:
+            decided = verdict(None, None, coverage={"records_share": records_share, "screened_names_median": None}, void=void)
+        if SERVED_SOURCE in labelled:
+            statistics_block, served_decided = self._statistics(*labelled[SERVED_SOURCE], expected=expected, index_of=index_of, mature_through=mature_through,
+                                                                partition_last=partition_last, records_share=served_share)
+            served_counts.update(statistics_block.pop("counts"))
+            served_block.update(statistics_block)
+        else:
+            served_decided = verdict(None, None, coverage={"records_share": served_share, "screened_names_median": None}, void=served_void)
+        served_block["verdict"] = served_decided
+        payload["verdict"] = decided
+        payload["served_internal_tp"] = served_block
+        payload["verdicts"] = {"primary": PRIMARY_VERDICT, "served_internal_tp": copy.deepcopy(served_decided), "v3_shadow": copy.deepcopy(decided)}
+        return {"schema": SCHEMA_VERSION, "payload": payload, "payload_sha256": canonical_sha256(payload)}
+
+    def _statistics(self, rows: list[dict[str, Any]], cohort: Counter[str], *, expected: Sequence[date], index_of: Mapping[str, int],
+                    mature_through: Mapping[int, int | None], partition_last: int | None, records_share: float | None) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The statistics of ONE source's labelled observations and its verdict: the horizons on the screened set, the halves,
+        the persistence co-condition, the names per session, the realized sd and the descriptive block (prereg §5–§7)."""
         decisory = [row for row in rows if row["screened"]]
         horizons = {str(horizon): accuracy.horizon_report(decisory, horizon, index_of=index_of, mature_through=mature_through, partition_last=partition_last)
                     for horizon in HORIZONS}
@@ -1153,12 +1308,13 @@ class PitBacktestReportService:
                        "last_block": long_means[-1][0] if long_means else None}
         names = self._names_per_session(by_session, [session.isoformat() for session in expected])
         realized_sd = panel._finite(statistics.stdev([value for _index, value in values])) if len(values) >= 2 else None
-        payload.update({"horizons": horizons, "halves": split, "persistence": persistence, "names_per_session": names, "realized_sd_per_session": realized_sd,
-                        "descriptive": self._descriptive(rows, decisory, by_session, values, index_of=index_of, mature_through=mature_through,
-                                                         partition_last=partition_last)})
-        payload["verdict"] = verdict(primary, split[DECISORY_STATISTIC], persistence=persistence,
-                                     coverage={"records_share": records_share, "screened_names_median": names["executable_h_primary"]["median"]})
-        return {"schema": SCHEMA_VERSION, "payload": payload, "payload_sha256": canonical_sha256(payload)}
+        block = {"counts": {"cohort": panel._counts(cohort), "observations": len(rows)}, "horizons": horizons, "halves": split, "persistence": persistence,
+                 "names_per_session": names, "realized_sd_per_session": realized_sd,
+                 "descriptive": self._descriptive(rows, decisory, by_session, values, index_of=index_of, mature_through=dict(mature_through),
+                                                  partition_last=partition_last)}
+        decided = verdict(primary, split[DECISORY_STATISTIC], persistence=persistence,
+                          coverage={"records_share": records_share, "screened_names_median": names["executable_h_primary"]["median"]})
+        return block, decided
 
     @staticmethod
     def _halves(by_session: Mapping[str, Sequence[Mapping[str, Any]]], primary: Mapping[str, Any], *, index_of: Mapping[str, int],

@@ -451,7 +451,9 @@ def test_the_prereg_commit_is_the_last_that_changed_the_prereg_and_the_producer_
     app_dir, docs = repo / "c3po" / "backend" / "app", repo / "c3po" / "docs"
     app_dir.mkdir(parents=True)
     docs.mkdir(parents=True)
-    for name in (*pit.IMPLEMENTATION_FILES, "database.py", "source_identity.py"):
+    from app import valuation_pit_served as served
+    (app_dir / "market_data").mkdir()
+    for name in sorted({*pit.IMPLEMENTATION_FILES, *served.IMPLEMENTATION_FILES, "database.py", "source_identity.py"}):  # rev 2: the served producer too
         shutil.copyfile(ROOT / "c3po" / "backend" / "app" / name, app_dir / name)
     shutil.copyfile(PREREG_PATH, docs / PREREG_PATH.name)
     identity = {"GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "", "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "", "GIT_CONFIG_NOSYSTEM": "1",
@@ -481,6 +483,9 @@ def test_the_prereg_commit_is_the_last_that_changed_the_prereg_and_the_producer_
     assert outputs["producer_sha256"] == grid.producer()["engine_sha256"]  # the workflow's producer IS the grid's, files and reader objects
     producer = json.loads((tmp_path / f"runner-{first[:8]}" / "producer.json").read_text(encoding="utf-8"))
     assert producer == {"files": grid.engine_files(), "objects": grid.engine_objects()}
+    assert outputs["served_producer_sha256"] == served.producer()["engine_sha256"]  # rev 2: the served producer IS the grid's served producer
+    served_producer = json.loads((tmp_path / f"runner-{first[:8]}" / "served-producer.json").read_text(encoding="utf-8"))
+    assert served_producer == {"files": served.implementation_files(), "objects": served.implementation_objects()}
     (repo / "c3po" / "docs" / PREREG_PATH.name).write_text(PREREG_PATH.read_text(encoding="utf-8") + "\nrevisão\n", encoding="utf-8")
     git("commit", "-q", "-am", "a new revision")
     stale, _ = run(first)
