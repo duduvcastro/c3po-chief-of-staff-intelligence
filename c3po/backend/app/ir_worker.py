@@ -2,6 +2,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
+from . import valuation_env
 from .maintenance_gate import job, startup_job
 from .config import get_settings
 from .database import Database
@@ -10,10 +11,20 @@ from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data.b3_screener import B3ScreenerService
 from .market_data.service import MarketDataService
 from .observability import init_sentry
+from .official_statements import statements_capture_enabled, statements_interval_hours
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("c3po.ir_worker")
+
+
+def next_cvm_statements_run(database: Database) -> datetime:
+    """Spacing survives restarts: the next complete-statements run is due one interval after the last success."""
+    health = database.ingestion_run_health(["cvm_statements"]).get("cvm_statements") or {}
+    last_success = health.get("last_success_at")
+    if isinstance(last_success, datetime):
+        return last_success.astimezone(timezone.utc) + timedelta(hours=statements_interval_hours())
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 
 def main() -> None:
@@ -22,14 +33,17 @@ def main() -> None:
         init_sentry(settings, service_name="investor-relations-worker")
         database = Database(settings)
         database.initialize()
-        service = InvestorRelationsService(settings, database)
+        # the only process that reads SEC filing headers (one container): sync_sec's header step and the as-filed poll
+        service = InvestorRelationsService(settings, database, read_sec_headers=True)
         market_data = MarketDataService(settings, database)
         valuation_processor = InvestorRelationsValuationProcessor(
             database,
             B3ScreenerService(settings, database, market_data.http),
+            asfiled_enabled=valuation_env.asfiled_enabled(),
         )
         next_cvm = datetime.min.replace(tzinfo=timezone.utc)
         next_ri = datetime.min.replace(tzinfo=timezone.utc)
+        next_cvm_statements = next_cvm_statements_run(database)
     while True:
         with job() as admitted:
             if not admitted:
@@ -37,12 +51,17 @@ def main() -> None:
                 continue
             now = datetime.now(timezone.utc)
             sources = ["sec"]
+            if valuation_env.asfiled_enabled():  # Valuation as-filed: the SEC poll extended to the US valuation universe
+                sources.append("sec_asfiled")
             if now >= next_cvm:
                 sources.insert(0, "cvm")
                 next_cvm = now + timedelta(minutes=max(settings.investor_relations_cvm_poll_minutes, 30))
             if now >= next_ri:
                 sources.append("ri")
                 next_ri = now + timedelta(minutes=max(settings.investor_relations_ri_poll_minutes, 30))
+            if statements_capture_enabled() and now >= next_cvm_statements:
+                sources.append("cvm_statements")
+                next_cvm_statements = now + timedelta(hours=statements_interval_hours())
             for source in sources:
                 result = service.sync(source)
                 logger.info("Investor Relations %s sync: %s", source, result.sources.get(source))

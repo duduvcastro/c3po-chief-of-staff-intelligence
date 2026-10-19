@@ -1,15 +1,19 @@
 import io
 import zipfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import httpx
 import pytest
 
+from app import valuation_env
 from app.config import Settings
 from app.cvm_fundamentals import extract_itr_official_fundamentals
 from app.database import Database
 from app.investor_relations import (
+    NEW_YORK,
     RI_URL_OVERRIDES,
+    SEC_ACCEPTANCE_FROM_HEADER,
+    SEC_ACCEPTANCE_FROM_SUBMISSIONS,
     SEC_FULLTEXT_KEYWORDS,
     LinkCollector,
     InvestorRelationsService,
@@ -17,6 +21,13 @@ from app.investor_relations import (
     normalize_company_name,
 )
 from app.market_data.b3_screener import B3ScreenerService
+from app.sec_xbrl import (
+    SecHeaderError,
+    SecRateLimiter,
+    SecXbrlClient,
+    acceptance_from_submissions_json,
+    parse_filing_header,
+)
 
 
 def service(tmp_path):
@@ -1073,3 +1084,413 @@ def test_matrix_risk_score_lowers_on_insider_buying_and_raises_on_selling():
 
     assert buying < neutral < selling
     assert no_signal_at_all == neutral
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Defect (e), verified 2026-10-17: the submissions JSON acceptanceDateTime is NOT true UTC (it is the true instant plus
+# the New York UTC offset); the filing header (New York wall clock) is the source of truth.
+
+def _submissions(acceptances: list[str], accessions: list[str]) -> tuple[dict, dict]:
+    count = len(accessions)
+    recent = {
+        "accessionNumber": accessions, "form": ["10-Q"] * count, "acceptanceDateTime": acceptances,
+        "primaryDocument": ["doc.htm"] * count, "primaryDocDescription": ["10-Q"] * count, "items": [""] * count,
+        "reportDate": [""] * count, "isXBRL": [1] * count,
+    }
+    return {"cik": "0000320193", "name": "Apple Inc.", "tickers": ["AAPL"], "filings": {"recent": recent}}, recent
+
+
+def test_sec_event_reads_the_submissions_acceptance_as_true_time_plus_the_new_york_offset(tmp_path):
+    """The two AAPL filings verified on 2026-10-17: the JSON's "UTC" labels are 4 h (EDT) / 5 h (EST) late. The event
+    used to carry the label as UTC (00:30:28Z / 02:30:33Z); it now carries the header's instant (16:30 New York)."""
+    ir, _ = service(tmp_path)
+    payload, recent = _submissions(
+        ["2026-07-31T00:30:28.000Z", "2026-01-30T02:30:33.000Z"], ["0000320193-26-000018", "0000320193-26-000005"],
+    )
+    cutoff = datetime(2025, 10, 1, tzinfo=timezone.utc)
+
+    july = ir._sec_event(payload, recent, 0, None, cutoff)
+    january = ir._sec_event(payload, recent, 1, None, cutoff)
+
+    assert july["published_at"] == datetime(2026, 7, 30, 20, 30, 28, tzinfo=timezone.utc)
+    assert july["published_at"].astimezone(NEW_YORK).strftime("%Y%m%d%H%M%S") == "20260730163028"  # the header
+    assert january["published_at"] == datetime(2026, 1, 29, 21, 30, 33, tzinfo=timezone.utc)
+    assert january["published_at"].astimezone(NEW_YORK).strftime("%Y%m%d%H%M%S") == "20260129163033"  # the header
+    assert july["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+    assert july["raw_metadata"]["acceptance_datetime_json"] == "2026-07-31T00:30:28.000Z"
+    assert acceptance_from_submissions_json("2026-07-31T00:30:28.000Z") == july["published_at"]
+
+
+def test_sec_header_acceptance_is_a_new_york_wall_clock_escaped_or_not():
+    escaped = "<pre>&lt;SEC-HEADER&gt;0000320193-26-000018.hdr.sgml : 20260731\n&lt;ACCEPTANCE-DATETIME&gt;20260730163028\n</pre>"
+    raw = "<SEC-HEADER>\n<ACCEPTANCE-DATETIME>20260129163033\nACCESSION NUMBER: 0000320193-26-000005"
+    assert parse_filing_header(escaped)["accepted_at"] == datetime(2026, 7, 30, 20, 30, 28, tzinfo=timezone.utc)  # EDT: UTC-4
+    assert parse_filing_header(raw)["accepted_at"] == datetime(2026, 1, 29, 21, 30, 33, tzinfo=timezone.utc)  # EST: UTC-5
+    with pytest.raises(SecHeaderError):
+        parse_filing_header("<html>no header here</html>")
+
+
+def test_sec_rate_limiter_keeps_requests_at_or_below_eight_per_second():
+    pauses: list[float] = []
+    limiter = SecRateLimiter(8.0, clock=lambda: 100.0, sleep=pauses.append)  # the process-wide limiter (app/sec_xbrl.py)
+    for _ in range(4):
+        limiter.acquire()
+    assert pauses == pytest.approx([0.125, 0.25, 0.375])  # four requests at one instant leave 1/8 s between each
+    assert SecRateLimiter(50.0).rate == 8.0 and valuation_env.sec_max_requests_per_second() <= 8.0  # never above 8/s
+
+
+class _SecResponse:
+    status_code = 200
+
+    def __init__(self, payload=None, text=""):
+        self._payload, self.text = payload, text
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _SecArchive:
+    """company_tickers, one AAPL submissions file, its filing header and an empty full-text search, from memory."""
+
+    def __init__(self, submissions: dict, header_text: str) -> None:
+        self.submissions, self.header_text = submissions, header_text
+        self.calls: list[tuple[str, dict]] = []
+
+    def get(self, url, params=None, headers=None):
+        self.calls.append((url, dict(headers or {})))
+        if url.endswith("/files/company_tickers.json"):
+            return _SecResponse({"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}})
+        if url.endswith("/submissions/CIK0000320193.json"):
+            return _SecResponse(self.submissions)
+        if url.endswith("-index-headers.html"):
+            return _SecResponse(text=self.header_text)
+        if url.endswith("/LATEST/search-index"):
+            return _SecResponse({"hits": {"hits": []}})
+        raise AssertionError(f"unexpected SEC request {url}")
+
+    def header_reads(self) -> list[tuple[str, dict]]:
+        return [call for call in self.calls if call[0].endswith("-index-headers.html")]
+
+
+class _PacedLimiter(SecRateLimiter):
+    """The fair-access limiter, counting the request starts it paced instead of sleeping."""
+
+    def __init__(self) -> None:
+        super().__init__(8.0, clock=lambda: 0.0, sleep=lambda _: None)
+        self.acquired = 0
+
+    def acquire(self) -> None:
+        self.acquired += 1
+
+
+def _serve(ir: InvestorRelationsService, archive: _SecArchive) -> _PacedLimiter:
+    """Answer every request of the service from ``archive``: its own client (submissions, full text) and, when an SEC
+    contact is configured, its one SEC header client (without a contact that client refuses to exist)."""
+    ir.client = archive
+    limiter = _PacedLimiter()
+    if valuation_env.sec_contact():
+        ir.sec_client = SecXbrlClient(ir.settings, http=archive, limiter=limiter)  # type: ignore[arg-type]
+    return limiter
+
+
+def test_sync_sec_takes_the_filing_header_once_and_never_calls_the_sec_without_a_contact(tmp_path, caplog, monkeypatch):
+    accepted_local = datetime.combine(date.today() - timedelta(days=3), time(16, 30, 28), tzinfo=NEW_YORK)
+    accepted = accepted_local.astimezone(timezone.utc)
+    label = (accepted - accepted_local.utcoffset()).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # the JSON: true instant + NY offset
+    accession = "0000320193-26-000099"
+    payload, _ = _submissions([label], [accession])
+    header = f"<pre>&lt;ACCEPTANCE-DATETIME&gt;{accepted_local:%Y%m%d%H%M%S}\n</pre>"
+    base = dict(database_url="", migrations_dir=tmp_path, investor_relations_output_dir=tmp_path / "ir-pdf",
+                investor_relations_sec_watchlist="AAPL")
+    database = Database(Settings(**base))
+
+    # 1) no C3PO_SEC_CONTACT: no header is requested; the corrected JSON reading is stored and labelled as such
+    monkeypatch.delenv(valuation_env.SEC_CONTACT_ENV, raising=False)
+    without_contact = InvestorRelationsService(Settings(**base), database, read_sec_headers=True)
+    archive = _SecArchive(payload, header)
+    _serve(without_contact, archive)
+    with caplog.at_level("WARNING", logger="app.investor_relations"):
+        without_contact.sync_sec()
+    assert archive.header_reads() == [] and "C3PO_SEC_CONTACT is not configured" in caplog.text
+    stored = database._ir_events[("sec", accession)]
+    assert stored["published_at"] == accepted and stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+
+    # 2) with a contact: the header is read once, paced, identified by the contact, and its instant becomes the event's
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")  # the host's environment, never Settings
+    with_contact = InvestorRelationsService(Settings(**base), database, read_sec_headers=True)
+    archive = _SecArchive(payload, header)
+    limiter = _serve(with_contact, archive)
+    with_contact.sync_sec()
+    reads = archive.header_reads()
+    assert [url for url, _ in reads] == [
+        f"https://www.sec.gov/Archives/edgar/data/320193/000032019326000099/{accession}-index-headers.html"
+    ]
+    assert reads[0][1]["User-Agent"].endswith("C3PO test desk")
+    assert limiter.acquired == len(reads)  # the header read waited on the fair-access limiter
+    stored = database._ir_events[("sec", accession)]
+    assert stored["published_at"] == accepted
+    assert stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+    assert stored["raw_metadata"]["acceptance_datetime_header"] == f"{accepted_local:%Y%m%d%H%M%S}"
+
+    # 3) a later sync reuses the stored header instant: no second read, no downgrade to the JSON reading
+    archive = _SecArchive(payload, header)
+    _serve(with_contact, archive)
+    with_contact.sync_sec()
+    assert archive.header_reads() == []
+    assert database._ir_events[("sec", accession)]["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+
+
+def test_sec_header_wins_over_the_json_and_a_semantics_change_is_reported(tmp_path, caplog, monkeypatch):
+    ir, database = service(tmp_path)
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    ir.read_sec_headers = True
+    payload, recent = _submissions(["2026-07-31T00:30:28.000Z"], ["0000320193-26-000018"])
+    event = ir._sec_event(payload, recent, 0, None, datetime(2025, 10, 1, tzinfo=timezone.utc))
+    _serve(ir, _SecArchive(payload, "&lt;ACCEPTANCE-DATETIME&gt;20260730163031"))  # three seconds later than the JSON says
+
+    with caplog.at_level("WARNING", logger="app.investor_relations"):
+        ir._apply_sec_header_acceptances([event])
+
+    assert event["published_at"] == datetime(2026, 7, 30, 20, 30, 31, tzinfo=timezone.utc)
+    assert event["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+    assert "no longer hold" in caplog.text
+
+
+# Review of defect (e): the header step is best-effort (sync_sec carries R2D2's insider events), only the IR worker reads
+# headers (one paced process for the host), throttling stops the reads and a failing header backs off.
+
+def _recent_sec_filings(count: int) -> tuple[dict, list[str], list[datetime]]:
+    """``count`` AAPL 10-Qs accepted 16:30:28 New York on the last ``count`` days, newest first, as submissions JSON."""
+    locals_ = [datetime.combine(date.today() - timedelta(days=day), time(16, 30, 28), tzinfo=NEW_YORK)
+               for day in range(1, count + 1)]
+    # the JSON label: the true UTC instant plus the New York offset (defect e)
+    labels = [(local.astimezone(timezone.utc) - local.utcoffset()).strftime("%Y-%m-%dT%H:%M:%S.000Z") for local in locals_]
+    accessions = [f"0000320193-26-0001{index:02d}" for index in range(count)]
+    payload, _ = _submissions(labels, accessions)
+    return payload, accessions, [local.astimezone(timezone.utc) for local in locals_]
+
+
+class _SecHeaders(_SecArchive):
+    """The SEC archive with one answer per filing header: an HTTP status, or the header text (default: the real one)."""
+
+    def __init__(self, submissions: dict, answers: dict[str, int | str] | None = None) -> None:
+        super().__init__(submissions, "")
+        self.answers = answers or {}
+        recent = submissions["filings"]["recent"]
+        self.true_headers = {
+            accession: f"&lt;ACCEPTANCE-DATETIME&gt;{acceptance_from_submissions_json(label).astimezone(NEW_YORK):%Y%m%d%H%M%S}"
+            for accession, label in zip(recent["accessionNumber"], recent["acceptanceDateTime"])
+        }
+
+    def get(self, url, params=None, headers=None):
+        if not url.endswith("-index-headers.html"):
+            return super().get(url, params=params, headers=headers)
+        self.calls.append((url, dict(headers or {})))
+        accession = url.rsplit("/", 1)[1].removesuffix("-index-headers.html")
+        answer = self.answers.get(accession, self.true_headers[accession])
+        if isinstance(answer, int):
+            return httpx.Response(answer, request=httpx.Request("GET", url))
+        return _SecResponse(text=answer)
+
+    def read_accessions(self) -> list[str]:
+        return [url.rsplit("/", 1)[1].removesuffix("-index-headers.html") for url, _ in self.header_reads()]
+
+
+class _FinnhubInsiders:
+    def __init__(self) -> None:
+        self.day = (date.today() - timedelta(days=5)).isoformat()
+
+    def get(self, url, *, params=None):
+        day = self.day
+
+        class Answer:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"data": [{"name": "COOK TIMOTHY D", "share": 511000, "change": -223986, "filingDate": day,
+                                  "transactionDate": day, "transactionCode": "S", "transactionPrice": 227.5}]}
+
+        return Answer()
+
+
+def _sec_settings(tmp_path, **overrides) -> Settings:
+    return Settings(database_url="", migrations_dir=tmp_path, investor_relations_output_dir=tmp_path / "ir-pdf",
+                    investor_relations_sec_watchlist="AAPL", **overrides)
+
+
+def _header_reader(settings: Settings, database: Database, archive: _SecArchive, **kwargs) -> InvestorRelationsService:
+    ir = InvestorRelationsService(settings, database, **kwargs)
+    _serve(ir, archive)
+    return ir
+
+
+def test_a_failing_header_step_never_fails_sync_sec_nor_the_insider_events_r2d2_reads(tmp_path, caplog, monkeypatch):
+    """sync_sec also ingests the Finnhub/EODHD insider events of R2D2's risk source (RC-4): the header step must be
+    best-effort like the full-text enrichment. Its stored-instant lookup used to raise straight out of sync_sec, failing
+    the run and dropping that sync's insider events."""
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path, finnhub_api_token="test-token")
+    database = Database(settings)
+    payload, accessions, accepted = _recent_sec_filings(1)
+    ir = _header_reader(settings, database, _SecHeaders(payload), read_sec_headers=True)
+    ir.finnhub.client = _FinnhubInsiders()
+
+    def lookup_down(*args, **kwargs):
+        raise RuntimeError("stored acceptance lookup failed")
+
+    database.stored_sec_acceptances = lookup_down  # type: ignore[method-assign]
+    with caplog.at_level("WARNING", logger="app.investor_relations"):
+        ir.sync_sec()
+
+    assert [run["status"] for run in database._ingestion_runs.values() if run["source_code"] == "sec"] == ["succeeded"]
+    assert any(external_id.startswith("finnhub-insider-AAPL-") for _, external_id in database._ir_events)
+    filing = database._ir_events[("sec", accessions[0])]
+    assert filing["published_at"] == accepted[0]
+    assert filing["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+    assert "acceptance step skipped (RuntimeError)" in caplog.text
+
+
+def test_only_the_header_reader_process_requests_headers_the_others_reuse_what_it_stored(tmp_path, monkeypatch):
+    """Four processes build their own service; only the IR worker's (read_sec_headers=True) calls the SEC for headers,
+    so its 8 req/s pacing is the host's. The API's sync reuses the stored header instant and never downgrades it."""
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path)
+    database = Database(settings)
+    payload, accessions, accepted = _recent_sec_filings(2)
+
+    api_archive = _SecHeaders(payload)
+    _header_reader(settings, database, api_archive).sync_sec()  # the API / valuation / R2D2 default
+    assert api_archive.header_reads() == []
+    assert database._ir_events[("sec", accessions[0])]["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+
+    worker_archive = _SecHeaders(payload)
+    _header_reader(settings, database, worker_archive, read_sec_headers=True).sync_sec()  # the IR worker
+    assert worker_archive.read_accessions() == accessions
+
+    api_archive = _SecHeaders(payload)
+    _header_reader(settings, database, api_archive).sync_sec()
+    assert api_archive.header_reads() == []
+    for accession, instant in zip(accessions, accepted):
+        stored = database._ir_events[("sec", accession)]
+        assert stored["published_at"] == instant
+        assert stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+
+
+@pytest.mark.parametrize("header_delay", [timedelta(0), timedelta(seconds=3)], ids=["equal-clocks", "divergent-clocks"])
+def test_the_api_fallback_saved_after_the_worker_stored_the_header_keeps_the_header(tmp_path, monkeypatch, header_delay):
+    """Codex P2 on #450: the API's sync reads that a filing has no header instant, the IR worker then stores the
+    header-sourced event, and the API's save lands last. A read cannot close that race: the save itself keeps the header
+    clock and its fields (Database.save_sec_filing_events), whether or not the two clocks coincide."""
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path, finnhub_api_token="test-token")
+    database = Database(settings)
+    payload, accessions, accepted = _recent_sec_filings(1)
+    header_instant = accepted[0] + header_delay
+    header_label = f"{header_instant.astimezone(NEW_YORK):%Y%m%d%H%M%S}"
+    worker = _header_reader(settings, database, _SecHeaders(payload, {accessions[0]: f"&lt;ACCEPTANCE-DATETIME&gt;{header_label}"}),
+                            read_sec_headers=True)
+    worker.finnhub.client = _FinnhubInsiders()
+    api = _header_reader(settings, database, _SecHeaders(payload))
+    api.finnhub.client = _FinnhubInsiders()
+
+    read_by_the_api: list[dict] = []
+    original_read = database.stored_sec_acceptances
+
+    def read_then_the_worker_stores(accessions_, *, acceptance_source):
+        found = original_read(accessions_, acceptance_source=acceptance_source)
+        if not read_by_the_api:
+            read_by_the_api.append(found)
+            worker.sync_sec()  # the IR worker's sync lands between the API's read and the API's save
+        return found
+
+    database.stored_sec_acceptances = read_then_the_worker_stores  # type: ignore[method-assign]
+    api.sync_sec()
+
+    assert read_by_the_api == [{}]  # the API did read "no header yet"
+    stored = database._ir_events[("sec", accessions[0])]
+    assert stored["published_at"] == header_instant
+    assert stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+    assert stored["raw_metadata"]["acceptance_datetime_header"] == header_label
+    assert stored["raw_metadata"]["acceptance_datetime_json"]  # the API's own metadata is still written
+    # the insider events R2D2 reads are still written by the same sync, through save_ir_events
+    assert any(external_id.startswith("finnhub-insider-AAPL-") for _, external_id in database._ir_events)
+    assert [run["status"] for run in database._ingestion_runs.values() if run["source_code"] == "sec"] == ["succeeded"] * 2
+
+
+@pytest.mark.parametrize("status", [403, 429])
+def test_sec_throttling_stops_the_header_reads_of_that_sync(tmp_path, caplog, status, monkeypatch):
+    """A 403/429 is the SEC throttling this host: the rest of the sync's header reads are skipped (they used to go on,
+    up to 40 more requests), nothing is penalised, and the next sync reads them."""
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path)
+    database = Database(settings)
+    payload, accessions, _ = _recent_sec_filings(3)
+
+    throttled = _SecHeaders(payload, {accessions[0]: status})
+    with caplog.at_level("WARNING", logger="app.investor_relations"):
+        ir = _header_reader(settings, database, throttled, read_sec_headers=True)
+        ir.sync_sec()
+    assert throttled.read_accessions() == [accessions[0]]
+    assert f"SEC answered {status}" in caplog.text and ir._sec_header_failures == {}
+    assert all(database._ir_events[("sec", accession)]["raw_metadata"]["acceptance_time_source"]
+               == SEC_ACCEPTANCE_FROM_SUBMISSIONS for accession in accessions)
+
+    recovered = _SecHeaders(payload)
+    _serve(ir, recovered)
+    ir.sync_sec()
+    assert recovered.read_accessions() == accessions
+
+
+@pytest.mark.parametrize("failure", [404, "<html>no acceptance tag</html>"])
+def test_a_failing_header_backs_off_and_no_longer_holds_the_newest_slot(tmp_path, monkeypatch, failure):
+    """Reads go newest first: a header that keeps failing (an HTTP error, or no ACCEPTANCE-DATETIME) used to take a slot
+    again on every sync. It now waits 1 h, 2 h, 4 h … (at most a day) and the next filings get read meanwhile."""
+    monkeypatch.setattr("app.investor_relations.SEC_HEADER_READS_PER_SYNC", 1)
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path)
+    database = Database(settings)
+    payload, accessions, accepted = _recent_sec_filings(2)
+    archive = _SecHeaders(payload, {accessions[0]: failure})
+    ir = _header_reader(settings, database, archive, read_sec_headers=True)
+
+    ir.sync_sec()
+    ir.sync_sec()
+    ir.sync_sec()
+
+    assert archive.read_accessions() == accessions  # the failing newest once, then the next one; nothing re-read
+    failures, retry_at = ir._sec_header_failures[accessions[0]]
+    assert failures == 1 and timedelta(minutes=59) < retry_at - datetime.now(timezone.utc) <= timedelta(hours=1)
+    assert database._ir_events[("sec", accessions[1])]["published_at"] == accepted[1]
+    assert database._ir_events[("sec", accessions[1])]["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+
+    ir._sec_header_failures[accessions[0]] = (1, datetime.now(timezone.utc) - timedelta(seconds=1))  # its hour is up
+    ir.sync_sec()
+    assert archive.read_accessions() == [accessions[0], accessions[1], accessions[0]]
+    failures, retry_at = ir._sec_header_failures[accessions[0]]
+    assert failures == 2 and timedelta(hours=1, minutes=59) < retry_at - datetime.now(timezone.utc) <= timedelta(hours=2)
+    stored = database._ir_events[("sec", accessions[0])]
+    assert stored["published_at"] == accepted[0]
+    assert stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_SUBMISSIONS
+
+    for _ in range(40):  # the wait doubles up to a day, never beyond (and never overflows)
+        ir._defer_sec_header(accessions[0], datetime.now(timezone.utc), "test")
+    assert ir._sec_header_failures[accessions[0]][1] - datetime.now(timezone.utc) <= timedelta(days=1)
+
+
+def test_a_missing_sec_contact_is_reported_once_per_process(tmp_path, caplog, monkeypatch):
+    monkeypatch.delenv(valuation_env.SEC_CONTACT_ENV, raising=False)
+    settings = _sec_settings(tmp_path)
+    payload, _, _ = _recent_sec_filings(1)
+    archive = _SecHeaders(payload)
+    ir = _header_reader(settings, Database(settings), archive, read_sec_headers=True)
+
+    with caplog.at_level("WARNING", logger="app.investor_relations"):
+        for _ in range(3):
+            ir.sync_sec()
+
+    assert archive.header_reads() == []
+    assert caplog.text.count("C3PO_SEC_CONTACT is not configured") == 1

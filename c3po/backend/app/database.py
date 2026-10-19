@@ -22,6 +22,60 @@ LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
 PriceHistoryCapture = tuple[dict[str, Any], dict[str, Any], datetime, str, list[dict[str, Any]]]
 PriceHistoryBuild = Callable[[dict[tuple[str, str], str]], PriceHistoryCapture]
 PriceBarKey = tuple[str, str, str, str, str]  # (market, symbol, session_date, source, fetched_at as a UTC instant) — the table's UNIQUE key
+# Database.save_sec_filing_events: save_ir_events' upsert plus the filing-header guard, decided inside ON CONFLICT DO UPDATE
+# on the locked conflicting row: a stored header-sourced acceptance instant (and its header fields) survives an incoming
+# event whose time is not from the header; an incoming header-sourced event always wins.
+SEC_FILING_EVENTS_UPSERT_SQL = """
+INSERT INTO ir_events
+    (id, source_code, external_id, company_id, market, symbol, company_name,
+     regulator_id, event_type, form, title, summary, published_at,
+     published_time_precision, reference_date, official_url, document_url,
+     materiality, valuation_relevant, valuation_status, raw_metadata, collected_at)
+VALUES (%(id)s, %(source_code)s, %(external_id)s, %(company_id)s, %(market)s, %(symbol)s, %(company_name)s,
+        %(regulator_id)s, %(event_type)s, %(form)s, %(title)s, %(summary)s, %(published_at)s,
+        %(published_time_precision)s, %(reference_date)s, %(official_url)s, %(document_url)s,
+        %(materiality)s, %(valuation_relevant)s, %(valuation_status)s, %(raw_metadata)s::jsonb, %(collected_at)s)
+ON CONFLICT (source_code, external_id) DO UPDATE
+SET company_id = COALESCE(EXCLUDED.company_id, ir_events.company_id),
+    symbol = COALESCE(EXCLUDED.symbol, ir_events.symbol),
+    company_name = EXCLUDED.company_name,
+    regulator_id = COALESCE(EXCLUDED.regulator_id, ir_events.regulator_id),
+    event_type = EXCLUDED.event_type,
+    form = EXCLUDED.form,
+    title = EXCLUDED.title,
+    summary = EXCLUDED.summary,
+    published_at = CASE
+        WHEN ir_events.raw_metadata->>'acceptance_time_source' = %(header_source)s
+         AND (EXCLUDED.raw_metadata->>'acceptance_time_source') IS DISTINCT FROM %(header_source)s
+        THEN ir_events.published_at
+        WHEN EXCLUDED.published_time_precision = 'collected'
+         AND ir_events.published_time_precision = 'collected'
+        THEN LEAST(ir_events.published_at, ir_events.collected_at, EXCLUDED.collected_at)
+        ELSE EXCLUDED.published_at
+    END,
+    published_time_precision = EXCLUDED.published_time_precision,
+    reference_date = EXCLUDED.reference_date,
+    official_url = EXCLUDED.official_url,
+    document_url = EXCLUDED.document_url,
+    materiality = EXCLUDED.materiality,
+    valuation_relevant = EXCLUDED.valuation_relevant,
+    valuation_status = CASE
+        WHEN ir_events.reviewed_at IS NOT NULL
+          OR ir_events.valuation_status = 'incorporated'
+        THEN ir_events.valuation_status
+        ELSE EXCLUDED.valuation_status
+    END,
+    raw_metadata = CASE
+        WHEN ir_events.raw_metadata->>'acceptance_time_source' = %(header_source)s
+         AND (EXCLUDED.raw_metadata->>'acceptance_time_source') IS DISTINCT FROM %(header_source)s
+        THEN EXCLUDED.raw_metadata || jsonb_strip_nulls(jsonb_build_object(
+            'acceptance_time_source', ir_events.raw_metadata->'acceptance_time_source',
+            'acceptance_datetime_header', ir_events.raw_metadata->'acceptance_datetime_header'))
+        ELSE EXCLUDED.raw_metadata
+    END,
+    collected_at = LEAST(ir_events.collected_at, EXCLUDED.collected_at),
+    updated_at = now()
+"""
 
 
 class AlreadyPublishedError(ValueError):
@@ -78,6 +132,7 @@ class Database:
         self._official_cycle_cache: dict[str, dict[str, Any]] = {}
         self._cycle_records_cache: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}  # (cycle_id, source) → records by symbol (Passo 1)
         self._price_bars: list[dict[str, Any]] = []  # V3.2 price series (in-memory mirror of valuation_price_bars)
+        self._valuation_decisions: list[dict[str, Any]] = []  # Decisor V1 (shadow): in-memory mirror of the append-only valuation_decisions
         self._price_history_locks: dict[str, threading.RLock] = {}  # one critical section per market (C394-9); PostgreSQL: advisory lock
         self._price_history_locks_guard = threading.Lock()
         self._valuation_changes: list[dict[str, Any]] = []
@@ -97,6 +152,7 @@ class Database:
         self._ir_security_map: dict[tuple[str, str], str] = {}
         self._ir_events: dict[tuple[str, str], dict[str, Any]] = {}
         self._ir_valuation_queue: dict[tuple[str, str], dict[str, Any]] = {}
+        self._sec_filing_events_lock = threading.RLock()  # save_sec_filing_events: read-merge-write of the memory store
         self._leah_pairings: dict[str, dict[str, Any]] = {}
         self._leah_devices: dict[str, dict[str, Any]] = {}
         self._leah_items: dict[str, dict[str, Any]] = {}
@@ -3151,6 +3207,112 @@ class Database:
         )
         return {row[0]: dict(zip(keys, row)) for row in rows}
 
+    def stored_sec_acceptances(self, accessions: list[str], *, acceptance_source: str) -> dict[str, datetime]:
+        """SEC filing events already stored with an acceptance instant from ``acceptance_source`` (their
+        ``raw_metadata.acceptance_time_source``), by accession: a sync reuses what it already read from the filing
+        headers instead of reading them again (SEC fair access) and never downgrades such an instant."""
+        clean = sorted({str(accession) for accession in accessions if accession})
+        if not clean:
+            return {}
+        if not self.database_url:
+            return {
+                external_id: event["published_at"]
+                for (source_code, external_id), event in self._ir_events.items()
+                if source_code == "sec" and external_id in clean
+                and (event.get("raw_metadata") or {}).get("acceptance_time_source") == acceptance_source
+            }
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT external_id, published_at
+                FROM ir_events
+                WHERE source_code = 'sec'
+                  AND external_id = ANY(%s)
+                  AND raw_metadata->>'acceptance_time_source' = %s
+                """,
+                (clean, acceptance_source),
+            ).fetchall()
+        return {str(external_id): published_at for external_id, published_at in rows}
+
+    # the filing-header fields of an SEC filing event's raw_metadata (written by InvestorRelationsService)
+    _SEC_HEADER_METADATA_KEYS = ("acceptance_time_source", "acceptance_datetime_header")
+
+    def save_sec_filing_events(self, events: list[dict[str, Any]], *, header_source: str) -> int:
+        """``save_ir_events`` for SEC filing events, keeping an acceptance instant read from the filing header
+        ATOMICALLY in the write: a stored event whose ``raw_metadata.acceptance_time_source`` is ``header_source`` keeps
+        its ``published_at`` and its header fields when the incoming event's time does not come from the header (the
+        corrected submissions-JSON fallback of a process that read before the header was stored), whatever the two
+        clocks say; the incoming event's other fields and metadata are written as usual. An incoming header-sourced
+        event always wins. A read before the save cannot do this: the IR worker may store the header between that read
+        and this write. PostgreSQL decides it inside ON CONFLICT DO UPDATE (the conflicting row is locked); the
+        in-memory store under one lock. Otherwise identical to ``save_ir_events``, which is left byte-identical because
+        R2D2's risk differential pins its source (r2d2_v2_risk_differential.verify_oracle_sources)."""
+        if not events:
+            return 0
+        if not self.database_url:
+            with self._sec_filing_events_lock:
+                merged: list[dict[str, Any]] = []
+                for event in events:
+                    existing = self._ir_events.get((event["source_code"], event["external_id"]))
+                    stored_metadata = (existing or {}).get("raw_metadata") or {}
+                    incoming_metadata = event.get("raw_metadata") or {}
+                    if (
+                        existing is not None
+                        and stored_metadata.get("acceptance_time_source") == header_source
+                        and incoming_metadata.get("acceptance_time_source") != header_source
+                    ):
+                        kept = {key: stored_metadata[key] for key in self._SEC_HEADER_METADATA_KEYS
+                                if stored_metadata.get(key) is not None}
+                        event = {**event, "published_at": existing["published_at"],
+                                 "raw_metadata": {**incoming_metadata, **kept}}
+                    merged.append(event)
+                return self.save_ir_events(merged)
+        rows = []
+        for event in events:
+            rows.append({
+                "id": event.get("id") or str(uuid4()), "source_code": event["source_code"],
+                "external_id": event["external_id"], "company_id": event.get("company_id"), "market": event["market"],
+                "symbol": event.get("symbol"), "company_name": event["company_name"],
+                "regulator_id": event.get("regulator_id"), "event_type": event["event_type"], "form": event.get("form"),
+                "title": event["title"], "summary": event.get("summary", ""), "published_at": event["published_at"],
+                "published_time_precision": event.get("published_time_precision", "datetime"),
+                "reference_date": event.get("reference_date"), "official_url": event["official_url"],
+                "document_url": event.get("document_url"), "materiality": event.get("materiality", "medium"),
+                "valuation_relevant": bool(event.get("valuation_relevant")),
+                "valuation_status": event.get("valuation_status", "informational"),
+                "raw_metadata": json.dumps(event.get("raw_metadata", {}), ensure_ascii=False),
+                "collected_at": event.get("collected_at") or datetime.now().astimezone(),
+                "header_source": header_source,
+            })
+        with self.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(SEC_FILING_EVENTS_UPSERT_SQL, rows)
+                relevant_rows = [row for row in rows if row["valuation_relevant"]]
+                if relevant_rows:
+                    cursor.execute(
+                        """
+                        WITH incoming(source_code, external_id) AS (
+                            SELECT * FROM unnest(%s::text[], %s::text[])
+                        )
+                        INSERT INTO ir_valuation_queue (event_id, market, symbol)
+                        SELECT event.id, security.market, security.symbol
+                        FROM ir_events event
+                        JOIN incoming
+                          ON incoming.source_code = event.source_code
+                         AND incoming.external_id = event.external_id
+                        JOIN ir_security_map security ON security.company_id = event.company_id
+                        WHERE event.valuation_relevant
+                          AND NOT (security.market = 'B3' AND security.symbol ~ '[0-9]F$')
+                        ON CONFLICT (event_id, market, symbol) DO NOTHING
+                        """,
+                        (
+                            [row["source_code"] for row in relevant_rows],
+                            [row["external_id"] for row in relevant_rows],
+                        ),
+                    )
+            connection.commit()
+        return len(events)
+
     @staticmethod
     def _insider_transaction_direction(metadata: dict[str, Any]) -> int:
         """+1 buy, -1 sell, 0 unknown. Handles the two raw_metadata shapes
@@ -3911,6 +4073,160 @@ class Database:
             ).fetchone()
         return self._selection_record(row)
 
+    # ------------------------------------------------------------------ Valuation decisor V1 (shadow; migration 052)
+
+    _DECISION_KEYS = ("id", "schema", "decisor_version", "mode", "run_id", "market", "symbol", "session_date", "prediction_instant", "published_at",
+                      "verdict", "reason_codes", "generation_id", "tp_source", "tp_cycle_id", "tp_row_sha256", "tp_prediction_instant", "tp", "buy_in",
+                      "price", "e_profile", "h_market", "thresholds_sha256", "inputs", "inputs_sha256", "checks", "row_sha256")
+    # the SELECT column list in _DECISION_KEYS order (the stored schema lives in record_schema)
+    _DECISION_COLUMNS = ("id::text, record_schema, decisor_version, mode, run_id::text, market, symbol, session_date::text, prediction_instant, published_at, "
+                         "verdict, reason_codes, generation_id::text, tp_source, tp_cycle_id::text, tp_row_sha256, tp_prediction_instant, tp, buy_in, "
+                         "price, e_profile, h_market, thresholds_sha256, inputs, inputs_sha256, checks, row_sha256")
+    _DECISION_ORDER = "prediction_instant DESC, published_at DESC, created_at DESC"
+    _DECISION_VERDICTS = ("COMPRA_PERMITIDA", "OBSERVAR", "VETO")  # migration 052: CHECK (verdict IN (...)) — pinned to valuation_decision.VERDICTS by a test
+
+    def insert_valuation_decisions(self, records: list[dict[str, Any]]) -> int:
+        """Append-only, idempotent per ``(run_id, market, symbol)`` (the UNIQUE of migration 052). The double mirrors the
+        table's NOT NULL columns and CHECKs — the verdict, the ``shadow`` mode, ``published_at >= prediction_instant`` —
+        refusing the WHOLE batch (``ValueError``) as PostgreSQL refuses the statement, and stores DEEP COPIES."""
+        if not records:
+            return 0
+        if not self.database_url:
+            for record in records:
+                missing = [key for key in self._DECISION_KEYS if key not in ("price", "e_profile", "h_market") and record.get(key) is None]
+                if missing:
+                    raise ValueError(f"valuation_decisions NOT NULL violated by {record.get('market')}/{record.get('symbol')}: {', '.join(missing)}")
+                if record["verdict"] not in self._DECISION_VERDICTS or record["mode"] != "shadow":
+                    raise ValueError(f"valuation_decisions CHECK violated by {record['market']}/{record['symbol']}: verdict {record['verdict']!r}, mode {record['mode']!r}")
+                if self._selection_instant(record["published_at"]) < self._selection_instant(record["prediction_instant"]):
+                    raise ValueError(f"valuation_decisions CHECK (published_at >= prediction_instant) violated by {record['market']}/{record['symbol']}")
+            existing = {(str(r["run_id"]), r["market"], r["symbol"]) for r in self._valuation_decisions}
+            added: list[dict[str, Any]] = []
+            for record in records:
+                key = (str(record["run_id"]), record["market"], record["symbol"])
+                if key not in existing:
+                    existing.add(key)
+                    added.append(copy.deepcopy(record))
+            self._valuation_decisions.extend(added)
+            return len(added)
+        inserted = 0
+        with self.connection() as connection:
+            for record in records:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO valuation_decisions
+                        (id, record_schema, decisor_version, mode, run_id, market, symbol, session_date, prediction_instant, published_at,
+                         verdict, reason_codes, generation_id, tp_source, tp_cycle_id, tp_row_sha256, tp_prediction_instant, tp, buy_in,
+                         price, e_profile, h_market, thresholds_sha256, inputs, inputs_sha256, checks, row_sha256)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s)
+                    ON CONFLICT (run_id, market, symbol) DO NOTHING
+                    """,
+                    (record["id"], record["schema"], record["decisor_version"], record["mode"], record["run_id"], record["market"], record["symbol"],
+                     record["session_date"], record["prediction_instant"], record["published_at"], record["verdict"], json.dumps(record["reason_codes"]),
+                     record["generation_id"], record["tp_source"], record["tp_cycle_id"], record["tp_row_sha256"], record["tp_prediction_instant"],
+                     self._numeric_param(record["tp"]), self._numeric_param(record["buy_in"]), self._numeric_param(record.get("price")),
+                     self._numeric_param(record.get("e_profile")), self._numeric_param(record.get("h_market")), record["thresholds_sha256"],
+                     json.dumps(record["inputs"]), record["inputs_sha256"], json.dumps(record["checks"]), record["row_sha256"]),
+                )
+                inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+            connection.commit()
+        return inserted
+
+    def _decision_record(self, row: Any) -> dict[str, Any] | None:
+        """A PostgreSQL row (``_DECISION_COLUMNS``) rebuilt into EXACTLY the canonical shape
+        ``valuation_decision.decision_record`` hashed: NUMERIC → float, DATE → ISO text, TIMESTAMPTZ → UTC ISO text whatever
+        the session time zone, JSONB decoded — then verified (``valuation_decision.stored_decision``: ``None`` when either hash
+        does not recompute). Change it together with the writer."""
+        from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+        record = dict(zip(self._DECISION_KEYS, row))
+        for key in ("tp", "buy_in", "price", "e_profile", "h_market"):
+            record[key] = float(record[key]) if record[key] is not None else None
+        for key in ("id", "run_id", "generation_id", "tp_cycle_id", "session_date"):
+            record[key] = str(record[key])
+        for key in ("prediction_instant", "published_at", "tp_prediction_instant"):
+            instant = record[key]
+            if isinstance(instant, datetime):
+                record[key] = (instant.astimezone(timezone.utc) if instant.tzinfo else instant.replace(tzinfo=timezone.utc)).isoformat()
+        for key in ("reason_codes", "inputs", "checks"):
+            if isinstance(record[key], str):
+                record[key] = json.loads(record[key])
+        return stored_decision(record)
+
+    def _decision_order_key(self, index: int, record: dict[str, Any]) -> tuple[datetime, datetime, int]:
+        return self._selection_instant(record["prediction_instant"]), self._selection_instant(record["published_at"]), index
+
+    def latest_valuation_decisions(self, market: str, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        """The newest decision of each REQUESTED symbol of ``market`` (``_DECISION_ORDER``), keyed by symbol — the reader of
+        the R2D2 lab's helper; it never enumerates a market. A newest row whose identity does not verify leaves its symbol
+        absent: nothing older is served in its place (as the prediction readers). Copies."""
+        wanted = sorted({str(symbol) for symbol in symbols if symbol})
+        if not wanted:
+            return {}
+        if not self.database_url:
+            from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+            latest: dict[str, tuple[tuple[datetime, datetime, int], dict[str, Any]]] = {}
+            for index, record in enumerate(self._valuation_decisions):
+                if record["market"] != market or record["symbol"] not in wanted:
+                    continue
+                key = self._decision_order_key(index, record)
+                held = latest.get(record["symbol"])
+                if held is None or key > held[0]:
+                    latest[record["symbol"]] = (key, record)
+            served = ((symbol, stored_decision(record)) for symbol, (_, record) in latest.items())
+            return {symbol: record for symbol, record in served if record is not None}
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT DISTINCT ON (symbol) {self._DECISION_COLUMNS}
+                FROM valuation_decisions
+                WHERE market = %s AND symbol = ANY(%s)
+                ORDER BY symbol, {self._DECISION_ORDER}
+                """,
+                (market, wanted),
+            ).fetchall()
+        return {str(record["symbol"]): record for record in (self._decision_record(row) for row in rows) if record is not None}
+
+    def list_valuation_decisions(self, market: str, symbol: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        """History of one symbol's decisions, newest first (``_DECISION_ORDER``) — for the studies that grade the verdicts.
+        Copies; a row whose identity does not verify is absent."""
+        if not self.database_url:
+            from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+            matches = [(self._decision_order_key(index, r), r) for index, r in enumerate(self._valuation_decisions) if r["market"] == market and r["symbol"] == symbol]
+            matches.sort(key=lambda entry: entry[0], reverse=True)
+            return [record for record in (stored_decision(r) for _, r in matches[:limit]) if record is not None]
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT {self._DECISION_COLUMNS}
+                FROM valuation_decisions
+                WHERE market = %s AND symbol = %s
+                ORDER BY {self._DECISION_ORDER} LIMIT %s
+                """,
+                (market, symbol, int(limit)),
+            ).fetchall()
+        return [record for record in (self._decision_record(row) for row in rows) if record is not None]
+
+    def latest_valuation_decision_run(self) -> dict[str, Any] | None:
+        """The latest decision run (``run_id``, ``generation_id``, both clocks as UTC ISO) by publication — what the nightly
+        phase compares with the generation in force (``valuation_decision.last_run_at``)."""
+        if not self.database_url:
+            if not self._valuation_decisions:
+                return None
+            index, record = max(enumerate(self._valuation_decisions), key=lambda entry: (self._selection_instant(entry[1]["published_at"]), entry[0]))
+            return {key: str(record[key]) for key in ("run_id", "generation_id", "prediction_instant", "published_at")}
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT run_id::text, generation_id::text, prediction_instant, published_at
+                FROM valuation_decisions
+                ORDER BY published_at DESC, created_at DESC LIMIT 1
+                """
+            ).fetchone()
+        if not row:
+            return None
+        return {"run_id": str(row[0]), "generation_id": str(row[1]), "prediction_instant": self._selection_instant(row[2]).isoformat(),
+                "published_at": self._selection_instant(row[3]).isoformat()}
+
     # ------------------------------------------------------------------ V3.2 price series (rev 7 §2.2; migration 049)
 
     _PRICE_BAR_KEYS = ("id", "market", "symbol", "session_date", "close", "adjusted_close", "volume", "currency", "source", "provider_symbol",
@@ -4472,6 +4788,38 @@ class Database:
         if not row:
             return None
         return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
+
+    def latest_analysis_snapshot_by_inputs(self, analysis_type: str, inputs_match: dict[str, str]) -> dict[str, Any] | None:
+        """The latest snapshot of ``analysis_type`` whose ``inputs`` carry EVERY ``key = value`` of ``inputs_match`` (text
+        equality on ``inputs->>key``), whatever its ``entity_key`` — how the point-in-time re-executor finds the previous
+        run of the same (market, T) when its ``run_key`` (part of the entity key) changed (``inputs.supersedes``). A deep
+        copy in memory, a fresh row from PostgreSQL."""
+        if not inputs_match:
+            raise ValueError("latest_analysis_snapshot_by_inputs requires at least one input to match")
+        if not self.database_url:
+            matches = [
+                item for item in self._analysis_snapshots
+                if item.get("analysis_type") == analysis_type and isinstance(item.get("inputs"), dict)
+                and all(str(item["inputs"].get(key)) == value and key in item["inputs"] for key, value in inputs_match.items())
+            ]
+            return copy.deepcopy(max(matches, key=lambda item: item["published_at"])) if matches else None
+        clauses = " AND ".join("inputs->>%s = %s" for _ in inputs_match)
+        params: list[Any] = [analysis_type]
+        for key, value in inputs_match.items():
+            params.extend([key, value])
+        with self.connection() as connection:
+            row = connection.execute(
+                f"""
+                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text, analysis_type, entity_key
+                FROM analysis_snapshots
+                WHERE analysis_type = %s AND {clauses}
+                ORDER BY published_at DESC LIMIT 1
+                """,
+                params,
+            ).fetchone()
+        if not row:
+            return None
+        return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id", "analysis_type", "entity_key"), row))
 
     def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict[str, Any] | None:
         if not self.database_url:  # a deep copy, as a PostgreSQL read is a fresh object: the store is never aliased (F393-5)
