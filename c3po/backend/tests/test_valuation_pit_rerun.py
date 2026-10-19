@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import statistics
 import threading
 from collections import Counter
 from contextlib import contextmanager
@@ -21,6 +22,7 @@ from zoneinfo import ZoneInfo
 import exchange_calendars as xcals
 import pytest
 
+from app import valuation_accuracy_report as accuracy
 from app import valuation_official as official
 from app import valuation_panel as panel
 from app import valuation_pit_panel as pit_panel
@@ -1542,3 +1544,119 @@ def test_the_run_refuses_a_naive_t_and_counts_inadmissible_names() -> None:
     early = datetime(2023, 8, 1, 21, 0, tzinfo=UTC)
     receipt, run = service.rerun("NASDAQ", as_of=early, clock=lambda: NOW)
     assert receipt["evaluated"] == 0 and receipt["records"]["expected"] == 0 and run.resolver.not_evaluable == {s: "fewer_than_90_valid_sessions_at_T" for s in SYMBOLS}
+
+
+# ------------------------------------------------------------------ the backtest's needs (PREREG_VALUATION_PIT_BACKTEST_US_V1 review, 18/10): catalogue pin, screen inputs, producer files
+def test_a_catalogue_pin_gives_a_grid_one_catalogue_and_without_it_nothing_changes(capsys: pytest.CaptureFixture[str]) -> None:
+    database = _ready()
+    first = database.latest_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE")
+    assert first is not None
+    plain, plain_run = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    snapshot = database.latest_analysis_snapshot(pit.ANALYSIS_TYPE, plain["entity_key"])
+    assert snapshot is not None and "catalogue_pin" not in plain and "catalogue_pin" not in snapshot["inputs"]  # unpinned: the run it always was
+    later_rows = [row for row in first["outputs"]["rows"] if row["symbol"] != "FFF"]
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7}, {"rows": later_rows}, VINTAGE_AT + timedelta(hours=1))
+    pin = VINTAGE_AT  # after the first catalogue (VINTAGE_AT − 1 h), before the later one
+    pinned, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=1), catalogue_pinned_at=pin)
+    assert pinned["run_key"] == plain["run_key"] and pinned["idempotent"] is True  # a pointer: the content (classification hash) names the run
+    assert pinned["catalogue_pin"] == {"mode": "explicit", "requested_at": pin.isoformat(), "resolved_snapshot_id": first["id"]}
+    latest, latest_run = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=2))
+    assert latest["run_key"] != plain["run_key"] and latest["supersedes"] == plain["run_key"] and "FFF" not in latest_run.results
+    for refused, message in ((datetime(2026, 9, 11, 3, 0), "time zone"), (NOW + timedelta(days=1), "after the run start"),
+                             (VINTAGE_AT - timedelta(days=1), "no NASDAQ catalogue published before")):
+        with pytest.raises(pit.PitRerunInputError, match=message):
+            _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW, catalogue_pinned_at=refused)
+    capsys.readouterr()
+    assert pit.main(["--market", "NASDAQ", "--rerun", "--as-of", "2024-06-14T18:00:00-03:00", "--catalogue-pinned-at", "2026-09-11T00:00:00-03:00"],
+                    database=database, settings=_settings()) == 0
+    assert json.loads(capsys.readouterr().out)["catalogue_pin"]["resolved_snapshot_id"] == first["id"]
+    with pytest.raises(SystemExit):
+        pit.main(["--market", "NASDAQ", "--fetch", "--catalogue-pinned-at", "2026-09-11T00:00:00-03:00"], database=database, settings=_settings())
+    # the screen inputs of every evaluated name, and the catalogue counts, beside the rows (outputs only: never in run_key)
+    screen = plain_run.screen_inputs()
+    stored = database.latest_analysis_snapshot(pit.ANALYSIS_TYPE, plain["entity_key"])
+    assert stored is not None and stored["outputs"]["screen"] == screen and stored["outputs"]["catalogue_counts"] == {"rows": 6, "stocks": 6}
+    aaa = plain_run.resolver.per_symbol["AAA"]["row"]
+    bars = plain_run.resolver.prices.bars("AAA")
+    expected = sorted(bar["close"] * bar["volume"] for bar in (bars[s] for s in sorted(bars)[-20:]))
+    assert screen["AAA"] == {"security_type": "Stock", "close": aaa["price"], "price_session": aaa["price_session"], "market_cap": aaa["price"] * aaa["shares"],
+                             "dollar_volume_median_20": pytest.approx((expected[9] + expected[10]) / 2),
+                             "split_adjusted_dollar_volume_median_20": pytest.approx((expected[9] + expected[10]) / 2)}  # no split: the same
+    prices = plain_run.resolver.prices
+    assert prices.dollar_volume_median("AAA", sessions=100_000) is None  # fewer bars than asked: no liquidity reading
+    with pytest.raises(ValueError):
+        prices.dollar_volume_median("AAA", basis="adjusted_close")
+
+
+def test_a_split_adjusted_volume_is_undone_by_the_split_only_factor_never_by_the_dividends_paid_after_t() -> None:
+    """A 4 % yielder (1 % a quarter) that splits 2:1 a year after T, with a provider that split-adjusts its volume: at T it
+    traded 250,000 shares at $100 = $25.0M a day. ``close × volume ÷ S(s)`` reads $25.0M; the total-return
+    ``adjusted_close × volume`` would read $25.0M × the dividends paid after T (no information available at T)."""
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    split = next(index for index, day in enumerate(sessions) if day >= date(2025, 6, 2))
+    ex_dates = list(range(30, len(sessions), 63))  # a 1 % dividend every quarter
+    rows = []
+    for index, day in enumerate(sessions):
+        later_split = 2.0 if index < split else 1.0
+        later_dividends = 0.99 ** sum(1 for ex in ex_dates if ex > index)
+        close = 100.0 if index < split else 50.0  # as traded
+        rows.append({"date": day.isoformat(), "close": close, "adjusted_close": close * later_dividends / later_split,
+                     "volume": 250_000.0 * 2.0})  # traded shares × the later split: 500,000 before (adjusted) and after (traded) the split
+    bars = {f"{symbol}.US": _bars_for(symbol, sessions, base=100.0 + 10 * index) for index, symbol in enumerate(SYMBOLS)}
+    bars["AAA.US"] = rows
+    computation = _compute_with_bars(bars)
+    prices = computation.resolver.prices
+    prices.bars("AAA")
+    assert [(when, round(factor, 6)) for when, factor in prices._splits["AAA"]] == [(sessions[split].isoformat(), 2.0)]  # the dividends are no event
+    assert prices.dollar_volume_median("AAA", basis="split_adjusted") == pytest.approx(25_000_000.0)
+    assert prices.dollar_volume_median("AAA") == pytest.approx(50_000_000.0)  # a split-adjusted volume read as traded shares: twice the truth
+    total_return = statistics.median(rows[index]["adjusted_close"] * rows[index]["volume"] for index in range(len(rows)) if sessions[index] <= date(2024, 6, 14))
+    assert total_return < 24_000_000.0  # what adjusted_close × volume would have read (the dividends paid after T)
+    assert computation.screen_inputs()["AAA"]["split_adjusted_dollar_volume_median_20"] == pytest.approx(25_000_000.0)
+
+
+def test_the_run_names_every_producer_module_in_its_manifest() -> None:
+    database = _ready()
+    service = _service(database)
+    run = service.compute("NASDAQ", as_of=T, prices=service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW))
+    files = run.manifest["engine"]["implementation_file_sha256"]
+    assert tuple(files) == pit.IMPLEMENTATION_FILES and files == {name: pit._file_sha256(name) for name in pit.IMPLEMENTATION_FILES}
+    for name in ("valuation_v2_engine.py", "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py",
+                 "valuation_price_history.py"):
+        assert name in files  # the record writer, the buy-in rule, the as-filed reader and the price series reader are part of the producer
+    # the Database methods the readers call, hashed from database.py's text exactly as a §17 object pin hashes the live object
+    objects = run.manifest["engine"]["implementation_object_sha256"]
+    assert tuple(objects) == pit.IMPLEMENTATION_OBJECTS and objects == pit.implementation_objects()
+    for qualified, digest in objects.items():
+        assert digest == accuracy._object_sha256(getattr(Database, qualified.rsplit(".", 1)[1])), qualified
+    for reader in ("latest_analysis_snapshot", "latest_analysis_snapshot_before", "latest_analysis_snapshot_by_inputs", "analysis_snapshot_by_id", "price_bars",
+                   "valuation_predictions_for_cycle"):
+        assert f"app.database.Database.{reader}" in objects
+
+
+def test_the_catalogue_counts_are_its_rows_and_its_stocks_without_the_etfs() -> None:
+    database = _ready()
+    first = database.latest_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE")
+    assert first is not None
+    rows = [*first["outputs"]["rows"], {"symbol": "ETFX", "sector": SECTOR, "security_type": "ETF"}]
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7}, {"rows": rows}, VINTAGE_AT)
+    receipt, _run = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    stored = database.latest_analysis_snapshot(pit.ANALYSIS_TYPE, receipt["entity_key"])
+    assert stored is not None and stored["outputs"]["catalogue_counts"] == {"rows": 7, "stocks": 6}
+
+
+def test_the_sibling_catalogue_of_the_coverage_check_is_the_pinned_one_too(front: Any) -> None:
+    """The format-drift check reads the SIBLING exchange's catalogue too: with a catalogue pin, the pinned one — a sibling
+    catalogue published after the pin never decides whether the table's symbols are the catalogue's."""
+    database = _ready()
+    _file(front, database, "AAA", "sibling", _accepted("2024-05-15"), [(REVENUE, 10.0, date(2024, 3, 31), date(2024, 1, 1))])
+    database._statement_filings[0]["symbols"] = ["ZZZ"]  # type: ignore[attr-defined]  # a name of the NYSE catalogue, not of NASDAQ's
+    database.save_analysis_snapshot("valuation_universe", "NYSE_UNIVERSE", "mv-cat", {}, {"rows": [{"symbol": "ZZZ", "sector": SECTOR}]}, VINTAGE_AT)
+    database.save_analysis_snapshot("valuation_universe", "NYSE_UNIVERSE", "mv-cat", {}, {"rows": [{"symbol": "YYY", "sector": SECTOR}]},
+                                    VINTAGE_AT + timedelta(hours=2))
+    service = _service(database)
+    pinned = service.compute("NASDAQ", as_of=T, prices=service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW), statements="auto",
+                             catalogue_pinned_at=VINTAGE_AT + timedelta(hours=1))
+    assert pinned.resolver.vintages_coverage["covered"] == 1 and pinned.resolver.vintages_coverage["covered_in_catalogue"] == 0
+    with pytest.raises(pit.PitRerunInputError, match="none of the NASDAQ catalogue's"):  # unpinned: the latest NYSE catalogue no longer holds it
+        service.compute("NASDAQ", as_of=T, prices=service.pin_vintage("NASDAQ", as_of=T, pinned_at=NOW), statements="auto")
