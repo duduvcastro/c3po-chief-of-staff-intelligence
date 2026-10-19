@@ -31,6 +31,7 @@ from app.valuation_official_engine import OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE
 
 NOW = datetime(2026, 9, 7, 23, 0, tzinfo=timezone.utc)
 APP = Path(__file__).resolve().parents[1] / "app"
+PRODUCER = "a" * 40  # the deployed revision the producing process reads (C3PO_BUILD_SHA)
 
 
 def _database() -> Database:
@@ -448,18 +449,21 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     # the CLI prints the aggregate only; the detail goes to --private-detail; --private-detail alone is refused
     monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
     monkeypatch.setattr("app.database.Database", lambda settings: database)
+    monkeypatch.setenv("C3PO_BUILD_SHA", PRODUCER)
     cli_detail = tmp_path / "cli_detail.json"
     assert official.main(["--before-after", "--private-detail", str(cli_detail)]) == 0
     printed = json.loads(capsys.readouterr().out)
-    assert printed == json.loads(json.dumps(report)) and "PETR4" not in json.dumps(printed) and cli_detail.read_bytes() == detail_path.read_bytes()
+    assert printed == json.loads(json.dumps(official.attest_before_after(report, producer_build_sha=PRODUCER))) and "PETR4" not in json.dumps(printed) and cli_detail.read_bytes() == detail_path.read_bytes()
     with pytest.raises(SystemExit):
         official.main(["--private-detail", str(cli_detail)])
     # the CLI publishes the receipt of a PROPOSAL too (C395-1): --cycles overlays the head's cycles, --targeted/--purge-targeted set the admissions,
     # --source-version the declared version; each equals the library call the order recomputes
     assert official.main(["--before-after", "--purge-targeted"]) == 0
-    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles=generation["cycles"], targeted={})))
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.attest_before_after(
+        official.before_after_report(database, cycles=generation["cycles"], targeted={}), producer_build_sha=PRODUCER)))
     assert official.main(["--before-after", "--cycles", f"B3={b3}", "--source-version", "9"]) == 0
-    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles={**generation["cycles"], "B3": b3}, targeted={}, source_version="9")))
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.attest_before_after(
+        official.before_after_report(database, cycles={**generation["cycles"], "B3": b3}, targeted={}, source_version="9"), producer_build_sha=PRODUCER)))
     for argv in (["--cycles", f"B3={b3}"], ["--before-after", "--targeted", "WEGE3=x", "--purge-targeted"], ["--before-after", "--cycles", "B3"],
                  ["--before-after", "--cycles", "B33=nonexistent-cycle"], ["--before-after", "--cycles", f"B3={b3}", "--cycles", f"B3={b3}"],
                  ["--before-after", "--targeted", "WEGE3=x", "--targeted", "wege3=y"]):  # unknown market / twice (case-insensitive): refused, never ignored
@@ -908,13 +912,18 @@ def test_r9_the_receipt_and_its_markdown_name_no_symbol_and_the_cli_appends_the_
     # the CLI prints the aggregate and APPENDS the summary (a CI step summary is an existing file); --markdown alone is refused
     monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
     monkeypatch.setattr("app.database.Database", lambda settings: database)
+    monkeypatch.setenv("C3PO_BUILD_SHA", PRODUCER)
     summary = tmp_path / "step_summary.md"
     summary.write_text("# earlier step\n", encoding="utf-8")
     assert official.main(["--before-after", "--markdown", str(summary)]) == 0
-    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(report))
+    attested = official.attest_before_after(report, producer_build_sha=PRODUCER)
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(attested))
     assert official.main(["--before-after", "--markdown", str(summary)]) == 0
     capsys.readouterr()
-    assert summary.read_text(encoding="utf-8") == "# earlier step\n" + markdown + markdown
+    attested_markdown = official.before_after_markdown(attested)  # the CLI renders the ATTESTED receipt: it names its producer
+    assert attested_markdown.replace(f"- Produzido pela revisão implantada `{PRODUCER}` (`receipt_sha256` `{attested['receipt_sha256']}`: "
+                                     "o recibo com a identidade do produtor)\n", "") == markdown
+    assert summary.read_text(encoding="utf-8") == "# earlier step\n" + attested_markdown + attested_markdown
     for argv in (["--markdown", str(summary)], ["--health", "--markdown", str(summary)]):
         with pytest.raises(SystemExit):
             official.main(argv)
@@ -1165,9 +1174,11 @@ def test_f2_keep_internal_targeted_keeps_the_valid_admissions_and_drops_only_the
     assert official.targeted_valid_for(database, head) == {"ITSA4": new} and official.targeted_valid_for(database, head, source=SOURCE_BLEND) == head["targeted"]
     monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
     monkeypatch.setattr("app.database.Database", lambda settings: database)
+    monkeypatch.setenv("C3PO_BUILD_SHA", PRODUCER)
     assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
     receipt = json.loads(capsys.readouterr().out)
-    assert receipt == json.loads(json.dumps(official.before_after_report(database, cycles=cycles, targeted={"ITSA4": new})))
+    assert receipt == json.loads(json.dumps(official.attest_before_after(official.before_after_report(database, cycles=cycles, targeted={"ITSA4": new}),
+                                                                         producer_build_sha=PRODUCER)))
     assert receipt["targeted_cycles"] == 2 and receipt["after_targeted_count"] == 1 and "ITSA4" not in json.dumps(receipt)
     assert receipt["markets"]["B3"]["missing_internal"] == 1  # the dropped pre-rev-9 admission: registered in the blend only
     _authorize(monkeypatch, receipt["report_sha256"])
@@ -1207,10 +1218,11 @@ def _runner_script(step: dict[str, Any]) -> str:
 def test_the_readonly_workflow_publishes_the_before_after_receipt_aggregate_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                                                                                 capsys: pytest.CaptureFixture[str]) -> None:
     """``report=before-after`` of ``valuation-readonly-report.yml``: the receipt the CLI prints (``--before-after
-    --keep-internal-targeted``) passes the workflow's own verifier (exact aggregate keys, ``report_sha256`` recomputed); the
-    second read-only exec renders ``before_after_markdown`` from that aggregate alone; the summary verifier binds it to the
-    verified hash and to a commit; nothing written for upload or the step summary names a symbol. Each script is run here as
-    the workflow file carries it."""
+    --keep-internal-targeted``) passes the workflow's own verifier (exact aggregate keys, ``report_sha256`` recomputed, the
+    producer's identity a commit under a ``receipt_sha256`` that recomputes); the second read-only exec renders
+    ``before_after_markdown`` from that receipt alone; the summary verifier binds it to the verified hashes and to the SAME
+    deployed build that produced the receipt; nothing written for upload or the step summary names a symbol. Each script is
+    run here as the workflow file carries it."""
     import subprocess
     import sys
 
@@ -1220,6 +1232,8 @@ def test_the_readonly_workflow_publishes_the_before_after_receipt_aggregate_only
     _targeted(database, "ITSA4", _row("ITSA4", tp=12.0, buy_in=10.0, price=11.0, internal_tp=11.8, internal_buy_in=9.8), _wall())
     monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
     monkeypatch.setattr("app.database.Database", lambda settings: database)
+    build = "b" * 40  # the deployed build, the same for both execs
+    monkeypatch.setenv("C3PO_BUILD_SHA", build)
     assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
     printed = capsys.readouterr().out
     symbols = ("PETR4", "VALE3", "AAPL", "KO", "ITSA4")
@@ -1238,17 +1252,21 @@ def test_the_readonly_workflow_publishes_the_before_after_receipt_aggregate_only
     accepted = verified(printed)
     assert accepted.returncode == 0, accepted.stderr
     receipt = json.loads(printed)
-    assert json.loads((out / "report.json").read_text(encoding="utf-8")) == receipt and receipt["after_targeted_count"] == 1
-    assert receipt["report_sha256"] in accepted.stdout and not any(symbol in accepted.stdout for symbol in symbols)
+    assert receipt["producer_build_sha"] == build and receipt["after_targeted_count"] == 1
+    assert json.loads((out / "report.json").read_text(encoding="utf-8")) == receipt
+    assert receipt["report_sha256"] in accepted.stdout and build in accepted.stdout and not any(symbol in accepted.stdout for symbol in symbols)
 
-    # the second exec, as the remote script carries it: the aggregate in (stdin), the markdown and the deployed revision out
+    # the second exec, as the remote script carries it: the receipt in (stdin), the markdown and the renderer's build out
     remote = str(steps["Render the Portuguese summary in the running api container, read-only"]["run"])
     render = remote.split("render='", 1)[1].split("'\n", 1)[0]
-    rendered = subprocess.run([sys.executable, "-c", render], input=(out / "report.json").read_text(encoding="utf-8"), text=True, capture_output=True,
-                              cwd=BACKEND, env={**os.environ, "PYTHONPATH": str(BACKEND), "C3PO_BUILD_SHA": "b" * 40})
+
+    def rendered_under(renderer: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, "-c", render], input=(out / "report.json").read_text(encoding="utf-8"), text=True, capture_output=True,
+                              cwd=BACKEND, env={**os.environ, "PYTHONPATH": str(BACKEND), "C3PO_BUILD_SHA": renderer})
+
+    rendered = rendered_under(build)
     assert rendered.returncode == 0, rendered.stderr
-    assert json.loads(rendered.stdout) == {"markdown": official.before_after_markdown(receipt), "build_sha": "b" * 40}
-    (raw / "summary.json").write_text(rendered.stdout, encoding="utf-8")
+    assert json.loads(rendered.stdout) == {"markdown": official.before_after_markdown(receipt), "renderer_build_sha": build}
     summarize = _runner_script(steps["Verify the summary and keep aggregates only"])
     env = {**os.environ, "RUN_ID": "7", "REVISION": "c" * 40, "GITHUB_STEP_SUMMARY": str(tmp_path / "step_summary.md")}
 
@@ -1259,30 +1277,94 @@ def test_the_readonly_workflow_publishes_the_before_after_receipt_aggregate_only
     done = summarized(rendered.stdout)
     assert done.returncode == 0, done.stderr
     metadata = json.loads((out / "metadata.json").read_text(encoding="utf-8"))
-    assert metadata == {"run_id": "7", "workflow_revision": "c" * 40, "deployed_build_sha": "b" * 40, "report": "before-after",
-                        "schema": official.BEFORE_AFTER_SCHEMA, "report_sha256": receipt["report_sha256"], "generation_id": receipt["generation_id"],
-                        "generation_source": SOURCE_BLEND, "after_source_version": receipt["after_source_version"]}
+    assert metadata == {"run_id": "7", "workflow_revision": "c" * 40, "producer_build_sha": build, "report": "before-after",
+                        "schema": official.BEFORE_AFTER_SCHEMA, "report_sha256": receipt["report_sha256"], "receipt_sha256": receipt["receipt_sha256"],
+                        "generation_id": receipt["generation_id"], "generation_source": SOURCE_BLEND, "after_source_version": receipt["after_source_version"]}
     assert (out / "summary.md").read_text(encoding="utf-8") == official.before_after_markdown(receipt)
-    assert receipt["report_sha256"] in (tmp_path / "step_summary.md").read_text(encoding="utf-8")
-    published = [path.read_text(encoding="utf-8") for path in out.iterdir()] + [(tmp_path / "step_summary.md").read_text(encoding="utf-8"), done.stdout]
+    step_summary = (tmp_path / "step_summary.md").read_text(encoding="utf-8")
+    assert receipt["report_sha256"] in step_summary and f"pela revisão implantada `{build}`" in step_summary
+    published = [path.read_text(encoding="utf-8") for path in out.iterdir()] + [step_summary, done.stdout]
     assert not any(symbol in text for text in published for symbol in symbols)
 
-    # the verifier refuses what is not exactly the aggregate, or does not recompute — before anything is uploaded
+    # the verifier refuses what is not exactly the aggregate, does not recompute, or does not name its producer — before anything is uploaded
+    def reattested(report: dict[str, Any], producer: Any) -> dict[str, Any]:
+        return official.attest_before_after({key: value for key, value in report.items() if key not in official.BEFORE_AFTER_ATTESTATION_KEYS},
+                                            producer_build_sha=producer)
+
+    bare = {key: value for key, value in receipt.items() if key not in official.BEFORE_AFTER_ATTESTATION_KEYS}
     detail = {**receipt, "detail": {"B3": ["PETR4"]}}
     tampered = {**receipt, "targeted_cycles": receipt["targeted_cycles"] + 1}
     keyed = {**receipt, "markets": {**receipt["markets"], "B3": {**receipt["markets"]["B3"], "pairs": {"PETR4": {}}}}}
-    for text, message in ((json.dumps(detail), "keys are not exactly the aggregate's"), (json.dumps(tampered), "does not recompute"),
+    for text, message in ((json.dumps(detail), "keys are not exactly the aggregate's"), (json.dumps(tampered), "report_sha256 does not recompute"),
                           (json.dumps(keyed), "keys are not exactly the aggregate's"), (json.dumps({**receipt, "schema": "VALUATION_P1_BEFORE_AFTER_V2"}), "not Valuation P1 rev 9"),
                           (json.dumps({**receipt, "cycles": {"PETR4": "x"}}), "keyed by something other than a market"),
+                          (json.dumps(bare), "does not name the build that produced it"),  # the receipt before the fix: no producer
+                          (json.dumps(reattested(receipt, "development")), "not a commit sha"), (json.dumps(reattested(receipt, None)), "not a commit sha"),
+                          (json.dumps({**receipt, "producer_build_sha": "a" * 40}), "receipt_sha256 does not recompute"),  # re-attributed by hand
+                          (json.dumps({**receipt, "receipt_sha256": receipt["report_sha256"]}), "receipt_sha256 does not recompute"),
                           ("not json", "not a single JSON document"), (" " * 70000, "larger than an aggregate")):
         refused = verified(text)
         assert refused.returncode != 0 and message in refused.stderr, (message, refused.stderr)
         assert not any(symbol in refused.stdout + refused.stderr for symbol in symbols)
     assert verified(printed).returncode == 0  # the accepted receipt back in place for the summary checks
-    unattributed = summarized(json.dumps({"markdown": official.before_after_markdown(receipt), "build_sha": "development"}))
+    unattributed = summarized(json.dumps({"markdown": official.before_after_markdown(receipt), "renderer_build_sha": "development"}))
     assert unattributed.returncode != 0 and "not a commit sha" in unattributed.stderr
-    other = summarized(json.dumps({"markdown": official.before_after_markdown({**receipt, "report_sha256": "f" * 64}), "build_sha": "b" * 40}))
+    other = summarized(json.dumps({"markdown": official.before_after_markdown({**receipt, "report_sha256": "f" * 64}), "renderer_build_sha": build}))
     assert other.returncode != 0 and "not rendered from this receipt" in other.stderr
+    unattested = summarized(json.dumps({"markdown": official.before_after_markdown(bare), "renderer_build_sha": build}))
+    assert unattested.returncode != 0 and "not rendered from this receipt" in unattested.stderr
+    legacy = summarized(json.dumps({"markdown": official.before_after_markdown(receipt), "build_sha": build}))  # the shape before the fix
+    assert legacy.returncode != 0 and "unexpected summary shape" in legacy.stderr
+
+    # Codex P2 on #451: the receipt produced under build A, a deploy, the summary rendered under build B — refused, nothing
+    # published, and the receipt is never attributed to B (the second read only gates; the attribution is the receipt's own)
+    under_a, under_b = "a" * 40, "d" * 40
+    monkeypatch.setenv("C3PO_BUILD_SHA", under_a)
+    assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
+    produced_a = capsys.readouterr().out
+    out = tmp_path / "out_race"
+    out.mkdir()
+    (tmp_path / "step_summary.md").unlink()
+    assert verified(produced_a).returncode == 0 and json.loads((out / "report.json").read_text(encoding="utf-8"))["producer_build_sha"] == under_a
+    rendered_b = rendered_under(under_b)
+    assert rendered_b.returncode == 0 and json.loads(rendered_b.stdout)["renderer_build_sha"] == under_b
+    race = summarized(rendered_b.stdout)
+    assert race.returncode != 0 and "the deployed build changed between the receipt and its summary" in race.stderr
+    assert f"receipt produced by {under_a}, summary rendered by {under_b}" in race.stderr
+    assert sorted(path.name for path in out.iterdir()) == ["report.json"] and not (tmp_path / "step_summary.md").exists()  # no summary, no metadata
+    # the same receipt, re-attributed to B by hand on the runner, does not pass either verifier
+    forged = {**json.loads(produced_a), "producer_build_sha": under_b}
+    assert "receipt_sha256 does not recompute" in verified(json.dumps(forged)).stderr
+    (out / "report.json").write_text(json.dumps(forged), encoding="utf-8")
+    forged_summary = summarized(json.dumps({"markdown": official.before_after_markdown(forged), "renderer_build_sha": under_b}))
+    assert forged_summary.returncode != 0 and "receipt_sha256 does not recompute" in forged_summary.stderr
+    assert not (out / "metadata.json").exists() and not (out / "summary.md").exists()
+    # rendered under A — the build that produced it — the receipt is published as A's, never as anything read later
+    assert verified(produced_a).returncode == 0
+    honest = summarized(rendered_under(under_a).stdout)
+    assert honest.returncode == 0, honest.stderr
+    assert json.loads((out / "metadata.json").read_text(encoding="utf-8"))["producer_build_sha"] == under_a
+    assert json.loads(produced_a)["report_sha256"] == receipt["report_sha256"]  # the content hash the lock names is build-independent
+
+
+def test_the_attestation_binds_the_producer_and_leaves_the_content_hash_alone() -> None:
+    """``attest_before_after`` (Codex P2 on #451): ``receipt_sha256`` covers the aggregate AND ``producer_build_sha``;
+    ``report_sha256`` — the hash the owner accepts, the lock names and the order recomputes under the lock commit's build —
+    does not change with the producer; a report is attested once."""
+    database = _database()
+    _three_markets(database)
+    report = official.before_after_report(database)
+    under_a = official.attest_before_after(report, producer_build_sha="a" * 40)
+    under_b = official.attest_before_after(report, producer_build_sha="b" * 40)
+    assert set(under_a) == set(report) | set(official.BEFORE_AFTER_ATTESTATION_KEYS) and under_a["producer_build_sha"] == "a" * 40
+    assert under_a["report_sha256"] == under_b["report_sha256"] == report["report_sha256"] and under_a["receipt_sha256"] != under_b["receipt_sha256"]
+    assert under_a["receipt_sha256"] == official.canonical_sha256({key: value for key, value in under_a.items() if key != "receipt_sha256"})
+    assert official.canonical_sha256({key: value for key, value in under_a.items() if key not in official.BEFORE_AFTER_ATTESTATION_KEYS + ("report_sha256",)}) \
+        == report["report_sha256"]
+    with pytest.raises(ValueError, match="already attested"):
+        official.attest_before_after(under_a, producer_build_sha="a" * 40)
+    markdown = official.before_after_markdown(under_a)
+    assert "a" * 40 in markdown and under_a["receipt_sha256"] in markdown and "Produzido pela revisão implantada" not in official.before_after_markdown(report)
 
 
 def test_the_readonly_workflow_runs_the_before_after_read_only_and_never_writes_a_detail() -> None:

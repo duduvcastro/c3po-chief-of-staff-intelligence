@@ -173,7 +173,9 @@ selection line, never by editing a number:
 * BEFORE/AFTER: ``before_after_report`` (CLI ``--before-after [--private-detail PATH]``) publishes, for the generation's
   own cycles, per market ``n``, median and p90 of ``tp_internal / tp_blend − 1`` and of ``buy_in_internal / buy_in_blend − 1``
   as an aggregate receipt with ``report_sha256``; the per-symbol detail goes ONLY to the private file, never printed —
-  the mesa's order to switch cites ``report_sha256``.
+  the mesa's order to switch cites ``report_sha256``. The CLI prints it ATTESTED (``attest_before_after``, Codex P2 on
+  #451): ``producer_build_sha`` (the deployed revision read by the producing process) and ``receipt_sha256`` over both,
+  so a publisher attributes the receipt to the build that computed it, never to one read later by another process.
 
 Rev 8 / P1 residuals (Q1–Q6, internal adversarial verification):
 * the hash a switch cites is CHECKED, not just shaped (Q1) and BINDS the proposed composition (C395-1): ``select_generation`` recomputes ``before_after_report`` over the order's exact ``cycles``/``targeted`` — a hash computed over another cycle or another targeted set is refused; on the
@@ -1971,6 +1973,27 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     return report
 
 
+BEFORE_AFTER_ATTESTATION_KEYS = ("producer_build_sha", "receipt_sha256")
+
+
+def attest_before_after(report: Mapping[str, Any], *, producer_build_sha: str | None) -> dict[str, Any]:
+    """The receipt as the CLI prints it (Codex P2 on #451): the aggregate plus the identity of the build that PRODUCED it —
+    ``producer_build_sha``, the deployed revision (``C3PO_BUILD_SHA``) read by the very process that computed the aggregate —
+    and ``receipt_sha256``, the canonical hash of the aggregate WITH that identity (every key but itself), so the identity
+    cannot be swapped without the receipt hash failing. A publisher attributes the receipt to ``producer_build_sha`` and
+    never to a revision read by another process: a deploy between the receipt and its rendering would otherwise publish
+    a receipt computed under build A as build B's. ``report_sha256`` is unchanged and excludes the identity ON PURPOSE: it
+    names the CONTENT the owner accepts, the lock commit writes and the order recomputes — under the lock commit's own
+    build, another build by design (an identity inside it would refuse every switch). The identity is recorded as read
+    (``None`` or ``"development"`` outside a deploy); the publisher refuses a receipt whose identity is not a commit.
+    ``ValueError`` on a report that already carries an attestation key (never attested twice)."""
+    present = [key for key in BEFORE_AFTER_ATTESTATION_KEYS if key in report]
+    if present:
+        raise ValueError(f"the before/after report is already attested ({', '.join(present)}): attest the library report once")
+    attested = {**report, "producer_build_sha": producer_build_sha}
+    return {**attested, "receipt_sha256": canonical_sha256(attested)}
+
+
 def _pt_number(value: Any, *, digits: int = 1, suffix: str = "", signed: bool = False, scale: float = 1.0) -> str:
     """A number as the owner reads it (decimal comma; ``scale`` 100 turns a ratio into percent); ``n/d`` for an absent one."""
     number = _number(value)
@@ -2001,6 +2024,8 @@ def before_after_markdown(report: Mapping[str, Any]) -> str:
         "## Valuation P1 — antes/depois do TP oficial sem consenso",
         "",
         f"- Recibo `report_sha256`: `{report.get('report_sha256')}` (esquema `{report.get('schema')}`)",
+        *([f"- Produzido pela revisão implantada `{report.get('producer_build_sha')}` (`receipt_sha256` `{report.get('receipt_sha256')}`: "
+           "o recibo com a identidade do produtor)"] if "producer_build_sha" in report else []),
         f"- Antes: geração `{report.get('generation_id')}` servindo `{report.get('source_from')}` (fonte em vigor: `{report.get('generation_source')}`)",
         f"- Depois: `{report.get('source_to')}`, versão `{report.get('after_source_version')}`, "
         f"{report.get('after_targeted_count')} direcionado(s) (hash `{str(report.get('after_targeted_sha256') or '')[:12]}…`)",
@@ -2116,7 +2141,8 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--bootstrap", action="store_true")
     group.add_argument("--health", action="store_true")
-    group.add_argument("--before-after", action="store_true", help="the before/after receipt of the current generation (Passo 1); prints the aggregate only")
+    group.add_argument("--before-after", action="store_true", help="the before/after receipt of the current generation (Passo 1); prints the aggregate only, "
+                                                                     "attested with the producing build (producer_build_sha, receipt_sha256)")
     group.add_argument("--switch-to-internal", action="store_true",
                        help="the mesa's order: select_generation(source=official_internal_v1) over the proposal, citing --before-after-sha256 "
                             "(refused while the lock is false or the hash is not the accepted receipt)")
@@ -2206,8 +2232,9 @@ def main(argv: list[str] | None = None) -> int:
         result = bootstrap_official_selection(database)
     elif args.before_after:
         cycles, targeted = _proposal()
-        result = before_after_report(database, private_detail_path=args.private_detail, cycles=cycles, targeted=targeted,
-                                     source_version=args.source_version)
+        result = attest_before_after(  # the producer's identity, read by THIS process (Codex P2 on #451)
+            before_after_report(database, private_detail_path=args.private_detail, cycles=cycles, targeted=targeted, source_version=args.source_version),
+            producer_build_sha=os.environ.get("C3PO_BUILD_SHA"))
         if args.markdown:
             with open(args.markdown, "a", encoding="utf-8") as handle:  # appended: a CI step summary is an existing file
                 handle.write(before_after_markdown(result))

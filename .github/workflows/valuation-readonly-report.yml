@@ -21,8 +21,11 @@ run-name: Valuation read-only ${{ inputs.report }} report
 # the code the prereg pins (§17: every pinned module and object, by sha256) and the deployed
 # revision is a commit sha. Then only the aggregate receipt (no symbols) and a metadata file are
 # uploaded. The before/after receipt is uploaded only when its report_sha256 recomputes over the
-# aggregate, its keys are exactly the aggregate's (no per-symbol field) and the deployed revision
-# is a commit sha. The remote stderr stays in the runner's temp directory and is never printed:
+# aggregate, its keys are exactly the aggregate's (no per-symbol field), it names the build that
+# PRODUCED it (producer_build_sha, read by the producing process, a commit sha) under a
+# receipt_sha256 that recomputes, and the summary was rendered by that same deployed build: a
+# deploy between the two execs refuses the run (nothing is published) — the receipt is never
+# attributed to a revision read by the second exec. The remote stderr stays in the runner's temp directory and is never printed:
 # this repository is public and a log line may name a symbol.
 # Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
 
@@ -317,7 +320,9 @@ jobs:
           # the aggregate's keys, exactly: a key the receipt grows is reviewed here before it can reach a public artifact
           KEYS = {"schema", "generation_id", "generation_source", "source_from", "source_to", "cycles", "targeted_cycles", "after_cycles",
                   "after_targeted_count", "after_targeted_sha256", "after_source_version", "session_dates", "source_version", "buy_status",
-                  "rating_cuts", "markets", "p90_method", "private_detail_sha256", "report_sha256"}
+                  "rating_cuts", "markets", "p90_method", "private_detail_sha256", "report_sha256", "producer_build_sha", "receipt_sha256"}
+          # the producer's identity (Codex P2 on #451): read by the process that computed the aggregate, bound by receipt_sha256
+          ATTESTATION = {"producer_build_sha", "receipt_sha256"}
           MARKET_KEYS = {"n", "missing_internal", "only_internal", "served_pairs", "before_unservable", "after_unservable", "tp", "tp_change_buckets",
                          "buy_in", "status", "rating", "buy", "upside_percent", "score_change", "tp_validation"}
           MARKETS = {"B3", "NASDAQ", "NYSE"}
@@ -327,6 +332,8 @@ jobs:
               report = json.loads(source.read_text(encoding="utf-8"))
           except (OSError, ValueError):
               sys.exit("the report output is not a single JSON document (content not printed)")
+          if isinstance(report, dict) and set(report) == KEYS - ATTESTATION:
+              sys.exit("the receipt does not name the build that produced it (producer_build_sha, receipt_sha256): it cannot be attributed")
           if not isinstance(report, dict) or set(report) != KEYS:
               sys.exit("unexpected receipt shape: the keys are not exactly the aggregate's")
           if report["schema"] != SCHEMA:
@@ -337,15 +344,23 @@ jobs:
           for name in ("cycles", "after_cycles", "session_dates"):
               if not isinstance(report[name], dict) or not set(report[name]) <= MARKETS:
                   sys.exit(f"unexpected {name}: keyed by something other than a market")
-          for name in ("report_sha256", "after_targeted_sha256", "private_detail_sha256"):
+          for name in ("report_sha256", "receipt_sha256", "after_targeted_sha256", "private_detail_sha256"):
               if not isinstance(report[name], str) or re.fullmatch(r"[0-9a-f]{64}", report[name]) is None:
                   sys.exit(f"{name} is not a sha256")
-          aggregate = {key: value for key, value in report.items() if key != "report_sha256"}
-          canonical = json.dumps(aggregate, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
-          if hashlib.sha256(canonical).hexdigest() != report["report_sha256"]:
+          producer = report["producer_build_sha"]
+          if not isinstance(producer, str) or re.fullmatch(r"[0-9a-f]{40}", producer) is None:
+              sys.exit("the build that produced the receipt is not a commit sha (producer_build_sha, C3PO_BUILD_SHA): it cannot be attributed")
+
+          def canonical_sha256(value):
+              return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+          if canonical_sha256({key: value for key, value in report.items() if key not in ATTESTATION | {"report_sha256"}}) != report["report_sha256"]:
               sys.exit("report_sha256 does not recompute over the aggregate")
+          if canonical_sha256({key: value for key, value in report.items() if key != "receipt_sha256"}) != report["receipt_sha256"]:
+              sys.exit("receipt_sha256 does not recompute over the aggregate and its producer")
           (out / "report.json").write_text(json.dumps(report, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-          print(f"report_sha256 {report['report_sha256']} (schema {SCHEMA}, generation {report['generation_id']}, source in force {report['generation_source']})")
+          print(f"report_sha256 {report['report_sha256']} (schema {SCHEMA}, generation {report['generation_id']}, source in force {report['generation_source']}); "
+                f"produced by {producer} (receipt_sha256 {report['receipt_sha256']})")
           PY
 
       - name: Render the Portuguese summary in the running api container, read-only
@@ -376,11 +391,12 @@ jobs:
           [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
           state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
           [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
-          # the aggregate in, the markdown out: before_after_markdown reads nothing but its argument
+          # the aggregate in, the markdown out: before_after_markdown reads nothing but its argument; the renderer's own
+          # build is returned only to be compared with the receipt's producer_build_sha — the receipt is never attributed to it
           render='import json, os, sys
           from app.valuation_official import before_after_markdown
           report = json.load(sys.stdin)
-          json.dump({"markdown": before_after_markdown(report), "build_sha": os.environ.get("C3PO_BUILD_SHA")}, sys.stdout)'
+          json.dump({"markdown": before_after_markdown(report), "renderer_build_sha": os.environ.get("C3PO_BUILD_SHA")}, sys.stdout)'
           printf '%s' "$REPORT_B64" | base64 -d | "${compose[@]}" exec -T \
             -e 'PGOPTIONS=-c default_transaction_read_only=on' \
             api python -c "$render"
@@ -399,6 +415,7 @@ jobs:
           set -uo pipefail
           out="$RUNNER_TEMP/valuation-p1-before-after"
           python3 - "$RUNNER_TEMP/raw/summary.json" "$out" <<'PY' || exit 1
+          import hashlib
           import json
           import os
           import re
@@ -407,33 +424,45 @@ jobs:
 
           source, out = Path(sys.argv[1]), Path(sys.argv[2])
           report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+          # the attribution comes from the receipt itself (Codex P2 on #451): its producer, bound by receipt_sha256 — re-checked here
+          producer = report.get("producer_build_sha")
+          if not isinstance(producer, str) or re.fullmatch(r"[0-9a-f]{40}", producer) is None:
+              sys.exit("the build that produced the receipt is not a commit sha (producer_build_sha): it cannot be attributed")
+          attested = {key: value for key, value in report.items() if key != "receipt_sha256"}
+          canonical = json.dumps(attested, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+          if hashlib.sha256(canonical).hexdigest() != report.get("receipt_sha256"):
+              sys.exit("receipt_sha256 does not recompute over the aggregate and its producer")
           try:
               rendered = json.loads(source.read_text(encoding="utf-8"))
           except (OSError, ValueError):
               sys.exit("the summary output is not a single JSON document (content not printed)")
-          if not isinstance(rendered, dict) or set(rendered) != {"markdown", "build_sha"} or not isinstance(rendered["markdown"], str):
+          if not isinstance(rendered, dict) or set(rendered) != {"markdown", "renderer_build_sha"} or not isinstance(rendered["markdown"], str):
               sys.exit("unexpected summary shape")
-          markdown, build_sha = rendered["markdown"], rendered["build_sha"]
-          if report["report_sha256"] not in markdown:
-              sys.exit("the summary does not quote the verified report_sha256: it was not rendered from this receipt")
-          if not isinstance(build_sha, str) or re.fullmatch(r"[0-9a-f]{40}", build_sha) is None:
-              sys.exit("the deployed revision is not a commit sha (C3PO_BUILD_SHA): the receipt cannot be attributed")
+          markdown, renderer = rendered["markdown"], rendered["renderer_build_sha"]
+          if report["report_sha256"] not in markdown or report["receipt_sha256"] not in markdown or producer not in markdown:
+              sys.exit("the summary does not quote the verified receipt and its producer: it was not rendered from this receipt")
+          if not isinstance(renderer, str) or re.fullmatch(r"[0-9a-f]{40}", renderer) is None:
+              sys.exit("the build that rendered the summary is not a commit sha (C3PO_BUILD_SHA): nothing is published")
+          if renderer != producer:
+              sys.exit(f"the deployed build changed between the receipt and its summary (receipt produced by {producer}, summary rendered by "
+                       f"{renderer}): nothing is published — dispatch the report again")
           (out / "summary.md").write_text(markdown, encoding="utf-8")
           metadata = {
               "run_id": os.environ["RUN_ID"],
               "workflow_revision": os.environ["REVISION"],
-              "deployed_build_sha": build_sha,
+              "producer_build_sha": producer,
               "report": "before-after",
               "schema": report["schema"],
               "report_sha256": report["report_sha256"],
+              "receipt_sha256": report["receipt_sha256"],
               "generation_id": report["generation_id"],
               "generation_source": report["generation_source"],
               "after_source_version": report["after_source_version"],
           }
           (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write(markdown + f"\n- Revisão implantada `{build_sha}`; workflow `{os.environ['REVISION']}`.\n")
-          print(f"report_sha256 {report['report_sha256']}; deployed revision {build_sha}")
+              summary.write(markdown + f"\n- Recibo produzido e resumo renderizado pela mesma revisão implantada `{producer}`; workflow `{os.environ['REVISION']}`.\n")
+          print(f"report_sha256 {report['report_sha256']}; receipt_sha256 {report['receipt_sha256']}; produced and rendered by {producer}")
           PY
           (cd "$out" && sha256sum report.json summary.md metadata.json > SHA256SUMS) || exit 1
 
