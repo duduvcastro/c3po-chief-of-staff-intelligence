@@ -19,10 +19,12 @@ run-name: Valuation PIT backtest US (PREREG_VALUATION_PIT_BACKTEST_US_V1) — ${
 # host check, both short reads) runs under `timeout` with what is left of ONE deadline, 10 minutes before the next window,
 # computed once on the host (a writing leg needs 60 s left, the dry run and the report 10 minutes); a
 # grid chunk stops before the window; a cancelled or failed run, or a host step that exited non-zero, stops the host
-# process. Writes take the deploy lock SHARED (a deploy in flight refuses the write; a deploy arriving during a write
+# processes THIS run launched (each carries the run's token `<run id>-<attempt>`), and nothing when it launched none.
+# Writes take the deploy lock SHARED (a deploy in flight refuses the write; a deploy arriving during a write
 # waits 120 s and fails, to be re-run after it; the security reboot controller waits too), check the host (disk, memory,
 # R2D2/massive timers and services, the nightly valuation worker and any ingestion running for more than 30 minutes,
-# pending reboot) first, and the grid refuses a producer other than the prereg commit's. The read-only modes force
+# pending reboot) first — every query of that check fails closed: a query that cannot answer refuses the run with its
+# own status —, and the grid refuses a producer other than the prereg commit's. The read-only modes force
 # PGOPTIONS default_transaction_read_only=on and write nothing on the host. No container is created, restarted or stopped
 # (`docker compose exec` into the running api). Only aggregates are uploaded: the remote stdout is reduced (and checked)
 # here, the remote stderr stays in the runner's temp directory and is never printed — this repository is public and a log
@@ -464,24 +466,39 @@ jobs:
           DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
           PRODUCER: ${{ steps.prereg.outputs.producer_sha256 }}
           RUN_ID: ${{ github.run_id }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
           set -uo pipefail
           raw="$RUNNER_TEMP/raw"
           mkdir -p "$raw" || exit 1
           [[ "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 1
-          DEADLINE=$(( DEADLINE_AT - $(date +%s) ))  # what is left of the window's deadline now; the host fixes ONE end from it
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || exit 1
+          now=$(date +%s) || exit 1
+          [[ "$now" =~ ^[0-9]+$ ]] || exit 1
+          DEADLINE=$(( DEADLINE_AT - now ))  # what is left of the window's deadline now; the host fixes ONE end from it
           [ "$DEADLINE" -gt 0 ] || DEADLINE=0
           [ -z "$PRODUCER" ] || [[ "$PRODUCER" =~ ^[0-9a-f]{64}$ ]] || exit 1
           rc=0
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' CATALOGUE_PIN='$CATALOGUE_PIN' MAX_RUNS='$MAX_RUNS' RECOMPUTE='$RECOMPUTE' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' PRODUCER='$PRODUCER' RUN_ID='$RUN_ID' bash -s" \
+            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' CATALOGUE_PIN='$CATALOGUE_PIN' MAX_RUNS='$MAX_RUNS' RECOMPUTE='$RECOMPUTE' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' PRODUCER='$PRODUCER' RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' bash -s" \
             > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
           set -uo pipefail
+          # every query of the preflight fails CLOSED with its own status: a command that cannot answer refuses the run
+          #   10 app dir / arguments   11 reboot pending      12 api container      13 host-check disk   14 host-check memory
+          #   16 unknown mode          17 deploy lock held    18 STOP_BEFORE parse  19 R2D2/massive job active or due
+          #   20 ingestion check run   21 blocking ingestion  22 free disk read     23 disk below need   24 memory below need
+          #   25 leg floor             26 host clock          27 services query     28 timers query      29 timer next elapse
+          #   30 timer elapse parse    31 ingestion parse     32 memory read        33 lock open         34 lock error
           APP_DIR=/opt/chief-of-staff-digital
           cd "$APP_DIR" || exit 10
-          end=$(( $(date +%s) + DEADLINE )) || exit 10
+          [[ "$DEADLINE" =~ ^[0-9]+$ ]] || { echo 'the deadline is not an integer' >&2; exit 10; }
+          [[ "$MAX_RUNS" =~ ^[0-9]{1,3}$ ]] || { echo 'max_runs is not an integer' >&2; exit 10; }
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || { echo 'the run token is not <run id>-<attempt>' >&2; exit 10; }
+          now=$(date +%s) || { echo 'the host clock cannot be read' >&2; exit 26; }
+          [[ "$now" =~ ^[0-9]+$ ]] || { echo 'the host clock is not an epoch' >&2; exit 26; }
+          end=$(( now + DEADLINE ))
           compose=(docker compose --env-file .env -f c3po/compose.yml)
           api=$("${compose[@]}" ps -q api) || exit 12
           [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
@@ -490,23 +507,34 @@ jobs:
           readonly_session=(-e 'PGOPTIONS=-c default_transaction_read_only=on')
           leg_env=()
           # >>> leg: every process runs under what is left of ONE deadline (end, fixed once above), never a fresh timeout per leg
+          # (the python of a leg carries `-X valuation_pit_run_token=<run id>-<attempt>`: an -X option the modules never read, kept in
+          #  its command line so that the cleanup step stops THIS run's processes and nothing else; LAUNCHED is printed before it starts)
           leg() {
-            local floor=$1 left
+            local floor=$1 left now
             shift
-            left=$(( end - $(date +%s) ))
+            now=$(date +%s) || { echo 'the host clock cannot be read: not started' >&2; return 26; }
+            [[ "$now" =~ ^[0-9]+$ ]] || { echo 'the host clock is not an epoch: not started' >&2; return 26; }
+            left=$(( end - now ))
             if [ "$left" -lt "$floor" ]; then
               echo "only ${left} s left before the next window (${floor} s needed): not started" >&2
               return 25
             fi
-            "${compose[@]}" exec -T ${leg_env[@]+"${leg_env[@]}"} api timeout -s TERM -k 120 "$left" nice -n 10 python -m "$@" </dev/null
+            echo "LAUNCHED $RUN_TOKEN"
+            "${compose[@]}" exec -T ${leg_env[@]+"${leg_env[@]}"} api timeout -s TERM -k 120 "$left" nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m "$@" </dev/null
           }
           # <<< leg
           if [ "$MODE" = host-check ]; then  # read only and exempt: it shows a pending reboot instead of refusing on it
             for flag in /run/c3po-security/reboot.pending /var/run/reboot-required; do
               if [ -e "$flag" ]; then echo "REBOOT pending $flag"; else echo "REBOOT absent $flag"; fi
             done
-            { df -P / /var/lib/docker /mnt/day-d-data 2>/dev/null || true; } | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
-            awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {sub(":", "", $1); print "MEM " $1 " " $2}' /proc/meminfo || exit 13
+            disks=$(df -P / /var/lib/docker) || { echo 'the free disk of / and /var/lib/docker cannot be read' >&2; exit 13; }
+            printf '%s\n' "$disks" | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
+            if data_disk=$(df -P /mnt/day-d-data 2>/dev/null); then  # the data volume is shown when it is mounted (informative only)
+              printf '%s\n' "$data_disk" | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
+            fi
+            memory=$(awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {sub(":", "", $1); print "MEM " $1 " " $2}' /proc/meminfo) || { echo 'the memory cannot be read' >&2; exit 14; }
+            [ -n "$memory" ] || { echo 'the memory cannot be read' >&2; exit 14; }
+            printf '%s\n' "$memory" || exit 14
             exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null
           fi
           for flag in /run/c3po-security/reboot.pending /var/run/reboot-required; do
@@ -519,29 +547,41 @@ jobs:
           case "$MODE" in price-backfill|fetch|grid) writes=1 ;; esac
           if [ "$writes" = 1 ] || [ "$MODE" = report ]; then
             # no R2D2/massive host job active, none due before this run's window ends (+ 60 min), no nightly worker or long ingestion running
-            limit=$(( $(date -d "$STOP_BEFORE" +%s) + 3600 )) || exit 18
-            active=$(systemctl list-units --type=service --state=active,activating,reloading --no-legend --plain 'r2d2*' 'c3po-massive*' 2>/dev/null | awk 'NF {print $1}')
+            stop_epoch=$(date -d "$STOP_BEFORE" +%s) || { echo 'STOP_BEFORE cannot be parsed: refused (fail closed)' >&2; exit 18; }
+            [[ "$stop_epoch" =~ ^[0-9]+$ ]] || { echo 'STOP_BEFORE is not an epoch: refused (fail closed)' >&2; exit 18; }
+            limit=$(( stop_epoch + 3600 ))
+            services=$(systemctl list-units --type=service --state=active,activating,reloading --no-legend --plain 'r2d2*' 'c3po-massive*') \
+              || { echo 'the host services cannot be listed: refused (fail closed)' >&2; exit 27; }
+            active=$(printf '%s\n' "$services" | awk 'NF {print $1}') || { echo 'the host services cannot be read: refused (fail closed)' >&2; exit 27; }
             [ -z "$active" ] || { echo 'an R2D2/massive host service is active: the backtest must wait' >&2; exit 19; }
-            timers=$(systemctl list-units --type=timer --all --no-legend --plain 'r2d2*' 'c3po-massive*') || { echo 'the host timers cannot be listed' >&2; exit 19; }
-            for timer in $(printf '%s\n' "$timers" | awk 'NF {print $1}'); do
-              next=$(systemctl show -p NextElapseUSecRealtime --value "$timer") || { echo "the next elapse of $timer cannot be read" >&2; exit 19; }
+            timers=$(systemctl list-units --type=timer --all --no-legend --plain 'r2d2*' 'c3po-massive*') \
+              || { echo 'the host timers cannot be listed: refused (fail closed)' >&2; exit 28; }
+            names=$(printf '%s\n' "$timers" | awk 'NF {print $1}') || { echo 'the host timers cannot be read: refused (fail closed)' >&2; exit 28; }
+            for timer in $names; do
+              next=$(systemctl show -p NextElapseUSecRealtime --value "$timer") || { echo "the next elapse of $timer cannot be read: refused (fail closed)" >&2; exit 29; }
               if [ -z "$next" ] || [ "$next" = n/a ]; then
                 continue  # not scheduled
               fi
-              next_epoch=$(date -d "$next" +%s 2>/dev/null) || { echo "the next elapse of $timer cannot be parsed: refused (fail closed)" >&2; exit 19; }
+              next_epoch=$(date -d "$next" +%s 2>/dev/null) || { echo "the next elapse of $timer cannot be parsed: refused (fail closed)" >&2; exit 30; }
+              [[ "$next_epoch" =~ ^[0-9]+$ ]] || { echo "the next elapse of $timer cannot be parsed: refused (fail closed)" >&2; exit 30; }
               if [ "$next_epoch" -le "$limit" ]; then
                 echo "an R2D2/massive host timer fires before this run's window ends + 60 min" >&2
                 exit 19
               fi
             done
-            preflight=$("${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null) || exit 20
-            blocking=$(printf '%s' "$preflight" | python3 -c 'import json, sys; print(int(json.load(sys.stdin)["ingestion_runs"]["blocking"]))') || exit 20
+            preflight=$("${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null) \
+              || { echo 'the host check failed: refused (fail closed)' >&2; exit 20; }
+            blocking=$(printf '%s' "$preflight" | python3 -c 'import json, sys; print(int(json.load(sys.stdin)["ingestion_runs"]["blocking"]))') \
+              || { echo 'the running ingestions cannot be read: refused (fail closed)' >&2; exit 31; }
+            [[ "$blocking" =~ ^[0-9]+$ ]] || { echo 'the running ingestions cannot be read: refused (fail closed)' >&2; exit 31; }
             [ "$blocking" = 0 ] || { echo 'the nightly valuation worker or a long ingestion is running: the backtest must wait' >&2; exit 21; }
           fi
           if [ "$writes" = 1 ]; then
-            avail_kb=$(df -P /var/lib/docker | awk 'NR == 2 {print $4}') || exit 22
-            mem_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) || exit 22
-            [[ "$avail_kb" =~ ^[0-9]+$ ]] && [[ "$mem_kb" =~ ^[0-9]+$ ]] || exit 22
+            disk=$(df -P /var/lib/docker) || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+            avail_kb=$(printf '%s\n' "$disk" | awk 'NR == 2 {print $4}') || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+            [[ "$avail_kb" =~ ^[0-9]+$ ]] || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+            mem_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) || { echo 'the available memory cannot be read: refused (fail closed)' >&2; exit 32; }
+            [[ "$mem_kb" =~ ^[0-9]+$ ]] || { echo 'the available memory cannot be read: refused (fail closed)' >&2; exit 32; }
             case "$MODE" in
               price-backfill) reserve=2097152 ;;
               fetch) reserve=524288 ;;
@@ -550,8 +590,14 @@ jobs:
             need=$((6291456 + reserve))
             [ "$avail_kb" -ge "$need" ] || { echo "free disk ${avail_kb} KiB below ${need} KiB (6 GiB + the mode's reserve)" >&2; exit 23; }
             [ "$mem_kb" -ge 3145728 ] || { echo "available memory ${mem_kb} KiB below 3 GiB" >&2; exit 24; }
-            exec 9>>"$APP_DIR/runtime/security/deployment.lock" || exit 17
-            flock -s -n 9 || { echo 'a deploy holds the deployment lock: the backtest must wait' >&2; exit 17; }
+            exec 9>>"$APP_DIR/runtime/security/deployment.lock" || { echo 'the deployment lock cannot be opened: refused (fail closed)' >&2; exit 33; }
+            lock_rc=0
+            flock -s -n 9 || lock_rc=$?
+            case "$lock_rc" in
+              0) ;;
+              1) echo 'a deploy holds the deployment lock: the backtest must wait' >&2; exit 17 ;;
+              *) echo "the deployment lock cannot be taken (flock status $lock_rc): refused (fail closed)" >&2; exit 34 ;;
+            esac
             echo "PREFLIGHT disk_kb=$avail_kb mem_kb=$mem_kb"
           fi
           case "$MODE" in
@@ -596,18 +642,23 @@ jobs:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
           DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
           set -uo pipefail
           raw="$RUNNER_TEMP/raw"
           [[ "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 1
-          left=$(( DEADLINE_AT - $(date +%s) ))  # what is left of the run's ONE deadline
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || exit 1
+          now=$(date +%s) || exit 1
+          [[ "$now" =~ ^[0-9]+$ ]] || exit 1
+          left=$(( DEADLINE_AT - now ))  # what is left of the run's ONE deadline
           [ "$left" -ge 600 ] || { echo "only ${left} s left before the next window (600 s needed): the report does not start" >&2; exit 1; }
           rc=0
-          # the manifest travels on stdin (never in argv); the remote command is fixed text but for the validated integer deadline
+          # the manifest travels on stdin (never in argv); the remote command is fixed text but for the validated integer deadline and
+          # the validated run token (LAUNCHED first, then the report's python carries the token: the cleanup stops only this run's process)
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api timeout -s TERM -k 120 $left nice -n 10 python -m app.valuation_pit_backtest_report --manifest - --prereg /legacy/c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md" \
+            "cd /opt/chief-of-staff-digital && echo 'LAUNCHED $RUN_TOKEN' && docker compose --env-file .env -f c3po/compose.yml exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api timeout -s TERM -k 120 $left nice -n 10 python -X valuation_pit_run_token=$RUN_TOKEN -m app.valuation_pit_backtest_report --manifest - --prereg /legacy/c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md" \
             < "$RUNNER_TEMP/manifest/manifest.json" > "$raw/report.txt" 2>> "$raw/stderr.log" || rc=$?
           echo "remote report exit status: $rc"
           cp "$raw/report.txt" "$raw/stdout.txt" || exit 1
@@ -830,22 +881,38 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Stop the host process on cancel or failure
+      - name: Stop this run's host processes on cancel or failure
         if: (cancelled() || failure() || (inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc) != '0') && steps.sshkey.outcome == 'success' && inputs.mode != 'host-check'
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
           set -uo pipefail
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || { echo 'the run token is not <run id>-<attempt>: nothing is stopped' >&2; exit 1; }
+          # only what THIS run launched, and only once it launched it: the host printed `LAUNCHED <token>` right before each leg (and
+          # the report); a refusal of the preflight or of the lock launched nothing, and stops nothing (the files outlive a cancel)
+          launched=0
+          for file in "$RUNNER_TEMP/raw/stdout.txt" "$RUNNER_TEMP/raw/report.txt"; do
+            if [ -f "$file" ] && grep -qxF "LAUNCHED $RUN_TOKEN" "$file"; then
+              launched=1
+            fi
+          done
+          if [ "$launched" != 1 ]; then
+            echo 'this run launched no process on the host: nothing to stop'
+            exit 0
+          fi
+          # the pattern names this run's token (its python carries -X valuation_pit_run_token=<run id>-<attempt>): an independent
+          # process — a manual valuation_price_history --nightly, another run — never matches; [.] keeps the pattern off its own text
           rc=0
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
             -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T api pkill -TERM -f 'app.valuation_(pit_grid|price_history|pit_rerun|pit_backtest_report)'" \
+            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T api pkill -TERM -f 'valuation_pit_run_token=$RUN_TOKEN -m app[.]valuation_'" \
             > /dev/null 2>&1 || rc=$?
           case "$rc" in
-            0) echo 'a backtest process was running in the api container: SIGTERM sent (the grid writes its manifest and stops between runs)' ;;
-            1) echo 'no backtest process was running in the api container' ;;
+            0) echo "a process of this run (token $RUN_TOKEN) was running in the api container: SIGTERM sent (the grid writes its manifest and stops between runs)" ;;
+            1) echo "no process of this run (token $RUN_TOKEN) was running in the api container" ;;
             *) echo "the stop request failed (status $rc): check the api container by hand" >&2 ;;
           esac
 

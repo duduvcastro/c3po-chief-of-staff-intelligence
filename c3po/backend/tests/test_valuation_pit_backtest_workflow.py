@@ -28,6 +28,7 @@ from tests.test_valuation_pit_backtest_report import PREREG_PATH, PRODUCER, Synt
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "valuation-pit-backtest.yml"
+STOP_STEP = "Stop this run's host processes on cancel or failure"
 
 
 def _workflow() -> dict[str, Any]:
@@ -66,8 +67,9 @@ def test_the_workflow_is_dispatch_only_and_guards_the_host() -> None:
     assert 'exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check' in remote
     assert "flock -s -n 9" in remote and 'exec 9>>"$APP_DIR/runtime/security/deployment.lock"' in remote  # a SHARED deploy lock, never waited for
     # ONE deadline: the end is fixed once on the host; every process runs under what is left of it (writing legs: 60 s; the dry run: 10 min)
-    assert remote.count("end=$(( $(date +%s) + DEADLINE ))") == 1 and remote.count("timeout -s TERM -k 120") == 1
-    assert 'api timeout -s TERM -k 120 "$left" nice -n 10 python -m "$@"' in remote and remote.count("leg 60 app.") == 4 and remote.count("leg 600 app.") == 1
+    assert remote.count("end=$(( now + DEADLINE ))") == 1 and remote.count("timeout -s TERM -k 120") == 1
+    assert 'api timeout -s TERM -k 120 "$left" nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m "$@"' in remote
+    assert remote.count("leg 60 app.") == 4 and remote.count("leg 600 app.") == 1
     assert "exec \"${compose[@]}\" exec -T api" not in remote  # no process outside a leg but the read-only host check
     assert "--backfill --months 120" in remote and "--market NYSE --fetch --no-macro" in remote and '--stop-before "$STOP_BEFORE"' in remote
     assert '--expect-producer-sha256 "$PRODUCER"' in remote and '--catalogue-pinned-at "$CATALOGUE_PIN"' in remote and "--statements vintages --step-sessions 5" in remote
@@ -79,16 +81,20 @@ def test_the_workflow_is_dispatch_only_and_guards_the_host() -> None:
     assert "cannot be parsed: refused (fail closed)" in remote and "+%s 2>/dev/null) || continue" not in remote  # an unreadable timer refuses
     report = _step("Run the report on the host")["run"]
     assert '< "$RUNNER_TEMP/manifest/manifest.json"' in report and "--manifest -" in report
-    assert '[ "$left" -ge 600 ]' in report and "api timeout -s TERM -k 120 $left nice -n 10 python -m app.valuation_pit_backtest_report" in report
+    assert '[ "$left" -ge 600 ]' in report and "api timeout -s TERM -k 120 $left nice -n 10 python -X valuation_pit_run_token=$RUN_TOKEN -m app.valuation_pit_backtest_report" in report
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "MANIFEST_B64" not in text and "base64" not in text  # the manifest travels on stdin, never in argv or the environment
     assert "set -e\n" not in text and "set -euo" not in text  # every guard explicit
     secret_steps = {step["name"] for job in workflow["jobs"].values() for step in job["steps"] if "secrets." in json.dumps(step)}
-    assert secret_steps == {"Configure deployment SSH key", "Run on the host", "Run the report on the host", "Stop the host process on cancel or failure"}
+    assert secret_steps == {"Configure deployment SSH key", "Run on the host", "Run the report on the host", "Stop this run's host processes on cancel or failure"}
     assert "stderr.log" in remote and "cat \"$raw/stderr.log\"" not in remote  # the remote stderr is counted, never printed
-    stop = _step("Stop the host process on cancel or failure")
+    stop = _step(STOP_STEP)
     assert stop["if"].startswith("(cancelled() || failure() || (inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc) != '0')")
-    assert "inputs.mode != 'host-check'" in stop["if"] and "pkill -TERM -f 'app.valuation_(pit_grid|price_history|pit_rerun|pit_backtest_report)'" in stop["run"]
+    assert "inputs.mode != 'host-check'" in stop["if"] and "pkill -TERM -f 'valuation_pit_run_token=$RUN_TOKEN -m app[.]valuation_'" in stop["run"]
+    assert "pkill -TERM -f 'app.valuation_" not in text  # never a selector by module name alone (it matches a manual --nightly)
+    for name in ("Run on the host", "Run the report on the host", STOP_STEP):
+        assert _step(name)["env"]["RUN_TOKEN"] == "${{ github.run_id }}-${{ github.run_attempt }}", name
+    assert "echo 'LAUNCHED $RUN_TOKEN' && docker compose" in report and "python -X valuation_pit_run_token=$RUN_TOKEN -m app.valuation_pit_backtest_report" in report
     producer_step = _step("Read the pre-registration and the producer at the prereg commit")["run"]
     listed = producer_step.split("for name in", 1)[1].split("; do", 1)[0].replace("\\", " ").split()
     assert tuple(listed) == pit.IMPLEMENTATION_FILES  # the producer the workflow checks is the run manifest's, file for file
@@ -414,7 +420,7 @@ def test_every_host_process_runs_under_what_is_left_of_one_deadline() -> None:
     remote = _step("Run on the host")["run"]
     leg = remote.split("# >>> leg", 1)[1].split("# <<< leg", 1)[0]
     script = "\n".join([
-        "set -uo pipefail", 'date() { echo "$FAKE_NOW"; }', "compose=(echo docker compose)", "leg_env=()", "end=1000", "# >>> leg" + leg,
+        "set -uo pipefail", 'date() { echo "$FAKE_NOW"; }', "compose=(echo docker compose)", "leg_env=()", "end=1000", "RUN_TOKEN=7-1", "# >>> leg" + leg,
         'FAKE_NOW=100 leg 60 app.valuation_price_history --market NASDAQ --backfill --months 120; echo "rc=$?"',
         'FAKE_NOW=950 leg 60 app.valuation_price_history --market NYSE --backfill --months 120; echo "rc=$?"',
         "leg_env=(-e PGOPTIONS=read-only)",
@@ -422,11 +428,14 @@ def test_every_host_process_runs_under_what_is_left_of_one_deadline() -> None:
         'FAKE_NOW=300 leg 600 app.valuation_pit_grid --dry-run; echo "rc=$?"',
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    token = "python -X valuation_pit_run_token=7-1 -m"  # every leg carries the run's token; LAUNCHED is printed only for a leg that starts
     assert result.stdout.splitlines() == [
-        "docker compose exec -T api timeout -s TERM -k 120 900 nice -n 10 python -m app.valuation_price_history --market NASDAQ --backfill --months 120", "rc=0",
+        "LAUNCHED 7-1",
+        f"docker compose exec -T api timeout -s TERM -k 120 900 nice -n 10 {token} app.valuation_price_history --market NASDAQ --backfill --months 120", "rc=0",
         "rc=25",  # 50 s left: the NYSE leg does not start (a fresh timeout would have given it the whole window again)
         "rc=25",  # the dry run needs 10 minutes
-        "docker compose exec -T -e PGOPTIONS=read-only api timeout -s TERM -k 120 700 nice -n 10 python -m app.valuation_pit_grid --dry-run", "rc=0"], result.stderr
+        "LAUNCHED 7-1",
+        f"docker compose exec -T -e PGOPTIONS=read-only api timeout -s TERM -k 120 700 nice -n 10 {token} app.valuation_pit_grid --dry-run", "rc=0"], result.stderr
     assert "only 50 s left before the next window (60 s needed): not started" in result.stderr
     backfill = remote.rsplit("price-backfill)\n", 1)[1].split(";;", 1)[0]
     assert "for market in NASDAQ NYSE; do" in backfill and 'leg 60 app.valuation_price_history --market "$market"' in backfill and "end=" not in backfill
@@ -478,15 +487,18 @@ def test_the_prereg_commit_is_the_last_that_changed_the_prereg_and_the_producer_
     assert stale.returncode != 0 and "is not the last commit that changed the pre-registration" in stale.stderr
 
 
-def _remote(tmp_path: Path, mode: str, *, reboot: bool) -> tuple[subprocess.CompletedProcess[str], str]:
+def _remote(tmp_path: Path, mode: str, *, reboot: bool, stubs: dict[str, str] | None = None, meminfo_text: str | None = None
+            ) -> tuple[subprocess.CompletedProcess[str], str]:
     """The host script of "Run on the host", run for real on stubs (docker, df, systemctl, flock, date): its paths moved
-    into ``tmp_path`` (the app directory, the two reboot flags, /proc/meminfo)."""
+    into ``tmp_path`` (the app directory, the two reboot flags, /proc/meminfo). ``stubs`` replaces a stub's body (a query
+    that fails); ``meminfo_text`` replaces /proc/meminfo."""
     script = _step("Run on the host")["run"].split("<<'REMOTE' || rc=$?\n", 1)[1].split("\nREMOTE\n", 1)[0]
     app, flags, bin_dir = tmp_path / "app", tmp_path / "flags", tmp_path / "bin"
     for folder in (app / "runtime" / "security", flags, bin_dir):
         folder.mkdir(parents=True, exist_ok=True)
     meminfo = tmp_path / "meminfo"
-    meminfo.write_text("MemTotal: 8000000 kB\nMemAvailable: 5000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n", encoding="utf-8")
+    meminfo.write_text("MemTotal: 8000000 kB\nMemAvailable: 5000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n" if meminfo_text is None else meminfo_text,
+                       encoding="utf-8")
     for flag in ("reboot.pending", "reboot-required"):
         path = flags / flag
         if reboot:
@@ -496,7 +508,7 @@ def _remote(tmp_path: Path, mode: str, *, reboot: bool) -> tuple[subprocess.Comp
     script = (script.replace("/opt/chief-of-staff-digital", str(app)).replace("/run/c3po-security/reboot.pending", str(flags / "reboot.pending"))
               .replace("/var/run/reboot-required", str(flags / "reboot-required")).replace("/proc/meminfo", str(meminfo)))
     log = tmp_path / "calls.log"
-    stubs = {
+    bodies = {
         "docker": ('echo "docker $*" >> "$STUB_LOG"\ncase "$*" in\n  *" ps -q api"*) echo cafe ;;\n  "inspect "*) echo running ;;\n'
                    '  *"--host-check"*) echo \'{"kind": "host_check", "ingestion_runs": {"running": 0, "blocking": 0}}\' ;;\nesac'),
         "df": 'echo "Filesystem 1024-blocks Used Available Capacity Mounted"\nfor arg in "$@"; do [ "$arg" = -P ] || echo "fs 41943040 0 9437184 0% $arg"; done',
@@ -505,13 +517,14 @@ def _remote(tmp_path: Path, mode: str, *, reboot: bool) -> tuple[subprocess.Comp
         "date": ('if [ "$1" = -d ]; then python3 -c \'import datetime, sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))'
                  '.timestamp()))\' "$2"; else /bin/date "$@"; fi'),
     }
-    for name, body in stubs.items():
+    bodies.update(stubs or {})
+    for name, body in bodies.items():
         stub = bin_dir / name
         stub.write_text("#!/bin/bash\n" + body + "\n", encoding="utf-8")
         stub.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "STUB_LOG": str(log), "MODE": mode, "ORDER": "", "PIN": "2026-10-19T01:00:01+00:00",
            "CATALOGUE_PIN": "2026-10-19T00:00:00+00:00", "MAX_RUNS": "10", "RECOMPUTE": "false", "STOP_BEFORE": "2026-10-19T02:10:00+00:00",
-           "DEADLINE": "3600", "PRODUCER": "", "RUN_ID": "7"}
+           "DEADLINE": "3600", "PRODUCER": "", "RUN_ID": "7", "RUN_TOKEN": "7-1"}
     if log.exists():
         log.unlink()
     result = subprocess.run(["bash", "-s"], input=script, capture_output=True, text=True, env=env)
@@ -532,3 +545,126 @@ def test_the_host_check_shows_a_pending_reboot_and_every_other_mode_refuses_on_i
     dry, calls = _remote(tmp_path, "dry-run", reboot=False)
     assert dry.returncode == 0, dry.stderr
     assert "-e PGOPTIONS=-c default_transaction_read_only=on api timeout -s TERM -k 120" in calls and "--dry-run" in calls
+
+
+DATE_D = ('if [ "$1" = -d ]; then python3 -c \'import datetime, sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))'
+          '.timestamp()))\' "$2"; else /bin/date "$@"; fi')
+TIMER = 'case "$*" in\n  *--type=timer*) echo "r2d2-session.timer loaded active waiting R2D2 session" ;;\n  show*) echo "{next}" ;;\nesac\nexit 0'
+HOST_CHECK = ('echo "docker $*" >> "$STUB_LOG"\ncase "$*" in\n  *" ps -q api"*) echo cafe ;;\n  "inspect "*) echo running ;;\n'
+              '  *"--host-check"*) echo \'{body}\' ;;\nesac')
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or shutil.which("python3") is None, reason="bash and python3 run the host script on stubs")
+def test_every_query_of_the_host_preflight_fails_closed_before_any_leg(tmp_path: Path) -> None:
+    """P1 of the review of #453: a query of the preflight that cannot answer — systemctl exiting 42 with no output, an
+    unreadable timer, the clock, the deploy lock, the free disk, the memory, the ingestion check — REFUSES the run with its own
+    status before any leg starts (no LAUNCHED line, no python of a leg); with every query answering, both fetch legs start."""
+    started, calls = _remote(tmp_path, "fetch", reboot=False)
+    assert started.returncode == 0, started.stderr
+    assert started.stdout.count("LAUNCHED 7-1") == 2 and "PREFLIGHT disk_kb=9437184 mem_kb=5000000" in started.stdout
+    assert "python -X valuation_pit_run_token=7-1 -m app.valuation_pit_rerun --market NASDAQ --fetch" in calls
+    assert "python -X valuation_pit_run_token=7-1 -m app.valuation_pit_rerun --market NYSE --fetch --no-macro" in calls
+    cases: dict[str, tuple[int, dict[str, str], str | None]] = {
+        "services query exits 42 with no output": (27, {"systemctl": 'case "$*" in *--type=service*) exit 42 ;; esac\n[ "$1" = show ] && echo n/a\nexit 0'}, None),
+        "every systemctl query exits 42": (27, {"systemctl": "exit 42"}, None),
+        "timers query fails": (28, {"systemctl": 'case "$*" in *--type=timer*) exit 42 ;; esac\nexit 0'}, None),
+        "timer next elapse unreadable": (29, {"systemctl": 'case "$*" in *--type=timer*) echo "r2d2-session.timer loaded active waiting x" ;; show*) exit 3 ;; esac\nexit 0'}, None),
+        "timer next elapse unparsable": (30, {"systemctl": TIMER.format(next="soon")}, None),
+        "timer due inside the run": (19, {"systemctl": TIMER.format(next="2026-10-19T02:30:00+00:00")}, None),
+        "service active": (19, {"systemctl": 'case "$*" in *--type=service*) echo "r2d2-session.service loaded active running x" ;; esac\nexit 0'}, None),
+        "STOP_BEFORE unparsable": (18, {"date": 'if [ "$1" = -d ]; then exit 1; else /bin/date "$@"; fi'}, None),
+        "host clock unreadable": (26, {"date": 'if [ "$1" = +%s ]; then exit 1; fi\n' + DATE_D}, None),
+        "host clock not an epoch": (26, {"date": 'if [ "$1" = +%s ]; then exit 0; fi\n' + DATE_D}, None),
+        "ingestion check fails": (20, {"docker": HOST_CHECK.format(body="x") + "\ncase \"$*\" in *--host-check*) exit 1 ;; esac"}, None),
+        "ingestion check unreadable": (31, {"docker": HOST_CHECK.format(body='{"kind": "host_check"}')}, None),
+        "ingestion check negative": (31, {"docker": HOST_CHECK.format(body='{"kind": "host_check", "ingestion_runs": {"blocking": -1}}')}, None),
+        "blocking ingestion": (21, {"docker": HOST_CHECK.format(body='{"kind": "host_check", "ingestion_runs": {"blocking": 1}}')}, None),
+        "free disk unreadable": (22, {"df": "exit 1"}, None),
+        "free disk empty": (22, {"df": "exit 0"}, None),
+        "memory unreadable": (32, {}, "MemTotal: 8000000 kB\n"),
+        "deploy lock held": (17, {"flock": "exit 1"}, None),
+        "deploy lock error": (34, {"flock": "exit 66"}, None),
+    }
+    for name, (status, stubs, meminfo) in cases.items():
+        refused, calls = _remote(tmp_path, "fetch", reboot=False, stubs=stubs, meminfo_text=meminfo)
+        assert refused.returncode == status, (name, refused.returncode, refused.stderr)
+        assert "LAUNCHED" not in refused.stdout and "valuation_pit_rerun" not in calls and "timeout" not in calls, name
+    # the report's preflight refuses the same way; the read-only host check refuses an unreadable disk or memory too
+    report, calls = _remote(tmp_path, "report", reboot=False, stubs={"systemctl": "exit 42"})
+    assert report.returncode == 27 and "PREFLIGHT report ok" not in report.stdout
+    for status, stubs, meminfo in ((13, {"df": "exit 1"}, None), (14, {}, "")):
+        checked, calls = _remote(tmp_path, "host-check", reboot=False, stubs=stubs, meminfo_text=meminfo)
+        assert checked.returncode == status and "--host-check" not in calls, (status, checked.stderr)
+
+
+def _stop(tmp_path: Path, token: str, *, stdout: str | None = None, report: str | None = None) -> tuple[subprocess.CompletedProcess[str], str]:
+    """The cleanup step, run for real: ``ssh`` and ``docker`` are stubs that hand the remote ``pkill`` to the REAL pkill of
+    this machine (the pattern names this run's token: nothing else can match it)."""
+    runner, bin_dir, log = tmp_path / "runner", tmp_path / "stop-bin", tmp_path / "stop.log"
+    for folder in (runner / "raw", bin_dir):
+        folder.mkdir(parents=True, exist_ok=True)
+    for name, content in (("stdout.txt", stdout), ("report.txt", report)):
+        path = runner / "raw" / name
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_text(content, encoding="utf-8")
+    stubs = {
+        "ssh": 'echo "ssh $*" >> "$STUB_LOG"\nfor last; do :; done\neval "${last#"cd /opt/chief-of-staff-digital && "}"',
+        "docker": 'echo "docker $*" >> "$STUB_LOG"\nwhile [ "$#" -gt 0 ] && [ "$1" != api ]; do shift; done\nshift\nexec "$@"',
+    }
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text("#!/bin/bash\n" + body + "\n", encoding="utf-8")
+        stub.chmod(0o755)
+    log.unlink(missing_ok=True)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "STUB_LOG": str(log), "RUNNER_TEMP": str(runner), "RUN_TOKEN": token,
+           "HOST": "host.invalid", "USER": "deploy", "HOME": str(tmp_path)}
+    result = subprocess.run(["bash", "-c", _step(STOP_STEP)["run"]], capture_output=True, text=True, env=env)
+    return result, log.read_text(encoding="utf-8") if log.exists() else ""
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or shutil.which("python3") is None, reason="bash and python3 run the host script on stubs")
+def test_the_cleanup_does_nothing_when_this_run_launched_nothing(tmp_path: Path) -> None:
+    """P2 of the review of #453: a refusal of the preflight launched nothing, so the cleanup stops nothing — no ssh at all."""
+    refused, _calls = _remote(tmp_path, "fetch", reboot=False, stubs={"systemctl": "exit 42"})
+    assert refused.returncode == 27 and "LAUNCHED" not in refused.stdout
+    for stdout, report in ((refused.stdout, None), (None, None), ("PREFLIGHT report ok\n", ""), ("LAUNCHED 7-2\nLAUNCHED 17-1\n", "LAUNCHED 7-10\n")):
+        result, log = _stop(tmp_path, "7-1", stdout=stdout, report=report)  # another attempt's or another run's LAUNCHED is not this run's
+        assert result.returncode == 0 and "launched no process on the host: nothing to stop" in result.stdout and log == "", (stdout, report)
+    assert _stop(tmp_path, "7", stdout="LAUNCHED 7\n")[0].returncode != 0  # a token that is not <run id>-<attempt> stops nothing
+    assert _stop(tmp_path, "7", stdout="LAUNCHED 7\n")[1] == ""
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or shutil.which("pkill") is None, reason="bash and pkill run the cleanup on stubs")
+def test_the_cleanup_stops_only_the_processes_carrying_this_runs_token(tmp_path: Path) -> None:
+    """P2 of the review of #453: the cleanup's real ``pkill`` stops this run's leg and never an independent process — a manual
+    ``valuation_price_history --nightly`` (no token) or another run's leg (a token that only extends this one)."""
+    package = tmp_path / "pkg" / "app"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "valuation_dummy.py").write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
+    token = f"{os.getpid()}{int.from_bytes(os.urandom(3), 'big')}-1"
+    run_id, attempt = token.split("-")
+
+    def start(*marker: str, args: tuple[str, ...] = ()) -> subprocess.Popen[bytes]:
+        return subprocess.Popen([sys.executable, *marker, "-m", "app.valuation_dummy", *args], cwd=tmp_path / "pkg", stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+
+    mine = start("-X", f"valuation_pit_run_token={token}", args=("--market", "NASDAQ", "--fetch"))
+    others = [start(args=("--nightly",)), start("-X", f"valuation_pit_run_token={token}0"), start("-X", f"valuation_pit_run_token=1{token}"),
+              start("-X", f"valuation_pit_run_token={run_id}-{int(attempt) + 1}")]
+    try:
+        result, log = _stop(tmp_path, token, stdout=f"PREFLIGHT disk_kb=1 mem_kb=1\nLAUNCHED {token}\n")
+        assert result.returncode == 0 and f"a process of this run (token {token}) was running" in result.stdout, (result.stdout, result.stderr)
+        assert f"pkill -TERM -f valuation_pit_run_token={token} -m app[.]valuation_" in log
+        assert mine.wait(timeout=20) == -15  # SIGTERM
+        assert all(other.poll() is None for other in others)  # the manual nightly and the other runs are untouched
+        again, _log = _stop(tmp_path, token, report=f"LAUNCHED {token}\n")  # the report's LAUNCHED counts too; nothing of this run is left
+        assert again.returncode == 0 and f"no process of this run (token {token})" in again.stdout
+        assert all(other.poll() is None for other in others)
+    finally:
+        for process in (mine, *others):
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=20)
