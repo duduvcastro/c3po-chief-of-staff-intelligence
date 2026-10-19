@@ -615,7 +615,14 @@ class InvestorRelationsService:
                 events.extend(finnhub_insider_events or self._eodhd_insider_events(symbol, cik, company, company_name))
             self._apply_sec_header_acceptances(events)
             self._enrich_with_sec_fulltext(events)
-            written = self.database.save_ir_events(events)
+            # filing events (they carry an acceptance clock) go through the write that keeps a stored filing-header
+            # instant atomically (another process may store it after this sync's read); the insider events R2D2 reads
+            # keep save_ir_events, unchanged
+            filings = [event for event in events if (event.get("raw_metadata") or {}).get("acceptance_time_source")]
+            others = [event for event in events if not (event.get("raw_metadata") or {}).get("acceptance_time_source")]
+            written = self.database.save_ir_events(others) + self.database.save_sec_filing_events(
+                filings, header_source=SEC_ACCEPTANCE_FROM_HEADER,
+            )
             self.database.finish_ingestion_run(run_id, "succeeded", read, written)
             return read, written
         except Exception as exc:
