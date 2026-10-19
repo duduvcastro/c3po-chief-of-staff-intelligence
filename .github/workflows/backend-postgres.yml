@@ -115,6 +115,7 @@ jobs:
         env:
           C3PO_PROVIDER_HEALTH_TEST_DSN: host=${{ env.SOCKET_DIR }} dbname=c3po_ci_tests user=postgres
           C3PO_VALUATION_DECISOR_TEST_DSN: host=${{ env.SOCKET_DIR }} dbname=c3po_ci_tests user=postgres
+          C3PO_SEC_FILING_EVENTS_TEST_DSN: host=${{ env.SOCKET_DIR }} dbname=c3po_ci_tests user=postgres
           C3PO_MIGRATED_TEST_DSN: host=${{ env.SOCKET_DIR }} dbname=c3po_ci_migrations user=postgres
         run: |
           mapfile -t files < <(grep -l -E "C3PO_[A-Z_]+_TEST_DSN" tests/test_*.py | sort)
