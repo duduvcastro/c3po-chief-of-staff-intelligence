@@ -1,8 +1,8 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-39110193842",
+  "artifact_name": "c3po-production-container-vulnerabilities-39226776335",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 16,
+  "finding_total": 21,
   "findings": [
     {
       "fixed_version": "2.9.0-r0",
@@ -30,6 +30,15 @@
       "severity": "high",
       "target": "usr/local/bin/gosu",
       "vulnerability_id": "CVE-2026-78669"
+    },
+    {
+      "fixed_version": "1.8.14-r0",
+      "image": "web",
+      "installed_version": "1.8.13-r0",
+      "package": "libx11",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88806"
     },
     {
       "fixed_version": "1.26.9, 1.27.2",
@@ -95,6 +104,42 @@
       "vulnerability_id": "CVE-2026-78663"
     },
     {
+      "fixed_version": "1.8.14-r0",
+      "image": "web",
+      "installed_version": "1.8.13-r0",
+      "package": "libx11",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-94283"
+    },
+    {
+      "fixed_version": "1.8.14-r0",
+      "image": "web",
+      "installed_version": "1.8.13-r0",
+      "package": "libx11",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-94284"
+    },
+    {
+      "fixed_version": "1.8.14-r0",
+      "image": "web",
+      "installed_version": "1.8.13-r0",
+      "package": "libx11",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-94285"
+    },
+    {
+      "fixed_version": "3.5.20-r0",
+      "image": "web",
+      "installed_version": "3.5.19-r0",
+      "package": "libxpm",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-94287"
+    },
+    {
       "fixed_version": "1.26.9, 1.27.2",
       "image": "database",
       "installed_version": "v1.25.13",
@@ -151,15 +196,15 @@
   ],
   "fix_available": {
     "critical": 0,
-    "high": 4,
+    "high": 5,
     "low": 1,
-    "medium": 11,
+    "medium": 15,
     "unknown": 0
   },
-  "generated_at": "2026-10-18T08:08:16.032179+00:00",
-  "remediation_key": "c8caea8eb852a2174770519a97872e235622c1af5c8a32a56dfc655a44c472c5",
-  "report_sha256": "cca7cd7634f4d7349ea1e7cc6d0898d7d49fcd03b75706cf0a543b186b338aae",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/39110193842",
+  "generated_at": "2026-10-19T09:01:31.351601+00:00",
+  "remediation_key": "9f2f4724bb9f543576e4a56923fdcf4a9f5f98ba2d39f7d8983be42899478ce6",
+  "report_sha256": "3aabfe95f16c16f7aabad8cb6b560892e37e20012fe1949268c6aa31cfa6f65c",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/39226776335",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
   "source_revision": "de96aee90a26e9587663ba7a1f6e55a592afcd20"
 }
