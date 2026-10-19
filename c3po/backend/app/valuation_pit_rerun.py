@@ -109,6 +109,7 @@ from .valuation_panel import _NoNetworkHttp
 from .valuation_price_history import PriceHistoryService, sessions_after
 from .valuation_v3_engine import ENGINE_VERSION, ValuationV3Engine
 from .valuation_v3_macro import (
+    PERCENT_RATE_BOUNDS,
     SCHEMA_VERSION as MACRO_SCHEMA_VERSION,
     SELIC_SOURCE,
     US_CURVE_SOURCE,
@@ -188,7 +189,9 @@ BASIS_VINTAGES = "statement_vintages"
 BASIS_PROVIDER = "provider_payload"
 AS_FILED_AVAILABILITY = "_pit_as_filed_availability"  # the key the reader sets on a rebuilt row: the regulator's acceptance (evidence)
 DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and the manifest DECLARE (never silent)
-    "consensus_published_date_zone": "a publishedDate without a zone is read as UTC (assumption: the provider states no zone)",
+    "curve_unit": "the US Treasury history (EODHD GBOND closes) is quoted in percent: every close is divided by 100, the unit decided per series "
+                  "(never per value: a sub-1 % yield of 2021 stays a sub-1 % yield); a converted close outside [-0.01, 0.20] refuses the history",
+    "consensus_published_date_zone":"a publishedDate without a zone is read as UTC (assumption: the provider states no zone)",
     "beta_proxy_membership": "the equal-weight universe proxy of daily log returns INCLUDES the symbol itself (it is not excluded from its own proxy)",
     "ttm_basis_mix": "ttm.basis is four_quarters or latest_fiscal_year; the prior period of revenue_growth may be previous_fiscal_year while the TTM is four_quarters (the bases can mix)",
     "ttm_contiguity": "four_quarters sums four CONSECUTIVE quarters (each period end one quarter after the next older one; the prior period of the "
@@ -1110,9 +1113,16 @@ def selic_package_at(history: Mapping[str, Any], *, as_of: datetime, economic_da
 
 def curve_package_at(history: Mapping[str, Any], *, as_of: datetime, economic_date: date) -> dict[str, Any] | None:
     """The US 3Y/10Y curve package at ``T``: the latest observation date ≤ the economic date with BOTH tenors, available
-    (next UTC midnight) ≤ T; validated by ``validate_us_curve_package`` for ``as_of`` = that observation date."""
+    (next UTC midnight) ≤ T; validated by ``validate_us_curve_package`` for ``as_of`` = that observation date.
+
+    The unit is the SERIES', never guessed per value: the history (``US_EODHD_TREASURY_HISTORY``) is EODHD's GBOND closes,
+    quoted in percent — every close is divided by 100 (a 0.30 % three-year yield of 2021 is 0.003, never 0.30); a history
+    naming another source, or any converted close outside ``PERCENT_RATE_BOUNDS``, is refused (``PitRerunInputError``)."""
     cut = _utc(as_of)
     fetched_at = str(history.get("fetched_at") or "")
+    source = history.get("source")
+    if source not in (None, "", US_CURVE_SOURCE):
+        raise PitRerunInputError(f"the US Treasury history names the source {source!r}, not {US_CURVE_SOURCE!r}: its unit is unknown")
     by_tenor: dict[int, dict[date, float]] = {}
     series = _mapping(history.get("series"))
     for tenor, symbol in US_CURVE_SYMBOLS:
@@ -1121,9 +1131,14 @@ def curve_package_at(history: Mapping[str, Any], *, as_of: datetime, economic_da
             data = _mapping(item)
             observed = _parse_date(data.get("date"))
             rate = _number(data.get("close"))
-            if observed is None or rate is None or observed > economic_date or _instant(_available_after_day(observed)) > cut:
+            if observed is None or rate is None:
                 continue
-            by_tenor[tenor][observed] = rate / 100 if rate > 1 else rate
+            converted = rate / 100  # percent, always (the series' unit)
+            if not PERCENT_RATE_BOUNDS[0] <= converted <= PERCENT_RATE_BOUNDS[1]:
+                raise PitRerunInputError(f"US Treasury history {symbol}: a close of {rate} % is outside {PERCENT_RATE_BOUNDS} once read as percent")
+            if observed > economic_date or _instant(_available_after_day(observed)) > cut:
+                continue
+            by_tenor[tenor][observed] = converted
     common = set(by_tenor[3]) & set(by_tenor[10])
     if not common:
         return None

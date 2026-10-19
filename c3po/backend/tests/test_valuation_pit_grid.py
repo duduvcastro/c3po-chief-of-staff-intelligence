@@ -272,18 +272,18 @@ def test_the_stop_window_is_checked_before_every_run_by_clock_and_by_prediction_
         return now if len(ticks) < 4 else stop + timedelta(seconds=1)
 
     path = tmp_path / "stop.json"
-    assert grid.main(_args(path, "--stop-before", stop.isoformat()), database=database, settings=_settings(), clock=clock) == 0
+    assert grid.main(_args(path, "--stop-before", stop.isoformat(), "--sources", "v3_2_shadow"), database=database, settings=_settings(), clock=clock) == 0  # the rev-1 timing
     stopped = _manifest(path)
     assert stopped["stopped"] == {"reason": "stop_before", "at": "2024-06-04T04:00:00+00:00", "market": "NYSE"} and stopped["grid"] == [] and len(_runs(database)) == 1
     # by prediction, before any instant is measured: 300 s per run, two runs per T, × 1.5 = 900 s → a stop 800 s away starts nothing
     run = grid.GridRun(database, _settings(), market_group="US", price_pinned_at=PIN, catalogue_pinned_at=CATALOGUE_PIN, statements="provider", step=5,
-                       clock=lambda: now, monotonic=lambda: 0.0, emit=lambda line: None)
+                       clock=lambda: now, monotonic=lambda: 0.0, emit=lambda line: None, sources=("v3_2_shadow",))
     prior = run.run(start=None, end=None, max_runs=None, stop_before=now + timedelta(seconds=800), recompute_existing=True, owner_order_sha256=None)
     assert prior["stopped"] == {"reason": "stop_before_predicted", "at": "2024-06-04T04:00:00+00:00"} and prior["grid"] == []
     # by prediction, measured: the first instant (900 s predicted < 1,200 s) took 1,000 s; the next (1.5 × 1,000 s) would end after the stop → not started
     steps = iter(range(0, 100_000, 200))
     run = grid.GridRun(database, _settings(), market_group="US", price_pinned_at=PIN, catalogue_pinned_at=CATALOGUE_PIN, statements="provider", step=5,
-                       clock=lambda: now, monotonic=lambda: float(next(steps)), emit=lambda line: None)
+                       clock=lambda: now, monotonic=lambda: float(next(steps)), emit=lambda line: None, sources=("v3_2_shadow",))
     predicted = run.run(start=None, end=None, max_runs=None, stop_before=now + timedelta(seconds=1200), recompute_existing=True, owner_order_sha256=None)
     assert predicted["stopped"] == {"reason": "stop_before_predicted", "at": "2024-06-11T04:00:00+00:00"} and len(predicted["grid"]) == 2
     # SIGTERM during a run: the run completes, the next one is not started, the manifest is written, the handler restored
@@ -298,7 +298,7 @@ def test_the_stop_window_is_checked_before_every_run_by_clock_and_by_prediction_
 
     monkeypatch.setattr(pit.PitRerunService, "rerun", terminated)
     term = tmp_path / "term.json"
-    assert grid.main(_args(term), database=fresh, settings=_settings()) == 0
+    assert grid.main(_args(term, "--sources", "v3_2_shadow"), database=fresh, settings=_settings()) == 0
     assert _manifest(term)["stopped"] == {"reason": "terminated", "at": "2024-06-04T04:00:00+00:00", "market": "NYSE"} and len(_runs(fresh)) == 1
     assert signal.getsignal(signal.SIGTERM) == before
     capsys.readouterr()
