@@ -6,6 +6,9 @@ ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513
 # at the pinned commit and built with the dependency raised to a fixed release; the
 # binary's embedded build info is asserted so the fix is provable from the image.
 ARG GOSU_X_SYS_VERSION=v0.47.0
+# The same gosu go.mod pins github.com/moby/sys/user v0.1.0, reported by the production scan of 08/10/2026
+# (CVE-2026-61801, medium, fixed in 0.4.1; PR #446). Raised and asserted the same way.
+ARG GOSU_MOBY_SYS_USER_VERSION=v0.4.1
 ARG C3PO_SECURITY_REBUILD=bootstrap
 RUN test -n "$C3PO_SECURITY_REBUILD" \
     && apk add --no-cache git \
@@ -13,9 +16,11 @@ RUN test -n "$C3PO_SECURITY_REBUILD" \
     && cd /src/gosu \
     && git checkout --quiet "$GOSU_COMMIT" \
     && go mod edit -require="golang.org/x/sys@${GOSU_X_SYS_VERSION}" \
+    && go mod edit -require="github.com/moby/sys/user@${GOSU_MOBY_SYS_USER_VERSION}" \
     && go mod tidy \
     && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /go/bin/gosu . \
-    && go version -m /go/bin/gosu | grep -E "golang.org/x/sys[[:space:]]+${GOSU_X_SYS_VERSION}([[:space:]]|$)"
+    && go version -m /go/bin/gosu | grep -E "golang.org/x/sys[[:space:]]+${GOSU_X_SYS_VERSION}([[:space:]]|$)" \
+    && go version -m /go/bin/gosu | grep -E "github.com/moby/sys/user[[:space:]]+${GOSU_MOBY_SYS_USER_VERSION}([[:space:]]|$)"
 
 FROM postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
 
