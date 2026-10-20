@@ -1,0 +1,88 @@
+name: Security merge window
+
+# Merges green SECURITY updates (Dependabot updates linked to an open alert, patch/minor, manifests
+# only; the container rebuild lane with its zero-fixable proof) inside the safe window, at most
+# three per run, and dispatches ONE production deploy afterwards — a merge made with GITHUB_TOKEN
+# emits no push event, so without that dispatch production would not receive the fix. Rules and
+# the window clock live in .github/scripts/c3po_security_merge_window.py (doc:
+# c3po/docs/DAILY_SECURITY_MAINTENANCE.md, "Janela de merge de segurança").
+# Uses only the workflow GITHUB_TOKEN: no secret, no host, no database, no checkout of PR code
+# (only this main revision's own script is checked out; never pull_request_target).
+# Kill switch: repository variable C3PO_SECURITY_MERGE_WINDOW=off turns every run into a dry-run.
+
+on:
+  schedule:
+    # 18:00 BRT on weekdays, after the B3/US close; in US winter time the script waits (at most
+    # 30 min) for 16:15 ET. The last merge must leave 45 min for the deploy before 23:30 BRT.
+    - cron: "0 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: dry-run (classify and report only, nothing written) or live
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - live
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c3po-security-merge-window
+  cancel-in-progress: false
+
+jobs:
+  merge-window:
+    name: Merge green security updates in the safe window
+    runs-on: ubuntu-latest
+    # window wait 30 + pipeline idle 20 + up to three update/validation waits of 35 + deploy 60
+    timeout-minutes: 240
+    permissions:
+      # merge and update-branch
+      contents: write
+      pull-requests: write
+      # read the exact-head check runs and the open Dependabot alerts
+      checks: read
+      vulnerability-alerts: read
+      # dispatch c3po-pipeline.yml: validation of an updated head (deploy=false) and the one deploy
+      actions: write
+      # one daily summary on the Fable/Codex channel
+      issues: write
+    env:
+      CHANNEL_ISSUE: ${{ vars.C3PO_ESCALATION_ISSUE || '429' }}
+      MODE: ${{ (vars.C3PO_SECURITY_MERGE_WINDOW == 'off' && 'dry-run') || (github.event_name == 'schedule' && 'live') || inputs.mode || 'dry-run' }}
+    steps:
+      - name: Check out the merge-window script
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Classify, merge and deploy inside the window
+        id: window
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          if [[ ! "$CHANNEL_ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::C3PO_ESCALATION_ISSUE must be an issue number"
+            exit 1
+          fi
+          python3 .github/scripts/c3po_security_merge_window.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --channel-issue "$CHANNEL_ISSUE" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --mode "$MODE" \
+            --max-merges 3 \
+            --body "$RUNNER_TEMP/security-merge-window.md" \
+            --github-output "$GITHUB_OUTPUT" || exit $?
+
+      - name: Post the daily summary to the Fable-Codex channel
+        if: steps.window.outputs.post == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "$CHANNEL_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file "$RUNNER_TEMP/security-merge-window.md"

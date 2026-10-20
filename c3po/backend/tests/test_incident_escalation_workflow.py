@@ -292,8 +292,9 @@ def test_escalation_workflow_uses_only_the_workflow_token_and_minimal_permission
     assert '--channel-meta "$RUNNER_TEMP/channel.json"' in decide
     assert '--channel-issue "$CHANNEL_ISSUE"' in decide
     for workflow_file in ("container-vulnerability-scan.yml", "dependency-security.yml",
-                          "security-watchdog.yml"):
+                          "security-watchdog.yml", "security-merge-window.yml"):
         assert workflow_file in collect
+        assert f'--runs "{workflow_file}=$RUNNER_TEMP/runs-{workflow_file}.json"' in decide
     post = steps["Post the escalation to the Fable-Codex channel"]
     assert post["if"] == "steps.decide.outputs.post == 'true'"
     assert 'gh issue comment "$CHANNEL_ISSUE"' in post["run"]
