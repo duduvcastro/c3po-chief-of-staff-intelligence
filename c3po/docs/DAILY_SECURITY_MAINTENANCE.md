@@ -137,6 +137,35 @@ Validação de aceitação em produção: timer habilitado, primeiro ciclo regis
 permissões do token conferidas, PR/CI/merge controlado na janela e scan posterior
 mostrando os avisos resolvidos. Não executar esse ensaio durante o D14.
 
+## Relatório read-only de incidentes
+
+`.github/workflows/ops-readonly-report.yml` roda diariamente às 11:30 UTC (08:30 BRT, depois do fim do ciclo noturno às 08:15 BRT) e por
+`workflow_dispatch`. Pelo transporte SSH do deploy, executa
+`python -m app.operational_incidents --report-json` dentro do contêiner `api` em execução
+(`docker compose exec -T`, sessão PostgreSQL com `default_transaction_read_only=on`, nada
+copiado, criado ou reiniciado no host; reboot de segurança pendente adia o relatório). O
+módulo só lê o ledger de incidentes e os cartões **locais** do painel de saúde
+(governança, incidentes e controles Day D/valuation: linhas do banco e arquivos de
+evidência); as sondas externas e o ping de healthcheck nunca rodam.
+
+A saída é só agregada: incidentes abertos/reconhecidos agrupados por tipo
+(`governance-vulnerability`, `notification:job_failure`, `notification:disk_threshold` ou
+`other`), origem, severidade e estado, com quantidade, idade do episódio atual (abertura
+ou reabertura → agora), quantos passam de 24 h e a última observação; e os cartões
+vermelhos/âmbar por chave fixa. Chave do incidente, título, detalhe, evidência, ator e
+texto dos cartões nunca saem do processo. No runner, o verificador exige o esquema exato
+(chaves e vocabulário fechados, horários UTC, contagens não negativas, soma dos grupos
+igual aos totais, `report_sha256` recalculado) antes de publicar o artefato
+`incidents.json` + `summary.md` (português) + `SHA256SUMS`. Só quando há incidente aberto
+há mais de 24 h, uma linha agregada vai ao canal `C3PO_ESCALATION_ISSUE` (padrão #429),
+com o marcador `<!-- c3po-ops-readonly-report:AAAA-MM-DD -->`, no máximo uma vez por dia
+(BRT); canal fechado, trancado ou cheio deixa o agregado só no artefato, com aviso.
+
+O job usa o ambiente `production`, o mesmo de `valuation-readonly-report.yml` e do
+`security-watchdog.yml` agendado, que já rodam sem aprovação manual. As regras de proteção do
+ambiente não foram lidas pela API nesta entrega: se um dia exigirem revisor, o agendamento
+espera a aprovação como esses workflows.
+
 ## Correções incluídas nesta implantação
 
 `sharp` 0.35.0 → 0.35.4 (GHSA-rgj7-g3m4-5g8c) e Next.js 15.5.22 → 15.5.24 (GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4). A auditoria npm do lockfile final retornou zero avisos. Isso comprova a resolução das dependências no checkout, não uma implantação já realizada nem exploração no host.
