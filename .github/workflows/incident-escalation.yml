@@ -53,7 +53,7 @@ jobs:
           gh api --paginate \
             "repos/$GITHUB_REPOSITORY/pulls?state=open&base=main&per_page=100" \
             --jq '.[]' | jq -s '.' > "$RUNNER_TEMP/open-pulls.json"
-          for workflow in container-vulnerability-scan.yml dependency-security.yml security-watchdog.yml; do
+          for workflow in container-vulnerability-scan.yml dependency-security.yml security-watchdog.yml security-merge-window.yml; do
             gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&per_page=50" \
               --jq '.workflow_runs' > "$RUNNER_TEMP/runs-$workflow.json"
           done
@@ -71,6 +71,7 @@ jobs:
             --runs "container-vulnerability-scan.yml=$RUNNER_TEMP/runs-container-vulnerability-scan.yml.json" \
             --runs "dependency-security.yml=$RUNNER_TEMP/runs-dependency-security.yml.json" \
             --runs "security-watchdog.yml=$RUNNER_TEMP/runs-security-watchdog.yml.json" \
+            --runs "security-merge-window.yml=$RUNNER_TEMP/runs-security-merge-window.yml.json" \
             --channel-comments "$RUNNER_TEMP/channel-comments.json" \
             --channel-meta "$RUNNER_TEMP/channel.json" \
             --channel-issue "$CHANNEL_ISSUE" \

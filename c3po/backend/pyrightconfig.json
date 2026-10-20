@@ -1,6 +1,10 @@
 {
   "include": [
-    "app"
+    "app",
+    "../../.github/scripts"
+  ],
+  "extraPaths": [
+    "../../.github/scripts"
   ],
   "exclude": [
     "app/api_performance.py",

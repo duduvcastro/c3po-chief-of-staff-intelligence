@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -38,11 +39,15 @@ def _age(delta: timedelta) -> str:
 
 def _text(value: Any, limit: int = 100) -> str:
     """Untrusted text: no angle brackets at all (no HTML comment can be
-    reassembled, e.g. "<!<!----"), no mentions, no code spans; single line;
-    truncated."""
+    reassembled, e.g. "<!<!----"), no mentions, no code spans, no markdown
+    link or image (brackets become parentheses) and no autolink (the scheme
+    separator and "www." are broken); single line; truncated."""
     text = str(value)
     for token in ("<", ">", "@", "`"):
         text = text.replace(token, "")
+    text = text.replace("[", "(").replace("]", ")").replace("!(", "! (")
+    text = re.sub(r"(?i)://", ":/ /", text)
+    text = re.sub(r"(?i)\bwww\.", "www .", text)
     text = " ".join(text.split()).replace("|", "/")
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
