@@ -29,6 +29,12 @@ the report reads (``VALUATION-PIT-GRID-MANIFEST-v1``).
   computed instant (before any is measured: 300 s per run) reaches it; a SIGTERM stops it between runs
   (``stopped.reason = terminated``). The next invocation resumes. ``--expect-producer-sha256`` refuses to run when the
   producer (files and reader objects: ``producer()["engine_sha256"]``) is not the expected one.
+* **Both sources (prereg rev 2)**: right after the V3 run of every ``(exchange, T)`` the grid runs the SERVED internal TP
+  (``valuation_pit_served``: ``official_internal_v1`` — the One Pager producer — re-executed on the same point-in-time
+  inputs, on the V3 run's pinned vintage when it was just computed), reused under the same rules, checked against the same
+  grid inputs and the same A → B → A trap; the manifest lists its runs in ``served_grid`` (each naming its V3 sibling's
+  ``run_key``), ``sources`` and ``served_producer``. ``--sources v3_2_shadow`` runs the V3 source alone (the rev-1 grid: no
+  served key in the manifest); ``--expect-served-producer-sha256`` refuses another served producer.
 * **Output**: stdout carries JSON lines, aggregates only — one line per ``T`` (both runs: run_key, cycle, idempotent,
   reused, evaluated, records, not evaluable by reason, statements basis and coverage, the own-history model count, the
   elapsed seconds and the process's peak RSS) and a final ``manifest`` line with the whole manifest, printed BEFORE the
@@ -57,6 +63,7 @@ from typing import Any, Callable, Mapping, Sequence, cast
 from . import valuation_accuracy_report as accuracy
 from . import valuation_pit_backtest_report as backtest
 from . import valuation_pit_rerun as pit
+from . import valuation_pit_served as served
 from .config import Settings, get_settings
 from .database import Database
 from .valuation_official import canonical_sha256
@@ -73,6 +80,7 @@ INGESTION_WINDOW = timedelta(hours=12)
 INGESTION_LONG_RUNNING = timedelta(minutes=30)  # a run `running` this long blocks a write whatever its source (an IR poll lasts seconds)
 NIGHTLY_SOURCE_TYPE = "valuation_worker"  # the nightly valuation worker's runs block a write from their start
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+SOURCES: tuple[str, ...] = (backtest.SOURCE, backtest.SERVED_SOURCE)  # rev 2: both sources per (exchange, T): the V3 shadow, then the served internal TP
 
 
 class GridError(RuntimeError):
@@ -277,7 +285,7 @@ def host_check(database: Database, settings: Settings, *, markets: Sequence[str]
             "status": vintage["status"], "publication_id": vintage["publication_id"], "available_at": vintage["available_at"], "from": vintage["from"],
             "to": vintage["to"], "symbols": len(vintage["series_sha256"]), "bars": sum(int(count) for count in vintage["series_bars"].values())}
     return {"kind": "host_check", "now": pit._utc(now).isoformat(), "publications": publications, "coverage": asfiled_coverage(database, markets, backtest.STATEMENTS),
-            "ingestion_runs": running_ingestions(database, now), "producer": producer()}
+            "ingestion_runs": running_ingestions(database, now), "producer": producer(), "served_producer": served.producer()}
 
 
 def _entry(*, as_of: datetime, session: date, market: str, run_key: str, cycle_id: str, idempotent: bool, reused: bool, supersedes: str | None,
@@ -301,9 +309,14 @@ class GridRun:
 
     def __init__(self, database: Database, settings: Settings, *, market_group: str, price_pinned_at: datetime, statements: str, step: int,
                  catalogue_pinned_at: datetime | None = None, clock: Callable[[], datetime] | None = None, monotonic: Callable[[], float] = time.monotonic,
-                 emit: Callable[[dict[str, Any]], None] | None = None, grid_start: date | None = None, expect_producer_sha256: str | None = None) -> None:
+                 emit: Callable[[dict[str, Any]], None] | None = None, grid_start: date | None = None, expect_producer_sha256: str | None = None,
+                 sources: Sequence[str] = SOURCES, expect_served_producer_sha256: str | None = None) -> None:
         if market_group not in MARKET_GROUPS:
             raise GridError(f"unknown market group {market_group!r}")
+        if not sources or len(set(sources)) != len(sources) or any(source not in SOURCES for source in sources) or sources[0] != backtest.SOURCE:
+            raise GridError(f"--sources must start with {backtest.SOURCE} and name sources of {', '.join(SOURCES)} once each")
+        if expect_served_producer_sha256 is not None and served.producer()["engine_sha256"] != expect_served_producer_sha256:
+            raise GridError("the served producer files of this code are not the expected ones (--expect-served-producer-sha256): nothing runs")
         for name, pin in (("price", price_pinned_at), ("catalogue", catalogue_pinned_at)):
             if pin is not None and (pin.tzinfo is None or pin.utcoffset() is None):
                 raise GridError(f"the {name} pin must carry a time zone")
@@ -318,6 +331,7 @@ class GridRun:
         self.price_pinned_at = pit._utc(price_pinned_at)
         self.catalogue_pinned_at = pit._utc(catalogue_pinned_at) if catalogue_pinned_at is not None else None
         self.statements = statements
+        self.served = backtest.SERVED_SOURCE in sources  # the served internal TP runs right after the V3 run of every (exchange, T)
         self.step = step
         self.grid_start = grid_start or backtest.GRID_START
         self.clock: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
@@ -344,20 +358,27 @@ class GridRun:
 
     def dry_run(self, *, start: date | None, end: date | None) -> dict[str, Any]:
         bounds, full, sessions = plan(self.pins, step=self.step, start=start, end=end, grid_start=self.grid_start)
-        reusable_runs = 0
-        reusable_t = 0
+        reusable_runs = reusable_t = served_runs = served_t = 0
         for session in sessions:
             found = [reusable_run(self.database, market, backtest.t_instant(session), publication_id=self.pins[market]["publication_id"], statements=self.statements)
                      for market in self.markets]
             reusable_runs += sum(1 for item in found if item is not None)
             reusable_t += all(item is not None for item in found)
-        return {"kind": "dry_run", "market": self.market_group, "markets": list(self.markets), "price_pin": self._pin_block(), "catalogue_pin": self._catalogue_block(),
-                "statements": self.statements, "step_sessions": self.step, "grid_start": self.grid_start.isoformat(), "bounds": bounds,
-                "prereg_grid_sessions": len(full),
-                "grid": {"count": len(sessions), "first": sessions[0].isoformat() if sessions else None, "last": sessions[-1].isoformat() if sessions else None,
-                         "sessions": [session.isoformat() for session in sessions]},
-                "reusable": {"runs": reusable_runs, "t_complete": reusable_t}, "volume_basis": dict(self.volume_basis),
-                "coverage": asfiled_coverage(self.database, self.markets, self.statements, before=self.catalogue_pinned_at), "producer": producer()}
+            if self.served:
+                served_found = [served.reusable_run(self.database, market, backtest.t_instant(session), publication_id=self.pins[market]["publication_id"],
+                                                    statements=self.statements) for market in self.markets]
+                served_runs += sum(1 for item in served_found if item is not None)
+                served_t += all(item is not None for item in served_found)
+        result = {"kind": "dry_run", "market": self.market_group, "markets": list(self.markets), "price_pin": self._pin_block(), "catalogue_pin": self._catalogue_block(),
+                  "statements": self.statements, "step_sessions": self.step, "grid_start": self.grid_start.isoformat(), "bounds": bounds,
+                  "prereg_grid_sessions": len(full),
+                  "grid": {"count": len(sessions), "first": sessions[0].isoformat() if sessions else None, "last": sessions[-1].isoformat() if sessions else None,
+                           "sessions": [session.isoformat() for session in sessions]},
+                  "reusable": {"runs": reusable_runs, "t_complete": reusable_t}, "volume_basis": dict(self.volume_basis),
+                  "coverage": asfiled_coverage(self.database, self.markets, self.statements, before=self.catalogue_pinned_at), "producer": producer()}
+        if self.served:
+            result.update({"sources": list(SOURCES), "served_reusable": {"runs": served_runs, "t_complete": served_t}, "served_producer": served.producer()})
+        return result
 
     def _terminate(self, _signum: int, _frame: Any) -> None:
         self.terminated = True  # checked between runs: the run in flight completes, the manifest is written
@@ -374,14 +395,16 @@ class GridRun:
             return "stop_before_predicted"
         return None
 
-    def _check(self, market: str, as_of: datetime, manifest: Mapping[str, Any], catalogue_snapshot_id: str | None, run_key: str, *, computed: bool) -> None:
-        """A run — reused or just computed — read the grid's inputs and is the latest run of its ``(exchange, T)``."""
+    def _check(self, market: str, as_of: datetime, manifest: Mapping[str, Any], catalogue_snapshot_id: str | None, run_key: str, *, computed: bool,
+               analysis_type: str = pit.ANALYSIS_TYPE) -> None:
+        """A run — reused or just computed, of either source (``analysis_type``) — read the grid's inputs and is the latest
+        run of its ``(exchange, T)``."""
         if self.sources is not None:
             problems = check_sources(manifest, self.sources[market], market=market, catalogue_snapshot_id=catalogue_snapshot_id)
             if problems:
                 raise GridError(f"the {market} run of {as_of.isoformat()} read other inputs than the grid resolved at start ({', '.join(problems)})")
         if computed:  # A → B → A: an idempotent A is not the store's latest run when a B superseded it in between
-            latest = self.database.latest_analysis_snapshot_by_inputs(pit.ANALYSIS_TYPE, {"market": market, "as_of": as_of.isoformat()})
+            latest = self.database.latest_analysis_snapshot_by_inputs(analysis_type, {"market": market, "as_of": as_of.isoformat()})
             if latest is None or str(pit._mapping(latest.get("inputs")).get("run_key")) != run_key:
                 raise GridError(f"the latest {market} run of {as_of.isoformat()} is not the run just computed: another run of that instant superseded it")
 
@@ -398,6 +421,7 @@ class GridRun:
         self.failure = None
         self.terminated = False
         entries: list[dict[str, Any]] = []
+        served_entries: list[dict[str, Any]] = []
         computed = 0
         slowest: float | None = None  # the slowest computed instant so far; before the first, PRIOR_SECONDS_PER_RUN per run
         stopped: dict[str, Any] | None = None
@@ -409,11 +433,13 @@ class GridRun:
                 try:
                     found = {market: (None if recompute_existing else reusable_run(self.database, market, as_of, publication_id=self.pins[market]["publication_id"],
                                                                                    statements=self.statements)) for market in self.markets}
-                    needs_run = any(snapshot is None for snapshot in found.values())
+                    served_found = {market: (None if recompute_existing or not self.served else served.reusable_run(
+                        self.database, market, as_of, publication_id=self.pins[market]["publication_id"], statements=self.statements)) for market in self.markets}
+                    needs_run = any(snapshot is None for snapshot in found.values()) or (self.served and any(snapshot is None for snapshot in served_found.values()))
                     if needs_run and max_runs is not None and computed >= max_runs:
                         stopped = {"reason": "max_runs", "at": as_of.isoformat()}
                         break
-                    expected = slowest if slowest is not None else PRIOR_SECONDS_PER_RUN * len(self.markets)
+                    expected = slowest if slowest is not None else PRIOR_SECONDS_PER_RUN * len(self.markets) * (2 if self.served else 1)  # a served run per V3 run
                     reason = self._stop_reason(stop_before, predict=expected if needs_run else None)
                     if reason is not None:
                         stopped = {"reason": reason, "at": as_of.isoformat()}
@@ -421,6 +447,9 @@ class GridRun:
                     line: dict[str, Any] = {"kind": "t", "as_of": as_of.isoformat(), "session_date": session.isoformat(), "runs": {}}
                     started = self.monotonic()
                     pending: list[dict[str, Any]] = []
+                    served_pending: list[dict[str, Any]] = []
+                    if self.served:
+                        line["served"] = {}
                     for market in self.markets:
                         reason = self._stop_reason(stop_before, predict=None)
                         if reason is not None:  # before EVERY exchange's run: a half-done instant is never listed (its runs are reused next time)
@@ -428,6 +457,7 @@ class GridRun:
                             break
                         tick = self.monotonic()
                         snapshot = found[market]
+                        computation: pit.PitComputation | None = None
                         if snapshot is not None:
                             inputs, outputs = pit._mapping(snapshot.get("inputs")), pit._mapping(snapshot.get("outputs"))
                             summary = pit._mapping(outputs.get("summary"))
@@ -452,9 +482,19 @@ class GridRun:
                                            records=int(receipt["records"]["expected"]), history_active=_history_active(computation.results))
                         pending.append(entry)
                         line["runs"][market] = _line(entry, summary, self.monotonic() - tick)
+                        if self.served:
+                            reason = self._stop_reason(stop_before, predict=None)
+                            if reason is not None:  # between the V3 run and its served run too: the half-done instant is never listed
+                                stopped = {"reason": reason, "at": as_of.isoformat(), "market": market, "source": backtest.SERVED_SOURCE}
+                                break
+                            tick = self.monotonic()
+                            served_entry, served_summary = self._served_run(market, as_of, session, served_found[market], computation, v3_run_key=entry["run_key"])
+                            served_pending.append(served_entry)
+                            line["served"][market] = _line(served_entry, served_summary, self.monotonic() - tick)
                     if stopped is not None:
                         break
                     entries.extend(pending)
+                    served_entries.extend(served_pending)
                     elapsed = self.monotonic() - started
                     if needs_run:
                         computed += 1
@@ -477,8 +517,37 @@ class GridRun:
             "complete": all(session.isoformat() in done for session in full), "remaining": sum(1 for session in full if session.isoformat() not in done),
             "stopped": stopped, "producer": producer(), "volume_basis": dict(self.volume_basis), "owner_order_sha256": owner_order_sha256,
         }
+        if self.served:  # rev 2: the served internal TP's runs, one per (exchange, T) beside the V3 run (its run_key named), and their producer
+            manifest.update({"sources": list(SOURCES), "served_grid": served_entries, "served_producer": served.producer()})
         manifest["manifest_sha256"] = backtest.manifest_sha256(manifest)
         return manifest
+
+    def _served_run(self, market: str, as_of: datetime, session: date, snapshot: Mapping[str, Any] | None, computation: pit.PitComputation | None, *,
+                    v3_run_key: str) -> tuple[dict[str, Any], Mapping[str, Any]]:
+        """The served internal TP's run of ``(exchange, T)``, right after its V3 run: reused when complete, else computed through
+        the served module's public API — on the V3 run's pinned vintage and as-filed reader when it was just computed (their
+        caches; the same pins) — and checked as a V3 run is (the grid's inputs, the latest run of its (exchange, T))."""
+        if snapshot is not None:
+            inputs, outputs = pit._mapping(snapshot.get("inputs")), pit._mapping(snapshot.get("outputs"))
+            summary = pit._mapping(outputs.get("summary"))
+            self._check(market, as_of, pit._mapping(inputs.get("manifest")), pit._mapping(inputs.get("catalogue_pin")).get("resolved_snapshot_id"),
+                        str(inputs["run_key"]), computed=False, analysis_type=served.ANALYSIS_TYPE)
+            entry = _entry(as_of=as_of, session=session, market=market, run_key=str(inputs["run_key"]), cycle_id=str(snapshot["id"]), idempotent=True, reused=True,
+                           supersedes=inputs.get("supersedes"), summary=summary, records=len(outputs.get("prediction_identities") or []), history_active=0)
+            return {**entry, "v3_run_key": v3_run_key}, summary
+        service = served.PitServedService(self.database, settings=self.settings)
+        receipt, run = service.rerun(market, as_of=as_of, price_pinned_at=self.price_pinned_at, statements=self.statements, catalogue_pinned_at=self.catalogue_pinned_at,
+                                     prices=computation.resolver.prices if computation is not None else None,
+                                     vintages=computation.resolver.vintages if computation is not None else None)
+        if service.http is not None and service.http.calls != 0:
+            raise pit.PitRerunIntegrityError(f"a served grid run made {service.http.calls} network call(s)")
+        if receipt["price_vintage"] != self.pins[market]["publication_id"]:
+            raise GridError(f"the served {market} run resolved another publication than the grid's pin")
+        self._check(market, as_of, run.manifest, pit._mapping(receipt.get("catalogue_pin")).get("resolved_snapshot_id"), str(receipt["run_key"]), computed=True,
+                    analysis_type=served.ANALYSIS_TYPE)
+        entry = _entry(as_of=as_of, session=session, market=market, run_key=receipt["run_key"], cycle_id=receipt["cycle_id"], idempotent=bool(receipt["idempotent"]),
+                       reused=False, supersedes=receipt["supersedes"], summary=receipt, records=int(receipt["records"]["expected"]), history_active=0)
+        return {**entry, "v3_run_key": v3_run_key}, receipt
 
 
 # ------------------------------------------------------------------ CLI
@@ -510,6 +579,9 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     parser.add_argument("--stop-before", default=None, help="do not start a run at/after this ISO-8601 instant WITH zone (the operator's window)")
     parser.add_argument("--owner-order-sha256", default=None, help="the sha256 of the owner's order authorising the writes, recorded in the manifest")
     parser.add_argument("--expect-producer-sha256", default=None, help="refuse to run unless the canonical sha256 of the producer files is this one")
+    parser.add_argument("--expect-served-producer-sha256", default=None, help="refuse to run unless the canonical sha256 of the served producer is this one")
+    parser.add_argument("--sources", default=",".join(SOURCES), help=f"comma-separated sources per (exchange, T) (the prereg rev 2 fixes {','.join(SOURCES)}; "
+                                                                      f"{SOURCES[0]} alone is the rev-1 grid)")
     parser.add_argument("--recompute-existing", action="store_true", help="re-run every T through the public API instead of reusing a complete run")
     parser.add_argument("--dry-run", action="store_true", help="print the grid, the pins, the coverage and what is reusable; nothing written")
     parser.add_argument("--host-check", action="store_true", help="print the price publications a cut now sees, the as-filed coverage and the running ingestions")
@@ -535,7 +607,9 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
         parser.error("--step-sessions must be positive")
     if args.max_runs is not None and args.max_runs < 0:
         parser.error("--max-runs must be >= 0")
-    for option, value in (("--owner-order-sha256", args.owner_order_sha256), ("--expect-producer-sha256", args.expect_producer_sha256)):
+    sources = tuple(source.strip() for source in str(args.sources).split(",") if source.strip())
+    for option, value in (("--owner-order-sha256", args.owner_order_sha256), ("--expect-producer-sha256", args.expect_producer_sha256),
+                          ("--expect-served-producer-sha256", args.expect_served_producer_sha256)):
         if value is not None and not _SHA256.match(value):
             parser.error(f"{option} must be 64 lowercase hex characters")
     if not args.dry_run:
@@ -554,7 +628,8 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     database = database if database is not None else Database(settings)
     try:
         grid = GridRun(database, settings, market_group=args.market, price_pinned_at=pinned_at, catalogue_pinned_at=catalogue_pinned_at, statements=args.statements,
-                       step=args.step_sessions, clock=clock, grid_start=grid_start, expect_producer_sha256=args.expect_producer_sha256)
+                       step=args.step_sessions, clock=clock, grid_start=grid_start, expect_producer_sha256=args.expect_producer_sha256, sources=sources,
+                       expect_served_producer_sha256=args.expect_served_producer_sha256)
         if args.dry_run:
             print(json.dumps(grid.dry_run(start=start, end=end), sort_keys=True, allow_nan=False))
             return 0
