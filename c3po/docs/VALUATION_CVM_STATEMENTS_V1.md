@@ -157,9 +157,12 @@ grava nada (a `.env` mantém o que tem) — para desligar, defina `false`.
    vazia ou `false`); deploy. Só o **ciclo noturno** do `valuation-worker` (`B3ScreenerService(nightly_cvm_shadow=True)`)
    roda a sombra — nunca o build completo frio de outro processo nem o de `refresh_symbols`. O build entrega ao
    `ShadowCapture` os mesmos payloads EODHD que consumiu, no mesmo instante; depois de publicar o ciclo servido, **uma
-   chamada** avalia o universo três vezes com o mesmo catálogo, cotações, Brapi, histórico, macro e consenso:
-   **antes** (os fundamentos servidos, recalculados ali — o recibo diz quantos batem com as linhas do ciclo publicado,
-   `names.before_matches_served`), **só a correção do fluxo de caixa** (sem linha CVM, para essa correção não ser
+   chamada** avalia o universo três vezes com o mesmo catálogo, cotações, Brapi, histórico, macro e consenso **e com as
+   mesmas leituras do banco e o mesmo instante do passe servido** — eventos de RI, atividade de insiders e o corte,
+   gravados uma vez pelo passe servido e reaproveitados nas três variantes (uma escrita do IR worker entre o ciclo e a
+   sombra nunca é atribuída à CVM; achado do Codex na #459):
+   **antes** (os fundamentos servidos, recalculados ali — o recibo diz quantos batem com as linhas do ciclo publicado em
+   TP interno, buy-in interno e status, `before_vs_served`, e em todos, `names.before_matches_served`), **só a correção do fluxo de caixa** (sem linha CVM, para essa correção não ser
    atribuída à CVM) e **depois** (overlay campo a campo). Grava **uma** snapshot `analysis_snapshots`
    (`analysis_type = valuation_cvm_overlay_shadow`, entidade `B3_UNIVERSE`):
    - `aggregate` (sem nenhum símbolo): `n`, mediana e p90 de `variante/referência − 1` e do módulo — TP e buy-in

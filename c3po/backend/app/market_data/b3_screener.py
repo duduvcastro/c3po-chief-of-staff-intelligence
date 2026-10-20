@@ -3,6 +3,7 @@ import math
 import os
 import re
 import statistics
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from threading import Lock, RLock
 from typing import Any
@@ -30,6 +31,15 @@ from ..valuation_policy import (
 
 
 logger = logging.getLogger(__name__)
+
+# The valuation cut of a row-preparation REPLAY (the CVM overlay shadow): unset — the served path — every clock read
+# below is the wall clock, exactly as before; set, the date-level ages and the insider lookback read the cut the served
+# pass recorded, so the shadow's three variants and the served rows are valued at one instant (``_prepare_rows``).
+_VALUATION_CUT: ContextVar[datetime | None] = ContextVar("b3_valuation_cut", default=None)
+
+
+def _valuation_now() -> datetime:
+    return _VALUATION_CUT.get() or datetime.now(timezone.utc)
 
 UNIVERSE_LIMIT = 350
 CATALOG_FETCH_LIMIT = 700
@@ -658,6 +668,7 @@ class B3ScreenerService:
             consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map,
                                                                   consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": reference_receipts})
             coverage_audit: dict[str, int] = {}
+            served_inputs: dict[str, Any] | None = {} if cvm_capture is not None else None  # recorded for the shadow's replays
             rows = self._prepare_rows(
                 catalog,
                 quotes,
@@ -669,6 +680,7 @@ class B3ScreenerService:
                 consensus_references,
                 coverage_audit=coverage_audit,
                 consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
+                row_inputs=served_inputs,
             )
             sector_audit, sector_counts = self._sector_coverage_audit(catalog, eodhd_map)
             coverage_audit.update(sector_counts)
@@ -702,6 +714,7 @@ class B3ScreenerService:
                 prepare_inputs=(catalog, quotes, statistics_map, financial_map, historical_map, macro),
                 consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
                 references=(reference_quotes, reference_financial, {"brapi": reference_brapi_at, "eodhd": reference_receipts}),
+                served_inputs=served_inputs or {},
             )
         return response
 
@@ -715,6 +728,7 @@ class B3ScreenerService:
         prepare_inputs: tuple[Any, ...],
         consensus_fetched_at: dict[str, Any],
         references: tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, Any]],
+        served_inputs: dict[str, Any],
     ) -> None:
         """The CVM field-wise overlay shadow of this cycle (``valuation_cvm_overlay_shadow``): the universe valued again —
         same catalog, quotes, Brapi data, history, macro and consensus receipts — over the field-wise overlay of the very
@@ -734,10 +748,11 @@ class B3ScreenerService:
                 references_rows = self._consensus_reference_rows(reference_quotes, reference_financial, fundamentals,
                                                                  consensus_fetched_at=reference_fetched_at)
                 return self._prepare_rows(catalog, quotes, statistics_map, financial_map, historical_map, macro, fundamentals,
-                                          references_rows, consensus_fetched_at=consensus_fetched_at)
+                                          references_rows, consensus_fetched_at=consensus_fetched_at, row_inputs=served_inputs)
 
-            # the three variants in ONE call, at the same moment: before (the served fundamentals, recomputed here and
-            # compared with the published rows), the cash-flow fix alone (no CVM row) and after (the field-wise overlay)
+            # the three variants in ONE call, on the served pass's own store reads and cut (IR events, insider activity,
+            # the instant): before (the served fundamentals, recomputed here and compared with the published rows —
+            # internal TP, buy-in and status), the cash-flow fix alone (no CVM row) and after (the field-wise overlay)
             before_rows = valued(dict(capture.served))
             cash_flow_fix_rows = valued(dict(capture.cash_flow_fixed))
             after_rows = valued(dict(capture.shadow))
@@ -1268,6 +1283,36 @@ class B3ScreenerService:
         enforce_screening_gates: bool = True,
         enforce_quality_gate: bool = True,
         consensus_fetched_at: dict[str, Any] | None = None,  # per provider: brapi = one receipt instant for this build; eodhd = per-symbol receipts (cached) — facts, never the cycle clock (PROMO-2 c)
+        row_inputs: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """``row_inputs`` (the CVM overlay shadow only): an EMPTY dict RECORDS what this pass read from the store and the
+        clock — the IR events, the insider activity and the cut instant; a filled one REPLAYS them, with the cut set for
+        every date-level age of the pass. ``None`` (every served caller) reads as always."""
+        if row_inputs:
+            token = _VALUATION_CUT.set(row_inputs["cut"])
+            try:
+                return self._prepare_rows_at(catalog, quotes, stats, financial, history, macro, eodhd, consensus_references, coverage_audit,
+                                             enforce_screening_gates, enforce_quality_gate, consensus_fetched_at, row_inputs)
+            finally:
+                _VALUATION_CUT.reset(token)
+        return self._prepare_rows_at(catalog, quotes, stats, financial, history, macro, eodhd, consensus_references, coverage_audit,
+                                     enforce_screening_gates, enforce_quality_gate, consensus_fetched_at, row_inputs)
+
+    def _prepare_rows_at(
+        self,
+        catalog: list[dict[str, Any]],
+        quotes: dict[str, Any],
+        stats: dict[str, dict[str, Any]],
+        financial: dict[str, dict[str, Any]],
+        history: dict[str, dict[str, float]],
+        macro: dict[str, float],
+        eodhd: dict[str, dict[str, Any]] | None,
+        consensus_references: list[dict[str, Any]] | None,
+        coverage_audit: dict[str, int] | None,
+        enforce_screening_gates: bool,
+        enforce_quality_gate: bool,
+        consensus_fetched_at: dict[str, Any] | None,
+        row_inputs: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
         eodhd = eodhd or {}
         if coverage_audit is not None:
@@ -1280,10 +1325,16 @@ class B3ScreenerService:
 
         rows: list[dict[str, Any]] = []
         catalog_symbols = [str(item.get("symbol", "")).upper() for item in catalog if item.get("symbol")]
-        ir_events = self.database.latest_valuation_ir_events(catalog_symbols, market="B3")
-        insider_activity = self.database.insider_transaction_activity(
-            catalog_symbols, "B3", datetime.now(timezone.utc) - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS),
-        )
+        if row_inputs:  # a replay: the served pass's reads, never re-read (an IR update in between is not the CVM's doing)
+            ir_events, insider_activity = row_inputs["ir_events"], row_inputs["insider_activity"]
+        else:
+            cut = _valuation_now()
+            ir_events = self.database.latest_valuation_ir_events(catalog_symbols, market="B3")
+            insider_activity = self.database.insider_transaction_activity(
+                catalog_symbols, "B3", cut - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS),
+            )
+            if row_inputs is not None:
+                row_inputs.update({"cut": cut, "ir_events": ir_events, "insider_activity": insider_activity})
         for item in catalog:
             symbol = str(item.get("symbol", "")).upper()
             quote = quotes.get(symbol)
@@ -1716,7 +1767,7 @@ class B3ScreenerService:
             try:
                 consensus_date = date.fromisoformat(official["as_of"])
                 consensus_age = (
-                    datetime.now(ZoneInfo("America/Sao_Paulo")).date() - consensus_date
+                    _valuation_now().astimezone(ZoneInfo("America/Sao_Paulo")).date() - consensus_date
                 ).days
             except (TypeError, ValueError):
                 continue
@@ -2568,7 +2619,7 @@ class B3ScreenerService:
             fundamentals_date = date.fromisoformat(str(value)[:10])
         except ValueError:
             return None
-        return max((datetime.now(ZoneInfo("America/Sao_Paulo")).date() - fundamentals_date).days, 0)
+        return max((_valuation_now().astimezone(ZoneInfo("America/Sao_Paulo")).date() - fundamentals_date).days, 0)
 
     @staticmethod
     def _ir_freshness(fundamentals_as_of: Any, event: dict[str, Any] | None) -> dict[str, Any]:

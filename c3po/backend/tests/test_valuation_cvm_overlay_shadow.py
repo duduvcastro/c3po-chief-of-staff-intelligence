@@ -585,6 +585,66 @@ def test_the_shadow_runs_only_in_the_nightly_build(monkeypatch: pytest.MonkeyPat
     assert nightly.database.latest_analysis_snapshot(shadow.ANALYSIS_TYPE, shadow.ENTITY_KEY) is not None
 
 
+def test_an_ir_update_between_the_served_pass_and_the_shadow_is_never_attributed_to_the_cvm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex P2 on #459: each variant re-read IR events and insider activity; an IR-worker write in between moved risk and
+    buy-in (identical TP, before_matches_served 8/8, 7/8 buy-ins "changed"). Now the shadow replays the served pass's own
+    reads and cut: the update is invisible to all three variants, and before agrees with the served rows in TP, buy-in
+    and status for every name."""
+    monkeypatch.delenv(FIELDWISE_OVERLAY_ENV, raising=False)
+    monkeypatch.setenv(valuation_env.CVM_OVERLAY_SHADOW_ENV, "true")
+    database = _database()
+    service = _service(database)
+    state = {"updated": False, "reads_after_update": 0}
+    original_ir, original_insider = database.latest_valuation_ir_events, database.insider_transaction_activity
+
+    def ir_events(symbols: list[str], *, market: str) -> dict[str, Any]:
+        if not state["updated"]:
+            return original_ir(symbols, market=market)
+        state["reads_after_update"] += 1
+        return {symbol: {"event_type": "Material Fact", "materiality": "high", "published_at": "2026-10-19T22:00:00+00:00",
+                         "reference_date": None} for symbol in symbols}  # an IR-worker write after the served pass
+
+    def insider_activity(symbols: list[str], market: str, since: datetime) -> dict[str, Any]:
+        if not state["updated"]:
+            return original_insider(symbols, market, since)
+        state["reads_after_update"] += 1
+        return {symbol: {"total_count": 20, "buy_count": 0, "sell_count": 20} for symbol in symbols}
+
+    persist = service._persist_cvm_overlay_shadow
+
+    def shadow_after_an_ir_write(*args: Any, **kwargs: Any) -> None:
+        state["updated"] = True  # the IR worker writes between the published cycle and the shadow
+        persist(*args, **kwargs)
+
+    monkeypatch.setattr(database, "latest_valuation_ir_events", ir_events)
+    monkeypatch.setattr(database, "insider_transaction_activity", insider_activity)
+    monkeypatch.setattr(service, "_persist_cvm_overlay_shadow", shadow_after_an_ir_write)
+    service.screen(refresh=True)
+    assert state == {"updated": True, "reads_after_update": 0}  # the shadow re-read nothing
+    aggregate = database.latest_analysis_snapshot(shadow.ANALYSIS_TYPE, shadow.ENTITY_KEY)["outputs"]["aggregate"]
+    agreement = aggregate["before_vs_served"]
+    assert agreement["compared"] == len(service._matrix_rows) and agreement == {"compared": agreement["compared"], "internal_tp": agreement["compared"],
+                                                                              "internal_buy_in": agreement["compared"], "internal_status": agreement["compared"],
+                                                                              "all": agreement["compared"]}
+    assert aggregate["names"]["before_matches_served"] == agreement["compared"]
+    # only the one name the CVM rows (and the cash-flow fix) touch can move; the update moves no other buy-in
+    assert aggregate["internal_buy_in"]["changed"] <= 1 and aggregate["cash_flow_fix_internal_tp"]["changed"] <= 1
+
+    # the same update re-read by the shadow (the defect) would move every buy-in: proven by replaying the variants unrecorded
+    replayed = service._prepare_rows(*_shadow_inputs(service), row_inputs=None)
+    assert state["reads_after_update"] == 2
+    served = {row["symbol"]: row for row in service._matrix_rows}
+    moved = sum(1 for row in replayed if abs(row["internal_buy_in"] / served[row["symbol"]]["internal_buy_in"] - 1) > 1e-9)
+    assert moved > 1
+
+
+def _shadow_inputs(service: Any) -> tuple[Any, ...]:
+    catalog = _Http().get_json("")["results"]
+    eodhd = {symbol: entry[0] for symbol, entry in service._eodhd_cache.items()}
+    return (catalog, service._quotes(SYMBOLS), service._fundamental_map("statistics", SYMBOLS), service._fundamental_map("financial-data", SYMBOLS),
+            service._historical_map(SYMBOLS), {"selic": 0.12, "ipca12m": 0.045}, apply_official_fundamentals_map(service.database, eodhd, market="B3"))
+
+
 def test_with_the_shadow_on_everything_served_and_stored_is_identical(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reviewer probe (identity): the response, the matrix rows, every other snapshot and the prediction records are the
     same with the shadow on and off, field for field (instants and ids aside); the shadow adds exactly one snapshot."""

@@ -73,14 +73,15 @@ METHODOLOGY_PARAMETERS = {
 SHADOW_OVERLAY = "fieldwise"
 CHANGE_TOLERANCE = 0.0005  # |after/before - 1| above 0.05 % counts as a change (float noise is far below it)
 EBITDA_TOLERANCE = 0.01  # |after/before - 1| of TTM EBITDA above 1 % counts as an EBITDA change
-MATCH_TOLERANCE = 1e-9  # the recomputed "before" matches the served row when its internal TP is within this relative gap
+MATCH_TOLERANCE = 1e-9  # the recomputed "before" matches the served row: internal TP and buy-in within this relative gap
 STATS_KEYS = ("n", "median", "p90", "abs_median", "abs_p90", "changed", "over_5_percent", "over_20_percent")
 AGGREGATE_KEYS = (
     "schema", "market", "cycle_id", "basis_at", "statements_as_of", "served_overlay", "shadow_overlay", "universe",
     "overlay_origin", "receipt_guard_excluded", "names", "internal_tp", "internal_buy_in", "cash_flow_fix_internal_tp",
-    "cvm_rows_internal_tp", "internal_validation", "field_sources", "cash_flow_guard", "ebitda", "shares_scale_skipped",
-    "private_detail_sha256",
+    "cvm_rows_internal_tp", "internal_validation", "before_vs_served", "field_sources", "cash_flow_guard", "ebitda",
+    "shares_scale_skipped", "private_detail_sha256",
 )
+BEFORE_VS_SERVED_KEYS = ("compared", "internal_tp", "internal_buy_in", "internal_status", "all")
 NAMES_KEYS = ("served_rows", "before", "before_matches_served", "after", "pairs", "only_before", "only_after")
 ORIGIN_KEYS = ("statements", "legacy", "stale", "none")
 VALIDATION_KEYS = ("before_validated", "after_validated", "changed")
@@ -239,10 +240,16 @@ def build_shadow_outputs(
     served, before, fixed, after = (_by_symbol(rows) for rows in (served_rows, before_rows, cash_flow_fix_rows, after_rows))
     before_valued, fixed_valued, after_valued = _valued(before), _valued(fixed), _valued(after)
     pairs = sorted(before_valued & after_valued)
-    matches = sum(
-        1 for symbol in _valued(served) & before_valued
-        if abs((_positive(before[symbol].get("internal_tp")) or 0.0) / (_positive(served[symbol].get("internal_tp")) or 1.0) - 1) <= MATCH_TOLERANCE
-    )
+
+    def same(column: str, symbol: str) -> bool:
+        if column == "internal_status":
+            return before[symbol].get(column) == served[symbol].get(column)
+        first, second = _positive(before[symbol].get(column)), _positive(served[symbol].get(column))
+        return first is not None and second is not None and abs(first / second - 1) <= MATCH_TOLERANCE
+
+    compared = sorted(_valued(served) & before_valued)
+    agreement = {column: {symbol for symbol in compared if same(column, symbol)} for column in ("internal_tp", "internal_buy_in", "internal_status")}
+    matches = len(set.intersection(*agreement.values())) if compared else 0
 
     universe = [symbol for symbol in dict.fromkeys(str(symbol).upper() for symbol in universe_symbols) if symbol in capture.shadow]
     field_sources = {name: {source: 0 for source in SOURCES} for name in SOURCE_FIELDS}
@@ -310,6 +317,7 @@ def build_shadow_outputs(
             "after_validated": sum(validated(row) for row in after.values()),
             "changed": sum(validated(before.get(symbol)) != validated(after.get(symbol)) for symbol in set(before) | set(after)),
         },
+        "before_vs_served": {"compared": len(compared), **{column: len(names) for column, names in agreement.items()}, "all": matches},
         "field_sources": field_sources,
         "cash_flow_guard": guard_counts,
         "ebitda": ebitda_counts,
@@ -399,8 +407,9 @@ def before_after_markdown(receipt: Mapping[str, Any]) -> str:
         f"- Produzido pela revisão implantada `{receipt.get('producer_build_sha')}` no ciclo noturno (`receipt_sha256` "
         f"`{receipt.get('receipt_sha256')}`; lido pela revisão `{receipt.get('reader_build_sha')}`)",
         f"- Ciclo B3 `{receipt.get('cycle_id')}`, base `{receipt.get('basis_at')}`; demonstrações lidas em `{receipt.get('statements_as_of')}`",
-        f"- Antes: overlay servido `{receipt.get('served_overlay')}`, recalculado na mesma chamada (bate com o ciclo servido em "
-        f"{names.get('before_matches_served')} de {names.get('served_rows')}); depois: `{receipt.get('shadow_overlay')}` (nada servido muda)",
+        f"- Antes: overlay servido `{receipt.get('served_overlay')}`, recalculado na mesma chamada sobre as mesmas leituras de RI, "
+        f"insiders e o mesmo instante do ciclo (bate com o ciclo servido em TP, buy-in e status em {names.get('before_matches_served')} de "
+        f"{(receipt.get('before_vs_served') or {}).get('compared')}); depois: `{receipt.get('shadow_overlay')}` (nada servido muda)",
         f"- Universo com fundamentos: {receipt.get('universe')}; origem do overlay: demonstrações completas {origin.get('statements')}, "
         f"legado {origin.get('legacy')}, mais antigo que o provedor (não aplicado) {origin.get('stale')}, nenhum {origin.get('none')}; "
         f"recusados pela trava de recebimento: {receipt.get('receipt_guard_excluded')}",

@@ -338,8 +338,8 @@ jobs:
           # reach a public artifact, and no block can be keyed by a symbol
           AGGREGATE = {"schema", "market", "cycle_id", "basis_at", "statements_as_of", "served_overlay", "shadow_overlay", "universe",
                        "overlay_origin", "receipt_guard_excluded", "names", "internal_tp", "internal_buy_in", "cash_flow_fix_internal_tp",
-                       "cvm_rows_internal_tp", "internal_validation", "field_sources", "cash_flow_guard", "ebitda", "shares_scale_skipped",
-                       "private_detail_sha256"}
+                       "cvm_rows_internal_tp", "internal_validation", "before_vs_served", "field_sources", "cash_flow_guard", "ebitda",
+                       "shares_scale_skipped", "private_detail_sha256"}
           ATTESTATION = {"report_sha256", "snapshot_id", "snapshot_published_at", "producer_build_sha", "reader_build_sha", "receipt_sha256"}
           STATS = {"n", "median", "p90", "abs_median", "abs_p90", "changed", "over_5_percent", "over_20_percent"}
           BLOCKS = {
@@ -350,6 +350,7 @@ jobs:
               "cash_flow_fix_internal_tp": STATS,
               "cvm_rows_internal_tp": STATS,
               "internal_validation": {"before_validated", "after_validated", "changed"},
+              "before_vs_served": {"compared", "internal_tp", "internal_buy_in", "internal_status", "all"},
               "cash_flow_guard": {"cumulative", "annual_missing", "annual_mismatch"},
               "ebitda": {"changed", "legacy_partial_window", "corrected"},
           }
