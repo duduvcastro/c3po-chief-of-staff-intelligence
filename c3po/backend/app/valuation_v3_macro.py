@@ -47,6 +47,23 @@ def _annual_rate(value: Any) -> float | None:
     return parsed / 100 if parsed > 1 else parsed
 
 
+PERCENT_RATE_BOUNDS = (-0.01, 0.20)  # a converted yield outside this range is not a yield in percent: the series is refused, never guessed
+
+
+def _percent_rate(value: Any, *, series: str) -> float | None:
+    """A yield of a series quoted IN PERCENT (EODHD GBOND closes): ALWAYS ``value / 100`` — the unit is the series', never
+    guessed per value (a 0.30 % three-year yield of 2021 is 0.003, not 0.30). ``None`` for a missing or non-positive
+    close (as ``_annual_rate``); a converted value outside ``PERCENT_RATE_BOUNDS`` is a ``ValuationV3MacroDataError``
+    naming the series. Identical to ``_annual_rate`` for every close above 1 (%)."""
+    parsed = _number(value)
+    if parsed is None or parsed <= 0:
+        return None
+    rate = parsed / 100
+    if not PERCENT_RATE_BOUNDS[0] <= rate <= PERCENT_RATE_BOUNDS[1]:
+        raise ValuationV3MacroDataError(f"{series}: a close of {parsed} % is not a yield in percent (outside {PERCENT_RATE_BOUNDS})")
+    return rate
+
+
 def _available_after_day(observation_date: date) -> str:
     # Both sources expose daily observations without an intraday publication
     # timestamp. Next-day UTC is a conservative availability convention: it
@@ -244,7 +261,7 @@ class ValuationV3MacroService:
                     observed = date.fromisoformat(str(item.get("date") or ""))
                 except ValueError:
                     continue
-                rate = _annual_rate(item.get("close"))
+                rate = _percent_rate(item.get("close"), series=symbol)  # EODHD GBOND quotes percent: the unit of the series
                 if observed <= as_of and rate is not None:
                     candidates.append((observed, rate))
             if not candidates:
