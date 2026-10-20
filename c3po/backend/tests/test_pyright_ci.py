@@ -14,7 +14,7 @@ def test_pyright_checks_new_modules_and_pins_the_ci_version() -> None:
         encoding="utf-8"
     )
 
-    assert config["include"] == ["app"]
+    assert config["include"] == ["app", "../../.github/scripts"]
     assert len(config["exclude"]) <= 42
     assert config["pythonVersion"] == "3.12"
     assert config["typeCheckingMode"] == "standard"

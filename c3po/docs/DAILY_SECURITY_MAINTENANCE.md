@@ -146,42 +146,71 @@ sem ação. O workflow `.github/workflows/security-merge-window.yml` (script
 `GITHUB_TOKEN` do workflow: sem segredo, sem host, sem banco, sem checkout de código de
 PR e sem `pull_request_target`.
 
+**Ativação (opt-in):** o workflow só escreve (merge, update-branch, dispatch, comentário)
+quando a variável de repositório `C3PO_SECURITY_MERGE_WINDOW` vale exatamente `on`. Sem
+ela, ou com qualquer outro valor, todo run — agendado ou manual — é `dry-run`. A variável é
+lida uma vez, no início do job: para parar um run já em andamento, a única forma é
+cancelar o run no GitHub Actions. Deixe-a desligada durante uma época CERTIFIED do R2D2 V2
+ou um freeze que proíba deploy: este workflow não enxerga o hold nem o marcador do host.
+
 **Quando:** dias úteis às 21:00 UTC (18:00 BRT) e por `workflow_dispatch` (padrão
 `dry-run`, que classifica e relata sem escrever nada). A janela segura exclui o pregão
 B3/EUA (10:00–17:30 BRT e, pelo relógio de Nova York, 09:30–16:15 ET nos dias úteis —
 no horário de inverno dos EUA o run espera até 30 min por 16:15 ET) e o ciclo noturno do
 valuation (23:30–08:15 BRT). Cada merge exige que o deploy de até 45 min que ele dispara
-também caiba na janela; o relógio é reconferido antes de cada escrita. Feriados contam
+também caiba na janela; o relógio é reconferido antes de cada escrita, inclusive depois da
+espera limitada pelo pipeline ocioso, e um deploy despachado que ainda esteja na fila quando
+a janela fecha é cancelado (o próximo run redeploya). **Premissa:** o horizonte de 45 min
+não foi medido; o p95 da duração dos deploys de produção não está disponível offline nesta
+entrega e deve ser medido no histórico de runs do `c3po-pipeline.yml` antes de ligar a
+variável — se passar de 45 min, aumentar `DEPLOY_MARGIN` no script. Feriados contam
 como pregão (conservador). Backtest PIT em execução (`valuation-pit-backtest.yml`, que
 segura a trava de deploy) bloqueia merges e deploy no run.
 
 **O que entra:** (1) PR do Dependabot em que *cada* dependência corrige um alerta
 Dependabot aberto (`first_patched_version` ≤ nova versão, no manifesto alterado), com
 salto patch ou minor (em 0.x, minor conta como major; em 0.0.x, patch também), um único
-commit do Dependabot (merges de atualização aceitos) e somente arquivos modificados da
+commit do Dependabot com assinatura verificada (`verification.verified`) e committer
+assinado pelo GitHub (`web-flow`) ou o próprio `dependabot[bot]` — o valor exato deve ser
+conferido na primeira PR real depois da ativação; um committer inesperado só recusa —,
+commits de merge de atualização verificados e com committer `web-flow`, e somente arquivos
+modificados da
 lista `c3po/backend/requirements.txt`, `requirements.txt`, `c3po/frontend/package.json`,
 `c3po/frontend/pnpm-lock.yaml`. Workflow, Dockerfile/compose, código do app (o que inclui
 os arquivos congelados desta semana, `config.py` e todo `PACKAGE_FILES` do R2D2 V2),
-documentos e scripts são recusados. (2) A lane `automation/container-security-rebuild-*`
+documentos e scripts são recusados. Dentro desses manifestos, nenhuma linha adicionada pode
+mudar a origem dos pacotes: `--extra-index-url`, `--index-url`, `-i`, `--find-links`,
+`--trusted-host`, `-e`, `git+`, URL `http(s)` ou `file:` nos requirements; `registry` ou
+`tarball` fora de `registry.npmjs.org`, ou `git`/`github:`/`file:`/`link:`, no
+`package.json`/`pnpm-lock.yaml`. Diff que o GitHub não devolve (grande demais) é recusado
+por não poder ser inspecionado. (2) A lane `automation/container-security-rebuild-*`
 do próprio repositório, de `github-actions[bot]`, que muda só
 `c3po/security/container-rebuild-trigger.json` (gatilho real, não dry-run) e tem o check
 `Security remediation proof` verde no head exato — ele só passa quando todos os jobs
 obrigatórios e o `verify-zero` (zero C/H fixável) passaram. PR com o rótulo
-`security-merge-hold` nunca é tocada.
+`security-merge-hold` nunca é tocada: o rótulo é relido no detalhe atual da PR antes de cada
+update-branch e de cada merge.
 
 **Como:** todos os checks obrigatórios (`Sensitive files`, `Secret scan`,
-`Backend tests`, `Python type check`, `Frontend build`) verdes no head exato, nenhum check
-vermelho e `mergeable_state` limpo pelo próprio GitHub. PR atrás da main (proteção
-`strict`) recebe `update-branch` com o head esperado; como push feito com `GITHUB_TOKEN`
+`Backend tests`, `Python type check`, `Frontend build`) verdes no head exato — contam só
+check runs criados pelo GitHub Actions (`app.slug == github-actions`) —, nenhum check
+vermelho e `mergeable_state` limpo pelo próprio GitHub. Imediatamente antes de cada merge e
+de cada update-branch, arquivos e commits são relidos e a PR é reclassificada no detalhe
+atual (elegível e com o mesmo head). PR atrás da main (proteção `strict`) recebe
+`update-branch` com o head esperado; o novo head precisa ser exatamente o merge assinado pelo
+GitHub de (head antigo, main lida antes da atualização), senão nada é validado nem mesclado.
+Como push feito com `GITHUB_TOKEN`
 não dispara workflows, o run despacha `c3po-pipeline.yml` com `deploy=false` no branch da
 PR (`remediation=true` para a lane de contêiner) e espera até 35 min pelos checks do novo
 head; se não ficarem verdes a tempo, o merge fica para o run seguinte. Nunca força, nunca
 usa bypass de administrador. No máximo 3 merges por run, em sequência, squash, sempre com
 o sha esperado. Merge feito com `GITHUB_TOKEN` não gera evento `push`: ao final o run
 despacha **um** deploy (`c3po-pipeline.yml`, `deploy=true`) do head atual da main — nunca
-de um sha mais antigo — e espera até 60 min pelo resultado. Se a main ficar sem deploy
-concluído (por exemplo, a trava de 120 s enquanto um backtest PIT grava), o próximo run
-dentro da janela redespacha o deploy.
+de um sha mais antigo — e espera até 60 min pelo resultado; se outro commit já estiver por
+cima do merge da janela, o push desse commit faz o deploy e nada é despachado. Só um head da
+main que a própria janela mesclou é redeployado no run seguinte, e só se o deploy dele falhou
+ou expirou (`failure`/`timed_out`, por exemplo a trava de 120 s enquanto um backtest PIT
+grava) ou nunca rodou; deploy cancelado não é refeito.
 
 **Relato:** um único comentário agregado por dia (BRT) no canal do
 `C3PO_ESCALATION_ISSUE` (padrão #429), com o marcador
@@ -193,40 +222,16 @@ ou com 2.400 comentários deixa o run vermelho, como no detector de escalonament
 detector `incident-escalation.yml` também acompanha `security-merge-window.yml`: run
 vermelho sem sucesso em 24 h vira escalonamento no mesmo canal.
 
-**Desligar:** variável de repositório `C3PO_SECURITY_MERGE_WINDOW=off` transforma todo
-run em dry-run (use durante uma época CERTIFIED do R2D2 V2 ou um freeze que proíba
-deploy: este workflow não enxerga o hold nem o marcador do host). Para uma PR só, o rótulo
-`security-merge-hold`.
+**Desligar:** remover a variável `C3PO_SECURITY_MERGE_WINDOW` (ou qualquer valor diferente
+de `on`) e cancelar o run em andamento, se houver. Para uma PR só, o rótulo
+`security-merge-hold`. Textos vindos das PRs (nomes, caminhos) entram no resumo sem
+menções, HTML, links markdown nem autolinks.
 
 **Permissões do job:** `contents: write` e `pull-requests: write` (merge e
 update-branch), `checks: read` e `vulnerability-alerts: read` (checks do head e alertas
 Dependabot), `actions: write` (dispatch da validação e do deploy) e `issues: write` (o
 resumo diário). Se os alertas não puderem ser lidos, nenhuma PR do Dependabot é mesclada e
 o resumo diz "alertas Dependabot ilegíveis".
-
-## Relatório read-only de incidentes
-
-`.github/workflows/ops-readonly-report.yml` roda diariamente às 11:00 UTC (08:00 BRT) e por
-`workflow_dispatch`. Pelo transporte SSH do deploy, executa
-`python -m app.operational_incidents --report-json` dentro do contêiner `api` em execução
-(`docker compose exec -T`, sessão PostgreSQL com `default_transaction_read_only=on`, nada
-copiado, criado ou reiniciado no host; reboot de segurança pendente adia o relatório). O
-módulo só lê o ledger de incidentes e os cartões **locais** do painel de saúde
-(governança, incidentes e controles Day D/valuation: linhas do banco e arquivos de
-evidência); as sondas externas e o ping de healthcheck nunca rodam.
-
-A saída é só agregada: incidentes abertos/reconhecidos agrupados por tipo
-(`governance-vulnerability`, `notification:job_failure`, `notification:disk_threshold` ou
-`other`), origem, severidade e estado, com quantidade, idade do episódio atual (abertura
-ou reabertura → agora), quantos passam de 24 h e a última observação; e os cartões
-vermelhos/âmbar por chave fixa. Chave do incidente, título, detalhe, evidência, ator e
-texto dos cartões nunca saem do processo. No runner, o verificador exige o esquema exato
-(chaves e vocabulário fechados, horários UTC, contagens não negativas, soma dos grupos
-igual aos totais, `report_sha256` recalculado) antes de publicar o artefato
-`incidents.json` + `summary.md` (português) + `SHA256SUMS`. Só quando há incidente aberto
-há mais de 24 h, uma linha agregada vai ao canal `C3PO_ESCALATION_ISSUE` (padrão #429),
-com o marcador `<!-- c3po-ops-readonly-report:AAAA-MM-DD -->`, no máximo uma vez por dia
-(BRT); canal fechado, trancado ou cheio deixa o agregado só no artefato, com aviso.
 
 ## Correções incluídas nesta implantação
 

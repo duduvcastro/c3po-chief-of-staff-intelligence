@@ -8,7 +8,9 @@ name: Security merge window
 # c3po/docs/DAILY_SECURITY_MAINTENANCE.md, "Janela de merge de segurança").
 # Uses only the workflow GITHUB_TOKEN: no secret, no host, no database, no checkout of PR code
 # (only this main revision's own script is checked out; never pull_request_target).
-# Kill switch: repository variable C3PO_SECURITY_MERGE_WINDOW=off turns every run into a dry-run.
+# OPT-IN: a run writes (merge, update-branch, dispatch, comment) ONLY while the repository variable
+# C3PO_SECURITY_MERGE_WINDOW is exactly 'on'; otherwise every run, scheduled or dispatched, is a dry-run.
+# The variable is read once at job start: to stop a run already in progress, cancel the run.
 
 on:
   schedule:
@@ -18,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: dry-run (classify and report only, nothing written) or live
+        description: dry-run (classify and report only, nothing written) or live (only with vars.C3PO_SECURITY_MERGE_WINDOW == 'on')
         required: true
         default: dry-run
         type: choice
@@ -52,7 +54,7 @@ jobs:
       issues: write
     env:
       CHANNEL_ISSUE: ${{ vars.C3PO_ESCALATION_ISSUE || '429' }}
-      MODE: ${{ (vars.C3PO_SECURITY_MERGE_WINDOW == 'off' && 'dry-run') || (github.event_name == 'schedule' && 'live') || inputs.mode || 'dry-run' }}
+      MODE: ${{ vars.C3PO_SECURITY_MERGE_WINDOW == 'on' && ((github.event_name == 'schedule' && 'live') || inputs.mode || 'dry-run') || 'dry-run' }}
     steps:
       - name: Check out the merge-window script
         uses: actions/checkout@v6

@@ -76,14 +76,24 @@ def _alert(name: str = "left-pad", patched: str = "1.2.4", manifest: str = "c3po
             "security_advisory": {"ghsa_id": "GHSA-cfgh-2345-vwxq"}}
 
 
-def _commit(message: str, *, login: str = "dependabot[bot]", parents: int = 1) -> dict[str, Any]:
-    return {"author": {"login": login}, "parents": [{}] * parents, "commit": {"message": message}}
+LOCK_PATCH = "@@ -10,7 +10,7 @@\n   left-pad@1.2.3:\n-    resolution: {integrity: sha512-old}\n+    resolution: {integrity: sha512-new}\n"
+
+
+def _commit(message: str, *, login: str = "dependabot[bot]", parents: int = 1, committer: str | None = None,
+            verified: bool = True) -> dict[str, Any]:
+    return {"author": {"login": login}, "committer": {"login": committer or ("web-flow" if parents > 1 else login)},
+            "parents": [{"sha": f"{index:040x}"} for index in range(parents)],
+            "commit": {"message": message, "verification": {"verified": verified}}}
+
+
+def _lock(path: str = "c3po/frontend/pnpm-lock.yaml", patch: str | None = LOCK_PATCH) -> dict[str, Any]:
+    return {"filename": path, "status": "modified", **({"patch": patch} if patch is not None else {})}
 
 
 def _green(sha: str, *, proof: bool = False, extra: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     names = list(mw.REQUIRED_CHECKS) + (["Security remediation proof"] if proof else [])
-    return [{"id": index + 1, "name": name, "status": "completed", "conclusion": "success", "head_sha": sha}
-            for index, name in enumerate(names)] + (extra or [])
+    return [{"id": index + 1, "name": name, "status": "completed", "conclusion": "success", "head_sha": sha,
+             "app": {"slug": "github-actions"}} for index, name in enumerate(names)] + (extra or [])
 
 
 class Clock:
@@ -117,6 +127,12 @@ class FakeGitHub:
         self.trigger: dict[str, Any] = {"schema": mw.CONTAINER_TRIGGER_SCHEMA, "dry_run": False, "remediation_key": "e" * 64}
         self.deploy_conclusion = "success"
         self.validation_turns_green = True
+        self.deploy_status = "completed"
+        self.update_parents: list[str] | None = None  # None: GitHub's (old head, main) merge
+        self.commit_meta: dict[str, dict[str, Any]] = {}
+        self.commit_pulls: dict[str, list[int]] = {}
+        self.clock: Clock | None = None
+        self.busy_until: dict[str, datetime] = {}
         self._ids = 1000
 
     def add(self, pull: dict[str, Any], *, state: str = "clean", files: list[dict[str, Any]] | None = None,
@@ -125,7 +141,7 @@ class FakeGitHub:
         self.details[pull["number"]] = {**pull, "state": "open", "mergeable": True, "mergeable_state": state}
         lane = pull["head"]["ref"].startswith("automation/")
         self.files[pull["number"]] = files if files is not None else [
-            {"filename": mw.CONTAINER_TRIGGER if lane else "c3po/frontend/pnpm-lock.yaml", "status": "modified"}]
+            {"filename": mw.CONTAINER_TRIGGER, "status": "modified", "patch": "@@ -1 +1 @@\n-{}\n+{}\n"} if lane else _lock()]
         self.commits[pull["number"]] = commits if commits is not None else [_commit(_message("left-pad", "1.2.4"))]
         self.checks[pull["head"]["sha"]] = checks if checks is not None else _green(pull["head"]["sha"], proof=lane)
 
@@ -151,22 +167,37 @@ class FakeGitHub:
                 raise mw.ApiError(method, path, 405)
             detail["state"] = "closed"
             self.main = f"{self._next():040x}"
+            detail["merge_commit_sha"], detail["merged_by"] = self.main, {"login": "github-actions[bot]"}
+            self.commit_pulls[self.main] = [number]
             for other, item in self.details.items():
                 if other != number and item["state"] == "open" and item["mergeable_state"] == "clean":
                     item["mergeable_state"] = "behind"
-            return {"merged": True}
+            return {"merged": True, "sha": self.main}
         if method == "PUT" and (match := re.fullmatch(r"/pulls/(\d+)/update-branch", path)):
             detail = self.details[int(match.group(1))]
             if body["expected_head_sha"] != detail["head"]["sha"]:
                 raise mw.ApiError(method, path, 422)
-            detail["head"] = {**detail["head"], "sha": f"{self._next():040x}"}
+            old, new = detail["head"]["sha"], f"{self._next():040x}"
+            detail["head"] = {**detail["head"], "sha": new}
             detail["mergeable_state"] = "blocked"
+            parents = self.update_parents or [old, self.main]
+            self.commit_meta[new] = {"sha": new, "parents": [{"sha": sha} for sha in parents], "committer": {"login": "web-flow"},
+                                     "commit": {"verification": {"verified": True}}}
+            self.commits[int(match.group(1))].append(_commit("Merge branch 'main'", login="github-actions[bot]", parents=2))
             return {"message": "Updating pull request branch."}
+        if method == "GET" and (match := re.fullmatch(r"/commits/([0-9a-f]{40})", path)):
+            return self.commit_meta[match.group(1)]
+        if method == "POST" and (match := re.fullmatch(r"/actions/runs/(\d+)/cancel", path)):
+            for run in self.pipeline_runs:
+                if run["id"] == int(match.group(1)):
+                    run["status"], run["conclusion"] = "completed", "cancelled"
+            return None
         if method == "POST" and path == f"/actions/workflows/{mw.PIPELINE}/dispatches":
             sha, deploy = body["inputs"]["ref"], body["inputs"]["deploy"] == "true"
             run_id = self._next()
-            self.pipeline_runs.append({"id": run_id, "head_sha": sha, "event": "workflow_dispatch", "status": "completed",
-                                       "conclusion": "success"})
+            status = self.deploy_status if deploy else "completed"
+            self.pipeline_runs.append({"id": run_id, "head_sha": sha, "event": "workflow_dispatch", "status": status,
+                                       "conclusion": "success" if status == "completed" else None})
             self.jobs[run_id] = [{"name": "Deploy production", "conclusion": self.deploy_conclusion if deploy else "skipped"}]
             if not deploy and self.validation_turns_green:
                 lane = body["inputs"]["remediation"] == "true"
@@ -191,16 +222,25 @@ class FakeGitHub:
         if (match := re.fullmatch(r"/commits/([0-9a-f]+)/check-runs\?.*", path)):
             return self.checks.get(match.group(1), [])
         if (match := re.fullmatch(r"/actions/workflows/([\w.-]+)/runs\?status=(\w+)&.*", path)):
-            return [{}] * self.active.get(match.group(1), 0) if match.group(2) == "in_progress" else []
+            busy = self.clock is not None and match.group(1) in self.busy_until and self.clock.now < self.busy_until[match.group(1)]
+            return [{}] * (self.active.get(match.group(1), 0) + busy) if match.group(2) == "in_progress" else []
         if (match := re.fullmatch(rf"/actions/workflows/{re.escape(mw.PIPELINE)}/runs\?(.*)", path)):
             query = dict(part.split("=", 1) for part in match.group(1).split("&"))
             return [run for run in self.pipeline_runs if run["head_sha"] == query.get("head_sha")
                     and ("event" not in query or run["event"] == query["event"])]
         if (match := re.fullmatch(r"/actions/runs/(\d+)/jobs\?.*", path)):
             return self.jobs.get(int(match.group(1)), [])
+        if (match := re.fullmatch(r"/commits/([0-9a-f]{40})/pulls\?.*", path)):
+            return [{"number": number} for number in self.commit_pulls.get(match.group(1), [])]
         if path.startswith("/issues/"):
             return self.comments
         raise AssertionError(f"unexpected listing {path}")
+
+    def merged_by_window(self, sha: str, number: int = 400) -> None:
+        """``sha`` is the merge commit of a Dependabot PR this workflow merged earlier."""
+        pull = _dependabot_pull(number)
+        self.details[number] = {**pull, "state": "closed", "merge_commit_sha": sha, "merged_by": {"login": "github-actions[bot]"}}
+        self.commit_pulls[sha] = [number]
 
     def deployed(self, sha: str) -> None:
         run_id = self._next()
@@ -258,7 +298,7 @@ def test_bump_kind(old: str, new: str, kind: str | None) -> None:
 def _classify(pull: dict[str, Any], *, files: list[dict[str, Any]] | None = None, commits: list[dict[str, Any]] | None = None,
               alerts: list[dict[str, Any]] | None = None) -> Any:
     return mw.classify_dependabot(
-        pull, files if files is not None else [{"filename": "c3po/frontend/pnpm-lock.yaml", "status": "modified"}],
+        pull, files if files is not None else [_lock()],
         commits if commits is not None else [_commit(_message("left-pad", "1.2.4"))],
         [_alert()] if alerts is None else alerts, REPOSITORY)
 
@@ -279,7 +319,7 @@ def test_only_security_updates_are_selected() -> None:
     closed = _alert()
     closed["state"] = "dismissed"
     assert not _classify(_dependabot_pull(447), alerts=[closed]).eligible
-    unreadable = mw.classify_dependabot(_dependabot_pull(447), [{"filename": "c3po/frontend/pnpm-lock.yaml", "status": "modified"}],
+    unreadable = mw.classify_dependabot(_dependabot_pull(447), [_lock()],
                                         [_commit(_message("left-pad", "1.2.4"))], None, REPOSITORY)
     assert not unreadable.eligible and "ilegíveis" in unreadable.reason
 
@@ -296,7 +336,7 @@ def test_major_bumps_are_refused_even_when_declared_minor() -> None:
 def test_python_names_are_normalized_and_minor_is_accepted() -> None:
     pull = _dependabot_pull(450, name="python_multipart", old="0.9.1", new="0.9.4")
     pull["title"] = "Bump python-multipart from 1.2.3 to 1.3.0 in /c3po/backend"
-    candidate = _classify(pull, files=[{"filename": "c3po/backend/requirements.txt", "status": "modified"}],
+    candidate = _classify(pull, files=[_lock("c3po/backend/requirements.txt", "@@ -1 +1 @@\n-python-multipart==1.2.3\n+python-multipart==1.3.0\n")],
                           commits=[_commit(_message("Python_Multipart", "1.3.0", "version-update:semver-minor"))],
                           alerts=[_alert(name="python-multipart", patched="1.2.9", manifest="c3po/backend/requirements.txt")])
     assert candidate.eligible, candidate.reason
@@ -313,8 +353,7 @@ def test_python_names_are_normalized_and_minor_is_accepted() -> None:
     ("c3po/frontend/src/main.tsx", "fora da lista permitida"),
 ])
 def test_files_outside_the_manifest_allowlist_are_refused(path: str, reason: str) -> None:
-    candidate = _classify(_dependabot_pull(447), files=[{"filename": "c3po/frontend/pnpm-lock.yaml", "status": "modified"},
-                                                        {"filename": path, "status": "modified"}])
+    candidate = _classify(_dependabot_pull(447), files=[_lock(), {"filename": path, "status": "modified", "patch": "@@\n+x\n"}])
     assert not candidate.eligible and reason in candidate.reason
 
 
@@ -357,12 +396,20 @@ def test_checks_must_be_green_on_the_exact_head() -> None:
     assert mw.checks_verdict(_green("s"), mw.REQUIRED_CHECKS)[0] is True
     missing = _green("s")[1:]
     assert mw.checks_verdict(missing, mw.REQUIRED_CHECKS)[:2] == (False, False)
-    rerun_red = _green("s") + [{"id": 99, "name": "Backend tests", "status": "completed", "conclusion": "failure"}]
+    rerun_red = _green("s") + [{"id": 99, "name": "Backend tests", "status": "completed", "conclusion": "failure",
+                                "app": {"slug": "github-actions"}}]
     green, settled, reason = mw.checks_verdict(rerun_red, mw.REQUIRED_CHECKS)
     assert (green, settled) == (False, True) and "Backend tests" in reason
-    other_red = _green("s", extra=[{"id": 50, "name": "Some other check", "status": "completed", "conclusion": "failure"}])
+    actions = {"app": {"slug": "github-actions"}}
+    other_red = _green("s", extra=[{"id": 50, "name": "Some other check", "status": "completed", "conclusion": "failure", **actions}])
     assert mw.checks_verdict(other_red, mw.REQUIRED_CHECKS)[0] is False
-    skipped_deploy = _green("s", extra=[{"id": 51, "name": "Deploy production", "status": "completed", "conclusion": "skipped"}])
+    # R1: only GitHub Actions check runs count: another app can neither fake a green nor veto with a red
+    foreign = {"app": {"slug": "some-app"}}
+    faked = _green("s")[1:] + [{"id": 60, "name": mw.REQUIRED_CHECKS[0], "status": "completed", "conclusion": "success", **foreign}]
+    assert mw.checks_verdict(faked, mw.REQUIRED_CHECKS)[:2] == (False, False)
+    foreign_red = _green("s", extra=[{"id": 61, "name": "Backend tests", "status": "completed", "conclusion": "failure", **foreign}])
+    assert mw.checks_verdict(foreign_red, mw.REQUIRED_CHECKS)[0] is True
+    skipped_deploy = _green("s", extra=[{"id": 51, "name": "Deploy production", "status": "completed", "conclusion": "skipped", **actions}])
     assert mw.checks_verdict(skipped_deploy, mw.REQUIRED_CHECKS)[0] is True
     assert mw.checks_verdict(_green("s"), mw.REQUIRED_CHECKS + (mw.PROOF_CHECK,))[0] is False
 
@@ -532,6 +579,7 @@ def test_container_lane_merges_only_with_the_proof_on_the_exact_head() -> None:
 
 def test_failed_deploy_of_main_is_retried_by_the_next_run() -> None:
     api, clock = FakeGitHub(), Clock(OPEN)
+    api.merged_by_window(MAIN)
     run_id = 77
     api.pipeline_runs.append({"id": run_id, "head_sha": MAIN, "event": "push", "status": "completed", "conclusion": "failure"})
     api.jobs[run_id] = [{"name": "Deploy production", "conclusion": "failure"}]  # 120 s lock timeout
@@ -624,7 +672,8 @@ def test_workflow_uses_only_the_token_minimal_permissions_and_no_pr_checkout() -
     assert workflow[True]["workflow_dispatch"]["inputs"]["mode"]["default"] == "dry-run"
     assert "secrets." not in source and "ssh" not in source.lower()  # the triggers are exactly schedule + dispatch (above)
     assert "environment" not in job
-    assert job["env"]["MODE"].startswith("${{ (vars.C3PO_SECURITY_MERGE_WINDOW == 'off' && 'dry-run')")
+    assert job["env"]["MODE"] == ("${{ vars.C3PO_SECURITY_MERGE_WINDOW == 'on' && ((github.event_name == 'schedule' && 'live') "
+                                  "|| inputs.mode || 'dry-run') || 'dry-run' }}")
     steps = {step["name"]: step for step in job["steps"]}
     checkout = steps["Check out the merge-window script"]
     assert checkout["with"] == {"persist-credentials": False}
@@ -638,5 +687,179 @@ def test_workflow_uses_only_the_token_minimal_permissions_and_no_pr_checkout() -
 def test_the_ops_doc_describes_the_window() -> None:
     doc = DOC_PATH.read_text(encoding="utf-8")
     assert "## Janela de merge de segurança" in doc
-    for needle in ("security-merge-window.yml", "C3PO_SECURITY_MERGE_WINDOW", mw.HOLD_LABEL, "23:30", "17:30", "update-branch"):
+    for needle in ("security-merge-window.yml", "C3PO_SECURITY_MERGE_WINDOW", mw.HOLD_LABEL, "23:30", "17:30", "update-branch",
+                   "exatamente `on`", "cancelar o run", "Premissa", "web-flow", "app.slug == github-actions"):
         assert needle in doc
+
+
+# ------------------------------------------------------------------- review fixes (F1–F5, R1–R5)
+def test_f1_gate_is_rechecked_after_the_bounded_pipeline_wait() -> None:
+    start = datetime(2026, 10, 21, 1, 40, tzinfo=timezone.utc)  # 22:40 BRT: open
+    api, clock = FakeGitHub(), Clock(start)
+    api.clock = clock
+    api.deployed(MAIN)
+    api.alerts = [_alert()]
+    api.busy_until[mw.PIPELINE] = start + timedelta(minutes=6)  # idle at 22:46: the deploy would reach 23:31
+    api.add(_dependabot_pull(447))
+    report = _window(api, clock).run()
+    assert report.gate is not None and "o deploy de até 45 min" in report.gate
+    assert api.writes == []
+
+
+def test_f1_a_queued_deploy_is_cancelled_when_the_window_closes() -> None:
+    api, clock = FakeGitHub(), Clock(datetime(2026, 10, 21, 1, 44, tzinfo=timezone.utc))  # 22:44 BRT
+    api.deployed(MAIN)
+    api.alerts = [_alert()]
+    api.deploy_status = "queued"
+    api.add(_dependabot_pull(447))
+    report = _window(api, clock).run()
+    assert _actions(report)[447][0] == "merged"
+    cancels = [(method, path) for method, path, _ in api.writes if path.endswith("/cancel")]
+    assert len(cancels) == 1 and cancels[0][0] == "POST"
+    assert report.deploy.startswith(f"cancelado na fila para `{api.main[:7]}`")
+
+
+def test_f2_the_pr_is_reclassified_on_fresh_files_right_before_the_merge() -> None:
+    api, clock = FakeGitHub(), Clock(OPEN)
+    api.deployed(MAIN)
+    api.alerts = [_alert()]
+    api.add(_dependabot_pull(447))
+    original, reads = api.request, {"n": 0}
+
+    def request(method: str, path: str, body: Any = None) -> Any:
+        if method == "GET" and path == "/pulls/447":
+            reads["n"] += 1
+            if reads["n"] == 1:  # after the loop's read, the same head now shows a workflow change
+                api.files[447] = [_lock(), {"filename": ".github/workflows/x.yml", "status": "modified", "patch": "@@\n+x\n"}]
+        return original(method, path, body)
+
+    api.request = request  # type: ignore[method-assign]
+    report = _window(api, clock).run()
+    action, reason = _actions(report)[447]
+    assert action == "skipped" and reason.startswith("reclassificada na hora: toca arquivo proibido")
+    assert not any(path.endswith("/merge") for _, path, _ in api.writes)
+
+
+def test_f2_update_branch_must_produce_githubs_merge_of_head_and_main() -> None:
+    api, clock = FakeGitHub(), Clock(OPEN)
+    api.deployed(MAIN)
+    api.alerts = [_alert()]
+    api.update_parents = [f"{448:040d}", "f" * 40]  # second parent is not the main read before the update
+    api.add(_dependabot_pull(448), state="behind")
+    report = _window(api, clock).run()
+    action, reason = _actions(report)[448]
+    assert action == "skipped" and "não é o merge assinado esperado" in reason
+    assert [path.rsplit("/", 1)[-1] for _, path, _ in api.writes] == ["update-branch"]  # no dispatch, no merge
+
+
+def test_f2_a_good_update_is_validated_then_merged() -> None:
+    api, clock = FakeGitHub(), Clock(OPEN)
+    api.deployed(MAIN)
+    api.alerts = [_alert()]
+    api.add(_dependabot_pull(448), state="behind")
+    report = _window(api, clock).run()
+    assert _actions(report)[448][0] == "merged"
+    assert [path.rsplit("/", 1)[-1] for _, path, _ in api.writes] == ["update-branch", "dispatches", "merge", "dispatches"]
+
+
+@pytest.mark.parametrize(("commits", "reason"), [
+    ([_commit(_message("left-pad", "1.2.4"), verified=False)], "sem assinatura verificada"),
+    ([_commit(_message("left-pad", "1.2.4"), committer="someone")], "committer inesperado"),
+    ([_commit(_message("left-pad", "1.2.4")), _commit("Merge", login="x", parents=2, committer="someone")], "web-flow"),
+    ([_commit(_message("left-pad", "1.2.4")), _commit("Merge", login="x", parents=2, verified=False)], "web-flow"),
+])
+def test_f3_commits_must_be_signed_by_github_or_dependabot(commits: list[dict[str, Any]], reason: str) -> None:
+    candidate = _classify(_dependabot_pull(447), commits=commits)
+    assert not candidate.eligible and reason in candidate.reason
+    assert _classify(_dependabot_pull(447), commits=[_commit(_message("left-pad", "1.2.4"), committer="web-flow")]).eligible
+
+
+@pytest.mark.parametrize(("path", "line", "allowed"), [
+    ("c3po/backend/requirements.txt", "httpx==0.28.1", True),
+    ("c3po/backend/requirements.txt", "--extra-index-url https://mirror.example/simple", False),
+    ("c3po/backend/requirements.txt", "--index-url https://mirror.example/simple", False),
+    ("c3po/backend/requirements.txt", "-i https://mirror.example/simple", False),
+    ("c3po/backend/requirements.txt", "--find-links ./wheels", False),
+    ("requirements.txt", "pkg @ git+https://example.invalid/pkg.git", False),
+    ("requirements.txt", "pkg @ https://example.invalid/pkg.whl", False),
+    ("c3po/frontend/package.json", '    "left-pad": "^1.2.4",', True),
+    ("c3po/frontend/package.json", '  "publishConfig": {"registry": "https://evil.example/"},', False),
+    ("c3po/frontend/package.json", '    "left-pad": "github:someone/left-pad",', False),
+    ("c3po/frontend/pnpm-lock.yaml", "    resolution: {tarball: https://registry.npmjs.org/left-pad/-/left-pad-1.2.4.tgz}", True),
+    ("c3po/frontend/pnpm-lock.yaml", "    resolution: {tarball: https://evil.example/left-pad-1.2.4.tgz}", False),
+    ("c3po/frontend/pnpm-lock.yaml", "registry: https://registry.npmjs.org.evil.example/", False),
+])
+def test_f3_manifest_lines_cannot_change_where_packages_come_from(path: str, line: str, allowed: bool) -> None:
+    patch = f"@@ -1,2 +1,2 @@\n context\n-old\n+{line}\n"
+    problem = mw.manifest_content_problem([_lock(path, patch)])
+    assert (problem is None) is allowed, problem
+
+
+def test_f3_an_uninspectable_diff_is_refused() -> None:
+    candidate = _classify(_dependabot_pull(447), files=[_lock(patch=None)])
+    assert not candidate.eligible and "indisponível para inspeção" in candidate.reason
+
+
+def test_f4_a_hold_label_added_after_listing_stops_the_merge_and_the_update() -> None:
+    for state in ("clean", "behind"):
+        api, clock = FakeGitHub(), Clock(OPEN)
+        api.deployed(MAIN)
+        api.alerts = [_alert()]
+        api.add(_dependabot_pull(447), state=state)
+        original = api.request
+
+        def request(method: str, path: str, body: Any = None, _original: Any = original, _api: FakeGitHub = api) -> Any:
+            result = _original(method, path, body)
+            if method == "GET" and path == "/pulls/447":
+                _api.details[447]["labels"] = [{"name": mw.HOLD_LABEL}]  # labelled right after the first read
+            return result
+
+        api.request = request  # type: ignore[method-assign]
+        report = _window(api, clock).run()
+        assert _actions(report)[447] == ("skipped", f"rótulo {mw.HOLD_LABEL}"), state
+        assert not any(path.endswith(("/merge", "/update-branch")) for _, path, _ in api.writes)
+
+
+def test_r2_only_heads_the_window_merged_are_redeployed() -> None:
+    api, clock = FakeGitHub(), Clock(OPEN)
+    api.pipeline_runs.append({"id": 77, "head_sha": MAIN, "event": "push", "status": "completed", "conclusion": "failure"})
+    api.jobs[77] = [{"name": "Deploy production", "conclusion": "failure"}]
+    report = _window(api, clock).run()  # a human's merge whose deploy failed: not this workflow's to redeploy
+    assert api.writes == [] and report.deploy == "não necessário"
+
+    cancelled = FakeGitHub()
+    cancelled.merged_by_window(MAIN)
+    cancelled.pipeline_runs.append({"id": 78, "head_sha": MAIN, "event": "workflow_dispatch", "status": "completed",
+                                    "conclusion": "cancelled"})
+    cancelled.jobs[78] = [{"name": "Deploy production", "conclusion": "cancelled"}]
+    assert _window(cancelled, Clock(OPEN)).run().deploy == "não necessário" and cancelled.writes == []
+
+
+def test_r2_a_main_that_moved_past_the_window_merge_is_left_to_its_own_push() -> None:
+    api, clock = FakeGitHub(), Clock(OPEN)
+    api.deployed(MAIN)
+    api.alerts = [_alert()]
+    api.add(_dependabot_pull(447))
+    original = api.request
+
+    def request(method: str, path: str, body: Any = None) -> Any:
+        result = original(method, path, body)
+        if path.endswith("/merge"):
+            api.main = "c" * 40  # a human merge lands right after ours
+        return result
+
+    api.request = request  # type: ignore[method-assign]
+    report = _window(api, clock).run()
+    assert _actions(report)[447][0] == "merged"
+    assert report.deploy.startswith("não disparado: a main (`ccccccc`) avançou além do merge da janela")
+    assert not any(path.endswith("/dispatches") for _, path, _ in api.writes)
+
+
+def test_r5_untrusted_text_cannot_carry_links() -> None:
+    text = mw._text("[click](https://evil.example/x) ![img](http://e.example/i.png) www.evil.example", 200)
+    assert "](" not in text and "://" not in text and "[" not in text and "www." not in text
+
+
+def test_r6_the_ci_type_check_covers_the_github_scripts() -> None:
+    config = json.loads((ROOT / "c3po" / "backend" / "pyrightconfig.json").read_text(encoding="utf-8"))
+    assert "../../.github/scripts" in config["include"]

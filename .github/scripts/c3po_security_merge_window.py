@@ -29,6 +29,21 @@ How:
     older sha). A main head whose deploy is missing or failed (e.g. the 120 s lock timeout while a PIT
     backtest wrote) is redeployed by the next run inside the window.
 
+Review hardening (20/10/2026):
+  * opt-in: the workflow passes ``--mode live`` only while vars.C3PO_SECURITY_MERGE_WINDOW == 'on';
+  * only GitHub Actions check runs count (``app.slug == github-actions``);
+  * the Dependabot commit must be signed (``verification.verified``) and committed by GitHub (web-flow)
+    or dependabot[bot]; update-branch merge commits signed and committed by web-flow; added manifest
+    lines may not change where packages come from (pip index/options/URLs/VCS, npm registry/tarball
+    outside registry.npmjs.org, git/github/file/link specifiers); an uninspectable diff is refused;
+  * right before every update-branch and every merge the PR is re-read and RE-CLASSIFIED (fresh files,
+    commits, labels: ``security-merge-hold`` stops it), and a new head after update-branch must be
+    exactly GitHub's signed merge of (old head, the main read before the update);
+  * the gate is re-checked after the bounded pipeline wait; a dispatched deploy still queued when the
+    window closes is cancelled; only a main head this workflow merged is ever (re)deployed, and only
+    after ``failure``/``timed_out`` (never ``cancelled``). The 45-minute deploy horizon is an
+    assumption (no offline p95 of deploy durations).
+
 One aggregate summary per BRT day goes to the Fable/Codex channel (issue #429) through the workflow,
 with the marker on its first line (the pattern of c3po_incident_escalation.py).
 """
@@ -46,12 +61,12 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from c3po_incident_escalation import _text, channel_problem  # noqa: E402  # pyright: ignore[reportMissingImports]
+from c3po_incident_escalation import _text, channel_problem  # noqa: E402
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -85,6 +100,23 @@ FORBIDDEN_PREFIXES = (
     ("c3po/security/", "contrato de segurança"),
 )
 RED_CONCLUSIONS = frozenset({"failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"})
+# A deploy that failed or timed out (e.g. the 120 s deploy lock held by a PIT backtest write) is retried;
+# a cancelled one is not (someone cancelled it on purpose).
+REDEPLOY_CONCLUSIONS = frozenset({"failure", "timed_out"})
+CHECKS_APP = "github-actions"  # only check runs created by GitHub Actions count (another app could fake a name)
+GITHUB_COMMITTER = "web-flow"  # GitHub's own committer for commits it signs (API/UI merges, update-branch)
+# Committers accepted for the single Dependabot commit. The exact value must be checked on the first real
+# Dependabot PR after this lands (c3po/docs/DAILY_SECURITY_MAINTENANCE.md): an unexpected one only refuses.
+DEPENDABOT_COMMITTERS = frozenset({GITHUB_COMMITTER, DEPENDABOT_LOGIN})
+QUEUED_STATUSES = frozenset({"queued", "waiting", "requested", "pending"})
+REQUIREMENT_FILES = frozenset({"c3po/backend/requirements.txt", "requirements.txt"})
+NPM_FILES = frozenset({"c3po/frontend/package.json", "c3po/frontend/pnpm-lock.yaml"})
+NPM_REGISTRY_HOST = "registry.npmjs.org"
+# An added requirements line may not change where pip installs from or install from a URL/VCS/path.
+REQUIREMENT_OPTION = re.compile(
+    r"(--extra-index-url|--index-url|--find-links|--trusted-host|--editable|--no-index|--pre\b|(^|\s)-[ief](\s|=|$)"
+    r"|git\+|https?:|file:|\s@\s)", re.IGNORECASE)
+URL_PATTERN = re.compile(r"[a-z][a-z0-9+.-]*://[^\s'\"),}\]]+", re.IGNORECASE)
 ACTIVE_RUN_STATUSES = ("queued", "in_progress", "waiting", "requested", "pending")
 UPDATE_ORDER = {"patch": 0, "minor": 1, "major": 2}
 
@@ -240,6 +272,61 @@ def files_problem(files: Any, allowed: frozenset[str], statuses: tuple[str, ...]
     return None
 
 
+def added_lines(patch: str) -> list[str]:
+    return [line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++")]
+
+
+def manifest_content_problem(files: Any) -> str | None:
+    """Inside the allowlisted manifests, refuse any added line that changes WHERE packages come from: a pip
+    index/option/URL/VCS line, or an npm/pnpm registry or tarball outside registry.npmjs.org, or a
+    git/github/file/link specifier. A diff GitHub does not return (too large) cannot be inspected: refused."""
+    if not isinstance(files, list):
+        return "lista de arquivos ilegível"
+    for item in files:
+        path = str((item or {}).get("filename") or "")
+        patch = (item or {}).get("patch")
+        if not isinstance(patch, str) or not patch.strip():
+            return f"diff de {_text(path, 80)} indisponível para inspeção (grande demais ou binário)"
+        for line in added_lines(patch):
+            if path in REQUIREMENT_FILES and REQUIREMENT_OPTION.search(line):
+                return f"{_text(path, 80)}: linha adicionada muda índice, opção ou origem do pip"
+            if path in NPM_FILES:
+                lowered = line.lower()
+                urls = URL_PATTERN.findall(line)
+                if any(urlsplit(url).hostname != NPM_REGISTRY_HOST for url in urls):
+                    return f"{_text(path, 80)}: URL fora de {NPM_REGISTRY_HOST}"
+                if ("registry" in lowered or "tarball" in lowered) and not urls:
+                    return f"{_text(path, 80)}: chave registry/tarball sem URL do registro oficial"
+                if re.search(r"(git\+|github:|file:|link:|git://)", lowered):
+                    return f"{_text(path, 80)}: especificador fora do registro (git/github/file/link)"
+    return None
+
+
+def commits_problem(commits: Any) -> tuple[str | None, dict[str, Any] | None]:
+    """(problem, the single Dependabot commit). Exactly one non-merge commit, authored by Dependabot, signed
+    (verification.verified) and committed by GitHub or Dependabot; merge commits (update-branch) signed and
+    committed by GitHub (web-flow)."""
+    if not isinstance(commits, list) or not commits:
+        return "commits ilegíveis", None
+    own: list[dict[str, Any]] = []
+    for commit in commits:
+        commit = commit if isinstance(commit, dict) else {}
+        verified = ((commit.get("commit") or {}).get("verification") or {}).get("verified") is True
+        committer = (commit.get("committer") or {}).get("login")
+        if len(commit.get("parents") or []) >= 2:
+            if not verified or committer != GITHUB_COMMITTER:
+                return "commit de merge sem assinatura do GitHub (web-flow verificado)", None
+            continue
+        own.append(commit)
+    if len(own) != 1 or (own[0].get("author") or {}).get("login") != DEPENDABOT_LOGIN:
+        return "commits que não são do Dependabot (só merges de atualização são aceitos)", None
+    if ((own[0].get("commit") or {}).get("verification") or {}).get("verified") is not True:
+        return "commit do Dependabot sem assinatura verificada", None
+    if (own[0].get("committer") or {}).get("login") not in DEPENDABOT_COMMITTERS:
+        return f"committer inesperado no commit do Dependabot ({_text((own[0].get('committer') or {}).get('login'), 40)})", None
+    return None, own[0]
+
+
 def alert_fix(dependency: str, version: str, changed: set[str], alerts: list[dict[str, Any]]) -> str | None:
     """GHSA id of an OPEN alert on a changed manifest that ``version`` fixes."""
     wanted, new = normalize_package(dependency), version_tuple(version)
@@ -290,12 +377,12 @@ def classify_dependabot(pull: dict[str, Any], files: Any, commits: Any, alerts: 
         return refuse("base diferente de main")
     if pull.get("draft"):
         return refuse("rascunho")
-    if not isinstance(commits, list) or not commits:
-        return refuse("commits ilegíveis")
-    own = [commit for commit in commits if len((commit or {}).get("parents") or []) < 2]
-    if len(own) != 1 or ((own[0].get("author") or {}).get("login") != DEPENDABOT_LOGIN):
-        return refuse("commits que não são do Dependabot (só merges de atualização são aceitos)")
-    dependencies = parse_updated_dependencies(str((own[0].get("commit") or {}).get("message") or ""))
+    if pull.get("state", "open") != "open":
+        return refuse("PR não está aberta")
+    commit_problem, own = commits_problem(commits)
+    if commit_problem or own is None:
+        return refuse(commit_problem or "commits ilegíveis")
+    dependencies = parse_updated_dependencies(str((own.get("commit") or {}).get("message") or ""))
     if not dependencies:
         return refuse("metadados updated-dependencies ausentes")
     stated = previous_versions(str(pull.get("title") or ""), str(pull.get("body") or ""))
@@ -326,7 +413,9 @@ def classify_dependabot(pull: dict[str, Any], files: Any, commits: Any, alerts: 
         return refuse("alertas Dependabot ilegíveis: não é possível provar que é atualização de segurança")
     if linked == 0:
         return refuse("atualização de versão sem alerta de segurança")
-    problem = files_problem(files, MANIFEST_ALLOWLIST)
+    if HOLD_LABEL in {str((label or {}).get("name")) for label in pull.get("labels") or []}:
+        return refuse(f"rótulo {HOLD_LABEL}")
+    problem = files_problem(files, MANIFEST_ALLOWLIST) or manifest_content_problem(files)
     if problem:
         return refuse(problem)
     if problems:
@@ -343,6 +432,12 @@ def classify_container(pull: dict[str, Any], files: Any, trigger: Any, repositor
     if ((head.get("repo") or {}).get("full_name") != repository or (pull.get("user") or {}).get("login") != ACTIONS_LOGIN
             or (pull.get("base") or {}).get("ref") != "main" or pull.get("draft")):
         candidate.security, candidate.reason = False, "lane fora do padrão (autor, repositório, base ou rascunho)"
+        return candidate
+    if pull.get("state", "open") != "open":
+        candidate.reason = "PR não está aberta"
+        return candidate
+    if HOLD_LABEL in {str((label or {}).get("name")) for label in pull.get("labels") or []}:
+        candidate.reason = f"rótulo {HOLD_LABEL}"
         return candidate
     problem = files_problem(files, frozenset({CONTAINER_TRIGGER}), ("modified", "added"))
     if problem:
@@ -367,7 +462,7 @@ def checks_verdict(check_runs: Any, required: tuple[str, ...]) -> tuple[bool, bo
         return False, True, "checks ilegíveis"
     latest: dict[str, dict[str, Any]] = {}
     for run in check_runs:
-        if not isinstance(run, dict):
+        if not isinstance(run, dict) or (run.get("app") or {}).get("slug") != CHECKS_APP:
             continue
         name = str(run.get("name") or "")
         if name not in latest or int(run.get("id") or 0) > int(latest[name].get("id") or 0):
@@ -476,6 +571,8 @@ class MergeWindow:
         self.clock, self.sleep = clock, sleep
         self.window_wait, self.busy_wait = window_wait, busy_wait
         self.validation_wait, self.deploy_wait, self.poll_seconds = validation_wait, deploy_wait, poll_seconds
+        self.alerts: list[dict[str, Any]] | None = None
+        self.merged_shas: list[str] = []  # merge commits this run created (the only heads it ever deploys)
 
     # -- reading
     def _alerts(self, report: Report) -> list[dict[str, Any]] | None:
@@ -507,19 +604,40 @@ class MergeWindow:
             if login == DEPENDABOT_LOGIN:
                 if not alerts_read:
                     alerts, alerts_read = self._alerts(report), True
-                files = self.api.pages(f"/pulls/{number}/files?per_page=100")
-                commits = self.api.pages(f"/pulls/{number}/commits?per_page=100")
-                candidate = classify_dependabot(pull, files, commits, alerts, self.repository)
-            elif ref.startswith(CONTAINER_LANE_PREFIX):
-                files = self.api.pages(f"/pulls/{number}/files?per_page=100")
-                trigger = self._trigger(str((pull.get("head") or {}).get("sha") or ""))
-                candidate = classify_container(pull, files, trigger, self.repository)
-            else:
+                    self.alerts = alerts
+            elif not ref.startswith(CONTAINER_LANE_PREFIX):
                 continue
+            candidate = self._classify_one(pull)
             if candidate.eligible and HOLD_LABEL in labels:
                 candidate.eligible, candidate.reason = False, f"rótulo {HOLD_LABEL}"
             candidates.append(candidate)
         return sorted(candidates, key=lambda item: (item.created_at, item.number))
+
+    def _classify_one(self, pull: dict[str, Any]) -> Candidate:
+        """Classify ``pull`` on freshly read files and commits (or trigger): used at listing time and again
+        on the fresh detail right before every update-branch and every merge."""
+        number = int(pull["number"])
+        files = self.api.pages(f"/pulls/{number}/files?per_page=100")
+        if (pull.get("user") or {}).get("login") == DEPENDABOT_LOGIN:
+            commits = self.api.pages(f"/pulls/{number}/commits?per_page=100")
+            return classify_dependabot(pull, files, commits, self.alerts, self.repository)
+        trigger = self._trigger(str((pull.get("head") or {}).get("sha") or ""))
+        return classify_container(pull, files, trigger, self.repository)
+
+    def _fresh(self, candidate: Candidate, sha: str) -> tuple[str | None, dict[str, Any]]:
+        """(problem, fresh detail): the PR as GitHub has it NOW must still be open, without the hold label, at
+        ``sha``, and eligible under the classifier on freshly read files and commits."""
+        detail = self._pull(candidate.number)
+        if detail.get("state") != "open":
+            return "PR fechada durante o run", detail
+        if HOLD_LABEL in {str((label or {}).get("name")) for label in detail.get("labels") or []}:
+            return f"rótulo {HOLD_LABEL}", detail
+        if (detail.get("head") or {}).get("sha") != sha:
+            return "head mudou durante o run", detail
+        fresh = self._classify_one(detail)
+        if not fresh.eligible or fresh.head_sha != sha:
+            return f"reclassificada na hora: {fresh.reason}", detail
+        return None, detail
 
     def _active_runs(self, workflow: str) -> int:
         return sum(len(self.api.pages(f"/actions/workflows/{workflow}/runs?status={status}&per_page=100", "workflow_runs"))
@@ -568,18 +686,34 @@ class MergeWindow:
         gate = self._gate()
         if gate:
             return Outcome(candidate, "skipped", gate)
+        problem, detail = self._fresh(candidate, sha)
+        if problem:
+            return Outcome(candidate, "skipped", problem)
+        if detail.get("mergeable_state") not in {"clean", "has_hooks"}:
+            return Outcome(candidate, "skipped", f"estado de merge {_text(detail.get('mergeable_state'), 20)}")
+        green, _settled, reason = self._checks(sha, candidate.lane)
+        if not green:
+            return Outcome(candidate, "skipped", reason)
         try:
             result = self.api.request("PUT", f"/pulls/{candidate.number}/merge", {"sha": sha, "merge_method": "squash"})
         except ApiError as error:
             return Outcome(candidate, "skipped", f"merge recusado pelo GitHub (HTTP {error.status})")
         if not isinstance(result, dict) or result.get("merged") is not True:
             return Outcome(candidate, "skipped", "merge não confirmado pelo GitHub")
+        merge_sha = str(result.get("sha") or "")
+        if re.fullmatch(r"[0-9a-f]{40}", merge_sha):
+            self.merged_shas.append(merge_sha)
         return Outcome(candidate, "merged", f"squash do head {sha[:7]}")
 
     def _update_and_validate(self, candidate: Candidate, sha: str) -> Outcome:
-        gate = self._gate() or self._wait_pipeline_idle()
+        # the clock again AFTER the bounded pipeline wait: the wait itself may have closed the window
+        gate = self._gate() or self._wait_pipeline_idle() or self._gate()
         if gate:
             return Outcome(candidate, "skipped", f"atrás da main; {gate}")
+        problem, _detail = self._fresh(candidate, sha)
+        if problem:
+            return Outcome(candidate, "skipped", problem)
+        main_before = str(((self.api.request("GET", "/git/ref/heads/main") or {}).get("object") or {}).get("sha") or "")
         try:
             self.api.request("PUT", f"/pulls/{candidate.number}/update-branch", {"expected_head_sha": sha})
         except ApiError as error:
@@ -591,6 +725,13 @@ class MergeWindow:
             new_sha = str(((self._pull(candidate.number).get("head") or {}).get("sha")) or sha)
         if new_sha == sha:
             return Outcome(candidate, "updated", "update-branch aceito; novo head ainda não visível — próximo run valida e mescla")
+        # the new head must be exactly GitHub's signed merge of (old head, the main read before the update)
+        commit = self.api.request("GET", f"/commits/{new_sha}") or {}
+        parents = [str((parent or {}).get("sha") or "") for parent in commit.get("parents") or []]
+        verified = ((commit.get("commit") or {}).get("verification") or {}).get("verified") is True
+        if parents != [sha, main_before] or not verified:
+            return Outcome(candidate, "skipped", f"novo head {new_sha[:7]} não é o merge assinado esperado de (head, main) — "
+                                                 "nada validado nem mesclado")
         # GITHUB_TOKEN pushes trigger no workflow: validate the new head explicitly (never deploy).
         self._dispatch(candidate.head_ref, new_sha, deploy=False, remediation=candidate.lane == "container")
         deadline = self.clock() + self.validation_wait
@@ -605,6 +746,21 @@ class MergeWindow:
         if (detail.get("head") or {}).get("sha") != new_sha or detail.get("mergeable_state") != "clean":
             return Outcome(candidate, "updated", f"atualizada e validada; estado de merge {_text(detail.get('mergeable_state'), 20)} — próximo run")
         return self._merge(candidate, new_sha)
+
+    def _merged_by_window(self, sha: str) -> bool:
+        """``sha`` is the merge commit of a PR merged by this workflow (github-actions[bot], a Dependabot or
+        container-lane PR): the only kind of main head this workflow ever (re)deploys."""
+        try:
+            pulls = self.api.pages(f"/commits/{sha}/pulls?per_page=10")
+        except ApiError:
+            return False
+        for pull in pulls:
+            detail = self.api.request("GET", f"/pulls/{int(pull['number'])}") or {}
+            ref = str((detail.get("head") or {}).get("ref") or "")
+            if (detail.get("merge_commit_sha") == sha and (detail.get("merged_by") or {}).get("login") == ACTIONS_LOGIN
+                    and ((detail.get("user") or {}).get("login") == DEPENDABOT_LOGIN or ref.startswith(CONTAINER_LANE_PREFIX))):
+                return True
+        return False
 
     def _main_deploy_state(self, sha: str) -> str:
         """deployed | in_progress | missing | failed | not_attempted for the main head ``sha``."""
@@ -621,16 +777,19 @@ class MergeWindow:
                     continue
                 if job.get("conclusion") == "success":
                     return "deployed"
-                failed = failed or job.get("conclusion") in RED_CONCLUSIONS
+                failed = failed or job.get("conclusion") in REDEPLOY_CONCLUSIONS
         return "failed" if failed else "not_attempted"
 
     def _deploy(self, reason: str) -> str:
-        gate = self._gate() or self._wait_pipeline_idle()
+        gate = self._gate() or self._wait_pipeline_idle() or self._gate()
         if gate:
             return f"pendente ({reason}); não disparado: {gate} — próximo run tenta de novo"
         main_sha = str(((self.api.request("GET", "/git/ref/heads/main") or {}).get("object") or {}).get("sha") or "")
         if not re.fullmatch(r"[0-9a-f]{40}", main_sha):
             return "pendente; head da main ilegível"
+        if main_sha not in self.merged_shas and not self._merged_by_window(main_sha):
+            # someone else's commit is on top: its own push event deploys it (and everything below it)
+            return f"não disparado: a main (`{main_sha[:7]}`) avançou além do merge da janela; o push desse commit faz o deploy"
         previous = max((int(run.get("id") or 0) for run in self.api.pages(
             f"/actions/workflows/{PIPELINE}/runs?event=workflow_dispatch&head_sha={main_sha}&per_page=50", "workflow_runs")), default=0)
         self._dispatch("main", main_sha, deploy=True, remediation=False)
@@ -644,6 +803,14 @@ class MergeWindow:
             run = max(runs, key=lambda item: int(item.get("id") or 0)) if runs else None
             if run is not None and run.get("status") == "completed":
                 break
+            if run is not None and run.get("status") in QUEUED_STATUSES and window_problem(self.clock()):
+                # still waiting in the queue when the window closed: it must not start a deploy now
+                try:
+                    self.api.request("POST", f"/actions/runs/{int(run['id'])}/cancel")
+                except ApiError as error:
+                    return f"disparado para `{main_sha[:7]}` ({reason}); a janela fechou com o run na fila e o cancelamento falhou (HTTP {error.status})"
+                return (f"cancelado na fila para `{main_sha[:7]}` ({reason}): {window_problem(self.clock())} — "
+                        "o próximo run redeploya")
         if run is None:
             return f"disparado para `{main_sha[:7]}` ({reason}); run não localizado na espera limitada"
         label = f"run [{run['id']}](https://github.com/{self.repository}/actions/runs/{run['id']})"
@@ -664,7 +831,8 @@ class MergeWindow:
         eligible = [candidate for candidate in candidates if candidate.eligible]
         main_sha = str(((self.api.request("GET", "/git/ref/heads/main") or {}).get("object") or {}).get("sha") or "")
         deploy_state = self._main_deploy_state(main_sha) if re.fullmatch(r"[0-9a-f]{40}", main_sha) else "unknown"
-        pending_deploy = deploy_state in {"missing", "failed"}
+        # only a head this workflow merged itself is ever redeployed (anything else deploys on its own push)
+        pending_deploy = deploy_state in {"missing", "failed"} and self._merged_by_window(main_sha)
         if not eligible and not pending_deploy:
             report.deploy = "não necessário"
             return report  # nothing to write: no window wait, no pipeline wait
@@ -676,7 +844,7 @@ class MergeWindow:
                 problem = window_problem(self.clock())
         report.gate = problem
         if problem is None:
-            report.gate = self._gate() or (self._wait_pipeline_idle() if self.live else None)
+            report.gate = self._gate() or ((self._wait_pipeline_idle() or self._gate()) if self.live else None)
         if report.gate:
             for candidate in eligible:
                 report.outcomes.append(Outcome(candidate, "skipped", report.gate))
@@ -696,6 +864,9 @@ class MergeWindow:
             sha = str((detail.get("head") or {}).get("sha") or "")
             if detail.get("state") != "open" or sha != candidate.head_sha:
                 report.outcomes.append(Outcome(candidate, "skipped", "head mudou ou PR fechada durante o run"))
+                continue
+            if HOLD_LABEL in {str((label or {}).get("name")) for label in detail.get("labels") or []}:
+                report.outcomes.append(Outcome(candidate, "skipped", f"rótulo {HOLD_LABEL}"))
                 continue
             state = detail.get("mergeable_state")
             if state == "behind":
