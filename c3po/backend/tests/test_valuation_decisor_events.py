@@ -110,7 +110,8 @@ def _sentiment(database: Database, symbol: str, published: datetime, *, bearish:
 
 
 def _poll_run(database: Database, *, started: datetime, completed: datetime, status: str = "succeeded", records: int = 1) -> str:
-    run_id = database.begin_ingestion_run("sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure", {"operation": "valuation_universe"})
+    run_id = database.begin_ingestion_run("sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure",
+                                         {"operation": "valuation_universe", "failed_issuers": [], "unattributed_failures": 0})  # a complete pass: every issuer observed
     database.finish_ingestion_run(run_id, status, records, 0)
     database._ingestion_runs[run_id].update(started_at=started, completed_at=completed)
     return run_id
@@ -240,12 +241,96 @@ def test_a_poll_covers_only_the_issuers_it_observed(monkeypatch: pytest.MonkeyPa
     assert gate["trigger_poll"]["issuers_not_observed"] == 1
     assert decisor.STALENESS_SOURCE_STALE not in ko["reason_codes"] and ko["inputs"]["tp_staleness"]["issuer_observed"] is True
     # a name whose issuer is unknown is not covered by a poll that missed issuers; by a complete one it is
-    unknown = decisor.name_staleness({"status": "ok", "known_at": RUN.isoformat(), "pending": {}, "failed_issuers": ["0000999201"],
+    unknown = decisor.name_staleness({"status": "ok", "known_at": RUN.isoformat(), "pending": {}, "poll_coverage": {"known": True, "failed_issuers": ["0000999201"], "unattributed_failures": 0},
                                       "trigger_poll": aapl["checks"]["tp_staleness"]["trigger_poll"]}, "NASDAQ", "NEWCO")
     assert unknown["source_status"] == "stale" and "issuer is unknown" in unknown["detail"]
-    complete = decisor.name_staleness({"status": "ok", "known_at": RUN.isoformat(), "pending": {}, "failed_issuers": [],
+    complete = decisor.name_staleness({"status": "ok", "known_at": RUN.isoformat(), "pending": {}, "poll_coverage": {"known": True, "failed_issuers": [], "unattributed_failures": 0},
                                        "trigger_poll": aapl["checks"]["tp_staleness"]["trigger_poll"]}, "NASDAQ", "NEWCO")
     assert complete["source_status"] == "ok"
+
+
+class _HeaderTimeout(_Submissions):
+    """The issuer's submissions list a NEW trigger 10-Q; reading its filing header times out (nothing is registered)."""
+
+    def submissions(self, cik: str) -> dict[str, Any]:
+        accepted = datetime.now(timezone.utc) - timedelta(days=1)
+        return {"filings": {"recent": {"accessionNumber": [f"{cik}-26-000099"], "form": ["10-Q"], "items": [""], "filingDate": [accepted.date().isoformat()],
+                                       "reportDate": ["2026-09-30"], "acceptanceDateTime": [accepted.strftime("%Y-%m-%dT%H:%M:%S.000Z")],
+                                       "primaryDocument": ["x.htm"]}}}
+
+    def filing_header(self, cik: str, accession: str) -> dict[str, Any]:
+        raise httpx.ReadTimeout("header timed out")
+
+    def companyfacts(self, cik: str) -> dict[str, Any]:
+        return {}
+
+
+def test_a_failed_filing_header_never_reads_as_an_observed_issuer(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(valuation_env.ASFILED_ENABLED_ENV, "true")
+    database = _database()
+    _night(database, poll=False)
+    _filing(database, "AAPL", "0000999201-26-000011", "10-Q", datetime(2026, 8, 20, 20, 30, tzinfo=UTC), issuer="0000999201")
+    _filing(database, "KO", "0000999202-26-000011", "10-Q", datetime(2026, 8, 20, 20, 30, tzinfo=UTC), issuer="0000999202")
+    service = InvestorRelationsService(Settings(database_url="", auth_cookie_secure=False), database, read_sec_headers=True)
+    service._asfiled_ingestor = SecXbrlIngestor(database, _HeaderTimeout({"AAPL": "0000999201"}, failing=set()))  # type: ignore[arg-type]
+    monkeypatch.setattr("app.investor_relations.us_valuation_universe", lambda db: {"AAPL": "NASDAQ"})
+    service.sync_sec_asfiled()
+    run = next(run for run in database._ingestion_runs.values() if run["source_code"] == "sec_asfiled")
+    assert run["status"] == "succeeded" and run["metadata"]["failed_issuers"] == ["0000999201"]  # named by the watched client
+    assert run["metadata"]["header_failures"] == 1 and run["metadata"]["unattributed_failures"] == 0
+    run.update(started_at=RUN - timedelta(minutes=30), completed_at=RUN - timedelta(minutes=20))
+    _run(database)
+    aapl, ko = _record(database, "NASDAQ", "AAPL"), _record(database, "NYSE", "KO")
+    assert aapl["reason_codes"] == [decisor.STALENESS_SOURCE_STALE] and "did not observe the name's issuer" in aapl["checks"]["tp_staleness"]["detail"]
+    assert decisor.STALENESS_SOURCE_STALE not in ko["reason_codes"]
+
+
+class _HeaderWithoutDate(_HeaderTimeout):
+    """The header reads, but neither it nor the submissions carry a filed date: register_filing counts a header failure
+    without raising — nobody can name the issuer from the pass, so the whole pass covers no name."""
+
+    def submissions(self, cik: str) -> dict[str, Any]:
+        payload = super().submissions(cik)
+        payload["filings"]["recent"]["filingDate"] = [None]
+        return payload
+
+    def filing_header(self, cik: str, accession: str) -> dict[str, Any]:
+        return {"accepted_at": datetime.now(timezone.utc) - timedelta(days=1), "filed_date": None, "form": "10-Q"}
+
+
+def test_a_header_failure_nobody_can_attribute_covers_no_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(valuation_env.ASFILED_ENABLED_ENV, "true")
+    database = _database()
+    service = InvestorRelationsService(Settings(database_url="", auth_cookie_secure=False), database, read_sec_headers=True)
+    service._asfiled_ingestor = SecXbrlIngestor(database, _HeaderWithoutDate({"AAPL": "0000999201"}, failing=set()))  # type: ignore[arg-type]
+    monkeypatch.setattr("app.investor_relations.us_valuation_universe", lambda db: {"AAPL": "NASDAQ"})
+    service.sync_sec_asfiled()
+    run = next(run for run in database._ingestion_runs.values() if run["source_code"] == "sec_asfiled")
+    assert run["metadata"]["header_failures"] == 1 and run["metadata"]["unattributed_failures"] == 1 and run["metadata"]["failed_issuers"] == []
+
+
+def test_unattributed_failures_and_unknown_coverage_cover_no_name() -> None:
+    from app.investor_relations import asfiled_unparsed_errors
+    assert asfiled_unparsed_errors(["0000999201: ReadTimeout", "320193: ReadTimeout", "boom"]) == 2  # a short CIK names no issuer
+    for metadata, why in (({"failed_issuers": [], "unattributed_failures": 2}, "2 failure(s) naming no issuer"),
+                          ({"operation": "valuation_universe"}, "recorded no coverage"),  # a run from before the deploy
+                          ({"failed_issuers": []}, "recorded no coverage")):
+        database = _database()
+        _night(database, poll=False)
+        run_id = _poll_run(database, started=RUN - timedelta(minutes=30), completed=RUN - timedelta(minutes=20))
+        database._ingestion_runs[run_id]["metadata"] = metadata
+        _run(database)
+        for market, symbol in (("NASDAQ", "AAPL"), ("NYSE", "KO")):
+            gate = _record(database, market, symbol)["checks"]["tp_staleness"]
+            assert gate["source_status"] == "stale" and why in gate["detail"], (metadata, symbol)
+
+
+def test_a_calendar_receipt_from_the_future_never_defers_the_decisor() -> None:
+    database = _database()
+    _night(database)
+    _calendar(database, [], received=datetime(2030, 1, 1, tzinfo=UTC))
+    assert decisor.not_before(database, now=RUN) is None  # a bad clock: logged and ignored
+    assert decisor.not_before(database, now=datetime(2030, 1, 1, tzinfo=UTC) - EPSILON) == datetime(2030, 1, 1, tzinfo=UTC) + EPSILON  # the edge
 
 
 def test_the_decisor_waits_until_the_calendar_it_just_collected_is_readable(monkeypatch: pytest.MonkeyPatch) -> None:

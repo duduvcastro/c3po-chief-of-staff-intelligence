@@ -82,6 +82,13 @@ relatório somente-leitura comparar com e sem o portão.
     `STALENESS_SOURCE_STALE`; nome de emissor desconhecido, quando o poll perdeu algum emissor → também. Ex.: timeout nas
     submissions de um emissor e leitura do outro dão execução `succeeded` com progresso — viva para o segundo, nunca
     para o primeiro (`issuer_observed` na procedência).
+  * **Falhas sem dono e cobertura desconhecida** (verificação de 20/10): o cliente SEC do poll é observado pelo
+    `investor_relations.py` (`AsFiledHeaderWatch`) — todo cabeçalho de filing que falha registra o CIK em
+    `failed_issuers` (o `register_filing` congelado só conta `header_failures`, sem nomear o emissor, e não registra
+    nada). O que nem assim tem dono (`unattributed_failures` = cabeçalhos falhos não explicados por exceção observada +
+    erros que não começam por um CIK de 10 dígitos) faz o poll não cobrir **nenhum** nome: todo nome dos EUA sai
+    `STALENESS_SOURCE_STALE`, com o motivo. Execução sem as chaves `failed_issuers` / `unattributed_failures` (gravada
+    antes do deploy) tem cobertura **desconhecida**: conta como nenhuma.
 * **Eventos** (`event_gates` no bloco diz quais seguram a permissão; todo outro código de evento é marca):
   * **`EARNINGS_WITHIN_N`** (portão → OBSERVAR nos EUA; **marca** na B3): resultado conhecido em D cuja **sessão do
     anúncio ou sessão de reação** cai em [T+1, T+N] (T = última sessão completa, N = 2). Sessão do anúncio = a data, ou a
@@ -220,7 +227,8 @@ recusadas, estado da fonte 053 em `tp_staleness_source`, estado do calendário, 
 `python -m app.valuation_decision --dry-run` (nada gravado), `--run` (recusado com a
 flag desligada), `--verdict MERCADO:SÍMBOLO`. **Espera o calendário ficar legível** (revisão do Codex de 19/10): a fase só roda a partir do recebimento do
 calendário mais novo + ε (`valuation_decision.not_before`) — um calendário recebido dentro da margem ficaria fora da
-leitura da rodada logo depois da fase `earnings_calendar`. Antes disso a fase responde "ainda não" (`deferred`): nada
+leitura da rodada logo depois da fase `earnings_calendar`; um recebimento posterior a agora + ε (relógio errado) é
+registrado em log e ignorado, para nunca adiar a fase toda noite. Antes disso a fase responde "ainda não" (`deferred`): nada
 roda, nada é gravado, a noite não é marcada como feita e o worker acorda nesse instante.
 
 `run_shadow` é **dry run por padrão**; grava só com `write=True` **e** a flag ligada (quem quer que chame — senão

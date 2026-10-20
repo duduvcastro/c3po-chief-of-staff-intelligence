@@ -643,5 +643,6 @@ def test_the_asfiled_poll_extends_the_sec_polling_to_the_valuation_universe(monk
     runs = [run for run in database._ingestion_runs.values() if run.get("source_code") == "sec_asfiled"]
     assert runs[-1]["status"] == "succeeded"
     assert ir._asfiled_ingestor is not None and original()[1] == 0  # the second poll reuses the ingestor and writes nothing new
-    assert ir._asfiled_ingestor.client is ir.sec_client  # one SEC header client per process: the sync_sec step's and the poll's
+    # one SEC header client per process: the sync_sec step's and the poll's (the poll's watched for header failures)
+    assert ir._asfiled_ingestor.client.client is ir.sec_client
     assert ir._asfiled_ingestor.backfill_per_poll == 3

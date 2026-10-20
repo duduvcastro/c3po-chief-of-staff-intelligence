@@ -117,7 +117,8 @@ def _curve(database: Database, at: datetime, *, observed: str, as_of: str = SESS
 
 def _poll(database: Database, completed_at: datetime, *, status: str = "succeeded") -> str:
     """One as-filed poll of the Investor Relations worker (``ingestion_runs`` source ``sec_asfiled``), dated in the test world."""
-    run_id = database.begin_ingestion_run("sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure", {"operation": "valuation_universe"})
+    run_id = database.begin_ingestion_run("sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure",
+                                         {"operation": "valuation_universe", "failed_issuers": [], "unattributed_failures": 0})  # a complete pass: every issuer observed
     database.finish_ingestion_run(run_id, status, 1, 1)
     database._ingestion_runs[run_id].update(started_at=completed_at - timedelta(minutes=3), completed_at=completed_at)
     return run_id
@@ -681,7 +682,8 @@ def test_the_filings_gate_is_pure_us_only_and_never_exempts_a_us_row() -> None:
     # ...and with a live poll the absent table is what it is: unavailable
     live = {"source_code": "sec_asfiled", "run_id": "r", "records_read": 9, "started_at": (RUN - timedelta(hours=1)).isoformat(),
             "completed_at": (RUN - timedelta(minutes=50)).isoformat()}
-    absent = decisor.name_staleness({"status": "unavailable", "known_at": RUN.isoformat(), "trigger_poll": live}, "NYSE", "KO")
+    absent = decisor.name_staleness({"status": "unavailable", "known_at": RUN.isoformat(), "trigger_poll": live,
+                                     "poll_coverage": {"known": True, "failed_issuers": [], "unattributed_failures": 0}}, "NYSE", "KO")
     assert (absent["status"], absent["source_status"]) == ("unavailable", "unavailable")
 
 

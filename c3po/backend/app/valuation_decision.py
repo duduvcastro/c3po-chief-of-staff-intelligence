@@ -513,18 +513,22 @@ def poll_reference(run: Mapping[str, Any] | None, source_code: str) -> dict[str,
     """What a record keeps of the as-filed poll it relied on: the source, the run id, what it read and when it ran."""
     if not run or not run.get("completed_at"):
         return None
-    metadata = run.get("metadata") if isinstance(run.get("metadata"), Mapping) else {}
-    failed = (metadata or {}).get("failed_issuers")
+    coverage = poll_coverage(run)
     return {"source_code": source_code, "run_id": _text(run.get("id")), "records_read": int(run.get("records_read") or 0),
             "started_at": _utc(run["started_at"]).isoformat() if run.get("started_at") else None, "completed_at": _utc(run["completed_at"]).isoformat(),
-            "issuers_not_observed": len(failed) if isinstance(failed, list) else None}
+            "coverage_known": coverage["known"], "issuers_not_observed": len(coverage["failed_issuers"]) if coverage["known"] else None,
+            "unattributed_failures": coverage["unattributed_failures"]}
 
 
-def failed_issuers(run: Mapping[str, Any] | None) -> list[str]:
-    """The issuers (CIKs) the as-filed poll did not observe (its run metadata, ``failed_issuers``)."""
+def poll_coverage(run: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What the as-filed poll says about its own coverage (its run metadata): ``failed_issuers`` (CIKs it did not observe)
+    and ``unattributed_failures`` (failures naming no issuer). ``known`` is False when either key is missing — a run
+    written before the poll recorded them: its coverage is unknown, and the decisor counts it as covering no name."""
     metadata = (run or {}).get("metadata") if isinstance((run or {}).get("metadata"), Mapping) else {}
-    failed = (metadata or {}).get("failed_issuers")
-    return sorted({str(item) for item in failed}) if isinstance(failed, list) else []
+    failed, unattributed = (metadata or {}).get("failed_issuers"), (metadata or {}).get("unattributed_failures")
+    known = isinstance(failed, list) and isinstance(unattributed, int) and not isinstance(unattributed, bool)
+    return {"known": known, "failed_issuers": sorted({str(item) for item in failed}) if isinstance(failed, list) else [],
+            "unattributed_failures": unattributed if known else None}
 
 
 def _poll_fresh(poll: Mapping[str, Any] | None, known_at: Any, thresholds: DecisorThresholds) -> bool:
@@ -556,8 +560,20 @@ def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str, *
     read = dict(source or {})
     poll = read.get("trigger_poll") if isinstance(read.get("trigger_poll"), Mapping) else None
     fresh = _poll_fresh(poll, read.get("known_at"), thresholds)
-    missed = {str(item) for item in read.get("failed_issuers") or []}
-    uncovered = fresh and bool(missed) and (issuer_key is None or str(issuer_key) in missed)
+    raw_coverage = read.get("poll_coverage")
+    coverage: Mapping[str, Any] = raw_coverage if isinstance(raw_coverage, Mapping) else {"known": False}
+    listed = coverage.get("failed_issuers")
+    missed = {str(item) for item in listed} if isinstance(listed, list) else set()
+    if not (coverage or {}).get("known"):
+        why_uncovered = "the live poll recorded no coverage (a run from before failed_issuers/unattributed_failures): unknown, counted as none"
+    elif int((coverage or {}).get("unattributed_failures") or 0) > 0:
+        why_uncovered = f"the live poll had {int((coverage or {}).get('unattributed_failures') or 0)} failure(s) naming no issuer: it covers no name"
+    elif missed and (issuer_key is None or str(issuer_key) in missed):
+        why_uncovered = ("the live poll did not observe the name's issuer" if issuer_key is not None else
+                         "the live poll missed issuers and the name's issuer is unknown")
+    else:
+        why_uncovered = None
+    uncovered = fresh and why_uncovered is not None
     fresh = fresh and not uncovered
     table = read.get("status") == "ok"
     if not fresh and not table:  # nobody looked, and nothing was there to look at: the same record as an empty table
@@ -573,8 +589,7 @@ def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str, *
     marks = [mark for mark in (pending or {}).get(symbol) or [] if isinstance(mark, Mapping)]
     return {**base, "status": STALENESS_STALE if marks else STALENESS_CLEAR, "source_status": "ok" if fresh else STALENESS_STALE,
             "detail": None if fresh else (
-                ("the live poll did not observe the name's issuer" if issuer_key is not None else
-                 "the live poll missed issuers and the name's issuer is unknown") + ": the marks known are kept, their absence is no evidence"
+                f"{why_uncovered}: the marks known are kept, their absence is no evidence"
                 if uncovered else
                 f"no live {thresholds.staleness_poll_source} poll (successful, with progress, started in the "
                 f"{thresholds.staleness_poll_max_age_hours} h before the run's clock): the marks known are kept, their absence is no evidence"),
@@ -1218,7 +1233,7 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
             if us_staleness is None:  # the poll first (a SUCCESSFUL run with progress, completed by D − ε), then the table
                 poll = database.ingestion_run_completed_at_or_before(thresholds.staleness_poll_source, instant - margin, min_records_read=1)
                 us_staleness = {**us_staleness_at(database, instant, margin_seconds=thresholds.insert_margin_seconds),
-                                "trigger_poll": poll_reference(poll, thresholds.staleness_poll_source), "failed_issuers": failed_issuers(poll)}
+                                "trigger_poll": poll_reference(poll, thresholds.staleness_poll_source), "poll_coverage": poll_coverage(poll)}
                 us_filings = filings_known_at(database, instant, lookback_days=thresholds.earnings_filings_lookback_days,
                                               margin_seconds=thresholds.insert_margin_seconds)
                 us_issuers = {symbol: str(refs[-1]["issuer_key"]) for symbol, refs in ((us_filings or {}).get("by_symbol") or {}).items()
@@ -1301,13 +1316,22 @@ def run_shadow(database: Any, *, now: datetime | None = None, quotes: Mapping[tu
     return receipt
 
 
-def not_before(database: Any, *, thresholds: DecisorThresholds = THRESHOLDS) -> datetime | None:
+def not_before(database: Any, *, thresholds: DecisorThresholds = THRESHOLDS, now: datetime | None = None) -> datetime | None:
     """The first instant the nightly phase may decide: the newest earnings calendar's receipt + ε. A calendar received
     inside the last ε is out of the run's read (``calendars_at``), so a run right after the calendar phase would decide
     without the calendar it just collected; the phase waits ("not yet": nothing recorded) and the worker wakes then.
-    ``None`` without any calendar."""
+    ``None`` without any calendar, or when the newest receipt is later than ``now`` (the wall clock) + ε: a bad clock
+    is logged and never defers the phase."""
     latest = database.latest_analysis_snapshot_published_at(CALENDAR_ANALYSIS, CALENDAR_ENTITY)
-    return _utc(latest) + timedelta(seconds=thresholds.insert_margin_seconds) if latest is not None else None
+    if latest is None:
+        return None
+    margin = timedelta(seconds=thresholds.insert_margin_seconds)
+    clock = _utc(now) if now is not None else datetime.now(timezone.utc)
+    if _utc(latest) > clock + margin:  # a receipt from the future is a bad clock: it must never defer the decisor every night
+        logger.warning("valuation_decision: the newest earnings calendar claims a receipt at %s, after now (%s) + ε — ignored for the deferral",
+                       _utc(latest).isoformat(), clock.isoformat())
+        return None
+    return _utc(latest) + margin
 
 
 def last_run_at(database: Any) -> datetime | None:
