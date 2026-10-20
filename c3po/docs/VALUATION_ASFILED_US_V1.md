@@ -169,7 +169,7 @@ instante real **mais** o deslocamento UTC de Nova York.
     passe, então um TP que entre na geração depois (ex.: ciclo das 00:00 promovido após um protocolo das 16:30) ainda é
     marcado.
 * Marca `stale` pendente é reconferida a cada passe, qualquer que seja a idade. `stale_us_tps` devolve as pendentes por
-  símbolo com tudo o que a tabela tem agora (operação, testes). **Leitor da decisão:** `us_staleness_at(database, at)` —
+  símbolo com tudo o que a tabela tem agora (operação, testes). **Leitor da decisão:** `valuation_staleness.us_staleness_at(database, at)` (fora deste arquivo, produtor congelado do backtest PIT) —
   causal: só marcas com `recorded_at` ≤ `at` e, no PostgreSQL, `created_at` ≤ `at` − margem; por (protocolo, símbolo) o estado
   mais recente entre elas; tabela ausente → `unavailable` (nada é criado). O decisor V1 o lê uma vez por rodada no
   relógio da rodada: TP dos EUA com marca `stale` pendente sai `OBSERVAR` / `TP_STALE_AFTER_FILING` com o protocolo

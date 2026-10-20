@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app import valuation_asfiled as asfiled
+from app import valuation_staleness as staleness_reader
 from app import valuation_decision as decisor
 from app import valuation_env
 from app import valuation_official as official
@@ -736,9 +737,9 @@ def test_a_mark_written_after_the_runs_clock_never_reaches_its_decision() -> Non
     later = decisor.run_shadow(database, now=RUN + timedelta(minutes=20))  # same session: after the clear, the name is permitted again
     assert later["markets"]["NASDAQ"]["verdicts"]["COMPRA_PERMITIDA"] == 1 and later["markets"]["NYSE"]["reasons"][decisor.TP_STALE_AFTER_FILING] == 1
     # the reader itself: only marks recorded by the clock, the latest state per (filing, symbol)
-    assert list(asfiled.us_staleness_at(database, RUN)["pending"]) == ["AAPL"]
-    assert list(asfiled.us_staleness_at(database, RUN + timedelta(minutes=20))["pending"]) == ["KO"]
-    assert asfiled.us_staleness_at(database, ACCEPTED)["pending"] == {} and asfiled.us_staleness_at(database, ACCEPTED)["marks_known"] == 0
+    assert list(staleness_reader.us_staleness_at(database, RUN)["pending"]) == ["AAPL"]
+    assert list(staleness_reader.us_staleness_at(database, RUN + timedelta(minutes=20))["pending"]) == ["KO"]
+    assert staleness_reader.us_staleness_at(database, ACCEPTED)["pending"] == {} and staleness_reader.us_staleness_at(database, ACCEPTED)["marks_known"] == 0
 
 
 def test_without_the_053_table_no_us_name_is_permitted_and_b3_is_decided_as_before() -> None:

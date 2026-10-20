@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 
 from app import valuation_asfiled as asfiled
+from app import valuation_staleness as staleness_reader
 from app import valuation_earnings_calendar as calendar_module
 from app.config import Settings
 from app.database import Database
@@ -160,6 +161,6 @@ def test_the_051_and_053_readers_apply_the_insert_margin(pg: tuple[Database, Any
     filings = calendar_module.filings_known_at(database, D, lookback_days=400, margin_seconds=60)
     assert filings["status"] == "ok" and [item["doc_id"] for item in filings["by_symbol"]["AAPL"]] == ["f-1"]
     assert filings["by_symbol"]["AAPL"][0]["period_of_report"] == "2026-06-30"
-    staleness = asfiled.us_staleness_at(database, D, margin_seconds=60)
+    staleness = staleness_reader.us_staleness_at(database, D, margin_seconds=60)
     assert staleness["status"] == "ok" and staleness["marks_known"] == 1 and len(staleness["pending"]["AAPL"]) == 1
-    assert asfiled.us_staleness_at(database, D, margin_seconds=0)["marks_known"] == 2
+    assert staleness_reader.us_staleness_at(database, D, margin_seconds=0)["marks_known"] == 2

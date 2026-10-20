@@ -124,6 +124,15 @@ def normalize_company_name(value: str) -> str:
     return re.sub(r"\s+", " ", folded).strip()
 
 
+_ASFILED_ERROR_ISSUER = re.compile(r"^(\d{10}): ")
+
+
+def asfiled_failed_issuers(errors: list[str]) -> list[str]:
+    """The issuers (10-digit CIKs) an as-filed pass did not observe, read from its per-issuer errors
+    (``SecXbrlIngestor.poll`` writes each as ``"<cik>: <error>"``; ``sec_xbrl.py`` itself is a frozen producer file)."""
+    return sorted({match.group(1) for error in errors if (match := _ASFILED_ERROR_ISSUER.match(str(error)))})
+
+
 def clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
@@ -771,7 +780,7 @@ class InvestorRelationsService:
                 )
             # the issuers this pass did not observe (CIKs, aggregate; no symbol): the Decisor V1 never counts the poll as
             # covering their names (valuation_decision.name_staleness)
-            self.database.update_ingestion_run_metadata(run_id, {"issuers": result.issuers, "failed_issuers": sorted(set(result.failed_issuers)),
+            self.database.update_ingestion_run_metadata(run_id, {"issuers": result.issuers, "failed_issuers": asfiled_failed_issuers(result.errors),
                                                                  "unmapped_symbols": result.unmapped_symbols})
             # a pass the SEC throttled is 'partial' (migration 001 admits it): it did not look at the whole universe, so the
             # Decisor V1 never counts it as the as-filed poll being alive (valuation_decision.name_staleness)

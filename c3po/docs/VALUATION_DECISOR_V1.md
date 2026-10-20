@@ -50,7 +50,7 @@ relatório somente-leitura comparar com e sem o portão.
   defeito de dado (`data_defect`, `data_defects`).
 * **Reavaliação após protocolo (OBSERVAR; só EUA)**: a migração 053 (`valuation_tp_staleness`, frente as-filed) marca o
   TP oficial dos EUA contra os protocolos da SEC (10-Q/10-K e emendas, 8-K 2.02). O decisor a lê **uma vez por rodada,
-  no relógio da rodada** (`valuation_asfiled.us_staleness_at`): só marcas com `recorded_at` ≤ relógio **e**, no
+  no relógio da rodada** (`valuation_staleness.us_staleness_at`; o leitor fica fora de `valuation_asfiled.py`, arquivo produtor que o backtest PIT dos EUA fixa por hash): só marcas com `recorded_at` ≤ relógio **e**, no
   PostgreSQL, `created_at` ≤ relógio (inseridas até ali); por par (protocolo, símbolo) vale o estado mais recente entre
   elas (empate de `recorded_at`, que o gatilho nunca grava, resolve para o mais estrito). Par cujo último estado é
   `stale` → `TP_STALE_AFTER_FILING`, e o registro nomeia o(s) protocolo(s) (id da marca 053, accession, formulário,
@@ -76,7 +76,8 @@ relatório somente-leitura comparar com e sem o portão.
     tabela: `STALENESS_SOURCE_UNAVAILABLE`. O registro nomeia o poll em que confiou (`trigger_poll`: fonte, id, linhas
     lidas, início, conclusão, emissores não observados).
   * **Cobertura por emissor** (revisão do Codex de 19/10): o poll grava nos metadados da execução os emissores que não
-    conseguiu observar (`failed_issuers`, só CIKs — nenhum símbolo). Um poll vivo cobre um nome **só se observou o
+    conseguiu observar (`failed_issuers`, só CIKs — nenhum símbolo), lidos dos erros por emissor que o passe já devolve
+    (`"<cik>: <erro>"`; `sec_xbrl.py` é produtor congelado e não muda). Um poll vivo cobre um nome **só se observou o
     emissor dele** (o emissor vem dos filings da 051 conhecidos em D): emissor em `failed_issuers` → o nome sai
     `STALENESS_SOURCE_STALE`; nome de emissor desconhecido, quando o poll perdeu algum emissor → também. Ex.: timeout nas
     submissions de um emissor e leitura do outro dão execução `succeeded` com progresso — viva para o segundo, nunca

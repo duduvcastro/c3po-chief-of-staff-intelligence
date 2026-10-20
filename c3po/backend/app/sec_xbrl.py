@@ -553,7 +553,6 @@ class AsFiledPollResult:
     deferred_documents: int = 0
     throttled: bool = False
     errors: list[str] = field(default_factory=list)
-    failed_issuers: list[str] = field(default_factory=list)  # CIKs this pass did not observe (an error): their names are not covered
 
     def as_dict(self) -> dict[str, Any]:
         return {key: (list(value) if isinstance(value, list) else value) for key, value in self.__dict__.items()}
@@ -671,12 +670,10 @@ class SecXbrlIngestor:
             except SecThrottled as error:  # fair access first: the SEC said slow down, so this pass ends here
                 result.throttled = True
                 result.errors.append(f"{cik}: {error}")
-                result.failed_issuers.append(cik)
                 logger.warning("sec_xbrl: %s — the as-filed pass stops; the next poll starts over", error)
                 break
             except Exception as error:  # one issuer never stops the pass; the next poll retries it
                 result.errors.append(f"{cik}: {type(error).__name__}")
-                result.failed_issuers.append(cik)
                 logger.warning("sec_xbrl: issuer %s failed in this poll: %s", cik, type(error).__name__)
         return result
 

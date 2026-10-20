@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from app import valuation_asfiled as asfiled
+from app import valuation_staleness as staleness_reader
 from app import valuation_env, valuation_official as official, valuation_worker
 from app.config import Settings
 from app.database import Database
@@ -452,36 +453,36 @@ def _staleness(doc_id: str, symbol: str, state: str, recorded_at: datetime, *, a
 def test_the_causal_reader_knows_only_the_marks_of_its_clock_and_the_latest_state_of_each_filing() -> None:
     database = Database(_settings())
     t0 = datetime(2026, 2, 20, 22, 0, tzinfo=UTC)
-    absent = asfiled.us_staleness_at(database, t0)
+    absent = staleness_reader.us_staleness_at(database, t0)
     assert absent["status"] == "unavailable" and "migration 053" in absent["detail"] and not hasattr(database, "_valuation_tp_staleness")
     store = asfiled.TpStalenessStore(database)
-    assert asfiled.us_staleness_at(database, t0) == {"status": "ok", "known_at": t0.isoformat(), "marks_known": 0, "latest_recorded_at": None, "pending": {}}
+    assert staleness_reader.us_staleness_at(database, t0) == {"status": "ok", "known_at": t0.isoformat(), "marks_known": 0, "latest_recorded_at": None, "pending": {}}
     store.append([_staleness("A-1", "SYNT", "untracked", t0), _staleness("A-1", "SYNT", "stale", t0 + timedelta(hours=1)),
                   _staleness("A-1", "SYNT", "cleared", t0 + timedelta(hours=5)),
                   _staleness("B-2", "SYNT", "stale", t0 + timedelta(hours=2), accepted_at=datetime(2026, 2, 12, 21, 5, tzinfo=UTC))])
-    early = asfiled.us_staleness_at(database, t0 + timedelta(minutes=30))
+    early = staleness_reader.us_staleness_at(database, t0 + timedelta(minutes=30))
     assert early["pending"] == {} and early["marks_known"] == 1  # untracked: not a stale TP
-    assert [mark["doc_id"] for mark in asfiled.us_staleness_at(database, t0 + timedelta(hours=1))["pending"]["SYNT"]] == ["A-1"]
-    both = asfiled.us_staleness_at(database, t0 + timedelta(hours=3))
+    assert [mark["doc_id"] for mark in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=1))["pending"]["SYNT"]] == ["A-1"]
+    both = staleness_reader.us_staleness_at(database, t0 + timedelta(hours=3))
     assert [mark["doc_id"] for mark in both["pending"]["SYNT"]] == ["B-2", "A-1"]  # oldest acceptance first
     assert both["latest_recorded_at"] == (t0 + timedelta(hours=2)).isoformat() and both["marks_known"] == 3
-    assert [mark["doc_id"] for mark in asfiled.us_staleness_at(database, t0 + timedelta(hours=5))["pending"]["SYNT"]] == ["B-2"]
+    assert [mark["doc_id"] for mark in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=5))["pending"]["SYNT"]] == ["B-2"]
     assert list(asfiled.stale_us_tps(database)) == ["SYNT"]  # the non-causal read: everything the table holds now
     # a tie on recorded_at (the trigger never writes one) resolves to the stricter state
     store.append([_staleness("C-3", "WWWW", "stale", t0 + timedelta(hours=6)), _staleness("C-3", "WWWW", "cleared", t0 + timedelta(hours=6))])
-    assert "WWWW" in asfiled.us_staleness_at(database, t0 + timedelta(hours=6))["pending"]
+    assert "WWWW" in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=6))["pending"]
     # the latest state is the latest by recorded_at, never the last row read (PostgreSQL orders them; the reader does not rely on it)
     store.append([_staleness("E-5", "VVVV", "cleared", t0 + timedelta(hours=3)), _staleness("E-5", "VVVV", "stale", t0 + timedelta(hours=1))])
-    assert "VVVV" in asfiled.us_staleness_at(database, t0 + timedelta(hours=2))["pending"]
-    assert "VVVV" not in asfiled.us_staleness_at(database, t0 + timedelta(hours=4))["pending"]
+    assert "VVVV" in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=2))["pending"]
+    assert "VVVV" not in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=4))["pending"]
     # a row inserted after the clock is not known at it, whatever clock its pass carried (a replayed pass, a straddling one)
     database._valuation_tp_staleness.append({**_staleness("D-4", "ZZZZ", "stale", t0 + timedelta(hours=1)), "id": "late",  # type: ignore[attr-defined]
                                              "created_at": t0 + timedelta(hours=7)})
-    assert "ZZZZ" not in asfiled.us_staleness_at(database, t0 + timedelta(hours=6, minutes=30))["pending"]
-    assert "ZZZZ" in asfiled.us_staleness_at(database, t0 + timedelta(hours=7))["pending"]
+    assert "ZZZZ" not in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=6, minutes=30))["pending"]
+    assert "ZZZZ" in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=7))["pending"]
     # the insert margin: a row inserted inside the last ε before the clock is out of the read (and of every replay)
-    assert "ZZZZ" not in asfiled.us_staleness_at(database, t0 + timedelta(hours=7, seconds=59), margin_seconds=60)["pending"]
-    assert "ZZZZ" in asfiled.us_staleness_at(database, t0 + timedelta(hours=7, seconds=60), margin_seconds=60)["pending"]
+    assert "ZZZZ" not in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=7, seconds=59), margin_seconds=60)["pending"]
+    assert "ZZZZ" in staleness_reader.us_staleness_at(database, t0 + timedelta(hours=7, seconds=60), margin_seconds=60)["pending"]
 
 
 def test_the_causal_reader_on_postgresql_asks_for_the_table_and_filters_both_clocks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -507,10 +508,10 @@ def test_the_causal_reader_on_postgresql_asks_for_the_table_and_filters_both_clo
         yield Recording()
 
     monkeypatch.setattr(pg, "connection", fake_connection)
-    assert asfiled.us_staleness_at(pg, clock)["status"] == "unavailable"  # to_regclass is NULL: migration 053 not applied
+    assert staleness_reader.us_staleness_at(pg, clock)["status"] == "unavailable"  # to_regclass is NULL: migration 053 not applied
     assert statements == [("SELECT to_regclass(%s)::text", ("valuation_tp_staleness",))]
     table[0] = "valuation_tp_staleness"
-    read = asfiled.us_staleness_at(pg, clock)
+    read = staleness_reader.us_staleness_at(pg, clock)
     query, params = statements[-1]
     assert "FROM valuation_tp_staleness WHERE recorded_at <= %s AND created_at <= %s" in query and params == (clock, clock)
     assert "id::text" in query and "ORDER BY recorded_at, doc_id, symbol, state" in query

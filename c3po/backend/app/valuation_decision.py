@@ -36,7 +36,7 @@ The rules (every number in ``DecisorThresholds``, the ONE settings block the PRE
 * quality (VETO): not validated (``tp_validation_status`` when the producer emits it — B3 —, else ``signal_quality`` —
   US); method dispersion above the limit (or unknown); confidence below the limit (or unknown); any data-defect mark.
 * staleness after a filing (OBSERVAR; US only — migration 053 marks the US TPs against SEC filings, B3 is
-  ``not_applicable``): a ``stale`` mark of the name KNOWN AT the run's clock (``valuation_asfiled.us_staleness_at``:
+  ``not_applicable``): a ``stale`` mark of the name KNOWN AT the run's clock (``valuation_staleness.us_staleness_at``:
   only marks recorded — and inserted — by then, the latest state per filing; a ``cleared`` written later never reaches
   an earlier night) → ``TP_STALE_AFTER_FILING``, the filings (053 mark id, accession, form, acceptance) named in the
   record; the table absent (053 not applied) → ``STALENESS_SOURCE_UNAVAILABLE`` for every US name: fail closed, as
@@ -104,7 +104,8 @@ from . import valuation_env
 from . import valuation_official as official
 from .config import get_settings
 from .sec_xbrl import EARNINGS_RELEASE_ITEM
-from .valuation_asfiled import next_quarter_end, us_staleness_at
+from .valuation_asfiled import next_quarter_end
+from .valuation_staleness import us_staleness_at
 from .valuation_earnings_calendar import ANALYSIS_TYPE as CALENDAR_ANALYSIS, ENTITY_KEY as CALENDAR_ENTITY, calendars_at, filings_known_at
 from .valuation_official import (MARKETS, CalendarUnavailable, canonical_sha256, current_generation, cycle_rows, generation_at, official_row, official_rows,
                                  session_date_of)
@@ -152,7 +153,7 @@ EVENT_CODES: tuple[str, ...] = (EARNINGS_WITHIN_N, EARNINGS_CALENDAR_ROW_INVALID
 MARK_CODES: tuple[str, ...] = (EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_30D, NEWS_SENTIMENT_NEGATIVE)
 NEVER_GATES: tuple[str, ...] = (NEWS_SENTIMENT_NEGATIVE,)  # its source overwrites the week: a verdict on it could not be replayed
 
-STALENESS_SOURCE = "valuation_tp_staleness"  # migration 053, read causally by valuation_asfiled.us_staleness_at
+STALENESS_SOURCE = "valuation_tp_staleness"  # migration 053, read causally by valuation_staleness.us_staleness_at
 STALENESS_CLEAR, STALENESS_STALE, STALENESS_UNAVAILABLE, STALENESS_NOT_APPLICABLE = "clear", "stale", "unavailable", "not_applicable"
 US_STALENESS_MARKETS = ("NASDAQ", "NYSE", "US")  # 053 marks only the US TPs (SEC filings); a US row is never 'not_applicable'
 
@@ -540,7 +541,7 @@ def _poll_fresh(poll: Mapping[str, Any] | None, known_at: Any, thresholds: Decis
 
 def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str, *, thresholds: DecisorThresholds = THRESHOLDS,
                    issuer_key: str | None = None) -> dict[str, Any]:
-    """What ``decide`` reads about ONE name from the causal read of migration 053 (``valuation_asfiled.us_staleness_at``
+    """What ``decide`` reads about ONE name from the causal read of migration 053 (``valuation_staleness.us_staleness_at``
     at the run's clock, ``source``, with the as-filed poll it relied on in ``trigger_poll``): B3 → ``not_applicable``
     (053 marks US TPs against SEC filings only). A US name: the poll is judged FIRST — no live poll (``_poll_fresh``)
     → ``source_status`` ``stale`` whether or not the table exists (an absent table then reads as an empty one: a night

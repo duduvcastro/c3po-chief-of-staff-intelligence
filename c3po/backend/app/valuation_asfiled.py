@@ -13,12 +13,9 @@
   official TP of each of the issuer's symbols ``stale`` when that TP predates the acceptance or its fundamentals predate
   the period the filing reports (a 10-Q/10-K's filed period; for an 8-K 2.02, the fiscal quarter it announces — see
   ``announced_quarter_end``) and queues it for the next nightly cut; the cut that revalues it appends ``cleared``
-  (migration 053, append-only). ``us_staleness_at`` is what a decision reads (the Decisor V1, ``valuation_decision``):
-  the marks known at the decision's clock, never a later one.
+  (migration 053, append-only). ``stale_us_tps`` is what a decision reads.
 
-Everything here runs only behind ``C3PO_VALUATION_ASFILED_ENABLED`` (default off) and changes no served number — except
-the read-only ``us_staleness_at``, which the decisor calls (its nightly phase and its writes are behind its own switch,
-``C3PO_VALUATION_DECISOR_SHADOW``).
+Everything here runs only behind ``C3PO_VALUATION_ASFILED_ENABLED`` (default off) and changes no served number.
 """
 from __future__ import annotations
 
@@ -67,10 +64,6 @@ SHARES_CONCEPT = CONCEPT_LADDER["shares_outstanding"][0]
 SHARE_BASIS_RATIO = 1.4  # cover share counts this far apart across the documents of one TTM EPS: a split (or a new share base)
 EPS_SHARE_BASIS_CHANGED = "eps_diluted_share_basis_changed"
 STALE, CLEARED, UNTRACKED = "stale", "cleared", "untracked"
-STALENESS_TABLE = "valuation_tp_staleness"
-# the order of the states of one (filing, symbol) when two marks share a recorded_at — the trigger never writes that (one
-# mark per pair per pass); should it happen, the stricter state is the one a decision reads
-_STATE_ORDER = {UNTRACKED: 0, CLEARED: 1, STALE: 2}
 
 
 # -- the universe ------------------------------------------------------------------------------------------------------
@@ -498,39 +491,6 @@ class TpStalenessStore:
             ).fetchall()
         return [dict(zip(_STALENESS_KEYS, row)) for row in rows]
 
-    def rows_known_at(self, at: datetime, *, margin_seconds: int = 0) -> list[dict[str, Any]]:
-        """The marks a reader at ``at`` could have read: written by a pass whose clock (``recorded_at``) is at or before
-        ``at`` AND — PostgreSQL — inserted (``created_at``, the insert's transaction clock) at least ``margin_seconds``
-        before it. A mark a later pass wrote, a pass replayed with a past clock, or a pass that straddles ``at`` and
-        inserts after it never reaches a decision taken at ``at``: a replay of an old night reads what that night could
-        read, and the margin keeps a commit racing the decision's read out of both. The memory double keeps no
-        ``created_at`` (a test row may carry one: then it is applied too)."""
-        clock = utc_instant(at)
-        inserted_by = clock - timedelta(seconds=margin_seconds)
-        if not self.database.database_url:
-            return [
-                dict(row) for row in self.database._valuation_tp_staleness  # type: ignore[attr-defined]
-                if utc_instant(row["recorded_at"]) <= clock and (row.get("created_at") is None or utc_instant(row["created_at"]) <= inserted_by)
-            ]
-        with self.database.connection() as connection:
-            rows = connection.execute(
-                f"SELECT {', '.join(key if key != 'id' else 'id::text' for key in _STALENESS_KEYS)} FROM valuation_tp_staleness "
-                "WHERE recorded_at <= %s AND created_at <= %s ORDER BY recorded_at, doc_id, symbol, state",
-                (clock, inserted_by),
-            ).fetchall()
-        return [dict(zip(_STALENESS_KEYS, row)) for row in rows]
-
-
-def staleness_table_present(database: Database) -> bool:
-    """Whether migration 053 is applied where ``database`` reads: PostgreSQL ``to_regclass`` of the table the writer
-    inserts into (the connection's search path); in memory, the store's list on the ``Database`` — present once a
-    writer created it, as ``valuation_pit_rerun`` reads the as-filed tables. Never creates anything."""
-    if not database.database_url:
-        return isinstance(getattr(database, "_valuation_tp_staleness", None), list)
-    with database.connection() as connection:
-        found = connection.execute("SELECT to_regclass(%s)::text", (STALENESS_TABLE,)).fetchone()
-    return bool(found and found[0])
-
 
 def next_nightly_cut(now: datetime) -> datetime:
     """The nightly canonical cycle runs from 00:00 America/Sao_Paulo (valuation_worker); EDGAR closes at 22:00 ET, so
@@ -690,8 +650,8 @@ def evaluate_us_filings(database: Database, *, now: datetime | None = None) -> d
 
 
 def stale_us_tps(database: Database, *, since: datetime | None = None) -> dict[str, list[dict[str, Any]]]:
-    """symbol → its pending stale marks (no ``cleared`` for the same filing yet), oldest acceptance first — EVERYTHING the
-    table holds now (operations, tests). A decision reads ``us_staleness_at`` instead: the same question, causal."""
+    """symbol → its pending stale marks (no ``cleared`` for the same filing yet), oldest acceptance first — what a buy
+    decision must read before trusting a US TP."""
     rows = TpStalenessStore(database).rows(accepted_since=since)
     cleared = {(row["doc_id"], row["symbol"]) for row in rows if row["state"] == CLEARED}
     pending: dict[str, list[dict[str, Any]]] = {}
@@ -699,33 +659,3 @@ def stale_us_tps(database: Database, *, since: datetime | None = None) -> dict[s
         if row["state"] == STALE and (row["doc_id"], row["symbol"]) not in cleared:
             pending.setdefault(row["symbol"], []).append(row)
     return pending
-
-
-def us_staleness_at(database: Database, at: datetime, *, margin_seconds: int = 0) -> dict[str, Any]:
-    """The causal reader of migration 053 for a decision taken at ``at`` (the decisor's run clock): the state of every
-    (filing, symbol) AS KNOWN AT ``at`` — only the marks ``TpStalenessStore.rows_known_at`` returns; per pair the latest
-    of them by ``recorded_at`` (a tie, which the trigger never writes, resolves to the stricter state) — and the pairs
-    whose latest state is ``stale``. A ``cleared`` written after ``at`` never reaches it: a re-run of an old night reads
-    what that night read, and decides the same.
-
-    ``{"status": "ok", "known_at", "marks_known", "latest_recorded_at", "pending": {symbol: [mark, …]}}`` — the full
-    marks, oldest acceptance first — or ``{"status": "unavailable", "detail"}`` when the table is absent (migration 053
-    not applied). A read that fails raises, as every other read of the decisor does."""
-    clock = utc_instant(at)
-    if not staleness_table_present(database):
-        return {"status": "unavailable", "known_at": clock.isoformat(), "detail": f"{STALENESS_TABLE} absent (migration 053 not applied)"}
-    known = TpStalenessStore(database).rows_known_at(clock, margin_seconds=margin_seconds)
-    latest: dict[tuple[str, str], dict[str, Any]] = {}
-    for row in known:
-        key = (str(row["doc_id"]), str(row["symbol"]))
-        order = (utc_instant(row["recorded_at"]), _STATE_ORDER.get(str(row["state"]), len(_STATE_ORDER)))
-        held = latest.get(key)
-        if held is None or order > (utc_instant(held["recorded_at"]), _STATE_ORDER.get(str(held["state"]), len(_STATE_ORDER))):
-            latest[key] = row
-    pending: dict[str, list[dict[str, Any]]] = {}
-    for (_, symbol), row in sorted(latest.items(), key=lambda item: (utc_instant(item[1]["accepted_at"]), item[0])):
-        if row["state"] == STALE:
-            pending.setdefault(symbol, []).append(dict(row))
-    newest = max((utc_instant(row["recorded_at"]) for row in known), default=None)
-    return {"status": "ok", "known_at": clock.isoformat(), "marks_known": len(known),
-            "latest_recorded_at": newest.isoformat() if newest is not None else None, "pending": pending}

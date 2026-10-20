@@ -209,6 +209,12 @@ class _Submissions:
         return {"filings": {"recent": {"accessionNumber": []}}}
 
 
+def test_the_unobserved_issuers_are_read_from_the_passes_own_errors() -> None:
+    from app.investor_relations import asfiled_failed_issuers
+    errors = ["0000999201: ReadTimeout", "0000999202: SEC throttled the pass (403)", "0000999201: KeyError", "not an issuer: ValueError", "123: short"]
+    assert asfiled_failed_issuers(errors) == ["0000999201", "0000999202"] and asfiled_failed_issuers([]) == []
+
+
 def test_a_poll_covers_only_the_issuers_it_observed(monkeypatch: pytest.MonkeyPatch) -> None:
     # AAPL's submissions time out, KO's are read: the run succeeds with progress (records_read = 1) — it is alive for KO,
     # never for AAPL, whose 053 marks nobody checked in this pass
