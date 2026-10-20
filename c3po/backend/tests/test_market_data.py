@@ -468,6 +468,92 @@ def test_b3_rows_carry_the_internal_buy_in_by_the_same_entry_rule_and_the_blend_
     assert internal["decomposition"]["buy_in_models"] == row["internal_buy_in_models"] and internal["consensus_tp"] == blend["consensus_tp"] == 52.93
 
 
+def _b3_status_before_rev9(upside: float, distance: float, confidence: float, dispersion: float, validation: str, cutoff: float) -> str:
+    """The inline status rule of ``_value_row`` before rev 9, verbatim — the oracle the extracted ``_screen_status`` reproduces."""
+    from app.market_data.b3_screener import MAX_ENTRY_DISTANCE, MAX_METHOD_DISPERSION, MIN_VALUATION_CONFIDENCE
+    if (
+        upside >= cutoff
+        and distance <= MAX_ENTRY_DISTANCE
+        and confidence >= MIN_VALUATION_CONFIDENCE
+        and dispersion <= MAX_METHOD_DISPERSION
+        and validation == "validated"
+    ):
+        return "full_match"
+    if upside >= max(cutoff - 5, 0) and distance <= 25 and confidence >= 60:
+        return "near_buy"
+    return "watchlist"
+
+
+def test_b3_status_rule_is_unchanged_by_its_extraction() -> None:
+    from app.market_data.b3_screener import MAX_ENTRY_DISTANCE, MAX_METHOD_DISPERSION, MIN_VALUATION_CONFIDENCE
+    cutoff = B3ScreenerService._tp_upside_cutoff_percent({"selic": 0.14})
+    seen = set()
+    for upside in (0.0, cutoff - 6, cutoff - 5, cutoff - 0.1, cutoff, cutoff + 30):
+        for distance in (-5.0, MAX_ENTRY_DISTANCE, MAX_ENTRY_DISTANCE + 0.1, 25.0, 25.1):
+            for confidence in (59.9, 60.0, MIN_VALUATION_CONFIDENCE, 90.0):
+                for dispersion in (10.0, MAX_METHOD_DISPERSION, MAX_METHOD_DISPERSION + 1):
+                    for validation in ("validated", "review_required"):
+                        status = B3ScreenerService._screen_status(upside, distance, confidence, dispersion, validation, cutoff)
+                        assert status == _b3_status_before_rev9(upside, distance, confidence, dispersion, validation, cutoff)
+                        seen.add(status)
+    assert seen == {"full_match", "near_buy", "watchlist"}
+
+
+def test_b3_rows_carry_the_internal_view_by_the_same_rules_and_the_internal_record_is_served_with_it() -> None:
+    """Passo 1 rev 9 (official_internal_v1): `_value_row` evaluates the TP-dependent tail of the row — upside, entry distance,
+    the TP plausibility check, expected return (consensus weight 0), Power Score and status — on the internal TP and its
+    buy-in by the producer's own rules; the blend's view is what it was; the internal record names the internal status and
+    is served with the internal view; without a consensus the internal view IS the blend's, bit for bit."""
+    from app import valuation_official as official
+    macro = {"selic": 0.14, "ipca12m": 0.045}
+    service = B3ScreenerService.__new__(B3ScreenerService)
+    service._calibration_factors = {}
+    row = _petrobras_row()
+    row.update(B3ScreenerService._cyclical_market_multiples(row))
+    service._value_row(row, PETROBRAS_BENCHMARK, macro)
+    assert row["buy_in"] == PETROBRAS_BUY_IN_AT_PASSO_0 and row["consensus_weight_percent"] == 35.0  # the blend is untouched
+    cutoff = B3ScreenerService._tp_upside_cutoff_percent(macro)
+    assert row["status"] == _b3_status_before_rev9(row["upside_percent"], row["price_vs_buy_in_percent"], row["valuation_confidence"],
+                                                   row["method_dispersion_percent"], row["tp_validation_status"], cutoff)
+    assert row["internal_upside_percent"] == (row["internal_tp"] / row["price"] - 1) * 100 != row["upside_percent"]
+    assert row["internal_price_vs_buy_in_percent"] == (row["price"] / row["internal_buy_in"] - 1) * 100
+    validation = B3ScreenerService._validate_target_price(row=row, methods=row["methods"], internal_tp=row["internal_tp"], consensus_tp=row["public_consensus_tp"],
+                                                          our_tp=row["internal_tp"], valuation_confidence=row["valuation_confidence"],
+                                                          method_dispersion=row["method_dispersion_percent"])
+    assert row["internal_tp_validation_status"] == validation["status"] and row["internal_tp_validation_reasons"] == validation["reasons"]
+    assert row["internal_expected_total_return_percent"] == B3ScreenerService._expected_12m_return(
+        row["price"], row["internal_tp"], row["expected_dividend"], row["sustainable_growth"], row["convergence_years"], row["valuation_confidence"],
+        row["method_dispersion_percent"], 0.0)
+    assert row["internal_convergence_weight"] == B3ScreenerService._convergence_weight(row["valuation_confidence"], row["method_dispersion_percent"], 0.0)
+    assert row["internal_convergence_weight"] < row["convergence_weight"]  # the consensus no longer confirms the convergence
+    assert row["internal_score"] == B3ScreenerService._power_score(row["internal_upside_percent"], row["risk_score"], row["operating_quality"],
+                                                                   row["valuation_confidence"], row["internal_price_vs_buy_in_percent"])
+    assert row["internal_status"] == _b3_status_before_rev9(row["internal_upside_percent"], row["internal_price_vs_buy_in_percent"], row["valuation_confidence"],
+                                                            row["method_dispersion_percent"], row["internal_tp_validation_status"], cutoff)
+    # the internal record names the internal view; the blend record what it always named
+    at = datetime(2026, 9, 4, 21, 30, tzinfo=timezone.utc)
+    blend = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=at)
+    internal = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=at, source=official.SOURCE_INTERNAL)
+    assert blend is not None and internal is not None
+    assert blend["decomposition"]["status"] == row["status"] and blend["decomposition"]["tp_validation_status"] == row["tp_validation_status"]
+    assert blend["decomposition"]["weights"]["convergence_weight"] == row["convergence_weight"]
+    assert internal["decomposition"]["status"] == row["internal_status"] and internal["decomposition"]["tp_validation_status"] == row["internal_tp_validation_status"]
+    assert internal["decomposition"]["weights"]["convergence_weight"] == row["internal_convergence_weight"]
+    served = official._served(row, internal, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="B3")
+    assert served is not None and served["upside_percent"] == row["internal_upside_percent"] and served["price_vs_buy_in_percent"] == row["internal_price_vs_buy_in_percent"]
+    assert (served["score"], served["status"], served["expected_total_return_percent"]) == (row["internal_score"], row["internal_status"], row["internal_expected_total_return_percent"])
+    assert served["tp_validation_status"] == row["internal_tp_validation_status"] and served["tp_validation_reasons"] == row["internal_tp_validation_reasons"]
+    shown = official._served(row, blend, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="B3")
+    assert shown is not None and (shown["score"], shown["status"], shown["upside_percent"]) == (row["score"], row["status"], row["upside_percent"])
+    # without a consensus the blend IS the internal TP: the internal view is the blend's, bit for bit
+    bare = {**_petrobras_row(), "public_consensus_tp": None, "analyst_count": 0, "consensus_source_count": 0}
+    bare.update(B3ScreenerService._cyclical_market_multiples(bare))
+    service._value_row(bare, PETROBRAS_BENCHMARK, macro)
+    for key in ("upside_percent", "price_vs_buy_in_percent", "expected_total_return_percent", "convergence_weight", "score", "status",
+                "tp_validation_status", "tp_validation_reasons"):
+        assert bare[f"internal_{key}"] == bare[key]
+
+
 class RoutingStubHttp:
     def __init__(self, routes):
         self.routes = routes

@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from app import valuation_asfiled as asfiled
-from app import valuation_env, valuation_worker
+from app import valuation_env, valuation_official as official, valuation_worker
 from app.config import Settings
 from app.database import Database
 from app.investor_relations import SEC_ACCEPTANCE_FROM_HEADER, SEC_ACCEPTANCE_FROM_SUBMISSIONS, InvestorRelationsService
@@ -395,6 +395,24 @@ def test_the_ir_processor_runs_the_trigger_only_behind_the_flag(monkeypatch: pyt
 
     monkeypatch.setattr("app.ir_valuation.evaluate_us_filings", broken)
     assert on.process()["us_revaluation"] == {"error": "RuntimeError"}  # never blocks the B3 propagation
+
+
+def test_while_the_mesa_freezes_the_selection_the_ir_processor_claims_nothing_but_the_trigger_still_marks(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Valuation P1 (F1): a frozen head defers the IR queue (nothing claimed, nothing republished); the US as-filed trigger only
+    # appends staleness marks judged against the head in force — it never activates a generation — so it keeps running
+    database = _ingested()
+    _official(database, datetime(2026, 2, 20, 5, 0, tzinfo=UTC), synt_fundamentals="2025-09-30")
+    monkeypatch.setattr("app.ir_valuation.datetime", _FrozenDatetime)
+    monkeypatch.setattr("app.ir_valuation.selection_frozen", lambda db: {"until": "2026-02-21T02:00:00+00:00"})
+    monkeypatch.setattr(database, "claim_ir_valuation_updates", lambda limit=12: pytest.fail("nothing is claimed while the selection is frozen"))
+    head = official.current_generation(database)
+    assert head is not None
+    off = InvestorRelationsValuationProcessor(database, SimpleNamespace())  # type: ignore[arg-type]
+    assert off.process() == {"claimed": 0, "updated": [], "targeted_only": [], "failed": [], "deferred_until": "2026-02-21T02:00:00+00:00"}
+    on = InvestorRelationsValuationProcessor(database, SimpleNamespace(), asfiled_enabled=True)  # type: ignore[arg-type]
+    result = on.process()
+    assert result["claimed"] == 0 and result["deferred_until"] == "2026-02-21T02:00:00+00:00" and result["us_revaluation"]["stale"] == 2
+    assert official.current_generation(database) == head  # the head the mesa froze did not move
 
 
 class _FrozenDatetime(datetime):

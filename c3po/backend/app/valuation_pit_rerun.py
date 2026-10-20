@@ -58,6 +58,12 @@ and the records are two commits, so a transaction-level lock could not span both
 missing rows are completed under the same ``cycle_id`` (the UNIQUE key refuses duplicates); a stored identity outside the
 computed set is an integrity failure. Changed inputs → a new ``run_key`` naming the previous run in ``inputs.supersedes``.
 
+Grids (the US backtest): ``--catalogue-pinned-at`` pins the universe catalogue as ``--price-pinned-at`` pins the vintage (a
+pointer, outside ``run_key``; without it nothing changes); every run records the inputs of a point-in-time screen of the
+cross-section (``outputs.screen``: security type, close and market cap at T, the 20-session median dollar volume for a
+volume in traded shares and for a split-adjusted one — never an engine input) and names its producer in its manifest: every module
+(``IMPLEMENTATION_FILES``) and the ``Database`` methods its readers call (``IMPLEMENTATION_OBJECTS``).
+
 Phases (§5): ``--fetch`` (one read per symbol through the existing provider HTTP clients, persisted as dated, hashed
 ``valuation_pit_source`` snapshots; nothing nominal on stdout; requires the owner's authorization, never during a
 session or a nightly phase) and ``--rerun`` (no network: ``_NoNetworkHttp``; reads snapshots and the price series only;
@@ -67,6 +73,7 @@ stdout carries aggregates only).
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import importlib
 import json
@@ -88,6 +95,7 @@ from .database import Database
 from .market_data.eodhd import EodhdClient
 from .market_data.fmp import FmpClient
 from .market_data.http import JsonHttpClient
+from .source_identity import objects_sha256
 from .valuation_official import (
     SESSION_ZONES,
     SOURCE_V3_2_SHADOW,
@@ -204,6 +212,24 @@ DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and
                         "serves outstandingShares only, when the as-filed balance carries no share count. An uncovered name reads the provider "
                         "payload (auto) or is not evaluable (vintages); B3 (CVM) facts have no reader yet",
 }
+IMPLEMENTATION_FILES: tuple[str, ...] = (  # the producer a run names in its manifest (engine.implementation_file_sha256: in run_key) — every module whose
+    # bytes can move a recorded number: the V3 engine and its inputs/macro, the shadow path it runs through, the V2 engine it extends, this re-executor,
+    # the record writer and the buy-in rule, the as-filed reader's pieces (SEC concept ladder and quarters, the as-of bridge, the 051 store) and the
+    # price series reader (hashed only: valuation_price_history.py is pinned by PREREG_VALUATION_DECISOR_V1 §17 and never edited for this)
+    "valuation_v3_engine.py", "valuation_v3_inputs.py", "valuation_v3_macro.py", "valuation_v3_shadow.py", "valuation_pit_rerun.py", "valuation_v2_engine.py",
+    "valuation_official.py", "valuation_official_engine.py", "sec_xbrl.py", "valuation_asfiled.py", "statement_vintages.py", "valuation_price_history.py",
+)
+IMPLEMENTATION_OBJECTS: tuple[str, ...] = (  # the Database methods the run's READERS call (engine.implementation_object_sha256: in run_key) — catalogue,
+    # source, macro and calibration snapshots, the price publication and its bars, the previous runs and the cycle's records — hashed as the §17
+    # object pins are (source_identity: the lines inspect.getsource returns), from database.py's text
+    "app.database.Database.latest_analysis_snapshot", "app.database.Database.latest_analysis_snapshot_before",
+    "app.database.Database.latest_analysis_snapshot_by_inputs", "app.database.Database.analysis_snapshot_by_id", "app.database.Database.price_bars",
+    "app.database.Database._price_bar_instant", "app.database.Database.valuation_predictions_for_cycle", "app.database.Database._prediction_record",
+    "app.database.Database._stored_prediction",
+)
+CATALOGUE_ANALYSIS_TYPE = "valuation_universe"
+SCREEN_DOLLAR_VOLUME_SESSIONS = 20  # the point-in-time liquidity of a name: the median dollar volume of its last 20 valid sessions ≤ T
+DOLLAR_VOLUME_BASES: tuple[str, ...] = ("as_traded", "split_adjusted")  # what the provider's volume is: traded shares, or split-adjusted shares
 _RUN_LOCKS: dict[str, threading.Lock] = {}
 _RUN_LOCKS_GUARD = threading.Lock()
 
@@ -268,15 +294,56 @@ def source_entity_key(market: str, provider: str, symbol: str) -> str:
     return f"{market}_{provider}_{symbol_hash(symbol)}"
 
 
-def _catalogue_symbols(database: Database, market: str) -> list[str]:
-    """The symbols of the market's latest universe catalogue (nothing else of it)."""
-    snapshot = database.latest_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE")
+def catalogue_snapshot(database: Database, market: str, *, before: datetime | None = None) -> dict[str, Any] | None:
+    """The market's universe catalogue: the latest one, or — pinned (``--catalogue-pinned-at``) — the latest published
+    strictly before ``before``."""
+    if before is None:
+        return database.latest_analysis_snapshot(CATALOGUE_ANALYSIS_TYPE, f"{market}_UNIVERSE")
+    return database.latest_analysis_snapshot_before(CATALOGUE_ANALYSIS_TYPE, f"{market}_UNIVERSE", _utc(before))
+
+
+def admitted_catalogue(snapshot: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    """The rows of a catalogue snapshot the re-executor admits: symbol + the classification fields, ordered by symbol."""
+    rows = _mapping((snapshot or {}).get("outputs")).get("rows")
+    return sorted(({"symbol": str(row["symbol"]).strip().upper(), **{field: row.get(field) for field in CURRENT_FIELDS_ADMITTED}}
+                   for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and row.get("symbol")), key=lambda row: row["symbol"])
+
+
+def _catalogue_symbols(database: Database, market: str, *, before: datetime | None = None) -> list[str]:
+    """The symbols of the market's universe catalogue (the latest, or the pinned one; nothing else of it)."""
+    snapshot = catalogue_snapshot(database, market, before=before)
     rows = _mapping((snapshot or {}).get("outputs")).get("rows")
     return sorted({str(row["symbol"]).strip().upper() for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and row.get("symbol")})
 
 
 def _file_sha256(name: str) -> str:
     return hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+
+
+@functools.cache
+def _implementation_identity() -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
+    """The producer of THIS process, computed once (the deployed code does not change under a running process): the sha256
+    of every ``IMPLEMENTATION_FILES`` file, and of every ``IMPLEMENTATION_OBJECTS`` object (``app.<module>.<Class>.<method>``)
+    hashed from its module's text by ``source_identity`` — each module read and parsed once (the workflow does the same on
+    the runner from the prereg commit's files)."""
+    files = tuple((name, _file_sha256(name)) for name in IMPLEMENTATION_FILES)
+    by_module: dict[str, list[str]] = {}
+    for qualified in IMPLEMENTATION_OBJECTS:
+        _package, module, rest = qualified.split(".", 2)
+        by_module.setdefault(module, []).append(rest)
+    digests: dict[str, str] = {}
+    for module, names in by_module.items():
+        digests.update({f"app.{module}.{name}": digest for name, digest in
+                        objects_sha256(Path(__file__).with_name(f"{module}.py").read_text(encoding="utf-8"), names).items()})
+    return files, tuple((name, digests[name]) for name in IMPLEMENTATION_OBJECTS)
+
+
+def implementation_files() -> dict[str, str]:
+    return dict(_implementation_identity()[0])
+
+
+def implementation_objects() -> dict[str, str]:
+    return dict(_implementation_identity()[1])
 
 
 def module_sha256() -> str:
@@ -850,6 +917,7 @@ class PinnedPrices:
         self._bars: dict[str, dict[str, dict[str, Any]]] = {}
         self._returns: dict[str, dict[str, float]] = {}
         self._capital_events: dict[str, list[str]] = {}
+        self._splits: dict[str, list[tuple[str, float]]] = {}  # the capital events of the WHOLE pinned series, per symbol (screen inputs only)
         self._proxy: dict[str, float] | None = None
         self._calendar_sessions: dict[str, bool] = {}
         self.off_calendar_bars = 0  # bars ≤ T dated off the exchange calendar, excluded (an aggregate: never a symbol)
@@ -892,7 +960,31 @@ class PinnedPrices:
                     continue
                 kept[session] = bar
             self._bars[symbol] = kept
+            self._splits[symbol] = self._split_events(series["bars"])
         return self._bars[symbol]
+
+    def _split_events(self, bars: Mapping[str, Mapping[str, Any]]) -> list[tuple[str, float]]:
+        """``(session, factor)`` of every capital event of the WHOLE pinned series (before and after T): a session where the
+        ratio ``close / adjusted_close`` moves by at least ``CAPITAL_EVENT_MIN_FACTOR`` from the previous valid session of
+        the calendar; ``factor`` = the ratio before ÷ the ratio after (2 for a 2:1 split, 0.1 for a 1:10 reverse split). A
+        dividend moves the ratio by its yield only — under 20 % it is never an event, so the factor is SPLIT-ONLY."""
+        threshold = math.log(CAPITAL_EVENT_MIN_FACTOR)
+        events: list[tuple[str, float]] = []
+        previous: float | None = None
+        for session in sorted(bars):
+            close, adjusted = _positive(bars[session].get(PRICE_LEVEL_FIELD)), _positive(bars[session].get(RETURN_FIELD))
+            if close is None or adjusted is None:
+                continue
+            try:
+                if not self._is_calendar_session(session):
+                    continue
+            except PitRerunInputError:
+                continue  # a bar the calendar cannot place: no event read from it (the bars ≤ T refuse it in bars())
+            ratio = close / adjusted
+            if previous is not None and abs(math.log(previous / ratio)) >= threshold:
+                events.append((session, previous / ratio))
+            previous = ratio
+        return events
 
     def valid_sessions(self, symbol: str) -> int:
         return sum(1 for bar in self.bars(symbol).values() if _positive(bar.get(PRICE_LEVEL_FIELD)) and _positive(bar.get(RETURN_FIELD)))
@@ -910,6 +1002,22 @@ class PinnedPrices:
         if on is not None and (on - date.fromisoformat(session)).days > FISCAL_PRICE_TOLERANCE_DAYS:
             return None, None
         return _positive(bars[session].get(PRICE_LEVEL_FIELD)), session
+
+    def dollar_volume_median(self, symbol: str, sessions: int = SCREEN_DOLLAR_VOLUME_SESSIONS, *, basis: str = "as_traded") -> float | None:
+        """The median dollar volume of the symbol's last ``sessions`` bars ≤ T with a positive close and volume (the pinned
+        vintage): its point-in-time dollar liquidity; ``None`` with fewer such bars. ``basis`` says what the provider's
+        ``volume`` is: ``as_traded`` (traded shares) → ``close × volume``; ``split_adjusted`` (pre-split volumes multiplied
+        by the later splits) → ``close × volume ÷ S(s)``, ``S(s)`` the product of the SPLIT-ONLY factors of the series'
+        capital events after session ``s`` — never the total-return ``adjusted_close``, which carries every dividend paid
+        after ``s``. The backtest's volume check decides which (prereg §2). A screen input, never an engine input."""
+        if basis not in DOLLAR_VOLUME_BASES:
+            raise ValueError(f"unknown dollar-volume basis {basis!r}")
+        bars = self.bars(symbol)
+        splits = self._splits.get(symbol.strip().upper(), []) if basis == "split_adjusted" else []
+        values = [close * volume / math.prod(factor for when, factor in splits if when > session) for session in sorted(bars)
+                  if (close := _positive(bars[session].get(PRICE_LEVEL_FIELD))) is not None
+                  and (volume := _positive(bars[session].get("volume"))) is not None][-sessions:]
+        return statistics.median(values) if len(values) == sessions else None
 
     def capital_events(self, symbol: str) -> list[str]:
         """The sessions ≤ T where the raw and the adjusted closes move apart by at least ``CAPITAL_EVENT_MIN_FACTOR`` from the
@@ -1058,7 +1166,7 @@ class PitSourceResolver:
     declare. Reads the store only; never the network."""
 
     def __init__(self, database: Database, *, market: str, as_of: datetime, prices: PinnedPrices, statements: str = STATEMENTS_DEFAULT,
-                 vintages: AsFiledReader | None = None) -> None:
+                 vintages: AsFiledReader | None = None, catalogue_pinned_at: datetime | None = None) -> None:
         if market not in MARKETS:
             raise PitRerunInputError(f"unknown market {market!r}")
         if statements not in STATEMENTS_MODES:
@@ -1083,15 +1191,25 @@ class PitSourceResolver:
         self.not_evaluable: dict[str, str] = {}
         self.price_basis_evidence: dict[str, int] = {}
         self.catalogue_snapshot_id: str | None = None  # a pointer for the reader; NOT part of the manifest hashed into run_key
+        self.catalogue_pinned_at = _utc(catalogue_pinned_at) if catalogue_pinned_at is not None else None
+        self.catalogue_pin: dict[str, Any] | None = None  # --catalogue-pinned-at: a pointer like the price pin (the content is in run_key by its hash)
+        self.catalogue_rows = 0
+        self.catalogue_stocks = 0
 
     # ---- catalogue (the only current fields admitted: classification)
     def catalogue(self, market: str) -> list[dict[str, Any]]:
-        snapshot = self.database.latest_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE")
+        """The catalogue the run reads: the latest, or — with ``--catalogue-pinned-at`` (one catalogue for a whole grid) — the
+        latest published before the pin; a pin before any catalogue is a refusal, never the latest instead."""
+        snapshot = catalogue_snapshot(self.database, market, before=self.catalogue_pinned_at)
         if snapshot is None:
+            if self.catalogue_pinned_at is not None:
+                raise PitRerunInputError(f"no {market} catalogue published before the catalogue pin {self.catalogue_pinned_at.isoformat()}")
             return []
-        rows = _mapping(snapshot.get("outputs")).get("rows")
-        catalogue = sorted(({"symbol": str(row["symbol"]).strip().upper(), **{field: row.get(field) for field in CURRENT_FIELDS_ADMITTED}}
-                            for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and row.get("symbol")), key=lambda row: row["symbol"])
+        catalogue = admitted_catalogue(snapshot)
+        self.catalogue_rows = len(catalogue)
+        self.catalogue_stocks = sum(1 for row in catalogue if row.get("security_type") == "Stock")
+        if self.catalogue_pinned_at is not None:
+            self.catalogue_pin = {"mode": "explicit", "requested_at": self.catalogue_pinned_at.isoformat(), "resolved_snapshot_id": str(snapshot["id"])}
         # the reference is the CONTENT admitted (symbol + classification), never the snapshot's id/clock: a nightly re-publication of an
         # identical catalogue is the same run (P2-2 b); the snapshot id is kept as a pointer only, outside the key
         self.references.append({"role": "catalogue", "market": market, "classification_sha256": canonical_sha256(catalogue), "rows": len(catalogue),
@@ -1140,7 +1258,8 @@ class PitSourceResolver:
         if not self.vintages_present:
             return
         names = {str(row["symbol"]) for row in catalogue}
-        known = names | {symbol for market in PEER_MARKETS[self.market] if market != self.market for symbol in _catalogue_symbols(self.database, market)}
+        known = names | {symbol for market in PEER_MARKETS[self.market] if market != self.market
+                         for symbol in _catalogue_symbols(self.database, market, before=self.catalogue_pinned_at)}
         matched = covered & names
         if covered and names and not covered & known:
             raise PitRerunInputError(f"{STATEMENT_VINTAGES_TABLE} covers {len(covered)} name(s) and none of the {self.market} catalogue's {len(names)}: its "
@@ -1440,9 +1559,22 @@ class PitComputation:
                 records.append(record)
         return records
 
+    def screen_inputs(self) -> dict[str, dict[str, Any]]:
+        """Per evaluated name, what a point-in-time screen of the cross-section reads (the backtest's, outside this run): the
+        catalogue's security type, the as-traded close the run priced it at and its session, the market cap at T (that close
+        × the shares at T) and the median dollar volume of its last 20 sessions ≤ T. Inputs only: nothing is filtered here."""
+        screen: dict[str, dict[str, Any]] = {}
+        for symbol in sorted(self.resolver.per_symbol):
+            row = self.resolver.per_symbol[symbol]["row"]
+            screen[symbol] = {"security_type": row.get("security_type"), "close": row.get("price"), "price_session": row.get("price_session"),
+                              "market_cap": row.get("market_cap"), "dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol),
+                              "split_adjusted_dollar_volume_median_20": self.resolver.prices.dollar_volume_median(symbol, basis="split_adjusted")}
+        return screen
+
     def summary(self) -> dict[str, Any]:
         with_tp = sum(1 for result in self.results.values() if _positive(result.get("v3_internal_tp")) is not None)
-        return {"evaluated": len(self.results), "with_internal_tp": with_tp, "not_evaluable": dict(Counter(self.resolver.not_evaluable.values())),
+        pins = {"catalogue_pin": dict(self.resolver.catalogue_pin)} if self.resolver.catalogue_pin is not None else {}  # only when pinned: unchanged otherwise
+        return {**pins, "evaluated": len(self.results), "with_internal_tp": with_tp, "not_evaluable": dict(Counter(self.resolver.not_evaluable.values())),
                 "with_consensus": len(self.resolver.consensus), "pit_excluded_inputs": dict(sorted(self.resolver.excluded.items())),
                 "hypotheses": sum(len(items) for items in self.resolver.hypotheses.values()), "calibration": self.calibration["status"],
                 "macro_as_of": self.macro.macro_as_of(self.market).isoformat(), "price_vintage": self.manifest["price_vintage"]["publication_id"],
@@ -1488,14 +1620,15 @@ class PitRerunService:
         operator's ``--price-pinned-at`` (P2-1)."""
         return PinnedPrices(self.price_history, market, as_of=as_of, pinned_at=pinned_at, pin_mode="explicit" if explicit else "run_start")
 
-    def compute(self, market: str, *, as_of: datetime, prices: PinnedPrices, statements: str = STATEMENTS_DEFAULT) -> PitComputation:
+    def compute(self, market: str, *, as_of: datetime, prices: PinnedPrices, statements: str = STATEMENTS_DEFAULT,
+                catalogue_pinned_at: datetime | None = None) -> PitComputation:
         """The ECONOMIC computation: T, the filters, the engine's ``today``, the macro ``as_of``, the consensus cut — nothing
         here reads ``now`` (pinned by the exploding-clock test). ``statements`` (``--statements``): ``auto`` reads a name's
         as-filed statements when ``statement_vintages`` covers it, else the provider payload (no table: unchanged);
         ``provider`` never reads the table; ``vintages`` reads only as-filed statements (an uncovered name is not evaluable)."""
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise PitRerunInputError("T must carry a time zone")
-        resolver = PitSourceResolver(self.database, market=market, as_of=as_of, prices=prices, statements=statements)
+        resolver = PitSourceResolver(self.database, market=market, as_of=as_of, prices=prices, statements=statements, catalogue_pinned_at=catalogue_pinned_at)
         loaded = resolver.resolve()
         macro = resolver.macro()
         calibration = resolver.calibration()
@@ -1504,7 +1637,8 @@ class PitRerunService:
         manifest: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION, "market": market, "as_of": _utc(as_of).isoformat(), "economic_date": resolver.economic_date.isoformat(),
             "session_date": prices.session_date, "engine": {"identity": engine_identity(), "engine_version": ENGINE_VERSION,
-                                                            "implementation_file_sha256": {name: _file_sha256(name) for name in ("valuation_v3_engine.py", "valuation_v3_inputs.py", "valuation_v3_macro.py", "valuation_v3_shadow.py", "valuation_pit_rerun.py")}},
+                                                            "implementation_file_sha256": implementation_files(),
+                                                            "implementation_object_sha256": implementation_objects()},
             "buy_in_rule": {"identity": buy_in_identity(), "risk_score": ENTRY_RISK_SCORE, "valuation_confidence": ENTRY_CONFIDENCE},
             "sources": sorted(resolver.references, key=lambda item: json.dumps(item, sort_keys=True)),
             "price_vintage": prices.manifest(), "price_basis": dict(PRICE_BASIS), "macro": macro.references, "calibration": calibration,
@@ -1543,9 +1677,13 @@ class PitRerunService:
                           "external_api_calls": 0}
                 if supersedes:
                     inputs["supersedes"] = supersedes
+                if computation.resolver.catalogue_pin is not None:
+                    inputs["catalogue_pin"] = dict(computation.resolver.catalogue_pin)
                 outputs = {"schema_version": SCHEMA_VERSION, "run_key": run_key, "market": market, "as_of": computation.as_of.isoformat(), "published_at": published_at.isoformat(),
                            "rows": computation.results, "summary": computation.summary(), "not_evaluable": dict(computation.resolver.not_evaluable),
                            "prediction_identities": [[record["symbol"], record["row_sha256"]] for record in records],
+                           "screen": computation.screen_inputs(),
+                           "catalogue_counts": {"rows": computation.resolver.catalogue_rows, "stocks": computation.resolver.catalogue_stocks},
                            "governance": {"diagnostic_only": True, "decision_consumer": False, "official_tp_replacement_authorized": False, "external_api_calls": 0}}
                 self.database.save_analysis_snapshot(ANALYSIS_TYPE, computation.entity_key, methodology_id, inputs, outputs, published_at, snapshot_id=cycle_id)
             expected = {(str(record["symbol"]), str(record["row_sha256"])): record for record in records}
@@ -1566,7 +1704,7 @@ class PitRerunService:
                 "source_version": computation.source_version, "manifest_sha256": computation.manifest["manifest_sha256"], **computation.summary()}
 
     def rerun(self, market: str, *, as_of: datetime, clock: Callable[[], datetime] | None = None, price_pinned_at: datetime | None = None,
-              statements: str = STATEMENTS_DEFAULT) -> tuple[dict[str, Any], PitComputation]:
+              statements: str = STATEMENTS_DEFAULT, catalogue_pinned_at: datetime | None = None) -> tuple[dict[str, Any], PitComputation]:
         """One run. ``price_pinned_at`` (P2-1, ``--price-pinned-at``) replaces the run-start clock as the vintage cut, so every
         run of a grid resolves ONE publication whatever the nightly series publishes meanwhile; it must carry a zone and lie
         at or before the run start (a pin in the future would resolve another vintage when re-run: not a pin)."""
@@ -1578,8 +1716,14 @@ class PitRerunService:
             if _utc(price_pinned_at) > started_at:
                 raise PitRerunInputError(f"the price pin {_utc(price_pinned_at).isoformat()} is after the run start {started_at.isoformat()}: a pin in the "
                                          "future would resolve another vintage when the run is repeated")
+        if catalogue_pinned_at is not None:  # S2 of the backtest review: one catalogue for a whole grid, a pointer like the price pin
+            if catalogue_pinned_at.tzinfo is None or catalogue_pinned_at.utcoffset() is None:
+                raise PitRerunInputError("the catalogue pin must carry a time zone")
+            if _utc(catalogue_pinned_at) > started_at:
+                raise PitRerunInputError(f"the catalogue pin {_utc(catalogue_pinned_at).isoformat()} is after the run start {started_at.isoformat()}: a pin in "
+                                         "the future would resolve another catalogue when the run is repeated")
         prices = self.pin_vintage(market, as_of=as_of, pinned_at=started_at if price_pinned_at is None else price_pinned_at, explicit=price_pinned_at is not None)
-        computation = self.compute(market, as_of=as_of, prices=prices, statements=statements)
+        computation = self.compute(market, as_of=as_of, prices=prices, statements=statements, catalogue_pinned_at=catalogue_pinned_at)
         return self.persist(computation, clock=tick), computation
 
 
@@ -1720,6 +1864,8 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     parser.add_argument("--detail", type=Path, default=None, help="with --rerun: write the PRIVATE per-symbol detail to this NEW path (O_EXCL|O_NOFOLLOW, 0600)")
     parser.add_argument("--price-pinned-at", default=None, help="with --rerun: resolve the price vintage published before this ISO-8601 instant WITH zone "
                                                                 "(default: the run start) — one vintage for every run of a grid")
+    parser.add_argument("--catalogue-pinned-at", default=None, help="with --rerun: read the universe catalogue published before this ISO-8601 instant WITH "
+                                                                    "zone (default: the latest) — one catalogue for every run of a grid")
     parser.add_argument("--statements", choices=STATEMENTS_MODES, default=None,
                         help="with --rerun: provider (default) = never the table; auto = the as-filed facts of statement_vintages (accepted <= T) "
                              "for a covered name, else the provider payload (no table: unchanged); vintages = as-filed only")
@@ -1727,8 +1873,8 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
     args = parser.parse_args(argv)
     if args.rerun and args.as_of is None:
         parser.error("--rerun requires --as-of")
-    if args.fetch and (args.as_of or args.detail or args.price_pinned_at or args.statements):
-        parser.error("--as-of/--detail/--price-pinned-at/--statements apply to --rerun only")
+    if args.fetch and (args.as_of or args.detail or args.price_pinned_at or args.statements or args.catalogue_pinned_at):
+        parser.error("--as-of/--detail/--price-pinned-at/--catalogue-pinned-at/--statements apply to --rerun only")
     if args.rerun and args.symbols:
         parser.error("--symbols applies to --fetch only")
     if args.detail is not None and (args.detail.is_symlink() or args.detail.exists()):
@@ -1745,8 +1891,10 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
         return 0
     as_of = _cli_instant(parser, "--as-of", str(args.as_of))
     price_pinned_at = _cli_instant(parser, "--price-pinned-at", str(args.price_pinned_at)) if args.price_pinned_at is not None else None
+    catalogue_pinned_at = _cli_instant(parser, "--catalogue-pinned-at", str(args.catalogue_pinned_at)) if args.catalogue_pinned_at is not None else None
     service = PitRerunService(database, settings=settings)
-    receipt, computation = service.rerun(args.market, as_of=as_of, price_pinned_at=price_pinned_at, statements=args.statements or STATEMENTS_DEFAULT)
+    receipt, computation = service.rerun(args.market, as_of=as_of, price_pinned_at=price_pinned_at, statements=args.statements or STATEMENTS_DEFAULT,
+                                         catalogue_pinned_at=catalogue_pinned_at)
     if args.detail is not None:
         write_private_detail(args.detail, {"schema": f"{SCHEMA_VERSION}:detail", "run_key": receipt["run_key"], "cycle_id": receipt["cycle_id"],
                                            "results": computation.results, "not_evaluable": dict(computation.resolver.not_evaluable),

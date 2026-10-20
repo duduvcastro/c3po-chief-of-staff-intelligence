@@ -346,21 +346,7 @@ class USScreeningService:
                 market, fundamentals, [quote.symbol for _, quote, metadata in selected if not self._is_etf(metadata)], eodhd_fetched_at,
             )
 
-        risk_cutoff = self._risk_cutoff(rows)
-        tp_cutoff = self._tp_cutoff(risk_free_rate)
-        for row in rows:
-            row["tp_hurdle_percent"] = tp_cutoff
-            row["tp_hurdle_risk_free_rate"] = risk_free_rate
-            row["status"] = (
-                "full_match"
-                if row["signal_quality"] == "validated"
-                and row["upside_percent"] >= tp_cutoff
-                and row["risk_score"] < risk_cutoff
-                and -10 <= row["price_vs_buy_in_percent"] <= MAX_ENTRY_DISTANCE
-                else "near_buy"
-                if row["signal_quality"] == "validated" and row["upside_percent"] >= tp_cutoff
-                else "watchlist"
-            )
+        self._assign_statuses(rows, risk_free_rate)
 
         self._rows[market] = rows
         self._basis_at[market] = now
@@ -608,7 +594,12 @@ class USScreeningService:
         price = float(quote["price"])
         upside = (our_tp / price - 1) * 100
         entry_distance = (price / buy_in - 1) * 100
-        expected_return = upside + (normalized_percent(fundamentals.get("dividendYield")) or 0)
+        dividend_yield = normalized_percent(fundamentals.get("dividendYield")) or 0
+        expected_return = upside + dividend_yield
+        # Passo 1 rev 9 (official_internal_v1): the TP-dependent tail of the row on the INTERNAL TP and its buy-in, by the
+        # same expressions — what an internal record is served with (status follows in _build, which knows the cutoffs)
+        internal_upside = (internal_tp / price - 1) * 100
+        internal_entry_distance = (price / internal_buy_in - 1) * 100
         consensus_gap = abs(internal_tp / consensus - 1) * 100 if consensus else None
         operating_quality = clamp(
             50
@@ -618,6 +609,7 @@ class USScreeningService:
             95,
         ) if security_type == "Stock" else quality_score
         score = self._power_score(upside, risk, operating_quality, confidence, entry_distance)
+        internal_score = self._power_score(internal_upside, risk, operating_quality, confidence, internal_entry_distance)
         return {
             "market": market,
             "symbol": str(quote["symbol"]),
@@ -642,6 +634,10 @@ class USScreeningService:
             "expected_total_return_percent": expected_return,
             "buy_in": buy_in,
             "internal_buy_in": internal_buy_in,  # Passo 1: the buy-in of the internal TP by the same rule (the official_internal_v1 record reads it)
+            "internal_upside_percent": internal_upside,  # rev 9: the internal view (valuation_official.internal_view serves score/status/expected return)
+            "internal_price_vs_buy_in_percent": internal_entry_distance,
+            "internal_expected_total_return_percent": internal_upside + dividend_yield,
+            "internal_score": internal_score,
             "price_vs_buy_in_percent": entry_distance,
             "buy_in_models": {name: target / (1 + 0.12 + risk / 100 * 0.10) for name, target in methods.items()},
             "methods": methods,
@@ -1073,6 +1069,37 @@ class USScreeningService:
             + clamp(100 - abs(entry_distance) * 5, 0, 100) * 0.10,
             0,
             100,
+        )
+
+    @classmethod
+    def _assign_statuses(cls, rows: list[dict[str, Any]], risk_free_rate: float) -> None:
+        """The screen status of every row of a build, against the build's own cutoffs (the risk cutoff is the universe's;
+        the TP hurdle is the build's US risk-free rate + the premium, defect b, stamped on every row as
+        ``tp_hurdle_percent``/``tp_hurdle_risk_free_rate``). Passo 1 rev 9 (official_internal_v1): the same rule and the
+        same cutoffs — the same hurdle — on the internal TP and its buy-in give ``internal_status``, the status an internal
+        record is served with, never the blend's."""
+        risk_cutoff = cls._risk_cutoff(rows)
+        tp_cutoff = cls._tp_cutoff(risk_free_rate)
+        for row in rows:
+            row["tp_hurdle_percent"] = tp_cutoff
+            row["tp_hurdle_risk_free_rate"] = risk_free_rate
+            row["status"] = cls._screen_status(row["signal_quality"], row["upside_percent"], row["risk_score"], row["price_vs_buy_in_percent"],
+                                               tp_cutoff, risk_cutoff)
+            row["internal_status"] = cls._screen_status(row["signal_quality"], row["internal_upside_percent"], row["risk_score"],
+                                                        row["internal_price_vs_buy_in_percent"], tp_cutoff, risk_cutoff)
+
+    @staticmethod
+    def _screen_status(signal_quality: str, upside: float, risk: float, entry_distance: float, tp_cutoff: float, risk_cutoff: float) -> str:
+        """The screen status of a row (Power Zone gate): applied to the blend and — Passo 1 rev 9 — to the internal TP."""
+        return (
+            "full_match"
+            if signal_quality == "validated"
+            and upside >= tp_cutoff
+            and risk < risk_cutoff
+            and -10 <= entry_distance <= MAX_ENTRY_DISTANCE
+            else "near_buy"
+            if signal_quality == "validated" and upside >= tp_cutoff
+            else "watchlist"
         )
 
     @staticmethod

@@ -59,6 +59,9 @@ def _row(symbol: str, *, tp: float, buy_in: float, price: float, market: str = "
         "symbol": symbol, "our_tp": tp, "buy_in": buy_in, "price": price, "internal_tp": tp * 0.98, "internal_buy_in": buy_in * 0.98,
         "valuation_profile": "general", "valuation_confidence": 80.0, "method_dispersion_percent": 20.0, "fundamentals_as_of": "2026-09-30",
         "methods": {"dcf": tp}, "risk_score": 30.0, "as_of": "2026-10-13T21:00:00+00:00", "status": "full_match",
+        # Passo 1 rev 9: the producers' internal view (score/status/expected return on the internal TP) — an internal record
+        # is served only with it, so a row without it would not be servable under the internal source
+        "internal_score": 70.0, "internal_status": "full_match", "internal_expected_total_return_percent": 20.0,
     }
     row.update({"tp_validation_status": "validated"} if market == "B3" else {"signal_quality": "validated"})
     return {**row, **extra}
@@ -387,6 +390,7 @@ def _switch_to_internal(database: Database, cycles: dict[str, str], monkeypatch:
     """The mesa's explicit P1 switch to the internal source, dated ``at`` (the order carries the mesa's clock)."""
     report = official.before_after_report(database, cycles=cycles, targeted={})
     monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", report["report_sha256"])  # P1 rev 9: the lock commit names the accepted receipt
     return official.select_generation(database, cycles=cycles, now=at, activated_by="mesa", reason="P1 switch", source=SOURCE_INTERNAL,
                                       source_version="32", before_after_sha256=report["report_sha256"])
 

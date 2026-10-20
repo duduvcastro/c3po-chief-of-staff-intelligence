@@ -210,11 +210,12 @@ def test_every_consumer_serves_the_internal_tp_with_its_stamp_after_the_switch_w
 
     database = _database()
     now = datetime(2026, 9, 7, 23, 0, tzinfo=timezone.utc)
+    views = {"score": 80.0, "status": "full_match", "internal_score": 71.0, "internal_status": "watchlist", "internal_expected_total_return_percent": 9.5}  # rev 9
     rows = {
-        "B3": [{"symbol": "PETR4", "our_tp": 40.0, "buy_in": 32.0, "price": 36.0, "internal_tp": 39.0, "internal_buy_in": 31.0, "signal_quality": "validated"}],
+        "B3": [{"symbol": "PETR4", "our_tp": 40.0, "buy_in": 32.0, "price": 36.0, "internal_tp": 39.0, "internal_buy_in": 31.0, "signal_quality": "validated", **views}],
         "NASDAQ": [{"symbol": "AAPL", "our_tp": 250.0, "buy_in": 200.0, "price": 220.0, "internal_tp": 245.0, "internal_buy_in": 196.0, "public_consensus_tp": 275.0,
-                    "analyst_count": 20, "consensus_weight_percent": 35.0, "signal_quality": "validated"}],
-        "NYSE": [{"symbol": "KO", "our_tp": 70.0, "buy_in": 60.0, "price": 65.0, "internal_tp": 68.0, "internal_buy_in": 58.0, "signal_quality": "validated"}],
+                    "analyst_count": 20, "consensus_weight_percent": 35.0, "signal_quality": "validated", **views}],
+        "NYSE": [{"symbol": "KO", "our_tp": 70.0, "buy_in": 60.0, "price": 65.0, "internal_tp": 68.0, "internal_buy_in": 58.0, "signal_quality": "validated", **views}],
     }
     cycles = {market: database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", {"methodology_version": 7},
                                                        {"rows": rows[market], "universe_size": 1}, now + timedelta(minutes=i))
@@ -223,6 +224,7 @@ def test_every_consumer_serves_the_internal_tp_with_its_stamp_after_the_switch_w
     assert blend is not None and blend["source"] == official.SOURCE_OFFICIAL
     report = official.before_after_report(database)
     monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", report["report_sha256"])  # rev 9: the lock commit names the accepted receipt
     generation = official.select_generation(database, cycles=cycles, now=datetime.now(timezone.utc), activated_by="mesa", reason="P1",
                                             source=SOURCE_INTERNAL, source_version="7", before_after_sha256=report["report_sha256"])
     assert generation["source"] == SOURCE_INTERNAL and official.current_generation(database) == generation
@@ -237,5 +239,9 @@ def test_every_consumer_serves_the_internal_tp_with_its_stamp_after_the_switch_w
     assert one_pager_view["generation_id"] == r2d2_view["generation_id"] == served["official_generation_id"] == generation["generation_id"]
     assert one_pager_view["tp_source"] == r2d2_view["tp_source"] == served["tp_source"] == official.item_stamp(r2d2_view)["tp_source"] == SOURCE_INTERNAL
     assert one_pager_view["official_row_sha256"] == r2d2_view["official_row_sha256"] == record["row_sha256"]
+    # rev 9: every consumer ranks and filters by the status and score OF THE SERVED TP — the producer's internal view
+    assert one_pager_view["status"] == r2d2_view["status"] == "watchlist" and one_pager_view["score"] == r2d2_view["score"] == 71.0
+    assert r2d2_view["expected_total_return_percent"] == 9.5 and record["decomposition"]["status"] == "watchlist"
     # the previous generation still resolves the blend for a replay
     assert official.official_row(database, "US", "AAPL", generation=blend)["our_tp"] == 250.0  # type: ignore[index]
+    assert official.official_row(database, "US", "AAPL", generation=blend)["status"] == "full_match"  # type: ignore[index]

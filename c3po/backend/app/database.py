@@ -22,6 +22,60 @@ LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
 PriceHistoryCapture = tuple[dict[str, Any], dict[str, Any], datetime, str, list[dict[str, Any]]]
 PriceHistoryBuild = Callable[[dict[tuple[str, str], str]], PriceHistoryCapture]
 PriceBarKey = tuple[str, str, str, str, str]  # (market, symbol, session_date, source, fetched_at as a UTC instant) — the table's UNIQUE key
+# Database.save_sec_filing_events: save_ir_events' upsert plus the filing-header guard, decided inside ON CONFLICT DO UPDATE
+# on the locked conflicting row: a stored header-sourced acceptance instant (and its header fields) survives an incoming
+# event whose time is not from the header; an incoming header-sourced event always wins.
+SEC_FILING_EVENTS_UPSERT_SQL = """
+INSERT INTO ir_events
+    (id, source_code, external_id, company_id, market, symbol, company_name,
+     regulator_id, event_type, form, title, summary, published_at,
+     published_time_precision, reference_date, official_url, document_url,
+     materiality, valuation_relevant, valuation_status, raw_metadata, collected_at)
+VALUES (%(id)s, %(source_code)s, %(external_id)s, %(company_id)s, %(market)s, %(symbol)s, %(company_name)s,
+        %(regulator_id)s, %(event_type)s, %(form)s, %(title)s, %(summary)s, %(published_at)s,
+        %(published_time_precision)s, %(reference_date)s, %(official_url)s, %(document_url)s,
+        %(materiality)s, %(valuation_relevant)s, %(valuation_status)s, %(raw_metadata)s::jsonb, %(collected_at)s)
+ON CONFLICT (source_code, external_id) DO UPDATE
+SET company_id = COALESCE(EXCLUDED.company_id, ir_events.company_id),
+    symbol = COALESCE(EXCLUDED.symbol, ir_events.symbol),
+    company_name = EXCLUDED.company_name,
+    regulator_id = COALESCE(EXCLUDED.regulator_id, ir_events.regulator_id),
+    event_type = EXCLUDED.event_type,
+    form = EXCLUDED.form,
+    title = EXCLUDED.title,
+    summary = EXCLUDED.summary,
+    published_at = CASE
+        WHEN ir_events.raw_metadata->>'acceptance_time_source' = %(header_source)s
+         AND (EXCLUDED.raw_metadata->>'acceptance_time_source') IS DISTINCT FROM %(header_source)s
+        THEN ir_events.published_at
+        WHEN EXCLUDED.published_time_precision = 'collected'
+         AND ir_events.published_time_precision = 'collected'
+        THEN LEAST(ir_events.published_at, ir_events.collected_at, EXCLUDED.collected_at)
+        ELSE EXCLUDED.published_at
+    END,
+    published_time_precision = EXCLUDED.published_time_precision,
+    reference_date = EXCLUDED.reference_date,
+    official_url = EXCLUDED.official_url,
+    document_url = EXCLUDED.document_url,
+    materiality = EXCLUDED.materiality,
+    valuation_relevant = EXCLUDED.valuation_relevant,
+    valuation_status = CASE
+        WHEN ir_events.reviewed_at IS NOT NULL
+          OR ir_events.valuation_status = 'incorporated'
+        THEN ir_events.valuation_status
+        ELSE EXCLUDED.valuation_status
+    END,
+    raw_metadata = CASE
+        WHEN ir_events.raw_metadata->>'acceptance_time_source' = %(header_source)s
+         AND (EXCLUDED.raw_metadata->>'acceptance_time_source') IS DISTINCT FROM %(header_source)s
+        THEN EXCLUDED.raw_metadata || jsonb_strip_nulls(jsonb_build_object(
+            'acceptance_time_source', ir_events.raw_metadata->'acceptance_time_source',
+            'acceptance_datetime_header', ir_events.raw_metadata->'acceptance_datetime_header'))
+        ELSE EXCLUDED.raw_metadata
+    END,
+    collected_at = LEAST(ir_events.collected_at, EXCLUDED.collected_at),
+    updated_at = now()
+"""
 
 
 class AlreadyPublishedError(ValueError):
@@ -98,6 +152,7 @@ class Database:
         self._ir_security_map: dict[tuple[str, str], str] = {}
         self._ir_events: dict[tuple[str, str], dict[str, Any]] = {}
         self._ir_valuation_queue: dict[tuple[str, str], dict[str, Any]] = {}
+        self._sec_filing_events_lock = threading.RLock()  # save_sec_filing_events: read-merge-write of the memory store
         self._leah_pairings: dict[str, dict[str, Any]] = {}
         self._leah_devices: dict[str, dict[str, Any]] = {}
         self._leah_items: dict[str, dict[str, Any]] = {}
@@ -3248,6 +3303,85 @@ class Database:
                 (clean, acceptance_source),
             ).fetchall()
         return {str(external_id): published_at for external_id, published_at in rows}
+
+    # the filing-header fields of an SEC filing event's raw_metadata (written by InvestorRelationsService)
+    _SEC_HEADER_METADATA_KEYS = ("acceptance_time_source", "acceptance_datetime_header")
+
+    def save_sec_filing_events(self, events: list[dict[str, Any]], *, header_source: str) -> int:
+        """``save_ir_events`` for SEC filing events, keeping an acceptance instant read from the filing header
+        ATOMICALLY in the write: a stored event whose ``raw_metadata.acceptance_time_source`` is ``header_source`` keeps
+        its ``published_at`` and its header fields when the incoming event's time does not come from the header (the
+        corrected submissions-JSON fallback of a process that read before the header was stored), whatever the two
+        clocks say; the incoming event's other fields and metadata are written as usual. An incoming header-sourced
+        event always wins. A read before the save cannot do this: the IR worker may store the header between that read
+        and this write. PostgreSQL decides it inside ON CONFLICT DO UPDATE (the conflicting row is locked); the
+        in-memory store under one lock. Otherwise identical to ``save_ir_events``, which is left byte-identical because
+        R2D2's risk differential pins its source (r2d2_v2_risk_differential.verify_oracle_sources)."""
+        if not events:
+            return 0
+        if not self.database_url:
+            with self._sec_filing_events_lock:
+                merged: list[dict[str, Any]] = []
+                for event in events:
+                    existing = self._ir_events.get((event["source_code"], event["external_id"]))
+                    stored_metadata = (existing or {}).get("raw_metadata") or {}
+                    incoming_metadata = event.get("raw_metadata") or {}
+                    if (
+                        existing is not None
+                        and stored_metadata.get("acceptance_time_source") == header_source
+                        and incoming_metadata.get("acceptance_time_source") != header_source
+                    ):
+                        kept = {key: stored_metadata[key] for key in self._SEC_HEADER_METADATA_KEYS
+                                if stored_metadata.get(key) is not None}
+                        event = {**event, "published_at": existing["published_at"],
+                                 "raw_metadata": {**incoming_metadata, **kept}}
+                    merged.append(event)
+                return self.save_ir_events(merged)
+        rows = []
+        for event in events:
+            rows.append({
+                "id": event.get("id") or str(uuid4()), "source_code": event["source_code"],
+                "external_id": event["external_id"], "company_id": event.get("company_id"), "market": event["market"],
+                "symbol": event.get("symbol"), "company_name": event["company_name"],
+                "regulator_id": event.get("regulator_id"), "event_type": event["event_type"], "form": event.get("form"),
+                "title": event["title"], "summary": event.get("summary", ""), "published_at": event["published_at"],
+                "published_time_precision": event.get("published_time_precision", "datetime"),
+                "reference_date": event.get("reference_date"), "official_url": event["official_url"],
+                "document_url": event.get("document_url"), "materiality": event.get("materiality", "medium"),
+                "valuation_relevant": bool(event.get("valuation_relevant")),
+                "valuation_status": event.get("valuation_status", "informational"),
+                "raw_metadata": json.dumps(event.get("raw_metadata", {}), ensure_ascii=False),
+                "collected_at": event.get("collected_at") or datetime.now().astimezone(),
+                "header_source": header_source,
+            })
+        with self.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(SEC_FILING_EVENTS_UPSERT_SQL, rows)
+                relevant_rows = [row for row in rows if row["valuation_relevant"]]
+                if relevant_rows:
+                    cursor.execute(
+                        """
+                        WITH incoming(source_code, external_id) AS (
+                            SELECT * FROM unnest(%s::text[], %s::text[])
+                        )
+                        INSERT INTO ir_valuation_queue (event_id, market, symbol)
+                        SELECT event.id, security.market, security.symbol
+                        FROM ir_events event
+                        JOIN incoming
+                          ON incoming.source_code = event.source_code
+                         AND incoming.external_id = event.external_id
+                        JOIN ir_security_map security ON security.company_id = event.company_id
+                        WHERE event.valuation_relevant
+                          AND NOT (security.market = 'B3' AND security.symbol ~ '[0-9]F$')
+                        ON CONFLICT (event_id, market, symbol) DO NOTHING
+                        """,
+                        (
+                            [row["source_code"] for row in relevant_rows],
+                            [row["external_id"] for row in relevant_rows],
+                        ),
+                    )
+            connection.commit()
+        return len(events)
 
     @staticmethod
     def _insider_transaction_direction(metadata: dict[str, Any]) -> int:

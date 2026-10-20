@@ -1380,6 +1380,47 @@ def test_only_the_header_reader_process_requests_headers_the_others_reuse_what_i
         assert stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
 
 
+@pytest.mark.parametrize("header_delay", [timedelta(0), timedelta(seconds=3)], ids=["equal-clocks", "divergent-clocks"])
+def test_the_api_fallback_saved_after_the_worker_stored_the_header_keeps_the_header(tmp_path, monkeypatch, header_delay):
+    """Codex P2 on #450: the API's sync reads that a filing has no header instant, the IR worker then stores the
+    header-sourced event, and the API's save lands last. A read cannot close that race: the save itself keeps the header
+    clock and its fields (Database.save_sec_filing_events), whether or not the two clocks coincide."""
+    monkeypatch.setenv(valuation_env.SEC_CONTACT_ENV, "C3PO test desk")
+    settings = _sec_settings(tmp_path, finnhub_api_token="test-token")
+    database = Database(settings)
+    payload, accessions, accepted = _recent_sec_filings(1)
+    header_instant = accepted[0] + header_delay
+    header_label = f"{header_instant.astimezone(NEW_YORK):%Y%m%d%H%M%S}"
+    worker = _header_reader(settings, database, _SecHeaders(payload, {accessions[0]: f"&lt;ACCEPTANCE-DATETIME&gt;{header_label}"}),
+                            read_sec_headers=True)
+    worker.finnhub.client = _FinnhubInsiders()
+    api = _header_reader(settings, database, _SecHeaders(payload))
+    api.finnhub.client = _FinnhubInsiders()
+
+    read_by_the_api: list[dict] = []
+    original_read = database.stored_sec_acceptances
+
+    def read_then_the_worker_stores(accessions_, *, acceptance_source):
+        found = original_read(accessions_, acceptance_source=acceptance_source)
+        if not read_by_the_api:
+            read_by_the_api.append(found)
+            worker.sync_sec()  # the IR worker's sync lands between the API's read and the API's save
+        return found
+
+    database.stored_sec_acceptances = read_then_the_worker_stores  # type: ignore[method-assign]
+    api.sync_sec()
+
+    assert read_by_the_api == [{}]  # the API did read "no header yet"
+    stored = database._ir_events[("sec", accessions[0])]
+    assert stored["published_at"] == header_instant
+    assert stored["raw_metadata"]["acceptance_time_source"] == SEC_ACCEPTANCE_FROM_HEADER
+    assert stored["raw_metadata"]["acceptance_datetime_header"] == header_label
+    assert stored["raw_metadata"]["acceptance_datetime_json"]  # the API's own metadata is still written
+    # the insider events R2D2 reads are still written by the same sync, through save_ir_events
+    assert any(external_id.startswith("finnhub-insider-AAPL-") for _, external_id in database._ir_events)
+    assert [run["status"] for run in database._ingestion_runs.values() if run["source_code"] == "sec"] == ["succeeded"] * 2
+
+
 @pytest.mark.parametrize("status", [403, 429])
 def test_sec_throttling_stops_the_header_reads_of_that_sync(tmp_path, caplog, status, monkeypatch):
     """A 403/429 is the SEC throttling this host: the rest of the sync's header reads are skipped (they used to go on,

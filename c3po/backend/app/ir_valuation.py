@@ -7,6 +7,7 @@ from typing import Any
 from .database import Database
 from .market_data.b3_screener import B3ScreenerService
 from .valuation_asfiled import evaluate_us_filings
+from .valuation_official import selection_frozen
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,14 @@ class InvestorRelationsValuationProcessor:
         self.asfiled_enabled = asfiled_enabled
 
     def process(self, limit: int = 12) -> dict[str, Any]:
+        # While the mesa freezes the official selection (Valuation P1, F1) nothing is claimed: a republished B3 universe could
+        # not be activated over the frozen head and the mesa's order would then hold it. The queue keeps every update; the
+        # first poll after the order (or the freeze's end) applies them. The US as-filed trigger still runs: it only appends
+        # staleness marks (migration 053) judged against the head in force and never activates a generation.
+        freeze = selection_frozen(self.database)
+        if freeze is not None:
+            logger.info("Investor Relations valuation propagation deferred: the official selection is frozen until %s", freeze["until"])
+            return {"claimed": 0, "updated": [], "targeted_only": [], "failed": [], "deferred_until": freeze["until"], **self._us_revaluation_trigger()}
         updates = self.database.claim_ir_valuation_updates(limit)
         if not updates:
             return {"claimed": 0, "updated": [], "targeted_only": [], "failed": [], **self._us_revaluation_trigger()}

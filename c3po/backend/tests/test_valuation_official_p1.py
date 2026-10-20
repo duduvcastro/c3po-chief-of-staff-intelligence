@@ -31,6 +31,7 @@ from app.valuation_official_engine import OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE
 
 NOW = datetime(2026, 9, 7, 23, 0, tzinfo=timezone.utc)
 APP = Path(__file__).resolve().parents[1] / "app"
+PRODUCER = "a" * 40  # the deployed revision the producing process reads (C3PO_BUILD_SHA)
 
 
 def _database() -> Database:
@@ -43,10 +44,14 @@ def _wall() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _row(symbol: str, *, tp: float, buy_in: float, price: float, internal_tp: float, internal_buy_in: float | None = None, **extra: Any) -> dict[str, Any]:
+def _row(symbol: str, *, tp: float, buy_in: float, price: float, internal_tp: float, internal_buy_in: float | None = None, view: bool = True,
+         **extra: Any) -> dict[str, Any]:
     """A producer row of Passo 1: the blend (``our_tp``/``buy_in``), the internal TP and — unless omitted, which mimics a
     cycle produced BEFORE Passo 1 — the internal buy-in the producer derived from it; the display fields the producer
-    computes over the blend (upside, distance, weight, score, status) travel with the row."""
+    computes over the blend (upside, distance, weight, score, status) travel with the row. With an internal buy-in the row
+    carries the producer's INTERNAL VIEW too (rev 9: score/status/expected return on the internal TP, deliberately
+    different from the blend's so a test sees which one is served) unless ``view=False`` — a cycle produced by the P1 code
+    before rev 9."""
     row: dict[str, Any] = {
         "symbol": symbol, "our_tp": tp, "buy_in": buy_in, "price": price, "internal_tp": internal_tp, "public_consensus_tp": tp * 1.1,
         "analyst_count": 12, "consensus_weight_percent": 25.0, "consensus_origin_source": "brapi", "consensus_as_of": "2026-09-01",
@@ -58,6 +63,8 @@ def _row(symbol: str, *, tp: float, buy_in: float, price: float, internal_tp: fl
     if internal_buy_in is not None:
         row["internal_buy_in"] = internal_buy_in
         row["internal_buy_in_models"] = {"Bridgewater": internal_buy_in * 1.02, "Market Structure": buy_in * 0.98}
+        if view:
+            row.update({"internal_score": 79.0, "internal_status": "near_buy", "internal_expected_total_return_percent": 20.5})
     return {**row, **extra}
 
 
@@ -80,12 +87,18 @@ def _three_markets(database: Database, at: datetime = NOW) -> dict[str, str]:
     }
 
 
+def _authorize(monkeypatch: pytest.MonkeyPatch, report_sha256: str) -> None:
+    """The lock commit as it will be merged (rev 9): the lock flipped AND the receipt the owner accepted named beside it."""
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", report_sha256)
+
+
 def _switch(database: Database, monkeypatch: pytest.MonkeyPatch, *, cycles: dict[str, str], targeted: dict[str, str] | None = None,
             reason: str = "P1 switch") -> tuple[dict[str, Any], dict[str, Any]]:
     """The mesa's order as it will be executed once the lock is flipped by the receipt's commit: the before/after receipt,
     then ``select_generation(source=SOURCE_INTERNAL, before_after_sha256=<its hash>)``. Returns ``(generation, report)``."""
     report = official.before_after_report(database, cycles=cycles, targeted=targeted or {})  # C395-1: the receipt is of THIS proposal
-    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+    _authorize(monkeypatch, report["report_sha256"])
     generation = official.select_generation(database, cycles=cycles, targeted=targeted, now=_wall(), activated_by="mesa", reason=reason,
                                             source=SOURCE_INTERNAL, source_version="7", before_after_sha256=report["report_sha256"])
     return generation, report
@@ -97,6 +110,9 @@ def test_the_constants_the_lock_and_the_pinned_one_pager() -> None:
     # the lock is a literal in the module (it flips only by a commit citing the mesa's receipt), and this tree has it FALSE
     assert official.OFFICIAL_TP_REPLACEMENT_AUTHORIZED is False
     assert "\nOFFICIAL_TP_REPLACEMENT_AUTHORIZED = False" in (APP / "valuation_official.py").read_text(encoding="utf-8")
+    # rev 9: the lock commit names the receipt the owner accepted beside the lock — none in this tree
+    assert official.OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256 is None
+    assert "\nOFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = None" in (APP / "valuation_official.py").read_text(encoding="utf-8")
     # the pinned producer framework is not edited by Passo 1 (the mirror of its entry hurdle lives in the engine module)
     assert hashlib.sha256((APP / "one_pager.py").read_bytes()).hexdigest() == ORACLE_ONE_PAGER_SHA256
 
@@ -210,6 +226,7 @@ def test_a_cycle_is_selectable_per_source_and_a_pre_p1_cycle_is_never_selectable
         official.select_generation(database, cycles=cycles, targeted={"WEGE3": wege_legacy}, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL,
                                    before_after_sha256=report["report_sha256"])
     # the same cycles ARE selectable for the internal source once complete: the order lands (the legacy targeted cycle purged)
+    _authorize(monkeypatch, report["report_sha256"])
     switched = official.select_generation(database, cycles=cycles, targeted={}, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL,
                                           source_version="7", before_after_sha256=report["report_sha256"])
     assert switched["source"] == SOURCE_INTERNAL and switched["cycles"] == cycles and official.official_row(database, "B3", "WEGE3") is None
@@ -262,7 +279,9 @@ def test_the_switch_by_explicit_order_serves_the_internal_tp_to_every_consumer_w
     assert row["generation_id"] == g1["generation_id"] and row["official_cycle_id"] == cycles["NASDAQ"] and row["official_row_sha256"] == internal["row_sha256"]
     assert row["public_consensus_tp"] == 275.0 and row["internal_tp"] == 245.0 and row["consensus_weight_percent"] == 0.0
     assert row["upside_percent"] == (245.0 / 220.0 - 1) * 100 and row["price_vs_buy_in_percent"] == (220.0 / 196.0 - 1) * 100
-    assert row["score"] == 80.0 and row["status"] == "full_match" and row["expected_total_return_percent"] == 21.5  # the producer's blend view: the declared residue
+    # rev 9 (the residue closed): the status, score and expected return served are the producer's INTERNAL view, never the blend's
+    assert row["score"] == 79.0 and row["status"] == "near_buy" and row["expected_total_return_percent"] == 20.5
+    assert official.official_row(database, "US", "AAPL", generation=admitted)["status"] == "full_match"  # type: ignore[index]  # the blend generation: the blend's, as before
     # the screeners read `official_rows` / `official_stamp` / `item_stamp`
     rows = official.official_rows(database, "B3")
     assert {symbol: item["our_tp"] for symbol, item in rows.items()} == {"PETR4": 39.0, "VALE3": 69.0} and all(item["tp_source"] == SOURCE_INTERNAL for item in rows.values())
@@ -362,7 +381,9 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     detail_path = tmp_path / "private" / "detail.json"
     detail_path.parent.mkdir()
     report = official.before_after_report(database, private_detail_path=detail_path)
-    assert report["schema"] == "VALUATION_P1_BEFORE_AFTER_V2" and report["generation_id"] == generation["generation_id"] and report["generation_source"] == SOURCE_BLEND
+    assert report["schema"] == "VALUATION_P1_BEFORE_AFTER_V3" and report["generation_id"] == generation["generation_id"] and report["generation_source"] == SOURCE_BLEND
+    assert report["buy_status"] == official.BUY_STATUS == "full_match"
+    assert report["rating_cuts"] == {"COMPRA": 25.0, "ACUMULAR": 10.0, "NEUTRO": -10.0, "REDUZIR": None}  # F3: the cuts the ratings were read with
     assert report["source_from"] == SOURCE_BLEND and report["source_to"] == SOURCE_INTERNAL and report["cycles"] == {"B3": b3, "NASDAQ": nasdaq, "NYSE": nyse}
     assert report["session_dates"] == {"B3": "2026-09-04", "NASDAQ": "2026-09-04", "NYSE": "2026-09-04"} and report["source_version"] == "7" and report["targeted_cycles"] == 0
     assert report["p90_method"] == "linear interpolation at (n-1)*0.9"
@@ -373,8 +394,27 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     assert b3_stats["tp"]["abs_median"] == pytest.approx(0.025) and b3_stats["tp"]["abs_p90"] == pytest.approx(0.2 * 0.025 + 0.8 * 0.1)
     buy_in_ratios = sorted([31.0 / 32.0 - 1, 59.0 / 60.0 - 1, 27.5 / 25.0 - 1])
     assert b3_stats["buy_in"]["median"] == pytest.approx(buy_in_ratios[1]) and b3_stats["buy_in"]["p90"] == pytest.approx(0.2 * buy_in_ratios[1] + 0.8 * buy_in_ratios[2])
-    assert report["markets"]["NASDAQ"] == {"n": 1, "missing_internal": 0, "tp": {"median": pytest.approx(-0.02), "p90": pytest.approx(-0.02), "abs_median": pytest.approx(0.02), "abs_p90": pytest.approx(0.02)},
-                                           "buy_in": {"median": pytest.approx(-0.02), "p90": pytest.approx(-0.02), "abs_median": pytest.approx(0.02), "abs_p90": pytest.approx(0.02)}}
+    minus_two = {"median": pytest.approx(-0.02), "p10": pytest.approx(-0.02), "p90": pytest.approx(-0.02), "abs_median": pytest.approx(0.02), "abs_p90": pytest.approx(0.02)}
+    upside_before, upside_after = (250.0 / 220.0 - 1) * 100, (245.0 / 220.0 - 1) * 100  # the served identities of each arm
+    assert report["markets"]["NASDAQ"] == {
+        "n": 1, "missing_internal": 0, "only_internal": 0, "served_pairs": 1, "before_unservable": 0, "after_unservable": 0,
+        "tp": minus_two, "buy_in": minus_two,
+        "tp_change_buckets": {"down": 1, "flat": 0, "up": 0, "abs": {"lt_1pct": 0, "1_to_5pct": 1, "5_to_10pct": 0, "10_to_25pct": 0, "ge_25pct": 0}},
+        # rev 9 (V3): the SERVED view of both arms — the blend row's status/score, the internal record under the producer's internal view
+        "status": {"before": {"full_match": 1}, "after": {"near_buy": 1}, "changed": 1, "transitions": {"full_match->near_buy": 1}},
+        "rating": {"before": {"ACUMULAR": 1}, "after": {"ACUMULAR": 1}, "changed": 0, "transitions": {}},  # F3: the One Pager rating, +13,6 % and +11,4 %
+        "buy": {"status": "full_match", "before": 1, "after": 0, "entered": 0, "left": 1},
+        "upside_percent": {"before": {key: pytest.approx(upside_before) for key in ("p10", "p25", "median", "p75", "p90")},
+                           "after": {key: pytest.approx(upside_after) for key in ("p10", "p25", "median", "p75", "p90")},
+                           "change_pp": {"median": pytest.approx(upside_after - upside_before), "p10": pytest.approx(upside_after - upside_before),
+                                         "p90": pytest.approx(upside_after - upside_before), "abs_median": pytest.approx(upside_before - upside_after),
+                                         "abs_p90": pytest.approx(upside_before - upside_after)}},
+        "score_change": {"median": -1.0, "p10": -1.0, "p90": -1.0, "abs_median": 1.0, "abs_p90": 1.0},
+        "tp_validation": None,  # the US rows carry no TP validation
+    }
+    assert report["markets"]["B3"]["status"] == {"before": {"full_match": 3}, "after": {"near_buy": 3}, "changed": 3, "transitions": {"full_match->near_buy": 3}}
+    assert report["markets"]["B3"]["buy"] == {"status": "full_match", "before": 3, "after": 0, "entered": 0, "left": 3} and report["markets"]["B3"]["served_pairs"] == 3
+    assert report["markets"]["B3"]["tp_change_buckets"] == {"down": 2, "flat": 0, "up": 1, "abs": {"lt_1pct": 0, "1_to_5pct": 2, "5_to_10pct": 0, "10_to_25pct": 1, "ge_25pct": 0}}
     assert report["markets"]["NYSE"]["n"] == 1 and report["markets"]["NYSE"]["tp"]["median"] == pytest.approx(68.0 / 70.0 - 1)
     # the aggregate names no symbol; its hash is the canonical hash of everything but itself, and it is stable
     printable = json.dumps(report, sort_keys=True)
@@ -384,31 +424,46 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     # the detail exists only in the private file, named symbol by symbol, and its bytes hash to the aggregate's private_detail_sha256
     assert hashlib.sha256(detail_path.read_bytes()).hexdigest() == report["private_detail_sha256"]
     detail = json.loads(detail_path.read_text(encoding="utf-8"))
-    assert detail["schema"] == "VALUATION_P1_BEFORE_AFTER_V2_DETAIL" and detail["generation_id"] == generation["generation_id"]
+    assert detail["schema"] == "VALUATION_P1_BEFORE_AFTER_V3_DETAIL" and detail["generation_id"] == generation["generation_id"]
     assert detail["markets"]["B3"]["missing_internal"] == ["BBDC4"] and set(detail["markets"]["B3"]["pairs"]) == {"PETR4", "VALE3", "ITUB4"}
-    assert detail["markets"]["B3"]["pairs"]["ITUB4"] == {"tp_blend": 30.0, "tp_internal": 33.0, "tp_ratio": pytest.approx(0.1), "buy_in_blend": 25.0, "buy_in_internal": 27.5, "buy_in_ratio": pytest.approx(0.1)}
+    assert detail["markets"]["B3"]["only_internal"] == []
+    assert detail["markets"]["B3"]["pairs"]["ITUB4"] == {"tp_blend": 30.0, "tp_internal": 33.0, "tp_ratio": pytest.approx(0.1), "buy_in_blend": 25.0, "buy_in_internal": 27.5,
+                                                         "buy_in_ratio": pytest.approx(0.1), "status_blend": "full_match", "status_internal": "near_buy",
+                                                         "upside_blend": pytest.approx((30.0 / 27.0 - 1) * 100), "upside_internal": pytest.approx((33.0 / 27.0 - 1) * 100),
+                                                         "score_blend": 80.0, "score_internal": 79.0, "validated_blend": False, "validated_internal": False,
+                                                         "rating_blend": "ACUMULAR", "rating_internal": "ACUMULAR"}
     # a market with NO pair reports n = 0 and null statistics (never a fabricated number)
     empty = _database()
     _publish_universe(empty, "B3", [_row("PETR4", tp=40.0, buy_in=32.0, price=36.0, internal_tp=39.0)], NOW)
     _publish_universe(empty, "NASDAQ", [_row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0, internal_buy_in=196.0)], NOW + timedelta(minutes=1))
     _publish_universe(empty, "NYSE", [_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0, internal_buy_in=58.0)], NOW + timedelta(minutes=2))
-    assert official.before_after_report(empty)["markets"]["B3"] == {"n": 0, "missing_internal": 1, "tp": {"median": None, "p90": None, "abs_median": None, "abs_p90": None},
-                                                                     "buy_in": {"median": None, "p90": None, "abs_median": None, "abs_p90": None}}
+    null_stats = {"median": None, "p10": None, "p90": None, "abs_median": None, "abs_p90": None}
+    null_quantiles = {"p10": None, "p25": None, "median": None, "p75": None, "p90": None}
+    assert official.before_after_report(empty)["markets"]["B3"] == {
+        "n": 0, "missing_internal": 1, "only_internal": 0, "served_pairs": 0, "before_unservable": 0, "after_unservable": 0, "tp": null_stats, "buy_in": null_stats,
+        "tp_change_buckets": {"down": 0, "flat": 0, "up": 0, "abs": {"lt_1pct": 0, "1_to_5pct": 0, "5_to_10pct": 0, "10_to_25pct": 0, "ge_25pct": 0}},
+        "status": {"before": {}, "after": {}, "changed": 0, "transitions": {}}, "rating": {"before": {}, "after": {}, "changed": 0, "transitions": {}},
+        "buy": {"status": "full_match", "before": 0, "after": 0, "entered": 0, "left": 0},
+        "upside_percent": {"before": null_quantiles, "after": null_quantiles, "change_pp": null_stats}, "score_change": null_stats, "tp_validation": None,
+    }
     # the CLI prints the aggregate only; the detail goes to --private-detail; --private-detail alone is refused
     monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
     monkeypatch.setattr("app.database.Database", lambda settings: database)
+    monkeypatch.setenv("C3PO_BUILD_SHA", PRODUCER)
     cli_detail = tmp_path / "cli_detail.json"
     assert official.main(["--before-after", "--private-detail", str(cli_detail)]) == 0
     printed = json.loads(capsys.readouterr().out)
-    assert printed == json.loads(json.dumps(report)) and "PETR4" not in json.dumps(printed) and cli_detail.read_bytes() == detail_path.read_bytes()
+    assert printed == json.loads(json.dumps(official.attest_before_after(report, producer_build_sha=PRODUCER))) and "PETR4" not in json.dumps(printed) and cli_detail.read_bytes() == detail_path.read_bytes()
     with pytest.raises(SystemExit):
         official.main(["--private-detail", str(cli_detail)])
     # the CLI publishes the receipt of a PROPOSAL too (C395-1): --cycles overlays the head's cycles, --targeted/--purge-targeted set the admissions,
     # --source-version the declared version; each equals the library call the order recomputes
     assert official.main(["--before-after", "--purge-targeted"]) == 0
-    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles=generation["cycles"], targeted={})))
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.attest_before_after(
+        official.before_after_report(database, cycles=generation["cycles"], targeted={}), producer_build_sha=PRODUCER)))
     assert official.main(["--before-after", "--cycles", f"B3={b3}", "--source-version", "9"]) == 0
-    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles={**generation["cycles"], "B3": b3}, targeted={}, source_version="9")))
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.attest_before_after(
+        official.before_after_report(database, cycles={**generation["cycles"], "B3": b3}, targeted={}, source_version="9"), producer_build_sha=PRODUCER)))
     for argv in (["--cycles", f"B3={b3}"], ["--before-after", "--targeted", "WEGE3=x", "--purge-targeted"], ["--before-after", "--cycles", "B3"],
                  ["--before-after", "--cycles", "B33=nonexistent-cycle"], ["--before-after", "--cycles", f"B3={b3}", "--cycles", f"B3={b3}"],
                  ["--before-after", "--targeted", "WEGE3=x", "--targeted", "wege3=y"]):  # unknown market / twice (case-insensitive): refused, never ignored
@@ -424,6 +479,7 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     complete_cycles = _three_markets(complete)
     complete_report = official.before_after_report(complete)
     assert all(item["missing_internal"] == 0 for item in complete_report["markets"].values())
+    _authorize(monkeypatch, complete_report["report_sha256"])
     switched = official.select_generation(complete, cycles=complete_cycles, now=_wall(), activated_by="mesa", reason="P1", source=SOURCE_INTERNAL, source_version="7",
                                           before_after_sha256=complete_report["report_sha256"])
     assert switched["receipt"]["source_switch"]["before_after_sha256"] == complete_report["report_sha256"]
@@ -461,6 +517,7 @@ def test_q1_the_switch_must_cite_the_receipt_of_the_generation_in_force_not_any_
     # the receipt of the head is accepted, and the generation carries exactly that hash
     report_g1 = official.before_after_report(database)
     assert report_g1["report_sha256"] != report_g0["report_sha256"] and report_g1["generation_id"] == g1["generation_id"] and report_g1["targeted_cycles"] == 1
+    _authorize(monkeypatch, report_g1["report_sha256"])
     switched = official.select_generation(database, cycles=cycles, targeted={"WEGE3": wege}, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL,
                                           before_after_sha256=report_g1["report_sha256"])
     assert switched["source"] == SOURCE_INTERNAL and switched["receipt"]["source_switch"]["before_after_sha256"] == report_g1["report_sha256"]
@@ -642,8 +699,8 @@ def test_q6_a_switch_without_an_explicit_source_version_stamps_the_cycles_versio
     cycles = _three_markets(database)
     g0 = official.current_generation(database)
     assert g0 is not None and g0["source_version"] == "7"
-    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
     report = official.before_after_report(database)
+    _authorize(monkeypatch, report["report_sha256"])
     g1 = official.select_generation(database, cycles=cycles, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, before_after_sha256=report["report_sha256"])
     assert g1["source"] == SOURCE_INTERNAL and g1["source_version"] == "7" and official.official_row(database, "US", "AAPL")["tp_source_version"] == "7"  # type: ignore[index]
     assert official.official_stamp(database, "B3")["tp_source_version"] == "7"
@@ -654,8 +711,8 @@ def test_q6_a_switch_without_an_explicit_source_version_stamps_the_cycles_versio
     monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", False)
     rolled = official.select_generation(database, cycles=auto["cycles"], now=_wall(), activated_by="mesa", reason="rollback")
     assert rolled["source"] == SOURCE_BLEND and rolled["source_version"] == "rollback"  # Passo 0 behaviour, unchanged
-    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
     report = official.before_after_report(database)
+    _authorize(monkeypatch, report["report_sha256"])
     mixed = official.select_generation(database, cycles=auto["cycles"], now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, before_after_sha256=report["report_sha256"])
     assert mixed["source_version"] == "7+8"
     # the mesa's explicit declaration wins when given, on both paths
@@ -669,6 +726,7 @@ def test_q6_a_switch_without_an_explicit_source_version_stamps_the_cycles_versio
                                    before_after_sha256=report["report_sha256"])
     report = official.before_after_report(database, source_version="8")
     assert report["after_source_version"] == "8"
+    _authorize(monkeypatch, report["report_sha256"])
     declared = official.select_generation(database, cycles=auto["cycles"], now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, source_version="8",
                                           before_after_sha256=report["report_sha256"])
     assert declared["source_version"] == "8" and declared["receipt"]["source_switch"]["from"] == SOURCE_BLEND
@@ -710,6 +768,7 @@ def test_c395_1_the_cited_hash_binds_the_proposed_cycles_and_targeted_admissions
     with pytest.raises(ValueError, match="EXACTLY the cycles and targeted admissions"):  # a receipt WITH the admission does not authorize dropping it
         official.select_generation(database, cycles=proposal, targeted={}, now=_wall(), activated_by="mesa", reason="switch",
                                    source=SOURCE_INTERNAL, before_after_sha256=with_targeted["report_sha256"])
+    _authorize(monkeypatch, approved["report_sha256"])
     switched = official.select_generation(database, cycles=proposal, targeted={}, now=_wall(), activated_by="mesa", reason="switch",
                                           source=SOURCE_INTERNAL, before_after_sha256=approved["report_sha256"])
     assert switched["cycles"]["B3"] == benign and switched["source"] == SOURCE_INTERNAL and switched["receipt"]["source_switch"]["before_after_sha256"] == approved["report_sha256"]
@@ -718,3 +777,624 @@ def test_c395_1_the_cited_hash_binds_the_proposed_cycles_and_targeted_admissions
     same = official.before_after_report(database)
     assert same["after_cycles"] == official.current_generation(database)["cycles"]  # type: ignore[index]
     assert same == official.before_after_report(database, cycles=same["after_cycles"], targeted=official.current_generation(database)["targeted"])  # type: ignore[index]
+
+
+# ------------------------------------------------------------------------------------- rev 9: the residue closed, the receipt V3, the order as a command
+
+
+def test_r9_a_row_without_the_internal_view_is_never_selectable_for_the_internal_source_nor_served(monkeypatch: pytest.MonkeyPatch,
+                                                                                                    caplog: pytest.LogCaptureFixture) -> None:
+    # The declared residue of Passo 1: an internal TP served under the blend's status/score. Now the internal view is required —
+    # a cycle of the P1 code before rev 9 (internal buy-in, no view) is recorded, but invalid for the internal source, refused by
+    # the order, counted as unservable by the receipt; a hand-made internal generation over it serves NOTHING, loudly.
+    database = _database()
+    cycles = {
+        "B3": _publish_universe(database, "B3", [_row("PETR4", tp=40.0, buy_in=32.0, price=36.0, internal_tp=39.0, internal_buy_in=31.0, view=False)], NOW),
+        "NASDAQ": _publish_universe(database, "NASDAQ", [_row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0, internal_buy_in=196.0)], NOW + timedelta(minutes=1)),
+        "NYSE": _publish_universe(database, "NYSE", [_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0, internal_buy_in=58.0)], NOW + timedelta(minutes=2)),
+    }
+    record = database.valuation_prediction_record(cycles["B3"], "PETR4", source=SOURCE_INTERNAL)
+    assert record is not None and record["tp"] == 39.0 and record["decomposition"]["status"] is None  # recorded; its status is NOT the blend's
+    assert database.valuation_prediction_record(cycles["B3"], "PETR4", source=SOURCE_BLEND)["decomposition"]["status"] == "full_match"  # type: ignore[index]
+    view = official.selectable_cycles(database, source=SOURCE_INTERNAL)["B3"]
+    assert view["valid"] is False and view["invalid_rows"] == ["PETR4"] and official.selectable_cycles(database, source=SOURCE_BLEND)["B3"]["valid"] is True
+    report = official.before_after_report(database)
+    assert report["markets"]["B3"]["n"] == 1 and report["markets"]["B3"]["served_pairs"] == 0 and report["markets"]["B3"]["after_unservable"] == 1
+    assert report["markets"]["B3"]["status"]["before"] == {} and report["markets"]["NASDAQ"]["served_pairs"] == 1
+    assert "**Atenção:** 1 par(es) sem a visão interna" in official.before_after_markdown(report)
+    _authorize(monkeypatch, report["report_sha256"])
+    with pytest.raises(ValueError, match=f"cycle for B3 is not complete/valid/recorded for source {SOURCE_INTERNAL}"):
+        official.select_generation(database, cycles=cycles, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, before_after_sha256=report["report_sha256"])
+    # a hand-made internal generation over that cycle (as a hand edit would plant it): the B3 record is not served, the others are
+    head = official.current_generation(database)
+    assert head is not None
+    planted = {**head, "generation_id": "hand-made", "source": SOURCE_INTERNAL, "previous_generation_id": head["generation_id"],
+               "activated_at": (official._utc(head["activated_at"]) + timedelta(microseconds=1)).isoformat()}
+    database._valuation_official_selections.append(planted)
+    database.drop_official_cycle_cache()
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    assert official.official_row(database, "B3", "PETR4") is None and official.official_rows(database, "B3") == {}
+    aapl = official.official_row(database, "US", "AAPL")
+    assert aapl is not None and aapl["our_tp"] == 245.0 and aapl["status"] == "near_buy" and aapl["score"] == 79.0 and aapl["expected_total_return_percent"] == 20.5
+    messages = [(record.levelno, record.getMessage()) for record in caplog.records if "has no internal view" in record.getMessage()]
+    assert [level for level, _ in messages] == [logging.WARNING, logging.INFO] and all("B3/PETR4" in message for _, message in messages)  # once per record, then INFO
+    # the optional part of the view (B3: the TP validation its status depends on) is served when the producer emits it
+    row = _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0, tp_validation_status="validated",
+               internal_tp_validation_status="review_required", internal_tp_validation_reasons=["Target price is outside the plausibility range"])
+    assert official.internal_view(row) == {"score": 79.0, "status": "near_buy", "expected_total_return_percent": 20.5, "tp_validation_status": "review_required",
+                                           "tp_validation_reasons": ["Target price is outside the plausibility range"]}
+    internal = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, source=SOURCE_INTERNAL)
+    assert internal is not None and internal["decomposition"]["tp_validation_status"] == "review_required" and internal["decomposition"]["status"] == "near_buy"
+    served = official._served(row, internal, generation=planted, cycle_id="c", scope="universe", market="B3")
+    assert served is not None and served["tp_validation_status"] == "review_required" and served["tp_validation_reasons"] == row["internal_tp_validation_reasons"]
+    served["tp_validation_reasons"].append("mutated")
+    assert row["internal_tp_validation_reasons"] == ["Target price is outside the plausibility range"]  # a copy
+    for broken in ({"internal_score": None}, {"internal_status": ""}, {"internal_expected_total_return_percent": float("nan")}):
+        assert official.internal_view({**row, **broken}) is None and official._usable({**row, **broken}, SOURCE_INTERNAL) is False
+        assert official._usable({**row, **broken}, SOURCE_BLEND) is True  # the blend never needs it
+
+
+def test_r9_the_switch_must_cite_exactly_the_receipt_the_lock_commit_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The lock commit names the receipt the owner accepted; the order must cite exactly it AND it must be the receipt recomputed
+    # on the head over the order's proposal. A lock without a named receipt (None, a placeholder) switches nothing.
+    database = _database()
+    cycles = _three_markets(database)
+    report = official.before_after_report(database)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+
+    def order(cited: str) -> dict[str, Any]:
+        return official.select_generation(database, cycles=cycles, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, before_after_sha256=cited)
+
+    for named in (None, "PENDING-OWNER-ACCEPTANCE", report["report_sha256"].upper()):
+        monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", named)
+        with pytest.raises(ValueError, match="the lock commit names no accepted before/after receipt"):
+            order(report["report_sha256"])
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", "f" * 64)  # another receipt accepted
+    with pytest.raises(ValueError, match="is the receipt of the generation in force over this proposal but not the accepted one"):
+        order(report["report_sha256"])
+    with pytest.raises(ValueError, match="does not match its report_sha256"):  # citing the accepted hash on a head it is not the receipt of
+        order("f" * 64)
+    assert len(database._valuation_official_selections) == 1  # nothing written by any refusal
+    # the head moves after the acceptance (a targeted admission): the accepted receipt no longer recomputes, and the new one is not accepted
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", report["report_sha256"])
+    wege = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0), _wall())
+    moved = official.before_after_report(database)
+    with pytest.raises(ValueError, match="does not match its report_sha256"):
+        official.select_generation(database, cycles=cycles, targeted={"WEGE3": wege}, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL,
+                                   before_after_sha256=report["report_sha256"])
+    with pytest.raises(ValueError, match="not the accepted one"):
+        official.select_generation(database, cycles=cycles, targeted={"WEGE3": wege}, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL,
+                                   before_after_sha256=moved["report_sha256"])
+    # a new acceptance (a new lock commit naming the new receipt) lands; the rollback never needs any of it
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", moved["report_sha256"])
+    switched = official.select_generation(database, cycles=cycles, targeted={"WEGE3": wege}, now=_wall(), activated_by="mesa", reason="switch",
+                                          source=SOURCE_INTERNAL, before_after_sha256=moved["report_sha256"])
+    assert switched["source"] == SOURCE_INTERNAL and switched["receipt"]["source_switch"]["before_after_sha256"] == moved["report_sha256"]
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", False)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256", None)
+    rolled = official.select_generation(database, cycles=cycles, now=_wall(), activated_by="mesa", reason="rollback")
+    assert rolled["source"] == SOURCE_BLEND
+
+
+def test_r9_the_receipt_and_its_markdown_name_no_symbol_and_the_cli_appends_the_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                                        capsys: pytest.CaptureFixture[str]) -> None:
+    database = _database()
+    _publish_universe(database, "B3", [
+        _row("PETR4", tp=40.0, buy_in=32.0, price=36.0, internal_tp=39.0, internal_buy_in=31.0),                                 # full_match → near_buy (the default view)
+        _row("VALE3", tp=70.0, buy_in=60.0, price=62.0, internal_tp=80.0, internal_buy_in=66.0, status="near_buy", internal_status="full_match", internal_score=85.0),
+        _row("ITUB4", tp=30.0, buy_in=25.0, price=27.0, internal_tp=30.0, internal_buy_in=25.0, status="watchlist", internal_status="watchlist", internal_score=80.0,
+             tp_validation_status="validated", internal_tp_validation_status="validated"),
+    ], NOW)
+    _publish_universe(database, "NASDAQ", [_row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0, internal_buy_in=196.0)], NOW + timedelta(minutes=1))
+    _publish_universe(database, "NYSE", [_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0, internal_buy_in=58.0)], NOW + timedelta(minutes=2))
+    report = official.before_after_report(database)
+    b3 = report["markets"]["B3"]
+    assert b3["status"] == {"before": {"full_match": 1, "near_buy": 1, "watchlist": 1}, "after": {"full_match": 1, "near_buy": 1, "watchlist": 1}, "changed": 2,
+                            "transitions": {"full_match->near_buy": 1, "near_buy->full_match": 1}}
+    assert b3["buy"] == {"status": "full_match", "before": 1, "after": 1, "entered": 1, "left": 1}
+    assert b3["tp_change_buckets"] == {"down": 1, "flat": 1, "up": 1, "abs": {"lt_1pct": 1, "1_to_5pct": 1, "5_to_10pct": 0, "10_to_25pct": 1, "ge_25pct": 0}}
+    assert b3["tp_validation"] == {"before_validated": 1, "after_validated": 1} and report["markets"]["NYSE"]["tp_validation"] is None
+    assert b3["score_change"]["median"] == pytest.approx(0.0) and b3["score_change"]["p90"] == pytest.approx(0.2 * 0.0 + 0.8 * 5.0)  # −1, 0, +5 (the internal view)
+    markdown = official.before_after_markdown(report)
+    symbols = ("PETR4", "VALE3", "ITUB4", "AAPL", "KO")
+    assert not any(symbol in json.dumps(report) or symbol in markdown for symbol in symbols)
+    assert report["report_sha256"] in markdown and "| B3 | 3 | 0 | 3 | 0 | 1 → 1 | 1 | 1 | 2 | 0 → 1 | 2 |" in markdown and "`full_match → near_buy` 1" in markdown
+    assert "| NASDAQ | 1 | 0 | 1 | 0 | 1 → 0 | 0 | 1 | 1 | 0 → 0 | 0 | -2,00 % | -2,00 % / -2,00 % |" in markdown and "**Atenção:**" not in markdown
+    # F3: the One Pager rating of the served upside, per arm — the candidate gate is no longer called "COMPRA"
+    assert b3["rating"] == {"before": {"ACUMULAR": 3}, "after": {"ACUMULAR": 1, "COMPRA": 1, "NEUTRO": 1}, "changed": 2,
+                            "transitions": {"ACUMULAR->COMPRA": 1, "ACUMULAR->NEUTRO": 1}}  # +11,1/+12,9/+11,1 % → +8,3/+29,0/+11,1 %
+    assert "Rating do One Pager — antes: ACUMULAR 3; depois: ACUMULAR 1, COMPRA 1, NEUTRO 1; mudanças: ACUMULAR → COMPRA 1, ACUMULAR → NEUTRO 1." in markdown
+    assert "COMPRA ≥ 25 %, ACUMULAR ≥ 10 %, NEUTRO ≥ -10 %, REDUZIR abaixo" in markdown and "COMPRA = status" not in markdown
+    assert "- **Candidato** = status `full_match`" in markdown and "**não** é o rating do One Pager" in markdown
+    reordered = {**report, "rating_cuts": dict(sorted(report["rating_cuts"].items()))}  # a JSON reload keeps the cuts sorted by name: same text
+    assert official.before_after_markdown(reordered) == markdown
+    # the CLI prints the aggregate and APPENDS the summary (a CI step summary is an existing file); --markdown alone is refused
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    monkeypatch.setenv("C3PO_BUILD_SHA", PRODUCER)
+    summary = tmp_path / "step_summary.md"
+    summary.write_text("# earlier step\n", encoding="utf-8")
+    assert official.main(["--before-after", "--markdown", str(summary)]) == 0
+    attested = official.attest_before_after(report, producer_build_sha=PRODUCER)
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(attested))
+    assert official.main(["--before-after", "--markdown", str(summary)]) == 0
+    capsys.readouterr()
+    attested_markdown = official.before_after_markdown(attested)  # the CLI renders the ATTESTED receipt: it names its producer
+    assert attested_markdown.replace(f"- Produzido pela revisão implantada `{PRODUCER}` (`receipt_sha256` `{attested['receipt_sha256']}`: "
+                                     "o recibo com a identidade do produtor)\n", "") == markdown
+    assert summary.read_text(encoding="utf-8") == "# earlier step\n" + attested_markdown + attested_markdown
+    for argv in (["--markdown", str(summary)], ["--health", "--markdown", str(summary)]):
+        with pytest.raises(SystemExit):
+            official.main(argv)
+
+
+def test_r9_the_order_commands_execute_the_switch_and_the_rollback_over_the_receipts_proposal(monkeypatch: pytest.MonkeyPatch,
+                                                                                              capsys: pytest.CaptureFixture[str]) -> None:
+    database = _database()
+    cycles = _three_markets(database)
+    wege = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0), _wall())
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": wege}
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    for argv in (["--switch-to-internal", "--reason", "P1"], ["--switch-to-internal", "--before-after-sha256", "a" * 64],
+                 ["--rollback-to-blend"], ["--before-after", "--reason", "x"], ["--before-after", "--before-after-sha256", "a" * 64],
+                 ["--rollback-to-blend", "--reason", "x", "--before-after-sha256", "a" * 64], ["--switch-to-internal", "--before-after-sha256", "a" * 64, "--reason", " "]):
+        with pytest.raises(SystemExit):
+            official.main(argv)
+    # the receipt of the purge proposal, from the CLI; the order with the SAME proposal options cites it — refused while the lock is false
+    assert official.main(["--before-after", "--purge-targeted"]) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["after_targeted_count"] == 0 and receipt["targeted_cycles"] == 1
+    switch = ["--switch-to-internal", "--purge-targeted", "--before-after-sha256", receipt["report_sha256"], "--reason", "P1: owner accepted the receipt"]
+    with pytest.raises(ValueError, match="official_tp_replacement_authorized is false"):
+        official.main(switch)
+    _authorize(monkeypatch, receipt["report_sha256"])
+    assert official.main(switch) == 0
+    printed = json.loads(capsys.readouterr().out)
+    generation = official.current_generation(database)
+    assert generation is not None and generation["source"] == SOURCE_INTERNAL and generation["targeted"] == {} and generation["cycles"] == cycles
+    assert printed == {"generation_id": generation["generation_id"], "previous_generation_id": head["generation_id"], "source": SOURCE_INTERNAL, "source_version": "7",
+                       "activated_at": generation["activated_at"], "cycles": cycles, "targeted_count": 0, "targeted_sha256": official.canonical_sha256({}),
+                       "source_switch": {"from": SOURCE_BLEND, "to": SOURCE_INTERNAL, "before_after_sha256": receipt["report_sha256"]}, "explicit": True,
+                       "freeze": None, "ended_freeze": None}
+    assert generation["receipt"]["reason"] == "P1: owner accepted the receipt" and generation["activated_by"] == "mesa"
+    assert official.official_row(database, "US", "AAPL")["status"] == "near_buy"  # type: ignore[index]  # served with the internal view
+    # the rollback: the same path, never locked, no hash — over the head's own composition unless a proposal is given; no symbol printed
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", False)
+    assert official.main(["--rollback-to-blend", "--targeted", f"WEGE3={wege}", "--reason", "drill"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    rolled = official.current_generation(database)
+    assert rolled is not None and rolled["source"] == SOURCE_BLEND and rolled["targeted"] == {"WEGE3": wege} and rolled["source_version"] == "rollback"
+    assert printed["source_switch"] == {"from": SOURCE_INTERNAL, "to": SOURCE_BLEND, "before_after_sha256": None} and printed["targeted_count"] == 1
+    assert "WEGE3" not in json.dumps(printed) and printed["targeted_sha256"] == official.canonical_sha256({"WEGE3": wege})
+    assert official.official_row(database, "US", "AAPL")["status"] == "full_match"  # type: ignore[index]  # the blend's view again
+
+
+# ------------------------------------------------------------------------------------- cross-review of rev 9 (F1–F3)
+
+
+def _noon_zone() -> timezone:
+    """A fixed zone where the wall clock reads about noon: a freeze of a few hours never reaches ITS midnight, whenever the
+    suite runs (the real ``FREEZE_NIGHTLY_ZONE`` bound is tested on its own)."""
+    return timezone(timedelta(hours=12 - datetime.now(timezone.utc).hour))
+
+
+def test_f1_the_freeze_holds_the_head_from_the_receipt_to_the_order(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    # F1: the lock commit is reviewed, merged and deployed AFTER the owner accepts the receipt; meanwhile the IR worker republished
+    # the B3 universe (a new cycle → a new head) and the accepted receipt no longer recomputed: the order was refused. The mesa's
+    # freeze re-selects the head's own composition and holds every automatic writer; the order lands on it and ends it.
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    database = _database()
+    cycles = _three_markets(database)
+    wege = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0), _wall())
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": wege}
+    served = official.official_row(database, "B3", "PETR4")
+    wall = _wall()
+    frozen = official.freeze_selection(database, now=wall, until=wall + timedelta(hours=8), reason="P1: congela até a ordem", activated_by="mesa")
+    # the head's own composition, a new generation id, an explicit order carrying the freeze — nothing served changes but the stamp
+    assert {key: frozen[key] for key in ("cycles", "targeted", "source", "source_version", "session_dates")} == \
+        {key: head[key] for key in ("cycles", "targeted", "source", "source_version", "session_dates")}
+    assert frozen["previous_generation_id"] == head["generation_id"] and frozen["activated_by"] == "mesa"
+    assert frozen["receipt"] == {"reason": "P1: congela até a ordem", "explicit": True,
+                                 "freeze": {"until": official._utc(wall + timedelta(hours=8)).isoformat(), "of_generation": head["generation_id"]}}
+    again = official.official_row(database, "B3", "PETR4")
+    assert again is not None and served is not None and again["generation_id"] == frozen["generation_id"]
+    assert {k: v for k, v in again.items() if k != "generation_id"} == {k: v for k, v in served.items() if k != "generation_id"}
+    health = official.selection_health(database, now=_wall())
+    assert health["freeze"] == {"generation_id": frozen["generation_id"], "until": frozen["receipt"]["freeze"]["until"], "reason": "P1: congela até a ordem"}
+    assert "frozen by the mesa's order until" in health["detail"] and health["status"] in {"ok", "stale"}
+    # the receipt on the frozen head, over the proposal the order will carry (the valid targeted admissions kept, F2)
+    proposal = official.targeted_valid_for(database, frozen)
+    assert proposal == {"WEGE3": wege}
+    report = official.before_after_report(database, cycles=frozen["cycles"], targeted=proposal)
+    assert report["generation_id"] == frozen["generation_id"]
+    # the window: an IR republish of the B3 universe, a One Pager's targeted cycle, the deploy's bootstrap — nothing moves the head
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    b3_ir = _publish_universe(database, "B3", [_row("PETR4", tp=41.0, buy_in=33.0, price=36.0, internal_tp=40.0, internal_buy_in=32.0),
+                                               _row("VALE3", tp=70.0, buy_in=60.0, price=62.0, internal_tp=69.0, internal_buy_in=59.0)], _wall())
+    itsa = _targeted(database, "ITSA4", _row("ITSA4", tp=12.0, buy_in=10.0, price=11.0, internal_tp=11.8, internal_buy_in=9.8), _wall())
+    assert official.bootstrap_official_selection(database)["generation"] == frozen
+    assert official.current_generation(database) == frozen
+    assert database.valuation_prediction_record(b3_ir, "PETR4", source=SOURCE_INTERNAL) is not None  # recorded all the same (records first)
+    assert any("frozen by the mesa's order" in record.getMessage() and record.levelno == logging.INFO for record in caplog.records)
+    assert any(f"targeted cycle {itsa} for ITSA4 not admitted — the selection is frozen" in record.getMessage() for record in caplog.records)
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+    # the order (after the lock commit's deploy): the accepted receipt still recomputes on the frozen head — it lands and ends the freeze
+    _authorize(monkeypatch, report["report_sha256"])
+    switched = official.select_generation(database, cycles=frozen["cycles"], targeted=proposal, now=_wall(), activated_by="mesa", reason="P1 switch",
+                                          source=SOURCE_INTERNAL, before_after_sha256=report["report_sha256"])
+    assert switched["source"] == SOURCE_INTERNAL and switched["previous_generation_id"] == frozen["generation_id"]
+    assert switched["receipt"]["ended_freeze"] == {"generation_id": frozen["generation_id"], "until": frozen["receipt"]["freeze"]["until"]}
+    assert official.selection_freeze(switched, now=_wall()) is None and official.selection_health(database, now=_wall())["freeze"] is None
+    assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 49.0  # type: ignore[index]  # the kept targeted admission, internal
+    # the automatic writers chain again: a cycle published after the order is activated in the internal source
+    b3_after = _publish_universe(database, "B3", [_row("PETR4", tp=42.0, buy_in=33.0, price=36.0, internal_tp=41.5, internal_buy_in=32.5),
+                                                  _row("VALE3", tp=70.0, buy_in=60.0, price=62.0, internal_tp=69.0, internal_buy_in=59.0)], _wall())
+    latest = official.current_generation(database)
+    assert latest is not None and latest["cycles"]["B3"] == b3_after and latest["source"] == SOURCE_INTERNAL
+    assert official.official_row(database, "B3", "PETR4")["our_tp"] == 41.5  # type: ignore[index]
+    assert cycles["NASDAQ"] == latest["cycles"]["NASDAQ"]
+
+
+def test_f1_a_freeze_ends_by_itself_and_the_cycles_of_its_window_are_then_activated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    database = _database()
+    cycles = _three_markets(database)
+    wall = _wall()
+    frozen = official.freeze_selection(database, now=wall, until=wall + timedelta(milliseconds=300), reason="short", activated_by="mesa")
+    b3_window = _publish_universe(database, "B3", [_row("PETR4", tp=41.0, buy_in=33.0, price=36.0, internal_tp=40.0, internal_buy_in=32.0)], _wall())
+    assert official.current_generation(database) == frozen
+    time.sleep(0.35)
+    # past `until` the first pass composes the window's cycle — predicted AFTER the freeze order, so W1 lets it in
+    activated = official.bootstrap_official_selection(database)["generation"]
+    assert activated is not None and activated["cycles"] == {**cycles, "B3": b3_window} and activated["activated_by"] == official.ACTIVATED_BY
+    assert activated["receipt"]["explicit_order"] == frozen["generation_id"] and "explicit" not in activated["receipt"]
+    # the pure reading: bounded by until, by activated_at + FREEZE_MAX, explicit orders only
+    at = official._utc(frozen["activated_at"])
+    until = official._utc(frozen["receipt"]["freeze"]["until"])
+    assert official.selection_freeze(frozen, now=until - timedelta(microseconds=1)) is not None and official.selection_freeze(frozen, now=until) is None
+    unbounded = {**frozen, "receipt": {**frozen["receipt"], "freeze": {"until": (at + timedelta(days=3)).isoformat()}}}
+    assert official.selection_freeze(unbounded, now=at + official.FREEZE_MAX - timedelta(seconds=1))["until"] == (at + official.FREEZE_MAX).isoformat()  # type: ignore[index]
+    assert official.selection_freeze(unbounded, now=at + official.FREEZE_MAX) is None
+    unreadable = {**frozen, "receipt": {**frozen["receipt"], "freeze": {"until": "tomorrow"}}}
+    assert official.selection_freeze(unreadable, now=at)["until"] == (at + official.FREEZE_MAX).isoformat()  # type: ignore[index]
+    automatic = {**frozen, "receipt": {key: value for key, value in frozen["receipt"].items() if key != "explicit"}}
+    assert official.selection_freeze(automatic, now=at) is None and official.selection_freeze(None, now=at) is None
+
+
+def test_f1_the_freeze_refusals_and_the_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    empty = _database()
+    wall = _wall()
+    with pytest.raises(ValueError, match="nothing to freeze"):
+        official.freeze_selection(empty, now=wall, until=wall + timedelta(minutes=5), reason="x", activated_by="mesa")
+    database = _database()
+    _three_markets(database)
+    head = official.current_generation(database)
+    wall = _wall()
+    for until, message in ((wall.replace(tzinfo=None) + timedelta(hours=1), "must be an aware instant"), (wall, "is not after the order's clock"),
+                           (wall + official.FREEZE_MAX + timedelta(minutes=1), "is too far")):
+        with pytest.raises(ValueError, match=message):
+            official.freeze_selection(database, now=wall, until=until, reason="x", activated_by="mesa")
+    # the real nightly bound: never past the next midnight in São Paulo, whatever FREEZE_MAX would allow
+    local = wall.astimezone(official.FREEZE_NIGHTLY_ZONE)
+    midnight = datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tzinfo=official.FREEZE_NIGHTLY_ZONE)
+    with pytest.raises(ValueError, match="never past the nightly cycle"):
+        official.freeze_selection(database, now=wall, until=midnight + timedelta(minutes=1), reason="x", activated_by="mesa")
+    with pytest.raises(ValueError, match="is in the future"):
+        official.freeze_selection(database, now=wall + timedelta(minutes=5), until=wall + timedelta(minutes=30), reason="x", activated_by="mesa")
+    assert official.current_generation(database) == head  # nothing written by any refusal
+    unknown = _database()
+    _three_markets(unknown)
+    unknown_head = official.current_generation(unknown)
+    assert unknown_head is not None
+    unknown._valuation_official_selections.append({**unknown_head, "generation_id": "unknown-source", "source": "v3_2_shadow",  # a hand edit (Q3)
+                                                   "previous_generation_id": unknown_head["generation_id"],
+                                                   "activated_at": (official._utc(unknown_head["activated_at"]) + timedelta(microseconds=1)).isoformat()})
+    unknown.drop_official_cycle_cache()
+    with pytest.raises(ValueError, match="roll back to the blend by explicit order first"):
+        official.freeze_selection(unknown, now=_wall(), until=_wall() + timedelta(minutes=5), reason="x", activated_by="mesa")
+    # the CLI: --freeze-selection --until (with its offset) --reason; prints the generation without symbols, with the freeze
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    until = (datetime.now(timezone.utc) + timedelta(hours=2)).astimezone(timezone(timedelta(hours=-3))).replace(microsecond=0)
+    for argv in (["--freeze-selection", "--reason", "x"], ["--freeze-selection", "--until", until.isoformat()], ["--health", "--until", until.isoformat()],
+                 ["--freeze-selection", "--until", until.replace(tzinfo=None).isoformat(), "--reason", "x"],
+                 ["--freeze-selection", "--until", "amanhã", "--reason", "x"],
+                 ["--freeze-selection", "--until", until.isoformat(), "--reason", "x", "--purge-targeted"],
+                 ["--before-after", "--purge-targeted", "--keep-internal-targeted"], ["--before-after", "--targeted", "WEGE3=x", "--keep-internal-targeted"]):
+        with pytest.raises(SystemExit):
+            official.main(argv)
+    assert official.current_generation(database) == head
+    assert official.main(["--freeze-selection", "--until", until.isoformat(), "--reason", "P1: recibo de terça"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    frozen = official.current_generation(database)
+    assert frozen is not None and printed["generation_id"] == frozen["generation_id"] and printed["previous_generation_id"] == head["generation_id"]  # type: ignore[index]
+    assert printed["freeze"] == {"until": official._utc(until).isoformat(), "of_generation": head["generation_id"]} and printed["explicit"] is True  # type: ignore[index]
+    assert printed["ended_freeze"] is None and printed["source"] == SOURCE_BLEND and printed["targeted_count"] == 0
+    assert official.main(["--health"]) == 0
+    assert json.loads(capsys.readouterr().out)["freeze"]["generation_id"] == frozen["generation_id"]
+    # the rollback (never locked) ends it too, over the head's composition
+    assert official.main(["--rollback-to-blend", "--source-version", "7", "--reason", "libera o congelamento"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["ended_freeze"]["generation_id"] == frozen["generation_id"] and printed["freeze"] is None
+    assert official.selection_frozen(database) is None
+
+
+def test_f1_the_ir_propagation_and_the_on_demand_b3_build_wait_while_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.ir_valuation import InvestorRelationsValuationProcessor
+    from app.market_data.b3_screener import B3ScreenerService
+
+    monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
+    database = _database()
+    cycles = _three_markets(database)
+    claims: list[int] = []
+
+    def claim(limit: int = 12) -> list[dict[str, Any]]:
+        claims.append(limit)
+        return []
+
+    monkeypatch.setattr(database, "claim_ir_valuation_updates", claim)
+    screener = B3ScreenerService(Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False), database, object())  # type: ignore[arg-type]
+    built: list[str] = []
+    monkeypatch.setattr(screener, "_build_targeted_valuation", lambda symbol: built.append(symbol) or {"symbol": symbol, "our_tp": 12.0})
+    monkeypatch.setattr(screener, "refresh_symbols", lambda symbols: pytest.fail("no B3 universe is republished while frozen"))
+    screener._matrix_rows = [{"symbol": "PETR4", "our_tp": 40.0}]
+    processor = InvestorRelationsValuationProcessor(database, screener)
+    assert processor.process() == {"claimed": 0, "updated": [], "targeted_only": [], "failed": []} and claims == [12]  # not frozen: claims as before
+    assert screener.valuation_for("ITSA4", build_if_missing=True) == {"symbol": "ITSA4", "our_tp": 12.0} and built == ["ITSA4"]
+    wall = _wall()
+    frozen = official.freeze_selection(database, now=wall, until=wall + timedelta(hours=4), reason="P1", activated_by="mesa")
+    until = frozen["receipt"]["freeze"]["until"]
+    # frozen: the queue is not even claimed (it keeps every update for the first poll after the order) and nothing is built on demand
+    assert processor.process() == {"claimed": 0, "updated": [], "targeted_only": [], "failed": [], "deferred_until": until} and claims == [12]
+    assert screener.valuation_for("ITSA4", build_if_missing=True) is None and built == ["ITSA4"]
+    assert screener.valuation_for("PETR4", build_if_missing=True) == {"symbol": "PETR4", "our_tp": 40.0}  # a current row is still answered
+    # the order (here the rollback, never locked) ends the freeze: both resume
+    official.select_generation(database, cycles=cycles, now=_wall(), activated_by="mesa", reason="libera", source_version="7")
+    processor.process()
+    assert claims == [12, 12]
+    assert screener.valuation_for("ITSA4", build_if_missing=True) is not None and built == ["ITSA4", "ITSA4"]
+
+
+def test_f2_keep_internal_targeted_keeps_the_valid_admissions_and_drops_only_the_ones_the_order_would_refuse(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    # F2: `--purge-targeted` also dropped valid rev-9 targeted cycles; a same-day one is never rebuilt by the producer that day
+    # (valuation_for answers the same-day snapshot), so its One Pager failed until the next day. The proposal now keeps them.
+    database = _database()
+    cycles = _three_markets(database)
+    old = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0, view=False), _wall())  # pre-rev 9
+    new = _targeted(database, "ITSA4", _row("ITSA4", tp=12.0, buy_in=10.0, price=11.0, internal_tp=11.8, internal_buy_in=9.8), _wall())  # rev 9
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"ITSA4": new, "WEGE3": old}
+    assert official.targeted_valid_for(database, head) == {"ITSA4": new} and official.targeted_valid_for(database, head, source=SOURCE_BLEND) == head["targeted"]
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    monkeypatch.setenv("C3PO_BUILD_SHA", PRODUCER)
+    assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt == json.loads(json.dumps(official.attest_before_after(official.before_after_report(database, cycles=cycles, targeted={"ITSA4": new}),
+                                                                         producer_build_sha=PRODUCER)))
+    assert receipt["targeted_cycles"] == 2 and receipt["after_targeted_count"] == 1 and "ITSA4" not in json.dumps(receipt)
+    assert receipt["markets"]["B3"]["missing_internal"] == 1  # the dropped pre-rev-9 admission: registered in the blend only
+    _authorize(monkeypatch, receipt["report_sha256"])
+    assert official.main(["--switch-to-internal", "--keep-internal-targeted", "--before-after-sha256", receipt["report_sha256"], "--reason", "P1"]) == 0
+    capsys.readouterr()
+    switched = official.current_generation(database)
+    assert switched is not None and switched["source"] == SOURCE_INTERNAL and switched["targeted"] == {"ITSA4": new}
+    assert official.official_row(database, "B3", "ITSA4")["our_tp"] == 11.8 and official.official_row(database, "B3", "WEGE3") is None  # type: ignore[index]
+
+
+def test_f3_the_rating_mirrors_the_pinned_one_pager_rule() -> None:
+    # the receipt's rating is the One Pager's: the same cuts, the same order, the floor below — read from the pinned file itself
+    cuts = official.ONE_PAGER_RATING_CUTS
+    expected = "rating = " + " else ".join(f'"{name}" if upside >= {cut:g}' for name, cut in cuts) + f' else "{official.ONE_PAGER_RATING_FLOOR}"'
+    assert expected in (APP / "one_pager.py").read_text(encoding="utf-8")
+    assert [official.one_pager_rating(value) for value in (25.0, 24.99, 10.0, 9.99, -10.0, -10.01, None, float("nan"), "12")] == \
+        ["COMPRA", "ACUMULAR", "ACUMULAR", "NEUTRO", "NEUTRO", "REDUZIR", None, None, "ACUMULAR"]
+
+
+# ------------------------------------------------------------------ the read-only workflow (report=before-after)
+WORKFLOW = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "valuation-readonly-report.yml"
+BACKEND = Path(__file__).resolve().parents[1]
+
+
+def _workflow_steps() -> dict[str, dict[str, Any]]:
+    import yaml
+
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    return {step["name"]: step for job in jobs.values() for step in job.get("steps", []) if step.get("name")}
+
+
+def _runner_script(step: dict[str, Any]) -> str:
+    """The Python a runner step carries in its ``<<'PY'`` heredoc, exactly as the workflow file has it."""
+    return str(step["run"]).split("<<'PY' || exit 1\n", 1)[1].split("\nPY\n", 1)[0]
+
+
+def test_the_readonly_workflow_publishes_the_before_after_receipt_aggregate_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                                capsys: pytest.CaptureFixture[str]) -> None:
+    """``report=before-after`` of ``valuation-readonly-report.yml``: the receipt the CLI prints (``--before-after
+    --keep-internal-targeted``) passes the workflow's own verifier (exact aggregate keys, ``report_sha256`` recomputed, the
+    producer's identity a commit under a ``receipt_sha256`` that recomputes); the second read-only exec renders
+    ``before_after_markdown`` from that receipt alone; the summary verifier binds it to the verified hashes and to the SAME
+    deployed build that produced the receipt; nothing written for upload or the step summary names a symbol. Each script is
+    run here as the workflow file carries it."""
+    import subprocess
+    import sys
+
+    steps = _workflow_steps()
+    database = _database()
+    _three_markets(database)
+    _targeted(database, "ITSA4", _row("ITSA4", tp=12.0, buy_in=10.0, price=11.0, internal_tp=11.8, internal_buy_in=9.8), _wall())
+    monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
+    monkeypatch.setattr("app.database.Database", lambda settings: database)
+    build = "b" * 40  # the deployed build, the same for both execs
+    monkeypatch.setenv("C3PO_BUILD_SHA", build)
+    assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
+    printed = capsys.readouterr().out
+    symbols = ("PETR4", "VALE3", "AAPL", "KO", "ITSA4")
+    assert printed.count("\n") == 1 and not any(symbol in printed for symbol in symbols)
+
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    raw.mkdir()
+    out.mkdir()
+    (raw / "before_after.json").write_text(printed, encoding="utf-8")
+    verify = _runner_script(steps["Verify the before/after receipt and keep the aggregate only"])
+
+    def verified(text: str) -> subprocess.CompletedProcess[str]:
+        (raw / "before_after.json").write_text(text, encoding="utf-8")
+        return subprocess.run([sys.executable, "-", str(raw / "before_after.json"), str(out)], input=verify, text=True, capture_output=True)
+
+    accepted = verified(printed)
+    assert accepted.returncode == 0, accepted.stderr
+    receipt = json.loads(printed)
+    assert receipt["producer_build_sha"] == build and receipt["after_targeted_count"] == 1
+    assert json.loads((out / "report.json").read_text(encoding="utf-8")) == receipt
+    assert receipt["report_sha256"] in accepted.stdout and build in accepted.stdout and not any(symbol in accepted.stdout for symbol in symbols)
+
+    # the second exec, as the remote script carries it: the receipt in (stdin), the markdown and the renderer's build out
+    remote = str(steps["Render the Portuguese summary in the running api container, read-only"]["run"])
+    render = remote.split("render='", 1)[1].split("'\n", 1)[0]
+
+    def rendered_under(renderer: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, "-c", render], input=(out / "report.json").read_text(encoding="utf-8"), text=True, capture_output=True,
+                              cwd=BACKEND, env={**os.environ, "PYTHONPATH": str(BACKEND), "C3PO_BUILD_SHA": renderer})
+
+    rendered = rendered_under(build)
+    assert rendered.returncode == 0, rendered.stderr
+    assert json.loads(rendered.stdout) == {"markdown": official.before_after_markdown(receipt), "renderer_build_sha": build}
+    summarize = _runner_script(steps["Verify the summary and keep aggregates only"])
+    env = {**os.environ, "RUN_ID": "7", "REVISION": "c" * 40, "GITHUB_STEP_SUMMARY": str(tmp_path / "step_summary.md")}
+
+    def summarized(text: str) -> subprocess.CompletedProcess[str]:
+        (raw / "summary.json").write_text(text, encoding="utf-8")
+        return subprocess.run([sys.executable, "-", str(raw / "summary.json"), str(out)], input=summarize, text=True, capture_output=True, env=env)
+
+    done = summarized(rendered.stdout)
+    assert done.returncode == 0, done.stderr
+    metadata = json.loads((out / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata == {"run_id": "7", "workflow_revision": "c" * 40, "producer_build_sha": build, "report": "before-after",
+                        "schema": official.BEFORE_AFTER_SCHEMA, "report_sha256": receipt["report_sha256"], "receipt_sha256": receipt["receipt_sha256"],
+                        "generation_id": receipt["generation_id"], "generation_source": SOURCE_BLEND, "after_source_version": receipt["after_source_version"]}
+    assert (out / "summary.md").read_text(encoding="utf-8") == official.before_after_markdown(receipt)
+    step_summary = (tmp_path / "step_summary.md").read_text(encoding="utf-8")
+    assert receipt["report_sha256"] in step_summary and f"pela revisão implantada `{build}`" in step_summary
+    published = [path.read_text(encoding="utf-8") for path in out.iterdir()] + [step_summary, done.stdout]
+    assert not any(symbol in text for text in published for symbol in symbols)
+
+    # the verifier refuses what is not exactly the aggregate, does not recompute, or does not name its producer — before anything is uploaded
+    def reattested(report: dict[str, Any], producer: Any) -> dict[str, Any]:
+        return official.attest_before_after({key: value for key, value in report.items() if key not in official.BEFORE_AFTER_ATTESTATION_KEYS},
+                                            producer_build_sha=producer)
+
+    bare = {key: value for key, value in receipt.items() if key not in official.BEFORE_AFTER_ATTESTATION_KEYS}
+    detail = {**receipt, "detail": {"B3": ["PETR4"]}}
+    tampered = {**receipt, "targeted_cycles": receipt["targeted_cycles"] + 1}
+    keyed = {**receipt, "markets": {**receipt["markets"], "B3": {**receipt["markets"]["B3"], "pairs": {"PETR4": {}}}}}
+    for text, message in ((json.dumps(detail), "keys are not exactly the aggregate's"), (json.dumps(tampered), "report_sha256 does not recompute"),
+                          (json.dumps(keyed), "keys are not exactly the aggregate's"), (json.dumps({**receipt, "schema": "VALUATION_P1_BEFORE_AFTER_V2"}), "not Valuation P1 rev 9"),
+                          (json.dumps({**receipt, "cycles": {"PETR4": "x"}}), "keyed by something other than a market"),
+                          (json.dumps(bare), "does not name the build that produced it"),  # the receipt before the fix: no producer
+                          (json.dumps(reattested(receipt, "development")), "not a commit sha"), (json.dumps(reattested(receipt, None)), "not a commit sha"),
+                          (json.dumps({**receipt, "producer_build_sha": "a" * 40}), "receipt_sha256 does not recompute"),  # re-attributed by hand
+                          (json.dumps({**receipt, "receipt_sha256": receipt["report_sha256"]}), "receipt_sha256 does not recompute"),
+                          ("not json", "not a single JSON document"), (" " * 70000, "larger than an aggregate")):
+        refused = verified(text)
+        assert refused.returncode != 0 and message in refused.stderr, (message, refused.stderr)
+        assert not any(symbol in refused.stdout + refused.stderr for symbol in symbols)
+    assert verified(printed).returncode == 0  # the accepted receipt back in place for the summary checks
+    unattributed = summarized(json.dumps({"markdown": official.before_after_markdown(receipt), "renderer_build_sha": "development"}))
+    assert unattributed.returncode != 0 and "not a commit sha" in unattributed.stderr
+    other = summarized(json.dumps({"markdown": official.before_after_markdown({**receipt, "report_sha256": "f" * 64}), "renderer_build_sha": build}))
+    assert other.returncode != 0 and "not rendered from this receipt" in other.stderr
+    unattested = summarized(json.dumps({"markdown": official.before_after_markdown(bare), "renderer_build_sha": build}))
+    assert unattested.returncode != 0 and "not rendered from this receipt" in unattested.stderr
+    legacy = summarized(json.dumps({"markdown": official.before_after_markdown(receipt), "build_sha": build}))  # the shape before the fix
+    assert legacy.returncode != 0 and "unexpected summary shape" in legacy.stderr
+
+    # Codex P2 on #451: the receipt produced under build A, a deploy, the summary rendered under build B — refused, nothing
+    # published, and the receipt is never attributed to B (the second read only gates; the attribution is the receipt's own)
+    under_a, under_b = "a" * 40, "d" * 40
+    monkeypatch.setenv("C3PO_BUILD_SHA", under_a)
+    assert official.main(["--before-after", "--keep-internal-targeted"]) == 0
+    produced_a = capsys.readouterr().out
+    out = tmp_path / "out_race"
+    out.mkdir()
+    (tmp_path / "step_summary.md").unlink()
+    assert verified(produced_a).returncode == 0 and json.loads((out / "report.json").read_text(encoding="utf-8"))["producer_build_sha"] == under_a
+    rendered_b = rendered_under(under_b)
+    assert rendered_b.returncode == 0 and json.loads(rendered_b.stdout)["renderer_build_sha"] == under_b
+    race = summarized(rendered_b.stdout)
+    assert race.returncode != 0 and "the deployed build changed between the receipt and its summary" in race.stderr
+    assert f"receipt produced by {under_a}, summary rendered by {under_b}" in race.stderr
+    assert sorted(path.name for path in out.iterdir()) == ["report.json"] and not (tmp_path / "step_summary.md").exists()  # no summary, no metadata
+    # the same receipt, re-attributed to B by hand on the runner, does not pass either verifier
+    forged = {**json.loads(produced_a), "producer_build_sha": under_b}
+    assert "receipt_sha256 does not recompute" in verified(json.dumps(forged)).stderr
+    (out / "report.json").write_text(json.dumps(forged), encoding="utf-8")
+    forged_summary = summarized(json.dumps({"markdown": official.before_after_markdown(forged), "renderer_build_sha": under_b}))
+    assert forged_summary.returncode != 0 and "receipt_sha256 does not recompute" in forged_summary.stderr
+    assert not (out / "metadata.json").exists() and not (out / "summary.md").exists()
+    # rendered under A — the build that produced it — the receipt is published as A's, never as anything read later
+    assert verified(produced_a).returncode == 0
+    honest = summarized(rendered_under(under_a).stdout)
+    assert honest.returncode == 0, honest.stderr
+    assert json.loads((out / "metadata.json").read_text(encoding="utf-8"))["producer_build_sha"] == under_a
+    assert json.loads(produced_a)["report_sha256"] == receipt["report_sha256"]  # the content hash the lock names is build-independent
+
+
+def test_the_attestation_binds_the_producer_and_leaves_the_content_hash_alone() -> None:
+    """``attest_before_after`` (Codex P2 on #451): ``receipt_sha256`` covers the aggregate AND ``producer_build_sha``;
+    ``report_sha256`` — the hash the owner accepts, the lock names and the order recomputes under the lock commit's build —
+    does not change with the producer; a report is attested once."""
+    database = _database()
+    _three_markets(database)
+    report = official.before_after_report(database)
+    under_a = official.attest_before_after(report, producer_build_sha="a" * 40)
+    under_b = official.attest_before_after(report, producer_build_sha="b" * 40)
+    assert set(under_a) == set(report) | set(official.BEFORE_AFTER_ATTESTATION_KEYS) and under_a["producer_build_sha"] == "a" * 40
+    assert under_a["report_sha256"] == under_b["report_sha256"] == report["report_sha256"] and under_a["receipt_sha256"] != under_b["receipt_sha256"]
+    assert under_a["receipt_sha256"] == official.canonical_sha256({key: value for key, value in under_a.items() if key != "receipt_sha256"})
+    assert official.canonical_sha256({key: value for key, value in under_a.items() if key not in official.BEFORE_AFTER_ATTESTATION_KEYS + ("report_sha256",)}) \
+        == report["report_sha256"]
+    with pytest.raises(ValueError, match="already attested"):
+        official.attest_before_after(under_a, producer_build_sha="a" * 40)
+    markdown = official.before_after_markdown(under_a)
+    assert "a" * 40 in markdown and under_a["receipt_sha256"] in markdown and "Produzido pela revisão implantada" not in official.before_after_markdown(report)
+
+
+def test_the_readonly_workflow_runs_the_before_after_read_only_and_never_writes_a_detail() -> None:
+    """The dispatch input chooses the report (``accuracy`` by default, the PREREG reading unchanged); ``before-after`` runs
+    the receipt's command exactly, both execs in the running api container under PGOPTIONS read-only, with the same four
+    deploy secrets as the accuracy path — never ``--private-detail``, never a ``--markdown`` path inside the container."""
+    import yaml
+
+    text = WORKFLOW.read_text(encoding="utf-8")
+    parsed = yaml.safe_load(text)
+    trigger = parsed[True]
+    assert set(trigger) == {"workflow_dispatch"}
+    report_input = trigger["workflow_dispatch"]["inputs"]["report"]
+    assert report_input["type"] == "choice" and report_input["default"] == "accuracy" and report_input["options"] == ["accuracy", "before-after"]
+    steps = _workflow_steps()
+    gated = {name: step.get("if") for name, step in steps.items()}
+    for name in ("Run the report in the running api container, read-only", "Verify the receipt and keep aggregates only", "Publish the aggregate receipt"):
+        assert gated[name] == "steps.inputs.outputs.report == 'accuracy'"
+    for name in ("Run the before/after receipt in the running api container, read-only", "Verify the before/after receipt and keep the aggregate only",
+                 "Render the Portuguese summary in the running api container, read-only", "Verify the summary and keep aggregates only",
+                 "Publish the before/after receipt"):
+        assert gated[name] == "steps.inputs.outputs.report == 'before-after'"
+    receipt_run = str(steps["Run the before/after receipt in the running api container, read-only"]["run"])
+    render_run = str(steps["Render the Portuguese summary in the running api container, read-only"]["run"])
+    assert "api python -m app.valuation_official --before-after --keep-internal-targeted </dev/null" in receipt_run
+    for run in (receipt_run, render_run):
+        assert "exec -T \\\n  -e 'PGOPTIONS=-c default_transaction_read_only=on' \\\n  api python" in run
+        assert "/run/c3po-security/reboot.pending" in run and "remote stderr lines (kept private, not printed)" in run
+    commands = "\n".join(str(step.get("run") or "") for step in steps.values())
+    assert "--private-detail" not in commands and "--markdown" not in commands  # only the header comment names them, to forbid them
+    secrets = sorted(set(__import__("re").findall(r"secrets\.([A-Z0-9_]+)", text)))
+    assert secrets == ["C3PO_AWS_HOST", "C3PO_AWS_KNOWN_HOSTS", "C3PO_AWS_SSH_KEY", "C3PO_AWS_USER"]
+    assert steps["Publish the before/after receipt"]["with"]["path"] == "${{ runner.temp }}/valuation-p1-before-after"
