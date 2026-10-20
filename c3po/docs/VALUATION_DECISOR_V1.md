@@ -74,7 +74,13 @@ relatório somente-leitura comparar com e sem o portão.
     `STALENESS_SOURCE_UNAVAILABLE`) **exista a tabela ou não** — a tabela ausente lê como vazia, então uma noite de antes
     da 053 se reproduz igual depois que ela chega; um nome com marca pendente leva os dois códigos. Com poll vivo e sem
     tabela: `STALENESS_SOURCE_UNAVAILABLE`. O registro nomeia o poll em que confiou (`trigger_poll`: fonte, id, linhas
-    lidas, início, conclusão).
+    lidas, início, conclusão, emissores não observados).
+  * **Cobertura por emissor** (revisão do Codex de 19/10): o poll grava nos metadados da execução os emissores que não
+    conseguiu observar (`failed_issuers`, só CIKs — nenhum símbolo). Um poll vivo cobre um nome **só se observou o
+    emissor dele** (o emissor vem dos filings da 051 conhecidos em D): emissor em `failed_issuers` → o nome sai
+    `STALENESS_SOURCE_STALE`; nome de emissor desconhecido, quando o poll perdeu algum emissor → também. Ex.: timeout nas
+    submissions de um emissor e leitura do outro dão execução `succeeded` com progresso — viva para o segundo, nunca
+    para o primeiro (`issuer_observed` na procedência).
 * **Eventos** (`event_gates` no bloco diz quais seguram a permissão; todo outro código de evento é marca):
   * **`EARNINGS_WITHIN_N`** (portão → OBSERVAR nos EUA; **marca** na B3): resultado conhecido em D cuja **sessão do
     anúncio ou sessão de reação** cai em [T+1, T+N] (T = última sessão completa, N = 2). Sessão do anúncio = a data, ou a
@@ -211,7 +217,10 @@ canônico), é decidida de novo. O recibo da rodada é agregado (contagens por m
 recusadas, estado da fonte 053 em `tp_staleness_source`, estado do calendário, contagem de marcas e
 `verdicts_without_events`) — não nomeia símbolo nem protocolo. CLI:
 `python -m app.valuation_decision --dry-run` (nada gravado), `--run` (recusado com a
-flag desligada), `--verdict MERCADO:SÍMBOLO`.
+flag desligada), `--verdict MERCADO:SÍMBOLO`. **Espera o calendário ficar legível** (revisão do Codex de 19/10): a fase só roda a partir do recebimento do
+calendário mais novo + ε (`valuation_decision.not_before`) — um calendário recebido dentro da margem ficaria fora da
+leitura da rodada logo depois da fase `earnings_calendar`. Antes disso a fase responde "ainda não" (`deferred`): nada
+roda, nada é gravado, a noite não é marcada como feita e o worker acorda nesse instante.
 
 `run_shadow` é **dry run por padrão**; grava só com `write=True` **e** a flag ligada (quem quer que chame — senão
 `ValueError`). A flag é lida do ambiente do processo (`app/valuation_env.py`, não `Settings`: `config.py` entra no hash do

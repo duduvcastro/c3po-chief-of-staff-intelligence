@@ -2374,11 +2374,11 @@ class Database:
                 return None
             run = max(matches, key=lambda item: item["completed_at"])
             return {"id": str(run["id"]), "status": run["status"], "started_at": run.get("started_at"), "completed_at": run["completed_at"],
-                    "records_read": int(run.get("records_read") or 0)}
+                    "records_read": int(run.get("records_read") or 0), "metadata": copy.deepcopy(dict(run.get("metadata") or {}))}
         with self.connection() as connection:
             row = connection.execute(
                 """
-                SELECT run.id::text, run.status, run.started_at, run.completed_at, COALESCE(run.records_read, 0)
+                SELECT run.id::text, run.status, run.started_at, run.completed_at, COALESCE(run.records_read, 0), run.metadata
                 FROM ingestion_runs run
                 JOIN data_sources source ON source.id = run.source_id
                 WHERE source.code = %s AND run.status = %s AND COALESCE(run.records_read, 0) >= %s
@@ -2389,7 +2389,25 @@ class Database:
             ).fetchone()
         if not row:
             return None
-        return dict(zip(("id", "status", "started_at", "completed_at", "records_read"), row))
+        found = dict(zip(("id", "status", "started_at", "completed_at", "records_read", "metadata"), row))
+        metadata = found.get("metadata")
+        found["metadata"] = metadata if isinstance(metadata, dict) else (json.loads(metadata) if metadata else {})
+        return found
+
+    def update_ingestion_run_metadata(self, run_id: str, metadata: dict[str, Any]) -> None:
+        """Merge ``metadata`` into one run's metadata (the keys given replace theirs) — what a run learned while running
+        (the as-filed poll's unobserved issuers)."""
+        if not self.database_url:
+            run = self._ingestion_runs.get(run_id)
+            if run is not None:
+                run["metadata"] = {**(run.get("metadata") or {}), **copy.deepcopy(metadata)}
+            return
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE ingestion_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb WHERE id = %s",
+                (json.dumps(metadata), run_id),
+            )
+            connection.commit()
 
     def count_ingestion_runs(self, source_code: str, status: str, *, scheduled_for: str) -> int:
         """How many runs of ``source_code`` ended with ``status`` for ONE scheduled cycle (``metadata.scheduled_for``, the

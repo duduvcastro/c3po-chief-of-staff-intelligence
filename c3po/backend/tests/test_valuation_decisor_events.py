@@ -32,6 +32,7 @@ from app.config import Settings
 from app.database import Database
 from app.investor_relations import InvestorRelationsService
 from app.r2d2_v2_earnings_source import EarningsReceipt
+from app.sec_xbrl import AsFiledPollResult, SecXbrlIngestor
 from app.statement_vintages import StatementVintageStore
 from app.valuation_worker import OffhoursPhase, run_worker_iteration
 from app.valuation_worker_contract import VALUATION_WORKER_ADVISORY_PHASES, VALUATION_WORKER_OFFHOURS_PHASES, VALUATION_WORKER_PHASES
@@ -75,8 +76,8 @@ def _calendar(database: Database, rows: list[Any], *, received: datetime = RECEI
 
 
 def _filing(database: Database, symbol: str, doc_id: str, form: str, accepted: datetime, *, items: str = "", period: str | None = "2026-06-30",
-            seen: datetime | None = None) -> None:
-    StatementVintageStore(database).register_filings([{"market": "US", "issuer_key": "0000999201", "source": "sec_edgar", "doc_id": doc_id, "form": form,
+            seen: datetime | None = None, issuer: str = "0000999201") -> None:
+    StatementVintageStore(database).register_filings([{"market": "US", "issuer_key": issuer, "source": "sec_edgar", "doc_id": doc_id, "form": form,
                                                        "items": items, "symbols": [symbol], "period_of_report": period,
                                                        "filed_date": accepted.date(), "accepted_at": accepted, "accepted_source": "sec_header"}])
     for row in database._statement_filings:  # type: ignore[attr-defined]
@@ -185,13 +186,88 @@ def test_a_throttled_as_filed_poll_is_recorded_partial(monkeypatch: pytest.Monke
     database = Database(settings)
     service = InvestorRelationsService(settings, database, read_sec_headers=True)
     for throttled, expected in ((True, "partial"), (False, "succeeded")):
-        result = SimpleNamespace(submissions_read=40, filings_registered=1, vintages_written=3, errors=[], header_failures=0, json_clock_mismatches=0,
-                                 throttled=throttled)
+        result = AsFiledPollResult(issuers=40, submissions_read=40, filings_registered=1, vintages_written=3, throttled=throttled)
         service._asfiled_ingestor = SimpleNamespace(client=SimpleNamespace(company_tickers=lambda: {}),  # type: ignore[assignment]
                                                     poll=lambda universe, tickers, now, result=result: result)
         service.sync_sec_asfiled()
         latest = max((run for run in database._ingestion_runs.values() if run["source_code"] == "sec_asfiled"), key=lambda run: run["started_at"])
         assert latest["status"] == expected and latest["records_read"] == 40
+
+
+class _Submissions:
+    """An SEC client double: the ticker map, and the submissions of each issuer — or the timeout one of them hits."""
+
+    def __init__(self, tickers: dict[str, str], failing: set[str]) -> None:
+        self.tickers, self.failing = tickers, failing
+
+    def company_tickers(self) -> dict[str, str]:
+        return dict(self.tickers)
+
+    def submissions(self, cik: str) -> dict[str, Any]:
+        if cik in self.failing:
+            raise httpx.ReadTimeout("submissions timed out")
+        return {"filings": {"recent": {"accessionNumber": []}}}
+
+
+def test_a_poll_covers_only_the_issuers_it_observed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # AAPL's submissions time out, KO's are read: the run succeeds with progress (records_read = 1) — it is alive for KO,
+    # never for AAPL, whose 053 marks nobody checked in this pass
+    monkeypatch.setenv(valuation_env.ASFILED_ENABLED_ENV, "true")
+    database = _database()
+    _night(database, poll=False)
+    _filing(database, "AAPL", "0000999201-26-000011", "10-Q", datetime(2026, 8, 20, 20, 30, tzinfo=UTC), issuer="0000999201")
+    _filing(database, "KO", "0000999202-26-000011", "10-Q", datetime(2026, 8, 20, 20, 30, tzinfo=UTC), issuer="0000999202")
+    service = InvestorRelationsService(Settings(database_url="", auth_cookie_secure=False), database, read_sec_headers=True)
+    client = _Submissions({"AAPL": "0000999201", "KO": "0000999202"}, failing={"0000999201"})
+    service._asfiled_ingestor = SecXbrlIngestor(database, client)  # type: ignore[arg-type]
+    service.sync_sec_asfiled()
+    run = next(run for run in database._ingestion_runs.values() if run["source_code"] == "sec_asfiled")
+    assert run["status"] == "succeeded" and run["records_read"] == 1
+    assert run["metadata"]["failed_issuers"] == ["0000999201"] and run["metadata"]["issuers"] == 2  # issuer keys only, no symbol
+    run.update(started_at=RUN - timedelta(minutes=30), completed_at=RUN - timedelta(minutes=20))  # the pass, in the test world
+    _run(database)
+    aapl, ko = _record(database, "NASDAQ", "AAPL"), _record(database, "NYSE", "KO")
+    assert aapl["verdict"] == decisor.OBSERVAR and aapl["reason_codes"] == [decisor.STALENESS_SOURCE_STALE]
+    gate = aapl["checks"]["tp_staleness"]
+    assert gate["source_status"] == "stale" and aapl["inputs"]["tp_staleness"]["issuer_observed"] is False
+    assert "did not observe the name's issuer" in gate["detail"]
+    assert gate["trigger_poll"]["issuers_not_observed"] == 1
+    assert decisor.STALENESS_SOURCE_STALE not in ko["reason_codes"] and ko["inputs"]["tp_staleness"]["issuer_observed"] is True
+    # a name whose issuer is unknown is not covered by a poll that missed issuers; by a complete one it is
+    unknown = decisor.name_staleness({"status": "ok", "known_at": RUN.isoformat(), "pending": {}, "failed_issuers": ["0000999201"],
+                                      "trigger_poll": aapl["checks"]["tp_staleness"]["trigger_poll"]}, "NASDAQ", "NEWCO")
+    assert unknown["source_status"] == "stale" and "issuer is unknown" in unknown["detail"]
+    complete = decisor.name_staleness({"status": "ok", "known_at": RUN.isoformat(), "pending": {}, "failed_issuers": [],
+                                       "trigger_poll": aapl["checks"]["tp_staleness"]["trigger_poll"]}, "NASDAQ", "NEWCO")
+    assert complete["source_status"] == "ok"
+
+
+def test_the_decisor_waits_until_the_calendar_it_just_collected_is_readable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the real calendar service and the real phases, one worker clock: the calendar lands at 01:30 BRT and AAPL reports
+    # tomorrow before the open; the decisor does not run inside the ε margin (it would decide without that calendar)
+    database = _database()
+    _night(database)
+    world = {"now": RUN}
+    body = _body([_row("AAPL.US", "2026-10-14", "BeforeMarket"), *_filler()], date(2026, 10, 7), date(2026, 11, 13))
+    service = calendar_module.EarningsCalendarService(
+        _settings(), database, clock=lambda: world["now"],
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=body, headers={"content-type": "application/json"})))
+    phases = (OffhoursPhase("earnings_calendar", service.last_run_at, service.run, max_failures=3),
+              OffhoursPhase("decisor_shadow", lambda: decisor.last_run_at(database),
+                            lambda: decisor.run_shadow(database, now=world["now"], write=True, enabled=True),
+                            not_before=lambda: decisor.not_before(database)))
+    local = RUN.astimezone(SAO_PAULO)
+    first = run_worker_iteration(database, now=local, canonical_due=False, canonical_operation=lambda: None, offhours_phases=phases)
+    assert first.phase_statuses == {"earnings_calendar": "succeeded", "decisor_shadow": "deferred"}
+    assert first.next_wake_at == local + EPSILON and database.list_valuation_decisions("NASDAQ", "AAPL") == []  # nothing recorded, not done
+    assert decisor.last_run_at(database) is None
+    world["now"] = RUN + EPSILON
+    second = run_worker_iteration(database, now=local + EPSILON, canonical_due=False, canonical_operation=lambda: None, offhours_phases=phases)
+    assert second.phase_statuses == {"decisor_shadow": "succeeded"}
+    aapl = _record(database, "NASDAQ", "AAPL")
+    assert aapl["reason_codes"] == [decisor.EARNINGS_WITHIN_N] and aapl["checks"]["events"]["earnings"]["calendars"][0]["received_at"] == RUN.isoformat()
+    # without the deferral the same run would have decided without the calendar (received inside its margin)
+    assert decisor.not_before(_database()) is None
 
 
 def test_a_stale_poll_keeps_the_marks_known_and_adds_its_own_code() -> None:

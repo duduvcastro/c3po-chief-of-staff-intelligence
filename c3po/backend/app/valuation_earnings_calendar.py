@@ -239,7 +239,7 @@ def filings_known_at(database: Database, at: datetime, *, lookback_days: int, ma
         except ValueError:
             period = None
         reference = {"doc_id": str(row["doc_id"]), "form": form, "items": ",".join(items), "accepted_at": _utc(row["accepted_at"]).isoformat(),
-                     "period_of_report": period.isoformat() if period else None}
+                     "period_of_report": period.isoformat() if period else None, "issuer_key": str(row["issuer_key"])}
         for symbol in row.get("symbols") or ():
             by_symbol.setdefault(str(symbol).strip().upper(), []).append(reference)
     return {"status": "ok", "by_symbol": by_symbol}
