@@ -95,10 +95,15 @@ class PortfolioService:
                     raise ValueError('FX unavailable')
                 ny = now.astimezone(ZoneInfo("America/New_York"))
                 fx_closed = ny.weekday()==5 or (ny.weekday()==4 and ny.hour>=17) or (ny.weekday()==6 and ny.hour<17)
-                max_age = timedelta(hours=72) if fx_closed else timedelta(minutes=30)
-                if timedelta(0) <= now-q.as_of <= max_age and q.price > 0:
+                # The EODHD FX quote is refreshed about hourly in the evening: a 30-minute limit
+                # blanked every B3 position at night. A rate up to 12 hours old is used and
+                # flagged (it moves far less than the stocks it converts); older is unavailable.
+                max_age = timedelta(hours=72) if fx_closed else timedelta(hours=12)
+                age = now-q.as_of
+                if timedelta(0) <= age <= max_age and q.price > 0:
                     rate = amount(q.price)
-                    fx = {'brl_per_usd': str(rate), 'as_of': q.as_of.isoformat(), 'source': 'EODHD'}
+                    fx = {'brl_per_usd': str(rate), 'as_of': q.as_of.isoformat(), 'source': 'EODHD',
+                          'age_minutes': int(age.total_seconds()//60), 'stale': not fx_closed and age > timedelta(minutes=30)}
             except Exception:
                 pass  # Provider error text may contain credentials.
         summary = current_values(events, quotes, rate)

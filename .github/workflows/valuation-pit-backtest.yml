@@ -1,0 +1,973 @@
+name: Valuation PIT backtest US
+run-name: Valuation PIT backtest US (PREREG_VALUATION_PIT_BACKTEST_US_V1) — ${{ inputs.mode }}
+
+# Dispatch only. Runs the steps of PREREG_VALUATION_PIT_BACKTEST_US_V1 §14 inside the running api container of the
+# production host through the deploy SSH transport of c3po-pipeline.yml (the pattern of valuation-readonly-report.yml):
+#   host-check      READ-ONLY  free disk and memory on the host, pending reboot flags, the price publications a cut now
+#                              sees, the as-filed coverage, the running ingestions — the ONLY mode exempt from the operating
+#                              window and from the pending-reboot refusal
+#   dry-run         READ-ONLY  the pre-registered grid for the two pins, what is reusable, the volume check
+#   price-backfill  WRITES     valuation_price_history --backfill --months 120, NASDAQ then NYSE
+#   fetch           WRITES     valuation_pit_rerun --fetch, NASDAQ then NYSE (the US macro once)
+#   grid            WRITES     valuation_pit_grid, one chunk (--max-runs <= 200, --stop-before the next window)
+#   report          READ-ONLY  valuation_pit_backtest_report over the complete manifest of a previous grid run's artifact
+# A writing mode needs the owner's order: the workflow runs from main, c3po/ops/owner-orders/<owner_order_sha256>.json
+# exists at this revision (no symbolic link on its path), hashes to the input and authorises this mode with these pins,
+# flags and cap, not after its deadline. No mode but host-check starts inside the US session (09:00-16:30
+# America/New_York on weekdays) or the nightly window (23:30 of the previous day to 08:15 America/Sao_Paulo: the cycle
+# starts at 00:00). Every process on the host but the read-only host check (the host-check mode and the preflight's own
+# host check, both short reads) runs under `timeout` with what is left of ONE deadline, 10 minutes before the next window,
+# computed once on the host (a writing leg needs 60 s left, the dry run and the report 10 minutes); a
+# grid chunk stops before the window; a cancelled or failed run, or a host step that exited non-zero, stops the host
+# processes THIS run launched (each carries the run's token `<run id>-<attempt>`), and nothing when it launched none.
+# Writes take the deploy lock SHARED (a deploy in flight refuses the write; a deploy arriving during a write
+# waits 120 s and fails, to be re-run after it; the security reboot controller waits too), check the host (disk, memory,
+# R2D2/massive timers and services, the nightly valuation worker and any ingestion running for more than 30 minutes,
+# pending reboot) first — every query of that check fails closed: a query that cannot answer refuses the run with its
+# own status —, and the grid refuses a producer other than the prereg commit's. The read-only modes force
+# PGOPTIONS default_transaction_read_only=on and write nothing on the host. No container is created, restarted or stopped
+# (`docker compose exec` into the running api). Only aggregates are uploaded: the remote stdout is reduced (and checked)
+# here, the remote stderr stays in the runner's temp directory and is never printed — this repository is public and a log
+# line may name a symbol. Secrets travel only through the deploy-key step's environment, as in
+# valuation-readonly-report.yml. Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN VALUATION PIT BACKTEST
+        required: true
+        type: string
+      mode:
+        description: host-check | dry-run | price-backfill | fetch | grid | report
+        required: true
+        type: choice
+        options: [host-check, dry-run, price-backfill, fetch, grid, report]
+      owner_order_sha256:
+        description: price-backfill/fetch/grid — sha256 of c3po/ops/owner-orders/<sha>.json at this revision (the owner's order)
+        required: false
+        default: ''
+        type: string
+      price_pinned_at:
+        description: dry-run/grid — the ONE price pin of the grid, ISO-8601 with zone (right after the 120-month backfill publications)
+        required: false
+        default: ''
+        type: string
+      catalogue_pinned_at:
+        description: dry-run/grid — the ONE catalogue pin of the grid, ISO-8601 with zone
+        required: false
+        default: ''
+        type: string
+      max_runs:
+        description: grid — grid instants COMPUTED in this chunk (reused ones are free), at most 200
+        required: false
+        default: '10'
+        type: string
+      recompute_existing:
+        description: grid — re-run every instant through the public API (must match the owner's order)
+        required: false
+        default: false
+        type: boolean
+      manifest_run_id:
+        description: report — the run id of the grid chunk whose artifact holds the complete manifest
+        required: false
+        default: ''
+        type: string
+      manifest_sha256:
+        description: report — the manifest_sha256 published in the canal for that manifest
+        required: false
+        default: ''
+        type: string
+      prereg_commit:
+        description: grid/report — the commit (40 hex) cited by the prereg's hash receipt (the last commit of main that changed the prereg)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: valuation-pit-backtest
+  cancel-in-progress: false
+
+jobs:
+  pit-backtest:
+    name: PIT backtest (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 350
+    steps:
+      - name: Require exact confirmation
+        env:
+          RECEIVED: ${{ inputs.confirmation }}
+        run: |
+          if [ "$RECEIVED" != 'RUN VALUATION PIT BACKTEST' ]; then
+            echo 'Confirmation did not match the approved phrase.' >&2
+            exit 2
+          fi
+
+      - name: Validate the inputs
+        id: inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          ORDER: ${{ inputs.owner_order_sha256 }}
+          PIN: ${{ inputs.price_pinned_at }}
+          CATALOGUE_PIN: ${{ inputs.catalogue_pinned_at }}
+          MAX_RUNS: ${{ inputs.max_runs }}
+          RECOMPUTE: ${{ inputs.recompute_existing }}
+          MANIFEST_RUN_ID: ${{ inputs.manifest_run_id }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          PREREG_COMMIT: ${{ inputs.prereg_commit }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          case "$MODE" in
+            host-check|dry-run|price-backfill|fetch|grid|report) ;;
+            *) echo 'unknown mode' >&2; exit 2 ;;
+          esac
+          # every value that reaches a remote command line is validated in EVERY mode (quoted there, never free text)
+          instant='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$'
+          [ -z "$ORDER" ] || [[ "$ORDER" =~ ^[0-9a-f]{64}$ ]] || { echo 'owner_order_sha256 must be 64 lowercase hex' >&2; exit 2; }
+          [ -z "$PIN" ] || [[ "$PIN" =~ $instant ]] || { echo 'price_pinned_at must be ISO-8601 with a zone' >&2; exit 2; }
+          [ -z "$CATALOGUE_PIN" ] || [[ "$CATALOGUE_PIN" =~ $instant ]] || { echo 'catalogue_pinned_at must be ISO-8601 with a zone' >&2; exit 2; }
+          [[ "$MAX_RUNS" =~ ^[0-9]{1,3}$ ]] && [ "$MAX_RUNS" -le 200 ] || { echo 'max_runs must be an integer from 0 to 200' >&2; exit 2; }
+          [ "$RECOMPUTE" = true ] || [ "$RECOMPUTE" = false ] || { echo 'recompute_existing must be a boolean' >&2; exit 2; }
+          [ -z "$PREREG_COMMIT" ] || [[ "$PREREG_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'prereg_commit must be a 40-hex commit' >&2; exit 2; }
+          case "$MODE" in
+            price-backfill|fetch|grid)
+              [ -n "$ORDER" ] || { echo 'owner_order_sha256 is required for a mode that writes on the host' >&2; exit 2; }
+              echo "owner order sha256: $ORDER" ;;
+          esac
+          case "$MODE" in
+            dry-run|grid)
+              [ -n "$PIN" ] && [ -n "$CATALOGUE_PIN" ] || { echo 'price_pinned_at and catalogue_pinned_at are required for dry-run and grid' >&2; exit 2; } ;;
+          esac
+          case "$MODE" in
+            grid|report) [ -n "$PREREG_COMMIT" ] || { echo 'prereg_commit is required for grid and report' >&2; exit 2; } ;;
+          esac
+          if [ "$MODE" = report ]; then
+            [[ "$MANIFEST_RUN_ID" =~ ^[0-9]{1,20}$ ]] || { echo 'manifest_run_id must be a run id' >&2; exit 2; }
+            [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'manifest_sha256 must be 64 lowercase hex' >&2; exit 2; }
+          fi
+          {
+            printf 'mode=%s\n' "$MODE"
+            printf 'order=%s\n' "$ORDER"
+            printf 'pin=%s\n' "$PIN"
+            printf 'catalogue_pin=%s\n' "$CATALOGUE_PIN"
+            printf 'max_runs=%s\n' "$MAX_RUNS"
+            printf 'recompute=%s\n' "$RECOMPUTE"
+          } >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Check the operating window
+        id: window
+        env:
+          MODE: ${{ steps.inputs.outputs.mode }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT" || exit 1
+          import datetime as dt
+          import os
+          import sys
+          from zoneinfo import ZoneInfo
+
+          mode = os.environ["MODE"]
+          now = dt.datetime.fromisoformat(os.environ["WINDOW_NOW"]) if os.environ.get("WINDOW_NOW") else dt.datetime.now(dt.timezone.utc)  # WINDOW_NOW: tests only
+          new_york, sao_paulo = ZoneInfo("America/New_York"), ZoneInfo("America/Sao_Paulo")
+          windows = []
+          for offset in range(-2, 6):
+              day = now.astimezone(new_york).date() + dt.timedelta(days=offset)
+              if day.weekday() < 5:  # the US session with a buffer (holidays are treated as sessions: conservative)
+                  windows.append((dt.datetime.combine(day, dt.time(9, 0), new_york), dt.datetime.combine(day, dt.time(16, 30), new_york)))
+              local = now.astimezone(sao_paulo).date() + dt.timedelta(days=offset)  # the nightly window: the cycle starts at 00:00, its phases to 08:00
+              windows.append((dt.datetime.combine(local - dt.timedelta(days=1), dt.time(23, 30), sao_paulo), dt.datetime.combine(local, dt.time(8, 15), sao_paulo)))
+          inside = sorted(start for start, end in windows if start <= now < end)
+          upcoming = min(start for start, _end in windows if start > now)
+          if mode != "host-check" and inside:
+              sys.exit(f"{mode} refused: now is inside the US session or the nightly window (from {inside[0].isoformat()})")
+          minutes = (upcoming - now).total_seconds() / 60
+          if mode in ("price-backfill", "fetch") and minutes < 120:
+              sys.exit(f"{mode} refused: the next window starts in {minutes:.0f} min (at least 120 needed)")
+          stop_before = min(upcoming - dt.timedelta(minutes=20), now + dt.timedelta(minutes=300))
+          deadline = min(upcoming - dt.timedelta(minutes=10), now + dt.timedelta(minutes=320))
+          if mode == "grid" and stop_before <= now + dt.timedelta(minutes=15):
+              sys.exit("grid refused: less than 35 min before the next window")
+          print(f"stop_before={stop_before.astimezone(dt.timezone.utc).isoformat(timespec='seconds')}")
+          print(f"deadline_epoch={int(deadline.timestamp())}")  # ONE deadline for every process of this run: what is left of it, never a fresh one
+          print(f"next_window={upcoming.astimezone(dt.timezone.utc).isoformat(timespec='seconds')}")
+          PY
+
+      - name: Check out the workflow revision
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify the owner's order
+        if: inputs.mode == 'price-backfill' || inputs.mode == 'fetch' || inputs.mode == 'grid'
+        env:
+          MODE: ${{ steps.inputs.outputs.mode }}
+          ORDER: ${{ steps.inputs.outputs.order }}
+          PIN: ${{ steps.inputs.outputs.pin }}
+          CATALOGUE_PIN: ${{ steps.inputs.outputs.catalogue_pin }}
+          MAX_RUNS: ${{ steps.inputs.outputs.max_runs }}
+          RECOMPUTE: ${{ steps.inputs.outputs.recompute }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - "$GITHUB_WORKSPACE" <<'PY' || exit 1
+          import datetime as dt
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          root, mode, order = Path(sys.argv[1]).resolve(), os.environ["MODE"], os.environ["ORDER"]
+          if os.environ.get("GITHUB_REF") != "refs/heads/main":
+              sys.exit("a writing mode runs only from main (the owner's order is a file of main)")
+          relative = Path("c3po") / "ops" / "owner-orders" / f"{order}.json"
+          current = root
+          for part in relative.parts:  # no symbolic link anywhere on the path: the file of THIS checkout, nothing it points to
+              current = current / part
+              if current.is_symlink():
+                  sys.exit("the owner's order path holds a symbolic link")
+          path = root / relative
+          if not path.is_file() or Path(os.path.realpath(path)) != path or not path.is_relative_to(root):
+              sys.exit("the owner's order file does not exist at this revision")
+          content = path.read_bytes()
+          if hashlib.sha256(content).hexdigest() != order:
+              sys.exit("the owner's order file does not hash to owner_order_sha256")
+          try:
+              data = json.loads(content.decode("utf-8"))
+          except (UnicodeDecodeError, ValueError):
+              sys.exit("the owner's order is not a JSON document")
+          if not isinstance(data, dict):
+              sys.exit("the owner's order is not a JSON object")
+
+
+          def instant(value):
+              try:
+                  parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+              except ValueError:
+                  return None
+              return parsed.astimezone(dt.timezone.utc) if parsed.tzinfo is not None else None
+
+
+          now = instant(os.environ["ORDER_NOW"]) if os.environ.get("ORDER_NOW") else dt.datetime.now(dt.timezone.utc)  # ORDER_NOW: tests only
+          if data.get("schema") != "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1" or data.get("prereg") != "PREREG_VALUATION_PIT_BACKTEST_US_V1":
+              sys.exit("the owner's order is not a VALUATION-PIT-BACKTEST-OWNER-ORDER-v1 for PREREG_VALUATION_PIT_BACKTEST_US_V1")
+          modes = data.get("modes")
+          if not isinstance(modes, list) or not all(isinstance(item, str) for item in modes):
+              sys.exit("the owner's order's modes must be a JSON list of mode names")
+          if mode not in modes:  # an exact name: never a substring of a string
+              sys.exit(f"the owner's order does not authorise mode {mode}")
+          deadline = instant(data.get("not_after"))
+          if deadline is None or now is None or deadline < now:
+              sys.exit("the owner's order has expired (not_after)")
+          if mode == "grid":
+              if instant(data.get("price_pinned_at")) != instant(os.environ["PIN"]) or instant(os.environ["PIN"]) is None:
+                  sys.exit("the owner's order names another price pin")
+              if instant(data.get("catalogue_pinned_at")) != instant(os.environ["CATALOGUE_PIN"]) or instant(os.environ["CATALOGUE_PIN"]) is None:
+                  sys.exit("the owner's order names another catalogue pin")
+              if bool(data.get("recompute_existing")) != (os.environ["RECOMPUTE"] == "true") or not isinstance(data.get("recompute_existing"), bool):
+                  sys.exit("the owner's order does not authorise this recompute_existing flag")
+              cap = data.get("max_runs_cap")
+              if not isinstance(cap, int) or isinstance(cap, bool) or int(os.environ["MAX_RUNS"]) > cap:
+                  sys.exit("max_runs exceeds the owner's order's max_runs_cap")
+          print(f"owner's order verified: modes {modes}, not after {deadline.isoformat()}")
+          PY
+
+      - name: Read the pre-registration and the producer at the prereg commit
+        id: prereg
+        if: inputs.mode == 'grid' || inputs.mode == 'report'
+        env:
+          PREREG_COMMIT: ${{ inputs.prereg_commit }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          prereg=c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md
+          git cat-file -e "$PREREG_COMMIT^{commit}" || { echo 'prereg_commit is not a commit of this repository' >&2; exit 2; }
+          last=$(git log -1 --format=%H -- "$prereg") || exit 1
+          [ "$last" = "$PREREG_COMMIT" ] || { echo 'prereg_commit is not the last commit that changed the pre-registration at this revision' >&2; exit 2; }
+          git show "$PREREG_COMMIT:$prereg" > "$RUNNER_TEMP/prereg-at-commit.md" || exit 1
+          cmp -s "$RUNNER_TEMP/prereg-at-commit.md" "$prereg" || { echo 'the pre-registration changed since the commit of its hash receipt' >&2; exit 2; }
+          # the producer AT THE PREREG COMMIT: the run manifest's files and the Database methods its readers call (hashed as source_identity does)
+          printf '{' > "$RUNNER_TEMP/producer-files.json" || exit 1
+          separator=''
+          for name in valuation_v3_engine.py valuation_v3_inputs.py valuation_v3_macro.py valuation_v3_shadow.py valuation_pit_rerun.py \
+                      valuation_v2_engine.py valuation_official.py valuation_official_engine.py sec_xbrl.py valuation_asfiled.py statement_vintages.py \
+                      valuation_price_history.py; do
+            digest=$(git show "$PREREG_COMMIT:c3po/backend/app/$name" | sha256sum | cut -d' ' -f1) || exit 1
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+            printf '%s"%s":"%s"' "$separator" "$name" "$digest" >> "$RUNNER_TEMP/producer-files.json" || exit 1
+            separator=','
+          done
+          printf '}\n' >> "$RUNNER_TEMP/producer-files.json" || exit 1
+          git show "$PREREG_COMMIT:c3po/backend/app/source_identity.py" > "$RUNNER_TEMP/source_identity.py" || exit 1
+          git show "$PREREG_COMMIT:c3po/backend/app/database.py" > "$RUNNER_TEMP/prereg-database.py" || exit 1
+          objects=(Database.latest_analysis_snapshot Database.latest_analysis_snapshot_before Database.latest_analysis_snapshot_by_inputs
+                   Database.analysis_snapshot_by_id Database.price_bars Database._price_bar_instant Database.valuation_predictions_for_cycle
+                   Database._prediction_record Database._stored_prediction)
+          python3 -I "$RUNNER_TEMP/source_identity.py" "$RUNNER_TEMP/prereg-database.py" "${objects[@]}" > "$RUNNER_TEMP/producer-objects.json" || exit 1
+          python3 -I - "$RUNNER_TEMP/producer-files.json" "$RUNNER_TEMP/producer-objects.json" "$RUNNER_TEMP/producer.json" \
+            > "$RUNNER_TEMP/producer.sha256" <<'PY' || exit 1
+          import hashlib
+          import json
+          import sys
+
+          files = json.load(open(sys.argv[1], encoding="utf-8"))
+          objects = {f"app.database.{name}": digest for name, digest in json.load(open(sys.argv[2], encoding="utf-8")).items()}
+          producer = {"files": files, "objects": objects}
+          json.dump(producer, open(sys.argv[3], "w", encoding="utf-8"), sort_keys=True)
+          print(hashlib.sha256(json.dumps(producer, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest())
+          PY
+          digest=$(cat "$RUNNER_TEMP/producer.sha256") || exit 1
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          printf 'producer_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT" || exit 1
+          # rev 2: the SERVED internal TP's producer at the prereg commit (valuation_pit_served.IMPLEMENTATION_FILES; the same reader objects)
+          printf '{' > "$RUNNER_TEMP/served-producer-files.json" || exit 1
+          separator=''
+          for name in valuation_pit_served.py one_pager.py market_data/us_screener.py market_data/eodhd.py market_data/models.py valuation_official.py valuation_official_engine.py \
+                      valuation_pit_rerun.py valuation_v3_macro.py sec_xbrl.py valuation_asfiled.py statement_vintages.py valuation_price_history.py; do
+            digest=$(git show "$PREREG_COMMIT:c3po/backend/app/$name" | sha256sum | cut -d' ' -f1) || exit 1
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+            printf '%s"%s":"%s"' "$separator" "$name" "$digest" >> "$RUNNER_TEMP/served-producer-files.json" || exit 1
+            separator=','
+          done
+          printf '}\n' >> "$RUNNER_TEMP/served-producer-files.json" || exit 1
+          python3 -I - "$RUNNER_TEMP/served-producer-files.json" "$RUNNER_TEMP/producer-objects.json" "$RUNNER_TEMP/served-producer.json" \
+            > "$RUNNER_TEMP/served-producer.sha256" <<'PY' || exit 1
+          import hashlib
+          import json
+          import sys
+
+          files = json.load(open(sys.argv[1], encoding="utf-8"))
+          objects = {f"app.database.{name}": digest for name, digest in json.load(open(sys.argv[2], encoding="utf-8")).items()}
+          producer = {"files": files, "objects": objects}
+          json.dump(producer, open(sys.argv[3], "w", encoding="utf-8"), sort_keys=True)
+          print(hashlib.sha256(json.dumps(producer, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest())
+          PY
+          digest=$(cat "$RUNNER_TEMP/served-producer.sha256") || exit 1
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          printf 'served_producer_sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Check the grid run's provenance
+        if: inputs.mode == 'report'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_RUN_ID: ${{ inputs.manifest_run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MANIFEST_RUN_ID" > "$RUNNER_TEMP/grid-run.json" || exit 1
+          python3 - "$RUNNER_TEMP/grid-run.json" <<'PY' || exit 1
+          import json
+          import os
+          import sys
+
+          run = json.loads(open(sys.argv[1], encoding="utf-8").read())
+          if not str(run.get("path") or "").startswith(".github/workflows/valuation-pit-backtest.yml"):
+              sys.exit("the referenced run is not a run of this workflow")
+          if run.get("event") != "workflow_dispatch" or run.get("head_branch") != "main" or run.get("conclusion") != "success":
+              sys.exit("the referenced run is not a successful dispatch from main")
+          if (run.get("repository") or {}).get("full_name") != os.environ["GITHUB_REPOSITORY"] or str(run.get("id")) != os.environ["MANIFEST_RUN_ID"]:
+              sys.exit("the referenced run is not of this repository")
+          if not str(run.get("display_title") or "").endswith("— grid"):
+              sys.exit("the referenced run is not a grid chunk")
+          PY
+
+      - name: Download the grid manifest
+        if: inputs.mode == 'report'
+        uses: actions/download-artifact@v4
+        with:
+          name: valuation-pit-backtest-grid-${{ inputs.manifest_run_id }}
+          path: ${{ runner.temp }}/manifest
+          run-id: ${{ inputs.manifest_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the grid manifest
+        if: inputs.mode == 'report'
+        env:
+          EXPECTED: ${{ inputs.manifest_sha256 }}
+          MANIFEST_RUN_ID: ${{ inputs.manifest_run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          (cd "$RUNNER_TEMP/manifest" && sha256sum -c --strict --quiet SHA256SUMS) || { echo 'the artifact does not match its SHA256SUMS' >&2; exit 2; }
+          python3 - "$RUNNER_TEMP/manifest" <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          folder = Path(sys.argv[1])
+          metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
+          if metadata.get("mode") != "grid" or str(metadata.get("run_id")) != os.environ["MANIFEST_RUN_ID"] or metadata.get("partial"):
+              sys.exit("the artifact is not the complete output of that grid run")
+          raw = (folder / "manifest.json").read_bytes()
+          if len(raw) > 8 * 1024 * 1024:
+              sys.exit("the grid manifest is too large")
+          manifest = json.loads(raw.decode("utf-8"))
+          body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+          digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+          if digest != manifest.get("manifest_sha256") or digest != os.environ["EXPECTED"]:
+              sys.exit("the grid manifest's sha256 does not recompute or is not the published one")
+          expected = {"schema": "VALUATION-PIT-GRID-MANIFEST-v1", "complete": True, "market": "US", "grid_start": "2021-06-01", "step_sessions": 5,
+                      "statements": "vintages"}
+          wrong = sorted(key for key, value in expected.items() if manifest.get(key) != value)
+          if wrong:
+              sys.exit("the grid manifest is not the pre-registered complete grid (" + ", ".join(wrong) + ")")
+          PY
+
+      - name: List the previous readings
+        if: inputs.mode == 'report'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/previous"
+          mkdir -p "$dir" || exit 1
+          gh run list -R "$GITHUB_REPOSITORY" --workflow valuation-pit-backtest.yml --status success --limit 200 \
+            --json databaseId,displayTitle > "$dir/runs.json" || exit 1
+          for id in $(python3 -c 'import json, sys; print(" ".join(str(r["databaseId"]) for r in json.load(open(sys.argv[1])) if str(r.get("displayTitle", "")).endswith("— report")))' "$dir/runs.json"); do
+            [[ "$id" =~ ^[0-9]+$ ]] || continue
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n "valuation-pit-backtest-report-$id" -D "$dir/$id" >/dev/null 2>&1 || true
+          done
+
+      - name: Check the single look
+        if: inputs.mode == 'report'
+        env:
+          EXPECTED: ${{ inputs.manifest_sha256 }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - "$RUNNER_TEMP/previous" c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          folder, prereg = Path(sys.argv[1]), hashlib.sha256(Path(sys.argv[2]).read_bytes()).hexdigest()
+          for metadata_path in sorted(folder.glob("*/metadata.json")):
+              try:
+                  metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+              except (OSError, ValueError):
+                  continue
+              verdicts = metadata.get("verdicts") if isinstance(metadata.get("verdicts"), dict) else {}
+              if metadata.get("verdict") == "VOID" and all(verdicts.get(name, "VOID") == "VOID" for name in ("served_internal_tp", "v3_shadow")):
+                  continue  # a reading whose verdicts are ALL VOID read no label and published no statistic: it spent no look
+              if metadata.get("prereg_sha256") != prereg:  # rev 2: the look is ONE across revisions — a revision after a published reading is refused
+                  sys.exit("a previous non-VOID reading published another revision of this pre-registration: the single look was spent")
+              if metadata.get("manifest_sha256") not in (None, os.environ["EXPECTED"]):
+                  sys.exit("a previous non-VOID reading published this pre-registration over another manifest: the single look was spent")
+          print("no previous non-VOID reading of this pre-registration (any revision) over another manifest")
+          PY
+
+      - name: Configure deployment SSH key
+        id: sshkey
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run on the host
+        id: host
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          MODE: ${{ steps.inputs.outputs.mode }}
+          ORDER: ${{ steps.inputs.outputs.order }}
+          PIN: ${{ steps.inputs.outputs.pin }}
+          CATALOGUE_PIN: ${{ steps.inputs.outputs.catalogue_pin }}
+          MAX_RUNS: ${{ steps.inputs.outputs.max_runs }}
+          RECOMPUTE: ${{ steps.inputs.outputs.recompute }}
+          STOP_BEFORE: ${{ steps.window.outputs.stop_before }}
+          DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
+          PRODUCER: ${{ steps.prereg.outputs.producer_sha256 }}
+          SERVED_PRODUCER: ${{ steps.prereg.outputs.served_producer_sha256 }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          [[ "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 1
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || exit 1
+          now=$(date +%s) || exit 1
+          [[ "$now" =~ ^[0-9]+$ ]] || exit 1
+          DEADLINE=$(( DEADLINE_AT - now ))  # what is left of the window's deadline now; the host fixes ONE end from it
+          [ "$DEADLINE" -gt 0 ] || DEADLINE=0
+          [ -z "$PRODUCER" ] || [[ "$PRODUCER" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          [ -z "$SERVED_PRODUCER" ] || [[ "$SERVED_PRODUCER" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' CATALOGUE_PIN='$CATALOGUE_PIN' MAX_RUNS='$MAX_RUNS' RECOMPUTE='$RECOMPUTE' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' PRODUCER='$PRODUCER' SERVED_PRODUCER='$SERVED_PRODUCER' RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' bash -s" \
+            > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          # every query of the preflight fails CLOSED with its own status: a command that cannot answer refuses the run
+          #   10 app dir / arguments   11 reboot pending      12 api container      13 host-check disk   14 host-check memory
+          #   16 unknown mode          17 deploy lock held    18 STOP_BEFORE parse  19 R2D2/massive job active or due
+          #   20 ingestion check run   21 blocking ingestion  22 free disk read     23 disk below need   24 memory below need
+          #   25 leg floor             26 host clock          27 services query     28 timers query      29 timer next elapse
+          #   30 timer elapse parse    31 ingestion parse     32 memory read        33 lock open         34 lock error
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          [[ "$DEADLINE" =~ ^[0-9]+$ ]] || { echo 'the deadline is not an integer' >&2; exit 10; }
+          [[ "$MAX_RUNS" =~ ^[0-9]{1,3}$ ]] || { echo 'max_runs is not an integer' >&2; exit 10; }
+          MAX_RUNS=$((10#$MAX_RUNS))  # decimal even with a leading zero (08 would abort the arithmetic, 010 read as octal)
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || { echo 'the run token is not <run id>-<attempt>' >&2; exit 10; }
+          now=$(date +%s) || { echo 'the host clock cannot be read' >&2; exit 26; }
+          [[ "$now" =~ ^[0-9]+$ ]] || { echo 'the host clock is not an epoch' >&2; exit 26; }
+          end=$(( now + DEADLINE ))
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          readonly_session=(-e 'PGOPTIONS=-c default_transaction_read_only=on')
+          leg_env=()
+          # >>> leg: every process runs under what is left of ONE deadline (end, fixed once above), never a fresh timeout per leg
+          # (the python of a leg carries `-X valuation_pit_run_token=<run id>-<attempt>`: an -X option the modules never read, kept in
+          #  its command line so that the cleanup step stops THIS run's processes and nothing else; LAUNCHED is printed before it starts)
+          leg() {
+            local floor=$1 left now
+            shift
+            now=$(date +%s) || { echo 'the host clock cannot be read: not started' >&2; return 26; }
+            [[ "$now" =~ ^[0-9]+$ ]] || { echo 'the host clock is not an epoch: not started' >&2; return 26; }
+            left=$(( end - now ))
+            if [ "$left" -lt "$floor" ]; then
+              echo "only ${left} s left before the next window (${floor} s needed): not started" >&2
+              return 25
+            fi
+            echo "LAUNCHED $RUN_TOKEN" || { echo 'LAUNCHED could not be written: not started' >&2; return 35; }
+            "${compose[@]}" exec -T ${leg_env[@]+"${leg_env[@]}"} api timeout -s TERM -k 120 "$left" nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m "$@" </dev/null
+          }
+          # <<< leg
+          if [ "$MODE" = host-check ]; then  # read only and exempt: it shows a pending reboot instead of refusing on it
+            for flag in /run/c3po-security/reboot.pending /var/run/reboot-required; do
+              if [ -e "$flag" ]; then echo "REBOOT pending $flag"; else echo "REBOOT absent $flag"; fi
+            done
+            disks=$(df -P / /var/lib/docker) || { echo 'the free disk of / and /var/lib/docker cannot be read' >&2; exit 13; }
+            printf '%s\n' "$disks" | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
+            if data_disk=$(df -P /mnt/day-d-data 2>/dev/null); then  # the data volume is shown when it is mounted (informative only)
+              printf '%s\n' "$data_disk" | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
+            fi
+            memory=$(awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {sub(":", "", $1); print "MEM " $1 " " $2}' /proc/meminfo) || { echo 'the memory cannot be read' >&2; exit 14; }
+            [ -n "$memory" ] || { echo 'the memory cannot be read' >&2; exit 14; }
+            printf '%s\n' "$memory" || exit 14
+            exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null
+          fi
+          for flag in /run/c3po-security/reboot.pending /var/run/reboot-required; do
+            if [ -e "$flag" ]; then
+              echo "reboot pending ($flag): the backtest must wait for recovery" >&2
+              exit 11
+            fi
+          done
+          writes=0
+          case "$MODE" in price-backfill|fetch|grid) writes=1 ;; esac
+          if [ "$writes" = 1 ] || [ "$MODE" = report ]; then
+            # no R2D2/massive host job active, none due before this run's window ends (+ 60 min), no nightly worker or long ingestion running
+            stop_epoch=$(date -d "$STOP_BEFORE" +%s) || { echo 'STOP_BEFORE cannot be parsed: refused (fail closed)' >&2; exit 18; }
+            [[ "$stop_epoch" =~ ^[0-9]+$ ]] || { echo 'STOP_BEFORE is not an epoch: refused (fail closed)' >&2; exit 18; }
+            limit=$(( stop_epoch + 3600 ))
+            services=$(systemctl list-units --type=service --state=active,activating,reloading --no-legend --plain 'r2d2*' 'c3po-massive*') \
+              || { echo 'the host services cannot be listed: refused (fail closed)' >&2; exit 27; }
+            active=$(printf '%s\n' "$services" | awk 'NF {print $1}') || { echo 'the host services cannot be read: refused (fail closed)' >&2; exit 27; }
+            [ -z "$active" ] || { echo 'an R2D2/massive host service is active: the backtest must wait' >&2; exit 19; }
+            timers=$(systemctl list-units --type=timer --all --no-legend --plain 'r2d2*' 'c3po-massive*') \
+              || { echo 'the host timers cannot be listed: refused (fail closed)' >&2; exit 28; }
+            names=$(printf '%s\n' "$timers" | awk 'NF {print $1}') || { echo 'the host timers cannot be read: refused (fail closed)' >&2; exit 28; }
+            for timer in $names; do
+              next=$(systemctl show -p NextElapseUSecRealtime --value "$timer") || { echo "the next elapse of $timer cannot be read: refused (fail closed)" >&2; exit 29; }
+              if [ -z "$next" ] || [ "$next" = n/a ]; then
+                continue  # not scheduled
+              fi
+              next_epoch=$(date -d "$next" +%s 2>/dev/null) || { echo "the next elapse of $timer cannot be parsed: refused (fail closed)" >&2; exit 30; }
+              [[ "$next_epoch" =~ ^[0-9]+$ ]] || { echo "the next elapse of $timer cannot be parsed: refused (fail closed)" >&2; exit 30; }
+              if [ "$next_epoch" -le "$limit" ]; then
+                echo "an R2D2/massive host timer fires before this run's window ends + 60 min" >&2
+                exit 19
+              fi
+            done
+            preflight=$("${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null) \
+              || { echo 'the host check failed: refused (fail closed)' >&2; exit 20; }
+            blocking=$(printf '%s' "$preflight" | python3 -c 'import json, sys; print(int(json.load(sys.stdin)["ingestion_runs"]["blocking"]))') \
+              || { echo 'the running ingestions cannot be read: refused (fail closed)' >&2; exit 31; }
+            [[ "$blocking" =~ ^[0-9]+$ ]] || { echo 'the running ingestions cannot be read: refused (fail closed)' >&2; exit 31; }
+            [ "$blocking" = 0 ] || { echo 'the nightly valuation worker or a long ingestion is running: the backtest must wait' >&2; exit 21; }
+          fi
+          if [ "$writes" = 1 ]; then
+            disk=$(df -P /var/lib/docker) || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+            avail_kb=$(printf '%s\n' "$disk" | awk 'NR == 2 {print $4}') || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+            [[ "$avail_kb" =~ ^[0-9]+$ ]] || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+            mem_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) || { echo 'the available memory cannot be read: refused (fail closed)' >&2; exit 32; }
+            [[ "$mem_kb" =~ ^[0-9]+$ ]] || { echo 'the available memory cannot be read: refused (fail closed)' >&2; exit 32; }
+            case "$MODE" in
+              price-backfill) reserve=2097152 ;;
+              fetch) reserve=524288 ;;
+              grid) reserve=$((MAX_RUNS * 2 * 10240)) ;;
+            esac
+            need=$((6291456 + reserve))
+            [ "$avail_kb" -ge "$need" ] || { echo "free disk ${avail_kb} KiB below ${need} KiB (6 GiB + the mode's reserve)" >&2; exit 23; }
+            [ "$mem_kb" -ge 3145728 ] || { echo "available memory ${mem_kb} KiB below 3 GiB" >&2; exit 24; }
+            exec 9>>"$APP_DIR/runtime/security/deployment.lock" || { echo 'the deployment lock cannot be opened: refused (fail closed)' >&2; exit 33; }
+            lock_rc=0
+            flock -s -n 9 || lock_rc=$?
+            case "$lock_rc" in
+              0) ;;
+              1) echo 'a deploy holds the deployment lock: the backtest must wait' >&2; exit 17 ;;
+              *) echo "the deployment lock cannot be taken (flock status $lock_rc): refused (fail closed)" >&2; exit 34 ;;
+            esac
+            echo "PREFLIGHT disk_kb=$avail_kb mem_kb=$mem_kb"
+          fi
+          case "$MODE" in
+            dry-run)
+              leg_env=("${readonly_session[@]}")
+              leg 600 app.valuation_pit_grid --market US --price-pinned-at "$PIN" --catalogue-pinned-at "$CATALOGUE_PIN" \
+                --statements vintages --step-sessions 5 --dry-run || exit $?
+              ;;
+            price-backfill)
+              for market in NASDAQ NYSE; do
+                leg 60 app.valuation_price_history --market "$market" --backfill --months 120 || exit $?
+              done
+              ;;
+            fetch)
+              leg 60 app.valuation_pit_rerun --market NASDAQ --fetch || exit $?
+              leg 60 app.valuation_pit_rerun --market NYSE --fetch --no-macro || exit $?
+              ;;
+            grid)
+              recompute=()
+              [ "$RECOMPUTE" != true ] || recompute=(--recompute-existing)
+              leg 60 app.valuation_pit_grid --market US --price-pinned-at "$PIN" --catalogue-pinned-at "$CATALOGUE_PIN" \
+                --statements vintages --step-sessions 5 --max-runs "$MAX_RUNS" --stop-before "$STOP_BEFORE" --owner-order-sha256 "$ORDER" \
+                --expect-producer-sha256 "$PRODUCER" --expect-served-producer-sha256 "$SERVED_PRODUCER" ${recompute[@]+"${recompute[@]}"} --manifest-out "/tmp/valuation-pit-grid-$RUN_ID.json" || exit $?
+              ;;
+            report)
+              echo 'PREFLIGHT report ok'
+              ;;
+            *)
+              echo 'unknown mode' >&2
+              exit 16
+              ;;
+          esac
+          REMOTE
+          lines=$(wc -l < "$raw/stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          printf 'rc=%s\n' "$rc" >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Run the report on the host
+        id: report
+        if: inputs.mode == 'report' && steps.host.outputs.rc == '0'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          [[ "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 1
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || exit 1
+          now=$(date +%s) || exit 1
+          [[ "$now" =~ ^[0-9]+$ ]] || exit 1
+          left=$(( DEADLINE_AT - now ))  # what is left of the run's ONE deadline
+          [ "$left" -ge 600 ] || { echo "only ${left} s left before the next window (600 s needed): the report does not start" >&2; exit 1; }
+          rc=0
+          # the manifest travels on stdin (never in argv); the remote command is fixed text but for the validated integer deadline and
+          # the validated run token (LAUNCHED first, then the report's python carries the token: the cleanup stops only this run's process)
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "cd /opt/chief-of-staff-digital && echo 'LAUNCHED $RUN_TOKEN' && docker compose --env-file .env -f c3po/compose.yml exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api timeout -s TERM -k 120 $left nice -n 10 python -X valuation_pit_run_token=$RUN_TOKEN -m app.valuation_pit_backtest_report --manifest - --prereg /legacy/c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md" \
+            < "$RUNNER_TEMP/manifest/manifest.json" > "$raw/report.txt" 2>> "$raw/stderr.log" || rc=$?
+          echo "remote report exit status: $rc"
+          cp "$raw/report.txt" "$raw/stdout.txt" || exit 1
+          printf 'rc=%s\n' "$rc" >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Verify and keep aggregates only
+        id: verify
+        env:
+          MODE: ${{ steps.inputs.outputs.mode }}
+          ORDER: ${{ steps.inputs.outputs.order }}
+          RC: ${{ inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc }}
+          EXPECTED_MANIFEST: ${{ inputs.manifest_sha256 }}
+          PREREG_COMMIT: ${{ inputs.prereg_commit }}
+          RUN_ID: ${{ github.run_id }}
+          REVISION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/valuation-pit-backtest"
+          mkdir -p "$out" || exit 1
+          python3 - "$RUNNER_TEMP/raw/stdout.txt" "$out" c3po/docs/PREREG_VALUATION_PIT_BACKTEST_US_V1.md "$RUNNER_TEMP/prereg-at-commit.md" "$RUNNER_TEMP/producer.json" \
+            "$RUNNER_TEMP/verify-failed" <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          source, out, prereg, prereg_at_commit, producer_path, failed_marker = (Path(arg) for arg in sys.argv[1:7])
+          mode = os.environ["MODE"]
+          partial = (os.environ.get("RC") or "1") != "0"  # the host step failed: publish what was found, marked partial; the job fails after the upload
+          text = source.read_text(encoding="utf-8") if source.exists() else ""
+          summary = [f"## Valuation PIT backtest US — {mode}" + (" (PARTIAL: the host step failed)" if partial else ""), ""]
+          errors: list[str] = []  # published as errors (metadata and summary), then the job fails
+
+
+          def canonical(value):
+              return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+
+
+          def documents():
+              """The JSON lines of the remote stdout; a LAST line cut short (the process was stopped mid-write) is dropped and the
+              output published as partial — any other line that is not JSON refuses the output (its content is never printed)."""
+              lines = [line.strip() for line in text.splitlines() if line.strip()]
+              found = []
+              for index, line in enumerate(lines):
+                  if not line.startswith("{"):
+                      continue
+                  try:
+                      found.append(json.loads(line))
+                  except ValueError:
+                      if index == len(lines) - 1:
+                          errors.append("truncated_last_line")
+                          continue
+                      sys.exit("a remote output line is not JSON (content not printed)")
+              return found
+
+
+          def aggregate(document):
+              """Scalars kept; a list or a mapping (possibly keyed by symbol) is reduced to its size — and errors to their types."""
+              reduced = {}
+              for key, value in sorted(document.items()):
+                  if isinstance(value, (list, dict)):
+                      reduced[f"{key}_count"] = len(value)
+                      if key == "errors" and isinstance(value, dict):
+                          reduced["errors_by_type"] = dict(sorted(Counter(str(item).split(":")[0] for item in value.values()).items()))
+                  else:
+                      reduced[key] = value
+              return reduced
+
+
+          metadata = {"run_id": os.environ["RUN_ID"], "workflow_revision": os.environ["REVISION"], "mode": mode, "partial": partial,
+                      "owner_order_sha256": os.environ.get("ORDER") or None}
+          preflight = [line.split(" ", 1)[1] for line in text.splitlines() if line.startswith("PREFLIGHT ")]
+          if preflight:
+              metadata["preflight"] = preflight
+          if mode == "host-check":
+              disks = [line.split()[1:] for line in text.splitlines() if line.startswith("DISK ")]
+              memory = {line.split()[1]: int(line.split()[2]) for line in text.splitlines() if line.startswith("MEM ")}
+              reboot = {line.split()[2]: line.split()[1] for line in text.splitlines() if line.startswith("REBOOT ")}
+              found = [document for document in documents() if document.get("kind") == "host_check"]
+              if len(found) != 1:
+                  sys.exit("no host check in the output")
+              result = {"disk": [{"available_kb": int(avail), "size_kb": int(size), "mount": mount} for avail, size, mount in disks], "memory_kb": memory,
+                        "reboot": reboot, **found[0]}
+              (out / "host-check.json").write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+              for disk in result["disk"]:
+                  summary.append(f"- disk {disk['mount']}: {disk['available_kb'] // 1024} MiB free of {disk['size_kb'] // 1024} MiB")
+              summary.append(f"- memory: {memory.get('MemAvailable', 0) // 1024} MiB available; swap {memory.get('SwapFree', 0) // 1024} MiB free of "
+                             f"{memory.get('SwapTotal', 0) // 1024} MiB; ingestions {found[0].get('ingestion_runs')}; reboot flags {reboot}")
+              for market, publication in sorted((found[0].get("publications") or {}).items()):
+                  if publication:
+                      summary.append(f"- {market}: publication `{publication['publication_id']}` available {publication['available_at']}, window "
+                                     f"{publication['from']} … {publication['to']}, {publication['symbols']} symbols, {publication['bars']} bars")
+              docker = [disk for disk in result["disk"] if disk["mount"] in ("/var/lib/docker", "/")]
+              if docker and min(disk["available_kb"] for disk in docker) < 6 * 1024 * 1024:
+                  metadata["disk_below_6_gib"] = True
+                  errors.append("disk_below_6_gib")
+                  summary.append("- **ERROR: less than 6 GiB free for the database — the backtest must not start**")
+          elif mode == "dry-run":
+              found = [document for document in documents() if document.get("kind") == "dry_run"]
+              if len(found) != 1:
+                  if not partial:
+                      sys.exit("no dry run in the output")
+              else:
+                  (out / "dry-run.json").write_text(json.dumps(found[0], sort_keys=True, indent=2) + "\n", encoding="utf-8")
+                  plan = found[0]
+                  summary.append(f"- grid: {plan['grid']['count']} instants, {plan['grid']['first']} … {plan['grid']['last']} (pre-registered grid: "
+                                 f"{plan['prereg_grid_sessions']}); reusable runs {plan['reusable']['runs']}; volume basis {plan.get('volume_basis')}")
+          elif mode in ("price-backfill", "fetch"):
+              found = [aggregate(document) for document in documents()]
+              if len(found) != 2 and not partial and not errors:
+                  sys.exit(f"{mode}: expected one result per exchange, got {len(found)}")
+              (out / f"{mode}.json").write_text(json.dumps(found, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+              for item in found:
+                  summary.append("- " + ", ".join(f"{key} {value}" for key, value in sorted(item.items())))
+          elif mode == "grid":
+              found = documents()
+              final = [document for document in found if document.get("kind") == "manifest"]
+              receipts = [document for document in found if document.get("kind") == "t"]
+              (out / "receipts.jsonl").write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in receipts), encoding="utf-8")
+              elapsed = sum(float(item.get("elapsed_seconds") or 0) for item in receipts)
+              metadata.update({"instants_this_chunk": len(receipts), "elapsed_seconds_this_chunk": elapsed,
+                               "peak_rss_kb": max([int(item.get("peak_rss_kb") or 0) for item in receipts] or [0])})
+              if len(final) != 1:
+                  if not partial and not errors:
+                      sys.exit("the grid printed no manifest")
+              else:
+                  manifest = final[0]["manifest"]
+                  digest = hashlib.sha256(canonical({key: value for key, value in manifest.items() if key != "manifest_sha256"})).hexdigest()
+                  if digest != manifest.get("manifest_sha256") or digest != final[0].get("manifest_sha256"):
+                      sys.exit("the grid manifest's sha256 does not recompute")
+                  if manifest.get("owner_order_sha256") != (os.environ.get("ORDER") or None):
+                      sys.exit("the manifest does not carry this run's owner order")
+                  (out / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+                  metadata.update({"manifest_sha256": digest, "complete": manifest.get("complete"), "entries": len(manifest.get("grid") or []),
+                                   "remaining": manifest.get("remaining"), "stopped": manifest.get("stopped"), "volume_basis": manifest.get("volume_basis")})
+                  summary.append(f"- manifest_sha256 `{digest}`; complete {manifest.get('complete')}; entries {len(manifest.get('grid') or [])}; "
+                                 f"remaining {manifest.get('remaining')}; stopped {manifest.get('stopped')}; volume basis {manifest.get('volume_basis')}")
+              summary.append(f"- this chunk: {len(receipts)} instants in {elapsed:.0f} s ({elapsed / max(1, len(receipts)):.1f} s per instant); "
+                             f"peak RSS {metadata['peak_rss_kb'] // 1024} MiB")
+          elif mode == "report":
+              found = documents()
+              if partial or errors:
+                  summary.append("- the report did not complete: nothing is published but this metadata")
+              else:
+                  if len(found) != 1:
+                      sys.exit("the report output is not a single JSON document (content not printed)")
+                  receipt = found[0]
+                  if set(receipt) != {"schema", "payload", "payload_sha256", "provenance"}:
+                      sys.exit("unexpected receipt shape")
+                  payload = receipt["payload"]
+                  if hashlib.sha256(canonical(payload)).hexdigest() != receipt["payload_sha256"]:
+                      sys.exit("payload_sha256 does not recompute")
+                  if receipt["schema"] != "VALUATION-PIT-BACKTEST-REPORT-v1" or payload.get("schema") != receipt["schema"]:
+                      sys.exit("unexpected schema")
+                  prereg_bytes = prereg.read_bytes()
+                  workflow_prereg = hashlib.sha256(prereg_bytes).hexdigest()
+                  if payload.get("prereg_sha256") != workflow_prereg:
+                      sys.exit("the deployed pre-registration is not the one of this workflow revision: the reading is void")
+                  if not prereg_at_commit.exists() or prereg_at_commit.read_bytes() != prereg_bytes:
+                      sys.exit("the pre-registration changed since the commit of its hash receipt: the reading is void")
+                  pinned = {}
+                  for line in prereg_bytes.decode("utf-8").splitlines():
+                      match = re.match(r"^(file|object) (\S+) ([0-9a-f]{64})$", line.strip())
+                      if match:
+                          pinned[f"{match.group(1)} {match.group(2)}"] = match.group(3)
+                  code = payload.get("code") or {}
+                  ran = {**{f"file {name}": digest for name, digest in (code.get("files") or {}).items()},
+                         **{f"object {name}": digest for name, digest in (code.get("objects") or {}).items()}}
+                  if not pinned:
+                      sys.exit("the pre-registration pins no code: the reading is void")
+                  if ran != pinned:
+                      differing = sorted(key for key in pinned.keys() | ran.keys() if pinned.get(key) != ran.get(key))
+                      sys.exit("the deployed code is not the pinned code (" + ", ".join(differing) + "): the reading is void")
+                  if (payload.get("code_binding") or {}).get("status") != "BOUND":
+                      sys.exit("the receipt does not declare its code BOUND: the reading is void")
+                  build_sha = code.get("build_sha")
+                  if not isinstance(build_sha, str) or re.fullmatch(r"[0-9a-f]{40}", build_sha) is None:
+                      sys.exit("the deployed revision is not a commit sha (C3PO_BUILD_SHA): the reading cannot be attributed")
+                  if (payload.get("manifest") or {}).get("manifest_sha256") != os.environ["EXPECTED_MANIFEST"]:
+                      sys.exit("the receipt was not computed over the published grid manifest")
+                  producer = json.loads(producer_path.read_text(encoding="utf-8")) if producer_path.exists() else {}
+                  ran_producer = (payload.get("runs") or {}).get("producer") or {}
+                  if not producer or {"files": ran_producer.get("engine_files"), "objects": ran_producer.get("engine_objects")} != producer:
+                      sys.exit("the grid's producer (the producer files and reader objects of its runs) is not the prereg commit's: the reading is void")
+                  served_block = payload.get("served_internal_tp") or {}
+                  served_decided = served_block.get("verdict") or {"status": "VOID", "reasons": ["served:not_in_the_receipt"]}
+                  if served_decided.get("status") != "VOID":  # rev 2: a served verdict is read only from the served producer of the prereg commit
+                      served_path = producer_path.with_name("served-producer.json")
+                      expected_served = json.loads(served_path.read_text(encoding="utf-8")) if served_path.exists() else {}
+                      ran_served = (served_block.get("runs") or {}).get("producer") or {}
+                      if not expected_served or {"files": ran_served.get("engine_files"), "objects": ran_served.get("engine_objects")} != expected_served:
+                          sys.exit("the served producer of the grid's served runs is not the prereg commit's: the reading is void")
+                  (out / "report.json").write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+                  decided = payload["verdict"]
+                  metadata.update({"deployed_build_sha": build_sha, "payload_sha256": receipt["payload_sha256"], "prereg_sha256": workflow_prereg,
+                                   "prereg_commit": os.environ["PREREG_COMMIT"], "manifest_sha256": os.environ["EXPECTED_MANIFEST"],
+                                   "code_pins_verified": len(pinned), "verdict": decided["status"],
+                                   "verdicts": {"primary": "served_internal_tp", "served_internal_tp": served_decided["status"], "v3_shadow": decided["status"]}})
+                  summary.append(f"- payload_sha256 `{receipt['payload_sha256']}`; prereg `{workflow_prereg}` (commit `{os.environ['PREREG_COMMIT']}`); "
+                                 f"{len(pinned)} code pins verified; deployed revision `{build_sha}`")
+                  for label, cell in (("served_internal_tp (PRIMARY: the TP served)", served_decided), ("v3_shadow (secondary)", decided)):
+                      summary.append(f"- {label}:")
+                      if cell["status"] == "VOID":  # a VOID reading shows no statistic, here either
+                          summary.append(f"  - **verdict VOID** — reasons {cell['reasons']}")
+                      else:
+                          summary.append(f"  - **verdict {cell['status']}** — IC executable h=21 {cell['ic_estimate']} (p_greater {cell['ic_p_greater']}), "
+                                         f"blocks {cell['blocks']}, halves {cell['halves']}, persistence p {cell['persistence_p_greater']}, coverage "
+                                         f"{cell['coverage_records_share']} / {cell['coverage_screened_names_median']}, reasons {cell['reasons']}")
+          else:
+              sys.exit("unknown mode")
+          if errors:
+              metadata.update({"partial": True, "errors": errors})
+              summary.append(f"- **ERROR** {', '.join(errors)}: published as an error; the job fails")
+              failed_marker.write_text(",".join(errors) + "\n", encoding="utf-8")
+          (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a", encoding="utf-8") as stream:
+              stream.write("\n".join(summary) + "\n")
+          PY
+          (cd "$out" && sha256sum ./* > SHA256SUMS) || exit 1
+
+      - name: Publish the aggregates
+        if: always() && steps.verify.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: valuation-pit-backtest-${{ inputs.mode }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/valuation-pit-backtest
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Stop this run's host processes on cancel or failure
+        if: (cancelled() || failure() || (inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc) != '0') && steps.sshkey.outcome == 'success' && inputs.mode != 'host-check'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || { echo 'the run token is not <run id>-<attempt>: nothing is stopped' >&2; exit 1; }
+          # only what THIS run launched, and only once it launched it: the host printed `LAUNCHED <token>` right before each leg (and
+          # the report); a refusal of the preflight or of the lock launched nothing, and stops nothing (the files outlive a cancel)
+          launched=0
+          for file in "$RUNNER_TEMP/raw/stdout.txt" "$RUNNER_TEMP/raw/report.txt"; do
+            if [ -f "$file" ] && grep -qxF "LAUNCHED $RUN_TOKEN" "$file"; then
+              launched=1
+            fi
+          done
+          if [ "$launched" != 1 ]; then
+            echo 'this run launched no process on the host: nothing to stop'
+            exit 0
+          fi
+          # the pattern names this run's token (its python carries -X valuation_pit_run_token=<run id>-<attempt>): an independent
+          # process — a manual valuation_price_history --nightly, another run — never matches; [.] keeps the pattern off its own text
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T api pkill -TERM -f 'valuation_pit_run_token=$RUN_TOKEN -m app[.]valuation_'" \
+            > /dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "a process of this run (token $RUN_TOKEN) was running in the api container: SIGTERM sent (the grid writes its manifest and stops between runs)" ;;
+            1) echo "no process of this run (token $RUN_TOKEN) was running in the api container" ;;
+            *) echo "the stop request failed (status $rc): check the api container by hand" >&2 ;;
+          esac
+
+      - name: Fail when the host step failed
+        env:
+          RC: ${{ inputs.mode == 'report' && steps.report.outputs.rc || steps.host.outputs.rc }}
+        run: |
+          if [ "$RC" != 0 ]; then
+            echo "the host step exited with status $RC (its stderr is kept private)" >&2
+            exit 1
+          fi
+          if [ -e "$RUNNER_TEMP/verify-failed" ]; then
+            echo "the outputs were published as an error: $(cat "$RUNNER_TEMP/verify-failed")" >&2
+            exit 1
+          fi

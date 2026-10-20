@@ -12,11 +12,12 @@ from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
 from ..investor_relations import normalize_company_name
 from ..official_fundamentals import apply_official_fundamentals_map
+from ..official_statements import apply_official_statements_map, fieldwise_overlay_enabled
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
-from ..valuation_official import UNRESOLVED, current_generation, item_stamp, official_rows, official_stamp, provenance_sha256
+from ..valuation_official import UNRESOLVED, current_generation, item_stamp, official_rows, official_stamp, provenance_sha256, selection_frozen
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -72,6 +73,12 @@ LATEST_COPOM_SELIC = 0.14
 LATEST_COPOM_DECISION_AT = datetime(2026, 8, 5, 18, 30, tzinfo=ZoneInfo("America/Sao_Paulo"))
 LATEST_COPOM_EFFECTIVE_DATE = date(2026, 8, 6)
 SELIC_GOVERNOR_STALE_WARNING_DAYS = 50
+# Defect (c), 2026-10-17: BCB SGS 432 (the COPOM target, one observation per day) is the PRIMARY Selic; the hardcoded
+# governor above only covers the hours between a COPOM decision and the series picking it up. Past its 50-day window a
+# later COPOM may already have moved the rate, so the stale governor no longer outranks Brapi's live macro feed, and the
+# source that won is persisted with the cycle (`selic_provenance`) — a stale rate is visible, never silent.
+SELIC_BCB_STALE_WARNING_DAYS = 7
+SELIC_PLAUSIBLE_RANGE = (0.02, 0.40)  # a reading outside it is a unit/parse error, never a policy rate
 # Data-source audit (2026-08-20): Brapi Pro's Tesouro Direto endpoints were
 # never used at all, even though they're included in the plan we already
 # pay for. A genuine, independently-observed market yield (unlike Selic,
@@ -179,6 +186,7 @@ class B3ScreenerService:
         self._matrix_rows: list[dict[str, Any]] = []
         self._matrix_basis_at: datetime | None = None
         self._matrix_macro: dict[str, float] = {"selic": LATEST_COPOM_SELIC, "ipca12m": 0.045}
+        self._selic_provenance: dict[str, Any] | None = None  # which source the macro's Selic came from (defect c)
         self._matrix_universe_size = 0
         self._matrix_coverage_audit: dict[str, int] = {}
         self._matrix_sector_audit: list[dict[str, Any]] = []
@@ -278,7 +286,12 @@ class B3ScreenerService:
         return int(size) if size is not None and size > 0 else 0
 
     def valuation_for(self, symbol: str, *, build_if_missing: bool = False) -> dict[str, Any] | None:
-        """Return the shared valuation basis, optionally building an on-demand B3 valuation."""
+        """Return the shared valuation basis, optionally building an on-demand B3 valuation. Nothing is built while the
+        mesa freezes the official selection (Valuation P1, F1): the cycle could not be admitted over the frozen head, and
+        the mesa's order would then hold it — a same-day snapshot is never rebuilt, so the symbol would stay without an
+        official TP for the rest of the day. After the order (or the freeze's end) the next request builds as usual."""
+        if build_if_missing and selection_frozen(self.database) is not None:
+            build_if_missing = False
         clean = symbol.strip().upper().removesuffix(".SA")
         self._hydrate_persisted_state()
         if not self._matrix_rows:
@@ -523,6 +536,7 @@ class B3ScreenerService:
                 self._matrix_rows = [dict(row) for row in rows if isinstance(row, dict)]
                 self._matrix_basis_at = basis["published_at"]
                 self._matrix_macro = dict(output.get("macro") or self._matrix_macro)
+                self._selic_provenance = output.get("selic_provenance")  # travels with the macro it describes; None = a cycle from before it existed
                 self._matrix_universe_size = int(output.get("universe_size") or len(self._matrix_rows))
                 self._matrix_coverage_audit = dict(output.get("coverage_audit") or {})
                 self._matrix_cached = None
@@ -747,7 +761,9 @@ class B3ScreenerService:
                 self.database.finish_ingestion_run(run_id, "failed", len(missing_symbols), 0, str(exc))
         cache = self._eodhd_cache  # one attribute load: a concurrent expiry rebinding the dict cannot split the reads below
         entries = {symbol: entry for symbol in clean_symbols if (entry := cache.get(symbol)) is not None}  # one dict read per symbol: the pair
-        fundamentals = apply_official_fundamentals_map(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
+        # C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED (default off): complete CVM statements overlaid field by field
+        overlay = apply_official_statements_map if fieldwise_overlay_enabled() else apply_official_fundamentals_map
+        fundamentals = overlay(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
         return fundamentals, {symbol: entry[1] for symbol, entry in entries.items()}
 
     def _eodhd_receipts(self, symbols: list[str]) -> dict[str, datetime]:
@@ -1023,27 +1039,35 @@ class B3ScreenerService:
         except Exception:
             pass
 
-        bcb_selic: float | None = None
-        bcb_as_of: date | None = None
-        try:
-            payload = self.http.get_json(BCB_SELIC_SERIES_URL, params={"formato": "json"})
-            latest = payload[-1] if isinstance(payload, list) and payload else {}
-            value = number(latest.get("valor")) if isinstance(latest, dict) else None
-            observed_at = str(latest.get("data") or "") if isinstance(latest, dict) else ""
-            if value is not None:
-                bcb_selic = value / 100
-            if observed_at:
-                bcb_as_of = datetime.strptime(observed_at, "%d/%m/%Y").date()
-        except Exception:
-            pass
-
-        defaults["selic"] = self._effective_selic(
+        bcb_selic, bcb_as_of = self._bcb_selic_observation()
+        defaults["selic"], self._selic_provenance = self._resolve_selic(
             provider_value=provider_selic,
             bcb_value=bcb_selic,
             bcb_as_of=bcb_as_of,
         )
         self._check_selic_against_market_yield(defaults["selic"])
         return defaults
+
+    def _bcb_selic_observation(self) -> tuple[float | None, date | None]:
+        """The newest DATED observation of BCB SGS 432 as ``(annual rate, observation date)``, ``(None, None)`` when the
+        series cannot be read. The row with the latest ``data`` wins (never merely the last list position), and a row
+        without a parseable date or value is skipped — an undated rate cannot outrank the governor."""
+        try:
+            payload = self.http.get_json(BCB_SELIC_SERIES_URL, params={"formato": "json"})
+        except Exception:
+            return None, None
+        newest: tuple[date, float] | None = None
+        for item in payload if isinstance(payload, list) else []:
+            if not isinstance(item, dict):
+                continue
+            value = number(str(item.get("valor") or "").replace(",", "."))
+            try:
+                observed = datetime.strptime(str(item.get("data") or ""), "%d/%m/%Y").date()
+            except ValueError:
+                continue
+            if value is not None and (newest is None or observed > newest[0]):
+                newest = (observed, value / 100)
+        return (newest[1], newest[0]) if newest else (None, None)
 
     def _check_selic_against_market_yield(self, effective_selic: float) -> None:
         """Cross-checks the Selic-derived risk-free rate against a real,
@@ -1087,22 +1111,69 @@ class B3ScreenerService:
         bcb_as_of: date | None,
         now: datetime | None = None,
     ) -> float:
-        current_time = now or datetime.now(ZoneInfo("America/Sao_Paulo"))
+        return B3ScreenerService._resolve_selic(
+            provider_value=provider_value, bcb_value=bcb_value, bcb_as_of=bcb_as_of, now=now,
+        )[0]
+
+    @staticmethod
+    def _resolve_selic(
+        *,
+        provider_value: float | None,
+        bcb_value: float | None,
+        bcb_as_of: date | None,
+        now: datetime | None = None,
+    ) -> tuple[float, dict[str, Any]]:
+        """The Selic of this run and its provenance (defect c). Precedence:
+        1. BCB SGS 432 — primary — when its dated observation is at least as recent as the governor's effective date;
+        2. the COPOM governor while it is newer than every BCB observation in hand AND inside its 50-day window (the
+           hours between a decision and the daily series picking it up);
+        3. past that window (a later COPOM may have moved the rate): Brapi's live macro Selic, else the governor flagged
+           ``copom_governor_stale`` — the only number left, but never silently.
+        A reading outside ``SELIC_PLAUSIBLE_RANGE`` is not a rate and is ignored."""
+        sao_paulo = ZoneInfo("America/Sao_Paulo")
+        current_time = now or datetime.now(sao_paulo)
         if current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
-        if bcb_value is not None and bcb_as_of is not None and bcb_as_of >= LATEST_COPOM_EFFECTIVE_DATE:
-            return bcb_value
-        if current_time >= LATEST_COPOM_DECISION_AT:
-            stale_days = (current_time.date() - LATEST_COPOM_DECISION_AT.date()).days
-            if stale_days > SELIC_GOVERNOR_STALE_WARNING_DAYS:
+            current_time = current_time.replace(tzinfo=sao_paulo)
+        today = current_time.astimezone(sao_paulo).date()
+        low, high = SELIC_PLAUSIBLE_RANGE
+        bcb = bcb_value if bcb_value is not None and bcb_as_of is not None and low <= bcb_value <= high else None
+        provider = provider_value if provider_value is not None and low <= provider_value <= high else None
+        governor_age_days = (today - LATEST_COPOM_DECISION_AT.date()).days
+
+        def resolved(value: float, source: str) -> tuple[float, dict[str, Any]]:
+            return value, {
+                "source": source,
+                "rate": value,
+                "bcb_as_of": bcb_as_of.isoformat() if bcb_as_of else None,
+                "governor_decided_on": LATEST_COPOM_DECISION_AT.date().isoformat(),
+                "governor_age_days": governor_age_days,
+                "resolved_on": today.isoformat(),
+            }
+
+        if bcb is not None and bcb_as_of is not None and bcb_as_of >= LATEST_COPOM_EFFECTIVE_DATE:
+            if (today - bcb_as_of).days > SELIC_BCB_STALE_WARNING_DAYS:
                 logger.warning(
-                    "Selic governor is %d days past LATEST_COPOM_DECISION_AT (%s) with no newer BCB "
-                    "observation (bcb_as_of=%s) — LATEST_COPOM_SELIC/LATEST_COPOM_DECISION_AT/"
-                    "LATEST_COPOM_EFFECTIVE_DATE may need a manual update after a subsequent COPOM meeting.",
-                    stale_days, LATEST_COPOM_DECISION_AT.date(), bcb_as_of,
+                    "BCB SGS 432 latest observation is %s (%d days old) — the daily Selic series looks stale; "
+                    "it still outranks the older COPOM governor.",
+                    bcb_as_of, (today - bcb_as_of).days,
                 )
-            return LATEST_COPOM_SELIC
-        return bcb_value or provider_value or LATEST_COPOM_SELIC
+            return resolved(bcb, "bcb_sgs_432")
+        if current_time < LATEST_COPOM_DECISION_AT:  # a clock before the governor's decision: the governor does not exist yet
+            if bcb is not None:
+                return resolved(bcb, "bcb_sgs_432")
+            return resolved(provider, "brapi_macro") if provider is not None else resolved(LATEST_COPOM_SELIC, "copom_governor")
+        if governor_age_days <= SELIC_GOVERNOR_STALE_WARNING_DAYS:
+            return resolved(LATEST_COPOM_SELIC, "copom_governor")
+        logger.warning(
+            "Selic governor is %d days past LATEST_COPOM_DECISION_AT (%s) with no newer BCB "
+            "observation (bcb_as_of=%s) — using %s; LATEST_COPOM_SELIC/LATEST_COPOM_DECISION_AT/"
+            "LATEST_COPOM_EFFECTIVE_DATE may need a manual update after a subsequent COPOM meeting.",
+            governor_age_days, LATEST_COPOM_DECISION_AT.date(), bcb_as_of,
+            "Brapi's live macro Selic" if provider is not None else "the stale governor",
+        )
+        if provider is not None:
+            return resolved(provider, "brapi_macro_governor_stale")
+        return resolved(LATEST_COPOM_SELIC, "copom_governor_stale")
 
     def _prepare_rows(
         self,
@@ -2203,19 +2274,37 @@ class B3ScreenerService:
         power_score = self._power_score(upside, risk_score, quality, valuation_confidence, distance)
 
         tp_upside_cutoff = self._tp_upside_cutoff_percent(macro)
+        status = self._screen_status(upside, distance, valuation_confidence, method_dispersion, tp_validation["status"], tp_upside_cutoff)
 
-        if (
-            upside >= tp_upside_cutoff
-            and distance <= MAX_ENTRY_DISTANCE
-            and valuation_confidence >= MIN_VALUATION_CONFIDENCE
-            and method_dispersion <= MAX_METHOD_DISPERSION
-            and tp_validation["status"] == "validated"
-        ):
-            status = "full_match"
-        elif upside >= max(tp_upside_cutoff - 5, 0) and distance <= 25 and valuation_confidence >= 60:
-            status = "near_buy"
-        else:
-            status = "watchlist"
+        # Passo 1 rev 9 (official_internal_v1): the TP-dependent tail of the row — upside, entry distance, the TP plausibility
+        # check, expected return (consensus weight 0), Power Score and status — by the SAME rules on the internal TP and its
+        # buy-in: what an internal record is served with, never the blend's. Without a consensus the blend IS the internal TP
+        # and the internal view is the blend's, bit for bit (the validation is reused, not re-read against the clock).
+        internal_upside = (internal_tp / row["price"] - 1) * 100
+        internal_distance = (row["price"] / internal_buy_in - 1) * 100 if internal_buy_in > 0 else 999.0
+        internal_validation = tp_validation if internal_tp == our_tp else self._validate_target_price(
+            row=row,
+            methods=normalized_methods,
+            internal_tp=internal_tp,
+            consensus_tp=consensus_for_blend,
+            our_tp=internal_tp,
+            valuation_confidence=valuation_confidence,
+            method_dispersion=method_dispersion,
+        )
+        internal_total_return = self._expected_12m_return(
+            row["price"],
+            internal_tp,
+            expected_dividend,
+            sustainable_growth,
+            convergence_years,
+            valuation_confidence,
+            method_dispersion,
+            0.0,
+        )
+        internal_score = self._power_score(internal_upside, risk_score, quality, valuation_confidence, internal_distance)
+        internal_status = self._screen_status(
+            internal_upside, internal_distance, valuation_confidence, method_dispersion, internal_validation["status"], tp_upside_cutoff,
+        )
 
         row.update({
             "methods": normalized_methods,
@@ -2236,6 +2325,14 @@ class B3ScreenerService:
             "buy_in_models": buy_in_models,
             "internal_buy_in": internal_buy_in,  # Passo 1: the same entry rule applied to internal_tp (official_internal_v1 reads these two)
             "internal_buy_in_models": internal_buy_in_models,
+            "internal_upside_percent": internal_upside,  # rev 9: the internal view (valuation_official.internal_view serves score/status/expected return/validation)
+            "internal_price_vs_buy_in_percent": internal_distance,
+            "internal_expected_total_return_percent": internal_total_return,
+            "internal_convergence_weight": self._convergence_weight(valuation_confidence, method_dispersion, 0.0),
+            "internal_score": internal_score,
+            "internal_tp_validation_status": internal_validation["status"],
+            "internal_tp_validation_reasons": internal_validation["reasons"],
+            "internal_status": internal_status,
             "expected_dividend": expected_dividend,
             "price_vs_buy_in_percent": distance,
             "fcf_yield_percent": fcf_yield * 100 if row.get("fcf") else None,
@@ -2539,6 +2636,28 @@ class B3ScreenerService:
             0,
             100,
         )
+
+    @staticmethod
+    def _screen_status(
+        tp_upside: float,
+        price_vs_buy_in: float,
+        valuation_confidence: float,
+        method_dispersion: float,
+        tp_validation_status: str,
+        tp_upside_cutoff: float,
+    ) -> str:
+        """The screen status of a row (Power Zone gate): applied to the blend and — Passo 1 rev 9 — to the internal TP."""
+        if (
+            tp_upside >= tp_upside_cutoff
+            and price_vs_buy_in <= MAX_ENTRY_DISTANCE
+            and valuation_confidence >= MIN_VALUATION_CONFIDENCE
+            and method_dispersion <= MAX_METHOD_DISPERSION
+            and tp_validation_status == "validated"
+        ):
+            return "full_match"
+        if tp_upside >= max(tp_upside_cutoff - 5, 0) and price_vs_buy_in <= 25 and valuation_confidence >= 60:
+            return "near_buy"
+        return "watchlist"
 
     @staticmethod
     def _sustainable_growth(profile: str, observed_growth: float) -> float:
@@ -3020,6 +3139,7 @@ class B3ScreenerService:
             self._json_safe({
                 "rows": self._matrix_rows,
                 "macro": macro,
+                "selic_provenance": getattr(self, "_selic_provenance", None),  # defect (c): which source the macro's Selic came from
                 "universe_size": self._matrix_universe_size,
                 "coverage_audit": self._matrix_coverage_audit,
                 "sector_audit": self._matrix_sector_audit,
@@ -3110,6 +3230,8 @@ class B3ScreenerService:
                     "samples": len(samples),
                     "median_forecast_error_percent": round(statistics.median(errors) * 100, 2) if errors else None,
                     "mean_absolute_error_percent": round(statistics.mean(absolute_errors) * 100, 2) if absolute_errors else None,
+                    # Decisor V1 (valuation_decision): e_profile is this measured median absolute error — a diagnostic, no factor reads it
+                    "median_absolute_error_percent": round(statistics.median(absolute_errors) * 100, 2) if absolute_errors else None,
                     "directional_accuracy_percent": round(statistics.mean(directional) * 100, 2) if directional else None,
                     "factor": round(factor, 5),
                 }

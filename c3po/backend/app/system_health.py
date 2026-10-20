@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from . import valuation_env
 from .config import Settings
 from .governance_vulnerability import report_sha256
 from .observability import HealthcheckPing
@@ -1407,6 +1408,7 @@ class SystemHealthService:
             for phase, definition in VALUATION_WORKER_PHASES.items()
             if (phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled)
             and (phase != "price_history" or getattr(self.settings, "valuation_price_history_enabled", False))
+            and (phase != "decisor_shadow" or valuation_env.decisor_shadow_enabled())
         }
         codes = [definition["code"] for definition in definitions.values()]
         try:

@@ -1,0 +1,476 @@
+name: Valuation read-only accuracy report
+run-name: Valuation read-only ${{ inputs.report }} report
+
+# Dispatch only. Two read-only reports, chosen by the `report` input:
+#   - `accuracy` (default): app.valuation_accuracy_report (PREREG_VALUATION_DECISOR_V1);
+#   - `before-after`: the Valuation P1 before/after receipt
+#     (app.valuation_official --before-after --keep-internal-targeted, VALUATION_P1_INTERNAL_TP.md),
+#     then a second read-only exec renders its Portuguese summary (before_after_markdown) from
+#     that aggregate. Only the aggregate (no symbols) and its report_sha256 leave the host:
+#     never --private-detail, never a --markdown path inside the container.
+# Both run inside the running api container of the production host through the deploy SSH
+# transport of c3po-pipeline.yml, READ-ONLY:
+#   - no file is copied to or written on the host, no container is created, restarted or
+#     stopped (`docker compose exec` into the running api), no lock is taken;
+#   - the database session is read-only in PostgreSQL itself (PGOPTIONS
+#     default_transaction_read_only=on, set here and, for accuracy, again by the module);
+#   - the accuracy module reaches four store readers only and never the network; the
+#     before/after receipt only reads the official selection, its cycles and their records.
+# Nothing is uploaded unless the reading is valid under §10 of the pre-registration: the
+# deployed prereg is byte-identical to this revision's, the code the container ran is exactly
+# the code the prereg pins (§17: every pinned module and object, by sha256) and the deployed
+# revision is a commit sha. Then only the aggregate receipt (no symbols) and a metadata file are
+# uploaded. The before/after receipt is uploaded only when its report_sha256 recomputes over the
+# aggregate, its keys are exactly the aggregate's (no per-symbol field), it names the build that
+# PRODUCED it (producer_build_sha, read by the producing process, a commit sha) under a
+# receipt_sha256 that recomputes, and the summary was rendered by that same deployed build: a
+# deploy between the two execs refuses the run (nothing is published) — the receipt is never
+# attributed to a revision read by the second exec. The remote stderr stays in the runner's temp directory and is never printed:
+# this repository is public and a log line may name a symbol.
+# Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN VALUATION READ-ONLY REPORT
+        required: true
+        type: string
+      report:
+        description: accuracy (PREREG_VALUATION_DECISOR_V1) or before-after (Valuation P1 receipt, aggregate only)
+        required: true
+        default: accuracy
+        type: choice
+        options:
+          - accuracy
+          - before-after
+      as_of:
+        description: accuracy only — cut C, ISO-8601 with zone (e.g. 2026-10-24T12:00:00-03:00); empty = now (UTC)
+        required: false
+        default: ''
+        type: string
+      holdout_start:
+        description: accuracy only — H0 of PREREG_VALUATION_DECISOR_V1 (YYYY-MM-DD); empty = development partition only
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valuation-readonly-report
+  cancel-in-progress: false
+
+jobs:
+  read-only-report:
+    name: Read-only report
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Require exact confirmation
+        env:
+          RECEIVED: ${{ inputs.confirmation }}
+        run: |
+          if [ "$RECEIVED" != 'RUN VALUATION READ-ONLY REPORT' ]; then
+            echo 'Confirmation did not match the approved phrase.' >&2
+            exit 2
+          fi
+
+      - name: Validate the report, the cut and the holdout start
+        id: inputs
+        env:
+          REPORT: ${{ inputs.report }}
+          AS_OF: ${{ inputs.as_of }}
+          HOLDOUT_START: ${{ inputs.holdout_start }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          REPORT=${REPORT:-accuracy}
+          case "$REPORT" in
+            accuracy) ;;
+            before-after)
+              if [ -n "$AS_OF" ] || [ -n "$HOLDOUT_START" ]; then
+                echo 'as_of and holdout_start apply to the accuracy report only: the before/after receipt reads the official head and has no cut' >&2
+                exit 2
+              fi
+              printf 'report=%s\n' "$REPORT" >> "$GITHUB_OUTPUT" || exit 1
+              exit 0
+              ;;
+            *)
+              echo 'report must be accuracy or before-after' >&2
+              exit 2
+              ;;
+          esac
+          printf 'report=%s\n' "$REPORT" >> "$GITHUB_OUTPUT" || exit 1
+          if [ -z "$AS_OF" ]; then
+            AS_OF=$(date -u +%Y-%m-%dT%H:%M:%S+00:00) || exit 1
+          fi
+          [[ "$AS_OF" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$ ]] \
+            || { echo 'as_of must be ISO-8601 with a zone' >&2; exit 2; }
+          if [ -n "$HOLDOUT_START" ]; then
+            [[ "$HOLDOUT_START" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo 'holdout_start must be YYYY-MM-DD' >&2; exit 2; }
+          fi
+          printf 'as_of=%s\n' "$AS_OF" >> "$GITHUB_OUTPUT" || exit 1
+          printf 'holdout_start=%s\n' "$HOLDOUT_START" >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Check out the workflow revision
+        uses: actions/checkout@v6
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run the report in the running api container, read-only
+        if: steps.inputs.outputs.report == 'accuracy'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          AS_OF: ${{ steps.inputs.outputs.as_of }}
+          HOLDOUT_START: ${{ steps.inputs.outputs.holdout_start }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "AS_OF='$AS_OF' HOLDOUT_START='$HOLDOUT_START' bash -s" \
+            > "$raw/stdout.json" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo 'Security reboot pending; the report must wait for recovery' >&2
+            exit 11
+          fi
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          args=(--as-of "$AS_OF" --prereg /legacy/c3po/docs/PREREG_VALUATION_DECISOR_V1.md)
+          if [ -n "$HOLDOUT_START" ]; then
+            args+=(--holdout-start "$HOLDOUT_START")
+          fi
+          exec "${compose[@]}" exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' \
+            api python -m app.valuation_accuracy_report "${args[@]}" </dev/null
+          REMOTE
+          lines=$(wc -l < "$raw/stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          [ "$rc" -eq 0 ] || exit 1
+
+      - name: Verify the receipt and keep aggregates only
+        if: steps.inputs.outputs.report == 'accuracy'
+        env:
+          AS_OF: ${{ steps.inputs.outputs.as_of }}
+          HOLDOUT_START: ${{ steps.inputs.outputs.holdout_start }}
+          RUN_ID: ${{ github.run_id }}
+          REVISION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/valuation-readonly-report"
+          mkdir -p "$out" || exit 1
+          python3 - "$RUNNER_TEMP/raw/stdout.json" "$out" c3po/docs/PREREG_VALUATION_DECISOR_V1.md <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          source, out, prereg = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+          try:
+              receipt = json.loads(source.read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit("the report output is not a single JSON document (content not printed)")
+          if not isinstance(receipt, dict) or set(receipt) != {"schema", "payload", "payload_sha256", "provenance"}:
+              sys.exit("unexpected receipt shape")
+          payload = receipt["payload"]
+          canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+          if hashlib.sha256(canonical).hexdigest() != receipt["payload_sha256"]:
+              sys.exit("payload_sha256 does not recompute")
+          if receipt["schema"] != "VALUATION-ACCURACY-REPORT-v1" or payload.get("schema") != receipt["schema"]:
+              sys.exit("unexpected schema")
+          if payload.get("holdout_start") != (os.environ["HOLDOUT_START"] or None):
+              sys.exit("the receipt's holdout_start is not the requested one")
+          # §10: the deployed pre-registration is this revision's, byte for byte
+          prereg_bytes = prereg.read_bytes()
+          workflow_prereg = hashlib.sha256(prereg_bytes).hexdigest()
+          if payload.get("prereg_sha256") != workflow_prereg:
+              sys.exit("the deployed pre-registration is not the one of this workflow revision: the reading is void")
+          # §10/§17: the code the container ran is exactly the pinned code (checked here, independently of the module's own binding)
+          pinned = {}
+          for line in prereg_bytes.decode("utf-8").splitlines():
+              match = re.match(r"^(file|object) (\S+) ([0-9a-f]{64})$", line.strip())
+              if match:
+                  pinned[f"{match.group(1)} {match.group(2)}"] = match.group(3)
+          code = payload.get("code") or {}
+          ran = {**{f"file {name}": digest for name, digest in (code.get("files") or {}).items()},
+                 **{f"object {name}": digest for name, digest in (code.get("objects") or {}).items()}}
+          if not pinned:
+              sys.exit("the pre-registration pins no code: the reading is void")
+          if ran != pinned:
+              differing = sorted(key for key in pinned.keys() | ran.keys() if pinned.get(key) != ran.get(key))
+              sys.exit("the deployed code is not the pinned code (" + ", ".join(differing) + "): the reading is void")
+          if (payload.get("code_binding") or {}).get("status") != "BOUND":
+              sys.exit("the receipt does not declare its code BOUND: the reading is void")
+          build_sha = code.get("build_sha")
+          if not isinstance(build_sha, str) or re.fullmatch(r"[0-9a-f]{40}", build_sha) is None:
+              sys.exit("the deployed revision is not a commit sha (C3PO_BUILD_SHA): the reading cannot be attributed")
+          (out / "report.json").write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+          metadata = {
+              "run_id": os.environ["RUN_ID"],
+              "workflow_revision": os.environ["REVISION"],
+              "deployed_build_sha": build_sha,
+              "as_of_requested": os.environ["AS_OF"],
+              "cut": payload.get("cut"),
+              "holdout_start": payload.get("holdout_start"),
+              "payload_sha256": receipt["payload_sha256"],
+              "prereg_sha256": workflow_prereg,
+              "code_pins_verified": len(pinned),
+          }
+          (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          lines = ["## Valuation read-only accuracy report", "",
+                   f"- payload_sha256 `{receipt['payload_sha256']}`; cut `{payload.get('cut')}`; H0 `{payload.get('holdout_start')}`",
+                   f"- prereg sha256 `{workflow_prereg}`; {len(pinned)} code pins verified; deployed revision `{build_sha}`",
+                   "", "| market | source | holdout verdict | development executable IC h=21 (mean per session) | development sessions |",
+                   "|---|---|---|---|---|"]
+          for group, by_source in sorted(payload["results"].items()):
+              for name, cell in sorted(by_source.items()):
+                  development = cell["partitions"]["development"]
+                  ic = development["horizons"].get("21", {}).get("ic_executable", {}).get("blocks", {}).get("mean_per_session")
+                  lines.append(f"| {group} | {name} | {cell['verdict']['status']} | {ic} | {development['sessions']} |")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          PY
+          (cd "$out" && sha256sum report.json metadata.json > SHA256SUMS) || exit 1
+
+      - name: Publish the aggregate receipt
+        if: steps.inputs.outputs.report == 'accuracy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: valuation-readonly-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/valuation-readonly-report
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Run the before/after receipt in the running api container, read-only
+        if: steps.inputs.outputs.report == 'before-after'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "bash -s" \
+            > "$raw/before_after.json" 2> "$raw/before_after.stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo 'Security reboot pending; the report must wait for recovery' >&2
+            exit 11
+          fi
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          exec "${compose[@]}" exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' \
+            api python -m app.valuation_official --before-after --keep-internal-targeted </dev/null
+          REMOTE
+          lines=$(wc -l < "$raw/before_after.stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          [ "$rc" -eq 0 ] || exit 1
+
+      - name: Verify the before/after receipt and keep the aggregate only
+        if: steps.inputs.outputs.report == 'before-after'
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/valuation-p1-before-after"
+          mkdir -p "$out" || exit 1
+          python3 - "$RUNNER_TEMP/raw/before_after.json" "$out" <<'PY' || exit 1
+          import hashlib
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          source, out = Path(sys.argv[1]), Path(sys.argv[2])
+          SCHEMA = "VALUATION_P1_BEFORE_AFTER_V3"
+          # the aggregate's keys, exactly: a key the receipt grows is reviewed here before it can reach a public artifact
+          KEYS = {"schema", "generation_id", "generation_source", "source_from", "source_to", "cycles", "targeted_cycles", "after_cycles",
+                  "after_targeted_count", "after_targeted_sha256", "after_source_version", "session_dates", "source_version", "buy_status",
+                  "rating_cuts", "markets", "p90_method", "private_detail_sha256", "report_sha256", "producer_build_sha", "receipt_sha256"}
+          # the producer's identity (Codex P2 on #451): read by the process that computed the aggregate, bound by receipt_sha256
+          ATTESTATION = {"producer_build_sha", "receipt_sha256"}
+          MARKET_KEYS = {"n", "missing_internal", "only_internal", "served_pairs", "before_unservable", "after_unservable", "tp", "tp_change_buckets",
+                         "buy_in", "status", "rating", "buy", "upside_percent", "score_change", "tp_validation"}
+          MARKETS = {"B3", "NASDAQ", "NYSE"}
+          if source.stat().st_size > 65536:
+              sys.exit("the report output is larger than an aggregate can be (content not printed)")
+          try:
+              report = json.loads(source.read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit("the report output is not a single JSON document (content not printed)")
+          if isinstance(report, dict) and set(report) == KEYS - ATTESTATION:
+              sys.exit("the receipt does not name the build that produced it (producer_build_sha, receipt_sha256): it cannot be attributed")
+          if not isinstance(report, dict) or set(report) != KEYS:
+              sys.exit("unexpected receipt shape: the keys are not exactly the aggregate's")
+          if report["schema"] != SCHEMA:
+              sys.exit("unexpected schema: the deployed code is not Valuation P1 rev 9")
+          markets = report["markets"]
+          if not isinstance(markets, dict) or not set(markets) <= MARKETS or any(not isinstance(item, dict) or set(item) != MARKET_KEYS for item in markets.values()):
+              sys.exit("unexpected market blocks: the keys are not exactly the aggregate's")
+          for name in ("cycles", "after_cycles", "session_dates"):
+              if not isinstance(report[name], dict) or not set(report[name]) <= MARKETS:
+                  sys.exit(f"unexpected {name}: keyed by something other than a market")
+          for name in ("report_sha256", "receipt_sha256", "after_targeted_sha256", "private_detail_sha256"):
+              if not isinstance(report[name], str) or re.fullmatch(r"[0-9a-f]{64}", report[name]) is None:
+                  sys.exit(f"{name} is not a sha256")
+          producer = report["producer_build_sha"]
+          if not isinstance(producer, str) or re.fullmatch(r"[0-9a-f]{40}", producer) is None:
+              sys.exit("the build that produced the receipt is not a commit sha (producer_build_sha, C3PO_BUILD_SHA): it cannot be attributed")
+
+          def canonical_sha256(value):
+              return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+          if canonical_sha256({key: value for key, value in report.items() if key not in ATTESTATION | {"report_sha256"}}) != report["report_sha256"]:
+              sys.exit("report_sha256 does not recompute over the aggregate")
+          if canonical_sha256({key: value for key, value in report.items() if key != "receipt_sha256"}) != report["receipt_sha256"]:
+              sys.exit("receipt_sha256 does not recompute over the aggregate and its producer")
+          (out / "report.json").write_text(json.dumps(report, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+          print(f"report_sha256 {report['report_sha256']} (schema {SCHEMA}, generation {report['generation_id']}, source in force {report['generation_source']}); "
+                f"produced by {producer} (receipt_sha256 {report['receipt_sha256']})")
+          PY
+
+      - name: Render the Portuguese summary in the running api container, read-only
+        if: steps.inputs.outputs.report == 'before-after'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          REPORT_B64=$(base64 -w0 "$RUNNER_TEMP/valuation-p1-before-after/report.json") || exit 1
+          [ -n "$REPORT_B64" ] || { echo 'the verified receipt is empty' >&2; exit 1; }
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "REPORT_B64='$REPORT_B64' bash -s" \
+            > "$raw/summary.json" 2> "$raw/summary.stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo 'Security reboot pending; the report must wait for recovery' >&2
+            exit 11
+          fi
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          # the aggregate in, the markdown out: before_after_markdown reads nothing but its argument; the renderer's own
+          # build is returned only to be compared with the receipt's producer_build_sha — the receipt is never attributed to it
+          render='import json, os, sys
+          from app.valuation_official import before_after_markdown
+          report = json.load(sys.stdin)
+          json.dump({"markdown": before_after_markdown(report), "renderer_build_sha": os.environ.get("C3PO_BUILD_SHA")}, sys.stdout)'
+          printf '%s' "$REPORT_B64" | base64 -d | "${compose[@]}" exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' \
+            api python -c "$render"
+          REMOTE
+          lines=$(wc -l < "$raw/summary.stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          [ "$rc" -eq 0 ] || exit 1
+
+      - name: Verify the summary and keep aggregates only
+        if: steps.inputs.outputs.report == 'before-after'
+        env:
+          RUN_ID: ${{ github.run_id }}
+          REVISION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/valuation-p1-before-after"
+          python3 - "$RUNNER_TEMP/raw/summary.json" "$out" <<'PY' || exit 1
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          source, out = Path(sys.argv[1]), Path(sys.argv[2])
+          report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+          # the attribution comes from the receipt itself (Codex P2 on #451): its producer, bound by receipt_sha256 — re-checked here
+          producer = report.get("producer_build_sha")
+          if not isinstance(producer, str) or re.fullmatch(r"[0-9a-f]{40}", producer) is None:
+              sys.exit("the build that produced the receipt is not a commit sha (producer_build_sha): it cannot be attributed")
+          attested = {key: value for key, value in report.items() if key != "receipt_sha256"}
+          canonical = json.dumps(attested, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+          if hashlib.sha256(canonical).hexdigest() != report.get("receipt_sha256"):
+              sys.exit("receipt_sha256 does not recompute over the aggregate and its producer")
+          try:
+              rendered = json.loads(source.read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit("the summary output is not a single JSON document (content not printed)")
+          if not isinstance(rendered, dict) or set(rendered) != {"markdown", "renderer_build_sha"} or not isinstance(rendered["markdown"], str):
+              sys.exit("unexpected summary shape")
+          markdown, renderer = rendered["markdown"], rendered["renderer_build_sha"]
+          if report["report_sha256"] not in markdown or report["receipt_sha256"] not in markdown or producer not in markdown:
+              sys.exit("the summary does not quote the verified receipt and its producer: it was not rendered from this receipt")
+          if not isinstance(renderer, str) or re.fullmatch(r"[0-9a-f]{40}", renderer) is None:
+              sys.exit("the build that rendered the summary is not a commit sha (C3PO_BUILD_SHA): nothing is published")
+          if renderer != producer:
+              sys.exit(f"the deployed build changed between the receipt and its summary (receipt produced by {producer}, summary rendered by "
+                       f"{renderer}): nothing is published — dispatch the report again")
+          (out / "summary.md").write_text(markdown, encoding="utf-8")
+          metadata = {
+              "run_id": os.environ["RUN_ID"],
+              "workflow_revision": os.environ["REVISION"],
+              "producer_build_sha": producer,
+              "report": "before-after",
+              "schema": report["schema"],
+              "report_sha256": report["report_sha256"],
+              "receipt_sha256": report["receipt_sha256"],
+              "generation_id": report["generation_id"],
+              "generation_source": report["generation_source"],
+              "after_source_version": report["after_source_version"],
+          }
+          (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(markdown + f"\n- Recibo produzido e resumo renderizado pela mesma revisão implantada `{producer}`; workflow `{os.environ['REVISION']}`.\n")
+          print(f"report_sha256 {report['report_sha256']}; receipt_sha256 {report['receipt_sha256']}; produced and rendered by {producer}")
+          PY
+          (cd "$out" && sha256sum report.json summary.md metadata.json > SHA256SUMS) || exit 1
+
+      - name: Publish the before/after receipt
+        if: steps.inputs.outputs.report == 'before-after'
+        uses: actions/upload-artifact@v4
+        with:
+          name: valuation-p1-before-after-${{ github.run_id }}
+          path: ${{ runner.temp }}/valuation-p1-before-after
+          if-no-files-found: error
+          retention-days: 30

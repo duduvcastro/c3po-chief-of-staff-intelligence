@@ -1,3 +1,4 @@
+import statistics
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -5,7 +6,15 @@ import pytest
 from app.config import Settings
 from app.database import Database
 from app.market_data.brapi import BrapiClient
-from app.market_data.b3_screener import DISCLOSURE_GOVERNANCE_MAX_SWING, MIN_MARKET_CAP, B3ScreenerService
+from app.market_data.b3_screener import (
+    DISCLOSURE_GOVERNANCE_MAX_SWING,
+    LATEST_COPOM_DECISION_AT,
+    LATEST_COPOM_EFFECTIVE_DATE,
+    LATEST_COPOM_SELIC,
+    MIN_MARKET_CAP,
+    SELIC_GOVERNOR_STALE_WARNING_DAYS,
+    B3ScreenerService,
+)
 from app.market_data.sector_taxonomy import SECTOR_TAXONOMY_VERSION
 from app.market_data.eodhd import EodhdClient
 from app.market_data.eodhd_stream import EodhdStreamQuote
@@ -459,6 +468,92 @@ def test_b3_rows_carry_the_internal_buy_in_by_the_same_entry_rule_and_the_blend_
     assert internal["decomposition"]["buy_in_models"] == row["internal_buy_in_models"] and internal["consensus_tp"] == blend["consensus_tp"] == 52.93
 
 
+def _b3_status_before_rev9(upside: float, distance: float, confidence: float, dispersion: float, validation: str, cutoff: float) -> str:
+    """The inline status rule of ``_value_row`` before rev 9, verbatim — the oracle the extracted ``_screen_status`` reproduces."""
+    from app.market_data.b3_screener import MAX_ENTRY_DISTANCE, MAX_METHOD_DISPERSION, MIN_VALUATION_CONFIDENCE
+    if (
+        upside >= cutoff
+        and distance <= MAX_ENTRY_DISTANCE
+        and confidence >= MIN_VALUATION_CONFIDENCE
+        and dispersion <= MAX_METHOD_DISPERSION
+        and validation == "validated"
+    ):
+        return "full_match"
+    if upside >= max(cutoff - 5, 0) and distance <= 25 and confidence >= 60:
+        return "near_buy"
+    return "watchlist"
+
+
+def test_b3_status_rule_is_unchanged_by_its_extraction() -> None:
+    from app.market_data.b3_screener import MAX_ENTRY_DISTANCE, MAX_METHOD_DISPERSION, MIN_VALUATION_CONFIDENCE
+    cutoff = B3ScreenerService._tp_upside_cutoff_percent({"selic": 0.14})
+    seen = set()
+    for upside in (0.0, cutoff - 6, cutoff - 5, cutoff - 0.1, cutoff, cutoff + 30):
+        for distance in (-5.0, MAX_ENTRY_DISTANCE, MAX_ENTRY_DISTANCE + 0.1, 25.0, 25.1):
+            for confidence in (59.9, 60.0, MIN_VALUATION_CONFIDENCE, 90.0):
+                for dispersion in (10.0, MAX_METHOD_DISPERSION, MAX_METHOD_DISPERSION + 1):
+                    for validation in ("validated", "review_required"):
+                        status = B3ScreenerService._screen_status(upside, distance, confidence, dispersion, validation, cutoff)
+                        assert status == _b3_status_before_rev9(upside, distance, confidence, dispersion, validation, cutoff)
+                        seen.add(status)
+    assert seen == {"full_match", "near_buy", "watchlist"}
+
+
+def test_b3_rows_carry_the_internal_view_by_the_same_rules_and_the_internal_record_is_served_with_it() -> None:
+    """Passo 1 rev 9 (official_internal_v1): `_value_row` evaluates the TP-dependent tail of the row — upside, entry distance,
+    the TP plausibility check, expected return (consensus weight 0), Power Score and status — on the internal TP and its
+    buy-in by the producer's own rules; the blend's view is what it was; the internal record names the internal status and
+    is served with the internal view; without a consensus the internal view IS the blend's, bit for bit."""
+    from app import valuation_official as official
+    macro = {"selic": 0.14, "ipca12m": 0.045}
+    service = B3ScreenerService.__new__(B3ScreenerService)
+    service._calibration_factors = {}
+    row = _petrobras_row()
+    row.update(B3ScreenerService._cyclical_market_multiples(row))
+    service._value_row(row, PETROBRAS_BENCHMARK, macro)
+    assert row["buy_in"] == PETROBRAS_BUY_IN_AT_PASSO_0 and row["consensus_weight_percent"] == 35.0  # the blend is untouched
+    cutoff = B3ScreenerService._tp_upside_cutoff_percent(macro)
+    assert row["status"] == _b3_status_before_rev9(row["upside_percent"], row["price_vs_buy_in_percent"], row["valuation_confidence"],
+                                                   row["method_dispersion_percent"], row["tp_validation_status"], cutoff)
+    assert row["internal_upside_percent"] == (row["internal_tp"] / row["price"] - 1) * 100 != row["upside_percent"]
+    assert row["internal_price_vs_buy_in_percent"] == (row["price"] / row["internal_buy_in"] - 1) * 100
+    validation = B3ScreenerService._validate_target_price(row=row, methods=row["methods"], internal_tp=row["internal_tp"], consensus_tp=row["public_consensus_tp"],
+                                                          our_tp=row["internal_tp"], valuation_confidence=row["valuation_confidence"],
+                                                          method_dispersion=row["method_dispersion_percent"])
+    assert row["internal_tp_validation_status"] == validation["status"] and row["internal_tp_validation_reasons"] == validation["reasons"]
+    assert row["internal_expected_total_return_percent"] == B3ScreenerService._expected_12m_return(
+        row["price"], row["internal_tp"], row["expected_dividend"], row["sustainable_growth"], row["convergence_years"], row["valuation_confidence"],
+        row["method_dispersion_percent"], 0.0)
+    assert row["internal_convergence_weight"] == B3ScreenerService._convergence_weight(row["valuation_confidence"], row["method_dispersion_percent"], 0.0)
+    assert row["internal_convergence_weight"] < row["convergence_weight"]  # the consensus no longer confirms the convergence
+    assert row["internal_score"] == B3ScreenerService._power_score(row["internal_upside_percent"], row["risk_score"], row["operating_quality"],
+                                                                   row["valuation_confidence"], row["internal_price_vs_buy_in_percent"])
+    assert row["internal_status"] == _b3_status_before_rev9(row["internal_upside_percent"], row["internal_price_vs_buy_in_percent"], row["valuation_confidence"],
+                                                            row["method_dispersion_percent"], row["internal_tp_validation_status"], cutoff)
+    # the internal record names the internal view; the blend record what it always named
+    at = datetime(2026, 9, 4, 21, 30, tzinfo=timezone.utc)
+    blend = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=at)
+    internal = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=at, source=official.SOURCE_INTERNAL)
+    assert blend is not None and internal is not None
+    assert blend["decomposition"]["status"] == row["status"] and blend["decomposition"]["tp_validation_status"] == row["tp_validation_status"]
+    assert blend["decomposition"]["weights"]["convergence_weight"] == row["convergence_weight"]
+    assert internal["decomposition"]["status"] == row["internal_status"] and internal["decomposition"]["tp_validation_status"] == row["internal_tp_validation_status"]
+    assert internal["decomposition"]["weights"]["convergence_weight"] == row["internal_convergence_weight"]
+    served = official._served(row, internal, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="B3")
+    assert served is not None and served["upside_percent"] == row["internal_upside_percent"] and served["price_vs_buy_in_percent"] == row["internal_price_vs_buy_in_percent"]
+    assert (served["score"], served["status"], served["expected_total_return_percent"]) == (row["internal_score"], row["internal_status"], row["internal_expected_total_return_percent"])
+    assert served["tp_validation_status"] == row["internal_tp_validation_status"] and served["tp_validation_reasons"] == row["internal_tp_validation_reasons"]
+    shown = official._served(row, blend, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="B3")
+    assert shown is not None and (shown["score"], shown["status"], shown["upside_percent"]) == (row["score"], row["status"], row["upside_percent"])
+    # without a consensus the blend IS the internal TP: the internal view is the blend's, bit for bit
+    bare = {**_petrobras_row(), "public_consensus_tp": None, "analyst_count": 0, "consensus_source_count": 0}
+    bare.update(B3ScreenerService._cyclical_market_multiples(bare))
+    service._value_row(bare, PETROBRAS_BENCHMARK, macro)
+    for key in ("upside_percent", "price_vs_buy_in_percent", "expected_total_return_percent", "convergence_weight", "score", "status",
+                "tp_validation_status", "tp_validation_reasons"):
+        assert bare[f"internal_{key}"] == bare[key]
+
+
 class RoutingStubHttp:
     def __init__(self, routes):
         self.routes = routes
@@ -711,6 +806,35 @@ def test_valuation_calibration_uses_mature_price_return_samples(tmp_path) -> Non
     assert calibration and calibration["outputs"]["status"] == "active"
     assert 1.0 < calibration["outputs"]["factors"]["global"] <= 1.05
     assert calibration["outputs"]["metrics"]["global"]["samples"] == 40
+    # Decisor V1 reads e_profile from this metric: the median ABSOLUTE error (equal samples here: the mean equals it)
+    global_metrics = calibration["outputs"]["metrics"]["global"]
+    assert global_metrics["median_absolute_error_percent"] == global_metrics["mean_absolute_error_percent"] > 0
+
+
+def test_valuation_calibration_publishes_the_decisors_median_absolute_error(tmp_path) -> None:
+    # Decisor V1's e_profile: the median of the ABSOLUTE price-only errors (the expected dividend out, as the factor's) —
+    # uneven, mixed-sign errors tell it apart from the mean absolute error and from the signed median
+    settings = Settings(database_url="", migrations_dir=tmp_path)
+    database = Database(settings)
+    service = B3ScreenerService(settings, database, StubHttp({}))  # type: ignore[arg-type]
+    methodology_id = database.ensure_methodology_version("test", 1, {}, "test")
+    generated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    moves = [-0.30, -0.12, 0.0, 0.03, 0.05, 0.08, 0.10, 0.14, 0.25, 0.40] * 4  # the two middle absolute errors sit on the same side
+    prior_rows = [
+        {"symbol": f"T{index:03d}3", "price": 100.0, "expected_total_return_percent": 15.0, "expected_dividend": 5.0, "valuation_profile": "general"}
+        for index in range(len(moves))
+    ]
+    current_rows = [{"symbol": row["symbol"], "price": 100.0 * (1 + move), "valuation_profile": "general"} for row, move in zip(prior_rows, moves)]
+    database.save_analysis_snapshot("valuation_universe", "B3_UNIVERSE", methodology_id, {}, {"rows": prior_rows}, generated_at - timedelta(days=90))
+
+    service._persist_calibration(methodology_id, generated_at, current_rows)
+    metrics = database.latest_analysis_snapshot("valuation_calibration", "B3_POWER_MODEL")["outputs"]["metrics"]  # type: ignore[index]
+
+    expected = 1.10 ** (90 / 365) - 1  # 15 % total minus the 5 % expected dividend
+    for profile in ("global", "general"):
+        assert metrics[profile]["median_absolute_error_percent"] == round(statistics.median(abs(move - expected) for move in moves) * 100, 2) == 9.62
+        assert metrics[profile]["mean_absolute_error_percent"] == round(statistics.mean(abs(move - expected) for move in moves) * 100, 2) != 9.62
+        assert abs(metrics[profile]["median_forecast_error_percent"]) != 9.62
 
 
 def test_eodhd_history_keeps_volume_for_b3_fallback() -> None:
@@ -3428,3 +3552,98 @@ def test_rankings_reorder_after_quote_updates_without_mutating_scan(market, monk
     assert [r.symbol for r in updated['losers']] == ['AAA','BBB']
     assert [r.symbol for r in updated['cash_leaders']] == ['BBB','AAA']
     assert {k:[r.model_dump() for r in v] for k,v in groups.items()} == original
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Defect (c), 2026-10-17: BCB SGS 432 is the primary Selic, the COPOM governor its fallback, and a governor past its
+# 50-day window no longer outranks Brapi's live macro feed; the winning source is persisted with the cycle.
+
+class SelicRoutingHttp:
+    """Brapi's macro feed and BCB SGS 432 answered from memory; anything else (the Tesouro cross-check) fails closed."""
+
+    def __init__(self, *, bcb: object, brapi_selic_percent: float | None) -> None:
+        self.bcb = bcb
+        self.brapi_selic_percent = brapi_selic_percent
+        self.calls: list[str] = []
+
+    def get_json(self, url, *, params=None, headers=None):
+        self.calls.append(url)
+        if "bcdata.sgs.432" in url:
+            if isinstance(self.bcb, Exception):
+                raise self.bcb
+            return self.bcb
+        if url.endswith("/api/v2/macro/latest"):
+            results = [{"series": {"slug": "ipca12m"}, "latest": {"value": 4.4}}]
+            if self.brapi_selic_percent is not None:
+                results.append({"series": {"slug": "selic"}, "latest": {"value": self.brapi_selic_percent}})
+            return {"results": results}
+        raise MarketDataRequestError("not stubbed")
+
+
+def test_stale_copom_governor_yields_to_brapis_live_selic_and_says_so() -> None:
+    """A governor past its 50-day window (the one dated 2026-08-05 was 73 days old on 2026-10-17): a later COPOM may have
+    moved the rate, so with BCB unreadable the live Brapi Selic wins over the stale governor (it used to return the
+    governor's 14%). Every date and rate here is relative to the governor constants, so updating them after the next
+    COPOM keeps this test meaningful instead of breaking it."""
+    age = SELIC_GOVERNOR_STALE_WARNING_DAYS + 23
+    now = LATEST_COPOM_DECISION_AT + timedelta(days=age)
+    live = LATEST_COPOM_SELIC + 0.01
+    value, provenance = B3ScreenerService._resolve_selic(provider_value=live, bcb_value=None, bcb_as_of=None, now=now)
+    assert value == live
+    assert B3ScreenerService._effective_selic(provider_value=live, bcb_value=None, bcb_as_of=None, now=now) == live
+    assert provenance["source"] == "brapi_macro_governor_stale" and provenance["governor_age_days"] == age
+    # nothing better than the stale governor: it is used, but flagged — never silently
+    stale_value, stale = B3ScreenerService._resolve_selic(provider_value=None, bcb_value=None, bcb_as_of=None, now=now)
+    assert stale_value == LATEST_COPOM_SELIC and stale["source"] == "copom_governor_stale"
+    # BCB SGS 432 stays primary whenever it has an observation newer than the governor
+    observed_on = now.date() - timedelta(days=1)
+    daily = LATEST_COPOM_SELIC + 0.0075
+    primary, bcb = B3ScreenerService._resolve_selic(provider_value=live, bcb_value=daily, bcb_as_of=observed_on, now=now)
+    assert primary == daily and bcb["source"] == "bcb_sgs_432" and bcb["bcb_as_of"] == observed_on.isoformat()
+    # inside its window the governor still bridges a decision the daily series has not picked up yet
+    bridging, governor = B3ScreenerService._resolve_selic(
+        provider_value=live, bcb_value=LATEST_COPOM_SELIC + 0.0025, bcb_as_of=LATEST_COPOM_DECISION_AT.date(),
+        now=LATEST_COPOM_DECISION_AT + timedelta(hours=3))
+    assert bridging == LATEST_COPOM_SELIC and governor["source"] == "copom_governor"
+    # an implausible reading (a unit error) is never a rate
+    assert B3ScreenerService._resolve_selic(provider_value=15.0, bcb_value=None, bcb_as_of=None, now=now)[1]["source"] == "copom_governor_stale"
+
+
+def test_macro_context_reads_the_newest_dated_bcb_observation_and_persists_its_provenance() -> None:
+    """BCB SGS 432 rows are taken by DATE (not list position) and decimal commas are read; the source travels with the
+    cycle's macro in the universe snapshot. (It used to read the last row's undated position and drop "15,25".)"""
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    newest, previous = LATEST_COPOM_EFFECTIVE_DATE + timedelta(days=71), LATEST_COPOM_EFFECTIVE_DATE + timedelta(days=70)
+    http = SelicRoutingHttp(
+        bcb=[{"data": f"{newest:%d/%m/%Y}", "valor": "15,25"}, {"data": f"{previous:%d/%m/%Y}", "valor": "15.00"}],
+        brapi_selic_percent=14.0,
+    )
+    service = B3ScreenerService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    macro = service._macro_context()
+
+    assert macro["selic"] == pytest.approx(0.1525) and macro["ipca12m"] == pytest.approx(0.044)
+    assert service._selic_provenance is not None and service._selic_provenance["source"] == "bcb_sgs_432"
+    assert service._selic_provenance["bcb_as_of"] == newest.isoformat()
+    service._persist_universe(datetime.now(timezone.utc), macro)
+    snapshot = service.database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
+    assert snapshot is not None and snapshot["outputs"]["selic_provenance"]["source"] == "bcb_sgs_432"
+    assert snapshot["outputs"]["macro"]["selic"] == pytest.approx(0.1525)
+
+
+def test_macro_context_with_bcb_down_records_which_fallback_it_used(monkeypatch) -> None:
+    """With BCB down and the governor past its window, the macro context takes Brapi's live Selic and records why. The
+    clock is pinned one day past the governor's window (it used to be the wall clock, which would have made this test
+    fail for 50 days after the next governor update)."""
+    age = SELIC_GOVERNOR_STALE_WARNING_DAYS + 1
+    now = LATEST_COPOM_DECISION_AT + timedelta(days=age)
+    resolve = B3ScreenerService._resolve_selic
+    monkeypatch.setattr(B3ScreenerService, "_resolve_selic", staticmethod(lambda **kwargs: resolve(**kwargs, now=now)))
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = B3ScreenerService(settings, Database(settings), SelicRoutingHttp(bcb=MarketDataRequestError("down"), brapi_selic_percent=15.5))  # type: ignore[arg-type]
+
+    macro = service._macro_context()
+
+    assert service._selic_provenance is not None and service._selic_provenance["bcb_as_of"] is None
+    assert service._selic_provenance["governor_age_days"] == age
+    assert macro["selic"] == pytest.approx(0.155) and service._selic_provenance["source"] == "brapi_macro_governor_stale"

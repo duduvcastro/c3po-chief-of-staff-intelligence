@@ -207,6 +207,80 @@ def test_stock_rows_carry_the_internal_buy_in_derived_by_the_producers_own_entry
     assert record is not None and record["tp"] == 145.0 and record["buy_in"] == expected and record["consensus_tp"] == 150.0 and record["consensus_weight_percent"] == 0.0
 
 
+def _status_before_rev9(signal_quality: str, upside: float, risk: float, entry_distance: float, tp_cutoff: float, risk_cutoff: float) -> str:
+    """The inline status rule of ``_build`` before rev 9, verbatim — the oracle the extracted ``_screen_status`` must reproduce."""
+    from app.market_data.us_screener import MAX_ENTRY_DISTANCE
+    return (
+        "full_match"
+        if signal_quality == "validated"
+        and upside >= tp_cutoff
+        and risk < risk_cutoff
+        and -10 <= entry_distance <= MAX_ENTRY_DISTANCE
+        else "near_buy"
+        if signal_quality == "validated" and upside >= tp_cutoff
+        else "watchlist"
+    )
+
+
+def test_the_status_rule_is_unchanged_and_the_internal_status_applies_it_to_the_internal_tp_with_the_same_cutoffs() -> None:
+    """Passo 1 rev 9: ``_assign_statuses`` (extracted from ``_build``) gives every row the status it always had and, by the SAME
+    rule and the SAME cutoffs of the build — the same US hurdle (defect b: the build's US risk-free rate + 6 p.p., stamped on
+    every row) — ``internal_status`` over the internal upside and entry distance."""
+    from app.market_data.us_screener import MAX_ENTRY_DISTANCE
+    risk_free_rate = DummyOnePagers()._us_risk_free_rate()
+    tp_cutoff = USScreeningService._tp_cutoff(risk_free_rate)
+    rows = []
+    for signal in ("validated", "provisional"):
+        for upside in (tp_cutoff - 1, tp_cutoff, tp_cutoff + 10):
+            for risk in (20.0, 39.0, 41.0, 60.0):
+                for distance in (-11.0, -10.0, 0.0, MAX_ENTRY_DISTANCE, MAX_ENTRY_DISTANCE + 1):
+                    rows.append({"signal_quality": signal, "upside_percent": upside, "risk_score": risk, "price_vs_buy_in_percent": distance,
+                                 "internal_upside_percent": upside - 5, "internal_price_vs_buy_in_percent": -distance})
+    USScreeningService._assign_statuses(rows, risk_free_rate)
+    risk_cutoff = USScreeningService._risk_cutoff(rows)
+    for row in rows:
+        assert (row["tp_hurdle_percent"], row["tp_hurdle_risk_free_rate"]) == (tp_cutoff, risk_free_rate)
+        assert row["status"] == _status_before_rev9(row["signal_quality"], row["upside_percent"], row["risk_score"], row["price_vs_buy_in_percent"], tp_cutoff, risk_cutoff)
+        assert row["internal_status"] == _status_before_rev9(row["signal_quality"], row["internal_upside_percent"], row["risk_score"],
+                                                             row["internal_price_vs_buy_in_percent"], tp_cutoff, risk_cutoff)
+    assert {row["status"] for row in rows} == {"full_match", "near_buy", "watchlist"} and any(row["status"] != row["internal_status"] for row in rows)
+
+
+def test_rows_carry_the_internal_view_and_the_internal_record_is_served_with_it_bit_for_bit() -> None:
+    """Passo 1 rev 9 (official_internal_v1): the row carries the TP-dependent tail on the INTERNAL TP and its buy-in — upside,
+    entry distance, expected return, Power Score (and status, in the build's status pass) — by the same expressions; the
+    internal record is served with exactly that view (the served identities equal the row's internal upside/distance bit for
+    bit); an ETF, with no consensus, has the blend's view."""
+    from app import valuation_official as official
+
+    stock = service()._analyze_stock("NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    assert stock["internal_buy_in"] != stock["buy_in"]  # the blend's buy-in is capped by the consensus pull; the internal one is not
+    assert stock["internal_upside_percent"] == (stock["internal_tp"] / 100.0 - 1) * 100
+    assert stock["internal_price_vs_buy_in_percent"] == (100.0 / stock["internal_buy_in"] - 1) * 100 != stock["price_vs_buy_in_percent"]
+    assert stock["internal_expected_total_return_percent"] == stock["internal_upside_percent"] + 1.0  # dividendYield 0.01 → 1 p.p., as the blend's
+    assert stock["expected_total_return_percent"] == stock["upside_percent"] + 1.0
+    assert stock["internal_score"] == USScreeningService._power_score(stock["internal_upside_percent"], stock["risk_score"], stock["operating_quality"],
+                                                                      stock["valuation_confidence"], stock["internal_price_vs_buy_in_percent"])
+    assert stock["score"] == USScreeningService._power_score(stock["upside_percent"], stock["risk_score"], stock["operating_quality"],
+                                                             stock["valuation_confidence"], stock["price_vs_buy_in_percent"])
+    etf = service()._analyze_etf("NYSE", {**STOCK_QUOTE, "symbol": "TESTETF"}, {"companyName": "Test ETF", "isETF": True, "etfCategory": "Large Blend",
+                                                                             "etfTotalAssets": 8_000_000_000, "etfHoldingsCount": 500}, rising_history(), 400_000_000)
+    USScreeningService._assign_statuses([stock, etf], DummyOnePagers()._us_risk_free_rate())
+    for key in ("upside_percent", "price_vs_buy_in_percent", "expected_total_return_percent", "score", "status"):
+        assert etf[f"internal_{key}"] == etf[key]  # no consensus: the internal view IS the blend's
+    # the internal record is served with the internal view; the blend record with the blend's, as before
+    at = datetime(2026, 9, 7, 21, 0, tzinfo=timezone.utc)
+    internal = official.prediction_from_row(stock, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=at, source=official.SOURCE_INTERNAL)
+    blend = official.prediction_from_row(stock, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=at)
+    assert internal is not None and blend is not None and internal["decomposition"]["status"] == stock["internal_status"] and blend["decomposition"]["status"] == stock["status"]
+    served = official._served(stock, internal, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="NASDAQ")
+    assert served is not None and served["upside_percent"] == stock["internal_upside_percent"] and served["price_vs_buy_in_percent"] == stock["internal_price_vs_buy_in_percent"]
+    assert served["score"] == stock["internal_score"] and served["status"] == stock["internal_status"]
+    assert served["expected_total_return_percent"] == stock["internal_expected_total_return_percent"]
+    shown = official._served(stock, blend, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="NASDAQ")
+    assert shown is not None and (shown["score"], shown["status"], shown["upside_percent"]) == (stock["score"], stock["status"], stock["upside_percent"])
+
+
 def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:
     result = service()._analyze_etf(
         "NYSE",
@@ -365,6 +439,40 @@ def test_us_valuation_calibration_uses_mature_price_return_samples() -> None:
     assert calibration and calibration["outputs"]["status"] == "active"
     assert 1.0 < calibration["outputs"]["factors"]["global"] <= 1.05
     assert calibration["outputs"]["metrics"]["global"]["samples"] == 40
+    # Decisor V1 reads e_profile from this metric: the median ABSOLUTE error (equal samples here: the mean equals it)
+    global_metrics = calibration["outputs"]["metrics"]["global"]
+    assert global_metrics["median_absolute_error_percent"] == global_metrics["mean_absolute_error_percent"] > 0
+
+
+def test_us_calibration_publishes_the_decisors_price_only_median_absolute_error() -> None:
+    """Decisor V1's e_profile: the median of the ABSOLUTE price-only errors — uneven, mixed-sign errors tell it apart from the
+    mean absolute error and from the signed median; the expected total return's dividend yield (upside 10 % + dividend 2 %)
+    is out of the expectation, as B3 takes its expected dividend out, while the factor keeps its own samples."""
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+    generated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    moves = [-0.30, -0.12, 0.0, 0.03, 0.05, 0.08, 0.10, 0.14, 0.25, 0.40] * 4  # the two middle absolute errors sit on the same side
+    prior_rows = [
+        {"symbol": f"T{index:03d}", "price": 100.0, "expected_total_return_percent": 12.0, "upside_percent": 10.0, "valuation_profile": "general"}
+        for index in range(len(moves))
+    ]
+    current_rows = [{"symbol": row["symbol"], "price": 100.0 * (1 + move), "valuation_profile": "general"} for row, move in zip(prior_rows, moves)]
+    svc.database.save_analysis_snapshot(
+        "valuation_universe", "NASDAQ_UNIVERSE", methodology_id, {}, {"rows": prior_rows}, generated_at - timedelta(days=90),
+    )
+
+    svc._persist_calibration("NASDAQ", methodology_id, generated_at, current_rows)
+    metrics = svc.database.latest_analysis_snapshot("valuation_calibration", "NASDAQ_POWER_MODEL")["outputs"]["metrics"]
+
+    price_only = 1.10 ** (90 / 365) - 1
+    with_dividend = 1.12 ** (90 / 365) - 1
+    for profile in ("global", "general"):
+        assert metrics[profile]["median_absolute_error_percent"] == round(statistics.median(abs(move - price_only) for move in moves) * 100, 2) == 9.62
+        assert metrics[profile]["median_absolute_error_percent"] != metrics[profile]["mean_absolute_error_percent"]
+        assert metrics[profile]["median_absolute_error_percent"] != abs(metrics[profile]["median_forecast_error_percent"])
+        # the factor's metrics keep the total-return expectation (no served number moves)
+        assert metrics[profile]["mean_absolute_error_percent"] == round(statistics.mean(abs(move - with_dividend) for move in moves) * 100, 2)
+    assert round(statistics.median(abs(move - with_dividend) for move in moves) * 100, 2) == 9.17  # the dividend in the expectation would have biased it
 
 
 def test_us_valuation_calibration_warms_up_without_a_mature_prior_snapshot() -> None:
@@ -555,3 +663,161 @@ def test_persist_publishes_the_cycle_at_its_publication_instant_after_every_rece
     from app import valuation_official as official
     clocks = official.cycle_clocks(snapshot)
     assert clocks is not None and clocks[0] == published_at  # the prediction instant IS the publication
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Defects (b) and (d), 2026-10-17 (owner approved one version for both): the US Power Zone hurdle is the US 10-year
+# Treasury + 6 p.p. (never Brazil's Selic) and the row carries the blend weight the producer actually applied.
+
+class _BuildQuote:
+    def __init__(self, symbol: str, price: float, cash_volume: float, as_of: datetime) -> None:
+        self.symbol, self.price, self.cash_volume, self.as_of = symbol, price, cash_volume, as_of
+        self.change_percent = 0.5
+
+    def model_dump(self) -> dict:
+        return {"symbol": self.symbol, "name": "Test Corp", "price": self.price, "change_percent": self.change_percent,
+                "volume": 3_000_000, "as_of": self.as_of}
+
+
+class _BuildRealtime:
+    """One NASDAQ stock priced so that its TP upside (145 / 126 - 1 = 15.1%) clears the US hurdle (4.2% + 6 p.p.)
+    but not Selic's (14% + 6 p.p.)."""
+    http = object()
+
+    def __init__(self, price: float = 126.0) -> None:
+        self.price = price
+
+    def _us_symbol_catalog(self, now):
+        return {"TEST": {"Code": "TEST", "Type": "Common Stock", "Exchange": "NASDAQ"}}
+
+    def _us_bulk_quotes(self, now):
+        return [{"code": "TEST"}]
+
+    def _us_symbol(self, code):
+        return str(code)
+
+    def _catalog_market(self, metadata):
+        return "NASDAQ"
+
+    def _portfolio_catalog_market(self, metadata):
+        return "NASDAQ"
+
+    def _is_portfolio_security(self, metadata):
+        return True
+
+    def _us_row(self, raw, metadata, market, now):
+        return _BuildQuote("TEST", self.price, 300_000_000.0, now)
+
+
+def _offline_eodhd(monkeypatch) -> None:
+    from app.market_data import us_screener as module
+
+    class OfflineEodhd(module.EodhdClient):
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def fundamentals(self, symbols, *, exchange="US", workers=8):
+            return {symbol: dict(STOCK_FUNDAMENTALS) for symbol in symbols}
+
+        def histories(self, symbols, *, exchange="US", days=400, workers=8):
+            return {symbol: rising_history() for symbol in symbols}
+
+    monkeypatch.setattr(module, "EodhdClient", OfflineEodhd)
+
+
+def test_us_tp_hurdle_is_the_us_ten_year_plus_the_premium_never_selic(monkeypatch) -> None:
+    """Defect (b): a 15% TP upside used to be `watchlist` because the US hurdle was Selic + 6 p.p. (20%). It is now the
+    build's own US risk-free rate (the CAPM 10Y, 4.2% here) + 6 p.p. = 10.2%, stamped on every row of the cycle."""
+    _offline_eodhd(monkeypatch)
+    settings = Settings(eodhd_api_token="test", auth_cookie_secure=False)
+    screener = USScreeningService(settings, Database(settings), _BuildRealtime(), DummyOnePagers())
+    saturday = datetime(2026, 10, 17, 15, 0, tzinfo=timezone.utc)
+
+    rows = screener._build("NASDAQ", now=saturday)
+
+    assert [row["symbol"] for row in rows] == ["TEST"] and rows[0]["signal_quality"] == "validated"
+    assert rows[0]["upside_percent"] == pytest.approx(145 / 126 * 100 - 100)
+    assert rows[0]["tp_hurdle_percent"] == pytest.approx(10.2) and rows[0]["tp_hurdle_risk_free_rate"] == 0.042
+    assert rows[0]["status"] == "near_buy"  # validated and above the US hurdle; the buy-in (94) is far below the price
+    # Passo 1 rev 9: the internal status is judged against the SAME stamped US hurdle and the build's risk cutoff
+    assert rows[0]["internal_status"] == USScreeningService._screen_status(
+        rows[0]["signal_quality"], rows[0]["internal_upside_percent"], rows[0]["risk_score"], rows[0]["internal_price_vs_buy_in_percent"],
+        rows[0]["tp_hurdle_percent"], USScreeningService._risk_cutoff(rows),
+    )
+
+
+def test_served_us_criteria_and_matrix_use_the_hurdle_the_cycle_was_built_with(monkeypatch) -> None:
+    _offline_eodhd(monkeypatch)
+    settings = Settings(eodhd_api_token="test", auth_cookie_secure=False)
+    screener = USScreeningService(settings, Database(settings), _BuildRealtime(), DummyOnePagers())
+    rows = screener._build("NASDAQ", now=datetime(2026, 10, 17, 15, 0, tzinfo=timezone.utc))
+    _publish_official_universes(screener.database, rows)
+
+    response = screener._candidate_response("NASDAQ")
+    matrix = screener._matrix_response("NASDAQ")
+
+    assert response.criteria["tp_upside"] == "C3PO TP upside >= US 10Y Treasury (4.20%) + 6 p.p. = 10.2%"
+    assert "Selic" not in response.criteria["tp_upside"] and "Selic" not in matrix.methodology["return"]
+    assert matrix.tp_upside_cutoff_percent == pytest.approx(10.2)
+    assert matrix.items[0].quadrant.startswith("high_return_")  # 15% upside clears 10.2% (it was "low_return" under 20%)
+
+
+def test_served_us_cycle_without_a_stamped_hurdle_takes_the_current_us_rate_never_selic() -> None:
+    class HigherRate(DummyOnePagers):
+        def _us_risk_free_rate(self):
+            return 0.05
+
+    screener = service(HigherRate())
+    legacy = screener._analyze_stock("NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    legacy["status"] = "near_buy"
+    _publish_official_universes(screener.database, [legacy])  # a cycle built before the hurdle travelled on its rows
+
+    from app.valuation_official import current_generation
+    assert screener._served_tp_hurdle(screener._served_rows("NASDAQ", current_generation(screener.database))) == (pytest.approx(11.0), 0.05)
+    assert screener._candidate_response("NASDAQ").criteria["tp_upside"].endswith("(5.00%) + 6 p.p. = 11.0%")
+
+
+def test_us_row_stores_the_blend_weight_the_producer_applied_not_a_fixed_35() -> None:
+    """Defect (d): the weight is the producer's own (`consensus_weight_diagnostic`: 20% + breadth x 15%, so 26% for four
+    analysts), zero for the primary-listing bridge (which never blends) and without a consensus."""
+    four_analysts = service(OverridingOnePagers(analyst_count=4, consensus_weight_diagnostic=0.26))._analyze_stock(
+        "NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    bridged = service(OverridingOnePagers(method_estimate_registered_on="2026-08-01", consensus_weight_diagnostic=0.35))._analyze_stock(
+        "NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    bare = service(OverridingOnePagers(consensus_tp=None, analyst_count=None, consensus_weight_diagnostic=0.0))._analyze_stock(
+        "NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+
+    assert four_analysts["consensus_weight_percent"] == pytest.approx(26.0)
+    assert bridged["public_consensus_tp"] == 150.0 and bridged["consensus_weight_percent"] == 0.0
+    assert bare["consensus_weight_percent"] == 0.0
+    from app import valuation_official as official
+    record = official.prediction_from_row(four_analysts, market="NASDAQ", scope="universe", cycle_id="c", source_version="7",
+                                          prediction_instant=datetime(2026, 9, 7, 21, 0, tzinfo=timezone.utc))
+    assert record is not None and record["consensus_weight_percent"] == pytest.approx(26.0)
+    assert record["decomposition"]["weights"]["consensus_weight_percent"] == pytest.approx(26.0)
+
+
+def test_us_row_weight_reproduces_the_real_producers_blend(tmp_path) -> None:
+    """Defect (d) on the real One Pager producer: the stored weight is the one `official_blend_v1` used, so the row's
+    TP is internal x (1 - w) + consensus x w with exactly that w (no calibration in force)."""
+    from app.market_data.service import MarketDataService
+    from app.one_pager import OnePagerService
+    from app.valuation_official_engine import official_blend_v1
+
+    settings = Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", one_pager_output_dir=tmp_path, auth_cookie_secure=False)
+    database = Database(settings)
+    producer = OnePagerService(settings, database, MarketDataService(settings, database), output_dir=tmp_path)
+    screener = USScreeningService(settings, database, DummyRealtime(), producer)
+    fundamentals = {"companyName": "Microsoft Corporation", "sector": "Technology", "industry": "Software", "marketCap": 3_700_000_000_000,
+                    "trailingPE": 31.0, "forwardPE": 27.0, "enterpriseToEbitda": 22.0, "pegRatio": 1.8, "trailingEps": 16.0, "forwardEps": 18.5,
+                    "bookValue": 42.0, "sharesOutstanding": 7_430_000_000, "freeCashflow": 92_000_000_000, "ebitda": 150_000_000_000,
+                    "totalDebt": 80_000_000_000, "totalCash": 90_000_000_000, "targetMeanPrice": 610.0, "numberOfAnalystOpinions": 4,
+                    "returnOnEquity": 0.34, "profitMargins": 0.36, "revenueGrowthAnnual": 0.15, "earningsGrowthAnnual": 0.17, "beta": 0.95}
+    quote = {"symbol": "MSFT", "name": "Microsoft", "price": 500.0, "change_percent": 1.25, "volume": 20_000_000,
+             "as_of": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)}
+
+    row = screener._analyze_stock("NASDAQ", quote, fundamentals, rising_history(), 10_000_000_000)
+
+    weight = OnePagerService._us_consensus_weight(row["public_consensus_tp"], 4)
+    assert weight == pytest.approx(0.26) and row["consensus_weight_percent"] == pytest.approx(weight * 100)
+    assert row["our_tp"] == pytest.approx(official_blend_v1(row["internal_tp"], row["public_consensus_tp"], row["consensus_weight_percent"] / 100))
