@@ -1,0 +1,208 @@
+name: Valuation PIT grid autopilot
+run-name: Valuation PIT grid autopilot — ${{ github.event_name == 'schedule' && 'tick' || (inputs.dry_run && 'dry-run' || 'act') }}
+
+# Dispatches the chunks of the US PIT grid (PREREG_VALUATION_PIT_BACKTEST_US_V1 §14 d) while nobody is at the keyboard,
+# under the owner's order already signed (owner order 2) and nothing else. Every tick (every 30 min, or a manual
+# dispatch: a DRY RUN unless dry_run is unticked) reads only what GitHub already holds — the runs of
+# valuation-pit-backtest.yml, the jobs and the log of the last failed grid chunk, the metadata artifact of the last
+# successful one, the channel's recent bot comments — and the owner's order file of this checkout, then decides with
+# .github/scripts/valuation_pit_grid_autopilot.py whether to dispatch ONE chunk (mode grid, recompute_existing=false,
+# the approved confirmation phrase). The grid's parameters come ONLY from the repository variables C3PO_PIT_GRID_*;
+# nothing here changes a parameter, ever. It never touches the host (the backtest does, with its own window guard,
+# owner-order verification and preflight), holds no secret but the workflow's GITHUB_TOKEN, and writes nothing to the
+# repository: its state is the run history. Every grid chunk completed after the last successful one is classified: a
+# retryable refusal (the window step; remote status 11 reboot pending — said once per BRT day —, 17 deploy lock, 19
+# R2D2/massive timer, 21 blocking ingestion, 25 no time left before the window) is retried on a later tick; any other
+# failure in ANY of them STOPS the autopilot and is posted ONCE to the channel (run id and exit status: aggregates only);
+# the operator decides. When a chunk's manifest says complete: true, it posts the manifest_sha256 once and stops. A
+# dispatch is confirmed (the new run must be listed within 60 s); a failing tick that acts is posted once per BRT day.
+# Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
+
+on:
+  schedule:
+    - cron: "13,43 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Decide and show what this tick would do, without dispatching or posting (untick to act, from main, with C3PO_PIT_GRID_AUTOPILOT=on)
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valuation-pit-grid-autopilot
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Decide and dispatch one grid chunk
+    if: vars.C3PO_PIT_GRID_AUTOPILOT == 'on' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+    env:
+      C3PO_PIT_GRID_ORDER_SHA256: ${{ vars.C3PO_PIT_GRID_ORDER_SHA256 }}
+      C3PO_PIT_GRID_PRICE_PIN: ${{ vars.C3PO_PIT_GRID_PRICE_PIN }}
+      C3PO_PIT_GRID_CATALOGUE_PIN: ${{ vars.C3PO_PIT_GRID_CATALOGUE_PIN }}
+      C3PO_PIT_GRID_PREREG_COMMIT: ${{ vars.C3PO_PIT_GRID_PREREG_COMMIT }}
+      C3PO_PIT_GRID_MAX_RUNS: ${{ vars.C3PO_PIT_GRID_MAX_RUNS }}
+      C3PO_PIT_GRID_AUTOPILOT: ${{ vars.C3PO_PIT_GRID_AUTOPILOT }}
+      C3PO_PIT_GRID_UNTIL: ${{ vars.C3PO_PIT_GRID_UNTIL }}
+      CHANNEL_ISSUE: ${{ vars.C3PO_ESCALATION_ISSUE || '429' }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - name: Check out the autopilot and the owner's orders
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: List the backtest runs
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/valuation-pit-backtest.yml/runs?per_page=100" --jq '.workflow_runs[]' \
+            > "$RUNNER_TEMP/runs.jsonl" || exit 1
+          jq -s '.' "$RUNNER_TEMP/runs.jsonl" > "$RUNNER_TEMP/runs.json" || exit 1
+          python3 -I .github/scripts/valuation_pit_grid_autopilot.py select --runs "$RUNNER_TEMP/runs.json" --github-output "$GITHUB_OUTPUT" || exit 1
+
+      - name: Read the failed grid chunks since the last success
+        if: steps.select.outputs.failed_run_ids != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED: ${{ steps.select.outputs.failed_run_ids }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/failed"
+          mkdir -p "$dir" || exit 1
+          for id in $FAILED; do
+            [[ "$id" =~ ^[0-9]{1,20}$ ]] || exit 1
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" > "$dir/$id.jobs.json" || exit 1
+            job=$(python3 -I -c 'import json, sys; jobs = [j for j in json.load(open(sys.argv[1]))["jobs"] if any(s.get("conclusion") == "failure" for s in j.get("steps") or [])]; print(jobs[0]["id"] if jobs else "")' \
+              "$dir/$id.jobs.json") || exit 1
+            if [ -n "$job" ]; then
+              [[ "$job" =~ ^[0-9]{1,20}$ ]] || exit 1
+              # the log is read for the remote exit status only (an aggregate line of the backtest); it is never printed here
+              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" > "$dir/$id.log" || exit 1
+            fi
+          done
+
+      - name: Read the last successful grid chunk's metadata
+        if: steps.select.outputs.success_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUCCESS: ${{ steps.select.outputs.success_run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$SUCCESS" =~ ^[0-9]{1,20}$ ]] || exit 1
+          dir="$RUNNER_TEMP/chunk"
+          gh run download "$SUCCESS" -R "$GITHUB_REPOSITORY" -n "valuation-pit-backtest-grid-$SUCCESS" -D "$dir" > /dev/null || exit 1
+          (cd "$dir" && sha256sum -c --strict --quiet SHA256SUMS) || { echo 'the chunk artifact does not match its SHA256SUMS' >&2; exit 1; }
+
+      - name: Read the channel's recent autopilot comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$CHANNEL_ISSUE" =~ ^[0-9]+$ ]] || { echo 'C3PO_ESCALATION_ISSUE must be an issue number' >&2; exit 1; }
+          since=$(date -u -d '-8 days' +%Y-%m-%dT%H:%M:%SZ) || exit 1
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$CHANNEL_ISSUE/comments?since=$since&per_page=100" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]") | .body]' > "$RUNNER_TEMP/comment-pages.json" || exit 1
+          jq -s 'add // []' "$RUNNER_TEMP/comment-pages.json" > "$RUNNER_TEMP/comments.json" || exit 1
+
+      - name: Decide this tick
+        id: decide
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I .github/scripts/valuation_pit_grid_autopilot.py decide \
+            --runs "$RUNNER_TEMP/runs.json" \
+            --failed-dir "$RUNNER_TEMP/failed" \
+            --metadata "$RUNNER_TEMP/chunk/metadata.json" \
+            --comments "$RUNNER_TEMP/comments.json" \
+            --root "$GITHUB_WORKSPACE" \
+            --repository "$GITHUB_REPOSITORY" \
+            --tick-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --ref "$GITHUB_REF" \
+            --dry-run "$DRY_RUN" \
+            --body "$RUNNER_TEMP/autopilot-comment.md" \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary "$GITHUB_STEP_SUMMARY" || exit 1
+
+      - name: Dispatch one grid chunk
+        if: steps.decide.outputs.action == 'dispatch' && steps.decide.outputs.act == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORDER: ${{ steps.decide.outputs.order }}
+          PIN: ${{ steps.decide.outputs.price_pin }}
+          CATALOGUE_PIN: ${{ steps.decide.outputs.catalogue_pin }}
+          PREREG_COMMIT: ${{ steps.decide.outputs.prereg_commit }}
+          MAX_RUNS: ${{ steps.decide.outputs.max_runs }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          instant='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$'
+          [[ "$ORDER" =~ ^[0-9a-f]{64}$ ]] || { echo 'the order is not a sha256' >&2; exit 1; }
+          [[ "$PIN" =~ $instant ]] && [[ "$CATALOGUE_PIN" =~ $instant ]] || { echo 'a pin is not an instant' >&2; exit 1; }
+          [[ "$PREREG_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'the prereg commit is not a commit' >&2; exit 1; }
+          [[ "$MAX_RUNS" =~ ^[0-9]{1,3}$ ]] && [ "$MAX_RUNS" -ge 1 ] && [ "$MAX_RUNS" -le 200 ] || { echo 'max_runs is not 1-200' >&2; exit 1; }
+          interval=${AUTOPILOT_POLL_SECONDS:-5}  # 12 polls x 5 s = 60 s (AUTOPILOT_POLL_SECONDS: tests only)
+          [[ "$interval" =~ ^[0-9]{1,2}$ ]] || exit 1
+          newest='import json, sys; runs = json.load(open(sys.argv[1]))["workflow_runs"]; after = int(sys.argv[2]); print(max([r["id"] for r in runs] or [0]) if after < 0 else " ".join(str(r["id"]) for r in runs if r["id"] > after and r.get("event") == "workflow_dispatch" and str(r.get("display_title") or "").endswith("— grid")))'
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/valuation-pit-backtest.yml/runs?per_page=20" > "$RUNNER_TEMP/before.json" || exit 1
+          before=$(python3 -I -c "$newest" "$RUNNER_TEMP/before.json" -1) || exit 1
+          [[ "$before" =~ ^[0-9]+$ ]] || exit 1
+          gh workflow run valuation-pit-backtest.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f confirmation='RUN VALUATION PIT BACKTEST' -f mode=grid -f owner_order_sha256="$ORDER" \
+            -f price_pinned_at="$PIN" -f catalogue_pinned_at="$CATALOGUE_PIN" -f max_runs="$MAX_RUNS" \
+            -f recompute_existing=false -f prereg_commit="$PREREG_COMMIT" || exit 1
+          found=''
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            sleep "$interval" || exit 1
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/valuation-pit-backtest.yml/runs?per_page=20" > "$RUNNER_TEMP/after.json" || continue
+            found=$(python3 -I -c "$newest" "$RUNNER_TEMP/after.json" "$before") || found=''
+            [ -z "$found" ] || break
+          done
+          [ -n "$found" ] || { echo 'the dispatched grid chunk did not appear in the run list within 60 s: the tick fails' >&2; exit 1; }
+          echo "- dispatched valuation-pit-backtest.yml mode=grid max_runs=$MAX_RUNS (owner order ${ORDER:0:8}): run $found" >> "$GITHUB_STEP_SUMMARY" || exit 1
+
+      - name: Post once to the Fable-Codex channel
+        if: steps.decide.outputs.post == 'true' && steps.decide.outputs.act == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$CHANNEL_ISSUE" =~ ^[0-9]+$ ]] || exit 1
+          [ -s "$RUNNER_TEMP/autopilot-comment.md" ] || { echo 'no comment body' >&2; exit 1; }
+          gh issue comment "$CHANNEL_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/autopilot-comment.md" || exit 1
+
+      - name: Report a failing tick to the channel (once per BRT day)
+        if: failure() && env.DRY_RUN == 'false' && github.ref == 'refs/heads/main' && vars.C3PO_PIT_GRID_AUTOPILOT == 'on'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TICK_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$CHANNEL_ISSUE" =~ ^[0-9]+$ ]] || exit 1
+          since=$(python3 -I -c 'import datetime as d; print((d.datetime.now(d.timezone.utc) - d.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ"))') || exit 1
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$CHANNEL_ISSUE/comments?since=$since&per_page=100" > "$RUNNER_TEMP/failing-pages.json" || exit 1
+          : > "$RUNNER_TEMP/failing.out" || exit 1
+          rm -f "$RUNNER_TEMP/failing-comment.md" || exit 1
+          python3 -I .github/scripts/valuation_pit_grid_autopilot.py failing --comments-raw "$RUNNER_TEMP/failing-pages.json" --tick-url "$TICK_URL" \
+            --body "$RUNNER_TEMP/failing-comment.md" --github-output "$RUNNER_TEMP/failing.out" || exit 1
+          if grep -qxF 'post=true' "$RUNNER_TEMP/failing.out"; then
+            gh issue comment "$CHANNEL_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/failing-comment.md" || exit 1
+          fi
