@@ -1021,6 +1021,20 @@ def test_parser_real_faults_are_not_pending(xml: str, match: str) -> None:
     assert not isinstance(fault.value, CashYieldPendingData)
 
 
+def test_empty_year_feed_in_early_january_is_pending_then_broken() -> None:
+    # The feed is fetched per year: on the second session of 2027 the 2027 feed may
+    # still be empty when the Treasury publishes 04/01 a day late.
+    empty = '<feed xmlns="http://www.w3.org/2005/Atom"/>'
+    with pytest.raises(CashYieldPendingData) as late:
+        parse_treasury_bill_xml(empty, observation_date=date(2027, 1, 4),
+                                fetched_at=datetime(2027, 1, 5, 9, 0, tzinfo=timezone.utc))
+    assert late.value.reason == "treasury_observation_not_yet_published"
+    with pytest.raises(CashYieldDataError, match="no dated rows") as broken:
+        parse_treasury_bill_xml(empty, observation_date=date(2027, 1, 4),
+                                fetched_at=datetime(2027, 1, 9, 9, 0, tzinfo=timezone.utc))
+    assert not isinstance(broken.value, CashYieldPendingData)
+
+
 def test_columbus_day_gap_stays_pending_without_failing_or_fabricating() -> None:
     # 12/10/2026: XNYS traded, the Treasury did not publish (Columbus Day). The
     # frozen spec allows no substitute rate, so 13/10 stays pending; 14/10 posts.

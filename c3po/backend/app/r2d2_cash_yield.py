@@ -56,6 +56,8 @@ PENDING_TREASURY_NOT_YET_CAUSAL = "treasury_observation_not_yet_causal"
 PENDING_TREASURY_OBSERVATION_ABSENT = "treasury_observation_absent_for_source_date"
 INACTIVE_EXPERIMENT_STATUSES = frozenset({"paused", "completed"})
 # "Not yet published" is only plausible for a few days; older than this it is a stale feed.
+# Compared in UTC dates: safe because the phase runs 06:00–10:00 BRT (same UTC
+# date); revisit if the schedule moves past 21:00 BRT.
 TREASURY_STALE_AFTER = timedelta(days=4)
 
 
@@ -120,13 +122,19 @@ def parse_treasury_bill_xml(
             raise CashYieldDataError("Treasury 13-week Coupon Equivalent is negative")
         matches.append(rate)
 
-    if not dated_rows:
+    fetched_day = fetched_at.astimezone(timezone.utc).date()
+    if not dated_rows and not (
+        observation_date.month == 1
+        and observation_date >= fetched_day - TREASURY_STALE_AFTER
+    ):
         # An empty feed, a renamed INDEX_DATE or an XML error page: a broken source.
+        # The feed is fetched per year, so early January may legitimately be empty
+        # for up to the stale grace before it counts as broken.
         raise CashYieldDataError("Treasury feed has no dated rows")
     message = f"Expected one Treasury observation for {observation_date}, found {len(matches)}"
     if (
         not matches and not published_later
-        and observation_date < fetched_at.astimezone(timezone.utc).date() - TREASURY_STALE_AFTER
+        and observation_date < fetched_day - TREASURY_STALE_AFTER
     ):
         # Nothing on or after the source date days later: the feed is stale, not late.
         raise CashYieldDataError(f"Treasury feed is stale: {message}")
