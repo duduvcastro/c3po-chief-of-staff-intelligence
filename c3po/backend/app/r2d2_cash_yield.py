@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import hashlib
 import json
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 from xml.etree import ElementTree
@@ -30,7 +30,35 @@ TREASURY_XML_URL = (
 
 
 class CashYieldDataError(RuntimeError):
-    pass
+    """A real data or integrity fault: the run raises and the phase fails."""
+
+
+class CashYieldPendingData(CashYieldDataError):
+    """An expected steady state of the frozen spec, never a failure.
+
+    The spec keeps an entry ``pending`` while its source is absent ("fonte
+    ausente ou stale => accrual pending ... nunca taxa fixa"), so these states
+    are recorded on the run and retried by the next run; nothing is substituted.
+    """
+
+    def __init__(self, reason: str, detail: str) -> None:
+        super().__init__(detail)
+        self.reason = reason
+
+
+# Expected pending reasons (recorded, never raised out of a run).
+PENDING_PRIOR_SNAPSHOT_MISSING = "prior_final_session_snapshot_missing"
+PENDING_TREASURY_NOT_YET_PUBLISHED = "treasury_observation_not_yet_published"
+PENDING_TREASURY_NOT_YET_CAUSAL = "treasury_observation_not_yet_causal"
+# Treasury published later dates but none for the source date: a day the Treasury
+# does not publish while XNYS trades (Columbus Day, Veterans Day). The frozen spec
+# has no rule for it, so the entry stays pending until a deliberation decides one.
+PENDING_TREASURY_OBSERVATION_ABSENT = "treasury_observation_absent_for_source_date"
+INACTIVE_EXPERIMENT_STATUSES = frozenset({"paused", "completed"})
+# "Not yet published" is only plausible for a few days; older than this it is a stale feed.
+# Compared in UTC dates: safe because the phase runs 06:00–10:00 BRT (same UTC
+# date); revisit if the schedule moves past 21:00 BRT.
+TREASURY_STALE_AFTER = timedelta(days=4)
 
 
 def _canonical_sha256(payload: dict[str, Any]) -> str:
@@ -66,6 +94,8 @@ def parse_treasury_bill_xml(
         raise CashYieldDataError("Treasury bill feed returned invalid XML") from exc
 
     matches: list[float] = []
+    published_later = False
+    dated_rows = 0
     for properties in root.iter():
         if not properties.tag.endswith("properties"):
             continue
@@ -78,7 +108,9 @@ def parse_treasury_bill_xml(
             row_date = date.fromisoformat(raw_date)
         except ValueError:
             continue
+        dated_rows += 1
         if row_date != observation_date:
+            published_later = published_later or row_date > observation_date
             continue
         try:
             rate = float(values["ROUND_B1_YIELD_13WK_2"]) / 100
@@ -90,13 +122,36 @@ def parse_treasury_bill_xml(
             raise CashYieldDataError("Treasury 13-week Coupon Equivalent is negative")
         matches.append(rate)
 
-    if len(matches) != 1:
-        raise CashYieldDataError(
-            f"Expected one Treasury observation for {observation_date}, found {len(matches)}"
+    fetched_day = fetched_at.astimezone(timezone.utc).date()
+    if not dated_rows and not (
+        observation_date.month == 1
+        and observation_date >= fetched_day - TREASURY_STALE_AFTER
+    ):
+        # An empty feed, a renamed INDEX_DATE or an XML error page: a broken source.
+        # The feed is fetched per year, so early January may legitimately be empty
+        # for up to the stale grace before it counts as broken.
+        raise CashYieldDataError("Treasury feed has no dated rows")
+    message = f"Expected one Treasury observation for {observation_date}, found {len(matches)}"
+    if (
+        not matches and not published_later
+        and observation_date < fetched_day - TREASURY_STALE_AFTER
+    ):
+        # Nothing on or after the source date days later: the feed is stale, not late.
+        raise CashYieldDataError(f"Treasury feed is stale: {message}")
+    if not matches:
+        raise CashYieldPendingData(
+            PENDING_TREASURY_OBSERVATION_ABSENT
+            if published_later else PENDING_TREASURY_NOT_YET_PUBLISHED,
+            message,
         )
+    if len(matches) != 1:
+        raise CashYieldDataError(message)
     available_at = _available_after_day(observation_date)
     if available_at > fetched_at:
-        raise CashYieldDataError("Treasury observation is not yet causally available")
+        raise CashYieldPendingData(
+            PENDING_TREASURY_NOT_YET_CAUSAL,
+            "Treasury observation is not yet causally available",
+        )
     package: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "source": SOURCE_NAME,
@@ -146,6 +201,8 @@ class R2D2CashYieldService:
 
     def run_latest(self) -> dict[str, Any]:
         experiment = self._experiment()
+        if self._inactive(experiment):
+            return self._record_inactive(experiment)
         experiment_id = str(experiment["id"])
         snapshots = self._final_snapshots(experiment_id)
         eligible = [
@@ -166,6 +223,8 @@ class R2D2CashYieldService:
             })
 
         experiment = self._experiment()
+        if self._inactive(experiment):
+            return self._record_inactive(experiment)
         experiment_id = str(experiment["id"])
         snapshots = self._final_snapshots(experiment_id)
         eligible = [
@@ -197,6 +256,7 @@ class R2D2CashYieldService:
 
         posted: list[dict[str, Any]] = []
         pending: list[dict[str, str]] = []
+        faults: list[dict[str, str]] = []
         xml_by_year: dict[int, str] = {}
         for current in missing:
             prior_session = calendar.previous_session(current["session_date"]).date()
@@ -205,7 +265,7 @@ class R2D2CashYieldService:
                 pending.append({
                     "session_date": current["session_date"].isoformat(),
                     "source_observation_date": prior_session.isoformat(),
-                    "reason": "prior_final_session_snapshot_missing",
+                    "reason": PENDING_PRIOR_SNAPSHOT_MISSING,
                 })
                 continue
 
@@ -225,8 +285,16 @@ class R2D2CashYieldService:
                     fetched_at=fetched_at,
                     xml_text=xml_by_year[year],
                 )
-            except CashYieldDataError as exc:
+            except CashYieldPendingData as exc:
                 pending.append({
+                    "session_date": current["session_date"].isoformat(),
+                    "source_observation_date": prior["session_date"].isoformat(),
+                    "reason": exc.reason,
+                    "detail": str(exc),
+                })
+                continue
+            except CashYieldDataError as exc:
+                faults.append({
                     "session_date": current["session_date"].isoformat(),
                     "source_observation_date": prior["session_date"].isoformat(),
                     "reason": str(exc),
@@ -261,18 +329,34 @@ class R2D2CashYieldService:
             })
             posted.append(self._insert_entry(entry))
 
-        if pending:
+        posted_dates = [row["session_date"].isoformat() for row in posted]
+        if faults:
+            # A real fault: every other session was still posted, then the phase fails.
             self._record_run({
                 "status": "partial",
                 "posted_count": len(posted),
-                "posted_session_dates": [row["session_date"].isoformat() for row in posted],
+                "posted_session_dates": posted_dates,
                 "pending_count": len(pending),
                 "pending_sessions": pending,
+                "fault_count": len(faults),
+                "fault_sessions": faults,
             })
             raise CashYieldDataError(
-                "Cash-yield sessions remain pending: "
-                + ", ".join(row["session_date"] for row in pending)
+                "Cash-yield sessions failed on a data fault: "
+                + ", ".join(row["session_date"] for row in faults)
             )
+        if pending:
+            # Expected steady state (spec: "fonte ausente => pending"): recorded, not raised.
+            return self._record_run({
+                "status": "pending_data",
+                "target_session": target_session.isoformat(),
+                "posted_count": len(posted),
+                "posted_session_dates": posted_dates,
+                "pending_count": len(pending),
+                "pending_sessions": pending,
+                "pending_reasons": sorted({row["reason"] for row in pending}),
+                "entries_paused": bool(experiment.get("entries_paused")),
+            })
 
         latest_session = accruable[-1]["session_date"]
         latest = self._entry(experiment_id, latest_session)
@@ -284,7 +368,20 @@ class R2D2CashYieldService:
             "interest_income_usd": latest["interest_income_usd"],
             "entry_sha256": latest["entry_sha256"],
             "posted_count": len(posted),
-            "posted_session_dates": [row["session_date"].isoformat() for row in posted],
+            "posted_session_dates": posted_dates,
+        })
+
+    @staticmethod
+    def _inactive(experiment: dict[str, Any]) -> bool:
+        return str(experiment.get("status") or "running") in INACTIVE_EXPERIMENT_STATUSES
+
+    def _record_inactive(self, experiment: dict[str, Any]) -> dict[str, Any]:
+        # A paused or completed experiment accrues nothing new; if it resumes, the
+        # oldest-first backfill posts every missed session from its own final snapshots.
+        return self._record_run({
+            "status": "idle",
+            "reason": f"experiment_{experiment['status']}",
+            "experiment_status": str(experiment["status"]),
         })
 
     def _refresh_rate(
@@ -344,11 +441,15 @@ class R2D2CashYieldService:
         else:
             with self.database.connection() as connection:
                 row = connection.execute(
-                    "SELECT id::text, code, start_date FROM r2d2_experiments WHERE code=%s",
+                    """SELECT id::text, code, start_date, status, entries_paused
+                       FROM r2d2_experiments WHERE code=%s""",
                     (self.settings.r2d2_experiment_code,),
                 ).fetchone()
             if row:
-                return {"id": row[0], "code": row[1], "start_date": row[2]}
+                return {
+                    "id": row[0], "code": row[1], "start_date": row[2],
+                    "status": row[3], "entries_paused": bool(row[4]),
+                }
         raise CashYieldDataError("R2D2 experiment is not initialized")
 
     def _final_snapshots(self, experiment_id: str) -> list[dict[str, Any]]:

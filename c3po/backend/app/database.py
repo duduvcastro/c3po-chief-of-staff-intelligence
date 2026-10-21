@@ -443,6 +443,72 @@ class Database:
             None,
         )
 
+    def set_operational_incident_severity(
+        self,
+        *,
+        incident_key: str,
+        severity: str,
+        detail: str,
+        evidence: dict[str, Any],
+        evidence_sha256: str,
+        at: datetime,
+    ) -> dict[str, Any] | None:
+        """Set an unresolved incident's severity (the caller owns the rule).
+
+        ``record_operational_incident`` fixes severity when the row is first
+        created; this lets a caller escalate an episode or re-derive it when a
+        resolved incident reopens. The change is recorded as an append-only
+        ``observed`` event carrying the evidence that justified it; a resolved,
+        absent or unchanged incident is returned as it is.
+        """
+        if severity not in {"attention", "critical"}:
+            raise ValueError("invalid incident severity")
+        if not self.database_url:
+            incident = self._operational_incidents.get(incident_key)
+            current = self.operational_incident_by_key(incident_key)
+            if (
+                incident is None or current is None
+                or current["status"] == "resolved" or incident["severity"] == severity
+            ):
+                return current
+            incident["severity"] = severity
+            self._operational_incident_events.append({
+                "id": str(uuid4()), "incident_id": incident["id"], "event_type": "observed",
+                "actor_email": "system", "detail": detail, "evidence": dict(evidence),
+                "evidence_sha256": evidence_sha256, "occurred_at": at,
+            })
+            return self.operational_incident_by_key(incident_key)
+        with self.connection() as connection:
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"operational-incident:{incident_key}",),
+            )
+            row = connection.execute(
+                "SELECT id, severity FROM operational_incidents WHERE incident_key = %s",
+                (incident_key,),
+            ).fetchone()
+            state = connection.execute(
+                """SELECT event_type FROM operational_incident_events
+                   WHERE incident_id = %s
+                     AND event_type IN ('opened','reopened','acknowledged','resolved')
+                   ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+                (row[0],),
+            ).fetchone() if row else None
+            if row and row[1] != severity and state and state[0] != "resolved":
+                connection.execute(
+                    "UPDATE operational_incidents SET severity = %s WHERE id = %s",
+                    (severity, row[0]),
+                )
+                connection.execute(
+                    """INSERT INTO operational_incident_events
+                       (id, incident_id, event_type, actor_email, detail, evidence,
+                        evidence_sha256, occurred_at)
+                       VALUES (%s,%s,'observed','system',%s,%s::jsonb,%s,%s)""",
+                    (uuid4(), row[0], detail, json.dumps(evidence), evidence_sha256, at),
+                )
+            connection.commit()
+        return self.operational_incident_by_key(incident_key)
+
     def operational_incident_open_since(self, incident_key: str) -> datetime | None:
         """When the current unresolved episode began: the latest opened/reopened
         event (``opened_at`` keeps the first opening forever, even after a

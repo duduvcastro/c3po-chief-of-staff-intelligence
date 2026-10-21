@@ -129,7 +129,10 @@ class PushNotificationService:
         event_key: str | None = None,
         user_email: str | None = None,
         include_all_user_subscriptions: bool = False,
+        record_incident: bool = True,
     ) -> dict[str, Any]:
+        """``record_incident=False`` is for a caller that keeps its own incident in the
+        ledger (one per episode, with its own severity), so the push adds none."""
         result = {
             "configured": self.configured,
             "attempted": 0,
@@ -138,7 +141,7 @@ class PushNotificationService:
             "expired": 0,
         }
         try:
-            if category in {"job_failure", "disk_threshold"}:
+            if record_incident and category in {"job_failure", "disk_threshold"}:
                 try:
                     signal_key = event_key or title
                     OperationalIncidentService(self.database).signal(

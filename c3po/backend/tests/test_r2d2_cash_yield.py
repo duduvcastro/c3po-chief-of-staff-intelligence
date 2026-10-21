@@ -918,8 +918,9 @@ def test_missing_rate_is_recorded_without_blocking_later_sessions(monkeypatch) -
     http = FakeTreasuryHttp(_xml("2026-08-17", "2026-08-19"))
     service = R2D2CashYieldService(settings, database, http)  # type: ignore[arg-type]
 
-    with pytest.raises(CashYieldDataError, match="2026-08-19"):
-        service.run_latest()
+    # A missing Treasury observation is the spec's expected "pending" state: the run
+    # records it and returns normally (it no longer fails the phase every night).
+    result = service.run_latest()
 
     entries = database._r2d2_cash_yield_entries  # type: ignore[attr-defined]
     latest_run = database.latest_analysis_snapshot("r2d2_cash_yield_run", "R2D2_CASH_YIELD")
@@ -929,13 +930,14 @@ def test_missing_rate_is_recorded_without_blocking_later_sessions(monkeypatch) -
     ]
     assert len(http.calls) == 1
     assert latest_run is not None
-    assert latest_run["outputs"]["status"] == "partial"
+    assert result["status"] == latest_run["outputs"]["status"] == "pending_data"
     assert latest_run["outputs"]["pending_sessions"] == [{
         "session_date": "2026-08-19",
         "source_observation_date": "2026-08-18",
-        "reason": "Expected one Treasury observation for 2026-08-18, found 0",
+        "reason": "treasury_observation_absent_for_source_date",
+        "detail": "Expected one Treasury observation for 2026-08-18, found 0",
     }]
-    assert service.last_run_at() is None
+    assert service.last_run_at() is not None
 
     http.payload = _xml("2026-08-17", "2026-08-18", "2026-08-19")
     completed = service.run_latest()
@@ -946,3 +948,206 @@ def test_missing_rate_is_recorded_without_blocking_later_sessions(monkeypatch) -
         date(2026, 8, 19),
         date(2026, 8, 20),
     ]
+
+
+# --- Expected steady states vs real faults (owner complaint 20/10/2026) ---
+
+from app.r2d2_cash_yield import CashYieldPendingData  # noqa: E402
+
+
+def _service_with_sessions(
+    sessions: dict[date, float],
+    xml: str,
+    *,
+    experiment_status: str | None = None,
+    entries_paused: bool = False,
+):
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    if experiment_status:
+        paper.repo.memory["experiment"]["status"] = experiment_status
+    paper.repo.memory["experiment"]["entries_paused"] = entries_paused
+    for session_date, cash_usd in sessions.items():
+        paper.repo.memory["snapshots"][session_date] = {
+            "session_date": session_date, "cash_usd": cash_usd,
+            "nav_usd": 1_000_000, "is_final": True,
+        }
+    http = FakeTreasuryHttp(xml)
+    return database, R2D2CashYieldService(settings, database, http), http  # type: ignore[arg-type]
+
+
+def test_parser_classifies_absent_versus_not_yet_published_versus_not_yet_causal() -> None:
+    fetched = datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
+    with pytest.raises(CashYieldPendingData) as absent:
+        parse_treasury_bill_xml(_xml("2026-10-09", "2026-10-13"),
+                                observation_date=date(2026, 10, 12), fetched_at=fetched)
+    assert absent.value.reason == "treasury_observation_absent_for_source_date"
+    with pytest.raises(CashYieldPendingData) as unpublished:
+        parse_treasury_bill_xml(_xml("2026-10-09"), observation_date=date(2026, 10, 12),
+                                fetched_at=datetime(2026, 10, 16, 9, 0, tzinfo=timezone.utc))
+    assert unpublished.value.reason == "treasury_observation_not_yet_published"
+    # More than 4 days later with nothing on or after the source date: a stale feed (fault).
+    with pytest.raises(CashYieldDataError, match="Treasury feed is stale") as stale:
+        parse_treasury_bill_xml(_xml("2026-10-09"), observation_date=date(2026, 10, 12),
+                                fetched_at=datetime(2026, 10, 17, 9, 0, tzinfo=timezone.utc))
+    assert not isinstance(stale.value, CashYieldPendingData)
+    # The Columbus Day gap stays pending however old it is: later dates were published.
+    with pytest.raises(CashYieldPendingData) as old_gap:
+        parse_treasury_bill_xml(_xml("2026-10-09", "2026-10-13"), observation_date=date(2026, 10, 12),
+                                fetched_at=datetime(2026, 12, 31, tzinfo=timezone.utc))
+    assert old_gap.value.reason == "treasury_observation_absent_for_source_date"
+    with pytest.raises(CashYieldPendingData) as not_causal:
+        parse_treasury_bill_xml(_xml("2026-10-19"), observation_date=date(2026, 10, 19),
+                                fetched_at=datetime(2026, 10, 19, 23, 0, tzinfo=timezone.utc))
+    assert not_causal.value.reason == "treasury_observation_not_yet_causal"
+
+
+@pytest.mark.parametrize("xml,match", [
+    ("<feed", "invalid XML"),
+    (_xml("2026-10-09", coupon_equivalent="-0.10"), "negative"),
+    (_xml("2026-10-09", coupon_equivalent="n/a"), "lacks 13-week"),
+    (_xml("2026-10-09", "2026-10-09"), "found 2"),
+    # Broken feeds that parse as XML must not look like "not yet published".
+    ('<feed xmlns="http://www.w3.org/2005/Atom"/>', "no dated rows"),
+    (_xml("2026-10-09").replace("INDEX_DATE", "RECORD_DATE"), "no dated rows"),
+    ("<html><head><title>Error</title></head><body><p>Service unavailable</p></body></html>", "no dated rows"),
+])
+def test_parser_real_faults_are_not_pending(xml: str, match: str) -> None:
+    with pytest.raises(CashYieldDataError, match=match) as fault:
+        parse_treasury_bill_xml(xml, observation_date=date(2026, 10, 9),
+                                fetched_at=datetime(2026, 10, 20, tzinfo=timezone.utc))
+    assert not isinstance(fault.value, CashYieldPendingData)
+
+
+def test_empty_year_feed_in_early_january_is_pending_then_broken() -> None:
+    # The feed is fetched per year: on the second session of 2027 the 2027 feed may
+    # still be empty when the Treasury publishes 04/01 a day late.
+    empty = '<feed xmlns="http://www.w3.org/2005/Atom"/>'
+    with pytest.raises(CashYieldPendingData) as late:
+        parse_treasury_bill_xml(empty, observation_date=date(2027, 1, 4),
+                                fetched_at=datetime(2027, 1, 5, 9, 0, tzinfo=timezone.utc))
+    assert late.value.reason == "treasury_observation_not_yet_published"
+    with pytest.raises(CashYieldDataError, match="no dated rows") as broken:
+        parse_treasury_bill_xml(empty, observation_date=date(2027, 1, 4),
+                                fetched_at=datetime(2027, 1, 9, 9, 0, tzinfo=timezone.utc))
+    assert not isinstance(broken.value, CashYieldPendingData)
+
+
+def test_columbus_day_gap_stays_pending_without_failing_or_fabricating() -> None:
+    # 12/10/2026: XNYS traded, the Treasury did not publish (Columbus Day). The
+    # frozen spec allows no substitute rate, so 13/10 stays pending; 14/10 posts.
+    database, service, _http = _service_with_sessions(
+        {date(2026, 10, 9): 800_000, date(2026, 10, 12): 800_000, date(2026, 10, 13): 800_000},
+        _xml("2026-10-09", "2026-10-13"),
+    )
+    result = service.run_through(date(2026, 10, 14))
+
+    entries = database._r2d2_cash_yield_entries  # type: ignore[attr-defined]
+    assert result["status"] == "pending_data"
+    assert result["pending_reasons"] == ["treasury_observation_absent_for_source_date"]
+    assert [row["session_date"] for row in result["pending_sessions"]] == ["2026-10-13"]
+    assert sorted(entry["session_date"] for entry in entries) == [date(2026, 10, 12), date(2026, 10, 14)]
+    assert all(entry["source_observation_date"] != date(2026, 10, 12) for entry in entries)
+    assert service.last_run_at() is not None
+
+
+def test_missing_prior_final_snapshot_is_pending_not_a_failure() -> None:
+    database, service, http = _service_with_sessions(
+        {date(2026, 10, 9): 800_000}, _xml("2026-10-09"),
+    )
+    result = service.run_through(date(2026, 10, 14))
+    assert result["status"] == "pending_data"
+    assert result["pending_reasons"] == ["prior_final_session_snapshot_missing"]
+    assert [row["session_date"] for row in result["pending_sessions"]] == ["2026-10-13", "2026-10-14"]
+    assert [entry["session_date"] for entry in database._r2d2_cash_yield_entries] == [date(2026, 10, 12)]  # type: ignore[attr-defined]
+
+
+def test_real_fault_still_raises_after_posting_the_other_sessions() -> None:
+    database, service, http = _service_with_sessions(
+        {date(2026, 10, 12): 800_000, date(2026, 10, 13): 800_000},
+        _xml("2026-10-12", "2026-10-12", "2026-10-13"),
+    )
+    with pytest.raises(CashYieldDataError, match="data fault: 2026-10-13") as fault:
+        service.run_through(date(2026, 10, 14))
+    assert not isinstance(fault.value, CashYieldPendingData)
+    latest_run = database.latest_analysis_snapshot("r2d2_cash_yield_run", "R2D2_CASH_YIELD")
+    assert latest_run is not None and latest_run["outputs"]["status"] == "partial"
+    assert latest_run["outputs"]["fault_sessions"][0]["reason"] == (
+        "Expected one Treasury observation for 2026-10-12, found 2"
+    )
+    assert [entry["session_date"] for entry in database._r2d2_cash_yield_entries] == [date(2026, 10, 14)]  # type: ignore[attr-defined]
+    assert service.last_run_at() is None  # the phase retries a real fault
+
+
+def test_canonical_entry_mismatch_remains_a_real_fault() -> None:
+    _database, service, _http = _service_with_sessions({}, _xml())
+    service.database.database_url = "postgresql://unused"  # route _insert_entry's mismatch branch
+    service._entry = lambda *_args: {"interest_income_usd": 1.0, "entry_sha256": "other"}  # type: ignore[method-assign]
+
+    class _Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_exc): return False
+        def execute(self, *_args): return self
+        def fetchone(self): return None
+        def commit(self): return None
+
+    service.database.connection = lambda: _Connection()  # type: ignore[method-assign]
+    with pytest.raises(CashYieldDataError, match="does not match the canonical entry") as fault:
+        service._insert_entry({
+            "id": "x", "experiment_id": "e", "session_date": date(2026, 10, 14),
+            "prior_session_date": date(2026, 10, 13), "base_cash_usd": 1.0,
+            "annual_coupon_equivalent_rate": 0.04, "calendar_days": 1, "daily_factor": 0.0001,
+            "interest_income_usd": 0.0001, "source_name": "s", "source_series": "s",
+            "source_observation_date": date(2026, 10, 13), "source_available_at": None,
+            "source_fetched_at": None, "source_payload_sha256": "p", "entry_sha256": "mine",
+            "backfilled_at": None,
+        })
+    assert not isinstance(fault.value, CashYieldPendingData)
+
+
+@pytest.mark.parametrize("status", ["paused", "completed"])
+def test_paused_or_completed_experiment_is_a_no_op_success(status: str) -> None:
+    database, service, http = _service_with_sessions(
+        {date(2026, 10, 12): 800_000, date(2026, 10, 13): 800_000},
+        _xml("2026-10-12", "2026-10-13"), experiment_status=status,
+    )
+    for result in (service.run_through(date(2026, 10, 14)), service.run_latest()):
+        assert result["status"] == "idle"
+        assert result["reason"] == f"experiment_{status}"
+    assert database._r2d2_cash_yield_entries == []  # type: ignore[attr-defined]
+    assert http.calls == []
+    assert service.last_run_at() is not None
+
+
+def test_entries_paused_keeps_accruing_from_factual_final_snapshots() -> None:
+    # entries_paused (the 06/09 breaker) stops new entries only; the paper worker
+    # still writes final snapshots, so the accrual stays factual and continues.
+    database, service, _http = _service_with_sessions(
+        {date(2026, 10, 13): 800_000}, _xml("2026-10-13"), entries_paused=True,
+    )
+    result = service.run_through(date(2026, 10, 14))
+    assert result["status"] == "posted"
+    assert [entry["session_date"] for entry in database._r2d2_cash_yield_entries] == [date(2026, 10, 14)]  # type: ignore[attr-defined]
+
+
+def test_worker_phase_succeeds_on_the_columbus_day_gap_and_opens_no_incident() -> None:
+    from zoneinfo import ZoneInfo
+
+    from app.valuation_worker import OffhoursPhase, run_worker_iteration
+
+    database, service, _http = _service_with_sessions(
+        {date(2026, 10, 9): 800_000, date(2026, 10, 12): 800_000, date(2026, 10, 13): 800_000},
+        _xml("2026-10-09", "2026-10-13"),
+    )
+    phase = OffhoursPhase(
+        "cash_yield", service.last_run_at, lambda: service.run_through(date(2026, 10, 14)),
+        start_hour=6, end_hour=10,
+    )
+    result = run_worker_iteration(
+        database, now=datetime(2026, 10, 14, 6, 0, tzinfo=ZoneInfo("America/Sao_Paulo")),
+        canonical_due=False, canonical_operation=lambda: None, offhours_phases=(phase,),
+    )
+    assert result.phase_statuses == {"cash_yield": "succeeded"}
+    assert database.list_operational_incidents(limit=10) == []
