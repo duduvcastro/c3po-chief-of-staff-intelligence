@@ -1005,3 +1005,84 @@ def test_live_http_probes_receive_the_short_system_health_timeout() -> None:
     assert set(observed_timeouts) == {2.0}
     items = [item for group in response.groups for item in group.items]
     assert all("probe_duration_ms" in item.metadata for item in items)
+
+
+def test_valuation_phase_card_turns_green_after_the_cash_yield_pending_gap_run() -> None:
+    # Owner card 20/10/2026: "Failed · cash_yield: CashYieldDataError: Cash-yield sessions
+    # remain pending: 2026-10-13". After the fix the 06:00 BRT run records pending_data
+    # as a SUCCESS, which is the state this card reads (latest ingestion run per phase).
+    from datetime import date
+    from zoneinfo import ZoneInfo
+
+    from app.database import Database
+    from app.r2d2 import R2D2PaperService
+    from app.r2d2_cash_yield import CashYieldDataError, R2D2CashYieldService
+    from app.valuation_worker import OffhoursPhase, run_worker_iteration
+
+    brt = ZoneInfo("America/Sao_Paulo")
+    settings = Settings(database_url="", r2d2_start_date="2026-08-17",
+                        r2d2_starting_capital_usd=1_000_000, r2d2_cash_yield_accounting_enabled=True)
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    for session in (date(2026, 10, 9), date(2026, 10, 12), date(2026, 10, 13), date(2026, 10, 14)):
+        paper.repo.memory["snapshots"][session] = {
+            "session_date": session, "cash_usd": 800_000, "nav_usd": 1_000_000, "is_final": True,
+        }
+
+    def _xml(*days: str) -> str:
+        rows = "".join(
+            f"<entry><content><m:properties><d:INDEX_DATE>{day}T00:00:00</d:INDEX_DATE>"
+            f"<d:ROUND_B1_YIELD_13WK_2>4.00</d:ROUND_B1_YIELD_13WK_2></m:properties></content></entry>"
+            for day in days
+        )
+        return ('<feed xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices" '
+                'xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" '
+                f'xmlns="http://www.w3.org/2005/Atom">{rows}</feed>')
+
+    class _Treasury:
+        def get_text(self, *_args, **_kwargs) -> str:
+            return _xml("2026-10-09", "2026-10-13", "2026-10-14")  # no 12/10: Columbus Day
+
+    def old_behaviour() -> None:
+        raise CashYieldDataError("Cash-yield sessions remain pending: 2026-10-13")
+
+    run_worker_iteration(
+        database, now=datetime(2026, 10, 20, 6, 0, tzinfo=brt), canonical_due=False,
+        canonical_operation=lambda: None,
+        offhours_phases=(OffhoursPhase("cash_yield", lambda: None, old_behaviour, start_hour=6, end_hour=10),),
+    )
+    now = datetime.now(timezone.utc)
+    others = {
+        definition["code"]: {"last_status": "succeeded", "started_at": now, "completed_at": now,
+                             "last_success_at": now, "last_error": None, "metadata": {"phase": phase}}
+        for phase, definition in VALUATION_WORKER_PHASES.items() if phase != "cash_yield"
+    }
+    cash_code = VALUATION_WORKER_PHASES["cash_yield"]["code"]
+
+    def card():
+        service = _service(valuation_phase_states={**others, **database.ingestion_run_health([cash_code])})
+        service.settings.r2d2_cash_yield_accounting_enabled = True
+        return service._valuation_worker_phase_health(datetime.now(timezone.utc))
+
+    before = card()
+    assert before.status == "offline"
+    assert "cash_yield: CashYieldDataError: Cash-yield sessions remain pending: 2026-10-13" in before.detail
+
+    cash_yield = R2D2CashYieldService(settings, database, _Treasury())  # type: ignore[arg-type]
+    result = run_worker_iteration(
+        database, now=datetime(2026, 10, 21, 6, 0, tzinfo=brt), canonical_due=False,
+        canonical_operation=lambda: None,
+        offhours_phases=(OffhoursPhase("cash_yield", lambda: None,
+                                       lambda: cash_yield.run_through(date(2026, 10, 15)),
+                                       start_hour=6, end_hour=10),),
+    )
+    assert result.phase_statuses == {"cash_yield": "succeeded"}
+    run = database.latest_analysis_snapshot("r2d2_cash_yield_run", "R2D2_CASH_YIELD")
+    assert run is not None and run["outputs"]["status"] == "pending_data"
+    after = card()
+    assert after.status == "healthy", after.detail
+    assert after.detail == "Canonical and all configured phases succeeded for the expected cycle"
+    # The incident for the failed night closes on the same successful run.
+    incidents = database.list_operational_incidents(limit=10)
+    assert incidents and all(item["status"] == "resolved" for item in incidents)

@@ -83,6 +83,40 @@ interrupção do watchdog local. Falha de SSH ou validação falha o workflow.
 Todos os agendamentos são permanentes, sem data de término. Ausência de correção
 ou incompatibilidade permanece visível e volta a ser consultada diariamente.
 
+## Ingestões órfãs após deploy ou reinício
+
+Um deploy (`docker compose up -d`) reinicia todos os workers; uma ingestão em curso
+naquele instante ficava com `status='running'` em `ingestion_runs` para sempre (cards
+de saúde, preflight da grade PIT e este controlador de reboot leem `running`). Desde
+20/10/2026, cada execução nova grava em `metadata` a identidade do processo que a
+iniciou (`process_instance`, um uuid4 por processo, mais `process_pid`,
+`process_started_at`, `process_host` — o id curto do contêiner — e, nos workers,
+`process_role`).
+
+Ao subir, **antes de iniciar qualquer execução**, o `valuation-worker` e o
+`investor-relations-worker` marcam como `failed` (resumo `orphaned: process
+restarted`, com `metadata.reaped_at` e `metadata.reaped_by`) toda execução ainda
+`running` iniciada antes do processo atual que seja:
+
+* marcada com o papel do próprio worker e outro `process_instance` (o processo
+  anterior do mesmo worker, inclusive fontes de RI chamadas dentro do noturno do
+  valuation); ou
+* antiga, sem marcador, de uma fonte que só esse worker grava (`source_type`
+  `valuation_worker` no valuation; `sec_asfiled` no worker de RI).
+
+Nunca toca execuções de outro worker, da API ou de CLIs avulsas (sem papel), do
+próprio processo, nem execuções antigas de fontes compartilhadas (`cvm`, `sec`, `ri`,
+`finnhub`, `cvm_statements`, `b3`, `eodhd`…), que apenas saem das janelas de 12 h do
+preflight e de vida dos contêineres deste controlador. É um único `UPDATE ... WHERE
+status = 'running' ... RETURNING id`, idempotente; a contagem sai no log
+(`ingestion orphan reaper: role=... reaped=N`), e uma falha do reaper é registrada sem
+impedir o worker de subir. Portanto, após um deploy, as órfãs desses dois workers são
+encerradas automaticamente na partida e o preflight da grade PIT não fica bloqueado
+por elas. Pressupõe um único processo vivo por worker (um contêiner por serviço no
+`compose.yml`). O `r2d2-worker` (congelado no pacote R2D2 V2) já grava o marcador,
+mas ainda não roda o reaper; o `server-usage-worker` e o
+`r2d2-shadow-candidate-worker` não abrem ingestões.
+
 ## Instalação e ativação
 
 O deploy instala/atualiza os scripts e unidades versionados após o portão de saúde,

@@ -12,11 +12,33 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 from uuid import uuid4
 
+from . import ingestion_process
 from .config import Settings
 from .valuation_official_engine import OFFICIAL_SOURCES  # the sources a generation may select (Q3); the engine imports no storage
 
 logger = logging.getLogger(__name__)
 LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
+_INGESTION_REAP_LOCK = threading.Lock()  # the in-memory double's reaper is one atomic step, like the PostgreSQL UPDATE
+# Database.reap_orphaned_ingestion_runs (app/ingestion_process.py): one atomic UPDATE; a marked run is reaped by its
+# role and another process instance, an unmarked (legacy) run only by the sources the reaping worker alone writes
+REAP_ORPHANED_INGESTION_RUNS_SQL = """
+UPDATE ingestion_runs AS run
+SET status = 'failed',
+    completed_at = %(reaped_at)s,
+    error_summary = %(error_summary)s,
+    metadata = run.metadata || jsonb_build_object('reaped_at', %(reaped_at_text)s::text, 'reaped_by', %(reaped_by)s::text)
+WHERE run.status = 'running'
+  AND run.started_at < %(process_started_at)s
+  AND (
+        (run.metadata ->> 'process_role' = %(role)s
+         AND run.metadata ->> 'process_instance' IS DISTINCT FROM %(process_instance)s)
+     OR (NOT (run.metadata ? 'process_instance')
+         AND run.source_id IN (
+             SELECT source.id FROM data_sources AS source
+             WHERE source.source_type = ANY(%(legacy_source_types)s::text[]) OR source.code = ANY(%(legacy_source_codes)s::text[])))
+  )
+RETURNING run.id::text
+"""
 # what the price-series producer hands the capture writer once it knows the latest stored hashes (V3.2, migration 049):
 # (manifest inputs, manifest outputs, published_at == the capture clock, snapshot_id, bars to insert)
 PriceHistoryCapture = tuple[dict[str, Any], dict[str, Any], datetime, str, list[dict[str, Any]]]
@@ -420,6 +442,72 @@ class Database:
             (item for item in self.list_operational_incidents(limit=1000) if item["id"] == incident_id),
             None,
         )
+
+    def set_operational_incident_severity(
+        self,
+        *,
+        incident_key: str,
+        severity: str,
+        detail: str,
+        evidence: dict[str, Any],
+        evidence_sha256: str,
+        at: datetime,
+    ) -> dict[str, Any] | None:
+        """Set an unresolved incident's severity (the caller owns the rule).
+
+        ``record_operational_incident`` fixes severity when the row is first
+        created; this lets a caller escalate an episode or re-derive it when a
+        resolved incident reopens. The change is recorded as an append-only
+        ``observed`` event carrying the evidence that justified it; a resolved,
+        absent or unchanged incident is returned as it is.
+        """
+        if severity not in {"attention", "critical"}:
+            raise ValueError("invalid incident severity")
+        if not self.database_url:
+            incident = self._operational_incidents.get(incident_key)
+            current = self.operational_incident_by_key(incident_key)
+            if (
+                incident is None or current is None
+                or current["status"] == "resolved" or incident["severity"] == severity
+            ):
+                return current
+            incident["severity"] = severity
+            self._operational_incident_events.append({
+                "id": str(uuid4()), "incident_id": incident["id"], "event_type": "observed",
+                "actor_email": "system", "detail": detail, "evidence": dict(evidence),
+                "evidence_sha256": evidence_sha256, "occurred_at": at,
+            })
+            return self.operational_incident_by_key(incident_key)
+        with self.connection() as connection:
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"operational-incident:{incident_key}",),
+            )
+            row = connection.execute(
+                "SELECT id, severity FROM operational_incidents WHERE incident_key = %s",
+                (incident_key,),
+            ).fetchone()
+            state = connection.execute(
+                """SELECT event_type FROM operational_incident_events
+                   WHERE incident_id = %s
+                     AND event_type IN ('opened','reopened','acknowledged','resolved')
+                   ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+                (row[0],),
+            ).fetchone() if row else None
+            if row and row[1] != severity and state and state[0] != "resolved":
+                connection.execute(
+                    "UPDATE operational_incidents SET severity = %s WHERE id = %s",
+                    (severity, row[0]),
+                )
+                connection.execute(
+                    """INSERT INTO operational_incident_events
+                       (id, incident_id, event_type, actor_email, detail, evidence,
+                        evidence_sha256, occurred_at)
+                       VALUES (%s,%s,'observed','system',%s,%s::jsonb,%s,%s)""",
+                    (uuid4(), row[0], detail, json.dumps(evidence), evidence_sha256, at),
+                )
+            connection.commit()
+        return self.operational_incident_by_key(incident_key)
 
     def operational_incident_open_since(self, incident_key: str) -> datetime | None:
         """When the current unresolved episode began: the latest opened/reopened
@@ -1973,6 +2061,7 @@ class Database:
         return str(row[0])
 
     def begin_ingestion_run(self, code: str, name: str, source_type: str, metadata: dict[str, Any]) -> str:
+        metadata = ingestion_process.stamp(metadata)  # the process marker the startup reaper reads
         source_id = self.ensure_data_source(code, name, source_type)
         run_id = str(uuid4())
         started_at = datetime.now().astimezone()
@@ -2029,6 +2118,64 @@ class Database:
                 (status, completed_at, records_read, records_written, error_summary, run_id),
             )
             connection.commit()
+
+    def reap_orphaned_ingestion_runs(
+        self,
+        *,
+        role: str,
+        process_instance: str,
+        process_started_at: datetime,
+        legacy_source_types: tuple[str, ...],
+        legacy_source_codes: tuple[str, ...],
+        reaped_at: datetime,
+        reaped_by: str,
+        error_summary: str,
+    ) -> list[str]:
+        """Fail the runs a previous process of worker ``role`` left ``running`` (app/ingestion_process.py): started
+        before ``process_started_at`` and either marked with ``role`` and another process instance, or unmarked and of
+        a source in ``legacy_source_types`` / ``legacy_source_codes``. One atomic step; returns the reaped ids."""
+        if not self.database_url:
+            with _INGESTION_REAP_LOCK:
+                legacy_sources = {
+                    str(source["id"]) for source in self._data_sources.values()
+                    if source.get("source_type") in legacy_source_types or source.get("code") in legacy_source_codes
+                }
+                reaped: list[str] = []
+                for run in self._ingestion_runs.values():
+                    if run.get("status") != "running" or not run["started_at"] < process_started_at:
+                        continue
+                    metadata = run.get("metadata") or {}
+                    if "process_instance" in metadata:
+                        owned = metadata.get("process_role") == role and metadata.get("process_instance") != process_instance
+                    else:
+                        owned = str(run.get("source_id")) in legacy_sources
+                    if not owned:
+                        continue
+                    run.update({
+                        "status": "failed",
+                        "completed_at": reaped_at,
+                        "error_summary": error_summary,
+                        "metadata": {**metadata, "reaped_at": reaped_at.isoformat(), "reaped_by": reaped_by},
+                    })
+                    reaped.append(str(run["id"]))
+                return reaped
+        with self.connection() as connection:
+            rows = connection.execute(
+                REAP_ORPHANED_INGESTION_RUNS_SQL,
+                {
+                    "role": role,
+                    "process_instance": process_instance,
+                    "process_started_at": process_started_at,
+                    "legacy_source_types": list(legacy_source_types),
+                    "legacy_source_codes": list(legacy_source_codes),
+                    "reaped_at": reaped_at,
+                    "reaped_at_text": reaped_at.isoformat(),
+                    "reaped_by": reaped_by,
+                    "error_summary": error_summary,
+                },
+            ).fetchall()
+            connection.commit()
+        return [str(row[0]) for row in rows]
 
     def save_quotes(self, source_code: str, run_id: str, quotes: list[Any]) -> None:
         if not quotes:
