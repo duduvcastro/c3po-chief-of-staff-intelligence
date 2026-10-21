@@ -21,7 +21,8 @@ from test_one_pager import service_for
 HOUSES = re.compile(r"morgan\s*stanley|j\.?\s*p\.?\s*morgan|goldman|bridgewater|blackrock", re.IGNORECASE)
 BACKEND_APP = Path(__file__).resolve().parents[1] / "app"
 FRONTEND_APP = Path(__file__).resolve().parents[2] / "frontend" / "app"
-WORK = Path(__file__).resolve().parents[3] / "work"
+_PARENTS = Path(__file__).resolve().parents
+WORK = _PARENTS[3] / "work" if len(_PARENTS) > 3 else Path("/nonexistent-work")
 # Files allowed to name a house, and why. Nothing here is a valuation criterion.
 ALLOWED = {
     "foreign_listings.py": "real, dated public coverage calls of a foreign primary listing (third-party data, not a criterion)",
@@ -86,7 +87,7 @@ def test_no_valuation_source_or_frontend_surface_names_a_house() -> None:
             hits[f"work/{path.name}"] = found
     assert hits == {}
     # the allowlisted coverage table quotes a house only as a real, dated third-party call — never a method or a criterion
-    for name in WORK_ALLOWED:
+    for name in WORK_ALLOWED if WORK.is_dir() else ():
         lines = [line for line in (WORK / name).read_text(encoding="utf-8").splitlines() if HOUSES.search(line)]
         assert lines and all(COVERAGE_QUOTE.match(line) for line in lines), name
     # the allowlisted One Pager names a house only in its comments and in one docstring, never in code
