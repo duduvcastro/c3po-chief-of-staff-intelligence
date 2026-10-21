@@ -2,7 +2,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from . import valuation_env
+from . import ingestion_process, valuation_env
 from .maintenance_gate import job, startup_job
 from .config import get_settings
 from .database import Database
@@ -33,6 +33,8 @@ def main() -> None:
         init_sentry(settings, service_name="investor-relations-worker")
         database = Database(settings)
         database.initialize()
+        # before any run of this process: the runs a previous process of this worker left 'running' (a deploy) are failed
+        ingestion_process.reap_at_startup(database, ingestion_process.IR_WORKER)
         # the only process that reads SEC filing headers (one container): sync_sec's header step and the as-filed poll
         service = InvestorRelationsService(settings, database, read_sec_headers=True)
         market_data = MarketDataService(settings, database)
