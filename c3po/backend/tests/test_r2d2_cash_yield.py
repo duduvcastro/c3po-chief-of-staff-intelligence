@@ -985,9 +985,19 @@ def test_parser_classifies_absent_versus_not_yet_published_versus_not_yet_causal
                                 observation_date=date(2026, 10, 12), fetched_at=fetched)
     assert absent.value.reason == "treasury_observation_absent_for_source_date"
     with pytest.raises(CashYieldPendingData) as unpublished:
-        parse_treasury_bill_xml(_xml("2026-10-09"),
-                                observation_date=date(2026, 10, 12), fetched_at=fetched)
+        parse_treasury_bill_xml(_xml("2026-10-09"), observation_date=date(2026, 10, 12),
+                                fetched_at=datetime(2026, 10, 16, 9, 0, tzinfo=timezone.utc))
     assert unpublished.value.reason == "treasury_observation_not_yet_published"
+    # More than 4 days later with nothing on or after the source date: a stale feed (fault).
+    with pytest.raises(CashYieldDataError, match="Treasury feed is stale") as stale:
+        parse_treasury_bill_xml(_xml("2026-10-09"), observation_date=date(2026, 10, 12),
+                                fetched_at=datetime(2026, 10, 17, 9, 0, tzinfo=timezone.utc))
+    assert not isinstance(stale.value, CashYieldPendingData)
+    # The Columbus Day gap stays pending however old it is: later dates were published.
+    with pytest.raises(CashYieldPendingData) as old_gap:
+        parse_treasury_bill_xml(_xml("2026-10-09", "2026-10-13"), observation_date=date(2026, 10, 12),
+                                fetched_at=datetime(2026, 12, 31, tzinfo=timezone.utc))
+    assert old_gap.value.reason == "treasury_observation_absent_for_source_date"
     with pytest.raises(CashYieldPendingData) as not_causal:
         parse_treasury_bill_xml(_xml("2026-10-19"), observation_date=date(2026, 10, 19),
                                 fetched_at=datetime(2026, 10, 19, 23, 0, tzinfo=timezone.utc))
@@ -999,6 +1009,10 @@ def test_parser_classifies_absent_versus_not_yet_published_versus_not_yet_causal
     (_xml("2026-10-09", coupon_equivalent="-0.10"), "negative"),
     (_xml("2026-10-09", coupon_equivalent="n/a"), "lacks 13-week"),
     (_xml("2026-10-09", "2026-10-09"), "found 2"),
+    # Broken feeds that parse as XML must not look like "not yet published".
+    ('<feed xmlns="http://www.w3.org/2005/Atom"/>', "no dated rows"),
+    (_xml("2026-10-09").replace("INDEX_DATE", "RECORD_DATE"), "no dated rows"),
+    ("<html><head><title>Error</title></head><body><p>Service unavailable</p></body></html>", "no dated rows"),
 ])
 def test_parser_real_faults_are_not_pending(xml: str, match: str) -> None:
     with pytest.raises(CashYieldDataError, match=match) as fault:

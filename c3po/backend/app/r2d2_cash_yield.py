@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import hashlib
 import json
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 from xml.etree import ElementTree
@@ -55,6 +55,8 @@ PENDING_TREASURY_NOT_YET_CAUSAL = "treasury_observation_not_yet_causal"
 # has no rule for it, so the entry stays pending until a deliberation decides one.
 PENDING_TREASURY_OBSERVATION_ABSENT = "treasury_observation_absent_for_source_date"
 INACTIVE_EXPERIMENT_STATUSES = frozenset({"paused", "completed"})
+# "Not yet published" is only plausible for a few days; older than this it is a stale feed.
+TREASURY_STALE_AFTER = timedelta(days=4)
 
 
 def _canonical_sha256(payload: dict[str, Any]) -> str:
@@ -91,6 +93,7 @@ def parse_treasury_bill_xml(
 
     matches: list[float] = []
     published_later = False
+    dated_rows = 0
     for properties in root.iter():
         if not properties.tag.endswith("properties"):
             continue
@@ -103,6 +106,7 @@ def parse_treasury_bill_xml(
             row_date = date.fromisoformat(raw_date)
         except ValueError:
             continue
+        dated_rows += 1
         if row_date != observation_date:
             published_later = published_later or row_date > observation_date
             continue
@@ -116,7 +120,16 @@ def parse_treasury_bill_xml(
             raise CashYieldDataError("Treasury 13-week Coupon Equivalent is negative")
         matches.append(rate)
 
+    if not dated_rows:
+        # An empty feed, a renamed INDEX_DATE or an XML error page: a broken source.
+        raise CashYieldDataError("Treasury feed has no dated rows")
     message = f"Expected one Treasury observation for {observation_date}, found {len(matches)}"
+    if (
+        not matches and not published_later
+        and observation_date < fetched_at.astimezone(timezone.utc).date() - TREASURY_STALE_AFTER
+    ):
+        # Nothing on or after the source date days later: the feed is stale, not late.
+        raise CashYieldDataError(f"Treasury feed is stale: {message}")
     if not matches:
         raise CashYieldPendingData(
             PENDING_TREASURY_OBSERVATION_ABSENT
