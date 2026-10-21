@@ -6,7 +6,7 @@ import json
 import os
 import re
 from collections.abc import MutableMapping
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import Settings, get_settings
@@ -128,7 +128,7 @@ class OperationalIncidentService:
 # AGGREGATES ONLY. Every string it prints comes from a closed vocabulary below: no incident key, title,
 # detail, evidence, actor, card name or card detail ever leaves the process (they may name a symbol or a
 # person). The runner re-verifies the exact schema before anything is uploaded or posted.
-REPORT_SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v1"
+REPORT_SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v2"  # v2: + stale_running_ingestion
 READ_ONLY_PGOPTION = "-c default_transaction_read_only=on"
 GOVERNANCE_INCIDENT_KIND = "governance-vulnerability"  # governance_vulnerability.GOVERNANCE_INCIDENT_KEY (no import: cycle)
 NOTIFICATION_KINDS = ("job_failure", "disk_threshold")
@@ -151,6 +151,7 @@ HEALTH_CARDS = {
 HEALTH_CARD_KEYS = (*HEALTH_CARDS.values(), "probe_failed", "unmapped")
 INCIDENT_SCAN_LIMIT = 1000
 OVER_24H_HOURS = 24.0
+STALE_RUNNING_MINUTES = 30
 
 
 def force_read_only_session(environ: MutableMapping[str, str] | None = None) -> str:
@@ -249,6 +250,24 @@ def health_cards(settings: Settings, database: Database, now: datetime) -> dict[
     return {"evaluated": evaluated, "cards": sorted(cards, key=lambda item: (item["group"], item["card"], item["status"]))}
 
 
+def stale_running_ingestion(database: Database, now: datetime) -> dict[str, Any]:
+    """Ingestion runs still `running` more than 30 min after they started: a count and the oldest age only (the
+    source code and the run metadata, which may list symbols, never leave)."""
+    cutoff = now - timedelta(minutes=STALE_RUNNING_MINUTES)
+    if not database.database_url:
+        runs = getattr(database, "_ingestion_runs", {}).values()
+        started = [_utc(run.get("started_at")) for run in runs if run.get("status") == "running"]
+    else:
+        with database.connection() as connection:
+            rows = connection.execute(
+                "SELECT started_at FROM ingestion_runs WHERE status = 'running' AND started_at < %s",
+                (cutoff,),
+            ).fetchall()
+        started = [_utc(row[0]) for row in rows]
+    ages = [int((now - moment).total_seconds() // 60) for moment in started if moment is not None and moment < cutoff]
+    return {"threshold_minutes": STALE_RUNNING_MINUTES, "count": len(ages), "oldest_age_minutes": max(ages, default=None)}
+
+
 def report_sha256(report: dict[str, Any]) -> str:
     body = {key: value for key, value in report.items() if key != "report_sha256"}
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
@@ -263,6 +282,7 @@ def incidents_report(settings: Settings, database: Database, now: datetime | Non
         "build_sha": build if re.fullmatch(r"[0-9a-f]{40}", build) else None,
         "incidents": incidents_aggregate(database, moment),
         "health": health_cards(settings, database, moment),
+        "stale_running_ingestion": stale_running_ingestion(database, moment),
     }
     report["report_sha256"] = report_sha256(report)
     return report

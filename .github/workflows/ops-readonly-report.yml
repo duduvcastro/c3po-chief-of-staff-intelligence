@@ -1,7 +1,8 @@
 name: Ops read-only incidents report
 
-# Daily (08:30 BRT, after the nightly valuation cycle ends at 08:15 BRT) and on dispatch: an AGGREGATE of the open/acknowledged operational incidents and
-# of the red/amber LOCAL health cards (governance, incidents, Day D/valuation controls), produced by
+# Twice a day (03:30 BRT, after the nightly phases, and 08:30 BRT, after the nightly valuation cycle ends at 08:15 BRT) and on
+# dispatch: an AGGREGATE of the open/acknowledged operational incidents, of the red/amber LOCAL health cards (governance,
+# incidents, Day D/valuation controls) and of the ingestion runs still running after 30 min, produced by
 # `python -m app.operational_incidents --report-json` inside the running api container of the
 # production host through the deploy SSH transport of c3po-pipeline.yml, READ-ONLY:
 #   - no file is copied to or written on the host, no container is created, restarted or stopped
@@ -10,14 +11,16 @@ name: Ops read-only incidents report
 #     set here and again by the module); the module never runs the external probes of the panel.
 # The runner verifies the EXACT schema before anything leaves it: every key at every level is the
 # whitelisted one, every string belongs to a closed vocabulary or is a UTC timestamp, the sha256
-# recomputes. Only then are incidents.json and a Portuguese summary.md uploaded, and a one-line
-# aggregate is posted on the Fable/Codex channel (C3PO_ESCALATION_ISSUE, default #429) only when an
-# incident is open for more than 24 h — at most once per BRT day. The remote stderr stays in the
-# runner's temp directory and is never printed: this repository is public.
+# recomputes. Only then are incidents.json and a Portuguese summary.md uploaded. When a health card is red, a critical
+# incident is open or an incident is open for more than 24 h, ONE comment per run (marker
+# `<!-- c3po-ops-readonly-report:YYYY-MM-DD:HHMM -->`, BRT day and scheduled slot) lists them on the Fable/Codex channel
+# (C3PO_ESCALATION_ISSUE, default #429); a red card or a critical incident also fails the job, so the run shows red in
+# Actions. The remote stderr stays in the runner's temp directory and is never printed: this repository is public.
 # Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
 
 on:
   schedule:
+    - cron: "30 6 * * *"
     - cron: "30 11 * * *"
   workflow_dispatch:
 
@@ -111,6 +114,7 @@ jobs:
       - name: Verify the exact schema and keep aggregates only
         id: verify
         env:
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
@@ -127,8 +131,10 @@ jobs:
           from pathlib import Path
 
           source, out, comments_path, channel_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])
-          SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v1"
-          TOP = {"schema", "generated_at", "build_sha", "incidents", "health", "report_sha256"}
+          SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v2"
+          TOP = {"schema", "generated_at", "build_sha", "incidents", "health", "stale_running_ingestion", "report_sha256"}
+          STALE = {"threshold_minutes", "count", "oldest_age_minutes"}
+          SLOTS = {"30 6 * * *": "0330", "30 11 * * *": "0830"}
           INCIDENTS = {"scanned", "totals", "groups"}
           TOTALS = {"active", "open", "acknowledged", "critical", "over_24h", "oldest_age_hours"}
           GROUP = {"kind", "source", "severity", "status", "count", "over_24h", "oldest_started_at", "oldest_age_hours", "last_seen_at"}
@@ -215,6 +221,14 @@ jobs:
               exact(card, CARD, "card")
               for name, allowed in CARD_VOCABULARY.items():
                   word(card[name], allowed, name)
+          stale = exact(report["stale_running_ingestion"], STALE, "stale_running_ingestion")
+          if stale["threshold_minutes"] != 30:
+              refuse("threshold_minutes is not 30")
+          count(stale["count"], "stale count")
+          if stale["oldest_age_minutes"] is not None:
+              count(stale["oldest_age_minutes"], "oldest_age_minutes")
+          if (stale["count"] == 0) != (stale["oldest_age_minutes"] is None):
+              refuse("the stale runs do not match their oldest age")
           body = {key: value for key, value in report.items() if key != "report_sha256"}
           digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
           if report["report_sha256"] != digest:
@@ -232,7 +246,9 @@ jobs:
                    f"- Incidentes ativos: {totals['active']} (abertos {totals['open']}, reconhecidos {totals['acknowledged']}, "
                    f"críticos {totals['critical']}); abertos há mais de 24 h: {totals['over_24h']}"
                    + (f"; o mais antigo há {totals['oldest_age_hours']} h" if totals["oldest_age_hours"] is not None else ""),
-                   f"- Cartões de saúde locais avaliados: {health['evaluated']}; vermelhos {red}, âmbar {amber}", ""]
+                   f"- Cartões de saúde locais avaliados: {health['evaluated']}; vermelhos {red}, âmbar {amber}",
+                   f"- Ingestões em execução há mais de 30 min: {stale['count']}"
+                   + (f"; a mais antiga há {stale['oldest_age_minutes']} min" if stale["oldest_age_minutes"] is not None else ""), ""]
           if incidents["groups"]:
               lines += ["| tipo | origem | severidade | estado | quantidade | > 24 h | mais antigo (h) | última observação (UTC) |",
                         "|---|---|---|---|---|---|---|---|"]
@@ -250,9 +266,12 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
               handle.write(summary)
 
+          slot = SLOTS.get(os.environ.get("EVENT_SCHEDULE") or "", f"{brt:%H%M}")
+          marker = f"<!-- c3po-ops-readonly-report:{brt.date().isoformat()}:{slot} -->"
+          red_cards = [card for card in health["cards"] if card["status"] == "offline"]
+          failing = bool(red_cards) or totals["critical"] > 0
           post = False
-          if totals["over_24h"] > 0:
-              marker = f"<!-- c3po-ops-readonly-report:{brt.date().isoformat()} -->"
+          if failing or totals["over_24h"] > 0:
               comments = json.loads(comments_path.read_text(encoding="utf-8"))
               channel = json.loads(channel_path.read_text(encoding="utf-8"))
               if not isinstance(comments, list):
@@ -260,17 +279,27 @@ jobs:
               done = any(isinstance(item, str) and item.split("\n", 1)[0].strip() == marker for item in comments)
               usable = isinstance(channel, dict) and channel.get("state") == "open" and channel.get("locked") is False \
                   and isinstance(channel.get("comments"), int) and channel["comments"] < 2400
-              if not done and not usable:
+              if done:
+                  print("this run's marker is already on the channel: not posted again")
+              elif not usable:
                   print("::warning::the channel is closed, locked or full: the aggregate stays in the artifact only")
-              if not done and usable:
-                  line = (f"Incidentes abertos há mais de 24 h: {totals['over_24h']} de {totals['active']} ativos "
-                          f"({totals['critical']} críticos; o mais antigo há {totals['oldest_age_hours']} h); cartões de saúde "
-                          f"vermelhos {red}, âmbar {amber} — [relatório read-only]({os.environ['RUN_URL']})")
-                  (out.parent / "ops-readonly-comment.md").write_text(f"{marker}\n{line}\n", encoding="utf-8")
+              else:
+                  body = [marker,
+                          f"**Relatório read-only {brt:%d/%m/%Y %H:%M} BRT** — cartões de saúde vermelhos {red}, âmbar {amber}; "
+                          f"incidentes ativos {totals['active']} ({totals['critical']} críticos, {totals['over_24h']} há mais de 24 h); "
+                          f"ingestões presas há mais de 30 min: {stale['count']} — [relatório read-only]({os.environ['RUN_URL']})", ""]
+                  body += [f"- [vermelho] cartão `{card['group']}/{card['card']}`" for card in red_cards]
+                  if totals["critical"]:
+                      body.append(f"- [crítico] {totals['critical']} incidente(s) crítico(s) aberto(s)")
+                  if totals["over_24h"]:
+                      body.append(f"- [> 24 h] {totals['over_24h']} incidente(s) aberto(s) há mais de 24 h "
+                                  f"(o mais antigo há {totals['oldest_age_hours']} h)")
+                  (out.parent / "ops-readonly-comment.md").write_text("\n".join(body) + "\n", encoding="utf-8")
                   post = True
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"post={'true' if post else 'false'}\n")
-          print(f"report_sha256 {report['report_sha256']}; active {totals['active']}; over 24 h {totals['over_24h']}; red {red}; amber {amber}")
+              handle.write(f"post={'true' if post else 'false'}\nred={'true' if failing else 'false'}\n")
+          print(f"report_sha256 {report['report_sha256']}; active {totals['active']}; critical {totals['critical']}; "
+                f"over 24 h {totals['over_24h']}; red {red}; amber {amber}; stale runs {stale['count']}; marker {marker}")
           PY
           (cd "$out" && sha256sum incidents.json summary.md > SHA256SUMS) || exit 1
 
@@ -282,7 +311,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Post the one-line aggregate to the Fable-Codex channel
+      - name: Post the aggregate to the Fable-Codex channel
         if: steps.verify.outputs.post == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -290,3 +319,9 @@ jobs:
           gh issue comment "$CHANNEL_ISSUE" \
             --repo "$GITHUB_REPOSITORY" \
             --body-file "$RUNNER_TEMP/ops-readonly-comment.md"
+
+      - name: Fail the run when a card is red or a critical incident is open
+        if: steps.verify.outputs.red == 'true'
+        run: |
+          echo '::error::red health card or critical incident open (see the summary and the channel)'
+          exit 1

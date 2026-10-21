@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -43,6 +44,9 @@ def _seeded(tmp_path: Path) -> tuple[Settings, Database]:
     service.resolve(resolved["id"], "owner@example.com", "done")
     service.signal(incident_key=f"custom:{SYMBOL}", source=f"robot-{SYMBOL}", severity="attention", title=SYMBOL,
                    detail=SYMBOL, at=NOW - timedelta(hours=1), **common)
+    for code, minutes, status in ((f"one-pager-{SYMBOL}", 95, "running"), ("eodhd", 10, "running"), ("cvm", 300, "succeeded")):
+        run_id = database.begin_ingestion_run(code, SYMBOL, "test", {"symbols": [SYMBOL]})
+        database._ingestion_runs[run_id].update(started_at=NOW - timedelta(minutes=minutes), status=status)
     return settings, database
 
 
@@ -59,7 +63,7 @@ def test_the_cli_prints_aggregates_only(tmp_path: Path, capsys: pytest.CaptureFi
     out = _cli(tmp_path, capsys, monkeypatch)
     assert out.count("\n") == 1
     report = json.loads(out)
-    for forbidden in (SYMBOL, "owner", "@", "Valuation", "Governança requer", "/mnt/x", "Causas", "exit 1", "/?view"):
+    for forbidden in (SYMBOL, "owner", "@", "Valuation", "Governança requer", "/mnt/x", "Causas", "exit 1", "/?view", "one-pager", "eodhd"):
         assert forbidden not in out
     assert report["schema"] == module.REPORT_SCHEMA and report["build_sha"] == "b" * 40
     assert report["report_sha256"] == module.report_sha256(report)
@@ -78,6 +82,7 @@ def test_the_cli_prints_aggregates_only(tmp_path: Path, capsys: pytest.CaptureFi
     assert cards[("governance", "governance_vulnerabilities")] == "attention"  # no attestation yet
     assert all(status in {"attention", "offline"} for status in cards.values())
     assert report["health"]["evaluated"] >= len(cards)
+    assert report["stale_running_ingestion"] == {"threshold_minutes": 30, "count": 1, "oldest_age_minutes": 95}
 
 
 def test_the_report_never_reaches_the_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -113,7 +118,7 @@ def _verifier() -> str:
 
 
 def _verify(tmp_path: Path, text: str, *, comments: list[str] | None = None,
-            channel: dict[str, Any] | None = None) -> subprocess.CompletedProcess[str]:
+            channel: dict[str, Any] | None = None, schedule: str = "30 11 * * *") -> subprocess.CompletedProcess[str]:
     work = tmp_path / "verify"
     out = work / "ops-readonly-report"
     out.mkdir(parents=True, exist_ok=True)
@@ -122,8 +127,9 @@ def _verify(tmp_path: Path, text: str, *, comments: list[str] | None = None,
     (work / "channel.json").write_text(json.dumps(channel or {"state": "open", "locked": False, "comments": 10}), encoding="utf-8")
     for name in ("summary.md", "output"):
         (work / name).write_text("", encoding="utf-8")
+    (work / "ops-readonly-comment.md").unlink(missing_ok=True)
     env = {**os.environ, "GITHUB_STEP_SUMMARY": str(work / "summary.md"), "GITHUB_OUTPUT": str(work / "output"),
-           "RUN_URL": "https://github.com/o/r/actions/runs/7"}
+           "RUN_URL": "https://github.com/o/r/actions/runs/7", "EVENT_SCHEDULE": schedule}
     return subprocess.run([sys.executable, "-", str(work / "incidents.json"), str(out), str(work / "comments.json"), str(work / "channel.json")],
                           input=_verifier(), text=True, capture_output=True, env=env)
 
@@ -133,7 +139,7 @@ def _rehash(report: dict[str, Any]) -> str:
     return json.dumps(report)
 
 
-def test_the_workflow_verifier_accepts_the_cli_output_and_posts_once_a_day(
+def test_the_workflow_verifier_accepts_the_cli_output_posts_once_per_run_and_turns_red(
         tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     out = _cli(tmp_path, capsys, monkeypatch)
     verified = _verify(tmp_path, out)
@@ -142,28 +148,46 @@ def test_the_workflow_verifier_accepts_the_cli_output_and_posts_once_a_day(
     summary = (work / "ops-readonly-report" / "summary.md").read_text(encoding="utf-8")
     assert summary.startswith("## Relatório read-only de incidentes — 20/10/2026 08:00 BRT")
     assert "abertos há mais de 24 h: 2" in summary and "| falha de job | worker | critical | open | 1 | 1 | 30.0 |" in summary
+    assert "Ingestões em execução há mais de 30 min: 1; a mais antiga há 95 min" in summary
     assert SYMBOL not in summary and "@" not in summary
     assert json.loads((work / "ops-readonly-report" / "incidents.json").read_text(encoding="utf-8")) == json.loads(out)
-    assert (work / "output").read_text(encoding="utf-8") == "post=true\n"
+    assert (work / "output").read_text(encoding="utf-8") == "post=true\nred=true\n"
     comment = (work / "ops-readonly-comment.md").read_text(encoding="utf-8").splitlines()
-    assert comment[0] == "<!-- c3po-ops-readonly-report:2026-10-20 -->" and len(comment) == 2
-    assert comment[1].startswith("Incidentes abertos há mais de 24 h: 2 de 4 ativos (1 críticos; o mais antigo há 50.0 h)")
+    assert comment[0] == "<!-- c3po-ops-readonly-report:2026-10-20:0830 -->"
+    red_cards = [card for card in json.loads(out)["health"]["cards"] if card["status"] == "offline"]
+    assert comment[1].startswith(f"**Relatório read-only 20/10/2026 08:00 BRT** — cartões de saúde vermelhos {len(red_cards)}, âmbar ")
+    assert [line for line in comment if line.startswith("- [vermelho]")] == [
+        f"- [vermelho] cartão `{card['group']}/{card['card']}`" for card in red_cards]
+    assert "incidentes ativos 4 (1 críticos, 2 há mais de 24 h); ingestões presas há mais de 30 min: 1" in comment[1]
+    assert "- [vermelho] cartão `governance/operational_incidents`" in comment
+    assert "- [crítico] 1 incidente(s) crítico(s) aberto(s)" in comment
+    assert "- [> 24 h] 2 incidente(s) aberto(s) há mais de 24 h (o mais antigo há 50.0 h)" in comment
+    assert SYMBOL not in "\n".join(comment)
 
     again = _verify(tmp_path, out, comments=["\n".join(comment)])
-    assert again.returncode == 0 and (work / "output").read_text(encoding="utf-8").endswith("post=false\n")
+    assert again.returncode == 0 and "already on the channel" in again.stdout
+    assert (work / "output").read_text(encoding="utf-8").endswith("post=false\nred=true\n")  # still red, never posted twice
+    other_slot = _verify(tmp_path, out, comments=["\n".join(comment)], schedule="30 6 * * *")
+    assert other_slot.returncode == 0 and (work / "output").read_text(encoding="utf-8").endswith("post=true\nred=true\n")
+    assert (work / "ops-readonly-comment.md").read_text(encoding="utf-8").startswith("<!-- c3po-ops-readonly-report:2026-10-20:0330 -->\n")
     closed = _verify(tmp_path, out, channel={"state": "closed", "locked": False, "comments": 1})
     assert closed.returncode == 0 and "::warning::" in closed.stdout
+    assert (work / "output").read_text(encoding="utf-8").endswith("post=false\nred=true\n")
 
 
-def test_nothing_older_than_24h_posts_nothing(tmp_path: Path) -> None:
+def test_green_cards_and_no_critical_or_aged_incident_post_nothing(tmp_path: Path) -> None:
     settings = Settings(database_url="", day_d_dataset_root=tmp_path)
     database = Database(settings)
     OperationalIncidentService(database).signal(incident_key=GOVERNANCE_INCIDENT_KEY, source="governance", severity="attention",
                                                 title="t", detail="d", deep_link="/", evidence={}, at=NOW - timedelta(hours=2))
     report = module.incidents_report(settings, database, NOW)
-    verified = _verify(tmp_path, json.dumps(report))
+    # an empty test host has red cards (no worker phase ran): keep only the amber ones, as on a healthy night
+    report["health"]["cards"] = [card for card in report["health"]["cards"] if card["status"] != "offline"]
+    assert report["health"]["cards"] and report["incidents"]["totals"]["active"] == 1
+    verified = _verify(tmp_path, _rehash(report))
     assert verified.returncode == 0, verified.stderr
-    assert (tmp_path / "verify" / "output").read_text(encoding="utf-8") == "post=false\n"
+    assert (tmp_path / "verify" / "output").read_text(encoding="utf-8") == "post=false\nred=false\n"
+    assert not (tmp_path / "verify" / "ops-readonly-comment.md").exists()
 
 
 def test_the_verifier_rejects_any_key_or_string_outside_the_whitelist(tmp_path: Path) -> None:
@@ -190,6 +214,9 @@ def test_the_verifier_rejects_any_key_or_string_outside_the_whitelist(tmp_path: 
         "build_sha is not a commit sha": mutated(lambda r: r.update(build_sha=SYMBOL)),
         "unexpected schema": mutated(lambda r: r.update(schema="OTHER")),
         "do not add up": mutated(lambda r: r["incidents"]["totals"].update(active=99)),
+        "stale_running_ingestion: the keys": mutated(lambda r: r["stale_running_ingestion"].update(sources=[SYMBOL])),
+        "stale count is not a non-negative count": mutated(lambda r: r["stale_running_ingestion"].update(count=-1)),
+        "do not match their oldest age": mutated(lambda r: r["stale_running_ingestion"].update(oldest_age_minutes=None)),
         "report_sha256 does not recompute": json.dumps({**base, "generated_at": "2026-10-20T11:00:01+00:00"}),
         "not a single JSON document": "{" + SYMBOL,
     }
@@ -200,12 +227,14 @@ def test_the_verifier_rejects_any_key_or_string_outside_the_whitelist(tmp_path: 
         assert not (tmp_path / "verify" / "ops-readonly-report" / "incidents.json").exists()
 
 
-def test_the_workflow_is_read_only_scheduled_and_posts_only_on_aged_incidents() -> None:
+def test_the_workflow_is_read_only_scheduled_twice_and_fails_on_red() -> None:
     source = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(source)
     assert workflow["permissions"] == {"contents": "read"}
     assert set(workflow[True]) == {"schedule", "workflow_dispatch"}
-    assert [entry["cron"] for entry in workflow[True]["schedule"]] == ["30 11 * * *"]
+    assert [entry["cron"] for entry in workflow[True]["schedule"]] == ["30 6 * * *", "30 11 * * *"]  # 03:30 and 08:30 BRT
+    assert set(re.findall(r"secrets\.([A-Z0-9_]+)", source)) == {"C3PO_AWS_SSH_KEY", "C3PO_AWS_KNOWN_HOSTS", "C3PO_AWS_HOST", "C3PO_AWS_USER"}
+    assert set(re.findall(r"vars\.([A-Z0-9_]+)", source)) == {"C3PO_ESCALATION_ISSUE"}
     job = workflow["jobs"]["read-only-report"]
     assert job["permissions"] == {"contents": "read", "issues": "write"} and job["environment"] == "production"
     steps = {step["name"]: step for step in job["steps"]}
@@ -218,6 +247,10 @@ def test_the_workflow_is_read_only_scheduled_and_posts_only_on_aged_incidents() 
     upload = steps["Publish the aggregate report"]
     assert upload["with"]["path"] == "${{ runner.temp }}/ops-readonly-report"
     assert "sha256sum incidents.json summary.md > SHA256SUMS" in steps["Verify the exact schema and keep aggregates only"]["run"]
-    post = steps["Post the one-line aggregate to the Fable-Codex channel"]
+    post = steps["Post the aggregate to the Fable-Codex channel"]
     assert post["if"] == "steps.verify.outputs.post == 'true'"
+    fail = steps["Fail the run when a card is red or a critical incident is open"]
+    assert fail["if"] == "steps.verify.outputs.red == 'true'" and "exit 1" in fail["run"]
+    assert list(steps).index("Post the aggregate to the Fable-Codex channel") < list(steps).index(
+        "Fail the run when a card is red or a critical incident is open")
     assert steps["Check out the workflow revision"]["with"] == {"persist-credentials": False}

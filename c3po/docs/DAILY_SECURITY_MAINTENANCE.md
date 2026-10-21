@@ -139,7 +139,7 @@ mostrando os avisos resolvidos. Não executar esse ensaio durante o D14.
 
 ## Relatório read-only de incidentes
 
-`.github/workflows/ops-readonly-report.yml` roda diariamente às 11:30 UTC (08:30 BRT, depois do fim do ciclo noturno às 08:15 BRT) e por
+`.github/workflows/ops-readonly-report.yml` roda às 06:30 e 11:30 UTC (03:30 e 08:30 BRT; ver "Varredura noturna de saúde") e por
 `workflow_dispatch`. Pelo transporte SSH do deploy, executa
 `python -m app.operational_incidents --report-json` dentro do contêiner `api` em execução
 (`docker compose exec -T`, sessão PostgreSQL com `default_transaction_read_only=on`, nada
@@ -156,15 +156,31 @@ vermelhos/âmbar por chave fixa. Chave do incidente, título, detalhe, evidênci
 texto dos cartões nunca saem do processo. No runner, o verificador exige o esquema exato
 (chaves e vocabulário fechados, horários UTC, contagens não negativas, soma dos grupos
 igual aos totais, `report_sha256` recalculado) antes de publicar o artefato
-`incidents.json` + `summary.md` (português) + `SHA256SUMS`. Só quando há incidente aberto
-há mais de 24 h, uma linha agregada vai ao canal `C3PO_ESCALATION_ISSUE` (padrão #429),
-com o marcador `<!-- c3po-ops-readonly-report:AAAA-MM-DD -->`, no máximo uma vez por dia
-(BRT); canal fechado, trancado ou cheio deixa o agregado só no artefato, com aviso.
+`incidents.json` + `summary.md` (português) + `SHA256SUMS`. A publicação no canal
+`C3PO_ESCALATION_ISSUE` (padrão #429) segue a regra da varredura noturna abaixo; canal fechado,
+trancado ou cheio deixa o agregado só no artefato, com aviso.
 
 O job usa o ambiente `production`, o mesmo de `valuation-readonly-report.yml` e do
 `security-watchdog.yml` agendado, que já rodam sem aprovação manual. As regras de proteção do
 ambiente não foram lidas pela API nesta entrega: se um dia exigirem revisor, o agendamento
 espera a aprovação como esses workflows.
+
+### Varredura noturna de saúde
+
+O mesmo workflow é a varredura noturna: roda também às 06:30 UTC (03:30 BRT, depois das fases noturnas), além das
+11:30 UTC (08:30 BRT), com o mesmo transporte, o mesmo ambiente e os mesmos segredos (nenhum segredo novo). O
+relatório (esquema `C3PO-OPS-INCIDENTS-REPORT-v2`) passou a trazer também as ingestões ainda `running` há mais de
+30 min, só como contagem e idade da mais antiga (código da fonte e metadados, que podem listar símbolos, não saem).
+
+Regra de publicação, substituindo a de "uma vez por dia": se houver cartão de saúde **vermelho**, incidente
+**crítico** aberto ou incidente aberto há mais de 24 h, sai **um** comentário por execução no canal (padrão #429),
+com o marcador `<!-- c3po-ops-readonly-report:AAAA-MM-DD:HHMM -->` (dia BRT e horário do agendamento, 0330 ou
+0830; no disparo manual, a hora BRT do relatório), listando cada cartão vermelho por chave fixa
+(`grupo/cartão`), os críticos, os abertos há mais de 24 h e as ingestões presas. Uma nova tentativa da mesma
+execução encontra o marcador e não repete o comentário. Cartão vermelho ou incidente crítico também fazem o job
+falhar, para a execução aparecer vermelha no Actions; só incidente com mais de 24 h publica sem falhar o job. Tudo
+verde: nada é publicado. Os motivos detalhados de cada cartão continuam só no painel (o relatório é agregado e
+público).
 
 ## Correções incluídas nesta implantação
 
