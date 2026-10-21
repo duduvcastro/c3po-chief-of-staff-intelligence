@@ -9,7 +9,7 @@ produtor do commit do recibo).
 ## O que faz
 
 A cada 30 min (`13,43 * * * *`, UTC) um tick lê apenas o que o GitHub já tem — as execuções de `valuation-pit-backtest.yml`,
-os jobs e o log do último lote que falhou, o artefato de metadados do último lote com sucesso, os comentários recentes do bot
+os jobs e o log de cada lote que falhou depois do último sucesso, o artefato de metadados do último lote com sucesso, os comentários recentes do bot
 no canal (#429) — e o ficheiro da ordem do dono do checkout, e decide com `.github/scripts/valuation_pit_grid_autopilot.py`:
 
 1. `C3PO_PIT_GRID_AUTOPILOT` diferente de `on` → nada (o tick agendado nem chega a correr o job).
@@ -22,12 +22,16 @@ no canal (#429) — e o ficheiro da ordem do dono do checkout, e decide com `.gi
    `volume_basis` com o `manifest_sha256` do primeiro lote).
 6. O manifesto do último lote com sucesso diz `complete: true` → nada, e **um** comentário no canal
    (`grid complete, manifest_sha256 …`, com o `manifest_run_id` para o `report`).
-7. O último lote concluído falhou:
-   - recusa reexecutável — o passo da janela do backtest, ou código remoto **17** (lock de deploy), **19** (timer/serviço
-     R2D2/massive), **21** (ingestão bloqueante), **25** (sem tempo antes da janela) → segue para o despacho neste tick;
-   - qualquer outra falha (erro de corrida, produtor divergente, erro de dados, reinício pendente 11, cancelamento,
-     código ilegível) → **PARADO**: nada é despachado e **um** comentário no canal com o run id e o código de saída (só o
-     agregado; o stderr fica privado no host). A parada dura enquanto esse run for o último lote concluído da grade.
+7. Lotes concluídos **depois do último sucesso** sem sucesso — **cada um** deles é classificado:
+   - recusa reexecutável — o passo da janela do backtest, ou código remoto **11** (reinício de segurança pendente; dito no
+     canal **uma vez por dia** BRT enquanto se repetir), **17** (lock de deploy), **19** (timer/serviço R2D2/massive), **21**
+     (ingestão bloqueante), **25** (sem tempo antes da janela) → o mais recente é reexecutado neste tick;
+   - qualquer outra falha em **qualquer** deles (erro de corrida, produtor divergente, erro de dados, cancelamento, código
+     ilegível) → **PARADO**: nada é despachado e **um** comentário no canal com o run id e o código de saída (só o agregado;
+     o stderr fica privado no host). Uma recusa reexecutável mais nova nunca esconde uma parada mais antiga. A parada dura
+     até um lote mais novo terminar com sucesso.
+   - **Prazo (código 124):** um lote morto pelo `timeout` do prazo único (10 min antes da janela) **para o autopiloto, de
+     propósito** — a grade normalmente para sozinha em `--stop-before`; chegar ao prazo é anomalia a diagnosticar.
 8. Dentro de uma janela proibida (09:00–16:30 America/New_York em dias úteis; 23:30 do dia anterior a 08:15
    America/Sao_Paulo) ou a menos de **40 min** do início da próxima → nada. As janelas são as do backtest, em hora local de
    cada fuso (o horário de verão de Nova Iorque é seguido automaticamente).
@@ -36,7 +40,18 @@ no canal (#429) — e o ficheiro da ordem do dono do checkout, e decide com `.gi
 
 O código remoto sai da linha agregada que o backtest imprime (`remote exit status: N; …`), lida no log do job; se não houver
 um valor único, a falha conta como não reexecutável. Um estado do GitHub ilegível (jobs, log, artefato) faz o tick falhar
-(vermelho) sem despachar nada.
+(vermelho) sem despachar nada. Cada despacho é **confirmado**: o novo lote tem de aparecer na lista de execuções em até
+60 s, senão o tick falha. Um tick que age e falha publica no canal **um** aviso por dia BRT (`autopilot tick failing`, com o
+run id do tick).
+
+## Quando ligar (`C3PO_PIT_GRID_AUTOPILOT=on`)
+
+O operador só liga o autopiloto **depois** do primeiro lote, despachado à mão, e das verificações do §14 d sobre ele:
+
+1. `statements_coverage.covered_without_rows_by_T` dos `T` de 2021 pequeno (o lookback SEC chegou a 2016);
+2. `volume_basis` (decisão ≠ `undetermined`) e o `manifest_sha256` do primeiro lote registados no canal;
+3. custo por data medido (`elapsed_seconds` e `peak_rss_kb` por `T`, incluindo a corrida servida) e compatível com as
+   janelas até sexta — senão avisar o dono **no ato** em vez de ligar.
 
 ## Regra de parada (§14 d) — o que o operador faz
 

@@ -16,12 +16,13 @@ Order of the checks (the first that applies decides):
   4. a run of valuation-pit-backtest.yml (any mode) is not completed, or one was created in the last 10 min → no-op
   5. no successful grid chunk of this owner order yet                  → no-op (the operator runs the first chunk, §14 d)
   6. the last successful chunk's manifest says ``complete: true``      → no-op, one channel comment per manifest
-  7. the last completed grid chunk failed:
-       a retryable refusal (the window step; remote status 17 deploy lock, 19 R2D2/massive timer, 21 blocking
-       ingestion, 25 not enough time left before the window) → go on (retried this tick)
-       anything else (a run error, a producer mismatch, a data error, a cancel, an unreadable status) → STOP: no-op,
-       one channel comment per failed run; the stop lasts while that run is the last completed grid chunk (a chunk the
-       operator dispatches by hand and that succeeds reopens the autopilot)
+  7. grid chunks completed AFTER the last successful one did not succeed — EVERY one of them is classified:
+       a retryable refusal (the window step; remote status 11 reboot pending, 17 deploy lock, 19 R2D2/massive timer,
+       21 blocking ingestion, 25 not enough time left before the window) → go on (retried this tick; a repeating
+       reboot pending is posted once per BRT day)
+       anything else, in ANY of them (a run error, a producer mismatch, a data error, the deadline's 124, a cancel, an
+       unreadable status) → STOP: no-op, one channel comment per stopping run; the stop lasts until a newer grid chunk
+       succeeds (a chunk the operator dispatches by hand and that succeeds reopens the autopilot)
   8. now is inside a forbidden window or less than 40 min before the next one → no-op
   9. otherwise                                                          → dispatch one chunk
 """
@@ -48,7 +49,7 @@ GRID_TITLE_SUFFIX = "— grid"
 LEAD_MINUTES = 40  # never dispatch less than this before the next forbidden window (the grid itself refuses under 35)
 RECENT_RUN_MINUTES = 10  # a run created this recently may not be listed as in progress yet: wait for the next tick
 MAX_RUNS_LIMIT = 200
-RETRYABLE_STATUS = {17: "deploy_lock", 19: "r2d2_timer", 21: "blocking_ingestion", 25: "window_leg_floor"}
+RETRYABLE_STATUS = {11: "reboot_pending", 17: "deploy_lock", 19: "r2d2_timer", 21: "blocking_ingestion", 25: "window_leg_floor"}
 WINDOW_STEP = "Check the operating window"
 FAIL_STEP = "Fail when the host step failed"
 MARKER = "valuation-pit-grid-autopilot"
@@ -217,13 +218,15 @@ def is_grid_chunk(run: Mapping[str, Any]) -> bool:
             and run.get("head_branch") == "main" and str(run.get("display_title") or "").endswith(GRID_TITLE_SUFFIX))
 
 
-def select(payload: Any) -> tuple[int | None, int | None]:
-    """(the last completed grid chunk when it did not succeed, the last successful grid chunk) — what the workflow
-    fetches before the decision (the failed run's jobs and log, the successful run's metadata artifact)."""
+def select(payload: Any) -> tuple[list[int], int | None]:
+    """(every completed grid chunk newer than the last successful one — none succeeded —, newest first; the last
+    successful grid chunk) — what the workflow fetches before the decision (each failed run's jobs and log, the
+    successful run's metadata artifact). Without a successful chunk nothing is fetched (the tick is a no-op)."""
     completed = [run for run in _runs(payload) if is_grid_chunk(run) and run.get("status") == "completed"]
-    failed = _id(completed[0]) if completed and completed[0].get("conclusion") != "success" else None
-    success = next((_id(run) for run in completed if run.get("conclusion") == "success"), None)
-    return failed, success
+    index = next((position for position, run in enumerate(completed) if run.get("conclusion") == "success"), None)
+    if index is None:
+        return [], None
+    return [_id(run) for run in completed[:index]], _id(completed[index])
 
 
 def remote_status(log: str) -> int | None:
@@ -305,7 +308,7 @@ def _run_url(repository: str, run_id: int) -> str:
     return f"https://github.com/{repository}/actions/runs/{run_id}"
 
 
-def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, failed_jobs: Any, failed_log: str | None, metadata: Any,
+def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, failures: Mapping[int, tuple[Any, str | None]], metadata: Any,
            repository: str, tick_url: str) -> Decision:
     params = parameters(env)
     if not params.autopilot:
@@ -329,7 +332,7 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
     recent = [_id(run) for run in ordered if now - _time(run.get("created_at")) < dt.timedelta(minutes=RECENT_RUN_MINUTES)]
     if recent:
         return Decision("noop", "recent_run", details={"runs": recent})
-    failed_id, success_id = select(runs)
+    failed_ids, success_id = select(runs)
     if success_id is None:
         return Decision("noop", "no_successful_chunk")
     if not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id):
@@ -350,34 +353,74 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
                           f"{success_id}, este `manifest_sha256` e `prereg_commit` `{params.prereg_commit}`.", "",
                           f"[Tick do autopiloto]({tick_url})", ""])
         return Decision("noop", "grid_complete", key, body, {"run": success_id, "manifest_sha256": digest})
-    retry: Failure | None = None
-    if failed_id is not None:
-        failed_run = next(run for run in ordered if _id(run) == failed_id)
-        failure = classify(failed_run, failed_jobs, failed_log)
+    by_id = {_id(run): run for run in ordered}
+    classified = [(failed_id, classify(by_id[failed_id], *failures.get(failed_id, (None, None)))) for failed_id in failed_ids]
+    retry: Failure | None = classified[0][1] if classified else None  # the newest failed chunk: the one retried
+    for failed_id, failure in classified:  # newest first: the newest stopping chunk is the one posted
+        failed_run = by_id[failed_id]
         if not failure.retryable:
             key = f"stop:{failed_id}"
             status = "não lido" if failure.status is None else f"`{failure.status}`"
             body = "\n".join([marker(key), f"**Autopiloto da grade PIT EUA PARADO** — o lote [run {failed_id}]({_run_url(repository, failed_id)}) terminou "
                               f"`{_text(failed_run.get('conclusion'), 20)}`; passo `{_text(failure.step or '-')}`; código remoto {status} "
                               f"(`{failure.label}`; só o agregado, o stderr fica privado no host).", "",
-                              "Não é uma recusa reexecutável (janela; 17 lock de deploy; 19 timer R2D2/massive; 21 ingestão bloqueante; 25 sem tempo "
+                              "Não é uma recusa reexecutável (janela; 11 reinício pendente; 17 lock de deploy; 19 timer R2D2/massive; 21 ingestão bloqueante; 25 sem tempo "
                               "antes da janela). Regra de parada do §14 d: o autopiloto **não despacha mais nada** e nunca muda parâmetros. O operador "
                               "decide — diagnosticar; erro de dados → corrigir e retomar com os MESMOS parâmetros. Um lote despachado à mão que termine "
                               "com sucesso reabre o autopiloto; `C3PO_PIT_GRID_AUTOPILOT=off` desliga-o.", "",
                               f"[Tick do autopiloto]({tick_url}) · um aviso por lote parado.", ""])
             return Decision("stop", failure.label, key, body, {"run": failed_id, "status": failure.status, "step": failure.step})
-        retry = failure
     inside, upcoming = window_state(now)
     minutes = (upcoming - now).total_seconds() / 60
     if inside:
-        return Decision("noop", "inside_window", details={"next_window": upcoming.isoformat()})
-    if minutes < LEAD_MINUTES:
-        return Decision("noop", "window_too_close", details={"next_window": upcoming.isoformat(), "minutes": round(minutes)})
-    details: dict[str, Any] = {"after_run": success_id, "next_window": upcoming.isoformat(), "minutes": round(minutes), "max_runs": params.max_runs,
-                               "remaining": metadata.get("remaining")}
-    if retry is not None:
-        details.update({"retry_of": failed_id, "retry_status": retry.status})
-    return Decision("dispatch", f"retry_after_{retry.label}" if retry is not None else "next_chunk", details=details)
+        decision = Decision("noop", "inside_window", details={"next_window": upcoming.isoformat()})
+    elif minutes < LEAD_MINUTES:
+        decision = Decision("noop", "window_too_close", details={"next_window": upcoming.isoformat(), "minutes": round(minutes)})
+    else:
+        details: dict[str, Any] = {"after_run": success_id, "next_window": upcoming.isoformat(), "minutes": round(minutes), "max_runs": params.max_runs,
+                                   "remaining": metadata.get("remaining")}
+        if retry is not None:
+            details.update({"retry_of": failed_ids[0], "retry_status": retry.status, "failed_since_success": len(failed_ids)})
+        decision = Decision("dispatch", f"retry_after_{retry.label}" if retry is not None else "next_chunk", details=details)
+    if retry is not None and retry.label == "reboot_pending":  # retried, but a reboot that stays pending is said once per BRT day
+        key = f"reboot:{now.astimezone(SAO_PAULO).date().isoformat()}"
+        decision.post_key = key
+        decision.post_body = "\n".join([marker(key), f"**Autopiloto da grade PIT EUA: reinício de segurança pendente no host** — o lote "
+                                         f"[run {failed_ids[0]}]({_run_url(repository, failed_ids[0])}) foi recusado com o código 11 "
+                                         f"({len(failed_ids)} lote(s) sem sucesso desde o último). O autopiloto continua a tentar a cada tick; o "
+                                         "reinício pendente é um incidente a tratar (o controlador de reinício espera as escritas).", "",
+                                         f"[Tick do autopiloto]({tick_url}) · no máximo um aviso por dia (BRT).", ""])
+    return decision
+
+
+def failing_tick(comments: Any, now: dt.datetime, tick_url: str) -> tuple[str, str] | None:
+    """The once-per-BRT-day notice of a failing tick (marker key, body), or None when today's was already posted."""
+    key = f"tick-failing:{now.astimezone(SAO_PAULO).date().isoformat()}"
+    if already_posted(comments, key):
+        return None
+    run_id = tick_url.rstrip("/").rsplit("/", 1)[-1]
+    body = "\n".join([marker(key), f"**Autopiloto da grade PIT EUA: autopilot tick failing** — o tick [run {_text(run_id, 24)}]({tick_url}) falhou "
+                      "(estado do GitHub ilegível, despacho não confirmado ou passo com erro): nada foi despachado por ele. Os ticks seguintes "
+                      "tentam de novo; conferir o run.", "", "No máximo um aviso por dia (BRT).", ""])
+    return key, body
+
+
+def comment_bodies(raw: str) -> list[str]:
+    """The bot comment bodies of `gh api --paginate` over an issue's comments (one JSON array per page, concatenated)."""
+    decoder, position, bodies = json.JSONDecoder(), 0, []
+    text = raw.strip()
+    while position < len(text):
+        try:
+            page, end = decoder.raw_decode(text, position)
+        except ValueError as error:
+            raise InputError("the channel comment pages are not JSON") from error
+        if not isinstance(page, list):
+            raise InputError("a channel comment page is not a list")
+        bodies += [str(item.get("body") or "") for item in page if isinstance(item, dict) and (item.get("user") or {}).get("login") == BOT_LOGIN]
+        position = end
+        while position < len(text) and text[position].isspace():
+            position += 1
+    return bodies
 
 
 # ---------------------------------------------------------------------------------------------------------------- CLI
@@ -408,8 +451,7 @@ def main(argv: list[str] | None = None) -> int:
     pick.add_argument("--github-output", type=Path)
     tick = sub.add_parser("decide")
     tick.add_argument("--runs", type=Path, required=True)
-    tick.add_argument("--failed-jobs", type=Path)
-    tick.add_argument("--failed-log", type=Path)
+    tick.add_argument("--failed-dir", type=Path, help="<run id>.jobs.json and <run id>.log of each failed chunk since the last success")
     tick.add_argument("--metadata", type=Path)
     tick.add_argument("--comments", type=Path, required=True)
     tick.add_argument("--root", type=Path, required=True)
@@ -421,21 +463,44 @@ def main(argv: list[str] | None = None) -> int:
     tick.add_argument("--github-output", type=Path)
     tick.add_argument("--summary", type=Path)
     tick.add_argument("--now", default=None, help="tests only")
+    fail = sub.add_parser("failing")
+    fail.add_argument("--comments-raw", type=Path, required=True, help="the raw `gh api --paginate` output over the channel's recent comments")
+    fail.add_argument("--tick-url", required=True)
+    fail.add_argument("--body", type=Path, required=True)
+    fail.add_argument("--github-output", type=Path)
+    fail.add_argument("--now", default=None, help="tests only")
     args = parser.parse_args(argv)
     try:
         if args.command == "select":
             failed, success = select(_load(args.runs))
-            _output(args.github_output, {"failed_run_id": str(failed or ""), "success_run_id": str(success or "")})
-            print(json.dumps({"failed_run_id": failed, "success_run_id": success}, sort_keys=True))
+            _output(args.github_output, {"failed_run_ids": " ".join(str(item) for item in failed), "success_run_id": str(success or "")})
+            print(json.dumps({"failed_run_ids": failed, "success_run_id": success}, sort_keys=True))
+            return 0
+        if not args.tick_url.startswith("https://github.com/"):
+            raise SystemExit("the tick url is invalid")
+        if args.command == "failing":
+            moment = instant(args.now) if args.now else dt.datetime.now(dt.timezone.utc)
+            if moment is None:
+                raise SystemExit("--now must be ISO-8601 with a zone")
+            notice = failing_tick(comment_bodies(args.comments_raw.read_text(encoding="utf-8")), moment, args.tick_url)
+            if notice is not None:
+                args.body.write_text(notice[1], encoding="utf-8")
+            _output(args.github_output, {"post": "true" if notice is not None else "false"})
             return 0
         if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repository) is None or not args.tick_url.startswith("https://github.com/"):
             raise SystemExit("repository or tick url is invalid")
         now = instant(args.now) if args.now else dt.datetime.now(dt.timezone.utc)
         if now is None:
             raise SystemExit("--now must be ISO-8601 with a zone")
-        log = args.failed_log.read_text(encoding="utf-8", errors="replace") if args.failed_log is not None and args.failed_log.is_file() else None
-        inputs: dict[str, Any] = {"root": args.root, "now": now, "runs": _load(args.runs), "failed_jobs": _load(args.failed_jobs), "failed_log": log,
-                  "metadata": _load(args.metadata), "repository": args.repository, "tick_url": args.tick_url}
+        runs = _load(args.runs)
+        failures: dict[int, tuple[Any, str | None]] = {}
+        for failed_id in select(runs)[0]:
+            jobs_path = args.failed_dir / f"{failed_id}.jobs.json" if args.failed_dir is not None else None
+            log_path = args.failed_dir / f"{failed_id}.log" if args.failed_dir is not None else None
+            log = log_path.read_text(encoding="utf-8", errors="replace") if log_path is not None and log_path.is_file() else None
+            failures[failed_id] = (_load(jobs_path), log)
+        inputs: dict[str, Any] = {"root": args.root, "now": now, "runs": runs, "failures": failures, "metadata": _load(args.metadata),
+                                  "repository": args.repository, "tick_url": args.tick_url}
         decision = decide(env=os.environ, **inputs)
         if decision.reason == "autopilot_off" and args.dry_run == "true":  # a dry run shows what the tick WOULD do were it on (never acted on)
             preview = decide(env={**os.environ, "C3PO_PIT_GRID_AUTOPILOT": "on"}, **inputs)
