@@ -2,8 +2,10 @@
 must not exist in any valuation model, target price or entry. The B3 entry is the lower of the return-hurdle and the
 market-structure entries; no output of a valuation producer, and no valuation surface of the frontend, names a house.
 
-The one exception is DATA, not a criterion: ``app/foreign_listings.py`` registers the real, dated public coverage calls
-of a foreign primary listing (e.g. MHVYF / 7011.T), which the One Pager quotes verbatim as third-party coverage.
+The exceptions are DATA, not criteria: ``app/foreign_listings.py`` registers the real, dated public coverage calls of a
+foreign primary listing (e.g. MHVYF / 7011.T), which the One Pager quotes verbatim as third-party coverage, and
+``work/us_single_pagers.py`` lists real, dated broker calls (house, target, rating, date) in its coverage table. The
+``work/`` scripts (the Chief of Staff morning summary and its single pagers) are scanned too.
 """
 from __future__ import annotations
 
@@ -19,11 +21,16 @@ from test_one_pager import service_for
 HOUSES = re.compile(r"morgan\s*stanley|j\.?\s*p\.?\s*morgan|goldman|bridgewater|blackrock", re.IGNORECASE)
 BACKEND_APP = Path(__file__).resolve().parents[1] / "app"
 FRONTEND_APP = Path(__file__).resolve().parents[2] / "frontend" / "app"
+WORK = Path(__file__).resolve().parents[3] / "work"
 # Files allowed to name a house, and why. Nothing here is a valuation criterion.
 ALLOWED = {
     "foreign_listings.py": "real, dated public coverage calls of a foreign primary listing (third-party data, not a criterion)",
     "one_pager.py": "comments only: the 2026-08-20 rename record and a docstring naming BlackRock as a company in a peer basket",
 }
+WORK_ALLOWED = {
+    "us_single_pagers.py": "real, dated third-party coverage calls quoted in the coverage table (house, target, rating, date)",
+}
+COVERAGE_QUOTE = re.compile(r'^\s*\{"house": "[^"]+", "target": [0-9.]+, "rating": "[^"]+", "date": "[^"]+", "call_date": "\d{4}-\d{2}-\d{2}"\},$')
 
 
 def _house_hits(text: str) -> list[str]:
@@ -71,7 +78,17 @@ def test_no_valuation_source_or_frontend_surface_names_a_house() -> None:
         found = _house_hits(path.read_text(encoding="utf-8"))
         if found:
             hits[f"frontend/app/{path.relative_to(FRONTEND_APP).as_posix()}"] = found
+    for path in sorted(WORK.glob("*.py")):
+        if path.name in WORK_ALLOWED:
+            continue
+        found = _house_hits(path.read_text(encoding="utf-8"))
+        if found:
+            hits[f"work/{path.name}"] = found
     assert hits == {}
+    # the allowlisted coverage table quotes a house only as a real, dated third-party call — never a method or a criterion
+    for name in WORK_ALLOWED:
+        lines = [line for line in (WORK / name).read_text(encoding="utf-8").splitlines() if HOUSES.search(line)]
+        assert lines and all(COVERAGE_QUOTE.match(line) for line in lines), name
     # the allowlisted One Pager names a house only in its comments and in one docstring, never in code
     one_pager = (BACKEND_APP / "one_pager.py").read_text(encoding="utf-8")
     assert all(line.lstrip().startswith("#") or "basket with" in line for line in one_pager.splitlines() if HOUSES.search(line))

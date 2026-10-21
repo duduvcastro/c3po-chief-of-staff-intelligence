@@ -4238,7 +4238,7 @@ def enrich_selected_candidate_snapshot(item):
         multiples,
         price_context,
     )
-    target_value = model.get("target_value") or consensus_target_value
+    target_value = model.get("target_value")  # the internal TP only: never the consensus (owner order 20/10/2026)
     upside_pct = candidate_upside_pct(current_price, target_value)
     buy_in_value = None
     distance = None
@@ -4323,9 +4323,7 @@ def candidate_base_snapshot(item):
             multiples,
             price_context,
         )
-        target_value = model.get("target_value")
-    if target_value is None:
-        target_value = consensus_target_value
+        target_value = model.get("target_value")  # the internal TP only: never the consensus (owner order 20/10/2026)
     upside_pct = candidate_upside_pct(current_price, target_value)
     price_context = {}
     buy_in_value = None
@@ -4781,7 +4779,7 @@ def build_candidate_stock_data():
                     price_context,
                 )
                 model_target_display = model.get("target_display", "N/D")
-                target_value = model.get("target_value") or consensus_target_value
+                target_value = model.get("target_value")  # the internal TP only: never the consensus
                 model_methods = model.get("methods", {})
             buy_in_value = base.get("buy_in_value")
             if buy_in_value is None and "buy_in_value" not in base:
@@ -5465,15 +5463,18 @@ def candidate_modeled_target_snapshot(item, current_price, consensus_target, mul
 
     ticker = item.get("ticker", "")
     symbol = CANDIDATE_SYMBOLS.get(ticker, ticker)
-    consensus_upside = candidate_upside_decimal(current_price, consensus_target)
+    # Owner order of 20/10/2026: no house framework and no consensus inside the TP. The five internal methods carry the
+    # neutral labels of the One Pager (2026-08-20 rename) and are computed WITHOUT the consensus (`consensus_target` is
+    # accepted for the callers' signature and ignored: the consensus is shown as information, never blended).
+    consensus_upside = None
     fundamentals = candidate_model_fundamentals(item, multiples, price_context or {})
     fallback_upside = candidate_fundamental_upside(fundamentals)
     methods = {
-        "Goldman-style screener": candidate_screener_target(current_price, consensus_upside, fallback_upside, fundamentals),
-        "Morgan Stanley-style DCF": candidate_dcf_target(current_price, consensus_upside, fallback_upside, fundamentals),
-        "Bridgewater-style risk": candidate_risk_adjusted_target(current_price, consensus_upside, fallback_upside, fundamentals),
-        "JPMorgan-style earnings": candidate_earnings_target(current_price, consensus_upside, fallback_upside, fundamentals),
-        "BlackRock-style portfolio": candidate_portfolio_target(current_price, consensus_upside, fallback_upside, fundamentals),
+        "Múltiplos de Lucro + EV/EBITDA": candidate_screener_target(current_price, consensus_upside, fallback_upside, fundamentals),
+        "Fluxo de Caixa Descontado": candidate_dcf_target(current_price, consensus_upside, fallback_upside, fundamentals),
+        "Blend Ajustado ao Risco": candidate_risk_adjusted_target(current_price, consensus_upside, fallback_upside, fundamentals),
+        "Momentum de Lucro": candidate_earnings_target(current_price, consensus_upside, fallback_upside, fundamentals),
+        "Qualidade & Fluxo de Caixa": candidate_portfolio_target(current_price, consensus_upside, fallback_upside, fundamentals),
     }
     values = [value for value in methods.values() if value is not None and value > 0]
     if not values:
