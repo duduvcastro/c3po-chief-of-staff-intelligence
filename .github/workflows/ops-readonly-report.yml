@@ -15,7 +15,9 @@ name: Ops read-only incidents report
 # incident is open or an incident is open for more than 24 h, ONE comment per run (marker
 # `<!-- c3po-ops-readonly-report:YYYY-MM-DD:HHMM -->`, BRT day and scheduled slot) lists them on the Fable/Codex channel
 # (C3PO_ESCALATION_ISSUE, default #429); a red card or a critical incident also fails the job, so the run shows red in
-# Actions. The remote stderr stays in the runner's temp directory and is never printed: this repository is public.
+# Actions. A run that fails for any other reason (host unreachable, report refused, channel error) posts ONE line per BRT
+# day, "varredura noturna falhou", with the run id and the failing step name (marker
+# `<!-- c3po-ops-readonly-report-failed:YYYY-MM-DD -->`). The remote stderr stays in the runner's temp directory and is never printed: this repository is public.
 # Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
 
 on:
@@ -47,11 +49,13 @@ jobs:
       CHANNEL_ISSUE: ${{ vars.C3PO_ESCALATION_ISSUE || '429' }}
     steps:
       - name: Check out the workflow revision
+        id: checkout
         uses: actions/checkout@v6
         with:
           persist-credentials: false
 
       - name: Configure deployment SSH key
+        id: ssh
         env:
           DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
@@ -63,6 +67,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts || exit 1
 
       - name: Run the report in the running api container, read-only
+        id: remote
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
@@ -97,6 +102,7 @@ jobs:
           [ "$rc" -eq 0 ] || exit 1
 
       - name: Collect today's channel comments
+        id: comments
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -304,6 +310,7 @@ jobs:
           (cd "$out" && sha256sum incidents.json summary.md > SHA256SUMS) || exit 1
 
       - name: Publish the aggregate report
+        id: publish
         uses: actions/upload-artifact@v4
         with:
           name: ops-readonly-report-${{ github.run_id }}
@@ -312,6 +319,7 @@ jobs:
           retention-days: 30
 
       - name: Post the aggregate to the Fable-Codex channel
+        id: post
         if: steps.verify.outputs.post == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -321,7 +329,64 @@ jobs:
             --body-file "$RUNNER_TEMP/ops-readonly-comment.md"
 
       - name: Fail the run when a card is red or a critical incident is open
+        id: fail_red
         if: steps.verify.outputs.red == 'true'
         run: |
           echo '::error::red health card or critical incident open (see the summary and the channel)'
           exit 1
+
+      - name: Report a failed sweep to the Fable-Codex channel
+        # Any failure except the deliberate red step above (whose findings were already posted): never silent.
+        if: failure() && steps.fail_red.outcome != 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STEPS_JSON: ${{ toJSON(steps) }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$CHANNEL_ISSUE" =~ ^[0-9]+$ ]] || { echo '::error::C3PO_ESCALATION_ISSUE must be an issue number'; exit 1; }
+          since=$(date -u -d '-2 days' +%Y-%m-%dT%H:%M:%SZ) || exit 1
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/$CHANNEL_ISSUE/comments?since=$since&per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | {body}' \
+            | jq -s '[.[].body]' > "$RUNNER_TEMP/failure-comments.json" || exit 1
+          python3 - "$RUNNER_TEMP/failure-comments.json" "$RUNNER_TEMP/failure-comment.md" <<'PY' || exit 1
+          import json
+          import os
+          import sys
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          comments_path, body_path = Path(sys.argv[1]), Path(sys.argv[2])
+          NAMES = {
+              "checkout": "Check out the workflow revision",
+              "ssh": "Configure deployment SSH key",
+              "remote": "Run the report in the running api container, read-only",
+              "comments": "Collect today's channel comments",
+              "verify": "Verify the exact schema and keep aggregates only",
+              "publish": "Publish the aggregate report",
+              "post": "Post the aggregate to the Fable-Codex channel",
+          }
+          steps = json.loads(os.environ.get("STEPS_JSON") or "{}")
+          failed = next((name for key, name in NAMES.items()
+                         if isinstance(steps.get(key), dict) and steps[key].get("outcome") == "failure"), "passo não identificado")
+          brt = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3)))
+          marker = f"<!-- c3po-ops-readonly-report-failed:{brt.date().isoformat()} -->"
+          comments = json.loads(comments_path.read_text(encoding="utf-8"))
+          if not isinstance(comments, list):
+              sys.exit("the channel comment listing is not a list")
+          if any(isinstance(item, str) and item.split("\n", 1)[0].strip() == marker for item in comments):
+              print("today's failure marker is already on the channel: not posted again")
+              sys.exit(0)
+          run_id = os.environ["RUN_ID"] if os.environ.get("RUN_ID", "").isdigit() else "?"
+          body_path.write_text(f"{marker}\nvarredura noturna falhou — execução {run_id}, passo: {failed} — "
+                               f"[execução]({os.environ['RUN_URL']})\n", encoding="utf-8")
+          print(f"failure reported: {failed}")
+          PY
+          if [ -f "$RUNNER_TEMP/failure-comment.md" ]; then
+            gh issue comment "$CHANNEL_ISSUE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body-file "$RUNNER_TEMP/failure-comment.md" || exit 1
+          fi

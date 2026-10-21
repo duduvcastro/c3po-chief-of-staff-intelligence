@@ -254,3 +254,49 @@ def test_the_workflow_is_read_only_scheduled_twice_and_fails_on_red() -> None:
     assert list(steps).index("Post the aggregate to the Fable-Codex channel") < list(steps).index(
         "Fail the run when a card is red or a critical incident is open")
     assert steps["Check out the workflow revision"]["with"] == {"persist-credentials": False}
+
+
+# ----------------------------------------------------------------------- a failed run is never silent
+FAILURE_STEP = "Report a failed sweep to the Fable-Codex channel"
+
+
+def _failure_reporter(tmp_path: Path, steps: dict[str, Any], comments: list[str]) -> tuple[subprocess.CompletedProcess[str], Path]:
+    job = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))["jobs"]["read-only-report"]
+    run = next(step["run"] for step in job["steps"] if step["name"] == FAILURE_STEP)
+    script = run.split("<<'PY' || exit 1\n", 1)[1].split("\nPY\n", 1)[0]
+    work = tmp_path / "failure"
+    work.mkdir(exist_ok=True)
+    (work / "comments.json").write_text(json.dumps(comments), encoding="utf-8")
+    body = work / "comment.md"
+    body.unlink(missing_ok=True)
+    env = {**os.environ, "STEPS_JSON": json.dumps(steps), "RUN_ID": "39525387284",
+           "RUN_URL": "https://github.com/o/r/actions/runs/39525387284"}
+    result = subprocess.run([sys.executable, "-", str(work / "comments.json"), str(body)],
+                            input=script, text=True, capture_output=True, env=env)
+    return result, body
+
+
+def test_a_failed_run_posts_one_line_per_brt_day_with_the_failing_step(tmp_path: Path) -> None:
+    job = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))["jobs"]["read-only-report"]
+    steps = [step for step in job["steps"]]
+    assert steps[-1]["name"] == FAILURE_STEP
+    assert steps[-1]["if"] == "failure() && steps.fail_red.outcome != 'failure'"  # the deliberate red run already posted
+    assert steps[-1]["env"]["STEPS_JSON"] == "${{ toJSON(steps) }}"
+    assert not re.search(r"secrets\.", json.dumps(steps[-1]))
+
+    outcomes = {"checkout": {"outcome": "success", "conclusion": "success", "outputs": {}},
+                "ssh": {"outcome": "success", "conclusion": "success", "outputs": {}},
+                "remote": {"outcome": "failure", "conclusion": "failure", "outputs": {}}}
+    result, body = _failure_reporter(tmp_path, outcomes, [])
+    assert result.returncode == 0, result.stderr
+    lines = body.read_text(encoding="utf-8").splitlines()
+    today = datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
+    assert lines[0] == f"<!-- c3po-ops-readonly-report-failed:{today} -->" and len(lines) == 2
+    assert lines[1].startswith("varredura noturna falhou — execução 39525387284, passo: "
+                               "Run the report in the running api container, read-only — [execução](")
+
+    again, body = _failure_reporter(tmp_path, outcomes, ["\n".join(lines)])
+    assert again.returncode == 0 and "already on the channel" in again.stdout and not body.exists()
+
+    unknown, body = _failure_reporter(tmp_path, {}, [])
+    assert unknown.returncode == 0 and "passo: passo não identificado" in body.read_text(encoding="utf-8")

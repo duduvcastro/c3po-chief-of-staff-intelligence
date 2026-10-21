@@ -179,7 +179,10 @@ com o marcador `<!-- c3po-ops-readonly-report:AAAA-MM-DD:HHMM -->` (dia BRT e ho
 (`grupo/cartão`), os críticos, os abertos há mais de 24 h e as ingestões presas. Uma nova tentativa da mesma
 execução encontra o marcador e não repete o comentário. Cartão vermelho ou incidente crítico também fazem o job
 falhar, para a execução aparecer vermelha no Actions; só incidente com mais de 24 h publica sem falhar o job. Tudo
-verde: nada é publicado. Os motivos detalhados de cada cartão continuam só no painel (o relatório é agregado e
+verde: nada é publicado. Execução que falha por qualquer outro motivo (host inalcançável, relatório recusado,
+erro no canal) nunca fica silenciosa: o último passo (`if: failure()`, exceto a falha proposital do vermelho, cujo
+comentário já saiu) publica uma linha por dia BRT, "varredura noturna falhou", com o id da execução e o nome do
+passo que falhou (marcador `<!-- c3po-ops-readonly-report-failed:AAAA-MM-DD -->`). Os motivos detalhados de cada cartão continuam só no painel (o relatório é agregado e
 público).
 
 ## Correções incluídas nesta implantação
