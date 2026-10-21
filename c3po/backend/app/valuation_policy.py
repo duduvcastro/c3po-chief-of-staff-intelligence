@@ -22,7 +22,7 @@ class ValuationPolicy:
 C3PO_VALUATION_POLICY = ValuationPolicy(
     key="b3_value_quality",
     name="C3PO Power Model",
-    version=32,
+    version=33,
     surfaces=(
         "candidate_stocks",
         "matrix_power",
@@ -38,19 +38,11 @@ C3PO_VALUATION_POLICY = ValuationPolicy(
         "entry": 0.10,
     },
     release_note=(
-        "US financial-profile stocks (banks/insurers) no longer use EV/EBITDA or FCF-DCF -- a bank's "
-        "reported debt is overwhelmingly customer deposits, not leverage, and its free cash flow is "
-        "dominated by loan/deposit balance changes, not owner earnings; both methods produced targets "
-        "2-3x price for real names. Real analyst consensus (FMP Ultimate: price-target-consensus, "
-        "price-target-summary, broker-level grades, 13F institutional positions) now feeds an explicit "
-        "final blend against the internal model and a governance-risk signal, replacing EODHD's single "
-        "target price field, which carried no update date and paired with an analyst count that measured "
-        "a different population of analysts than the ones behind the price target. US peer-median "
-        "benchmarking gained a statistical dispersion guard so a heterogeneous peer bucket (e.g. banks "
-        "pooled with high-multiple diversified financials) can't quietly distort a fair multiple. B3 "
-        "governance risk now factors in disclosure materiality, and the Selic risk-free input is "
-        "cross-checked against real Tesouro Direto market yields and against a staleness warning on its "
-        "hardcoded COPOM governor."
+        "Ordem do dono de 20/10/2026: a entrada pelos \"frameworks das casas\" (média ponderada de critérios "
+        "atribuídos a bancos e gestoras) foi removida de todos os modelos de valuation e de TP. A entrada da B3 "
+        "passa a ser min(retorno mínimo, técnica): a menor entre a entrada de retorno mínimo (TP projetado mais "
+        "dividendo esperado, descontado pelo retorno mínimo de entrada) e a entrada técnica de estrutura de mercado "
+        "de 60 pregões. Os demais cálculos (TP, métodos, risco, confiança, Power Score) não mudam."
     ),
 )
 
