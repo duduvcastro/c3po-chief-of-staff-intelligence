@@ -152,6 +152,7 @@ HEALTH_CARD_KEYS = (*HEALTH_CARDS.values(), "probe_failed", "unmapped")
 INCIDENT_SCAN_LIMIT = 1000
 OVER_24H_HOURS = 24.0
 STALE_RUNNING_MINUTES = 30
+STALE_RUNNING_HORIZON = timedelta(days=7)
 
 
 def force_read_only_session(environ: MutableMapping[str, str] | None = None) -> str:
@@ -251,17 +252,20 @@ def health_cards(settings: Settings, database: Database, now: datetime) -> dict[
 
 
 def stale_running_ingestion(database: Database, now: datetime) -> dict[str, Any]:
-    """Ingestion runs still `running` more than 30 min after they started: a count and the oldest age only (the
-    source code and the run metadata, which may list symbols, never leave)."""
+    """Ingestion runs still `running` more than 30 min after they started, within the last 7 days: a count and the
+    oldest age only (the source code and the run metadata, which may list symbols, never leave). Older leftovers are
+    out of scope so the age stays bounded."""
     cutoff = now - timedelta(minutes=STALE_RUNNING_MINUTES)
+    horizon = now - STALE_RUNNING_HORIZON
     if not database.database_url:
         runs = getattr(database, "_ingestion_runs", {}).values()
         started = [_utc(run.get("started_at")) for run in runs if run.get("status") == "running"]
+        started = [moment for moment in started if moment is not None and moment >= horizon]
     else:
         with database.connection() as connection:
             rows = connection.execute(
-                "SELECT started_at FROM ingestion_runs WHERE status = 'running' AND started_at < %s",
-                (cutoff,),
+                "SELECT started_at FROM ingestion_runs WHERE status = 'running' AND started_at < %s AND started_at >= %s",
+                (cutoff, horizon),
             ).fetchall()
         started = [_utc(row[0]) for row in rows]
     ages = [int((now - moment).total_seconds() // 60) for moment in started if moment is not None and moment < cutoff]

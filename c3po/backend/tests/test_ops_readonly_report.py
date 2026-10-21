@@ -300,3 +300,20 @@ def test_a_failed_run_posts_one_line_per_brt_day_with_the_failing_step(tmp_path:
 
     unknown, body = _failure_reporter(tmp_path, {}, [])
     assert unknown.returncode == 0 and "passo: passo não identificado" in body.read_text(encoding="utf-8")
+
+
+def test_stale_running_ingestion_ignores_leftovers_older_than_the_horizon() -> None:
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from app.operational_incidents import stale_running_ingestion
+
+    now = datetime(2026, 10, 26, 6, 30, tzinfo=timezone.utc)
+    database = SimpleNamespace(database_url="", _ingestion_runs={
+        "leftover": {"status": "running", "started_at": now - timedelta(days=80)},
+        "stuck": {"status": "running", "started_at": now - timedelta(minutes=95)},
+        "fresh": {"status": "running", "started_at": now - timedelta(minutes=5)},
+        "done": {"status": "succeeded", "started_at": now - timedelta(days=1)},
+    })
+    report = stale_running_ingestion(database, now)  # type: ignore[arg-type]
+    assert report == {"threshold_minutes": 30, "count": 1, "oldest_age_minutes": 95}
