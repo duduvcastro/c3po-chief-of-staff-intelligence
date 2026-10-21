@@ -1,11 +1,11 @@
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, time as wall_time, timedelta
+from datetime import date, datetime, time as wall_time, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from . import valuation_env
+from . import ingestion_process, valuation_env
 from .chewie_fundamentals import ChewieFundamentalsService
 from .maintenance_gate import job, startup_job
 from .config import Settings, get_settings
@@ -20,7 +20,8 @@ from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerService
 from .official_fundamentals import ensure_builtin_official_fundamentals
 from .observability import HealthcheckPing, init_sentry
-from .r2d2_cash_yield import R2D2CashYieldService
+from .operational_incidents import OperationalIncidentService
+from .r2d2_cash_yield import CashYieldDataError, CashYieldPendingData, R2D2CashYieldService
 from .push_notifications import PushNotificationService
 from .valuation_asfiled import evaluate_us_filings
 from .valuation_decision import last_run_at as decision_last_run_at, run_shadow as run_decisor_shadow
@@ -49,6 +50,12 @@ OFFHOURS_END_HOUR = 8
 CASH_YIELD_PHASE_KEY = "cash_yield"
 CASH_YIELD_FAILURE_ACTION = "r2d2.cash_yield.failed"
 CASH_YIELD_RECOVERY_ACTION = "r2d2.cash_yield.recovered"
+# One incident per phase and failure episode (the key carries no date). Legacy
+# per-night keys ``<key>:<YYYY-MM-DD>`` share the prefix and close on recovery.
+PHASE_INCIDENT_KEY_PREFIX = "notification:job_failure:valuation-phase-failure:"
+# Severity by persistence: a failing night that retries is attention; the incident
+# becomes critical on the Nth consecutive failing night, or at once on a data fault.
+PHASE_FAILURE_CRITICAL_NIGHTS = 2
 
 
 @dataclass(frozen=True)
@@ -141,6 +148,101 @@ def _record_cash_yield_recovery(database: Database, *, scheduled_for: datetime) 
         subject_id,
         {"scheduled_for": scheduled_for.isoformat()},
     )
+
+
+def phase_incident_key(phase_key: str) -> str:
+    return f"{PHASE_INCIDENT_KEY_PREFIX}{phase_key}"
+
+
+def _is_data_fault(error: Exception) -> bool:
+    """A real data/integrity fault (invalid feed, negative rate, canonical-entry
+    mismatch). Expected pending states never reach here: they do not raise."""
+    return isinstance(error, CashYieldDataError) and not isinstance(error, CashYieldPendingData)
+
+
+def phase_failure_severity(*, consecutive_nights: int, data_fault: bool) -> str:
+    if data_fault or consecutive_nights >= PHASE_FAILURE_CRITICAL_NIGHTS:
+        return "critical"
+    return "attention"
+
+
+def _signal_phase_failure(
+    database: Database,
+    push_notifications: PushNotificationService | None,
+    *,
+    phase_key: str,
+    night: date,
+    error: Exception,
+    at: datetime,
+) -> dict[str, Any] | None:
+    """Record the failing night on the phase's single open incident.
+
+    Retries inside the same night carry identical evidence and add no event; each
+    new failing night adds one ``observed`` event, so ``event_count`` tracks the
+    nights. The push goes out once per episode, when the incident is critical.
+    """
+    try:
+        incidents = OperationalIncidentService(database)
+        key = phase_incident_key(phase_key)
+        open_since = incidents.open_since(key)
+        first_night = open_since.astimezone(SAO_PAULO).date() if open_since else night
+        consecutive_nights = max(1, (night - first_night).days + 1)
+        data_fault = _is_data_fault(error)
+        severity = phase_failure_severity(
+            consecutive_nights=consecutive_nights, data_fault=data_fault,
+        )
+        name = VALUATION_WORKER_PHASES[phase_key]["name"]
+        error_class = type(error).__name__
+        evidence = {
+            "phase": phase_key,
+            "night": night.isoformat(),
+            "episode_first_night": first_night.isoformat(),
+            "consecutive_nights": consecutive_nights,
+            "error_class": error_class,
+            "fault": "data" if data_fault else "retryable",
+            "severity": severity,
+            "critical_after_nights": PHASE_FAILURE_CRITICAL_NIGHTS,
+        }
+        detail = (
+            f"{error_class}: {'data fault' if data_fault else 'off-hours phase will retry'}"
+            f" · {consecutive_nights} consecutive night(s) since {first_night.isoformat()}"
+        )
+        incident = incidents.signal(
+            incident_key=key, source="worker", severity=severity, title=f"{name} failed",
+            detail=detail, deep_link="/?view=health", evidence=evidence, at=at,
+        )
+        # Escalate inside an episode (never lower it); a reopened incident starts a
+        # new episode, so its severity is derived again instead of inherited.
+        if incident.get("severity") != severity and (severity == "critical" or open_since is None):
+            incident = incidents.set_severity(
+                incident_key=key, severity=severity, detail=f"Severity {severity} · {detail}",
+                evidence=evidence, at=at,
+            ) or incident
+        if severity == "critical" and push_notifications:
+            push_notifications.notify(
+                category="job_failure",
+                title=f"{name} failed",
+                body=f"{error_class}: failing for {consecutive_nights} night(s)",
+                deep_link="/?view=health",
+                event_key=f"valuation-phase-failure:{phase_key}:episode:{first_night.isoformat()}",
+                record_incident=False,
+            )
+        return incident
+    except Exception:
+        logger.exception("Phase incident recording failed without affecting the worker")
+        return None
+
+
+def _resolve_phase_incident(database: Database, *, phase_key: str, observed_at: datetime) -> int:
+    try:
+        return OperationalIncidentService(database).resolve_recovered_family(
+            phase_incident_key(phase_key),
+            observed_at=observed_at,
+            detail=f"{VALUATION_WORKER_PHASES[phase_key]['name']} succeeded again; incident closed automatically",
+        )
+    except Exception:
+        logger.exception("Phase incident recovery failed without affecting the worker")
+        return 0
 
 
 def _run_recorded_phase(
@@ -275,6 +377,7 @@ def run_worker_iteration(
                 )
                 if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                     cash_yield_healthcheck.ping("success")
+                _resolve_phase_incident(database, phase_key=phase.key, observed_at=now)
             except Exception as exc:
                 phase_statuses[phase.key] = "failed"
                 failed_work = True
@@ -284,14 +387,14 @@ def run_worker_iteration(
                     "%s failed; keeping prior evidence and retrying inside the window",
                     VALUATION_WORKER_PHASES[phase.key]["name"],
                 )
-                if push_notifications:
-                    push_notifications.notify(
-                        category="job_failure",
-                        title=f"{VALUATION_WORKER_PHASES[phase.key]['name']} failed",
-                        body=f"{type(exc).__name__}: off-hours phase will retry",
-                        deep_link="/?view=health",
-                        event_key=f"valuation-phase-failure:{phase.key}:{phase_due_at.date()}",
-                    )
+                _signal_phase_failure(
+                    database,
+                    push_notifications,
+                    phase_key=phase.key,
+                    night=phase_due_at.date(),
+                    error=exc,
+                    at=now,
+                )
                 retry_at = now + OFFHOURS_RETRY_DELAY
                 if retry_at < phase_window_end:
                     wake_targets.append(retry_at)
@@ -343,6 +446,8 @@ def main() -> None:
         init_sentry(settings, service_name="valuation-worker")
         database = Database(settings)
         database.initialize()
+        # before any run of this process: the runs a previous process of this worker left 'running' (a deploy) are failed
+        ingestion_process.reap_at_startup(database, ingestion_process.VALUATION_WORKER)
         push_notifications = PushNotificationService(settings, database)
         ensure_builtin_official_fundamentals(database)
         try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
