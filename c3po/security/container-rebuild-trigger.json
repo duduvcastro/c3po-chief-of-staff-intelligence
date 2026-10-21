@@ -1,36 +1,30 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-33587089986",
+  "artifact_name": "c3po-production-container-vulnerabilities-39570938389",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 2,
+  "finding_total": 1,
   "findings": [
     {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
+      "fixed_version": "1.26.10, 1.27.3",
+      "image": "database",
+      "installed_version": "v1.26.9",
+      "package": "stdlib",
       "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-66046"
-    },
-    {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
-      "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-76641"
+      "target": "usr/local/bin/gosu",
+      "vulnerability_id": "CVE-2026-111943"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 2
+    "high": 1,
+    "low": 0,
+    "medium": 0,
+    "unknown": 0
   },
-  "generated_at": "2026-09-02T03:28:47.063426+00:00",
-  "remediation_key": "614ce1e7b4892afaa29a0e98735dc8f7772936198517505365c7abd17a34312a",
-  "report_sha256": "1d07350e1caeaede55611698158eabffefe731f8753ea95c2f1b06251c40c58c",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/33587089986",
+  "generated_at": "2026-10-21T08:40:52.331441+00:00",
+  "remediation_key": "42d35942121dcb1efc1b578f0998e4bc109d11ecb345cc7913eec51217066245",
+  "report_sha256": "b7534098eda32be3b961854cf34e2467c617e2245fad4396a4e3619a6877d497",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/39570938389",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
-  "source_revision": "7bc70899db6088afcd303b4c490f08d88a2758ce"
+  "source_revision": "da20181fe2fefba2d92d78234f9ec292b23ea79d"
 }
