@@ -106,6 +106,46 @@ class OperationalIncidentService:
             at=datetime.now(timezone.utc),
         )
 
+    def set_severity(
+        self,
+        *,
+        incident_key: str,
+        severity: str,
+        detail: str,
+        evidence: dict[str, Any],
+        at: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Change an unresolved incident's severity, recorded as an event."""
+        validate_evidence(evidence)
+        return self.database.set_operational_incident_severity(
+            incident_key=incident_key,
+            severity=severity,
+            detail=detail,
+            evidence=evidence,
+            evidence_sha256=evidence_sha256(evidence),
+            at=at or datetime.now(timezone.utc),
+        )
+
+    def resolve_recovered_family(
+        self, incident_key: str, *, observed_at: datetime, detail: str,
+    ) -> int:
+        """Close ``incident_key`` and its per-day siblings ``incident_key:<suffix>``
+        when the recovery evidence covers them (nothing newer than ``observed_at``).
+        Returns how many incidents were resolved."""
+        resolved = 0
+        for incident in self.database.list_operational_incidents(limit=1000):
+            key = incident["incident_key"]
+            if incident["status"] == "resolved" or not (
+                key == incident_key or key.startswith(f"{incident_key}:")
+            ):
+                continue
+            result = self.database.transition_operational_incident(
+                incident_id=incident["id"], event_type="resolved", actor_email="system",
+                detail=detail, at=observed_at, recovered_through=observed_at,
+            )
+            resolved += bool(result and result["status"] == "resolved")
+        return resolved
+
     def resolve_recovered_prefix(
         self, prefix: str, *, observed_at: datetime, detail: str,
     ) -> None:
