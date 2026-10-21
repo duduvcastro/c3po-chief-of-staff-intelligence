@@ -1,0 +1,467 @@
+#!/usr/bin/env python3
+"""The decision of ``.github/workflows/valuation-pit-grid-autopilot.yml`` (PREREG_VALUATION_PIT_BACKTEST_US_V1 §14 d).
+
+One tick decides whether to dispatch ONE more chunk of the US PIT grid through ``valuation-pit-backtest.yml`` (mode
+``grid``), with the parameters of the repository variables ``C3PO_PIT_GRID_*`` only — never an input, never a value read
+from a run, a log or a comment. It reads data GitHub already holds (the backtest's runs, the jobs and the log of the last
+failed grid chunk, the metadata artifact of the last successful one, the channel's recent bot comments) and the owner's
+order file of the checkout; it never touches the host or the database. The state is the run history: nothing is written
+to the repository.
+
+Order of the checks (the first that applies decides):
+  1. ``C3PO_PIT_GRID_AUTOPILOT`` is not ``on``                          → no-op
+  2. now is after ``C3PO_PIT_GRID_UNTIL``                              → no-op
+  3. a variable is invalid or disagrees with the owner's order file    → no-op, one channel comment per BRT day;
+     now is after the order's not_after                                → no-op
+  4. a run of valuation-pit-backtest.yml (any mode) is not completed, or one was created in the last 10 min → no-op
+  5. no successful grid chunk of this owner order yet                  → no-op (the operator runs the first chunk, §14 d)
+  6. the last successful chunk's manifest says ``complete: true``      → no-op, one channel comment per manifest
+  7. the last completed grid chunk failed:
+       a retryable refusal (the window step; remote status 17 deploy lock, 19 R2D2/massive timer, 21 blocking
+       ingestion, 25 not enough time left before the window) → go on (retried this tick)
+       anything else (a run error, a producer mismatch, a data error, a cancel, an unreadable status) → STOP: no-op,
+       one channel comment per failed run; the stop lasts while that run is the last completed grid chunk (a chunk the
+       operator dispatches by hand and that succeeds reopens the autopilot)
+  8. now is inside a forbidden window or less than 40 min before the next one → no-op
+  9. otherwise                                                          → dispatch one chunk
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import sys
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+NEW_YORK = ZoneInfo("America/New_York")
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+BACKTEST_WORKFLOW = ".github/workflows/valuation-pit-backtest.yml"
+CONFIRMATION = "RUN VALUATION PIT BACKTEST"
+GRID_TITLE_SUFFIX = "— grid"
+LEAD_MINUTES = 40  # never dispatch less than this before the next forbidden window (the grid itself refuses under 35)
+RECENT_RUN_MINUTES = 10  # a run created this recently may not be listed as in progress yet: wait for the next tick
+MAX_RUNS_LIMIT = 200
+RETRYABLE_STATUS = {17: "deploy_lock", 19: "r2d2_timer", 21: "blocking_ingestion", 25: "window_leg_floor"}
+WINDOW_STEP = "Check the operating window"
+FAIL_STEP = "Fail when the host step failed"
+MARKER = "valuation-pit-grid-autopilot"
+BOT_LOGIN = "github-actions[bot]"
+VARIABLES = ("C3PO_PIT_GRID_ORDER_SHA256", "C3PO_PIT_GRID_PRICE_PIN", "C3PO_PIT_GRID_CATALOGUE_PIN", "C3PO_PIT_GRID_PREREG_COMMIT",
+             "C3PO_PIT_GRID_MAX_RUNS", "C3PO_PIT_GRID_AUTOPILOT", "C3PO_PIT_GRID_UNTIL")
+INSTANT = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$")  # the backtest's
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
+# the two lines the backtest prints with the remote exit status (its "Run on the host" and "Fail when the host step
+# failed" steps); the step's own script, echoed in the log, carries `$rc`/`$RC` there and never matches the digits
+REMOTE_STATUS = (re.compile(r"remote exit status: ([0-9]{1,3}); remote stderr lines"),
+                 re.compile(r"the host step exited with status ([0-9]{1,3}) \(its stderr is kept private\)"))
+
+
+class InputError(Exception):
+    """A GitHub payload this tick cannot read: the tick fails (red) and dispatches nothing."""
+
+
+def instant(value: Any) -> dt.datetime | None:
+    if not isinstance(value, str) or INSTANT.match(value) is None:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(dt.timezone.utc) if parsed.tzinfo is not None else None
+
+
+def _time(value: Any) -> dt.datetime:
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise InputError("a run timestamp cannot be read") from error
+    if parsed.tzinfo is None:
+        raise InputError("a run timestamp has no zone")
+    return parsed.astimezone(dt.timezone.utc)
+
+
+# ---------------------------------------------------------------------------------------------------------------- parameters
+@dataclass(frozen=True)
+class Parameters:
+    autopilot: bool
+    order_sha256: str
+    price_pinned_at: str
+    catalogue_pinned_at: str
+    prereg_commit: str
+    max_runs: int
+    until: dt.datetime | None
+    problems: tuple[str, ...] = ()
+
+
+def parameters(env: Mapping[str, str]) -> Parameters:
+    """The grid's parameters from the repository variables (and nowhere else); a malformed one is a named problem."""
+    problems: list[str] = []
+    order = env.get("C3PO_PIT_GRID_ORDER_SHA256", "").strip()
+    price_pin = env.get("C3PO_PIT_GRID_PRICE_PIN", "").strip()
+    catalogue_pin = env.get("C3PO_PIT_GRID_CATALOGUE_PIN", "").strip()
+    commit = env.get("C3PO_PIT_GRID_PREREG_COMMIT", "").strip()
+    raw_max = env.get("C3PO_PIT_GRID_MAX_RUNS", "").strip()
+    raw_until = env.get("C3PO_PIT_GRID_UNTIL", "").strip()
+    if SHA256.match(order) is None:
+        problems.append("C3PO_PIT_GRID_ORDER_SHA256 não é um sha256 (64 hex minúsculos)")
+    if instant(price_pin) is None:
+        problems.append("C3PO_PIT_GRID_PRICE_PIN não é um instante ISO-8601 com fuso")
+    if instant(catalogue_pin) is None:
+        problems.append("C3PO_PIT_GRID_CATALOGUE_PIN não é um instante ISO-8601 com fuso")
+    if COMMIT.match(commit) is None:
+        problems.append("C3PO_PIT_GRID_PREREG_COMMIT não é um commit (40 hex)")
+    max_runs = int(raw_max) if re.fullmatch(r"[0-9]{1,3}", raw_max) else 0
+    if not 1 <= max_runs <= MAX_RUNS_LIMIT:
+        problems.append(f"C3PO_PIT_GRID_MAX_RUNS não é um inteiro de 1 a {MAX_RUNS_LIMIT}")
+    until = instant(raw_until)
+    if until is None:
+        problems.append("C3PO_PIT_GRID_UNTIL não é um instante ISO-8601 com fuso")
+    return Parameters(autopilot=env.get("C3PO_PIT_GRID_AUTOPILOT", "").strip() == "on", order_sha256=order, price_pinned_at=price_pin,
+                      catalogue_pinned_at=catalogue_pin, prereg_commit=commit, max_runs=max_runs, until=until, problems=tuple(problems))
+
+
+def order_check(root: Path, params: Parameters) -> tuple[list[str], dt.datetime | None]:
+    """The owner's order file of this checkout must exist, hash to the variable and authorise exactly these parameters
+    (the backtest verifies it again at its own revision): a disagreement here dispatches nothing."""
+    if SHA256.match(params.order_sha256) is None:
+        return [], None  # already a named problem
+    root = root.resolve()
+    relative = Path("c3po") / "ops" / "owner-orders" / f"{params.order_sha256}.json"
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return ["o caminho da ordem do dono tem uma ligação simbólica"], None
+    path = root / relative
+    if not path.is_file():
+        return ["a ordem do dono C3PO_PIT_GRID_ORDER_SHA256 não existe nesta revisão"], None
+    content = path.read_bytes()
+    if hashlib.sha256(content).hexdigest() != params.order_sha256:
+        return ["o ficheiro da ordem do dono não tem o sha256 da variável"], None
+    try:
+        data = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return ["a ordem do dono não é JSON"], None
+    if not isinstance(data, dict):
+        return ["a ordem do dono não é um objeto JSON"], None
+    problems: list[str] = []
+    if data.get("schema") != "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1" or data.get("prereg") != "PREREG_VALUATION_PIT_BACKTEST_US_V1":
+        problems.append("a ordem do dono não é uma VALUATION-PIT-BACKTEST-OWNER-ORDER-v1 deste pré-registro")
+    modes = data.get("modes")
+    if not isinstance(modes, list) or "grid" not in modes:
+        problems.append("a ordem do dono não autoriza o modo grid")
+    if instant(params.price_pinned_at) is not None and instant(data.get("price_pinned_at")) != instant(params.price_pinned_at):
+        problems.append("C3PO_PIT_GRID_PRICE_PIN difere do pino de preços da ordem")
+    if instant(params.catalogue_pinned_at) is not None and instant(data.get("catalogue_pinned_at")) != instant(params.catalogue_pinned_at):
+        problems.append("C3PO_PIT_GRID_CATALOGUE_PIN difere do pino do catálogo da ordem")
+    if data.get("recompute_existing") is not False:
+        problems.append("a ordem do dono não autoriza recompute_existing=false")
+    cap = data.get("max_runs_cap")
+    if not isinstance(cap, int) or isinstance(cap, bool) or params.max_runs > cap:
+        problems.append("C3PO_PIT_GRID_MAX_RUNS excede o max_runs_cap da ordem")
+    not_after = instant(data.get("not_after"))
+    if not_after is None:
+        problems.append("a ordem do dono não tem not_after legível")
+    return problems, not_after
+
+
+# ---------------------------------------------------------------------------------------------------------------- windows
+def forbidden_windows(now: dt.datetime) -> list[tuple[dt.datetime, dt.datetime]]:
+    """The backtest's windows, exactly as its "Check the operating window" step builds them: the US session with its
+    buffer, 09:00-16:30 America/New_York on weekdays (holidays count as sessions), and the nightly window, 23:30 of the
+    previous day to 08:15 America/Sao_Paulo. Wall-clock times in each zone: daylight saving is the zone's."""
+    windows = []
+    for offset in range(-2, 6):
+        day = now.astimezone(NEW_YORK).date() + dt.timedelta(days=offset)
+        if day.weekday() < 5:
+            windows.append((dt.datetime.combine(day, dt.time(9, 0), NEW_YORK), dt.datetime.combine(day, dt.time(16, 30), NEW_YORK)))
+        local = now.astimezone(SAO_PAULO).date() + dt.timedelta(days=offset)
+        windows.append((dt.datetime.combine(local - dt.timedelta(days=1), dt.time(23, 30), SAO_PAULO), dt.datetime.combine(local, dt.time(8, 15), SAO_PAULO)))
+    return windows
+
+
+def window_state(now: dt.datetime) -> tuple[bool, dt.datetime]:
+    """(inside a forbidden window, the start of the next one)."""
+    windows = forbidden_windows(now)
+    inside = any(start <= now < end for start, end in windows)
+    upcoming = min(start for start, _end in windows if start > now)
+    return inside, upcoming
+
+
+# ---------------------------------------------------------------------------------------------------------------- runs
+def _id(run: Mapping[str, Any]) -> int:
+    value = run.get("id")
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise InputError("a run id is invalid")
+    return value
+
+
+def _runs(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, list) or not all(isinstance(run, dict) for run in payload):
+        raise InputError("the run listing is not a list of runs")
+    return sorted(payload, key=lambda run: (_time(run.get("created_at")), _id(run)), reverse=True)  # newest first
+
+
+def is_grid_chunk(run: Mapping[str, Any]) -> bool:
+    """A grid chunk of the backtest dispatched from main (the run-name ends with the mode)."""
+    path = str(run.get("path") or "")
+    return ((path == BACKTEST_WORKFLOW or path.startswith(BACKTEST_WORKFLOW + "@")) and run.get("event") == "workflow_dispatch"
+            and run.get("head_branch") == "main" and str(run.get("display_title") or "").endswith(GRID_TITLE_SUFFIX))
+
+
+def select(payload: Any) -> tuple[int | None, int | None]:
+    """(the last completed grid chunk when it did not succeed, the last successful grid chunk) — what the workflow
+    fetches before the decision (the failed run's jobs and log, the successful run's metadata artifact)."""
+    completed = [run for run in _runs(payload) if is_grid_chunk(run) and run.get("status") == "completed"]
+    failed = _id(completed[0]) if completed and completed[0].get("conclusion") != "success" else None
+    success = next((_id(run) for run in completed if run.get("conclusion") == "success"), None)
+    return failed, success
+
+
+def remote_status(log: str) -> int | None:
+    """The remote exit status the failed chunk printed — one value, or None when absent or ambiguous."""
+    found = {int(match.group(1)) for pattern in REMOTE_STATUS for match in pattern.finditer(log)}
+    return found.pop() if len(found) == 1 else None
+
+
+@dataclass(frozen=True)
+class Failure:
+    retryable: bool
+    label: str
+    status: int | None = None
+    step: str | None = None
+
+
+def classify(run: Mapping[str, Any], jobs: Any, log: str | None) -> Failure:
+    """A failed chunk: retryable refusals go on; anything else stops the autopilot (the operator decides)."""
+    conclusion = str(run.get("conclusion") or "")
+    if conclusion != "failure":
+        return Failure(False, f"conclusion_{re.sub(r'[^a-z_]', '', conclusion) or 'unknown'}")
+    if not isinstance(jobs, dict) or not isinstance(jobs.get("jobs"), list):
+        raise InputError("the failed run's jobs cannot be read")
+    failed_steps: list[tuple[int, str]] = []
+    for job in jobs["jobs"]:
+        if not isinstance(job, dict) or job.get("run_id") != _id(run):
+            raise InputError("a job of the listing is not of the failed run")
+        for step in job.get("steps") or []:
+            if isinstance(step, dict) and step.get("conclusion") == "failure":
+                number = step.get("number")
+                failed_steps.append((number if isinstance(number, int) and not isinstance(number, bool) else 10 ** 6, str(step.get("name") or "")))
+    if not failed_steps:
+        return Failure(False, "no_failed_step")
+    step = min(failed_steps)[1]
+    if step == WINDOW_STEP:
+        return Failure(True, "window", step=step)
+    if step != FAIL_STEP:
+        return Failure(False, "step_failed", step=step)
+    status = remote_status(log or "")
+    if status is None:
+        return Failure(False, "status_unreadable", step=step)
+    if status in RETRYABLE_STATUS:
+        return Failure(True, RETRYABLE_STATUS[status], status, step)
+    if status == 0:
+        return Failure(False, "published_as_error", status, step)
+    return Failure(False, "host_exit", status, step)
+
+
+# ---------------------------------------------------------------------------------------------------------------- decision
+@dataclass
+class Decision:
+    action: str  # noop | dispatch | stop
+    reason: str
+    post_key: str | None = None
+    post_body: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+def _text(value: Any, limit: int = 80) -> str:
+    text = str(value)
+    for token in ("<", ">", "@", "`", "|", "[", "]", "(", ")"):
+        text = text.replace(token, "")
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def marker(key: str) -> str:
+    return f"<!-- {MARKER}:{key} -->"
+
+
+def already_posted(comments: Any, key: str) -> bool:
+    """Only a bot comment whose FIRST line is the marker counts (a marker quoted elsewhere never suppresses a post)."""
+    if not isinstance(comments, list):
+        raise InputError("the channel comment listing is not a list")
+    return any(isinstance(body, str) and body.split("\n", 1)[0].strip() == marker(key) for body in comments)
+
+
+def _run_url(repository: str, run_id: int) -> str:
+    return f"https://github.com/{repository}/actions/runs/{run_id}"
+
+
+def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, failed_jobs: Any, failed_log: str | None, metadata: Any,
+           repository: str, tick_url: str) -> Decision:
+    params = parameters(env)
+    if not params.autopilot:
+        return Decision("noop", "autopilot_off")
+    if params.until is not None and now > params.until:
+        return Decision("noop", "after_until", details={"until": params.until.isoformat()})
+    order_problems, not_after = order_check(root, params)
+    problems = [*params.problems, *order_problems]
+    if problems:
+        key = f"config:{now.astimezone(SAO_PAULO).date().isoformat()}"
+        body = "\n".join([marker(key), "**Autopiloto da grade PIT EUA sem despachar** — variáveis do repositório inválidas ou em desacordo com a ordem "
+                          "do dono (nada é despachado; os parâmetros só mudam por decisão do operador):", "",
+                          *[f"- {problem}" for problem in problems], "", f"[Tick do autopiloto]({tick_url}) · no máximo um aviso por dia (BRT).", ""])
+        return Decision("noop", "invalid_parameters", key, body, {"problems": problems})
+    if not_after is not None and now > not_after:  # never past the owner's order, whatever C3PO_PIT_GRID_UNTIL says
+        return Decision("noop", "after_until", details={"until": not_after.isoformat()})
+    ordered = _runs(runs)
+    active = [_id(run) for run in ordered if run.get("status") != "completed"]
+    if active:
+        return Decision("noop", "run_in_progress", details={"runs": active})
+    recent = [_id(run) for run in ordered if now - _time(run.get("created_at")) < dt.timedelta(minutes=RECENT_RUN_MINUTES)]
+    if recent:
+        return Decision("noop", "recent_run", details={"runs": recent})
+    failed_id, success_id = select(runs)
+    if success_id is None:
+        return Decision("noop", "no_successful_chunk")
+    if not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id):
+        raise InputError("the last successful chunk's metadata is not that run's grid metadata")
+    if metadata.get("owner_order_sha256") != params.order_sha256:
+        return Decision("noop", "last_chunk_of_another_order", details={"run": success_id})
+    if metadata.get("partial") is not False:
+        raise InputError("the last successful chunk's metadata is marked partial")
+    if metadata.get("complete") is True:
+        digest = metadata.get("manifest_sha256")
+        if not isinstance(digest, str) or SHA256.match(digest) is None:
+            raise InputError("the complete chunk's manifest_sha256 cannot be read")
+        key = f"complete:{digest}"
+        body = "\n".join([marker(key), f"**grid complete, manifest_sha256 `{digest}`** — grade PIT EUA completa no lote "
+                          f"[run {success_id}]({_run_url(repository, success_id)}) (ordem do dono `{params.order_sha256[:8]}`, {metadata.get('entries')} "
+                          f"entradas). O autopiloto não despacha mais nada.", "",
+                          f"Próximo passo (operador, §14 d/e): publicar este `manifest_sha256` e, depois, o modo `report` com `manifest_run_id` "
+                          f"{success_id}, este `manifest_sha256` e `prereg_commit` `{params.prereg_commit}`.", "",
+                          f"[Tick do autopiloto]({tick_url})", ""])
+        return Decision("noop", "grid_complete", key, body, {"run": success_id, "manifest_sha256": digest})
+    retry: Failure | None = None
+    if failed_id is not None:
+        failed_run = next(run for run in ordered if _id(run) == failed_id)
+        failure = classify(failed_run, failed_jobs, failed_log)
+        if not failure.retryable:
+            key = f"stop:{failed_id}"
+            status = "não lido" if failure.status is None else f"`{failure.status}`"
+            body = "\n".join([marker(key), f"**Autopiloto da grade PIT EUA PARADO** — o lote [run {failed_id}]({_run_url(repository, failed_id)}) terminou "
+                              f"`{_text(failed_run.get('conclusion'), 20)}`; passo `{_text(failure.step or '-')}`; código remoto {status} "
+                              f"(`{failure.label}`; só o agregado, o stderr fica privado no host).", "",
+                              "Não é uma recusa reexecutável (janela; 17 lock de deploy; 19 timer R2D2/massive; 21 ingestão bloqueante; 25 sem tempo "
+                              "antes da janela). Regra de parada do §14 d: o autopiloto **não despacha mais nada** e nunca muda parâmetros. O operador "
+                              "decide — diagnosticar; erro de dados → corrigir e retomar com os MESMOS parâmetros. Um lote despachado à mão que termine "
+                              "com sucesso reabre o autopiloto; `C3PO_PIT_GRID_AUTOPILOT=off` desliga-o.", "",
+                              f"[Tick do autopiloto]({tick_url}) · um aviso por lote parado.", ""])
+            return Decision("stop", failure.label, key, body, {"run": failed_id, "status": failure.status, "step": failure.step})
+        retry = failure
+    inside, upcoming = window_state(now)
+    minutes = (upcoming - now).total_seconds() / 60
+    if inside:
+        return Decision("noop", "inside_window", details={"next_window": upcoming.isoformat()})
+    if minutes < LEAD_MINUTES:
+        return Decision("noop", "window_too_close", details={"next_window": upcoming.isoformat(), "minutes": round(minutes)})
+    details: dict[str, Any] = {"after_run": success_id, "next_window": upcoming.isoformat(), "minutes": round(minutes), "max_runs": params.max_runs,
+                               "remaining": metadata.get("remaining")}
+    if retry is not None:
+        details.update({"retry_of": failed_id, "retry_status": retry.status})
+    return Decision("dispatch", f"retry_after_{retry.label}" if retry is not None else "next_chunk", details=details)
+
+
+# ---------------------------------------------------------------------------------------------------------------- CLI
+def _load(path: Path | None) -> Any:
+    if path is None or not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise InputError(f"{path.name} is not JSON") from error
+
+
+def _output(path: Path | None, values: Mapping[str, str]) -> None:
+    for key, value in values.items():
+        if "\n" in value or "\r" in value:
+            raise SystemExit(f"output {key} holds a line break")
+    if path is None:
+        return
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("".join(f"{key}={value}\n" for key, value in values.items()))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="valuation PIT grid autopilot: one tick")
+    sub = parser.add_subparsers(dest="command", required=True)
+    pick = sub.add_parser("select")
+    pick.add_argument("--runs", type=Path, required=True)
+    pick.add_argument("--github-output", type=Path)
+    tick = sub.add_parser("decide")
+    tick.add_argument("--runs", type=Path, required=True)
+    tick.add_argument("--failed-jobs", type=Path)
+    tick.add_argument("--failed-log", type=Path)
+    tick.add_argument("--metadata", type=Path)
+    tick.add_argument("--comments", type=Path, required=True)
+    tick.add_argument("--root", type=Path, required=True)
+    tick.add_argument("--repository", required=True)
+    tick.add_argument("--tick-url", required=True)
+    tick.add_argument("--ref", required=True)
+    tick.add_argument("--dry-run", choices=("true", "false"), required=True)
+    tick.add_argument("--body", type=Path, required=True)
+    tick.add_argument("--github-output", type=Path)
+    tick.add_argument("--summary", type=Path)
+    tick.add_argument("--now", default=None, help="tests only")
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "select":
+            failed, success = select(_load(args.runs))
+            _output(args.github_output, {"failed_run_id": str(failed or ""), "success_run_id": str(success or "")})
+            print(json.dumps({"failed_run_id": failed, "success_run_id": success}, sort_keys=True))
+            return 0
+        if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repository) is None or not args.tick_url.startswith("https://github.com/"):
+            raise SystemExit("repository or tick url is invalid")
+        now = instant(args.now) if args.now else dt.datetime.now(dt.timezone.utc)
+        if now is None:
+            raise SystemExit("--now must be ISO-8601 with a zone")
+        log = args.failed_log.read_text(encoding="utf-8", errors="replace") if args.failed_log is not None and args.failed_log.is_file() else None
+        inputs: dict[str, Any] = {"root": args.root, "now": now, "runs": _load(args.runs), "failed_jobs": _load(args.failed_jobs), "failed_log": log,
+                  "metadata": _load(args.metadata), "repository": args.repository, "tick_url": args.tick_url}
+        decision = decide(env=os.environ, **inputs)
+        if decision.reason == "autopilot_off" and args.dry_run == "true":  # a dry run shows what the tick WOULD do were it on (never acted on)
+            preview = decide(env={**os.environ, "C3PO_PIT_GRID_AUTOPILOT": "on"}, **inputs)
+            decision.details["preview"] = {"action": preview.action, "reason": preview.reason, **preview.details}
+        post = decision.post_key is not None and not already_posted(_load(args.comments) or [], decision.post_key)
+    except InputError as error:
+        print(f"::error::the tick cannot read GitHub's state ({error}): nothing is dispatched", file=sys.stderr)
+        return 1
+    act = args.dry_run == "false" and args.ref == "refs/heads/main"
+    params = parameters(os.environ)
+    values = {"action": decision.action, "reason": decision.reason, "act": "true" if act else "false", "post": "true" if post else "false"}
+    if decision.action == "dispatch":
+        values.update({"order": params.order_sha256, "price_pin": params.price_pinned_at, "catalogue_pin": params.catalogue_pinned_at,
+                       "prereg_commit": params.prereg_commit, "max_runs": str(params.max_runs)})
+    if post and decision.post_body is not None:
+        args.body.write_text(decision.post_body, encoding="utf-8")
+    _output(args.github_output, values)
+    record = {"action": decision.action, "reason": decision.reason, "act": act, "post": post, "details": decision.details}
+    print(json.dumps(record, sort_keys=True, default=str))
+    if args.summary is not None:
+        mode = "ACT" if act else "DRY-RUN (nothing dispatched, nothing posted)"
+        with args.summary.open("a", encoding="utf-8") as handle:
+            handle.write(f"## Valuation PIT grid autopilot — {mode}\n\n- action `{decision.action}`, reason `{decision.reason}`, channel post {post}\n"
+                         f"- details `{json.dumps(decision.details, sort_keys=True, default=str)}`\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,67 @@
+# Autopiloto da grade PIT EUA (`valuation-pit-grid-autopilot.yml`)
+
+Aprovado pelo dono em 20/10/2026 (21:4x BRT): despachar os lotes da grade do `PREREG_VALUATION_PIT_BACKTEST_US_V1` (§14 d)
+enquanto o Mac do dono — onde rodam Fable e Codex — está desligado, **só** sob a ordem do dono já assinada (ordem 2,
+`ba24f301…`). Este documento não altera o pré-registro (congelado) nem o `valuation-pit-backtest.yml`: o autopiloto só chama
+o modo `grid` desse workflow, que continua a fazer todas as suas verificações (ordem do dono, janelas, pré-voo no host,
+produtor do commit do recibo).
+
+## O que faz
+
+A cada 30 min (`13,43 * * * *`, UTC) um tick lê apenas o que o GitHub já tem — as execuções de `valuation-pit-backtest.yml`,
+os jobs e o log do último lote que falhou, o artefato de metadados do último lote com sucesso, os comentários recentes do bot
+no canal (#429) — e o ficheiro da ordem do dono do checkout, e decide com `.github/scripts/valuation_pit_grid_autopilot.py`:
+
+1. `C3PO_PIT_GRID_AUTOPILOT` diferente de `on` → nada (o tick agendado nem chega a correr o job).
+2. Agora depois de `C3PO_PIT_GRID_UNTIL` → nada.
+3. Variável inválida ou em desacordo com a ordem do dono (o ficheiro existe, tem o sha256, autoriza `grid`, os mesmos pinos
+   como instantes, `recompute_existing=false`, `max_runs ≤ max_runs_cap`) → nada, e **um** aviso por dia (BRT) no canal.
+   Depois do `not_after` da ordem → nada, seja qual for o `UNTIL`.
+4. Uma execução do backtest (qualquer modo) não concluída, ou criada há menos de 10 min → nada.
+5. Nenhum lote com sucesso desta ordem → nada: o **primeiro lote é do operador** (§14 d: medir o custo, registar o
+   `volume_basis` com o `manifest_sha256` do primeiro lote).
+6. O manifesto do último lote com sucesso diz `complete: true` → nada, e **um** comentário no canal
+   (`grid complete, manifest_sha256 …`, com o `manifest_run_id` para o `report`).
+7. O último lote concluído falhou:
+   - recusa reexecutável — o passo da janela do backtest, ou código remoto **17** (lock de deploy), **19** (timer/serviço
+     R2D2/massive), **21** (ingestão bloqueante), **25** (sem tempo antes da janela) → segue para o despacho neste tick;
+   - qualquer outra falha (erro de corrida, produtor divergente, erro de dados, reinício pendente 11, cancelamento,
+     código ilegível) → **PARADO**: nada é despachado e **um** comentário no canal com o run id e o código de saída (só o
+     agregado; o stderr fica privado no host). A parada dura enquanto esse run for o último lote concluído da grade.
+8. Dentro de uma janela proibida (09:00–16:30 America/New_York em dias úteis; 23:30 do dia anterior a 08:15
+   America/Sao_Paulo) ou a menos de **40 min** do início da próxima → nada. As janelas são as do backtest, em hora local de
+   cada fuso (o horário de verão de Nova Iorque é seguido automaticamente).
+9. Senão → despacha **um** lote: `mode=grid`, `owner_order_sha256`, os dois pinos, `prereg_commit` e `max_runs` das
+   variáveis, `recompute_existing=false`, frase `RUN VALUATION PIT BACKTEST`, `--ref main`.
+
+O código remoto sai da linha agregada que o backtest imprime (`remote exit status: N; …`), lida no log do job; se não houver
+um valor único, a falha conta como não reexecutável. Um estado do GitHub ilegível (jobs, log, artefato) faz o tick falhar
+(vermelho) sem despachar nada.
+
+## Regra de parada (§14 d) — o que o operador faz
+
+Os parâmetros **nunca** mudam pelo autopiloto. Depois de uma parada, o operador diagnostica; erro de dados → corrigir e
+retomar com os **mesmos** parâmetros. Para retomar, despachar um lote à mão (os mesmos parâmetros): se terminar com sucesso,
+o autopiloto volta a andar sozinho. `C3PO_PIT_GRID_AUTOPILOT=off` desliga-o a qualquer momento.
+
+## Variáveis do repositório (Settings → Secrets and variables → Actions → Variables)
+
+| Variável | Valor |
+|---|---|
+| `C3PO_PIT_GRID_ORDER_SHA256` | `ba24f301f446bad09d030fdb6c3acf7b3c96f71b792b6e5b6bf4b33cac05f744` |
+| `C3PO_PIT_GRID_PRICE_PIN` | `2026-10-19T18:30:00-03:00` |
+| `C3PO_PIT_GRID_CATALOGUE_PIN` | `2026-10-19T18:30:00-03:00` |
+| `C3PO_PIT_GRID_PREREG_COMMIT` | `7f147409e5b500b819b2e5151f04290be1950db3` |
+| `C3PO_PIT_GRID_MAX_RUNS` | `40` (1–200; nunca acima do `max_runs_cap` 200 da ordem) |
+| `C3PO_PIT_GRID_UNTIL` | `2026-10-23T23:30:00-03:00` |
+| `C3PO_PIT_GRID_AUTOPILOT` | `off` (padrão) → `on` para ligar |
+
+O canal é `C3PO_ESCALATION_ISSUE` (padrão 429), o mesmo do detector de incidentes.
+
+## Permissões e limites
+
+`actions: write` (despachar), `contents: read`, `issues: write` (os comentários). Só o `GITHUB_TOKEN`; nenhum segredo,
+nenhum acesso ao host ou ao banco, nenhuma escrita no repositório (o estado é o histórico de execuções). Um
+`workflow_dispatch` manual é **dry-run** por padrão (mostra a decisão, e com o autopiloto desligado também o que faria, sem
+despachar nem comentar); só age a partir de `main`. O agendamento só existe depois do merge em `main`; se o ambiente
+`production` exigir aprovação manual, o lote despachado fica em espera e o autopiloto não despacha outro.
