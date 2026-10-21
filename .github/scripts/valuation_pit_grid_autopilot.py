@@ -14,7 +14,8 @@ Order of the checks (the first that applies decides):
   3. a variable is invalid or disagrees with the owner's order file    → no-op, one channel comment per BRT day;
      now is after the order's not_after                                → no-op
   4. a run of valuation-pit-backtest.yml (any mode) is not completed, or one was created in the last 10 min → no-op
-  5. no successful grid chunk of this owner order yet                  → no-op (the operator runs the first chunk, §14 d)
+  5. no successful grid chunk of this owner order yet                  → the FIRST chunk, capped at FIRST_CHUNK_MAX_RUNS (§14 d "start
+     with 10"), posted once; the operator does the post-first-chunk checks and turns the autopilot off if they fail
   6. the last successful chunk's manifest says ``complete: true``      → no-op, one channel comment per manifest
   7. grid chunks completed AFTER the last successful one did not succeed — EVERY one of them is classified:
        a retryable refusal (the window step; remote status 11 reboot pending, 17 deploy lock, 19 R2D2/massive timer,
@@ -49,6 +50,7 @@ GRID_TITLE_SUFFIX = "— grid"
 LEAD_MINUTES = 40  # never dispatch less than this before the next forbidden window (the grid itself refuses under 35)
 RECENT_RUN_MINUTES = 10  # a run created this recently may not be listed as in progress yet: wait for the next tick
 MAX_RUNS_LIMIT = 200
+FIRST_CHUNK_MAX_RUNS = 10
 RETRYABLE_STATUS = {11: "reboot_pending", 17: "deploy_lock", 19: "r2d2_timer", 21: "blocking_ingestion", 25: "window_leg_floor"}
 WINDOW_STEP = "Check the operating window"
 FAIL_STEP = "Fail when the host step failed"
@@ -221,11 +223,12 @@ def is_grid_chunk(run: Mapping[str, Any]) -> bool:
 def select(payload: Any) -> tuple[list[int], int | None]:
     """(every completed grid chunk newer than the last successful one — none succeeded —, newest first; the last
     successful grid chunk) — what the workflow fetches before the decision (each failed run's jobs and log, the
-    successful run's metadata artifact). Without a successful chunk nothing is fetched (the tick is a no-op)."""
+    successful run's metadata artifact). Without a successful chunk every completed grid chunk is classified (a
+    non-retryable one stops the first chunk too)."""
     completed = [run for run in _runs(payload) if is_grid_chunk(run) and run.get("status") == "completed"]
     index = next((position for position, run in enumerate(completed) if run.get("conclusion") == "success"), None)
     if index is None:
-        return [], None
+        return [_id(run) for run in completed], None
     return [_id(run) for run in completed[:index]], _id(completed[index])
 
 
@@ -334,14 +337,14 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
         return Decision("noop", "recent_run", details={"runs": recent})
     failed_ids, success_id = select(runs)
     if success_id is None:
-        return Decision("noop", "no_successful_chunk")
-    if not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id):
+        metadata = None
+    elif not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id):
         raise InputError("the last successful chunk's metadata is not that run's grid metadata")
-    if metadata.get("owner_order_sha256") != params.order_sha256:
+    if metadata is not None and metadata.get("owner_order_sha256") != params.order_sha256:
         return Decision("noop", "last_chunk_of_another_order", details={"run": success_id})
-    if metadata.get("partial") is not False:
+    if metadata is not None and metadata.get("partial") is not False:
         raise InputError("the last successful chunk's metadata is marked partial")
-    if metadata.get("complete") is True:
+    if metadata is not None and metadata.get("complete") is True:
         digest = metadata.get("manifest_sha256")
         if not isinstance(digest, str) or SHA256.match(digest) is None:
             raise InputError("the complete chunk's manifest_sha256 cannot be read")
@@ -377,11 +380,22 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
     elif minutes < LEAD_MINUTES:
         decision = Decision("noop", "window_too_close", details={"next_window": upcoming.isoformat(), "minutes": round(minutes)})
     else:
-        details: dict[str, Any] = {"after_run": success_id, "next_window": upcoming.isoformat(), "minutes": round(minutes), "max_runs": params.max_runs,
-                                   "remaining": metadata.get("remaining")}
+        first = success_id is None
+        details: dict[str, Any] = {"after_run": success_id, "next_window": upcoming.isoformat(), "minutes": round(minutes),
+                                   "max_runs": min(params.max_runs, FIRST_CHUNK_MAX_RUNS) if first else params.max_runs,
+                                   "remaining": None if metadata is None else metadata.get("remaining")}
         if retry is not None:
             details.update({"retry_of": failed_ids[0], "retry_status": retry.status, "failed_since_success": len(failed_ids)})
-        decision = Decision("dispatch", f"retry_after_{retry.label}" if retry is not None else "next_chunk", details=details)
+        reason = f"retry_after_{retry.label}" if retry is not None else ("first_chunk" if first else "next_chunk")
+        decision = Decision("dispatch", reason, details=details)
+        if first:
+            key = "first-chunk"
+            decision.post_key = key
+            decision.post_body = "\n".join([marker(key), f"**Autopiloto da grade PIT EUA: primeiro lote despachado** (ordem do dono `{params.order_sha256[:8]}`, "
+                                              f"`max_runs` {details['max_runs']}, §14 d \"start with 10\"). O operador faz as conferências pós-primeiro-lote "
+                                              "(`covered_without_rows_by_T` de 2021, `volume_basis` e o primeiro `manifest_sha256` no canal, custo por data) e "
+                                              "desliga o autopiloto (`C3PO_PIT_GRID_AUTOPILOT=off`) se alguma falhar.", "",
+                                              f"[Tick do autopiloto]({tick_url}) · um aviso só.", ""])
     if retry is not None and retry.label == "reboot_pending":  # retried, but a reboot that stays pending is said once per BRT day
         key = f"reboot:{now.astimezone(SAO_PAULO).date().isoformat()}"
         decision.post_key = key
@@ -514,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
     values = {"action": decision.action, "reason": decision.reason, "act": "true" if act else "false", "post": "true" if post else "false"}
     if decision.action == "dispatch":
         values.update({"order": params.order_sha256, "price_pin": params.price_pinned_at, "catalogue_pin": params.catalogue_pinned_at,
-                       "prereg_commit": params.prereg_commit, "max_runs": str(params.max_runs)})
+                       "prereg_commit": params.prereg_commit, "max_runs": str(decision.details.get("max_runs", params.max_runs))})
     if post and decision.post_body is not None:
         args.body.write_text(decision.post_body, encoding="utf-8")
     _output(args.github_output, values)

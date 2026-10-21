@@ -80,3 +80,8 @@ nenhum acesso ao host ou ao banco, nenhuma escrita no repositório (o estado é 
 `workflow_dispatch` manual é **dry-run** por padrão (mostra a decisão, e com o autopiloto desligado também o que faria, sem
 despachar nem comentar); só age a partir de `main`. O agendamento só existe depois do merge em `main`; se o ambiente
 `production` exigir aprovação manual, o lote despachado fica em espera e o autopiloto não despacha outro.
+
+
+## Primeiro lote (21/10/2026)
+
+Sem nenhum lote de sucesso desta ordem, o autopiloto despacha o **primeiro lote**, limitado a `FIRST_CHUNK_MAX_RUNS` = 10 (§14 d, "start with 10"), e posta um aviso único (`first-chunk`) no canal. Antes, todo lote completado é classificado: uma recusa reexecutável é repetida, e qualquer outra falha para o autopiloto. O operador faz as conferências pós-primeiro-lote (`covered_without_rows_by_T` de 2021, `volume_basis` e o primeiro `manifest_sha256` no canal, custo por data) e desliga o autopiloto se alguma falhar. Motivo: o Mac do operador fica desligado na janela da noite de 21/10, e sem isso a grade perderia a noite.

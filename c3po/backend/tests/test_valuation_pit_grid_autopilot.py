@@ -271,9 +271,14 @@ def test_a_complete_grid_is_a_no_op_posted_once() -> None:
     assert _decide(runs=runs, metadata=_metadata(100, complete=True), jobs=_jobs(101, "Validate the inputs")).reason == "grid_complete"
 
 
-def test_no_chunk_of_this_order_yet_is_a_no_op() -> None:
-    assert _decide(runs=[_run(100, age_minutes=120, mode="dry-run")]).reason == "no_successful_chunk"
-    assert _decide(runs=[_run(100, age_minutes=120, branch="feature")]).reason == "no_successful_chunk"
+def test_no_chunk_of_this_order_yet_dispatches_a_capped_first_chunk_once_posted() -> None:
+    for runs in ([_run(100, age_minutes=120, mode="dry-run")], [_run(100, age_minutes=120, branch="feature")], []):
+        decision = _decide(runs=runs)
+        assert (decision.action, decision.reason) == ("dispatch", "first_chunk")
+        assert decision.details["max_runs"] == min(AP.FIRST_CHUNK_MAX_RUNS, 40) and decision.details["after_run"] is None
+        assert decision.post_key == "first-chunk" and decision.post_body is not None
+        assert decision.post_body.startswith("<!-- valuation-pit-grid-autopilot:first-chunk -->\n")
+        assert AP.already_posted([decision.post_body], "first-chunk")
     assert _decide(metadata=_metadata(100, order="cd" * 32)).reason == "last_chunk_of_another_order"
     with pytest.raises(AP.InputError):
         _decide(metadata=_metadata(99))  # the metadata of another run
@@ -464,7 +469,7 @@ def test_select_names_the_runs_to_fetch(tmp_path: Path) -> None:
     assert AP.select(runs) == ([102], 101)
     assert AP.select([_run(101, age_minutes=40), _run(100, age_minutes=60, conclusion="failure")]) == ([], 101)
     assert AP.select([_run(101, age_minutes=40, status="in_progress")]) == ([], None)
-    assert AP.select([_run(100, age_minutes=40, conclusion="failure")]) == ([], None)  # no success: nothing to fetch
+    assert AP.select([_run(100, age_minutes=40, conclusion="failure")]) == ([100], None)  # no success: every failed chunk is classified
     many = [_run(105, age_minutes=10, conclusion="failure"), _run(104, age_minutes=20, conclusion="cancelled"), _run(103, age_minutes=30, mode="dry-run"),
             _run(102, age_minutes=40, conclusion="failure"), _run(101, age_minutes=50), _run(100, age_minutes=60, conclusion="failure")]
     assert AP.select(many) == ([105, 104, 102], 101)
@@ -544,3 +549,12 @@ def test_a_failing_tick_is_posted_once_per_day_when_acting(tmp_path: Path) -> No
     assert AP.failing_tick(AP.comment_bodies(json.dumps([{"user": {"login": "x"}, "body": body}])), dt.datetime.now(dt.timezone.utc), TICK_URL) is not None
     with pytest.raises(AP.InputError):
         AP.comment_bodies("[{}] not json")
+
+
+def test_first_chunk_retries_a_retryable_refusal_and_stops_on_anything_else() -> None:
+    failed = [_run(101, age_minutes=60, conclusion="failure")]
+    retried = _decide(runs=failed, jobs=_jobs(101, AP.FAIL_STEP), log=_log(21))
+    assert (retried.action, retried.reason) == ("dispatch", "retry_after_blocking_ingestion")
+    assert retried.details["max_runs"] == AP.FIRST_CHUNK_MAX_RUNS
+    stopped = _decide(runs=failed, jobs=_jobs(101, AP.FAIL_STEP), log=_log(2))
+    assert stopped.action == "stop" and stopped.post_key == "stop:101"
