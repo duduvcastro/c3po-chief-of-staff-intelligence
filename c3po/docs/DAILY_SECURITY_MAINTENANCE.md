@@ -83,6 +83,40 @@ interrupção do watchdog local. Falha de SSH ou validação falha o workflow.
 Todos os agendamentos são permanentes, sem data de término. Ausência de correção
 ou incompatibilidade permanece visível e volta a ser consultada diariamente.
 
+## Ingestões órfãs após deploy ou reinício
+
+Um deploy (`docker compose up -d`) reinicia todos os workers; uma ingestão em curso
+naquele instante ficava com `status='running'` em `ingestion_runs` para sempre (cards
+de saúde, preflight da grade PIT e este controlador de reboot leem `running`). Desde
+20/10/2026, cada execução nova grava em `metadata` a identidade do processo que a
+iniciou (`process_instance`, um uuid4 por processo, mais `process_pid`,
+`process_started_at`, `process_host` — o id curto do contêiner — e, nos workers,
+`process_role`).
+
+Ao subir, **antes de iniciar qualquer execução**, o `valuation-worker` e o
+`investor-relations-worker` marcam como `failed` (resumo `orphaned: process
+restarted`, com `metadata.reaped_at` e `metadata.reaped_by`) toda execução ainda
+`running` iniciada antes do processo atual que seja:
+
+* marcada com o papel do próprio worker e outro `process_instance` (o processo
+  anterior do mesmo worker, inclusive fontes de RI chamadas dentro do noturno do
+  valuation); ou
+* antiga, sem marcador, de uma fonte que só esse worker grava (`source_type`
+  `valuation_worker` no valuation; `sec_asfiled` no worker de RI).
+
+Nunca toca execuções de outro worker, da API ou de CLIs avulsas (sem papel), do
+próprio processo, nem execuções antigas de fontes compartilhadas (`cvm`, `sec`, `ri`,
+`finnhub`, `cvm_statements`, `b3`, `eodhd`…), que apenas saem das janelas de 12 h do
+preflight e de vida dos contêineres deste controlador. É um único `UPDATE ... WHERE
+status = 'running' ... RETURNING id`, idempotente; a contagem sai no log
+(`ingestion orphan reaper: role=... reaped=N`), e uma falha do reaper é registrada sem
+impedir o worker de subir. Portanto, após um deploy, as órfãs desses dois workers são
+encerradas automaticamente na partida e o preflight da grade PIT não fica bloqueado
+por elas. Pressupõe um único processo vivo por worker (um contêiner por serviço no
+`compose.yml`). O `r2d2-worker` (congelado no pacote R2D2 V2) já grava o marcador,
+mas ainda não roda o reaper; o `server-usage-worker` e o
+`r2d2-shadow-candidate-worker` não abrem ingestões.
+
 ## Instalação e ativação
 
 O deploy instala/atualiza os scripts e unidades versionados após o portão de saúde,
@@ -136,6 +170,35 @@ malformado é tratado como falha.
 Validação de aceitação em produção: timer habilitado, primeiro ciclo registrado,
 permissões do token conferidas, PR/CI/merge controlado na janela e scan posterior
 mostrando os avisos resolvidos. Não executar esse ensaio durante o D14.
+
+## Relatório read-only de incidentes
+
+`.github/workflows/ops-readonly-report.yml` roda diariamente às 11:30 UTC (08:30 BRT, depois do fim do ciclo noturno às 08:15 BRT) e por
+`workflow_dispatch`. Pelo transporte SSH do deploy, executa
+`python -m app.operational_incidents --report-json` dentro do contêiner `api` em execução
+(`docker compose exec -T`, sessão PostgreSQL com `default_transaction_read_only=on`, nada
+copiado, criado ou reiniciado no host; reboot de segurança pendente adia o relatório). O
+módulo só lê o ledger de incidentes e os cartões **locais** do painel de saúde
+(governança, incidentes e controles Day D/valuation: linhas do banco e arquivos de
+evidência); as sondas externas e o ping de healthcheck nunca rodam.
+
+A saída é só agregada: incidentes abertos/reconhecidos agrupados por tipo
+(`governance-vulnerability`, `notification:job_failure`, `notification:disk_threshold` ou
+`other`), origem, severidade e estado, com quantidade, idade do episódio atual (abertura
+ou reabertura → agora), quantos passam de 24 h e a última observação; e os cartões
+vermelhos/âmbar por chave fixa. Chave do incidente, título, detalhe, evidência, ator e
+texto dos cartões nunca saem do processo. No runner, o verificador exige o esquema exato
+(chaves e vocabulário fechados, horários UTC, contagens não negativas, soma dos grupos
+igual aos totais, `report_sha256` recalculado) antes de publicar o artefato
+`incidents.json` + `summary.md` (português) + `SHA256SUMS`. Só quando há incidente aberto
+há mais de 24 h, uma linha agregada vai ao canal `C3PO_ESCALATION_ISSUE` (padrão #429),
+com o marcador `<!-- c3po-ops-readonly-report:AAAA-MM-DD -->`, no máximo uma vez por dia
+(BRT); canal fechado, trancado ou cheio deixa o agregado só no artefato, com aviso.
+
+O job usa o ambiente `production`, o mesmo de `valuation-readonly-report.yml` e do
+`security-watchdog.yml` agendado, que já rodam sem aprovação manual. As regras de proteção do
+ambiente não foram lidas pela API nesta entrega: se um dia exigirem revisor, o agendamento
+espera a aprovação como esses workflows.
 
 ## Correções incluídas nesta implantação
 

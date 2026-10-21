@@ -5,7 +5,7 @@ from datetime import date, datetime, time as wall_time, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from . import valuation_env
+from . import ingestion_process, valuation_env
 from .chewie_fundamentals import ChewieFundamentalsService
 from .maintenance_gate import job, startup_job
 from .config import Settings, get_settings
@@ -446,6 +446,8 @@ def main() -> None:
         init_sentry(settings, service_name="valuation-worker")
         database = Database(settings)
         database.initialize()
+        # before any run of this process: the runs a previous process of this worker left 'running' (a deploy) are failed
+        ingestion_process.reap_at_startup(database, ingestion_process.VALUATION_WORKER)
         push_notifications = PushNotificationService(settings, database)
         ensure_builtin_official_fundamentals(database)
         try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
