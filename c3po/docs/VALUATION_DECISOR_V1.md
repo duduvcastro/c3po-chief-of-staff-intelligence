@@ -269,6 +269,15 @@ que não é current sai com `effective_verdict = VETO` e `effective_reason_codes
 `VERDICT_TP_NOT_SERVED`): nenhuma permissão sobrevive à sua noite nem ao seu TP. A resposta traz também `marks` (as
 marcas do registro), sem efeito no veredicto.
 
+**Exportação cifrada da noite** (ordem do dono de 20/10; `valuation_verdict_export.py`, workflow
+`decisor-verdict-export.yml`): a única leitura que enumera uma noite inteira — os veredictos dos EUA da sessão NYSE N
+(`session_date`), da última rodada publicada até a abertura da sessão seguinte, com a geração em vigor nesse corte igual à
+que a rodada decidiu (senão a noite está incompleta e nada sai). Sai do servidor **só cifrada** para a chave X25519 do
+laboratório (HKDF-SHA256, AES-256-GCM; contagens e sha256 em claro, sem símbolo), porque os artefatos deste repositório
+são públicos. CLI: `python -m app.valuation_decision --export-verdicts --night <AAAA-MM-DD|last-completed>
+--recipient-public-key <base64>`. Leitor: `Database.valuation_decisions_of_session` (novo; conta e recusa registro que
+não confere). Chave e comando do dono: README da raiz ("Ponte de veredictos").
+
 ## Pendências declaradas
 
 * Os limiares acima são propostas até o PREREG.

@@ -83,7 +83,8 @@ cut and every existing phase, and never writes the selection or any served numbe
 decided on the cut and the cycles published after it, and nothing intraday replaces them. A night is done when the latest
 run decided over the generation in force (``last_run_at``): a generation activated later inside the window (a canonical
 retry) is decided again. The R2D2 lab reads verdicts by symbol (``latest_verdict``/``latest_verdicts``): it names the
-symbols it asks about — nothing here enumerates the names a verdict permits, and receipts are aggregate counts only. A
+symbols it asks about — nothing here enumerates the names a verdict permits (the one exception, ``valuation_verdict_export``,
+leaves the host ENCRYPTED to the lab's key), and receipts are aggregate counts only. A
 verdict is ``current`` only for its own session AND while the generation in force still serves the TP it read (the same
 row hash: a targeted admission of another name keeps it, a source switch or a rollback does not).
 """
@@ -1411,7 +1412,18 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--dry-run", action="store_true", help="decide over the generation in force and print the aggregate receipt; writes nothing")
     group.add_argument("--run", action="store_true", help="decide and record (only with C3PO_VALUATION_DECISOR_SHADOW on)")
     group.add_argument("--verdict", metavar="MARKET:SYMBOL", help="the latest verdict of one symbol")
+    group.add_argument("--export-verdicts", action="store_true",
+                       help="the US verdicts of one night, ENCRYPTED to the R2D2 lab's X25519 key (valuation_verdict_export): prints only the envelope; "
+                            "read-only session")
+    parser.add_argument("--night", metavar="YYYY-MM-DD", help="--export-verdicts: the NYSE session the verdicts are for, or last-completed")
+    parser.add_argument("--recipient-public-key", metavar="BASE64", help="--export-verdicts: the lab's raw X25519 public key, base64")
     args = parser.parse_args(argv)
+    if args.export_verdicts:
+        if not args.night or not args.recipient_public_key:
+            parser.error("--export-verdicts needs --night and --recipient-public-key")
+        return _export_verdicts(args.night, args.recipient_public_key)
+    if args.night or args.recipient_public_key:
+        parser.error("--night and --recipient-public-key belong to --export-verdicts")
     from .database import Database
     settings = get_settings()
     if args.run and not valuation_env.decisor_shadow_enabled():
@@ -1425,6 +1437,27 @@ def main(argv: list[str] | None = None) -> int:
     else:
         result = run_shadow(database, write=args.run)
     print(json.dumps(result, sort_keys=True, default=str))
+    return 0
+
+
+EXPORT_REFUSED_EXIT = 3
+
+
+def _export_verdicts(night: str, recipient_public_key: str) -> int:
+    """``--export-verdicts``: the session is made read-only in PostgreSQL BEFORE any connection; stdout carries ONE JSON
+    line — the encrypted envelope, or a refusal (its code and the night, exit ``EXPORT_REFUSED_EXIT``). The plaintext is
+    never printed, and nothing here logs a symbol to stdout."""
+    from . import valuation_verdict_export as export
+    from .database import Database
+
+    export.force_read_only_session()
+    shown = night if night == export.LAST_COMPLETED or export.NIGHT_PATTERN.fullmatch(night) else None
+    try:
+        envelope = export.export(Database(get_settings()), night, recipient_public_key)
+    except export.ExportRefused as error:
+        print(json.dumps(export.refusal(error, shown or ""), sort_keys=True))
+        return EXPORT_REFUSED_EXIT
+    print(json.dumps(envelope, sort_keys=True))
     return 0
 
 

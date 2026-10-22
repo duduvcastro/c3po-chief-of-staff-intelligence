@@ -4462,6 +4462,34 @@ class Database:
             ).fetchall()
         return [record for record in (self._decision_record(row) for row in rows) if record is not None]
 
+    def valuation_decisions_of_session(self, markets: list[str], session_date: str) -> tuple[list[dict[str, Any]], int]:
+        """Every decision of ``markets`` decided FOR ``session_date`` (every run), oldest first (``_DECISION_ORDER``
+        reversed), verified — and how many stored rows of that session do NOT verify (not served; the encrypted verdict
+        export refuses the night then). The reader of ``valuation_verdict_export``; it enumerates a night only for that
+        export, which leaves the host encrypted. Copies."""
+        wanted = sorted({str(market) for market in markets if market})
+        if not wanted:
+            return [], 0
+        if not self.database_url:
+            from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+            matches = [(self._decision_order_key(index, r), r) for index, r in enumerate(self._valuation_decisions)
+                       if r["market"] in wanted and str(r["session_date"]) == str(session_date)]
+            matches.sort(key=lambda entry: entry[0])
+            verified = [stored_decision(r) for _, r in matches]
+            return [record for record in verified if record is not None], sum(1 for record in verified if record is None)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT {self._DECISION_COLUMNS}
+                FROM valuation_decisions
+                WHERE market = ANY(%s) AND session_date = %s::date
+                ORDER BY prediction_instant, published_at, created_at
+                """,
+                (wanted, str(session_date)),
+            ).fetchall()
+        verified = [self._decision_record(row) for row in rows]
+        return [record for record in verified if record is not None], sum(1 for record in verified if record is None)
+
     def latest_valuation_decision_run(self) -> dict[str, Any] | None:
         """The latest decision run (``run_id``, ``generation_id``, both clocks as UTC ISO) by publication — what the nightly
         phase compares with the generation in force (``valuation_decision.last_run_at``)."""
