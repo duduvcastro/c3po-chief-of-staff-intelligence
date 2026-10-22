@@ -44,6 +44,11 @@ RETURNING run.id::text
 PriceHistoryCapture = tuple[dict[str, Any], dict[str, Any], datetime, str, list[dict[str, Any]]]
 PriceHistoryBuild = Callable[[dict[tuple[str, str], str]], PriceHistoryCapture]
 PriceBarKey = tuple[str, str, str, str, str]  # (market, symbol, session_date, source, fetched_at as a UTC instant) — the table's UNIQUE key
+# Ben Kenobi Records (valuation_change_records): the TP source a record states. A record appended from the official selection
+# carries the SERVED source in its own column (tp_source, migration 054); a record written before (tp_source NULL) is LEGACY,
+# never rewritten, and is labelled by the producer stream that wrote it (API ``tp_source_label``):
+LEGACY_TP_SOURCE_PRODUCER = "legacy_producer_blend"  # a producer row's our_tp (universe / on-demand cycle): the internal TP blended with the consensus
+LEGACY_TP_SOURCE_ONE_PAGER = "legacy_one_pager"  # a One Pager row's c3po_tp: the TP the One Pager showed then, its source not stamped
 # Database.save_sec_filing_events: save_ir_events' upsert plus the filing-header guard, decided inside ON CONFLICT DO UPDATE
 # on the locked conflicting row: a stored header-sourced acceptance instant (and its header fields) survives an incoming
 # event whose time is not from the header; an incoming header-sourced event always wins.
@@ -158,6 +163,7 @@ class Database:
         self._price_history_locks: dict[str, threading.RLock] = {}  # one critical section per market (C394-9); PostgreSQL: advisory lock
         self._price_history_locks_guard = threading.Lock()
         self._valuation_changes: list[dict[str, Any]] = []
+        self._served_capture_guard = threading.RLock()  # Ben Kenobi Records: one served capture at a time (PostgreSQL: advisory lock)
         self._server_usage_samples: list[dict[str, Any]] = []
         self._api_performance_buckets: list[dict[str, Any]] = []
         self._page_load_performance_samples: list[dict[str, Any]] = []
@@ -3732,9 +3738,7 @@ class Database:
         snapshot_id: str | None = None,
     ) -> str:
         snapshot_id = snapshot_id or str(uuid4())
-        prior_snapshot: dict[str, Any] | None = None
         if not self.database_url:
-            prior_snapshot = self.latest_analysis_snapshot(analysis_type, entity_key)
             current_snapshot = {  # the double stores COPIES, as PostgreSQL stores JSON: the caller's dicts never alias the store (F393-5)
                 "id": snapshot_id,
                 "analysis_type": analysis_type,
@@ -3745,10 +3749,10 @@ class Database:
                 "published_at": published_at,
             }
             # the store keeps what the JSONB column would give back (T4): the JSON round-trip of inputs/outputs — fresh objects, a
-            # datetime/date/Decimal/UUID as its string, a tuple as a list — never the caller's dicts (which the change capture
-            # below still reads, as the PostgreSQL path does)
+            # datetime/date/Decimal/UUID as its string, a tuple as a list — never the caller's dicts (which the official records
+            # below still read, as the PostgreSQL path does). Ben Kenobi Records no longer reads producer rows here: it records the
+            # SERVED rows when the official selection changes (insert_valuation_official_selection → capture_served_valuation_changes)
             self._analysis_snapshots.append({**current_snapshot, "inputs": self._jsonb_mirror(inputs), "outputs": self._jsonb_mirror(outputs)})
-            self._capture_valuation_changes(current_snapshot, prior_snapshot)
             self._record_official_predictions(current_snapshot)
             return snapshot_id
         with self.connection() as connection:
@@ -3761,11 +3765,6 @@ class Database:
                 """,
                 (analysis_type, entity_key),
             ).fetchone()
-            if prior:
-                prior_snapshot = dict(zip(
-                    ("id", "inputs", "outputs", "published_at", "methodology_version_id"),
-                    prior,
-                ))
             connection.execute(
                 """
                 INSERT INTO analysis_snapshots
@@ -3794,7 +3793,6 @@ class Database:
             "outputs": outputs,
             "published_at": published_at,
         }
-        self._capture_valuation_changes(current_snapshot, prior_snapshot)
         self._record_official_predictions(current_snapshot)
         return snapshot_id
 
@@ -4071,7 +4069,10 @@ class Database:
         unique too (partial unique index where the predecessor is null, F393-9): two bootstraps cannot both succeed.
         The double mirrors both indexes. A generation selecting a source that is not one of ``OFFICIAL_SOURCES`` is
         refused before either store is touched (``ValueError``, Q3): a reader meeting such a head serves nothing, so the
-        writer never creates one."""
+        writer never creates one.
+        Every generation — the nightly activation, a targeted admission, the bootstrap, the mesa's switch, rollback and
+        freeze — passes here: once it is stored, Ben Kenobi Records captures what the head now SERVES
+        (``capture_served_valuation_changes``), a capture that can never fail the generation already written."""
         source = generation.get("source")
         if source not in OFFICIAL_SOURCES:
             raise ValueError(f"valuation_official_selection.source {source!r} is not an official source (expected one of {OFFICIAL_SOURCES}): "
@@ -4082,15 +4083,16 @@ class Database:
             if any(item.get("previous_generation_id") == previous for item in self._valuation_official_selections):
                 raise SelectionConflict(conflict)
             self._valuation_official_selections.append(copy.deepcopy(generation))
-            return
-        with self.connection() as connection:
-            try:
-                self._insert_selection_row(connection, generation)
-            except Exception as error:
-                if type(error).__name__ == "UniqueViolation":
-                    raise SelectionConflict(conflict) from error
-                raise
-            connection.commit()
+        else:
+            with self.connection() as connection:
+                try:
+                    self._insert_selection_row(connection, generation)
+                except Exception as error:
+                    if type(error).__name__ == "UniqueViolation":
+                        raise SelectionConflict(conflict) from error
+                    raise
+                connection.commit()
+        self._capture_served_after_selection()  # Ben Kenobi Records: what the new head serves, after the generation is committed
 
     @staticmethod
     def _insert_selection_row(connection: Any, generation: dict[str, Any]) -> None:
@@ -5086,23 +5088,23 @@ class Database:
         return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
 
     def backfill_valuation_change_baseline(self) -> None:
+        """At start-up (``initialize``, PostgreSQL only), until Ben Kenobi Records holds its first SERVED record (``generation_id``
+        set, migration 054): capture what the official generation in force serves — the boundary with the legacy records, one
+        record per served symbol. Every later start finds a served record and only runs that ``EXISTS`` (backed by the partial
+        unique index of 054). Never fails the start-up: the next official generation re-diffs the ledger anyway."""
         if not self.database_url:
             return
-        with self.connection() as connection:
-            count = int(connection.execute("SELECT count(*) FROM valuation_change_records").fetchone()[0])
-        if count:
+        try:
+            with self.connection() as connection:
+                served = bool(connection.execute(
+                    "SELECT EXISTS (SELECT 1 FROM valuation_change_records WHERE generation_id IS NOT NULL)"
+                ).fetchone()[0])
+        except Exception:
+            logger.warning("valuation_change_records: could not read whether a served record exists — the next official generation captures the "
+                           "served TP", exc_info=True)
             return
-        snapshot = self.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
-        if not snapshot:
-            return
-        self._capture_valuation_changes(
-            {
-                **snapshot,
-                "analysis_type": "valuation_universe",
-                "entity_key": "B3_UNIVERSE",
-            },
-            None,
-        )
+        if not served:
+            self._capture_served_after_selection()
 
     def _valuation_logo_lookup(self) -> dict[tuple[str, str], str]:
         """{(market, symbol): logo_url} from each market's latest bulk universe
@@ -5152,6 +5154,7 @@ class Database:
             page = records[offset:offset + limit]
             for item in page:
                 item["logo_url"] = logo_lookup.get((item["market"], item["symbol"]))
+                self._label_valuation_change(item)
             return len(records), page
 
         conditions: list[str] = []
@@ -5179,7 +5182,7 @@ class Database:
                        tp_change_percent, old_buy_in, new_buy_in,
                        old_consensus_tp, new_consensus_tp, price,
                        old_confidence, new_confidence, methodology_name,
-                       methodology_version, metadata
+                       methodology_version, metadata, tp_source, generation_id::text
                 FROM valuation_change_records
                 {where}
                 ORDER BY changed_at DESC, created_at DESC, id DESC
@@ -5193,192 +5196,326 @@ class Database:
             "source_url", "currency", "old_tp", "new_tp", "tp_change_percent",
             "old_buy_in", "new_buy_in", "old_consensus_tp", "new_consensus_tp",
             "price", "old_confidence", "new_confidence", "methodology_name",
-            "methodology_version", "metadata",
+            "methodology_version", "metadata", "tp_source", "generation_id",
         )
         items = [dict(zip(keys, row)) for row in rows]
         for item in items:
             item["logo_url"] = logo_lookup.get((item["market"], item["symbol"]))
+            self._label_valuation_change(item)
         return total, items
 
-    def _capture_valuation_changes(
-        self,
-        current_snapshot: dict[str, Any],
-        prior_snapshot: dict[str, Any] | None,
-    ) -> None:
-        analysis_type = str(current_snapshot.get("analysis_type") or "")
-        if analysis_type not in {"valuation_universe", "security_valuation", "one_pager_valuation"}:
+    # ------------------------------------------------------------------ Ben Kenobi Records: the ledger of the SERVED official TP
+
+    _SERVED_CAPTURE = "served_generation_v1"  # metadata.capture of a record taken from the official selection (tp_source set)
+    _SERVED_CAPTURE_LOCK = "c3po_valuation_change_served_capture"  # one served capture at a time (PostgreSQL advisory lock)
+    # the four numbers a served record states — (changed-field label the tab maps, record column, decimals compared) — read from the
+    # served row ONCE (``_served_values``) for the comparison and for the record alike
+    _SERVED_FIELDS: tuple[tuple[str, str, int], ...] = (
+        ("c3po_tp", "new_tp", 2), ("buy_in", "new_buy_in", 2), ("consensus_tp", "new_consensus_tp", 2), ("confidence", "new_confidence", 1),
+    )
+    # what db/009 (re-run at every start) writes into EVERY `initial` record: a served `initial` record is born with exactly these
+    # values and no `event_id` key, so that start-up UPDATE never changes its content
+    _INITIAL_SUMMARY = "Base inicial registrada para comparação com futuras revisões de valuation."
+    _INITIAL_SOURCE_NAME = "C3PO Valuation Engine"
+
+    @staticmethod
+    def _tp_source_label(tp_source: Any, metadata: Any) -> str:
+        """What a record states as its TP source: the SERVED official source (``tp_source``, a record of the selection), or —
+        ``tp_source`` NULL, a record written before migration 054 and never rewritten — the legacy stream that wrote it: the
+        One Pager's row, or a producer's row (universe / on-demand cycle: ``our_tp``, the internal TP blended with the consensus)."""
+        if tp_source:
+            return str(tp_source)
+        stream = metadata.get("analysis_type") if isinstance(metadata, dict) else None
+        return LEGACY_TP_SOURCE_ONE_PAGER if stream == "one_pager_valuation" else LEGACY_TP_SOURCE_PRODUCER
+
+    @classmethod
+    def _label_valuation_change(cls, item: dict[str, Any]) -> None:
+        """The API view of a record (a copy): ``tp_source``/``generation_id`` as stored (``None`` for a legacy record), ``legacy``
+        and ``tp_source_label`` — the served source, or ``legacy_producer_blend`` / ``legacy_one_pager``."""
+        item["tp_source"] = str(item["tp_source"]) if item.get("tp_source") else None
+        item["generation_id"] = str(item["generation_id"]) if item.get("generation_id") else None
+        item["legacy"] = item["tp_source"] is None
+        item["tp_source_label"] = cls._tp_source_label(item["tp_source"], item.get("metadata"))
+
+    def _capture_served_after_selection(self) -> None:
+        """Ben Kenobi Records after a generation was written (or at start-up, ``backfill_valuation_change_baseline``). It never
+        fails the caller: the generation is committed already, and the next capture re-diffs the ledger against what is served."""
+        try:
+            self.capture_served_valuation_changes()
+        except Exception:
+            logger.warning("valuation_change_records: the served capture failed — the next official generation re-diffs the ledger against what "
+                           "it serves", exc_info=True)
+
+    @contextmanager
+    def _served_capture_lock(self) -> Iterator[None]:
+        if not self.database_url:
+            with self._served_capture_guard:
+                yield
             return
-        current_rows = self._valuation_rows(analysis_type, current_snapshot.get("outputs"))
-        if not current_rows:
-            return
-        prior_rows = self._valuation_rows(analysis_type, (prior_snapshot or {}).get("outputs"))
-        previous_by_symbol = {
-            str(item.get("symbol") or "").upper(): item
-            for item in prior_rows if item.get("symbol")
-        }
-        changed_rows: list[tuple[dict[str, Any], dict[str, Any] | None, list[str]]] = []
-        for current in current_rows:
-            symbol = str(current.get("symbol") or "").upper()
-            new_tp = self._valuation_number(current.get("our_tp") or current.get("c3po_tp"))
-            if not symbol or not new_tp or new_tp <= 0:
+        with self.connection() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (self._SERVED_CAPTURE_LOCK,))
+            yield
+            connection.commit()  # ends the transaction: the advisory lock is released
+
+    def _served_capture_head(self) -> dict[str, Any] | None:
+        """The generation in force when the capture runs (inside its lock), in the head's order (activated_at DESC, created_at
+        DESC) — read here, not through ``latest_valuation_official_selection``: the capture is not a step of the selection
+        writers' protocol (it runs after their INSERT, never between their read and their write)."""
+        if not self.database_url:
+            return self._latest_selection_memory()
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT generation_id::text, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at,
+                       activated_by, previous_generation_id::text, receipt
+                FROM valuation_official_selection
+                ORDER BY activated_at DESC, created_at DESC LIMIT 1
+                """
+            ).fetchone()
+        return self._selection_record(row)
+
+    def _latest_valuation_changes(self) -> dict[tuple[str, str], dict[str, Any]]:
+        """The ledger's own latest record per (market, symbol), whatever its regime, in the order the tab lists them
+        (``changed_at``, then insertion): what a served row is compared with. Copies."""
+        if not self.database_url:
+            latest: dict[tuple[str, str], tuple[datetime, int, dict[str, Any]]] = {}
+            for index, item in enumerate(self._valuation_changes):
+                market, symbol, changed_at = item.get("market"), item.get("symbol"), item.get("changed_at")
+                if not market or not symbol or not isinstance(changed_at, datetime):
+                    continue
+                key, instant = (str(market), str(symbol)), self._selection_instant(changed_at)  # a naive clock is UTC, as the column reads it
+                held = latest.get(key)
+                if held is None or (instant, index) >= (held[0], held[1]):
+                    latest[key] = (instant, index, item)
+            return {key: copy.deepcopy(entry[2]) for key, entry in latest.items()}
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (market, symbol) id::text, market, symbol, changed_at, new_tp, new_buy_in, new_consensus_tp,
+                       new_confidence, tp_source, metadata
+                FROM valuation_change_records
+                ORDER BY market, symbol, changed_at DESC, created_at DESC, id DESC
+                """
+            ).fetchall()
+        keys = ("id", "market", "symbol", "changed_at", "new_tp", "new_buy_in", "new_consensus_tp", "new_confidence", "tp_source", "metadata")
+        return {(str(row[1]), str(row[2])): dict(zip(keys, row)) for row in rows}
+
+    @classmethod
+    def _served_values(cls, served: dict[str, Any]) -> dict[str, float | None]:
+        """The four numbers a served row states, keyed by the record's columns: the official TP and buy-in (``our_tp``/``buy_in``,
+        the generation's record), the consensus shown beside it (never inside) and the confidence."""
+        return {"new_tp": cls._valuation_number(served.get("our_tp")), "new_buy_in": cls._valuation_number(served.get("buy_in")),
+                "new_consensus_tp": cls._valuation_number(served.get("public_consensus_tp")),
+                "new_confidence": cls._valuation_number(served.get("valuation_confidence"))}
+
+    @classmethod
+    def _served_changed_fields(cls, previous: dict[str, Any] | None, values: dict[str, float | None], tp_source: str) -> list[str]:
+        """What a served row changes against the ledger's latest record of its symbol: each of the four numbers at the precision
+        the tab shows, plus ``tp_source`` when that record is of another regime (legacy: NULL) or of another official source (a
+        switch, a rollback). Empty when nothing changed — and for a symbol new to the ledger (``previous`` is ``None``)."""
+        if previous is None:
+            return []
+        changed: list[str] = []
+        for label, column, decimals in cls._SERVED_FIELDS:
+            old_value, new_value = cls._valuation_number(previous.get(column)), values[column]
+            if old_value is None and new_value is None:
                 continue
-            previous = previous_by_symbol.get(symbol)
-            fields = self._valuation_changed_fields(previous, current)
-            if previous is None or fields:
-                changed_rows.append((current, previous, fields or ["initial_valuation"]))
-        if not changed_rows:
-            return
+            if old_value is None or new_value is None or round(old_value, decimals) != round(new_value, decimals):
+                changed.append(label)
+        if (previous.get("tp_source") or None) != tp_source:
+            changed.append("tp_source")
+        return changed
 
-        inputs = current_snapshot.get("inputs") if isinstance(current_snapshot.get("inputs"), dict) else {}
-        entity_key = str(current_snapshot.get("entity_key") or "")
-        if entity_key in {"NASDAQ_UNIVERSE", "NYSE_UNIVERSE"}:
-            # The bulk US screener snapshot's own entity_key names the exact
-            # exchange -- authoritative, unlike inputs.market (which historically
-            # carried the same "NASDAQ"/"NYSE" string but got collapsed to a
-            # generic "US" or mislabeled "B3" by earlier fallback logic; see
-            # db/018_correct_us_valuation_change_markets.sql for the backfill).
-            market = entity_key.split("_")[0]
-        elif entity_key == "B3_UNIVERSE":
-            market = "B3"
-        else:
-            raw_market = str(inputs.get("market") or ("B3" if analysis_type != "one_pager_valuation" else "US")).upper()
-            market = raw_market if raw_market in {"B3", "NASDAQ", "NYSE", "US"} else "B3"
-        events = self.latest_valuation_ir_events(
-            [str(current.get("symbol") or "") for current, _, _ in changed_rows],
-            market=market,
-        )
-        changed_at = current_snapshot.get("published_at")
-        if not isinstance(changed_at, datetime):
-            changed_at = datetime.now().astimezone()
-        prior_at = (prior_snapshot or {}).get("published_at")
-        records: list[dict[str, Any]] = []
-        for current, previous, changed_fields in changed_rows:
-            symbol = str(current.get("symbol") or "").upper()
-            event = events.get(symbol)
-            event_at = self._latest_datetime(
-                event.get("published_at") if event else None,
-                event.get("collected_at") if event else None,
-            )
-            event_is_new = previous is not None and self._is_after(event_at, prior_at)
-            change_event = event if event_is_new else None
-            methodology_changed = bool(
-                prior_snapshot
-                and prior_snapshot.get("methodology_version_id") != current_snapshot.get("methodology_version_id")
-            )
-            if previous is None:
-                trigger_type = "initial"
-                trigger_title = "Registro inicial do valuation canônico"
-            elif event_is_new and str((event or {}).get("event_type") or "") == "Financial Results":
-                trigger_type = "financial_results"
-                trigger_title = str((event or {}).get("title") or "Novo resultado financeiro incorporado")
-            elif event_is_new:
-                trigger_type = "material_event"
-                trigger_title = str((event or {}).get("title") or "Novo material relevante incorporado")
-            elif methodology_changed:
-                trigger_type = "methodology"
-                trigger_title = "Metodologia de valuation atualizada"
-            elif analysis_type == "one_pager_valuation":
-                trigger_type = "web_research"
-                trigger_title = str(inputs.get("trigger_title") or "One Pager recalculado com novas evidências")
-            else:
-                trigger_type = "market_data"
-                trigger_title = "Recalibração com dados de mercado e fundamentos"
+    def capture_served_valuation_changes(self) -> int:
+        """Ben Kenobi Records from the OFFICIAL SELECTION (V3.2 rev 7 §7-bis, the owner's "um só para tudo"): the rows the generation
+        in force SERVES — ``valuation_official.official_rows`` per market plus ``official_row`` for its targeted admissions, exactly
+        what Last Jedi, Dark Side, the One Pager and R2D2 read — compared with the ledger's own latest record per (market, symbol).
+        A record is appended for every served symbol that is new to the ledger (``initial``), whose latest record is of another
+        regime or source (``methodology``: the boundary with the legacy records, a switch, a rollback), or whose TP, buy-in,
+        consensus or confidence moved at the precision the tab shows (an IR event newer than that latest record names the trigger;
+        else a new methodology version; else ``market_data``). Every record carries ``tp_source`` and ``generation_id`` (columns of
+        migration 054, repeated in ``metadata`` with the served identity: cycle, scope, session, row hash, prediction instant);
+        ``changed_at`` is the generation's activation — when the served number started being served —, moved 1 µs past the
+        symbol's latest record when that one is not older, so the latest record of a symbol is always the served one.
+        Append-only and idempotent: one capture at a time (advisory lock / ``_served_capture_guard``), the ledger diffed with
+        itself (a capture that failed is caught up by the next one; a freeze, which serves the same rows, appends nothing) and
+        ``(generation_id, market, symbol)`` unique. Legacy records (``tp_source`` NULL) are never rewritten; producer snapshots
+        are not read. Returns how many records were appended."""
+        from . import valuation_official as official  # local import, as _record_official_predictions: that module reads this storage API
+        with self._served_capture_lock():
+            head = self._served_capture_head()
+            source = (head or {}).get("source")
+            if not head or source not in OFFICIAL_SOURCES:
+                return 0  # nothing is served (no generation, or a head whose source is unknown: Q3) — nothing is recorded
+            served: dict[tuple[str, str], dict[str, Any]] = {}
+            for market in official.MARKETS:
+                for symbol, item in official.official_rows(self, market, generation=head).items():
+                    served.setdefault((market, str(symbol).strip().upper()), item)
+            for symbol in sorted(head.get("targeted") or {}):  # targeted admissions are B3 (valuation_official.market_of_entity)
+                clean = str(symbol).strip().upper()
+                if ("B3", clean) not in served:
+                    item = official.official_row(self, "B3", clean, generation=head)
+                    if item is not None:
+                        served[("B3", clean)] = item
+            latest = self._latest_valuation_changes()
+            changed: list[tuple[str, str, dict[str, Any], str, dict[str, float | None], dict[str, Any] | None, list[str]]] = []
+            for (market, symbol), item in sorted(served.items()):
+                record_source = str(item.get("tp_source") or source)
+                values = self._served_values(item)
+                if values["new_tp"] is None or values["new_tp"] <= 0:
+                    continue  # a served TP is a record's positive tp: never met, never guessed
+                previous = latest.get((market, symbol))
+                fields = self._served_changed_fields(previous, values, record_source)
+                if previous is None or fields:
+                    changed.append((market, symbol, item, record_source, values, previous, fields or ["initial_valuation"]))
+            if not changed:
+                return 0
+            events: dict[tuple[str, str], dict[str, Any]] = {}
+            for ir_market in ("B3", "US"):  # ir_security_map keys a listing by B3/US only (db/002): NASDAQ/NYSE symbols are "US" there
+                symbols = [symbol for market, symbol, *_ in changed if ("B3" if market == "B3" else "US") == ir_market]
+                if symbols:
+                    events.update({(ir_market, symbol): event for symbol, event in self.latest_valuation_ir_events(symbols, market=ir_market).items()})
+            generation_id = str(head["generation_id"])
+            activated_at = self._selection_instant(head["activated_at"])
+            records: list[dict[str, Any]] = []
+            for market, symbol, item, record_source, values, previous, fields in changed:
+                previous_source = (previous or {}).get("tp_source") or None
+                previous_label = self._tp_source_label(previous_source, (previous or {}).get("metadata")) if previous is not None else None
+                previous_at = (previous or {}).get("changed_at")
+                previous_instant = self._selection_instant(previous_at) if isinstance(previous_at, datetime) else None
+                record_at = previous_instant + timedelta(microseconds=1) if previous_instant is not None and previous_instant >= activated_at else activated_at
+                previous_metadata = (previous or {}).get("metadata") if isinstance((previous or {}).get("metadata"), dict) else {}
+                event = events.get(("B3" if market == "B3" else "US", symbol))
+                event_at = self._latest_datetime(event.get("published_at") if event else None, event.get("collected_at") if event else None)
+                change_event = event if previous is not None and self._is_after(event_at, previous_instant) else None
+                currency = str(item.get("currency") or ("BRL" if market == "B3" else "USD"))
+                old_tp = self._valuation_number((previous or {}).get("new_tp"))
+                old_buy_in = self._valuation_number((previous or {}).get("new_buy_in"))
+                new_tp = values["new_tp"] or 0.0
+                summary = ""
+                if previous is None:
+                    trigger_type, trigger_title = "initial", "Registro inicial do TP oficial servido"
+                    summary, source_name, source_url = self._INITIAL_SUMMARY, self._INITIAL_SOURCE_NAME, None
+                else:
+                    if previous_source != record_source:
+                        change_event = None  # a change of regime or of source: the record states the selection, not an event
+                        trigger_type = "methodology"
+                        if previous_source is not None:
+                            trigger_title = f"TP oficial servido: {record_source} (antes: {previous_source})"
+                            note = f" Fonte do TP oficial servido: {previous_source} → {record_source}."
+                        elif previous_label == LEGACY_TP_SOURCE_ONE_PAGER:
+                            trigger_title = f"TP oficial servido: {record_source} (o registro anterior, do One Pager, não marcava a fonte)"
+                            note = " O valor anterior é o do One Pager (registro legado, fonte não marcada); este é o TP oficial servido."
+                        else:
+                            trigger_title = f"TP oficial servido: {record_source} (o registro anterior é legado: TP do produtor com consenso)"
+                            note = " O valor anterior é o TP do produtor com consenso (registro legado); este é o TP oficial servido."
+                    elif change_event is not None:
+                        financial = str(change_event.get("event_type") or "") == "Financial Results"
+                        trigger_type = "financial_results" if financial else "material_event"
+                        trigger_title = str(change_event.get("title") or ("Novo resultado financeiro incorporado" if financial
+                                                                          else "Novo material relevante incorporado"))
+                        summary, note = str(change_event.get("summary") or "").strip(), ""
+                    elif str(item.get("tp_source_version")) != str(previous_metadata.get("tp_source_version")):
+                        trigger_type, trigger_title, note = "methodology", "Metodologia de valuation atualizada", ""
+                    else:
+                        trigger_type, trigger_title, note = "market_data", "Recalibração com dados de mercado e fundamentos", ""
+                    if not summary:
+                        summary = self._valuation_change_summary(currency, old_tp, new_tp, old_buy_in, values["new_buy_in"], fields) + note
+                    event_source = str((change_event or {}).get("source_code") or "")
+                    source_name = (event_source.upper() if event_source.lower() in {"cvm", "sec", "ri"} else event_source) or f"Seleção oficial C3PO ({record_source})"
+                    raw_url = (change_event or {}).get("document_url") or (change_event or {}).get("official_url")
+                    source_url = str(raw_url) if raw_url else None
+                metadata: dict[str, Any] = {
+                    "capture": self._SERVED_CAPTURE,
+                    "tp_source": record_source,  # the columns, repeated: the CSV export (scripts/r2d2-export-readonly.sh) reads metadata, not them
+                    "generation_id": generation_id,
+                    "generation_activated_at": activated_at.isoformat(),
+                    "changed_fields": fields,
+                    "tp_source_version": item.get("tp_source_version"),
+                    "official_cycle_id": item.get("official_cycle_id"),
+                    "official_scope": item.get("official_scope"),
+                    "official_session_date": item.get("official_session_date"),
+                    "official_row_sha256": item.get("official_row_sha256"),
+                    "prediction_instant": item.get("prediction_instant"),
+                    "official_published_at": item.get("official_published_at"),
+                    "previous_record_id": (previous or {}).get("id"),
+                    "previous_tp_source": previous_source,
+                    "previous_tp_source_label": previous_label,
+                    "fundamentals_as_of": item.get("fundamentals_as_of"),
+                    "analyst_count": item.get("analyst_count"),
+                    "consensus_weight_percent": item.get("consensus_weight_percent"),  # the served record's: 0 for official_internal_v1
+                    "analysis_type": "valuation_official_selection",
+                }
+                if trigger_type != "initial":  # db/009 strips `event_id` from every initial record at every start: never written there
+                    metadata["event_id"] = (change_event or {}).get("id")
+                records.append({
+                    "id": str(uuid4()),
+                    "snapshot_id": None,  # the served identity is the generation (+ metadata.official_cycle_id), never one producer snapshot
+                    "generation_id": generation_id,
+                    "tp_source": record_source,
+                    "market": market,
+                    "symbol": symbol,
+                    "company_name": str(item.get("name") or item.get("company_name") or (event or {}).get("company_name") or symbol),
+                    "changed_at": record_at,
+                    "trigger_type": trigger_type,
+                    "trigger_title": trigger_title,
+                    "trigger_summary": summary[:2000],
+                    "source_name": source_name,
+                    "source_url": source_url,
+                    "currency": currency,
+                    "old_tp": old_tp,
+                    "new_tp": new_tp,
+                    "tp_change_percent": ((new_tp / old_tp) - 1) * 100 if old_tp and old_tp > 0 else None,
+                    "old_buy_in": old_buy_in,
+                    "new_buy_in": values["new_buy_in"],
+                    "old_consensus_tp": self._valuation_number((previous or {}).get("new_consensus_tp")),
+                    "new_consensus_tp": values["new_consensus_tp"],
+                    "price": self._valuation_number(item.get("price")),
+                    "old_confidence": self._valuation_number((previous or {}).get("new_confidence")),
+                    "new_confidence": values["new_confidence"],
+                    "methodology_name": "C3PO Valuation Model",
+                    "methodology_version": self._valuation_integer(item.get("tp_source_version")),
+                    "metadata": metadata,
+                })
+            self._store_valuation_changes(records)
+            return len(records)
 
-            old_tp = self._valuation_number((previous or {}).get("our_tp") or (previous or {}).get("c3po_tp"))
-            new_tp = self._valuation_number(current.get("our_tp") or current.get("c3po_tp")) or 0.0
-            old_buy_in = self._valuation_number((previous or {}).get("buy_in"))
-            new_buy_in = self._valuation_number(current.get("buy_in"))
-            old_consensus = self._valuation_number((previous or {}).get("public_consensus_tp") or (previous or {}).get("consensus_tp"))
-            new_consensus = self._valuation_number(current.get("public_consensus_tp") or current.get("consensus_tp"))
-            old_confidence = self._valuation_number((previous or {}).get("valuation_confidence") or (previous or {}).get("confidence"))
-            new_confidence = self._valuation_number(current.get("valuation_confidence") or current.get("confidence"))
-            change_percent = ((new_tp / old_tp) - 1) * 100 if old_tp and old_tp > 0 else None
-            currency = str(current.get("currency") or ("BRL" if market == "B3" else "USD"))
-            source_name = str(
-                (change_event or {}).get("source_code")
-                or inputs.get("source")
-                or current.get("source")
-                or "C3PO valuation engine"
-            )
-            source_url = (
-                (change_event or {}).get("document_url")
-                or (change_event or {}).get("official_url")
-                or inputs.get("source_url")
-            )
-            company_name = str(
-                current.get("name")
-                or current.get("company_name")
-                or (event or {}).get("company_name")
-                or symbol
-            )
-            summary = str((change_event or {}).get("summary") or "").strip()
-            if not summary:
-                summary = self._valuation_change_summary(
-                    currency,
-                    old_tp,
-                    new_tp,
-                    old_buy_in,
-                    new_buy_in,
-                    changed_fields,
-                )
-            records.append({
-                "id": str(uuid4()),
-                "snapshot_id": current_snapshot.get("id"),
-                "market": market,
-                "symbol": symbol,
-                "company_name": company_name,
-                "changed_at": changed_at,
-                "trigger_type": trigger_type,
-                "trigger_title": trigger_title,
-                "trigger_summary": summary[:2000],
-                "source_name": source_name.upper() if source_name.lower() in {"cvm", "sec", "ri"} else source_name,
-                "source_url": str(source_url) if source_url else None,
-                "currency": currency,
-                "old_tp": old_tp,
-                "new_tp": new_tp,
-                "tp_change_percent": change_percent,
-                "old_buy_in": old_buy_in,
-                "new_buy_in": new_buy_in,
-                "old_consensus_tp": old_consensus,
-                "new_consensus_tp": new_consensus,
-                "price": self._valuation_number(current.get("price")),
-                "old_confidence": old_confidence,
-                "new_confidence": new_confidence,
-                "methodology_name": str(inputs.get("methodology_name") or "C3PO Valuation Model"),
-                "methodology_version": self._valuation_integer(inputs.get("methodology_version")),
-                "metadata": {
-                    "changed_fields": changed_fields,
-                    "event_id": (change_event or {}).get("id"),
-                    "fundamentals_as_of": current.get("fundamentals_as_of"),
-                    "analyst_count": current.get("analyst_count"),
-                    "consensus_weight_percent": current.get("consensus_weight_percent"),
-                    "analysis_type": analysis_type,
-                },
-            })
-        self._store_valuation_changes(records)
+    @staticmethod
+    def _valuation_change_key(item: dict[str, Any]) -> tuple[Any, Any, Any, Any]:
+        """The identity the unique indexes give a record — ``(snapshot, market, symbol)`` for a legacy one (007),
+        ``(generation, market, symbol)`` for a served one (054) — on which the double dedups too."""
+        return (item.get("snapshot_id"), item.get("generation_id"), item.get("market"), item.get("symbol"))
+
+    _VALUATION_CHANGE_NUMERIC = ("old_tp", "new_tp", "tp_change_percent", "old_buy_in", "new_buy_in", "old_consensus_tp", "new_consensus_tp",
+                                 "price", "old_confidence", "new_confidence")  # the NUMERIC columns, in the INSERT's order
 
     def _store_valuation_changes(self, records: list[dict[str, Any]]) -> None:
+        """Appends the SERVED records of one capture: at most one per ``(generation_id, market, symbol)`` — the partial unique index of
+        migration 054, mirrored by the double — so a second process capturing the same generation appends nothing. NUMERIC values
+        are bound as their shortest round-trip decimal (``_numeric_param``): the next capture reads back exactly the number it
+        compares (a float8 → numeric cast keeps 15 digits). The double stores deep copies, as the table stores values."""
         if not records:
             return
+        if any(not item.get("generation_id") or not item.get("tp_source") for item in records):
+            raise ValueError("valuation_change_records: only records of the official selection are appended — generation_id and tp_source set "
+                             "(migration 054); a legacy record is never written again")
         if not self.database_url:
-            existing = {
-                (item.get("snapshot_id"), item["market"], item["symbol"])
-                for item in self._valuation_changes
-            }
-            self._valuation_changes.extend(
-                item for item in records
-                if (item.get("snapshot_id"), item["market"], item["symbol"]) not in existing
-            )
+            existing = {self._valuation_change_key(item) for item in self._valuation_changes}
+            for item in records:  # one per key, within the batch too: each row of the executemany is its own INSERT ... ON CONFLICT
+                key = self._valuation_change_key(item)
+                if key not in existing:
+                    existing.add(key)
+                    self._valuation_changes.append(copy.deepcopy(item))
             return
         values = [(
             item["id"], item.get("snapshot_id"), item["market"], item["symbol"],
             item["company_name"], item["changed_at"], item["trigger_type"],
             item["trigger_title"], item["trigger_summary"], item["source_name"],
-            item.get("source_url"), item["currency"], item.get("old_tp"), item["new_tp"],
-            item.get("tp_change_percent"), item.get("old_buy_in"), item.get("new_buy_in"),
-            item.get("old_consensus_tp"), item.get("new_consensus_tp"), item.get("price"),
-            item.get("old_confidence"), item.get("new_confidence"), item["methodology_name"],
-            item.get("methodology_version"), json.dumps(item.get("metadata", {}), ensure_ascii=False),
+            item.get("source_url"), item["currency"],
+            *(self._numeric_param(item.get(column)) for column in self._VALUATION_CHANGE_NUMERIC),
+            item["methodology_name"], item.get("methodology_version"),
+            json.dumps(item.get("metadata", {}), ensure_ascii=False, default=str),
+            item["tp_source"], item["generation_id"],
         ) for item in records]
         with self.connection() as connection:
             with connection.cursor() as cursor:
@@ -5390,45 +5527,15 @@ class Database:
                          source_url, currency, old_tp, new_tp, tp_change_percent,
                          old_buy_in, new_buy_in, old_consensus_tp, new_consensus_tp,
                          price, old_confidence, new_confidence, methodology_name,
-                         methodology_version, metadata)
+                         methodology_version, metadata, tp_source, generation_id)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                    ON CONFLICT (snapshot_id, market, symbol) WHERE snapshot_id IS NOT NULL
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                    ON CONFLICT (generation_id, market, symbol) WHERE generation_id IS NOT NULL
                     DO NOTHING
                     """,
                     values,
                 )
             connection.commit()
-
-    @staticmethod
-    def _valuation_rows(analysis_type: str, outputs: Any) -> list[dict[str, Any]]:
-        if not isinstance(outputs, dict):
-            return []
-        if analysis_type == "valuation_universe":
-            rows = outputs.get("rows")
-            return [item for item in rows if isinstance(item, dict)] if isinstance(rows, list) else []
-        row = outputs.get("row")
-        return [row] if isinstance(row, dict) else []
-
-    @classmethod
-    def _valuation_changed_fields(cls, previous: dict[str, Any] | None, current: dict[str, Any]) -> list[str]:
-        if previous is None:
-            return []
-        fields = (
-            ("c3po_tp", "our_tp", "c3po_tp", 2),
-            ("buy_in", "buy_in", "buy_in", 2),
-            ("consensus_tp", "public_consensus_tp", "consensus_tp", 2),
-            ("confidence", "valuation_confidence", "confidence", 1),
-        )
-        changed: list[str] = []
-        for label, b3_key, pager_key, decimals in fields:
-            old_value = cls._valuation_number(previous.get(b3_key) if b3_key in previous else previous.get(pager_key))
-            new_value = cls._valuation_number(current.get(b3_key) if b3_key in current else current.get(pager_key))
-            if old_value is None and new_value is None:
-                continue
-            if old_value is None or new_value is None or round(old_value, decimals) != round(new_value, decimals):
-                changed.append(label)
-        return changed
 
     @staticmethod
     def _valuation_change_summary(

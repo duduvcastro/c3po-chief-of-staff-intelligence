@@ -1038,6 +1038,12 @@ class ValuationChangeRecord(BaseModel):
     methodology_name: str
     methodology_version: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # Ben Kenobi Records states the SERVED official TP (migration 054): the source and generation of the served row a record states;
+    # both None for a LEGACY record (written before, never rewritten), whose ``tp_source_label`` names the stream that wrote it
+    tp_source: str | None = None
+    generation_id: str | None = None
+    legacy: bool = True
+    tp_source_label: str | None = None  # the served source (official_internal_v1, ...) or legacy_producer_blend / legacy_one_pager
 
 
 class ValuationChangeResponse(BaseModel):
