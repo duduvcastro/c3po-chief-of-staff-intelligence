@@ -86,7 +86,8 @@ jobs:
           mkdir -p "$dir" || exit 1
           # gh >= 2.8x refuses to write a body with terminal escape sequences (job logs have ANSI colours) unless allowed
           esc=()
-          if gh api --help 2>&1 | grep -q -- '--allow-escape-sequences'; then esc=(--allow-escape-sequences); fi
+          help=$(gh api --help 2>&1 || true)  # read whole: a grep -q pipe would SIGPIPE gh and fail under pipefail
+          if [[ "$help" == *--allow-escape-sequences* ]]; then esc=(--allow-escape-sequences); fi
           for id in $FAILED; do
             [[ "$id" =~ ^[0-9]{1,20}$ ]] || exit 1
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" > "$dir/$id.jobs.json" || exit 1

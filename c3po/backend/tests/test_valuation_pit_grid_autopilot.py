@@ -563,5 +563,5 @@ def test_first_chunk_retries_a_retryable_refusal_and_stops_on_anything_else() ->
 def test_failed_chunk_logs_are_saved_despite_terminal_escapes() -> None:
     # gh refuses to write a job log with ANSI escapes unless allowed (ticks of 21/10/2026 failed on this)
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
-    assert "grep -q -- '--allow-escape-sequences'" in text
+    assert '[[ "$help" == *--allow-escape-sequences* ]]' in text and "grep -q -- '--allow-escape-sequences'" not in text
     assert 'gh api ${esc[@]+"${esc[@]}"} "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs"' in text
