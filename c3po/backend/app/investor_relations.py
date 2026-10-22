@@ -821,8 +821,11 @@ class InvestorRelationsService:
             # unattributed: header failures no watched exception explains (a header read without a filed date) and errors that
             # name no issuer — the decisor then counts the pass as covering no US name at all
             unattributed = max(0, result.header_failures - watch.caught) + asfiled_unparsed_errors(result.errors)
+            failed = {*asfiled_failed_issuers(result.errors), *watch.failed}
+            # the issuers this pass DID observe (CIKs only): the decisor covers a name only when its issuer is here
+            observed = sorted({tickers[symbol.upper()] for symbol in universe if tickers.get(symbol.upper())} - failed)
             self.database.update_ingestion_run_metadata(run_id, {
-                "issuers": result.issuers, "failed_issuers": sorted({*asfiled_failed_issuers(result.errors), *watch.failed}),
+                "issuers": result.issuers, "failed_issuers": sorted(failed), "observed_issuers": observed,
                 "unattributed_failures": unattributed, "header_failures": result.header_failures, "unmapped_symbols": result.unmapped_symbols})
             # a pass the SEC throttled is 'partial' (migration 001 admits it): it did not look at the whole universe, so the
             # Decisor V1 never counts it as the as-filed poll being alive (valuation_decision.name_staleness)

@@ -282,7 +282,10 @@ def test_a_failed_filing_header_never_reads_as_an_observed_issuer(monkeypatch: p
     _run(database)
     aapl, ko = _record(database, "NASDAQ", "AAPL"), _record(database, "NYSE", "KO")
     assert aapl["reason_codes"] == [decisor.STALENESS_SOURCE_STALE] and "did not observe the name's issuer" in aapl["checks"]["tp_staleness"]["detail"]
-    assert decisor.STALENESS_SOURCE_STALE not in ko["reason_codes"]
+    # KO's issuer was not in this pass at all (only AAPL was polled): the pass records the issuers it observed, so KO is
+    # not covered either (fail closed) — before observed_issuers it read as covered by a pass that never looked at it
+    assert run["metadata"]["observed_issuers"] == []
+    assert decisor.STALENESS_SOURCE_STALE in ko["reason_codes"] and "did not observe" in ko["checks"]["tp_staleness"]["detail"]
 
 
 class _HeaderWithoutDate(_HeaderTimeout):
@@ -1081,3 +1084,16 @@ def test_the_aggregate_us_market_reads_the_xnys_calendar_like_its_exchanges() ->
         nasdaq = decisor.name_earnings(calendars, None, "NASDAQ", "AAPL", at=RUN, expected_session=SESSION)
         assert us == nasdaq and us["window"]
     assert decisor.name_earnings(in_window, None, "US", "AAPL", at=RUN, expected_session=SESSION)["within"] is True
+
+
+def test_a_pass_that_records_its_observed_issuers_covers_only_those_names() -> None:
+    def read(observed: list[str] | None, issuer: str | None) -> dict:
+        coverage = {"known": True, "failed_issuers": [], "unattributed_failures": 0, "observed_issuers": observed}
+        poll = {"started_at": (RUN - timedelta(hours=1)).isoformat(), "completed_at": (RUN - timedelta(minutes=30)).isoformat()}
+        return decisor.name_staleness({"status": "ok", "known_at": RUN.isoformat(), "pending": {}, "poll_coverage": coverage,
+                                       "trigger_poll": poll}, "NASDAQ", "AAPL", issuer_key=issuer)
+    assert read(["0000999201"], "0000999201")["source_status"] == "ok"
+    unknown = read(["0000999201"], None)  # no CIK / no 10-Q on file: fail closed even on a clean pass
+    assert unknown["source_status"] == "stale" and "issuer is unknown" in unknown["detail"]
+    remapped = read(["0000999202"], "0000999201")  # the ticker's 051 issuer is no longer what the SEC map polled
+    assert remapped["source_status"] == "stale" and "did not observe" in remapped["detail"]

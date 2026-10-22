@@ -528,8 +528,10 @@ def poll_coverage(run: Mapping[str, Any] | None) -> dict[str, Any]:
     metadata = (run or {}).get("metadata") if isinstance((run or {}).get("metadata"), Mapping) else {}
     failed, unattributed = (metadata or {}).get("failed_issuers"), (metadata or {}).get("unattributed_failures")
     known = isinstance(failed, list) and isinstance(unattributed, int) and not isinstance(unattributed, bool)
+    observed = (metadata or {}).get("observed_issuers")
     return {"known": known, "failed_issuers": sorted({str(item) for item in failed}) if isinstance(failed, list) else [],
-            "unattributed_failures": unattributed if known else None}
+            "unattributed_failures": unattributed if known else None,
+            "observed_issuers": sorted({str(item) for item in observed}) if isinstance(observed, list) else None}
 
 
 def _poll_fresh(poll: Mapping[str, Any] | None, known_at: Any, thresholds: DecisorThresholds) -> bool:
@@ -552,8 +554,8 @@ def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str, *
     → ``source_status`` ``stale`` whether or not the table exists (an absent table then reads as an empty one: a night
     from before 053 replays identically once it lands), the marks known still listed; a live poll and no table →
     ``unavailable``; else ``ok``. A live poll covers a name only if it observed the name's issuer (``issuer_key``, from
-    the 051 filings known at D): an issuer in the poll's ``failed_issuers`` — or, when the poll missed any issuer, a name
-    whose issuer is unknown — is ``source_status`` ``stale`` too. ``status``: ``stale`` with the pending filings,
+    the 051 filings known at D): a name whose issuer is unknown, an issuer in the poll's ``failed_issuers``, or (when the
+    poll recorded ``observed_issuers``) an issuer it did not observe, is ``source_status`` ``stale`` too (fail closed). ``status``: ``stale`` with the pending filings,
     ``clear``, or ``unavailable``."""
     if market not in US_STALENESS_MARKETS:
         return {"status": STALENESS_NOT_APPLICABLE, "source_status": None, "source": None, "detail": "migration 053 marks US TPs only (SEC filings)",
@@ -569,6 +571,15 @@ def name_staleness(source: Mapping[str, Any] | None, market: str, symbol: str, *
         why_uncovered = "the live poll recorded no coverage (a run from before failed_issuers/unattributed_failures): unknown, counted as none"
     elif int((coverage or {}).get("unattributed_failures") or 0) > 0:
         why_uncovered = f"the live poll had {int((coverage or {}).get('unattributed_failures') or 0)} failure(s) naming no issuer: it covers no name"
+    elif isinstance(coverage.get("observed_issuers"), list):
+        # a pass that records the issuers it observed: a name is covered ONLY when its issuer is among them (fail closed —
+        # an unknown issuer, a CIK the SEC map no longer lists for the ticker, or a missed issuer is never covered)
+        if issuer_key is None:
+            why_uncovered = "the name's issuer is unknown: the live poll cannot have observed it"
+        elif str(issuer_key) not in set(coverage["observed_issuers"]):
+            why_uncovered = "the live poll did not observe the name's issuer"
+        else:
+            why_uncovered = None
     elif missed and (issuer_key is None or str(issuer_key) in missed):
         why_uncovered = ("the live poll did not observe the name's issuer" if issuer_key is not None else
                          "the live poll missed issuers and the name's issuer is unknown")
