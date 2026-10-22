@@ -303,3 +303,17 @@ def test_a_later_b3_only_generation_does_not_void_the_us_night() -> None:
     _night(database, generation=decided)
     envelope = export.export(database, NIGHT, public, now=NOW)
     assert envelope["generation_id"] == decided and export.decrypt(envelope, private)["night"] == NIGHT
+
+
+def test_only_the_publish_job_writes_and_it_never_touches_the_host() -> None:
+    import yaml
+
+    path = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "decisor-verdict-export.yml"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert workflow["permissions"] == {"contents": "read"}
+    export_job, publish_job = workflow["jobs"]["export"], workflow["jobs"]["publish"]
+    assert "permissions" not in export_job and publish_job["permissions"] == {"contents": "write"}
+    assert publish_job["needs"] == "export" and "environment" not in publish_job
+    publish_text = json.dumps(publish_job)
+    assert "ssh" not in publish_text and "C3PO_AWS" not in publish_text and "secrets." not in publish_text
+    assert 'tag="decisor-verdicts-$NIGHT-r$RUN_ID"' in publish_text and "--prerelease" in publish_text
