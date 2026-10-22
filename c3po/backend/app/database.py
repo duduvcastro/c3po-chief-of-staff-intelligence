@@ -5388,6 +5388,14 @@ class Database:
                 event = events.get(("B3" if market == "B3" else "US", symbol))
                 event_at = self._latest_datetime(event.get("published_at") if event else None, event.get("collected_at") if event else None)
                 change_event = event if previous is not None and self._is_after(event_at, previous_instant) else None
+                try:
+                    served_instant = self._selection_instant(item["prediction_instant"]) if item.get("prediction_instant") else None
+                except (TypeError, ValueError):
+                    served_instant = None
+                if change_event is not None and served_instant is not None and self._is_after(event_at, served_instant):
+                    change_event = None  # an IR event after the served TP was computed cannot explain it
+                receipt = head.get("receipt") if isinstance(head.get("receipt"), dict) else {}
+                desk_order = self._is_explicit_selection(head)
                 currency = str(item.get("currency") or ("BRL" if market == "B3" else "USD"))
                 old_tp = self._valuation_number((previous or {}).get("new_tp"))
                 old_buy_in = self._valuation_number((previous or {}).get("new_buy_in"))
@@ -5409,6 +5417,12 @@ class Database:
                         else:
                             trigger_title = f"TP oficial servido: {record_source} (o registro anterior é legado: TP do produtor com consenso)"
                             note = " O valor anterior é o TP do produtor com consenso (registro legado); este é o TP oficial servido."
+                    elif desk_order:
+                        change_event = None  # the desk's explicit selection (rollback / pin): it states the order, never an IR event
+                        reason = str(receipt.get("reason") or "").strip()
+                        trigger_type = "methodology"
+                        trigger_title = f"Ordem da mesa: {reason}" if reason else "Ordem da mesa na seleção oficial"
+                        note = " Mudança por ordem explícita da mesa na seleção oficial."
                     elif change_event is not None:
                         financial = str(change_event.get("event_type") or "") == "Financial Results"
                         trigger_type = "financial_results" if financial else "material_event"

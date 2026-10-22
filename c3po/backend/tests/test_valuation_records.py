@@ -617,3 +617,15 @@ def test_legacy_labels_are_never_an_official_source(label: str) -> None:
     from app.valuation_official_engine import OFFICIAL_SOURCES
 
     assert label not in OFFICIAL_SOURCES and label.startswith("legacy_")
+
+
+def test_a_desk_rollback_within_the_same_source_states_the_order_never_an_event(tmp_path, monkeypatch) -> None:
+    database, methodology_id = _database(tmp_path)
+    cycles = _bootstrap(database, methodology_id, [valuation_row(40.0, 32.0, 48.0, 72)], NIGHT)
+    _publish(database, "B3", [valuation_row(44.0, 35.0, 52.0, 72)], NIGHT + timedelta(days=1), methodology_id)  # night 2: 40 -> 44
+    assert official.official_row(database, "B3", "PRNR3")["our_tp"] == 44.0
+    middle = len(database._valuation_changes)
+    _rollback_to_blend(database, cycles)  # the desk pins night 1's cycles again, same source (blend)
+    petr = next(item for item in database._valuation_changes[middle:] if item["symbol"] == "PRNR3")
+    assert (petr["old_tp"], petr["new_tp"], petr["trigger_type"]) == (44.0, 40.0, "methodology")
+    assert petr["trigger_title"] == "Ordem da mesa: rollback" and petr["source_url"] is None
