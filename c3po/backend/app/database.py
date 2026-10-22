@@ -39,6 +39,18 @@ WHERE run.status = 'running'
   )
 RETURNING run.id::text
 """
+# Database.reap_stale_ingestion_runs (app/ingestion_process.py): every run still 'running' more than max_age after it
+# started, of any role or none and any source; both sides on the database clock; one atomic UPDATE, idempotent
+REAP_STALE_INGESTION_RUNS_SQL = """
+UPDATE ingestion_runs AS run
+SET status = 'failed',
+    completed_at = now(),
+    error_summary = %(error_summary)s,
+    metadata = run.metadata || jsonb_build_object('reaped_at', now(), 'reaped_by', %(reaped_by)s::text)
+WHERE run.status = 'running'
+  AND run.started_at < now() - %(max_age)s::interval
+RETURNING run.id::text
+"""
 # what the price-series producer hands the capture writer once it knows the latest stored hashes (V3.2, migration 049):
 # (manifest inputs, manifest outputs, published_at == the capture clock, snapshot_id, bars to insert)
 PriceHistoryCapture = tuple[dict[str, Any], dict[str, Any], datetime, str, list[dict[str, Any]]]
@@ -2173,6 +2185,40 @@ class Database:
                     "reaped_by": reaped_by,
                     "error_summary": error_summary,
                 },
+            ).fetchall()
+            connection.commit()
+        return [str(row[0]) for row in rows]
+
+    def reap_stale_ingestion_runs(
+        self,
+        *,
+        max_age: timedelta,
+        reaped_by: str,
+        error_summary: str,
+        now: datetime | None = None,
+    ) -> list[str]:
+        """Fail every run still ``running`` more than ``max_age`` after it started, whatever its role (or none) and its
+        source (app/ingestion_process.py). PostgreSQL reads its own clock (``now()``) for both sides; ``now`` is the
+        in-memory double's clock only. One atomic step guarded by ``status = 'running'``; returns the reaped ids."""
+        if not self.database_url:
+            with _INGESTION_REAP_LOCK:
+                reaped_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+                reaped: list[str] = []
+                for run in self._ingestion_runs.values():
+                    if run.get("status") != "running" or not run["started_at"] < reaped_at - max_age:
+                        continue
+                    run.update({
+                        "status": "failed",
+                        "completed_at": reaped_at,
+                        "error_summary": error_summary,
+                        "metadata": {**(run.get("metadata") or {}), "reaped_at": reaped_at.isoformat(), "reaped_by": reaped_by},
+                    })
+                    reaped.append(str(run["id"]))
+                return reaped
+        with self.connection() as connection:
+            rows = connection.execute(
+                REAP_STALE_INGESTION_RUNS_SQL,
+                {"max_age": max_age, "reaped_by": reaped_by, "error_summary": error_summary},
             ).fetchall()
             connection.commit()
         return [str(row[0]) for row in rows]
