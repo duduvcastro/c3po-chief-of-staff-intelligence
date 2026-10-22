@@ -2,20 +2,24 @@ name: Valuation PIT grid autopilot
 run-name: Valuation PIT grid autopilot — ${{ github.event_name == 'schedule' && 'tick' || (inputs.dry_run && 'dry-run' || 'act') }}
 
 # Dispatches the chunks of the US PIT grid (PREREG_VALUATION_PIT_BACKTEST_US_V1 §14 d) while nobody is at the keyboard,
-# under the owner's order already signed (owner order 2) and nothing else. Every tick (every 30 min, or a manual
+# under the owner's order already signed (owner order 2) or its direct successor (order 3, issued by Fable under the
+# owner's pre-authorisation of 22/10: the script's successor rule) and nothing else. Every tick (every 30 min, or a manual
 # dispatch: a DRY RUN unless dry_run is unticked) reads only what GitHub already holds — the runs of
 # valuation-pit-backtest.yml, the jobs and the log of the last failed grid chunk, the metadata artifact of the last
-# successful one, the channel's recent bot comments — and the owner's order file of this checkout, then decides with
-# .github/scripts/valuation_pit_grid_autopilot.py whether to dispatch ONE chunk (mode grid, recompute_existing=false,
-# the approved confirmation phrase). The grid's parameters come ONLY from the repository variables C3PO_PIT_GRID_*;
-# nothing here changes a parameter, ever. It never touches the host (the backtest does, with its own window guard,
-# owner-order verification and preflight), holds no secret but the workflow's GITHUB_TOKEN, and writes nothing to the
-# repository: its state is the run history. Every grid chunk completed after the last successful one is classified: a
-# retryable refusal (the window step; remote status 11 reboot pending — said once per BRT day —, 17 deploy lock, 19
-# R2D2/massive timer, 21 blocking ingestion, 25 no time left before the window) is retried on a later tick; any other
-# failure in ANY of them STOPS the autopilot and is posted ONCE to the channel (run id and exit status: aggregates only);
-# the operator decides. When a chunk's manifest says complete: true, it posts the manifest_sha256 once and stops. A
-# dispatch is confirmed (the new run must be listed within 60 s); a failing tick that acts is posted once per BRT day.
+# successful one, the newest runs of the production pipeline, the channel's recent bot comments — and the owner's order
+# file of this checkout, then decides with .github/scripts/valuation_pit_grid_autopilot.py whether to dispatch ONE chunk
+# (mode grid, recompute_existing=false, the approved confirmation phrase). The grid's parameters come ONLY from the
+# repository variables C3PO_PIT_GRID_*; nothing here changes a parameter, ever. It never touches the host (the backtest
+# does, with its own window guard, owner-order verification and preflight), holds no secret but the workflow's
+# GITHUB_TOKEN, and writes nothing to the repository: its state is the run history. Every grid chunk completed after the
+# last successful one is classified: a retryable refusal (the window step; remote status 11 reboot pending — said once
+# per BRT day —, 17 deploy lock, 19 R2D2/massive timer, 21 blocking ingestion, 25 no time left before the window) is
+# retried on a later tick; any other failure in ANY of them STOPS the autopilot and is posted ONCE to the channel (run id
+# and exit status: aggregates only); the operator decides. Nothing is dispatched while a run of c3po-pipeline.yml that
+# can deploy is not completed (its deploy recreates the api/db containers: a chunk's preflight meeting that exits 12/20,
+# a stop). When a chunk's manifest says complete: true, it posts the manifest_sha256 once and stops; an end (UNTIL or
+# the order's not_after) reached with the grid incomplete is posted once. A dispatch is confirmed (the new run must be
+# listed within 60 s); a failing tick that acts is posted once per BRT day.
 # Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
 
 on:
@@ -73,6 +77,18 @@ jobs:
             > "$RUNNER_TEMP/runs.jsonl" || exit 1
           jq -s '.' "$RUNNER_TEMP/runs.jsonl" > "$RUNNER_TEMP/runs.json" || exit 1
           python3 -I .github/scripts/valuation_pit_grid_autopilot.py select --runs "$RUNNER_TEMP/runs.json" --github-output "$GITHUB_OUTPUT" || exit 1
+
+      - name: List the production deploys
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          # the newest runs of the production pipeline: one that is not completed may be about to recreate the api/db
+          # containers (its deploy), and the decision dispatches nothing then (a chunk's preflight meeting that exits 12/20)
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/c3po-pipeline.yml/runs?per_page=100" --jq '.workflow_runs[]' \
+            > "$RUNNER_TEMP/deploys.jsonl" || exit 1
+          jq -s '.' "$RUNNER_TEMP/deploys.jsonl" > "$RUNNER_TEMP/deploys.json" || exit 1
 
       - name: Read the failed grid chunks since the last success
         if: steps.select.outputs.failed_run_ids != ''
@@ -134,6 +150,7 @@ jobs:
             --runs "$RUNNER_TEMP/runs.json" \
             --failed-dir "$RUNNER_TEMP/failed" \
             --metadata "$RUNNER_TEMP/chunk/metadata.json" \
+            --deploys "$RUNNER_TEMP/deploys.json" \
             --comments "$RUNNER_TEMP/comments.json" \
             --root "$GITHUB_WORKSPACE" \
             --repository "$GITHUB_REPOSITORY" \

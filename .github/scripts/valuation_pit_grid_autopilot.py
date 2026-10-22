@@ -4,18 +4,21 @@
 One tick decides whether to dispatch ONE more chunk of the US PIT grid through ``valuation-pit-backtest.yml`` (mode
 ``grid``), with the parameters of the repository variables ``C3PO_PIT_GRID_*`` only — never an input, never a value read
 from a run, a log or a comment. It reads data GitHub already holds (the backtest's runs, the jobs and the log of the last
-failed grid chunk, the metadata artifact of the last successful one, the channel's recent bot comments) and the owner's
-order file of the checkout; it never touches the host or the database. The state is the run history: nothing is written
-to the repository.
+failed grid chunk, the metadata artifact of the last successful one, the newest runs of the production pipeline, the
+channel's recent bot comments) and the owner's order file of the checkout; it never touches the host or the database. The
+state is the run history: nothing is written to the repository.
 
 Order of the checks (the first that applies decides):
   1. ``C3PO_PIT_GRID_AUTOPILOT`` is not ``on``                          → no-op
-  2. now is after ``C3PO_PIT_GRID_UNTIL``                              → no-op
+  2. now is after ``C3PO_PIT_GRID_UNTIL``                              → no-op; said once per end when the last successful
+     chunk left the grid incomplete and no backtest run is in progress (a stale UNTIL or an order that runs out is never silent)
   3. a variable is invalid or disagrees with the owner's order file    → no-op, one channel comment per BRT day;
-     now is after the order's not_after                                → no-op
+     now is after the order's not_after                                → no-op, said as in 2
   4. a run of valuation-pit-backtest.yml (any mode) is not completed, or one was created in the last 10 min → no-op
   5. no successful grid chunk of this owner order yet                  → the FIRST chunk, capped at FIRST_CHUNK_MAX_RUNS (§14 d "start
-     with 10"), posted once; the operator does the post-first-chunk checks and turns the autopilot off if they fail
+     with 10"), posted once; the operator does the post-first-chunk checks and turns the autopilot off if they fail;
+     the last successful chunk ran under another owner order           → no-op, one channel comment per BRT day, unless the
+     order of the variables is that order's direct successor (below): then the grid goes on under it
   6. the last successful chunk's manifest says ``complete: true``      → no-op, one channel comment per manifest
   7. grid chunks completed AFTER the last successful one did not succeed — EVERY one of them is classified:
        a retryable refusal (the window step; remote status 11 reboot pending, 17 deploy lock, 19 R2D2/massive timer,
@@ -24,8 +27,24 @@ Order of the checks (the first that applies decides):
        anything else, in ANY of them (a run error, a producer mismatch, a data error, the deadline's 124, a cancel, an
        unreadable status) → STOP: no-op, one channel comment per stopping run; the stop lasts until a newer grid chunk
        succeeds (a chunk the operator dispatches by hand and that succeeds reopens the autopilot)
-  8. now is inside a forbidden window or less than 40 min before the next one → no-op
+  8. now is inside a forbidden window or less than 40 min before the next one → no-op;
+     a run of the production pipeline (c3po-pipeline.yml) that can deploy — any event but a pull request — is not
+     completed → no-op (``deploy_in_progress``; said once per deploy that holds the grid DEPLOY_NOTICE_MINUTES): its
+     ``docker compose up -d`` recreates the api and db containers, and a chunk whose host preflight meets that exits 12
+     or 20 — not retryable, a stop — before it reaches the deployment lock (17, retryable)
   9. otherwise                                                          → dispatch one chunk
+
+Every decision past the order check carries ``until`` — the autopilot's end, the earlier of UNTIL and the order's
+not_after — and, when the last successful chunk ran under another order, ``successor_of`` (the link below passed) or
+``successor`` (why it was refused), a tick while a chunk runs included: a manual dry run always shows them.
+
+Successor order (owner order 3 of 22/10/2026 extends the grid past Friday): a grid begun under one owner order goes on
+under the order of the variables only when that order DIRECTLY supersedes it — its file (this checkout's, verified by its
+hash) carries ``"supersedes": <the order of the last successful chunk>``, and the superseded order's file, in this checkout
+too and verified by its hash, is a grid order of the same schema and prereg with the same two pins (as instants) and
+``recompute_existing=false`` in both. One link only: the order that the superseded one superseded counts for nothing.
+Anything else stays the no-op ``last_chunk_of_another_order``. The chunks completed after the last success are classified
+whatever order they ran under (a stop under the superseded order still stops under its successor).
 """
 from __future__ import annotations
 
@@ -45,6 +64,8 @@ from zoneinfo import ZoneInfo
 NEW_YORK = ZoneInfo("America/New_York")
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 BACKTEST_WORKFLOW = ".github/workflows/valuation-pit-backtest.yml"
+DEPLOY_WORKFLOW = ".github/workflows/c3po-pipeline.yml"  # the production deploy: a push to main, or a dispatch with deploy
+DEPLOY_NOTICE_MINUTES = 120  # a deploy that holds the grid this long is said once in the channel (stuck or queued?)
 CONFIRMATION = "RUN VALUATION PIT BACKTEST"
 GRID_TITLE_SUFFIX = "— grid"
 LEAD_MINUTES = 40  # never dispatch less than this before the next forbidden window (the grid itself refuses under 35)
@@ -131,30 +152,51 @@ def parameters(env: Mapping[str, str]) -> Parameters:
                       catalogue_pinned_at=catalogue_pin, prereg_commit=commit, max_runs=max_runs, until=until, problems=tuple(problems))
 
 
+ORDER_FILE_PROBLEMS = {  # what is wrong with the order file of the variables, as posted to the channel
+    "not_sha256": "C3PO_PIT_GRID_ORDER_SHA256 não é um sha256 (64 hex minúsculos)",
+    "symlink": "o caminho da ordem do dono tem uma ligação simbólica",
+    "missing": "a ordem do dono C3PO_PIT_GRID_ORDER_SHA256 não existe nesta revisão",
+    "hash": "o ficheiro da ordem do dono não tem o sha256 da variável",
+    "not_json": "a ordem do dono não é JSON",
+    "not_object": "a ordem do dono não é um objeto JSON",
+}
+
+
+def read_order(root: Path, digest: str) -> tuple[dict[str, Any] | None, str]:
+    """``c3po/ops/owner-orders/<digest>.json`` of this checkout, read as the backtest reads it — no symbolic link on its
+    path, its bytes hash to its name, a JSON object: (the object, "") or (None, what is wrong: a key of ORDER_FILE_PROBLEMS)."""
+    if SHA256.match(digest) is None:
+        return None, "not_sha256"
+    root = root.resolve()
+    relative = Path("c3po") / "ops" / "owner-orders" / f"{digest}.json"
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return None, "symlink"
+    path = root / relative
+    if not path.is_file():
+        return None, "missing"
+    content = path.read_bytes()
+    if hashlib.sha256(content).hexdigest() != digest:
+        return None, "hash"
+    try:
+        data = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None, "not_json"
+    if not isinstance(data, dict):
+        return None, "not_object"
+    return data, ""
+
+
 def order_check(root: Path, params: Parameters) -> tuple[list[str], dt.datetime | None]:
     """The owner's order file of this checkout must exist, hash to the variable and authorise exactly these parameters
     (the backtest verifies it again at its own revision): a disagreement here dispatches nothing."""
     if SHA256.match(params.order_sha256) is None:
         return [], None  # already a named problem
-    root = root.resolve()
-    relative = Path("c3po") / "ops" / "owner-orders" / f"{params.order_sha256}.json"
-    current = root
-    for part in relative.parts:
-        current = current / part
-        if current.is_symlink():
-            return ["o caminho da ordem do dono tem uma ligação simbólica"], None
-    path = root / relative
-    if not path.is_file():
-        return ["a ordem do dono C3PO_PIT_GRID_ORDER_SHA256 não existe nesta revisão"], None
-    content = path.read_bytes()
-    if hashlib.sha256(content).hexdigest() != params.order_sha256:
-        return ["o ficheiro da ordem do dono não tem o sha256 da variável"], None
-    try:
-        data = json.loads(content.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
-        return ["a ordem do dono não é JSON"], None
-    if not isinstance(data, dict):
-        return ["a ordem do dono não é um objeto JSON"], None
+    data, problem = read_order(root, params.order_sha256)
+    if data is None:
+        return [ORDER_FILE_PROBLEMS[problem]], None
     problems: list[str] = []
     if data.get("schema") != "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1" or data.get("prereg") != "PREREG_VALUATION_PIT_BACKTEST_US_V1":
         problems.append("a ordem do dono não é uma VALUATION-PIT-BACKTEST-OWNER-ORDER-v1 deste pré-registro")
@@ -174,6 +216,35 @@ def order_check(root: Path, params: Parameters) -> tuple[list[str], dt.datetime 
     if not_after is None:
         problems.append("a ordem do dono não tem not_after legível")
     return problems, not_after
+
+
+def successor_refusal(root: Path, params: Parameters, chunk_order: Any) -> str | None:
+    """None when the order of the variables (already checked by ``order_check``) DIRECTLY supersedes ``chunk_order``, the
+    order under which the last successful chunk ran: its file names that order in ``supersedes``, and that order's file —
+    in this checkout too, verified by its hash — has the same schema and prereg, the grid among its modes, the same two
+    pins (as instants) and ``recompute_existing=false``, as the successor has. One link only. Otherwise the reason (a label)."""
+    if not isinstance(chunk_order, str) or SHA256.match(chunk_order) is None:
+        return "chunk_order_unreadable"
+    current, problem = read_order(root, params.order_sha256)
+    if current is None:
+        return f"order_{problem}"
+    if current.get("supersedes") != chunk_order:
+        return "not_superseded"
+    previous, problem = read_order(root, chunk_order)
+    if previous is None:
+        return f"superseded_order_{problem}"
+    if previous.get("schema") != current.get("schema") or previous.get("prereg") != current.get("prereg"):
+        return "superseded_order_other_prereg"
+    modes = previous.get("modes")
+    if not isinstance(modes, list) or "grid" not in modes:
+        return "superseded_order_without_grid"
+    for key in ("price_pinned_at", "catalogue_pinned_at"):
+        pin = instant(previous.get(key))
+        if pin is None or pin != instant(current.get(key)):
+            return f"superseded_order_other_{key}"
+    if previous.get("recompute_existing") is not False or current.get("recompute_existing") is not False:
+        return "recompute_existing_not_false"
+    return None
 
 
 # ---------------------------------------------------------------------------------------------------------------- windows
@@ -230,6 +301,22 @@ def select(payload: Any) -> tuple[list[int], int | None]:
     if index is None:
         return [_id(run) for run in completed], None
     return [_id(run) for run in completed[:index]], _id(completed[index])
+
+
+def deploys_in_progress(payload: Any) -> list[tuple[int, dt.datetime]]:
+    """The runs of the production pipeline that can still deploy — not completed, of any event but a pull request (only a
+    push to main or a dispatch reaches its ``deploy-production`` job) —, newest first: (run id, created at). A listing that
+    cannot be read, or holds a run of another workflow, fails the tick: nothing is dispatched."""
+    if payload is None:
+        raise InputError("the production pipeline's run listing cannot be read")
+    if not isinstance(payload, list):
+        raise InputError("the production pipeline's run listing is not a list of runs")
+    runs = _runs(payload)
+    for run in runs:
+        path = str(run.get("path") or "")
+        if path != DEPLOY_WORKFLOW and not path.startswith(DEPLOY_WORKFLOW + "@"):
+            raise InputError("the production pipeline's run listing holds a run of another workflow")
+    return [(_id(run), _time(run.get("created_at"))) for run in runs if run.get("status") != "completed" and run.get("event") != "pull_request"]
 
 
 def remote_status(log: str) -> int | None:
@@ -311,13 +398,44 @@ def _run_url(repository: str, run_id: int) -> str:
     return f"https://github.com/{repository}/actions/runs/{run_id}"
 
 
+def _brt(moment: dt.datetime) -> str:
+    return moment.astimezone(SAO_PAULO).strftime("%d/%m/%Y %H:%M") + " BRT"
+
+
+def ended(end: dt.datetime, *, runs: Any, metadata: Any, repository: str, tick_url: str) -> Decision:
+    """After the autopilot's end (UNTIL, or the order's not_after) nothing is dispatched. When the last successful chunk left
+    the grid incomplete and no backtest run is in progress, it is said once per end: a stale UNTIL, or an order that runs
+    out before the grid, is never a silent stop. A payload this notice cannot read only leaves it unsaid."""
+    decision = Decision("noop", "after_until", details={"until": end.isoformat()})
+    try:
+        ordered = _runs(runs)
+        _failed, success_id = select(ordered)
+    except InputError:
+        return decision
+    if success_id is None or any(run.get("status") != "completed" for run in ordered):
+        return decision
+    if (not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id)
+            or metadata.get("partial") is not False or metadata.get("complete") is not False):
+        return decision
+    decision.details["remaining"] = metadata.get("remaining")
+    key = f"ended:{end.isoformat()}"
+    decision.post_key = key
+    decision.post_body = "\n".join([marker(key), f"**Autopiloto da grade PIT EUA no fim do prazo, grade incompleta** — passou {_brt(end)} (o "
+                                    "`C3PO_PIT_GRID_UNTIL` ou o `not_after` da ordem do dono, o que vier primeiro) e o último lote com sucesso "
+                                    f"[run {success_id}]({_run_url(repository, success_id)}) deixou `{_text(metadata.get('remaining'), 12)}` instantes "
+                                    "por fazer. O autopiloto não despacha mais nada. Para seguir: `C3PO_PIT_GRID_UNTIL` mais tarde, se a ordem ainda "
+                                    "vale; senão, uma ordem sucessora direta (`supersedes`) com `not_after` mais tarde.", "",
+                                    f"[Tick do autopiloto]({tick_url}) · um aviso por prazo.", ""])
+    return decision
+
+
 def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, failures: Mapping[int, tuple[Any, str | None]], metadata: Any,
-           repository: str, tick_url: str) -> Decision:
+           deploys: Any, repository: str, tick_url: str) -> Decision:
     params = parameters(env)
     if not params.autopilot:
         return Decision("noop", "autopilot_off")
     if params.until is not None and now > params.until:
-        return Decision("noop", "after_until", details={"until": params.until.isoformat()})
+        return ended(params.until, runs=runs, metadata=metadata, repository=repository, tick_url=tick_url)
     order_problems, not_after = order_check(root, params)
     problems = [*params.problems, *order_problems]
     if problems:
@@ -327,30 +445,65 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
                           *[f"- {problem}" for problem in problems], "", f"[Tick do autopiloto]({tick_url}) · no máximo um aviso por dia (BRT).", ""])
         return Decision("noop", "invalid_parameters", key, body, {"problems": problems})
     if not_after is not None and now > not_after:  # never past the owner's order, whatever C3PO_PIT_GRID_UNTIL says
-        return Decision("noop", "after_until", details={"until": not_after.isoformat()})
+        return ended(not_after, runs=runs, metadata=metadata, repository=repository, tick_url=tick_url)
     ordered = _runs(runs)
+    failed_ids, success_id = select(ordered)
+    if success_id is None:
+        metadata = None
+    elif not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id):
+        raise InputError("the last successful chunk's metadata is not that run's grid metadata")
+    # shown on every decision from here on, a tick while a chunk runs included (a manual dry run after the variables change)
+    shown: dict[str, Any] = {}
+    ends = [moment for moment in (params.until, not_after) if moment is not None]
+    if ends:
+        shown["until"] = min(ends).isoformat()  # the autopilot's end
+    refusal: str | None = None  # why the order of the variables does not go on with the last successful chunk's order
+    successor_of: str | None = None  # the last successful chunk's order, when the order of the variables directly supersedes it
+    if metadata is not None and metadata.get("owner_order_sha256") != params.order_sha256:
+        refusal = successor_refusal(root, params, metadata.get("owner_order_sha256"))
+        if refusal is None:
+            successor_of = str(metadata["owner_order_sha256"])
+            shown["successor_of"] = successor_of
+        else:
+            shown["successor"] = refusal
+    decision = _decide_chunk(params=params, now=now, ordered=ordered, failed_ids=failed_ids, success_id=success_id, metadata=metadata,
+                             refusal=refusal, successor_of=successor_of, failures=failures, deploys=deploys, repository=repository,
+                             tick_url=tick_url)
+    decision.details.update(shown)
+    return decision
+
+
+def _decide_chunk(*, params: Parameters, now: dt.datetime, ordered: list[dict[str, Any]], failed_ids: list[int], success_id: int | None,
+                  metadata: dict[str, Any] | None, refusal: str | None, successor_of: str | None,
+                  failures: Mapping[int, tuple[Any, str | None]], deploys: Any, repository: str, tick_url: str) -> Decision:
+    """Checks 4 to 9 (the module's docstring), once the order of the variables is known to be valid and in force."""
     active = [_id(run) for run in ordered if run.get("status") != "completed"]
     if active:
         return Decision("noop", "run_in_progress", details={"runs": active})
     recent = [_id(run) for run in ordered if now - _time(run.get("created_at")) < dt.timedelta(minutes=RECENT_RUN_MINUTES)]
     if recent:
         return Decision("noop", "recent_run", details={"runs": recent})
-    failed_ids, success_id = select(runs)
-    if success_id is None:
-        metadata = None
-    elif not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id):
-        raise InputError("the last successful chunk's metadata is not that run's grid metadata")
-    if metadata is not None and metadata.get("owner_order_sha256") != params.order_sha256:
-        return Decision("noop", "last_chunk_of_another_order", details={"run": success_id})
+    if metadata is not None and success_id is not None and refusal is not None:
+        chunk_order = metadata.get("owner_order_sha256")
+        label = chunk_order[:8] if isinstance(chunk_order, str) and SHA256.match(chunk_order) is not None else "ilegível"
+        key = f"other-order:{now.astimezone(SAO_PAULO).date().isoformat()}"
+        body = "\n".join([marker(key), "**Autopiloto da grade PIT EUA sem despachar: o último lote com sucesso é de outra ordem do dono** — o lote "
+                          f"[run {success_id}]({_run_url(repository, success_id)}) correu sob a ordem `{label}`, e a ordem das variáveis "
+                          f"(`{params.order_sha256[:8]}`) não é a sua sucessora direta (`{refusal}`). Nada é despachado: a grade só segue sob uma "
+                          "ordem cujo ficheiro tenha `supersedes` igual à ordem desse lote (mesmo `schema` e `prereg`, `grid`, os mesmos pinos, "
+                          "`recompute_existing=false`), ou depois de um lote da ordem das variáveis despachado à mão que termine com sucesso. "
+                          "Conferir `C3PO_PIT_GRID_ORDER_SHA256`.", "",
+                          f"[Tick do autopiloto]({tick_url}) · no máximo um aviso por dia (BRT).", ""])
+        return Decision("noop", "last_chunk_of_another_order", key, body, {"run": success_id, "successor": refusal})
     if metadata is not None and metadata.get("partial") is not False:
         raise InputError("the last successful chunk's metadata is marked partial")
-    if metadata is not None and metadata.get("complete") is True:
+    if metadata is not None and success_id is not None and metadata.get("complete") is True:
         digest = metadata.get("manifest_sha256")
         if not isinstance(digest, str) or SHA256.match(digest) is None:
             raise InputError("the complete chunk's manifest_sha256 cannot be read")
         key = f"complete:{digest}"
         body = "\n".join([marker(key), f"**grid complete, manifest_sha256 `{digest}`** — grade PIT EUA completa no lote "
-                          f"[run {success_id}]({_run_url(repository, success_id)}) (ordem do dono `{params.order_sha256[:8]}`, {metadata.get('entries')} "
+                          f"[run {success_id}]({_run_url(repository, success_id)}) (ordem do dono `{(successor_of or params.order_sha256)[:8]}`, {metadata.get('entries')} "
                           f"entradas). O autopiloto não despacha mais nada.", "",
                           f"Próximo passo (operador, §14 d/e): publicar este `manifest_sha256` e, depois, o modo `report` com `manifest_run_id` "
                           f"{success_id}, este `manifest_sha256` e `prereg_commit` `{params.prereg_commit}`.", "",
@@ -375,10 +528,24 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
             return Decision("stop", failure.label, key, body, {"run": failed_id, "status": failure.status, "step": failure.step})
     inside, upcoming = window_state(now)
     minutes = (upcoming - now).total_seconds() / 60
+    deploying = [] if inside or minutes < LEAD_MINUTES else deploys_in_progress(deploys)
     if inside:
         decision = Decision("noop", "inside_window", details={"next_window": upcoming.isoformat()})
     elif minutes < LEAD_MINUTES:
         decision = Decision("noop", "window_too_close", details={"next_window": upcoming.isoformat(), "minutes": round(minutes)})
+    elif deploying:  # a deploy may be recreating the containers: a chunk started now could stop the autopilot (12/20)
+        oldest, created = deploying[-1]
+        waited = round((now - created).total_seconds() / 60)
+        decision = Decision("noop", "deploy_in_progress", details={"deploys": [run_id for run_id, _created in deploying], "waited_minutes": waited})
+        if waited >= DEPLOY_NOTICE_MINUTES:
+            key = f"deploy-wait:{oldest}"
+            decision.post_key = key
+            decision.post_body = "\n".join([marker(key), f"**Autopiloto da grade PIT EUA em espera: deploy de produção em curso há {waited} min** — o "
+                                             f"[run {oldest}]({_run_url(repository, oldest)}) do `c3po-pipeline.yml` não terminou. Enquanto um deploy "
+                                             "puder correr nada é despachado: o `docker compose up -d` dele recria os contêineres `api` e `db`, e um lote "
+                                             "cujo pré-voo no host o encontre sai com 12 ou 20 (não reexecutáveis: param o autopiloto) antes de chegar ao "
+                                             "lock de deploy (17). Conferir esse run (preso? em fila?); a grade segue sozinha quando ele terminar.", "",
+                                             f"[Tick do autopiloto]({tick_url}) · um aviso por deploy.", ""])
     else:
         first = success_id is None
         details: dict[str, Any] = {"after_run": success_id, "next_window": upcoming.isoformat(), "minutes": round(minutes),
@@ -467,6 +634,7 @@ def main(argv: list[str] | None = None) -> int:
     tick.add_argument("--runs", type=Path, required=True)
     tick.add_argument("--failed-dir", type=Path, help="<run id>.jobs.json and <run id>.log of each failed chunk since the last success")
     tick.add_argument("--metadata", type=Path)
+    tick.add_argument("--deploys", type=Path, required=True, help="the newest runs of the production pipeline (c3po-pipeline.yml)")
     tick.add_argument("--comments", type=Path, required=True)
     tick.add_argument("--root", type=Path, required=True)
     tick.add_argument("--repository", required=True)
@@ -514,7 +682,7 @@ def main(argv: list[str] | None = None) -> int:
             log = log_path.read_text(encoding="utf-8", errors="replace") if log_path is not None and log_path.is_file() else None
             failures[failed_id] = (_load(jobs_path), log)
         inputs: dict[str, Any] = {"root": args.root, "now": now, "runs": runs, "failures": failures, "metadata": _load(args.metadata),
-                                  "repository": args.repository, "tick_url": args.tick_url}
+                                  "deploys": _load(args.deploys), "repository": args.repository, "tick_url": args.tick_url}
         decision = decide(env=os.environ, **inputs)
         if decision.reason == "autopilot_off" and args.dry_run == "true":  # a dry run shows what the tick WOULD do were it on (never acted on)
             preview = decide(env={**os.environ, "C3PO_PIT_GRID_AUTOPILOT": "on"}, **inputs)
