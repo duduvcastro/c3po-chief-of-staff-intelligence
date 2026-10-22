@@ -1048,11 +1048,15 @@ def test_the_calendar_phase_never_pages_and_stops_after_three_failed_attempts_a_
     next_night = run_worker_iteration(database, now=local + timedelta(days=1), canonical_due=False, canonical_operation=lambda: None,
                                       offhours_phases=(phase,))
     assert next_night.phase_statuses == {"earnings_calendar": "failed"} and len(attempts) == 5
-    # the decisor's phase keeps its behaviour: a failure pages
+    # the decisor's phase keeps its behaviour: a failure fails the worker's check at once and pages under main's
+    # one-incident-per-episode policy (bad97b8): attention on the first failing night, a push from the second
     decisor_phase = OffhoursPhase("decisor_shadow", lambda: None, failing)
     run_worker_iteration(database, now=local, canonical_due=False, canonical_operation=lambda: None, offhours_phases=(decisor_phase,),
                          healthchecks={"valuation": ping}, push_notifications=push)  # type: ignore[dict-item,arg-type]
-    assert ping.pings == ["start", "fail"] and len(push.sent) == 1
+    assert ping.pings == ["start", "fail"] and push.sent == []
+    run_worker_iteration(database, now=local + timedelta(days=1), canonical_due=False, canonical_operation=lambda: None,
+                         offhours_phases=(decisor_phase,), healthchecks={"valuation": ping}, push_notifications=push)  # type: ignore[dict-item,arg-type]
+    assert len(push.sent) == 1
 
 
 def test_the_calendar_phase_is_flagged_off_runs_before_the_decisor_and_is_expected_only_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:

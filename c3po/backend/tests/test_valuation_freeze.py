@@ -20,7 +20,7 @@ import pytest
 from app.r2d2_v2_earnings_package import implementation_package_sha
 
 BACKEND = Path(__file__).resolve().parents[1]
-FREEZE_REVISION = "42f4280 + 739b215 (PR #456)"
+FREEZE_REVISION = "42f4280 + 739b215 (PR #456) + the P1 lock (main 7f14740, PREREG rev 3)"
 FROZEN: dict[str, str | None] = {
     "app/market_data/eodhd.py": "94c2aab73e660b9d6b7d3775f5342766485776205b59c4d4742c10a72a72c8ed",
     "app/market_data/models.py": "57aa53f06defe58b9ba82a0da8ea1b6e275d82a589aa77ba11fe76e4ba080978",
@@ -29,7 +29,7 @@ FROZEN: dict[str, str | None] = {
     "app/sec_xbrl.py": "42d5f04232995eb30b7b7b36f6c4ef809e672076ea921c174b0e91f7a21c538c",
     "app/statement_vintages.py": "ca6537b08a3cbd00765e71bae5bc4b26295a74af2082568e34b5a89a5eb4ace9",
     "app/valuation_asfiled.py": "6b0d2fa2f0b1e9934bc5569a07dd5920a99b1ae34aa299906d43054770ae41a4",
-    "app/valuation_official.py": "fde3b7a15c1b97e2a014b09dc915df2ec65272b53222a3689559a9ddcda99f02",
+    "app/valuation_official.py": "3451b954a6cbc800db0051e7e341bf4a4f72e1254a7bc40d4c695c42d7e606ce",  # P1 lock (4652f34, 8b34659; PREREG rev 3 7f14740)
     "app/valuation_official_engine.py": "64230c9f08f891f9c7531359925b161584f15d61d6f20c0970582a1e96ae83fe",
     "app/valuation_pit_rerun.py": "609cda399e0b2d23243c35d594f5c7e0b591de26c97f09ff25271ad3ba6f3e8b",  # 739b215
     "app/valuation_pit_served.py": "3aa8e0954e4f6722b17bd08eba6335bd2b2dbb7d4df3a8e142cc554dd022bac1",  # 739b215
@@ -46,7 +46,7 @@ FROZEN: dict[str, str | None] = {
     "app/valuation_panel.py": "cfebdd986876bd5d2929a4cda6de335e1634ea60cb10c632fa7dee997f883e16",
 }
 R2D2_V2_IMPLEMENTATION_PACKAGE_SHA = "43db2b969fe113594fafe4a9e0cabec1f80ada9f8ab9ee5852677d65e2ec716a"
-SERVED_PRODUCER_ENGINE_SHA256 = "e92fffe6dfa115e29d6f259d3d35f6df7a5adee18f13a07acca8a686430ee97b"  # files + the nine Database readers
+SERVED_PRODUCER_ENGINE_SHA256 = "fbadbd374e31bff77e02e68bf5e9b7fc9a9542c7934946629ca2452bae43f7f2"  # files + the nine Database readers
 
 
 @pytest.mark.parametrize("path", sorted(FROZEN))
