@@ -440,6 +440,19 @@ def run_nightly(
             logger.exception("US as-filed revaluation after the cut failed; the IR worker re-checks on its next poll")
 
 
+def idle_until_wake(seconds: float, stale_sweep: ingestion_process.PeriodicReaper, *,
+                    sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
+    """The loop's sleep, in naps no longer than the stale-run sweep's interval: between naps the sweep runs when due
+    (at most hourly, admitted by the maintenance gate), so a run orphaned for 24 h is cleared while the worker idles."""
+    deadline = clock() + seconds
+    while (left := deadline - clock()) > 0:
+        if stale_sweep.due():
+            with job() as admitted:
+                if admitted:
+                    stale_sweep()
+        sleep(min(left, max(5.0, stale_sweep.seconds_until_due())))
+
+
 def main() -> None:
     with startup_job():
         settings = get_settings()
@@ -448,6 +461,10 @@ def main() -> None:
         database.initialize()
         # before any run of this process: the runs a previous process of this worker left 'running' (a deploy) are failed
         ingestion_process.reap_at_startup(database, ingestion_process.VALUATION_WORKER)
+        # and, of any role or none, every run 'running' for more than 24 h — now and then hourly while idle (this worker only)
+        stale_sweep = ingestion_process.PeriodicReaper(
+            lambda: ingestion_process.reap_stale_safely(database, ingestion_process.VALUATION_WORKER))
+        stale_sweep()
         push_notifications = PushNotificationService(settings, database)
         ensure_builtin_official_fundamentals(database)
         try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
@@ -570,7 +587,7 @@ def main() -> None:
             now = datetime.now(SAO_PAULO)
             wake_at = result.next_wake_at
             logger.info("Next valuation-worker wake-up at %s", wake_at.isoformat())
-        time.sleep(max(30, int((wake_at - now).total_seconds())))
+        idle_until_wake(max(30, int((wake_at - now).total_seconds())), stale_sweep)
 
 
 if __name__ == "__main__":
