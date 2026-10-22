@@ -557,6 +557,43 @@ def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
 
 
+def test_postdeploy_grace_keeps_the_card_amber_and_names_the_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service()
+    now = datetime.now(timezone.utc)
+    report = service.database.latest_governance_vulnerability_report()
+    assert report is not None
+    grace = {"active": True, "until": (now + timedelta(hours=3)).isoformat(),
+             "blockers": ["npm_evidence_pending"], "deployed_sha": "a" * 40, "main_sha": "b" * 40}
+    report.update(status="attention", post_deploy_grace=grace)
+    report["report_sha256"] = report_sha256(report)
+    monkeypatch.setattr(service.database, "latest_governance_vulnerability_report", lambda: report)
+
+    item = service._governance_vulnerability_health(now)
+
+    assert item.status == "attention"
+    assert item.detail is not None and item.detail.startswith("Pós-deploy aaaaaaa: aguardando auditoria npm até ")
+    assert item.detail.endswith(" BRT")
+    assert item.metadata["post_deploy_grace"] == grace
+    expired = service._governance_vulnerability_health(now + timedelta(hours=3))
+    assert expired.status == "attention" and not (expired.detail or "").startswith("Pós-deploy")
+
+
+def test_postdeploy_detail_never_overrides_a_stale_attestation(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service()
+    now = datetime.now(timezone.utc)
+    report = service.database.latest_governance_vulnerability_report()
+    assert report is not None
+    report.update(status="attention", generated_at=(now - timedelta(hours=37)).isoformat(),
+                  post_deploy_grace={"active": True, "until": (now + timedelta(hours=1)).isoformat(),
+                                     "blockers": ["deploy_lag"], "deployed_sha": "a" * 40, "main_sha": "b" * 40})
+    report["report_sha256"] = report_sha256(report)
+    monkeypatch.setattr(service.database, "latest_governance_vulnerability_report", lambda: report)
+
+    item = service._governance_vulnerability_health(now)
+
+    assert item.status == "offline" and item.detail == "Atestado diário vencido há mais de 36h"
+
+
 def test_governance_card_never_converts_unverifiable_lanes_to_zero() -> None:
     service = _service()
     original = service.database.latest_governance_vulnerability_report

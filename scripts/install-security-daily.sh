@@ -26,5 +26,8 @@ systemd-analyze verify /etc/systemd/system/c3po-security-{daily,watchdog}.{servi
 systemctl daemon-reload
 systemctl enable --now c3po-security-daily.timer c3po-security-watchdog.timer
 systemctl start --no-block c3po-security-watchdog.service
+# Reconcile the deploy immediately; the next hourly tick may be nearly an hour
+# away. Keep deployment nonblocking and preserve every maintenance hold.
+systemctl start --no-block c3po-security-daily.service
 systemctl is-enabled c3po-security-daily.timer c3po-security-watchdog.timer
 systemctl show c3po-security-daily.timer -p NextElapseUSecRealtime
