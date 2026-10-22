@@ -169,8 +169,9 @@ def counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 def _us_view(generation: Mapping[str, Any], symbols: set[str]) -> tuple[Any, ...]:
     """What a generation serves to the US rows of a night: its source and version, the NASDAQ/NYSE cycles, and the
     targeted admissions of those symbols. Two generations with the same US view serve the same US numbers."""
-    cycles = generation.get("cycles") if isinstance(generation.get("cycles"), Mapping) else {}
-    targeted = generation.get("targeted") if isinstance(generation.get("targeted"), Mapping) else {}
+    raw_cycles, raw_targeted = generation.get("cycles"), generation.get("targeted")
+    cycles: Mapping[str, Any] = raw_cycles if isinstance(raw_cycles, Mapping) else {}
+    targeted: Mapping[str, Any] = raw_targeted if isinstance(raw_targeted, Mapping) else {}
     return (generation.get("source"), generation.get("source_version"),
             tuple(str(cycles.get(market)) for market in US_MARKETS),
             tuple(sorted((str(key).strip().upper(), str(value)) for key, value in targeted.items() if str(key).strip().upper() in symbols)))
