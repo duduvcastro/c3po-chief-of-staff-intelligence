@@ -36,6 +36,10 @@ VALUATION_WORKER_PHASES: dict[str, dict[str, str]] = {
         "code": "valuation-worker-price-history",
         "name": "Valuation V3.2 price series cycle",
     },
+    "earnings_calendar": {
+        "code": "valuation-worker-earnings-calendar",
+        "name": "Valuation earnings calendar cycle",
+    },
     "decisor_shadow": {
         "code": "valuation-worker-decisor-shadow",
         "name": "Valuation decisor V1 shadow cycle",
@@ -43,6 +47,9 @@ VALUATION_WORKER_PHASES: dict[str, dict[str, str]] = {
 }
 
 VALUATION_WORKER_CANONICAL_PHASE = "canonical"
+# phases whose failure never pages (no job_failure push, no failed worker check) and never turns the health card offline:
+# their consumers tolerate their absence (the Decisor V1 falls back to the 051 estimate when the calendar is missing)
+VALUATION_WORKER_ADVISORY_PHASES = ("earnings_calendar",)
 VALUATION_WORKER_OFFHOURS_PHASES = (
     "chewie",
     "v2_data",
