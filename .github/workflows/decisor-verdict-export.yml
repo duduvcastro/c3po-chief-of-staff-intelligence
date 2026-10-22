@@ -1,0 +1,286 @@
+name: Decisor verdict export (encrypted)
+run-name: Decisor verdict export ${{ inputs.night || 'last-completed' }}
+
+# The Valuation decisor's US verdicts of ONE night, for the R2D2 measurement mode in the PRIVATE lab repository
+# (owner's order of 2026-10-20: from Monday 26/10 the lab takes entries only in the names marked COMPRA_PERMITIDA for
+# the night before the session, and measures the same day without the gate side by side).
+# THIS REPOSITORY IS PUBLIC: anyone can download its artifacts. The verdict list names symbols, so it leaves the host
+# ENCRYPTED ONLY (app.valuation_verdict_export: X25519 ephemeral ECDH → HKDF-SHA256 → AES-256-GCM) to the lab's public
+# key, the repository VARIABLE C3PO_R2D2_LAB_VERDICT_PUBKEY (a public key: fine in a variable). The private key is a
+# secret of the lab repository only; nothing here can decrypt.
+# Read-only on the production host, exactly as valuation-readonly-report.yml: the deploy SSH transport, `docker compose
+# exec -T` into the running api (no file copied or written on the host, no container created, restarted or stopped, no
+# lock), PGOPTIONS default_transaction_read_only=on (set here and again by the module). The remote stderr stays in the
+# runner's temp directory and is never printed: a log line may name a symbol. stdout carries ONE JSON line — the
+# envelope, or a refusal code (no symbol). Before anything is uploaded, the runner checks the envelope's EXACT schema (no
+# field can carry the plaintext). The artifact `decisor-verdicts-<night>` holds the envelope, its metadata (counts, sha256,
+# night — no symbol) and SHA256SUMS.
+# Schedule: weekdays 11:00 UTC (08:00 BRT), after the nightly cycle; the night is the last completed NYSE session (Monday
+# exports Friday's night). Dispatch exports any night (YYYY-MM-DD).
+# Every guard is explicit (`|| exit N`); nothing here relies on `set -e`.
+
+on:
+  schedule:
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      night:
+        description: NYSE session the verdicts are for (YYYY-MM-DD); empty = the last completed session
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: decisor-verdict-export
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: Encrypted verdict export
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Validate the night and the lab's public key
+        id: inputs
+        env:
+          NIGHT: ${{ inputs.night }}
+          PUBKEY: ${{ vars.C3PO_R2D2_LAB_VERDICT_PUBKEY }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          NIGHT=${NIGHT:-last-completed}
+          if [ "$NIGHT" != last-completed ]; then
+            [[ "$NIGHT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo 'night must be YYYY-MM-DD' >&2; exit 2; }
+          fi
+          [ -n "$PUBKEY" ] || { echo 'the repository variable C3PO_R2D2_LAB_VERDICT_PUBKEY is not set: the owner creates the key pair (README, "Ponte de veredictos")' >&2; exit 2; }
+          [[ "$PUBKEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo 'C3PO_R2D2_LAB_VERDICT_PUBKEY is not a base64 raw X25519 public key (44 characters)' >&2; exit 2; }
+          printf 'night=%s\n' "$NIGHT" >> "$GITHUB_OUTPUT" || exit 1
+
+      - name: Check out the workflow revision
+        uses: actions/checkout@v6
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Export the encrypted verdicts in the running api container, read-only
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          NIGHT: ${{ steps.inputs.outputs.night }}
+          PUBKEY: ${{ vars.C3PO_R2D2_LAB_VERDICT_PUBKEY }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "NIGHT='$NIGHT' PUBKEY='$PUBKEY' bash -s" \
+            > "$raw/stdout.json" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR" || exit 10
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo 'Security reboot pending; the export must wait for recovery' >&2
+            exit 11
+          fi
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
+          state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
+          [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
+          exec "${compose[@]}" exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' \
+            api python -m app.valuation_decision --export-verdicts --night "$NIGHT" --recipient-public-key "$PUBKEY" </dev/null
+          REMOTE
+          lines=$(wc -l < "$raw/stderr.log") || exit 1
+          echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
+          if [ "$rc" -eq 3 ]; then
+            # a refusal: its code only (a fixed list), never the remote stderr
+            python3 - "$raw/stdout.json" <<'PY' || exit 1
+          import json
+          import sys
+
+          CODES = {"NIGHT_INVALID", "NOT_A_SESSION", "CALENDAR_UNAVAILABLE", "NIGHT_NOT_CLOSED", "NO_DECISIONS", "DECISIONS_ONLY_AFTER_NEXT_OPEN",
+                   "UNVERIFIED_DECISIONS", "RUN_INCONSISTENT", "GENERATION_NOT_DECIDED", "KEY_INVALID"}
+          try:
+              refusal = json.loads(open(sys.argv[1], encoding="utf-8").read())
+          except (OSError, ValueError):
+              sys.exit("the refusal is not a single JSON document (content not printed)")
+          if not isinstance(refusal, dict) or set(refusal) != {"schema", "night", "refused"} or refusal["refused"] not in CODES:
+              sys.exit("unexpected refusal shape (content not printed)")
+          print(f"the decisor refused the export: {refusal['refused']} — nothing is uploaded; the lab's +VAL variants record 'no verdicts' for this night")
+          PY
+            exit 1
+          fi
+          [ "$rc" -eq 0 ] || exit 1
+
+      - name: Verify the envelope's exact schema and keep it only
+        id: verify
+        env:
+          REQUESTED: ${{ steps.inputs.outputs.night }}
+          PUBKEY: ${{ vars.C3PO_R2D2_LAB_VERDICT_PUBKEY }}
+          RUN_ID: ${{ github.run_id }}
+          REVISION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/decisor-verdicts"
+          mkdir -p "$out" || exit 1
+          python3 - "$RUNNER_TEMP/raw/stdout.json" "$out" <<'PY' || exit 1
+          import base64
+          import binascii
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          from datetime import datetime
+          from pathlib import Path
+
+          source, out = Path(sys.argv[1]), Path(sys.argv[2])
+          # the envelope's keys, EXACTLY (app.valuation_verdict_export.ENVELOPE_KEYS): no field may carry the plaintext
+          KEYS = {"schema", "algorithm", "night", "decision_instant", "decision_run_id", "generation_id", "decisor_version", "thresholds_sha256",
+                  "counts", "plaintext_sha256", "recipient_public_key", "ephemeral_public_key", "nonce", "ciphertext"}
+          COUNT_KEYS = {"rows", "by_market", "by_verdict", "by_verdict_without_events"}
+          MARKETS = {"NASDAQ", "NYSE"}
+          VERDICTS = {"COMPRA_PERMITIDA", "OBSERVAR", "VETO"}
+          SHA256 = re.compile(r"^[0-9a-f]{64}$")
+          if source.stat().st_size > 4 * 1024 * 1024:
+              sys.exit("the export output is larger than an envelope can be (content not printed)")
+          try:
+              envelope = json.loads(source.read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit("the export output is not a single JSON document (content not printed)")
+          if not isinstance(envelope, dict) or set(envelope) != KEYS:
+              sys.exit("unexpected envelope shape: the keys are not exactly the envelope's (content not printed)")
+          if envelope["schema"] != "VALUATION_DECISOR_VERDICTS_ENVELOPE_V1" or envelope["algorithm"] != "X25519-HKDF-SHA256-AES-256-GCM":
+              sys.exit("unexpected envelope schema or algorithm")
+          night = envelope["night"]
+          if not isinstance(night, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", night) is None:
+              sys.exit("the envelope's night is not YYYY-MM-DD")
+          if os.environ["REQUESTED"] != "last-completed" and night != os.environ["REQUESTED"]:
+              sys.exit("the envelope is of another night than the one requested")
+          for name in ("plaintext_sha256", "thresholds_sha256"):
+              if not isinstance(envelope[name], str) or SHA256.fullmatch(envelope[name]) is None:
+                  sys.exit(f"{name} is not a sha256")
+          for name in ("decision_instant", "decision_run_id", "generation_id", "decisor_version"):
+              if not isinstance(envelope[name], str) or re.fullmatch(r"[0-9A-Za-z_.:+-]{1,64}", envelope[name]) is None:
+                  sys.exit(f"{name} is not an identifier or an instant")
+          try:
+              datetime.fromisoformat(envelope["decision_instant"])
+          except ValueError:
+              sys.exit("decision_instant is not ISO-8601")
+
+          def raw(name, size=None):
+              value = envelope[name]
+              try:
+                  data = base64.b64decode(value.encode("ascii"), validate=True) if isinstance(value, str) else None
+              except (binascii.Error, ValueError):
+                  data = None
+              if data is None or (size is not None and len(data) != size):
+                  sys.exit(f"{name} is not base64 of the expected size")
+              return data
+
+          raw("ephemeral_public_key", 32)
+          raw("nonce", 12)
+          if raw("recipient_public_key", 32) != base64.b64decode(os.environ["PUBKEY"]):
+              sys.exit("the envelope is not encrypted to C3PO_R2D2_LAB_VERDICT_PUBKEY")
+          ciphertext = raw("ciphertext")
+          if len(ciphertext) < 16:
+              sys.exit("the ciphertext is shorter than its tag")
+          counts = envelope["counts"]
+          if not isinstance(counts, dict) or set(counts) != COUNT_KEYS or not isinstance(counts["rows"], int) or isinstance(counts["rows"], bool):
+              sys.exit("unexpected counts shape")
+          for name, keys in (("by_market", MARKETS), ("by_verdict", VERDICTS), ("by_verdict_without_events", VERDICTS)):
+              block = counts[name]
+              if (not isinstance(block, dict) or set(block) != keys
+                      or not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in block.values())
+                      or sum(block.values()) != counts["rows"]):
+                  sys.exit(f"counts.{name} is not exactly {sorted(keys)} adding up to counts.rows")
+          text = json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n"
+          (out / "envelope.json").write_text(text, encoding="utf-8")
+          metadata = {
+              "night": night,
+              "workflow_run_id": os.environ["RUN_ID"],
+              "workflow_revision": os.environ["REVISION"],
+              "decision_instant": envelope["decision_instant"],
+              "decision_run_id": envelope["decision_run_id"],
+              "decisor_version": envelope["decisor_version"],
+              "thresholds_sha256": envelope["thresholds_sha256"],
+              "counts": counts,
+              "plaintext_sha256": envelope["plaintext_sha256"],
+              "envelope_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+              "ciphertext_bytes": len(ciphertext),
+          }
+          (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"night={night}\n")
+          summary = ["## Decisor verdict export (encrypted)", "",
+                     f"- night `{night}`; decision `{envelope['decision_instant']}`; thresholds `{envelope['thresholds_sha256']}`",
+                     f"- rows {counts['rows']}; by verdict {counts['by_verdict']}; without events {counts['by_verdict_without_events']}",
+                     f"- plaintext sha256 `{envelope['plaintext_sha256']}`; envelope sha256 `{metadata['envelope_sha256']}`"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("\n".join(summary) + "\n")
+          print(f"night {night}: {counts['rows']} verdicts encrypted ({counts['by_verdict']['COMPRA_PERMITIDA']} COMPRA_PERMITIDA)")
+          PY
+          (cd "$out" && sha256sum envelope.json metadata.json > SHA256SUMS) || exit 1
+
+      - name: Publish the encrypted envelope
+        uses: actions/upload-artifact@v4
+        with:
+          name: decisor-verdicts-${{ steps.verify.outputs.night }}
+          path: ${{ runner.temp }}/decisor-verdicts
+          if-no-files-found: error
+          retention-days: 30
+    outputs:
+      night: ${{ steps.verify.outputs.night }}
+
+  # The lab reads the envelope from a RELEASE of this repository, not from the artifact: a release asset of a public
+  # repository downloads without any token (the lab needs no credential of this repository), it does not expire, and
+  # only this repository's own workflows and writers can create a release (a fork's pull request runs with a read-only
+  # token) — the lab accepts only releases authored by github-actions[bot] whose tag names the night. This job never
+  # touches the host; it alone holds contents: write, and only to create the release.
+  publish:
+    name: Publish the envelope as a release asset
+    needs: export
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: decisor-verdicts-${{ needs.export.outputs.night }}
+          path: ${{ runner.temp }}/decisor-verdicts
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIGHT: ${{ needs.export.outputs.night }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$NIGHT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo 'bad night' >&2; exit 1; }
+          [[ "$RUN_ID" =~ ^[0-9]{1,20}$ ]] || exit 1
+          dir="$RUNNER_TEMP/decisor-verdicts"
+          (cd "$dir" && sha256sum --check --strict --quiet SHA256SUMS) || { echo 'the envelope does not match its SHA256SUMS' >&2; exit 1; }
+          tag="decisor-verdicts-$NIGHT-r$RUN_ID"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Decisor verdicts $NIGHT (encrypted)" \
+            --notes "Encrypted to the R2D2 lab's key; counts only in metadata.json. Run $RUN_ID." \
+            "$dir/envelope.json" "$dir/metadata.json" "$dir/SHA256SUMS" > /dev/null || exit 1
+          echo "- release \`$tag\` (envelope.json, metadata.json, SHA256SUMS)" >> "$GITHUB_STEP_SUMMARY"

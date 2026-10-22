@@ -610,6 +610,9 @@ jobs:
           SEC_CONTACT: ${{ secrets.C3PO_SEC_CONTACT }}
           ASFILED_ENABLED: ${{ vars.C3PO_VALUATION_ASFILED_ENABLED }}
           ASFILED_BACKFILL: ${{ vars.C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL }}
+          # The Decisor V1 switches (c3po/docs/VALUATION_DECISOR_V1.md): shadow recording and the nightly earnings calendar.
+          DECISOR_SHADOW: ${{ vars.C3PO_VALUATION_DECISOR_SHADOW }}
+          EARNINGS_CALENDAR_ENABLED: ${{ vars.C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED }}
           LC_ALL: C  # the regex character ranges compare bytes on any runner image
         run: |
           test -n "$PUSH_PRIVATE"
@@ -627,6 +630,14 @@ jobs:
             echo "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL must be an integer from 0 to 200" >&2
             exit 1
           fi
+          if [ -n "$DECISOR_SHADOW" ] && ! [[ "$DECISOR_SHADOW" =~ ^(true|false)$ ]]; then
+            echo "C3PO_VALUATION_DECISOR_SHADOW must be true or false" >&2
+            exit 1
+          fi
+          if [ -n "$EARNINGS_CALENDAR_ENABLED" ] && ! [[ "$EARNINGS_CALENDAR_ENABLED" =~ ^(true|false)$ ]]; then
+            echo "C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED must be true or false" >&2
+            exit 1
+          fi
           umask 077
           {
             printf 'C3PO_PUSH_VAPID_PRIVATE_KEY=%s\n' "$PUSH_PRIVATE"
@@ -634,6 +645,8 @@ jobs:
             if [ -n "$SEC_CONTACT" ]; then printf 'C3PO_SEC_CONTACT=%s\n' "$SEC_CONTACT"; fi
             if [ -n "$ASFILED_ENABLED" ]; then printf 'C3PO_VALUATION_ASFILED_ENABLED=%s\n' "$ASFILED_ENABLED"; fi
             if [ -n "$ASFILED_BACKFILL" ]; then printf 'C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL=%s\n' "$ASFILED_BACKFILL"; fi
+            if [ -n "$DECISOR_SHADOW" ]; then printf 'C3PO_VALUATION_DECISOR_SHADOW=%s\n' "$DECISOR_SHADOW"; fi
+            if [ -n "$EARNINGS_CALENDAR_ENABLED" ]; then printf 'C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=%s\n' "$EARNINGS_CALENDAR_ENABLED"; fi
           } > /tmp/c3po-push.env
           scp -i ~/.ssh/c3po_deploy \
             /tmp/c3po-push.env \
