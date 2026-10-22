@@ -316,4 +316,5 @@ def test_only_the_publish_job_writes_and_it_never_touches_the_host() -> None:
     assert publish_job["needs"] == "export" and "environment" not in publish_job
     publish_text = json.dumps(publish_job)
     assert "ssh" not in publish_text and "C3PO_AWS" not in publish_text and "secrets." not in publish_text
-    assert 'tag="decisor-verdicts-$NIGHT-r$RUN_ID"' in publish_text and "--prerelease" in publish_text
+    run = "\n".join(str(step.get("run", "")) for step in publish_job["steps"])
+    assert 'tag="decisor-verdicts-$NIGHT-r$RUN_ID"' in run and "--prerelease" in run
