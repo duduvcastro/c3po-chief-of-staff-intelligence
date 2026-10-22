@@ -166,6 +166,16 @@ def counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _us_view(generation: Mapping[str, Any], symbols: set[str]) -> tuple[Any, ...]:
+    """What a generation serves to the US rows of a night: its source and version, the NASDAQ/NYSE cycles, and the
+    targeted admissions of those symbols. Two generations with the same US view serve the same US numbers."""
+    cycles = generation.get("cycles") if isinstance(generation.get("cycles"), Mapping) else {}
+    targeted = generation.get("targeted") if isinstance(generation.get("targeted"), Mapping) else {}
+    return (generation.get("source"), generation.get("source_version"),
+            tuple(str(cycles.get(market)) for market in US_MARKETS),
+            tuple(sorted((str(key).strip().upper(), str(value)) for key, value in targeted.items() if str(key).strip().upper() in symbols)))
+
+
 def night_verdicts(database: Any, night: str, *, now: datetime | None = None) -> dict[str, Any]:
     """The verdicts of night ``night`` (see the module docstring), as ``{"document": <plaintext>, "header": <clear
     identity>}``. Read-only: ``database.valuation_decisions_of_session`` and the generation in force at the cutoff."""
@@ -202,9 +212,17 @@ def night_verdicts(database: Any, night: str, *, now: datetime | None = None) ->
     if schema != DECISION_SCHEMA or mode != MODE_SHADOW or SHA256_PATTERN.fullmatch(thresholds) is None:
         raise ExportRefused("RUN_INCONSISTENT", f"run {run_id} is not a {DECISION_SCHEMA} shadow run with a thresholds hash")
     in_force = generation_at(database, cutoff)
-    if not in_force or str(in_force.get("generation_id")) != generation_id:
-        raise ExportRefused("GENERATION_NOT_DECIDED", f"the generation in force at {cutoff.isoformat()} is not the one run {run_id} decided: "
-                                                      f"the night {night} is not complete")
+    if not in_force:
+        raise ExportRefused("GENERATION_NOT_DECIDED", f"no generation in force at {cutoff.isoformat()}: the night {night} is not complete")
+    if str(in_force.get("generation_id")) != generation_id:
+        # A later generation that leaves every US input of this run unchanged (a B3-only republish, a B3 targeted
+        # admission) does not void the US night: only the US view of the two generations is compared.
+        decided = generation_at(database, _utc(instant))
+        symbols = {str(record["symbol"]).strip().upper() for record in chosen}
+        if (not decided or str(decided.get("generation_id")) != generation_id
+                or _us_view(decided, symbols) != _us_view(in_force, symbols)):
+            raise ExportRefused("GENERATION_NOT_DECIDED", f"the generation in force at {cutoff.isoformat()} changes the US inputs run {run_id} "
+                                                          f"decided on: the night {night} is not complete")
     rows: list[dict[str, Any]] = []
     for record in sorted(chosen, key=lambda item: (str(item["market"]), str(item["symbol"]))):
         checks = record.get("checks") if isinstance(record.get("checks"), Mapping) else {}

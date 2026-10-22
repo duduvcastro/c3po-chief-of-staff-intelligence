@@ -43,12 +43,19 @@ def _keys() -> tuple[str, str]:
     return base64.b64encode(private).decode(), base64.b64encode(public).decode()
 
 
-def _database(generations: list[tuple[datetime, str]]) -> Database:
+def _database(generations: list[tuple[datetime, str]], us_cycles: dict[str, str] | None = None) -> Database:
+    """A generation's US cycles default to its own id (every generation changes the US inputs); ``us_cycles`` maps a
+    generation id to the US cycle it serves, so two generations can share their US view (a B3-only republish)."""
     database = Database(Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
 
     def selection_at(instant: datetime) -> dict[str, Any] | None:
         known = [(at, generation) for at, generation in generations if at <= instant]
-        return {"generation_id": max(known)[1], "source": "official_blend_v1"} if known else None
+        if not known:
+            return None
+        generation = max(known)[1]
+        us = (us_cycles or {}).get(generation, generation)
+        return {"generation_id": generation, "source": "official_blend_v1", "source_version": "v1",
+                "cycles": {"NASDAQ": us, "NYSE": us, "B3": generation}, "targeted": {}}
 
     database.valuation_official_selection_at = selection_at  # type: ignore[method-assign]
     return database
@@ -287,3 +294,12 @@ def test_the_workflow_reads_the_host_read_only_on_schedule_and_prints_a_refusal_
     source.write_text(json.dumps({"schema": export.REFUSAL_SCHEMA, "night": NIGHT, "refused": "AAP.L"}))
     result = subprocess.run([sys.executable, "-", str(source)], input=script, text=True, capture_output=True)
     assert result.returncode != 0 and "AAP.L" not in result.stdout + result.stderr
+
+
+def test_a_later_b3_only_generation_does_not_void_the_us_night() -> None:
+    private, public = _keys()
+    decided, b3_only = str(uuid4()), str(uuid4())
+    database = _database([(RUN - timedelta(hours=2), decided), (RUN + timedelta(hours=3), b3_only)], us_cycles={b3_only: decided})
+    _night(database, generation=decided)
+    envelope = export.export(database, NIGHT, public, now=NOW)
+    assert envelope["generation_id"] == decided and export.decrypt(envelope, private)["night"] == NIGHT
