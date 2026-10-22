@@ -84,6 +84,10 @@ jobs:
           set -uo pipefail
           dir="$RUNNER_TEMP/failed"
           mkdir -p "$dir" || exit 1
+          # gh >= 2.8x refuses to write a body with terminal escape sequences (job logs have ANSI colours) unless allowed
+          esc=()
+          help=$(gh api --help 2>&1 || true)  # read whole: a grep -q pipe would SIGPIPE gh and fail under pipefail
+          if [[ "$help" == *--allow-escape-sequences* ]]; then esc=(--allow-escape-sequences); fi
           for id in $FAILED; do
             [[ "$id" =~ ^[0-9]{1,20}$ ]] || exit 1
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" > "$dir/$id.jobs.json" || exit 1
@@ -92,7 +96,7 @@ jobs:
             if [ -n "$job" ]; then
               [[ "$job" =~ ^[0-9]{1,20}$ ]] || exit 1
               # the log is read for the remote exit status only (an aggregate line of the backtest); it is never printed here
-              gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" > "$dir/$id.log" || exit 1
+              gh api ${esc[@]+"${esc[@]}"} "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" > "$dir/$id.log" || exit 1
             fi
           done
 
