@@ -2,9 +2,10 @@
 
 Aprovado pelo dono em 20/10/2026 (21:4x BRT): despachar os lotes da grade do `PREREG_VALUATION_PIT_BACKTEST_US_V1` (§14 d)
 enquanto o Mac do dono — onde rodam Fable e Codex — está desligado, **só** sob a ordem do dono já assinada (ordem 2,
-`ba24f301…`). Este documento não altera o pré-registro (congelado) nem o `valuation-pit-backtest.yml`: o autopiloto só chama
-o modo `grid` desse workflow, que continua a fazer todas as suas verificações (ordem do dono, janelas, pré-voo no host,
-produtor do commit do recibo).
+`ba24f301…`) ou a sua sucessora direta (ordem 3, emitida pela Fable sob a pré-autorização do dono de 22/10/2026 — ver
+«Ordem sucessora»). Este documento não altera o pré-registro (congelado) nem o `valuation-pit-backtest.yml`: o autopiloto
+só chama o modo `grid` desse workflow, que continua a fazer todas as suas verificações (ordem do dono, janelas, pré-voo no
+host, produtor do commit do recibo).
 
 ## O que faz
 
@@ -85,3 +86,26 @@ despachar nem comentar); só age a partir de `main`. O agendamento só existe de
 ## Primeiro lote (21/10/2026)
 
 Sem nenhum lote de sucesso desta ordem, o autopiloto despacha o **primeiro lote**, limitado a `FIRST_CHUNK_MAX_RUNS` = 10 (§14 d, "start with 10"), e posta um aviso único (`first-chunk`) no canal. Antes, todo lote completado é classificado: uma recusa reexecutável é repetida, e qualquer outra falha para o autopiloto. O operador faz as conferências pós-primeiro-lote (`covered_without_rows_by_T` de 2021, `volume_basis` e o primeiro `manifest_sha256` no canal, custo por data) e desliga o autopiloto se alguma falhar. Motivo: o Mac do operador fica desligado na janela da noite de 21/10, e sem isso a grade perderia a noite.
+
+## Ordem sucessora
+
+O primeiro lote (run 39772674670, 22/10) mediu ~193 s por instante: os 257 instantes restantes (~13,8 h de cálculo) não
+cabem nas janelas dos dias úteis até ao `not_after` da ordem 2 (sex 23/10 23:30 BRT, ~11,7 h). A **ordem 3**
+(`6ad97737b3fe889027012e60b19f301f17924612a2a86c89eddfd21e2a4387ad`), emitida pela Fable com base na pré-autorização do dono
+de 22/10/2026 (#429, comentário 6340314970), é a ordem 2 com `not_after` **dom 25/10 23:30 BRT** e
+`"supersedes": "ba24f301…"`: os mesmos pinos, `modes`, `recompute_existing=false` e `max_runs_cap`. Sáb 24 e dom 25 só têm a
+janela noturna do PREREG. O `valuation-pit-backtest.yml` confere-a como qualquer ordem (ignora `supersedes` e `note`).
+
+Regra do autopiloto: quando o último lote com sucesso correu sob outra ordem `X`, o tick só segue se a ordem das variáveis
+(o ficheiro do checkout, conferido pelo sha256) tiver `"supersedes": X` e o ficheiro de `X` também estiver no checkout
+(conferido pelo sha256) com o mesmo `schema` e `prereg`, `grid` nos `modes`, os mesmos dois pinos (como instantes) e
+`recompute_existing=false` nas duas. Um elo só: a ordem que `X` substituiu não conta. Senão → nada
+(`last_chunk_of_another_order`, como antes; o motivo vai em `details.successor`). O resto não muda: os lotes falhados depois
+do último sucesso continuam classificados (uma parada sob a ordem 2 continua parada sob a ordem 3, com o mesmo aviso único
+`stop:<run>`), as janelas e o primeiro lote. O lote despachado corre sob a ordem das variáveis; cada tick que passa o elo
+mostra `successor_of` nos detalhes.
+
+Para passar à ordem 3 (operador, depois do merge em `main`): `C3PO_PIT_GRID_ORDER_SHA256` =
+`6ad97737b3fe889027012e60b19f301f17924612a2a86c89eddfd21e2a4387ad` e `C3PO_PIT_GRID_UNTIL` = `2026-10-25T23:30:00-03:00`;
+as outras variáveis não mudam. Conferir com um tick manual em dry-run: `successor_of` = `ba24f301…` nos detalhes (fora das
+janelas, `next_chunk`), nunca `last_chunk_of_another_order`.

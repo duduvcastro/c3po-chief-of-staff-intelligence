@@ -2,7 +2,8 @@ name: Valuation PIT grid autopilot
 run-name: Valuation PIT grid autopilot — ${{ github.event_name == 'schedule' && 'tick' || (inputs.dry_run && 'dry-run' || 'act') }}
 
 # Dispatches the chunks of the US PIT grid (PREREG_VALUATION_PIT_BACKTEST_US_V1 §14 d) while nobody is at the keyboard,
-# under the owner's order already signed (owner order 2) and nothing else. Every tick (every 30 min, or a manual
+# under the owner's order already signed (owner order 2) or its direct successor (order 3, issued by Fable under the
+# owner's pre-authorisation of 22/10: the script's successor rule) and nothing else. Every tick (every 30 min, or a manual
 # dispatch: a DRY RUN unless dry_run is unticked) reads only what GitHub already holds — the runs of
 # valuation-pit-backtest.yml, the jobs and the log of the last failed grid chunk, the metadata artifact of the last
 # successful one, the channel's recent bot comments — and the owner's order file of this checkout, then decides with

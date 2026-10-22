@@ -2,10 +2,12 @@
 the parameters come only from the repository variables and the owner's order of the checkout; a tick is a no-op when the
 autopilot is off, after UNTIL, while a backtest run is in progress, once the grid is complete (posted once), inside or too
 close to a forbidden window (daylight saving of New York and São Paulo); a retryable refusal is retried, any other failure
-stops the autopilot and is posted once. The decision script runs here as the workflow runs it, over stub payloads."""
+stops the autopilot and is posted once; a grid begun under one owner order goes on under another only when that one directly
+supersedes it (owner order 3, the weekend). The decision script runs here as the workflow runs it, over stub payloads."""
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import importlib.util
 import json
 import os
@@ -34,6 +36,11 @@ VARIABLES = {"C3PO_PIT_GRID_ORDER_SHA256": ORDER, "C3PO_PIT_GRID_PRICE_PIN": PIN
 # Wednesday 21/10/2026 18:00 BRT = 17:00 New York (EDT): outside both windows, 330 min before the nightly window (23:30 BRT)
 NOW = dt.datetime(2026, 10, 21, 21, 0, tzinfo=dt.timezone.utc)
 MANIFEST_SHA = "ab" * 32
+ORDERS = ROOT / "c3po" / "ops" / "owner-orders"
+ORDER_3 = "6ad97737b3fe889027012e60b19f301f17924612a2a86c89eddfd21e2a4387ad"  # owner order 3: order 2's grid extended to the weekend
+ORDER_3_VARIABLES = {**VARIABLES, "C3PO_PIT_GRID_ORDER_SHA256": ORDER_3, "C3PO_PIT_GRID_UNTIL": "2026-10-25T23:30:00-03:00"}
+# Saturday 24/10/2026 12:00 BRT: after order 2's not_after; no US session on the weekend, 690 min before the nightly window
+SATURDAY = dt.datetime(2026, 10, 24, 15, 0, tzinfo=dt.timezone.utc)
 # a stub `gh`: records its argv; `api` serves the run list (before / after a `workflow run`) and the channel's comment pages
 STUB_GH = """#!@PYTHON@
 import json, os, sys
@@ -78,7 +85,7 @@ def _run(run_id: int, *, age_minutes: float, conclusion: str | None = "success",
             "display_title": f"Valuation PIT backtest US (PREREG_VALUATION_PIT_BACKTEST_US_V1) — {mode}"}
 
 
-def _metadata(run_id: int, *, complete: bool = False, order: str = ORDER) -> dict[str, Any]:
+def _metadata(run_id: int, *, complete: bool = False, order: str | None = ORDER) -> dict[str, Any]:
     return {"run_id": str(run_id), "mode": "grid", "partial": False, "owner_order_sha256": order, "complete": complete,
             "manifest_sha256": MANIFEST_SHA, "entries": 120 if not complete else 266, "remaining": 0 if complete else 146}
 
@@ -103,13 +110,13 @@ def _log(status: int) -> str:
 
 
 def _decide(*, env: dict[str, str] | None = None, now: dt.datetime = NOW, runs: list[dict[str, Any]] | None = None, jobs: Any = None,
-            log: str | None = None, metadata: Any = None, failures: Mapping[int, tuple[Any, str | None]] | None = None) -> Any:
+            log: str | None = None, metadata: Any = None, failures: Mapping[int, tuple[Any, str | None]] | None = None, root: Path = ROOT) -> Any:
     runs = runs if runs is not None else [_run(100, age_minutes=120, at=now)]
     metadata = metadata if metadata is not None else _metadata(100)
     merged: dict[int, tuple[Any, str | None]] = dict(failures or {})
     if jobs is not None:  # the one failed chunk of most tests
         merged[jobs["jobs"][0]["run_id"]] = (jobs, log)
-    return AP.decide(env=env if env is not None else VARIABLES, root=ROOT, now=now, runs=runs, failures=merged, metadata=metadata,
+    return AP.decide(env=env if env is not None else VARIABLES, root=root, now=now, runs=runs, failures=merged, metadata=metadata,
                      repository=REPOSITORY, tick_url=TICK_URL)
 
 
@@ -565,3 +572,184 @@ def test_failed_chunk_logs_are_saved_despite_terminal_escapes() -> None:
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert '[[ "$help" == *--allow-escape-sequences* ]]' in text and "grep -q -- '--allow-escape-sequences'" not in text
     assert 'gh api ${esc[@]+"${esc[@]}"} "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs"' in text
+
+
+# ---------------------------------------------------------------------------------------------------------------- the successor order
+def _order_file(digest: str) -> bytes:
+    return (ORDERS / f"{digest}.json").read_bytes()
+
+
+def _checkout(root: Path, *orders: dict[str, Any], copy: tuple[str, ...] = (ORDER,)) -> tuple[Path, list[str]]:
+    """A checkout at ``root`` with the repository's orders named in ``copy`` and ``orders``, each written as the repository
+    writes them (one JSON line) and named by its sha256."""
+    folder = root / "c3po" / "ops" / "owner-orders"
+    folder.mkdir(parents=True, exist_ok=True)
+    for digest in copy:
+        (folder / f"{digest}.json").write_bytes(_order_file(digest))
+    digests = []
+    for order in orders:
+        content = (json.dumps(order) + "\n").encode("utf-8")
+        digests.append(hashlib.sha256(content).hexdigest())
+        (folder / f"{digests[-1]}.json").write_bytes(content)
+    return root, digests
+
+
+def _successor(**changes: Any) -> dict[str, Any]:
+    """Order 2 extended to the weekend and naming it in ``supersedes`` (the shape of order 3), with ``changes``."""
+    return {**json.loads(_order_file(ORDER)), "not_after": "2026-10-25T23:30:00-03:00", "supersedes": ORDER, "note": "teste", **changes}
+
+
+def _variables(order: str, **changes: str) -> dict[str, str]:
+    return {**ORDER_3_VARIABLES, "C3PO_PIT_GRID_ORDER_SHA256": order, **changes}
+
+
+def _backtest_order_check(order: str, now: str, **env: str) -> subprocess.CompletedProcess[str]:
+    """The backtest's "Verify the owner's order" Python, exactly as valuation-pit-backtest.yml carries it, over this checkout."""
+    backtest = yaml.safe_load(BACKTEST_PATH.read_text(encoding="utf-8"))
+    run = next(step for step in backtest["jobs"]["pit-backtest"]["steps"] if step.get("name") == "Verify the owner's order")["run"]
+    script = run.split("<<'PY'", 1)[1].split("\n", 1)[1].split("\nPY\n", 1)[0]
+    variables = {"MODE": "grid", "ORDER": order, "PIN": PIN, "CATALOGUE_PIN": PIN, "MAX_RUNS": "40", "RECOMPUTE": "false",
+                 "GITHUB_REF": "refs/heads/main", "ORDER_NOW": now, **env}
+    return subprocess.run([sys.executable, "-", str(ROOT)], input=script, text=True, capture_output=True, env={**os.environ, **variables}, cwd=ROOT)
+
+
+def test_order_3_hashes_to_its_name_and_is_order_2_extended_to_the_weekend() -> None:
+    content = _order_file(ORDER_3)
+    assert hashlib.sha256(content).hexdigest() == ORDER_3
+    order_2, order_3 = json.loads(_order_file(ORDER)), json.loads(content)
+    assert order_3["supersedes"] == ORDER and order_3["not_after"] == "2026-10-25T23:30:00-03:00"
+    assert {key: value for key, value in order_3.items() if key not in ("not_after", "supersedes", "note")} == \
+        {key: value for key, value in order_2.items() if key not in ("not_after", "note")}  # the same pins, modes, flag and cap
+    assert list(order_3) == [*[key for key in order_2 if key != "note"], "supersedes", "note"]
+    for raw in (content, _order_file(ORDER)):  # written as order 2 was: one line of json.dumps, ASCII, a final newline
+        assert raw == (json.dumps(json.loads(raw)) + "\n").encode("ascii")
+    assert "emitida pela Fable" in order_3["note"] and "#429" in order_3["note"] and "6340314970" in order_3["note"]
+    assert AP.successor_refusal(ROOT, AP.parameters(ORDER_3_VARIABLES), ORDER) is None
+
+
+def test_the_backtest_accepts_order_3_on_the_weekend_when_order_2_has_expired() -> None:
+    saturday = "2026-10-24T12:00:00-03:00"
+    accepted = _backtest_order_check(ORDER_3, saturday)
+    assert accepted.returncode == 0 and "owner's order verified" in accepted.stdout, accepted.stderr
+    expired = _backtest_order_check(ORDER, saturday)
+    assert expired.returncode != 0 and "has expired" in expired.stderr
+    assert _backtest_order_check(ORDER, "2026-10-23T23:29:59-03:00").returncode == 0  # order 2 until Friday 23:30 BRT
+    assert _backtest_order_check(ORDER_3, "2026-10-25T23:29:59-03:00").returncode == 0  # order 3 until Sunday 23:30 BRT
+    assert "has expired" in _backtest_order_check(ORDER_3, "2026-10-25T23:30:01-03:00").stderr
+    for env, message in (({"RECOMPUTE": "true"}, "this recompute_existing flag"), ({"PIN": "2026-10-19T18:31:00-03:00"}, "another price pin"),
+                         ({"CATALOGUE_PIN": "2026-10-19T18:29:59-03:00"}, "another catalogue pin"), ({"MAX_RUNS": "201"}, "max_runs_cap"),
+                         ({"MODE": "fetch"}, "does not authorise mode fetch")):
+        result = _backtest_order_check(ORDER_3, saturday, **env)
+        assert result.returncode != 0 and message in result.stderr, (env, result.stderr)
+
+
+def test_the_direct_successor_goes_on_with_the_grid_of_the_order_it_supersedes(tmp_path: Path) -> None:
+    decision = _decide(env=ORDER_3_VARIABLES)  # the last successful chunk ran under order 2; the variables name order 3
+    assert (decision.action, decision.reason, decision.post_key) == ("dispatch", "next_chunk", None)
+    assert decision.details["successor_of"] == ORDER and decision.details["after_run"] == 100 and decision.details["max_runs"] == 40
+    # Saturday 24/10: order 2 is over (its not_after, whatever the UNTIL), order 3 goes on until Sunday 23:30 BRT
+    weekend = [_run(100, age_minutes=120, at=SATURDAY)]
+    on = _decide(env=ORDER_3_VARIABLES, now=SATURDAY, runs=weekend)
+    assert (on.action, on.reason, on.details["minutes"], on.details["successor_of"]) == ("dispatch", "next_chunk", 690, ORDER)
+    assert _decide(now=SATURDAY, runs=weekend).reason == "after_until"
+    assert _decide(env={**VARIABLES, "C3PO_PIT_GRID_UNTIL": "2026-10-25T23:30:00-03:00"}, now=SATURDAY, runs=weekend).reason == "after_until"
+    sunday_late = dt.datetime(2026, 10, 26, 2, 31, tzinfo=dt.timezone.utc)  # Sunday 25/10 23:31 BRT
+    assert _decide(env=ORDER_3_VARIABLES, now=sunday_late, runs=[_run(100, age_minutes=120, at=sunday_late)]).reason == "after_until"
+    # the windows are unchanged, and a tick inside one (a dry run too) still shows the link it accepted
+    inside = _utc(2026, 10, 22, 15, 0)  # Thursday 11:00 New York
+    held = _decide(env=ORDER_3_VARIABLES, now=inside, runs=[_run(100, age_minutes=120, at=inside)])
+    assert (held.action, held.reason, held.details["successor_of"]) == ("noop", "inside_window", ORDER)
+    # once a chunk of order 3 succeeds the grid is its own (no link read any more)
+    own = _decide(env=ORDER_3_VARIABLES, runs=[_run(101, age_minutes=30), _run(100, age_minutes=120)], metadata=_metadata(101, order=ORDER_3))
+    assert own.reason == "next_chunk" and "successor_of" not in own.details
+    # the chunk is dispatched under order 3 — the variables —, never under the order it supersedes
+    result, values = _cli(tmp_path, env=ORDER_3_VARIABLES, runs=[_run(100, age_minutes=120)], metadata=_metadata(100))
+    assert result.returncode == 0, result.stderr
+    assert values == {"action": "dispatch", "reason": "next_chunk", "act": "true", "post": "false", "order": ORDER_3, "price_pin": PIN,
+                      "catalogue_pin": PIN, "prereg_commit": PREREG_COMMIT, "max_runs": "40"}
+    # a grid completed by a chunk of order 2 is said once, naming the order its manifest carries
+    complete = _decide(env=ORDER_3_VARIABLES, metadata=_metadata(100, complete=True))
+    assert (complete.reason, complete.post_key) == ("grid_complete", f"complete:{MANIFEST_SHA}")
+    assert f"ordem do dono `{ORDER[:8]}`" in complete.post_body
+    # the same pins written in another zone are the same pins
+    utc = "2026-10-19T21:30:00Z"
+    root, (zoned,) = _checkout(tmp_path / "zone", _successor(price_pinned_at=utc, catalogue_pinned_at=utc))
+    assert _decide(env=_variables(zoned), root=root).details["successor_of"] == ORDER
+
+
+def test_an_order_that_does_not_directly_supersede_the_last_chunk_s_order_is_refused(tmp_path: Path) -> None:
+    def refused(decision: Any, label: str) -> None:
+        assert (decision.action, decision.reason, decision.post_key) == ("noop", "last_chunk_of_another_order", None)
+        assert decision.details["successor"] == label
+
+    refused(_decide(env=ORDER_3_VARIABLES, metadata=_metadata(100, order="cd" * 32)), "not_superseded")  # an order that order 3 does not name
+    refused(_decide(metadata=_metadata(100, order=ORDER_3)), "not_superseded")  # never backwards: order 2 does not supersede order 3
+    refused(_decide(env=ORDER_3_VARIABLES, metadata=_metadata(100, order=None)), "chunk_order_unreadable")
+    refused(_decide(env=ORDER_3_VARIABLES, metadata=_metadata(100, order="../" + ORDER)), "chunk_order_unreadable")
+    # one link only: an order 4 that supersedes order 3 does not take over a grid of order 2 (it would one of order 3)
+    root, (order_4,) = _checkout(tmp_path / "chain", _successor(supersedes=ORDER_3), copy=(ORDER, ORDER_3))
+    refused(_decide(env=_variables(order_4), root=root), "not_superseded")
+    assert _decide(env=_variables(order_4), root=root, metadata=_metadata(100, order=ORDER_3)).details["successor_of"] == ORDER_3
+    # the superseded order's file must be in this checkout, unchanged and without a symbolic link
+    root, (alone,) = _checkout(tmp_path / "alone", _successor(), copy=())
+    refused(_decide(env=_variables(alone), root=root), "superseded_order_missing")
+    root, (tampered,) = _checkout(tmp_path / "tampered", _successor())
+    path = root / "c3po" / "ops" / "owner-orders" / f"{ORDER}.json"
+    path.write_bytes(path.read_bytes() + b" ")
+    refused(_decide(env=_variables(tampered), root=root), "superseded_order_hash")
+    root, (linked,) = _checkout(tmp_path / "linked", _successor())
+    path = root / "c3po" / "ops" / "owner-orders" / f"{ORDER}.json"
+    path.rename(tmp_path / "order-2-elsewhere.json")
+    path.symlink_to(tmp_path / "order-2-elsewhere.json")
+    refused(_decide(env=_variables(linked), root=root), "superseded_order_symlink")
+
+
+def test_a_successor_with_other_pins_or_flags_is_refused(tmp_path: Path) -> None:
+    other = "2026-10-19T18:31:00-03:00"
+    for name, changes, variables, label in (
+        ("price", {"price_pinned_at": other}, {"C3PO_PIT_GRID_PRICE_PIN": other}, "superseded_order_other_price_pinned_at"),
+        ("catalogue", {"catalogue_pinned_at": other}, {"C3PO_PIT_GRID_CATALOGUE_PIN": other}, "superseded_order_other_catalogue_pinned_at"),
+    ):
+        root, (digest,) = _checkout(tmp_path / name, _successor(**changes))
+        decision = _decide(env=_variables(digest, **variables), root=root)  # the variables agree with the successor, not with order 2
+        assert (decision.action, decision.reason, decision.details["successor"]) == ("noop", "last_chunk_of_another_order", label), name
+    # recompute_existing=true is never the autopilot's: the order of the variables is refused before any link is read
+    root, (recompute,) = _checkout(tmp_path / "recompute", _successor(recompute_existing=True))
+    assert _decide(env=_variables(recompute), root=root).reason == "invalid_parameters"
+    # the superseded order must be a grid order of the same schema and prereg, with the same pins and recompute_existing=false
+    for name, changes, label in (("prereg", {"prereg": "PREREG_OTHER"}, "superseded_order_other_prereg"),
+                                 ("schema", {"schema": "OTHER"}, "superseded_order_other_prereg"),
+                                 ("modes", {"modes": ["fetch"]}, "superseded_order_without_grid"),
+                                 ("flag", {"recompute_existing": True}, "recompute_existing_not_false"),
+                                 ("unpinned", {"price_pinned_at": None}, "superseded_order_other_price_pinned_at")):
+        root, (older,) = _checkout(tmp_path / f"older-{name}", {**json.loads(_order_file(ORDER)), **changes}, copy=())
+        root, (newer,) = _checkout(root, _successor(supersedes=older), copy=())
+        decision = _decide(env=_variables(newer), root=root, metadata=_metadata(100, order=older))
+        assert (decision.reason, decision.details["successor"]) == ("last_chunk_of_another_order", label), name
+
+
+def test_a_stop_under_the_superseded_order_still_stops_under_its_successor(tmp_path: Path) -> None:
+    runs = [_run(101, age_minutes=30, conclusion="failure"), _run(100, age_minutes=120)]  # 100: the last success, under order 2
+    under_2 = _decide(runs=runs, jobs=_jobs(101, AP.FAIL_STEP), log=_log(2))
+    under_3 = _decide(env=ORDER_3_VARIABLES, runs=runs, jobs=_jobs(101, AP.FAIL_STEP), log=_log(2))
+    assert (under_2.action, under_2.reason, under_2.post_key) == ("stop", "host_exit", "stop:101")
+    assert (under_3.action, under_3.reason, under_3.post_key) == ("stop", "host_exit", "stop:101")  # the same notice: posted once
+    for conclusion in ("cancelled", "timed_out"):
+        stopped = [_run(101, age_minutes=30, conclusion=conclusion), _run(100, age_minutes=120)]
+        assert _decide(env=ORDER_3_VARIABLES, runs=stopped, jobs=_jobs(101, None)).reason == f"conclusion_{conclusion}"
+    # every chunk since the last success is classified, whatever order it ran under: an older stop is not masked by a retry
+    mixed = [_run(103, age_minutes=20, conclusion="failure"), _run(102, age_minutes=50, conclusion="failure"), _run(100, age_minutes=120)]
+    decision = _decide(env=ORDER_3_VARIABLES, runs=mixed, failures={103: (_jobs(103, AP.FAIL_STEP), _log(17)), 102: (_jobs(102, AP.FAIL_STEP), _log(2))})
+    assert (decision.action, decision.post_key) == ("stop", "stop:102")
+    # a retryable refusal is retried under the successor, as under order 2
+    retried = _decide(env=ORDER_3_VARIABLES, runs=runs, jobs=_jobs(101, AP.FAIL_STEP), log=_log(21))
+    assert (retried.action, retried.reason, retried.details["successor_of"]) == ("dispatch", "retry_after_blocking_ingestion", ORDER)
+    # the stop posted under order 2 is not posted again under order 3
+    result, values = _cli(tmp_path, env=VARIABLES, runs=runs, metadata=_metadata(100), jobs=_jobs(101, AP.FAIL_STEP), log=_log(2))
+    assert (values["action"], values["post"]) == ("stop", "true"), result.stderr
+    body = (tmp_path / "comment.md").read_text(encoding="utf-8")
+    result, values = _cli(tmp_path, env=ORDER_3_VARIABLES, runs=runs, metadata=_metadata(100), jobs=_jobs(101, AP.FAIL_STEP), log=_log(2),
+                          comments=[body])
+    assert (values["action"], values["post"]) == ("stop", "false"), result.stderr
+    # a chunk of order 3 dispatched by hand that succeeds reopens the autopilot, under order 3
+    assert _decide(env=ORDER_3_VARIABLES, runs=[_run(102, age_minutes=20), *runs], metadata=_metadata(102, order=ORDER_3)).reason == "next_chunk"

@@ -15,7 +15,9 @@ Order of the checks (the first that applies decides):
      now is after the order's not_after                                → no-op
   4. a run of valuation-pit-backtest.yml (any mode) is not completed, or one was created in the last 10 min → no-op
   5. no successful grid chunk of this owner order yet                  → the FIRST chunk, capped at FIRST_CHUNK_MAX_RUNS (§14 d "start
-     with 10"), posted once; the operator does the post-first-chunk checks and turns the autopilot off if they fail
+     with 10"), posted once; the operator does the post-first-chunk checks and turns the autopilot off if they fail;
+     the last successful chunk ran under another owner order           → no-op, unless the order of the variables is that
+     order's direct successor (below): then the grid goes on under it
   6. the last successful chunk's manifest says ``complete: true``      → no-op, one channel comment per manifest
   7. grid chunks completed AFTER the last successful one did not succeed — EVERY one of them is classified:
        a retryable refusal (the window step; remote status 11 reboot pending, 17 deploy lock, 19 R2D2/massive timer,
@@ -26,6 +28,14 @@ Order of the checks (the first that applies decides):
        succeeds (a chunk the operator dispatches by hand and that succeeds reopens the autopilot)
   8. now is inside a forbidden window or less than 40 min before the next one → no-op
   9. otherwise                                                          → dispatch one chunk
+
+Successor order (owner order 3 of 22/10/2026 extends the grid to the weekend): a grid begun under one owner order goes on
+under the order of the variables only when that order DIRECTLY supersedes it — its file (this checkout's, verified by its
+hash) carries ``"supersedes": <the order of the last successful chunk>``, and the superseded order's file, in this checkout
+too and verified by its hash, is a grid order of the same schema and prereg with the same two pins (as instants) and
+``recompute_existing=false`` in both. One link only: the order that the superseded one superseded counts for nothing.
+Anything else stays the no-op ``last_chunk_of_another_order``. The chunks completed after the last success are classified
+whatever order they ran under (a stop under the superseded order still stops under its successor).
 """
 from __future__ import annotations
 
@@ -131,30 +141,51 @@ def parameters(env: Mapping[str, str]) -> Parameters:
                       catalogue_pinned_at=catalogue_pin, prereg_commit=commit, max_runs=max_runs, until=until, problems=tuple(problems))
 
 
+ORDER_FILE_PROBLEMS = {  # what is wrong with the order file of the variables, as posted to the channel
+    "not_sha256": "C3PO_PIT_GRID_ORDER_SHA256 não é um sha256 (64 hex minúsculos)",
+    "symlink": "o caminho da ordem do dono tem uma ligação simbólica",
+    "missing": "a ordem do dono C3PO_PIT_GRID_ORDER_SHA256 não existe nesta revisão",
+    "hash": "o ficheiro da ordem do dono não tem o sha256 da variável",
+    "not_json": "a ordem do dono não é JSON",
+    "not_object": "a ordem do dono não é um objeto JSON",
+}
+
+
+def read_order(root: Path, digest: str) -> tuple[dict[str, Any] | None, str]:
+    """``c3po/ops/owner-orders/<digest>.json`` of this checkout, read as the backtest reads it — no symbolic link on its
+    path, its bytes hash to its name, a JSON object: (the object, "") or (None, what is wrong: a key of ORDER_FILE_PROBLEMS)."""
+    if SHA256.match(digest) is None:
+        return None, "not_sha256"
+    root = root.resolve()
+    relative = Path("c3po") / "ops" / "owner-orders" / f"{digest}.json"
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return None, "symlink"
+    path = root / relative
+    if not path.is_file():
+        return None, "missing"
+    content = path.read_bytes()
+    if hashlib.sha256(content).hexdigest() != digest:
+        return None, "hash"
+    try:
+        data = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None, "not_json"
+    if not isinstance(data, dict):
+        return None, "not_object"
+    return data, ""
+
+
 def order_check(root: Path, params: Parameters) -> tuple[list[str], dt.datetime | None]:
     """The owner's order file of this checkout must exist, hash to the variable and authorise exactly these parameters
     (the backtest verifies it again at its own revision): a disagreement here dispatches nothing."""
     if SHA256.match(params.order_sha256) is None:
         return [], None  # already a named problem
-    root = root.resolve()
-    relative = Path("c3po") / "ops" / "owner-orders" / f"{params.order_sha256}.json"
-    current = root
-    for part in relative.parts:
-        current = current / part
-        if current.is_symlink():
-            return ["o caminho da ordem do dono tem uma ligação simbólica"], None
-    path = root / relative
-    if not path.is_file():
-        return ["a ordem do dono C3PO_PIT_GRID_ORDER_SHA256 não existe nesta revisão"], None
-    content = path.read_bytes()
-    if hashlib.sha256(content).hexdigest() != params.order_sha256:
-        return ["o ficheiro da ordem do dono não tem o sha256 da variável"], None
-    try:
-        data = json.loads(content.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
-        return ["a ordem do dono não é JSON"], None
-    if not isinstance(data, dict):
-        return ["a ordem do dono não é um objeto JSON"], None
+    data, problem = read_order(root, params.order_sha256)
+    if data is None:
+        return [ORDER_FILE_PROBLEMS[problem]], None
     problems: list[str] = []
     if data.get("schema") != "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1" or data.get("prereg") != "PREREG_VALUATION_PIT_BACKTEST_US_V1":
         problems.append("a ordem do dono não é uma VALUATION-PIT-BACKTEST-OWNER-ORDER-v1 deste pré-registro")
@@ -174,6 +205,35 @@ def order_check(root: Path, params: Parameters) -> tuple[list[str], dt.datetime 
     if not_after is None:
         problems.append("a ordem do dono não tem not_after legível")
     return problems, not_after
+
+
+def successor_refusal(root: Path, params: Parameters, chunk_order: Any) -> str | None:
+    """None when the order of the variables (already checked by ``order_check``) DIRECTLY supersedes ``chunk_order``, the
+    order under which the last successful chunk ran: its file names that order in ``supersedes``, and that order's file —
+    in this checkout too, verified by its hash — has the same schema and prereg, the grid among its modes, the same two
+    pins (as instants) and ``recompute_existing=false``, as the successor has. One link only. Otherwise the reason (a label)."""
+    if not isinstance(chunk_order, str) or SHA256.match(chunk_order) is None:
+        return "chunk_order_unreadable"
+    current, problem = read_order(root, params.order_sha256)
+    if current is None:
+        return f"order_{problem}"
+    if current.get("supersedes") != chunk_order:
+        return "not_superseded"
+    previous, problem = read_order(root, chunk_order)
+    if previous is None:
+        return f"superseded_order_{problem}"
+    if previous.get("schema") != current.get("schema") or previous.get("prereg") != current.get("prereg"):
+        return "superseded_order_other_prereg"
+    modes = previous.get("modes")
+    if not isinstance(modes, list) or "grid" not in modes:
+        return "superseded_order_without_grid"
+    for key in ("price_pinned_at", "catalogue_pinned_at"):
+        pin = instant(previous.get(key))
+        if pin is None or pin != instant(current.get(key)):
+            return f"superseded_order_other_{key}"
+    if previous.get("recompute_existing") is not False or current.get("recompute_existing") is not False:
+        return "recompute_existing_not_false"
+    return None
 
 
 # ---------------------------------------------------------------------------------------------------------------- windows
@@ -340,8 +400,12 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
         metadata = None
     elif not isinstance(metadata, dict) or metadata.get("mode") != "grid" or str(metadata.get("run_id")) != str(success_id):
         raise InputError("the last successful chunk's metadata is not that run's grid metadata")
+    successor_of: str | None = None  # the last successful chunk's order, when the order of the variables directly supersedes it
     if metadata is not None and metadata.get("owner_order_sha256") != params.order_sha256:
-        return Decision("noop", "last_chunk_of_another_order", details={"run": success_id})
+        refusal = successor_refusal(root, params, metadata.get("owner_order_sha256"))
+        if refusal is not None:
+            return Decision("noop", "last_chunk_of_another_order", details={"run": success_id, "successor": refusal})
+        successor_of = str(metadata["owner_order_sha256"])
     if metadata is not None and metadata.get("partial") is not False:
         raise InputError("the last successful chunk's metadata is marked partial")
     if metadata is not None and metadata.get("complete") is True:
@@ -350,7 +414,7 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
             raise InputError("the complete chunk's manifest_sha256 cannot be read")
         key = f"complete:{digest}"
         body = "\n".join([marker(key), f"**grid complete, manifest_sha256 `{digest}`** — grade PIT EUA completa no lote "
-                          f"[run {success_id}]({_run_url(repository, success_id)}) (ordem do dono `{params.order_sha256[:8]}`, {metadata.get('entries')} "
+                          f"[run {success_id}]({_run_url(repository, success_id)}) (ordem do dono `{(successor_of or params.order_sha256)[:8]}`, {metadata.get('entries')} "
                           f"entradas). O autopiloto não despacha mais nada.", "",
                           f"Próximo passo (operador, §14 d/e): publicar este `manifest_sha256` e, depois, o modo `report` com `manifest_run_id` "
                           f"{success_id}, este `manifest_sha256` e `prereg_commit` `{params.prereg_commit}`.", "",
@@ -396,6 +460,8 @@ def decide(*, env: Mapping[str, str], root: Path, now: dt.datetime, runs: Any, f
                                               "(`covered_without_rows_by_T` de 2021, `volume_basis` e o primeiro `manifest_sha256` no canal, custo por data) e "
                                               "desliga o autopiloto (`C3PO_PIT_GRID_AUTOPILOT=off`) se alguma falhar.", "",
                                               f"[Tick do autopiloto]({tick_url}) · um aviso só.", ""])
+    if successor_of is not None:  # the link to the superseded order, shown on every tick past it (a dry run inside a window too)
+        decision.details["successor_of"] = successor_of
     if retry is not None and retry.label == "reboot_pending":  # retried, but a reboot that stays pending is said once per BRT day
         key = f"reboot:{now.astimezone(SAO_PAULO).date().isoformat()}"
         decision.post_key = key
