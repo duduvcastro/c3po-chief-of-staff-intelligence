@@ -20,6 +20,15 @@ controller all read ``running``). Two pieces close that:
 
 The rule assumes ONE live process per worker role (one container per worker service in compose.yml): a second
 process claiming the same role at startup would reap the first one's in-flight runs.
+
+* **The stale-run reaper.** The valuation worker alone (one process applies it) also marks ``failed`` (error summary
+  ``STALE_ERROR_SUMMARY``, the same ``reaped_at`` / ``reaped_by``) every run still ``running`` more than
+  ``STALE_RUNNING_AFTER`` after it started, whatever its role (or none: the API, a one-off CLI) and its source — the
+  orphans the rule above leaves alone. Both sides of the age on the database clock (``now()``); one atomic, idempotent
+  ``UPDATE ... WHERE status = 'running' AND started_at < now() - interval ... RETURNING id``. It runs at startup and
+  then at most once per ``STALE_SWEEP_INTERVAL_SECONDS`` while the worker idles (``PeriodicReaper``), so an orphan is
+  cleared without a deploy. No ingestion of this system runs for 24 h (the longest ones are bounded well below it); a
+  live run it reaped by mistake is not lost: its own ``finish_ingestion_run`` still records the real outcome.
 """
 from __future__ import annotations
 
@@ -27,9 +36,10 @@ import logging
 import os
 import socket
 import threading
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Mapping, Protocol
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Mapping, Protocol
 from uuid import uuid4
 
 from .valuation_worker_contract import VALUATION_WORKER_SOURCE_TYPE
@@ -37,6 +47,9 @@ from .valuation_worker_contract import VALUATION_WORKER_SOURCE_TYPE
 logger = logging.getLogger(__name__)
 
 ORPHAN_ERROR_SUMMARY = "orphaned: process restarted"
+STALE_ERROR_SUMMARY = "orphaned: running for more than 24 h"
+STALE_RUNNING_AFTER = timedelta(hours=24)  # no ingestion of this system legitimately runs this long
+STALE_SWEEP_INTERVAL_SECONDS = 3600.0  # the stale-run reaper runs at most hourly
 MARKER_INSTANCE = "process_instance"
 MARKER_ROLE = "process_role"
 MARKER_PID = "process_pid"
@@ -83,6 +96,17 @@ class ReapingDatabase(Protocol):
         reaped_at: datetime,
         reaped_by: str,
         error_summary: str,
+    ) -> list[str]: ...
+
+
+class StaleReapingDatabase(Protocol):
+    def reap_stale_ingestion_runs(
+        self,
+        *,
+        max_age: timedelta,
+        reaped_by: str,
+        error_summary: str,
+        now: datetime | None = None,
     ) -> list[str]: ...
 
 
@@ -176,3 +200,54 @@ def reap_at_startup(database: ReapingDatabase, ownership: WorkerOwnership) -> li
     except Exception:
         logger.exception("ingestion orphan reaper failed: role=%s", ownership.role)
         return []
+
+
+def reap_stale(database: StaleReapingDatabase, ownership: WorkerOwnership, *, identity: ProcessIdentity | None = None,
+               now: datetime | None = None) -> list[str]:
+    """Mark ``failed`` every run, of any role or none, still ``running`` more than ``STALE_RUNNING_AFTER`` after it
+    started (the database clock; ``now`` is the in-memory double's); returns their ids. ``ownership`` names the reaper."""
+    identity = identity or current()
+    reaped = database.reap_stale_ingestion_runs(
+        max_age=STALE_RUNNING_AFTER,
+        reaped_by=f"{ownership.role}:{identity.instance}",
+        error_summary=STALE_ERROR_SUMMARY,
+        now=now,
+    )
+    logger.info("ingestion stale-run reaper: role=%s older_than=%s reaped=%d", ownership.role, STALE_RUNNING_AFTER, len(reaped))
+    return reaped
+
+
+def reap_stale_safely(database: StaleReapingDatabase, ownership: WorkerOwnership) -> list[str]:
+    """``reap_stale`` for the worker: a failure is logged and never blocks it (the next sweep tries again)."""
+    try:
+        return reap_stale(database, ownership)
+    except Exception:
+        logger.exception("ingestion stale-run reaper failed: role=%s", ownership.role)
+        return []
+
+
+class PeriodicReaper:
+    """Calls ``reap`` at most once per ``interval_seconds`` of a monotonic clock; the first call always runs."""
+
+    def __init__(self, reap: Callable[[], Any], *, interval_seconds: float = STALE_SWEEP_INTERVAL_SECONDS,
+                 clock: Callable[[], float] = time.monotonic) -> None:
+        self._reap = reap
+        self._interval = interval_seconds
+        self._clock = clock
+        self._last: float | None = None
+
+    def seconds_until_due(self) -> float:
+        if self._last is None:
+            return 0.0
+        return max(0.0, self._last + self._interval - self._clock())
+
+    def due(self) -> bool:
+        return self.seconds_until_due() <= 0.0
+
+    def __call__(self) -> bool:
+        """Run ``reap`` if due; True when it ran."""
+        if not self.due():
+            return False
+        self._last = self._clock()
+        self._reap()
+        return True

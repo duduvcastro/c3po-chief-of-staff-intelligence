@@ -117,6 +117,25 @@ por elas. Pressupõe um único processo vivo por worker (um contêiner por servi
 mas ainda não roda o reaper; o `server-usage-worker` e o
 `r2d2-shadow-candidate-worker` não abrem ingestões.
 
+**Regra das 24 h.** Somente o `valuation-worker` (um único processo a aplica) também
+marca como `failed` toda execução ainda `running` iniciada há mais de **24 h**, de
+qualquer papel ou sem papel (API, CLIs avulsas) e de qualquer fonte, inclusive as
+compartilhadas — as órfãs que a regra acima deixa de lado. O resumo é `orphaned:
+running for more than 24 h`, com os mesmos `metadata.reaped_at` e
+`metadata.reaped_by`. A idade é medida no relógio do banco dos dois lados
+(`started_at < now() - interval '24 hours'`), num único `UPDATE ... WHERE status =
+'running' ... RETURNING id`, atômico e idempotente. Roda na partida (logo após o
+reaper acima) e depois **no máximo uma vez por hora** enquanto o worker espera o
+próximo ciclo (o sono do laço é dividido em cochilos de até 1 h, cada varredura
+admitida pelo portão de manutenção), de modo que uma órfã é encerrada sem depender de
+deploy. A contagem sai no log (`ingestion stale-run reaper: role=valuation_worker
+... reaped=N`); uma falha é registrada e nunca impede o worker de subir nem de
+seguir. Nenhuma ingestão deste sistema dura 24 h legitimamente (as mais longas — o
+ciclo noturno e suas fases, a passagem as-filed da SEC e as demonstrações completas
+da CVM — ficam muito abaixo disso; o backfill de preços da grade PIT tem teto de
+320 min e não abre `ingestion_runs`). Se uma execução viva for encerrada por engano,
+o `finish_ingestion_run` do próprio processo ainda grava o resultado real.
+
 ## Instalação e ativação
 
 O deploy instala/atualiza os scripts e unidades versionados após o portão de saúde,

@@ -1,4 +1,4 @@
-"""The startup reaper of ingestion runs orphaned by a restart (app/ingestion_process.py).
+"""The startup reaper of ingestion runs orphaned by a restart, and the 24 h stale-run reaper (app/ingestion_process.py).
 
 Runs on the in-memory double and, when C3PO_PROVIDER_HEALTH_TEST_DSN names a disposable local PostgreSQL (a socket
 under /tmp — the backend-postgres.yml job), on connection-local TEMP tables with the production columns. No schema is
@@ -21,10 +21,15 @@ from app.database import Database
 from app.ingestion_process import (
     IR_WORKER,
     ORPHAN_ERROR_SUMMARY,
+    STALE_ERROR_SUMMARY,
+    STALE_RUNNING_AFTER,
+    STALE_SWEEP_INTERVAL_SECONDS,
     VALUATION_WORKER,
+    PeriodicReaper,
     ProcessIdentity,
     WorkerOwnership,
     reap_orphans,
+    reap_stale,
 )
 
 APP = Path(__file__).resolve().parents[1] / "app"
@@ -329,3 +334,145 @@ def test_the_workers_reap_at_startup_before_any_run(module: str, ownership: str)
     for later in ("InvestorRelationsService(", "MarketDataService(", "ensure_builtin_official_fundamentals(", "B3ScreenerService("):
         if later in main:
             assert main.index(call) < main.index(later), later
+
+
+# ------------------------------------------------------------------ the 24 h stale-run reaper (valuation worker only)
+def _assert_stale_reaped(db: Database, run_id: str, *, by: str) -> datetime:
+    state = _state(db, run_id)
+    assert state["status"] == "failed" and state["error_summary"] == STALE_ERROR_SUMMARY
+    reaped_at = datetime.fromisoformat(state["metadata"]["reaped_at"])
+    assert state["completed_at"] == reaped_at and state["metadata"]["reaped_by"] == by
+    assert state["metadata"]["operation"] == "test"  # the run's own metadata survives
+    return reaped_at
+
+
+def test_a_run_running_for_more_than_24_h_is_reaped_whatever_its_role(database: Database) -> None:
+    # the clock of the database: the in-memory double takes it from the caller, PostgreSQL reads now() itself
+    clock = datetime.now(timezone.utc)
+    old, previous = clock - STALE_RUNNING_AFTER - timedelta(hours=5), _identity("previous", clock - timedelta(days=3))
+    roleless = _run(database, "eodhd", "market_data", started_at=old, marker=_marker(previous, None))  # the API / a CLI
+    shared_legacy = _run(database, "cvm", "regulatory_disclosure", started_at=old, marker=None)
+    other_role = _run(database, "sec", "regulatory_disclosure", started_at=old, marker=_marker(previous, "investor_relations_worker"))
+    recent = _run(database, "ri", "issuer_relations", started_at=clock - timedelta(hours=23), marker=_marker(previous, None))
+    succeeded = _run(database, "finnhub", "market_sentiment", started_at=old, marker=None, status="succeeded")
+    failed = _run(database, "b3", "market_data", started_at=old, marker=None, status="failed")
+    now = _identity("now", clock)
+    reaped = reap_stale(database, VALUATION_WORKER, identity=now, now=clock)
+    assert sorted(reaped) == sorted([roleless, shared_legacy, other_role])
+    instants = {_assert_stale_reaped(database, run_id, by="valuation_worker:instance-now") for run_id in reaped}
+    assert len(instants) == 1  # one statement, one instant
+    _assert_untouched(database, recent)  # 23 h: not yet
+    _assert_untouched(database, succeeded, status="succeeded")
+    _assert_untouched(database, failed, status="failed")
+
+
+def test_stale_reaping_is_idempotent(database: Database) -> None:
+    clock = datetime.now(timezone.utc)
+    stale = _run(database, "cvm_statements", "regulatory_disclosure", started_at=clock - timedelta(hours=29), marker=None)
+    assert reap_stale(database, VALUATION_WORKER, identity=_identity("now", clock), now=clock) == [stale]
+    first = _assert_stale_reaped(database, stale, by="valuation_worker:instance-now")
+    later = clock + timedelta(hours=1)
+    assert reap_stale(database, VALUATION_WORKER, identity=_identity("later", later), now=later) == []
+    assert _assert_stale_reaped(database, stale, by="valuation_worker:instance-now") == first  # the first reaping stands
+    database.finish_ingestion_run(stale, "succeeded", 1, 1)  # a live run reaped by mistake still records its outcome
+    assert _state(database, stale)["status"] == "succeeded"
+
+
+def test_the_stale_postgresql_statement_is_one_guarded_atomic_update_on_the_database_clock() -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    class Cursor:
+        def fetchall(self) -> list[tuple[str]]:
+            return [("22222222-2222-2222-2222-222222222222",)]
+
+    class Connection:
+        def execute(self, sql: str, params: dict[str, Any]) -> Cursor:
+            calls.append((sql, params))
+            return Cursor()
+
+        def commit(self) -> None:
+            calls.append(("COMMIT", {}))
+
+    db = Database(Settings(database_url=""))
+    db.database_url = "postgresql://unused"
+
+    @contextmanager
+    def fake_connection():
+        yield Connection()
+
+    db.connection = fake_connection  # type: ignore[method-assign]
+    assert reap_stale(db, VALUATION_WORKER, identity=_identity("now", T0), now=T0) == ["22222222-2222-2222-2222-222222222222"]
+    assert [sql for sql, _ in calls].count("COMMIT") == 1 and len(calls) == 2
+    sql, params = calls[0]
+    flat = " ".join(sql.split())
+    assert flat.startswith("UPDATE ingestion_runs AS run SET status = 'failed', completed_at = now(),")
+    assert flat.count("WHERE") == 1 and "WHERE run.status = 'running' AND run.started_at < now() - %(max_age)s::interval RETURNING" in flat
+    assert "jsonb_build_object('reaped_at', now(), 'reaped_by', %(reaped_by)s::text)" in flat
+    assert "process_role" not in flat and "source" not in flat  # any role or none, any source
+    assert flat.endswith("RETURNING run.id::text")
+    assert params == {"max_age": timedelta(hours=24), "reaped_by": "valuation_worker:instance-now", "error_summary": STALE_ERROR_SUMMARY}
+
+
+def test_the_stale_reaper_never_blocks_the_worker(caplog: pytest.LogCaptureFixture) -> None:
+    class Broken:
+        def reap_stale_ingestion_runs(self, **_: Any) -> list[str]:
+            raise RuntimeError("database unavailable")
+
+    assert ingestion_process.reap_stale_safely(Broken(), VALUATION_WORKER) == []
+    assert "ingestion stale-run reaper failed" in caplog.text
+
+
+def test_the_periodic_reaper_runs_at_most_hourly() -> None:
+    ticks = [0.0]
+    calls: list[float] = []
+    sweep = PeriodicReaper(lambda: calls.append(ticks[0]), clock=lambda: ticks[0])
+    assert STALE_SWEEP_INTERVAL_SECONDS == 3600.0
+    assert sweep.due() and sweep() and calls == [0.0]  # the first call always runs (startup)
+    for at in (1.0, 1800.0, 3599.0):
+        ticks[0] = at
+        assert not sweep() and sweep.seconds_until_due() == 3600.0 - at
+    ticks[0] = 3600.0
+    assert sweep() and not sweep() and calls == [0.0, 3600.0]
+
+
+def test_the_valuation_worker_idles_in_naps_and_sweeps_at_most_hourly(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import valuation_worker
+
+    ticks = [0.0]
+    naps: list[float] = []
+    calls: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        naps.append(seconds)
+        ticks[0] += seconds
+
+    sweep = PeriodicReaper(lambda: calls.append(ticks[0]), clock=lambda: ticks[0])
+    sweep()  # the startup sweep
+    valuation_worker.idle_until_wake(3 * 3600 + 100, sweep, sleep=sleep, clock=lambda: ticks[0])
+    assert naps == [3600.0, 3600.0, 3600.0, 100.0] and calls == [0.0, 3600.0, 7200.0, 10800.0]
+    naps.clear()
+    valuation_worker.idle_until_wake(30, sweep, sleep=sleep, clock=lambda: ticks[0])  # not due: a plain sleep
+    assert naps == [30.0] and calls == [0.0, 3600.0, 7200.0, 10800.0]
+
+    @contextmanager
+    def refused():
+        yield False
+
+    monkeypatch.setattr(valuation_worker, "job", refused)  # a maintenance drain: no sweep, and no busy loop
+    ticks[0] += 3600.0
+    naps.clear()
+    valuation_worker.idle_until_wake(12, sweep, sleep=sleep, clock=lambda: ticks[0])
+    assert naps == [5.0, 5.0, 2.0] and len(calls) == 4
+
+
+def test_only_the_valuation_worker_runs_the_stale_reaper_at_startup_and_while_idle() -> None:
+    source = (APP / "valuation_worker.py").read_text(encoding="utf-8")
+    main = source[source.index("def main() -> None:"):]
+    startup = "ingestion_process.reap_at_startup(database, ingestion_process.VALUATION_WORKER)"
+    stale = "ingestion_process.reap_stale_safely(database, ingestion_process.VALUATION_WORKER)"
+    assert main.count(stale) == 1 and main.count("stale_sweep()") == 1
+    assert main.index(startup) < main.index(stale) < main.index("stale_sweep()") < main.index("InvestorRelationsService(") < main.index("while True:")
+    loop = main[main.index("while True:"):]
+    assert "idle_until_wake(max(30, int((wake_at - now).total_seconds())), stale_sweep)" in loop and "time.sleep(max(30" not in loop
+    for module in ("ir_worker", "r2d2_worker", "main"):
+        assert "reap_stale" not in (APP / f"{module}.py").read_text(encoding="utf-8"), module
