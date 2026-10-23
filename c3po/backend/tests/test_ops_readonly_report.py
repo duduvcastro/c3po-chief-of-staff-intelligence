@@ -105,7 +105,8 @@ def test_the_diagnostics_name_families_and_routine_blockers_in_closed_vocabulari
                                       "additional_by_severity": {"critical": 0, "high": 1, "medium": 2, "low": 0}},
               "post_deploy_grace": {"active": False, "reason": "layer_not_healthy", "layer": SYMBOL}}
     database.latest_governance_vulnerability_report = lambda: report  # type: ignore[method-assign]
-    diagnostics = module.diagnostics(database)
+    diagnostics = module.diagnostics(database, NOW)
+    assert diagnostics.pop("decisor")["status"] in module.DECISOR_STATUSES
     assert diagnostics == {
         "job_failure_families": {"security-automation-failure": 2, "valuation-phase-failure": 1, "other": 1},
         "governance": {"attestation": "attention",
@@ -123,6 +124,51 @@ def test_the_diagnostics_name_families_and_routine_blockers_in_closed_vocabulari
     assert "- Falhas de job por família: other 1, security-automation-failure 2, valuation-phase-failure 1" in summary
     assert "bloqueadores: os_security_pending, other, reboot_required; carência pós-deploy: layer_not_healthy" in summary
     assert "reboot pendente True" in summary and SYMBOL not in summary
+
+
+def test_the_decisor_diagnostics_count_reason_codes_never_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import valuation_verdict_export as export
+
+    calls: list[str] = []
+    rows = [{"symbol": SYMBOL, "market": "NYSE", "verdict": "VETO", "reasons": ["TP_SESSION_STALE", "PRICE_ABOVE_BUY_IN"]},
+            {"symbol": "QQQQ", "market": "NASDAQ", "verdict": "OBSERVAR", "reasons": ["PRICE_ABOVE_BUY_IN", SYMBOL]},
+            {"symbol": "RRRR", "market": "NASDAQ", "verdict": "COMPRA_PERMITIDA", "reasons": ["ALL_GATES_PASSED"]}]
+
+    def fake(_database: Any, night: str, *, now: datetime) -> dict[str, Any]:
+        calls.append(night)
+        if night == export.LAST_COMPLETED:
+            raise export.ExportRefused("NO_DECISIONS", "the evening after the close")
+        return {"document": {"night": night, "rows": rows}}
+
+    monkeypatch.setattr(export, "night_verdicts", fake)
+    monkeypatch.setattr(export, "resolve_night", lambda night, *, now: "2026-10-22")
+    result = module.decisor_diagnostics(None, NOW)  # type: ignore[arg-type]
+    assert calls == [export.LAST_COMPLETED, "2026-10-22"]  # the evening falls back to the night before
+    assert result == {"night": "2026-10-22", "status": "ok", "rows": 3,
+                      "by_verdict": {"COMPRA_PERMITIDA": 1, "OBSERVAR": 1, "VETO": 1},
+                      "reasons": {"ALL_GATES_PASSED": 1, "PRICE_ABOVE_BUY_IN": 2, "TP_SESSION_STALE": 1, "other": 1}}
+    assert SYMBOL not in json.dumps(result) and "QQQQ" not in json.dumps(result)
+
+    def refused(_database: Any, night: str, *, now: datetime) -> dict[str, Any]:
+        raise export.ExportRefused("RUN_INCONSISTENT", f"{SYMBOL} disagrees")
+
+    monkeypatch.setattr(export, "night_verdicts", refused)
+    assert module.decisor_diagnostics(None, NOW)["status"] == "RUN_INCONSISTENT"  # type: ignore[arg-type]
+    monkeypatch.setattr(export, "night_verdicts", lambda *_a, **_k: 1 / 0)
+    assert module.decisor_diagnostics(None, NOW) == {"night": None, "status": "error", "rows": 0, "by_verdict": {},  # type: ignore[arg-type]
+                                                    "reasons": {}}
+
+
+def test_the_runner_vocabularies_match_the_decisor_and_the_export() -> None:
+    from app.valuation_verdict_export import REFUSALS
+
+    verifier = _verifier()
+    namespace: dict[str, Any] = {}
+    start = verifier.index("          DECISOR_STATUSES") if "          DECISOR_STATUSES" in verifier else verifier.index("DECISOR_STATUSES")
+    block = verifier[start:verifier.index("TIMESTAMP = re.compile(")]
+    exec("\n".join(line.strip() for line in block.splitlines()), namespace)  # noqa: S102 - the test's own workflow literal
+    assert namespace["REASON_CODES"] == {*module.decisor_reason_codes(), "other"}
+    assert namespace["DECISOR_STATUSES"] == {*module.DECISOR_STATUSES} == {*REFUSALS} - {"KEY_INVALID"} | {"ok", "error", "other"}
 
 
 def test_the_report_never_reaches_the_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -264,6 +310,10 @@ def test_the_verifier_rejects_any_key_or_string_outside_the_whitelist(tmp_path: 
         "routine is not in its closed vocabulary": mutated(lambda r: r["diagnostics"]["governance"].update(routine=SYMBOL)),
         "layers: the keys": mutated(lambda r: r["diagnostics"]["governance"]["layers"].update(symbol="healthy")),
         "reboot_required is not a boolean": mutated(lambda r: r["diagnostics"]["governance"].update(reboot_required=SYMBOL)),
+        "decisor reasons is not in its closed vocabulary": mutated(lambda r: r["diagnostics"]["decisor"]["reasons"].update({SYMBOL: 1})),
+        "decisor night is not a date": mutated(lambda r: r["diagnostics"]["decisor"].update(night=SYMBOL)),
+        "decisor status is not in its closed vocabulary": mutated(lambda r: r["diagnostics"]["decisor"].update(status=SYMBOL)),
+        "the decisor verdicts do not add up": mutated(lambda r: r["diagnostics"]["decisor"].update(rows=7)),
         "report_sha256 does not recompute": json.dumps({**base, "generated_at": "2026-10-20T11:00:01+00:00"}),
         "not a single JSON document": "{" + SYMBOL,
     }
