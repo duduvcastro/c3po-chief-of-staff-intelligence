@@ -19,7 +19,7 @@ import httpx
 
 from . import valuation_env
 from .config import Settings
-from .governance_vulnerability import report_sha256
+from .governance_vulnerability import post_deploy_grace_detail, report_sha256
 from .observability import HealthcheckPing
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 from .valuation_worker_contract import (
@@ -1365,8 +1365,12 @@ class SystemHealthService:
             f"repo {open_total} · SO {os_pending if os_pending is not None else '?'} · "
             f"imagens {image_total if image_total is not None else '?'}"
         )
+        grace = report.get("post_deploy_grace")
+        grace_detail = post_deploy_grace_detail(grace, now)
         if stale:
             detail = "Atestado diário vencido há mais de 36h"
+        elif status == "attention" and grace_detail:
+            detail = grace_detail
         elif not remediation_lanes_complete:
             detail = f"Lanes de remediação não verificáveis · {layer_detail}"
         elif int(remediation_lanes["count"]) > 0:
@@ -1396,6 +1400,7 @@ class SystemHealthService:
                 "production_images": production_images,
                 "remediation_lanes": remediation_lanes,
                 "security_automation": report.get("security_automation") or {},
+                "post_deploy_grace": grace,
                 "known_vulnerabilities": report.get("known_vulnerabilities") or {},
                 "governance_checks": governance.get("checks") or [],
                 "drift_fields": [str(item.get("field")) for item in drift],
