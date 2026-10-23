@@ -557,6 +557,43 @@ def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
 
 
+def test_postdeploy_grace_keeps_the_card_amber_and_names_the_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service()
+    now = datetime.now(timezone.utc)
+    report = service.database.latest_governance_vulnerability_report()
+    assert report is not None
+    grace = {"active": True, "until": (now + timedelta(hours=3)).isoformat(),
+             "blockers": ["npm_evidence_pending"], "deployed_sha": "a" * 40, "main_sha": "b" * 40}
+    report.update(status="attention", post_deploy_grace=grace)
+    report["report_sha256"] = report_sha256(report)
+    monkeypatch.setattr(service.database, "latest_governance_vulnerability_report", lambda: report)
+
+    item = service._governance_vulnerability_health(now)
+
+    assert item.status == "attention"
+    assert item.detail is not None and item.detail.startswith("Pós-deploy aaaaaaa: aguardando auditoria npm até ")
+    assert item.detail.endswith(" BRT")
+    assert item.metadata["post_deploy_grace"] == grace
+    expired = service._governance_vulnerability_health(now + timedelta(hours=3))
+    assert expired.status == "attention" and not (expired.detail or "").startswith("Pós-deploy")
+
+
+def test_postdeploy_detail_never_overrides_a_stale_attestation(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service()
+    now = datetime.now(timezone.utc)
+    report = service.database.latest_governance_vulnerability_report()
+    assert report is not None
+    report.update(status="attention", generated_at=(now - timedelta(hours=37)).isoformat(),
+                  post_deploy_grace={"active": True, "until": (now + timedelta(hours=1)).isoformat(),
+                                     "blockers": ["deploy_lag"], "deployed_sha": "a" * 40, "main_sha": "b" * 40})
+    report["report_sha256"] = report_sha256(report)
+    monkeypatch.setattr(service.database, "latest_governance_vulnerability_report", lambda: report)
+
+    item = service._governance_vulnerability_health(now)
+
+    assert item.status == "offline" and item.detail == "Atestado diário vencido há mais de 36h"
+
+
 def test_governance_card_never_converts_unverifiable_lanes_to_zero() -> None:
     service = _service()
     original = service.database.latest_governance_vulnerability_report
@@ -624,6 +661,49 @@ def test_valuation_worker_phase_health_expects_the_decisor_only_when_enabled(mon
     assert "decisor_shadow" not in (service._valuation_worker_phase_health(now).detail or "")
     monkeypatch.setenv(valuation_env.DECISOR_SHADOW_ENV, "true")
     assert "pending/stale: decisor_shadow" in (service._valuation_worker_phase_health(now).detail or "")
+
+
+def test_valuation_worker_phase_health_expects_the_earnings_calendar_only_when_enabled_and_never_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Decisor V1 events: the earnings-calendar phase is dormant by default — never expected — and, once enabled, ADVISORY: it
+    # not having run (even after the window) or having failed is attention, never offline (its consumer falls back)
+    now = datetime.now(timezone.utc)
+    states = {
+        definition["code"]: {"last_status": "succeeded", "started_at": now, "completed_at": now, "last_success_at": now, "last_error": None,
+                             "metadata": {"phase": phase}}
+        for phase, definition in VALUATION_WORKER_PHASES.items()
+        if phase != "earnings_calendar"
+    }
+    service = _service(valuation_phase_states=states)
+    monkeypatch.delenv(valuation_env.EARNINGS_CALENDAR_ENV, raising=False)
+    monkeypatch.setenv(valuation_env.DECISOR_SHADOW_ENV, "true")
+    dormant = service._valuation_worker_phase_health(now)
+    assert "earnings_calendar" not in (dormant.detail or "") and dormant.status == "healthy"
+    monkeypatch.setenv(valuation_env.EARNINGS_CALENDAR_ENV, "true")
+    missing = service._valuation_worker_phase_health(now)
+    assert missing.status == "attention" and "Advisory · earnings_calendar: not run yet" in (missing.detail or "")
+    code = VALUATION_WORKER_PHASES["earnings_calendar"]["code"]
+    failed = _service(valuation_phase_states={**states, code: {**states[VALUATION_WORKER_PHASES["canonical"]["code"]], "last_status": "failed",
+                                                               "last_error": "EarningsCalendarError: provider down"}})
+    item = failed._valuation_worker_phase_health(now)
+    assert item.status == "attention" and "earnings_calendar: EarningsCalendarError: provider down" in (item.detail or "")
+    # a real phase failure still turns the card offline, and the advisory one is named next to it
+    v2 = VALUATION_WORKER_PHASES["v2_data"]["code"]
+    both = _service(valuation_phase_states={**states, v2: {**states[v2], "last_status": "failed", "last_error": "boom"}})
+    item = both._valuation_worker_phase_health(now)
+    assert item.status == "offline" and "v2_data: boom" in (item.detail or "") and "Advisory · earnings_calendar" in (item.detail or "")
+    # after every window (12:00 BRT): an advisory phase stuck running (killed mid-download) or last successful days ago is
+    # attention, never offline
+    noon = datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
+    fresh = {code_: {**state, "started_at": noon, "completed_at": noon, "last_success_at": noon} for code_, state in states.items()}
+    stuck = _service(valuation_phase_states={**fresh, code: {**fresh[VALUATION_WORKER_PHASES["canonical"]["code"]], "last_status": "running",
+                                                             "completed_at": None, "last_success_at": None}})
+    item = stuck._valuation_worker_phase_health(noon)
+    assert item.status == "attention" and "Advisory · earnings_calendar: running" in (item.detail or "")
+    old = noon - timedelta(days=2)
+    behind = _service(valuation_phase_states={**fresh, code: {**fresh[VALUATION_WORKER_PHASES["canonical"]["code"]], "started_at": old, "completed_at": old,
+                                                              "last_success_at": old}})
+    item = behind._valuation_worker_phase_health(noon)
+    assert item.status == "attention" and "earnings_calendar: not run yet for this cycle" in (item.detail or "")
 
 
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:

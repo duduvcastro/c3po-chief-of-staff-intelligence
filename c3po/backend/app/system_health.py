@@ -19,10 +19,11 @@ import httpx
 
 from . import valuation_env
 from .config import Settings
-from .governance_vulnerability import report_sha256
+from .governance_vulnerability import post_deploy_grace_detail, report_sha256
 from .observability import HealthcheckPing
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 from .valuation_worker_contract import (
+    VALUATION_WORKER_ADVISORY_PHASES,
     VALUATION_WORKER_CANONICAL_PHASE,
     VALUATION_WORKER_PHASES,
 )
@@ -1364,8 +1365,12 @@ class SystemHealthService:
             f"repo {open_total} · SO {os_pending if os_pending is not None else '?'} · "
             f"imagens {image_total if image_total is not None else '?'}"
         )
+        grace = report.get("post_deploy_grace")
+        grace_detail = post_deploy_grace_detail(grace, now)
         if stale:
             detail = "Atestado diário vencido há mais de 36h"
+        elif status == "attention" and grace_detail:
+            detail = grace_detail
         elif not remediation_lanes_complete:
             detail = f"Lanes de remediação não verificáveis · {layer_detail}"
         elif int(remediation_lanes["count"]) > 0:
@@ -1395,6 +1400,7 @@ class SystemHealthService:
                 "production_images": production_images,
                 "remediation_lanes": remediation_lanes,
                 "security_automation": report.get("security_automation") or {},
+                "post_deploy_grace": grace,
                 "known_vulnerabilities": report.get("known_vulnerabilities") or {},
                 "governance_checks": governance.get("checks") or [],
                 "drift_fields": [str(item.get("field")) for item in drift],
@@ -1409,6 +1415,7 @@ class SystemHealthService:
             if (phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled)
             and (phase != "price_history" or getattr(self.settings, "valuation_price_history_enabled", False))
             and (phase != "decisor_shadow" or valuation_env.decisor_shadow_enabled())
+            and (phase != "earnings_calendar" or valuation_env.earnings_calendar_enabled())
         }
         codes = [definition["code"] for definition in definitions.values()]
         try:
@@ -1441,6 +1448,7 @@ class SystemHealthService:
         failed: list[str] = []
         pending: list[str] = []
         running: list[str] = []
+        advisory: list[str] = []  # an advisory phase (VALUATION_WORKER_ADVISORY_PHASES) that failed or has not run: attention, never offline
         updates: list[datetime] = []
         for phase, definition in definitions.items():
             state = states.get(definition["code"], {})
@@ -1450,21 +1458,22 @@ class SystemHealthService:
                 value = state.get(field)
                 if isinstance(value, datetime):
                     updates.append(value if value.tzinfo else value.replace(tzinfo=timezone.utc))
+            is_advisory = phase in VALUATION_WORKER_ADVISORY_PHASES
             if status == "failed":
                 error = str(state.get("last_error") or "unknown error").replace("\n", " ")[:120]
-                failed.append(f"{phase}: {error}")
+                (advisory if is_advisory else failed).append(f"{phase}: {error}")
                 continue
-            if status == "running":
-                running.append(phase)
+            if status == "running":  # an advisory phase stuck running (killed mid-download) is attention too, never offline
+                (advisory if is_advisory else running).append(f"{phase}: running" if is_advisory else phase)
                 continue
             if not isinstance(last_success, datetime):
-                pending.append(phase)
+                (advisory if is_advisory else pending).append(f"{phase}: not run yet" if is_advisory else phase)
                 continue
             success_local = (
                 last_success if last_success.tzinfo else last_success.replace(tzinfo=timezone.utc)
             ).astimezone(SAO_PAULO)
             if success_local < expected_at.get(phase, offhours_due):  # a phase without a due entry can never break the card
-                pending.append(phase)
+                (advisory if is_advisory else pending).append(f"{phase}: not run yet for this cycle" if is_advisory else phase)
 
         if failed:
             status = "offline"
@@ -1481,6 +1490,11 @@ class SystemHealthService:
         else:
             status = "healthy"
             detail = "Canonical and all configured phases succeeded for the expected cycle"
+        if advisory:  # never worse than attention on its own; named next to whatever else the card says
+            if status == "healthy":
+                status, detail = "attention", "Advisory · " + " · ".join(advisory)
+            else:
+                detail += " · Advisory · " + " · ".join(advisory)
 
         return IntegrationHealth(
             name="Valuation worker phases",

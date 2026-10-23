@@ -61,7 +61,12 @@ with open(os.environ['TEST_EVENTS'],'a') as f: f.write(json.dumps({'args':sys.ar
         events.write_text('')
         subprocess.run(['bash','-c',script],env=env,check=True,capture_output=True,text=True)
         return [json.loads(line) for line in events.read_text().splitlines()]
-    assert all(row['hold']=='bootstrap: pending post-install acceptance\n' for row in run())
+    first = run()
+    assert all(row['hold']=='bootstrap: pending post-install acceptance\n' for row in first)
+    commands = [row['args'] for row in first]
+    assert commands.count(['start', '--no-block', 'c3po-security-daily.service']) == 1
+    assert (commands.index(['start', '--no-block', 'c3po-security-daily.service'])
+            > commands.index(['enable', '--now', 'c3po-security-daily.timer', 'c3po-security-watchdog.timer']))
     hold.unlink()  # Authorized acceptance releases only bootstrap.
     assert all(row['hold'] is None for row in run())
     hold.write_text('operator hold unchanged')
