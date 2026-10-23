@@ -12,7 +12,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from difflib import SequenceMatcher
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
@@ -40,6 +40,7 @@ from .sec_xbrl import (
     FILING_SOURCE as SEC_FILING_SOURCE,
     NEW_YORK,
     SecContactMissing,
+    SecHeaderError,
     SecThrottled,
     SecXbrlClient,
     SecXbrlIngestor,
@@ -122,6 +123,48 @@ def normalize_company_name(value: str) -> str:
     folded = re.sub(r"[^A-Z0-9]+", " ", folded.upper())
     folded = re.sub(r"\b(S A|SA|INC|CORP|CORPORATION|LTD|LTDA|PLC|PFD|ON|PN)\b", " ", folded)
     return re.sub(r"\s+", " ", folded).strip()
+
+
+_ASFILED_ERROR_ISSUER = re.compile(r"^(\d{10}): ")
+
+
+def asfiled_failed_issuers(errors: list[str]) -> list[str]:
+    """The issuers (10-digit CIKs) an as-filed pass did not observe, read from its per-issuer errors
+    (``SecXbrlIngestor.poll`` writes each as ``"<cik>: <error>"``; ``sec_xbrl.py`` itself is a frozen producer file)."""
+    return sorted({match.group(1) for error in errors if (match := _ASFILED_ERROR_ISSUER.match(str(error)))})
+
+
+def asfiled_unparsed_errors(errors: list[str]) -> int:
+    """The errors of an as-filed pass that name no issuer: a failure nobody can attribute to a name."""
+    return sum(1 for error in errors if not _ASFILED_ERROR_ISSUER.match(str(error)))
+
+
+class AsFiledHeaderWatch:
+    """The as-filed poll's SEC client, watched: every ``filing_header`` that raises records its CIK (the frozen
+    ``SecXbrlIngestor.register_filing`` only counts a header failure, without naming the issuer, and registers nothing —
+    the issuer then has no 051 row and no 053 mark, so its names must not read as covered). Everything else delegates."""
+
+    _CAUGHT = (httpx.HTTPError, SecHeaderError, ValueError)  # what register_filing swallows into header_failures
+
+    def __init__(self, client: Any) -> None:
+        self.client = client
+        self.failed: set[str] = set()
+        self.caught = 0
+
+    def reset(self) -> None:
+        self.failed.clear()
+        self.caught = 0
+
+    def filing_header(self, cik: str, accession: str) -> Any:
+        try:
+            return self.client.filing_header(cik, accession)
+        except Exception as error:
+            self.failed.add(str(cik))
+            self.caught += int(isinstance(error, self._CAUGHT))
+            raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.client, name)
 
 
 def clean_text(value: str) -> str:
@@ -758,8 +801,12 @@ class InvestorRelationsService:
                     backfill_per_poll=valuation_env.asfiled_backfill_issuers_per_poll(),
                 )
             ingestor = self._asfiled_ingestor
+            if not isinstance(ingestor.client, AsFiledHeaderWatch):
+                ingestor.client = AsFiledHeaderWatch(ingestor.client)  # type: ignore[assignment]
+            watch = cast(AsFiledHeaderWatch, ingestor.client)
+            watch.reset()
             universe = us_valuation_universe(self.database)
-            tickers = ingestor.client.company_tickers()
+            tickers = watch.company_tickers()
             result = ingestor.poll(universe, tickers, now=datetime.now(timezone.utc))
             written = result.filings_registered + result.vintages_written
             warning = None
@@ -769,7 +816,20 @@ class InvestorRelationsService:
                     f"{len(result.errors)} issuer errors, {result.header_failures} header failures, "
                     f"{result.json_clock_mismatches} JSON/header clock mismatches: {'; '.join(result.errors[:10])}"
                 )
-            self.database.finish_ingestion_run(run_id, "succeeded", result.submissions_read, written, warning)
+            # the issuers this pass did not observe (CIKs, aggregate; no symbol): the Decisor V1 never counts the poll as
+            # covering their names (valuation_decision.name_staleness)
+            # unattributed: header failures no watched exception explains (a header read without a filed date) and errors that
+            # name no issuer — the decisor then counts the pass as covering no US name at all
+            unattributed = max(0, result.header_failures - watch.caught) + asfiled_unparsed_errors(result.errors)
+            failed = {*asfiled_failed_issuers(result.errors), *watch.failed}
+            # the issuers this pass DID observe (CIKs only): the decisor covers a name only when its issuer is here
+            observed = sorted({tickers[symbol.upper()] for symbol in universe if tickers.get(symbol.upper())} - failed)
+            self.database.update_ingestion_run_metadata(run_id, {
+                "issuers": result.issuers, "failed_issuers": sorted(failed), "observed_issuers": observed,
+                "unattributed_failures": unattributed, "header_failures": result.header_failures, "unmapped_symbols": result.unmapped_symbols})
+            # a pass the SEC throttled is 'partial' (migration 001 admits it): it did not look at the whole universe, so the
+            # Decisor V1 never counts it as the as-filed poll being alive (valuation_decision.name_staleness)
+            self.database.finish_ingestion_run(run_id, "partial" if result.throttled else "succeeded", result.submissions_read, written, warning)
             return result.submissions_read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))

@@ -64,3 +64,10 @@ def test_config_declares_none_of_them_so_the_r2d2_v2_package_does_not_move(monke
         monkeypatch.setenv(name, value)
     assert implementation_package_sha() == before
     assert "C3PO test desk" not in repr(Settings())  # a Settings object never carries the contact
+
+
+def test_every_switch_starts_from_its_default_in_the_test_session() -> None:
+    # conftest.py clears each name before any import: a shell or container that exports one never leaks into the suite
+    conftest = (Path(__file__).resolve().parent / "conftest.py").read_text(encoding="utf-8")
+    for name in valuation_env.ENVIRONMENT_NAMES:
+        assert f'os.environ["{name}"] = ""' in conftest, name

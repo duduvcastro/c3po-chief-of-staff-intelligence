@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import os
 import re
-from datetime import datetime, timezone
+from collections.abc import MutableMapping
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from .config import Settings, get_settings
 from .database import Database
 
 
@@ -106,6 +110,46 @@ class OperationalIncidentService:
             at=datetime.now(timezone.utc),
         )
 
+    def set_severity(
+        self,
+        *,
+        incident_key: str,
+        severity: str,
+        detail: str,
+        evidence: dict[str, Any],
+        at: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Change an unresolved incident's severity, recorded as an event."""
+        validate_evidence(evidence)
+        return self.database.set_operational_incident_severity(
+            incident_key=incident_key,
+            severity=severity,
+            detail=detail,
+            evidence=evidence,
+            evidence_sha256=evidence_sha256(evidence),
+            at=at or datetime.now(timezone.utc),
+        )
+
+    def resolve_recovered_family(
+        self, incident_key: str, *, observed_at: datetime, detail: str,
+    ) -> int:
+        """Close ``incident_key`` and its per-day siblings ``incident_key:<suffix>``
+        when the recovery evidence covers them (nothing newer than ``observed_at``).
+        Returns how many incidents were resolved."""
+        resolved = 0
+        for incident in self.database.list_operational_incidents(limit=1000):
+            key = incident["incident_key"]
+            if incident["status"] == "resolved" or not (
+                key == incident_key or key.startswith(f"{incident_key}:")
+            ):
+                continue
+            result = self.database.transition_operational_incident(
+                incident_id=incident["id"], event_type="resolved", actor_email="system",
+                detail=detail, at=observed_at, recovered_through=observed_at,
+            )
+            resolved += bool(result and result["status"] == "resolved")
+        return resolved
+
     def resolve_recovered_prefix(
         self, prefix: str, *, observed_at: datetime, detail: str,
     ) -> None:
@@ -117,3 +161,273 @@ class OperationalIncidentService:
                     detail=detail, at=datetime.now(timezone.utc),
                     recovered_through=observed_at,
                 )
+
+
+# ------------------------------------------------------------------------------------------------
+# Read-only aggregate report (ops-readonly-report.yml): `python -m app.operational_incidents --report-json`.
+# AGGREGATES ONLY. Every string it prints comes from a closed vocabulary below: no incident key, title,
+# detail, evidence, actor, card name or card detail ever leaves the process (they may name a symbol or a
+# person). The runner re-verifies the exact schema before anything is uploaded or posted.
+REPORT_SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v3"  # v2: + stale_running_ingestion; v3: + diagnostics
+READ_ONLY_PGOPTION = "-c default_transaction_read_only=on"
+GOVERNANCE_INCIDENT_KIND = "governance-vulnerability"  # governance_vulnerability.GOVERNANCE_INCIDENT_KEY (no import: cycle)
+NOTIFICATION_KINDS = ("job_failure", "disk_threshold")
+INCIDENT_KINDS = (GOVERNANCE_INCIDENT_KIND, *(f"notification:{kind}" for kind in NOTIFICATION_KINDS), "other")
+INCIDENT_SOURCES = ("governance", "worker", "host", "other")
+INCIDENT_SEVERITIES = ("critical", "attention", "other")
+ACTIVE_STATUSES = ("open", "acknowledged")
+HEALTH_GROUPS = ("governance", "controls")
+HEALTH_STATUSES = ("offline", "attention")  # red, amber
+# The local (database and evidence-file) cards of system_health, by their fixed English/Portuguese label.
+HEALTH_CARDS = {
+    "Governança & Vulnerabilidades": "governance_vulnerabilities",
+    "Incidentes operacionais": "operational_incidents",
+    "Valuation worker phases": "valuation_worker_phases",
+    "Valuation V2.1b cycle": "valuation_v2_1b_cycle",
+    "V3 pre-A/B gate": "v3_pre_ab_gate",
+    "Day D disk reserve": "day_d_disk_reserve",
+    "B2 zero-cap evidence": "b2_zero_cap_evidence",
+}
+HEALTH_CARD_KEYS = (*HEALTH_CARDS.values(), "probe_failed", "unmapped")
+INCIDENT_SCAN_LIMIT = 1000
+OVER_24H_HOURS = 24.0
+STALE_RUNNING_MINUTES = 30
+STALE_RUNNING_HORIZON = timedelta(days=7)
+
+
+# Diagnostics (v3): why an incident stays open, in closed vocabularies only. A job failure's family is the fixed
+# event-key prefix its producer writes (never the free title or the date); the governance block repeats the latest
+# attestation's own status words and the security routine's blocker codes, and drops anything else to "other".
+JOB_FAILURE_FAMILIES = ("security-automation-failure", "governance-job-failure", "valuation-phase-failure",
+                        "valuation-canonical-failure", "other")
+GOVERNANCE_LAYERS = ("dependabot", "governance", "operating_system", "production_images", "remediation_lanes",
+                     "security_automation")
+LAYER_STATUSES = ("healthy", "attention", "offline", "missing", "other")
+ROUTINE_STATUSES = (
+    "observed", "preliminary", "failed", "maintenance_hold", "reboot_requested", "reboot_action", "blocked_missing_evidence",
+    "waiting_npm_evidence", "blocked_unhealthy_host", "waiting_maintenance_window", "blocked_scan_dispatch",
+    "waiting_main_deploy", "blocked_branch_protection", "waiting_pipeline", "waiting_security_tests", "waiting_branch_rules",
+    "baseline_changed_or_hold", "merged_waiting_deploy_and_rescan", "no_validated_candidate", "missing", "other",
+)
+ROUTINE_BLOCKERS = (
+    "deploy_lag", "npm_evidence_pending", "image_scan_predates_deploy", "errors", "alerts", "os_security_pending",
+    "reboot_required", "image_findings_or_unavailable", "unhealthy_host", "routine_failed", "other",
+)
+GRACE_REASONS = (
+    "active", "status_not_attention", "layer_not_healthy", "routine_not_waiting", "npm_findings", "blockers_not_post_deploy",
+    "pending_mismatch", "revision_mismatch", "anchor_invalid", "deployed_at_invalid", "expired", "missing", "other",
+)
+
+
+def job_failure_family(incident_key: str) -> str:
+    parts = incident_key.split(":", 3)
+    if len(parts) >= 3 and parts[0] == "notification" and parts[1] == "job_failure" and parts[2] in JOB_FAILURE_FAMILIES:
+        return parts[2]
+    return "other"
+
+
+def _closed(value: Any, allowed: tuple[str, ...]) -> str:
+    return value if isinstance(value, str) and value in allowed else "other"
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _small_count(value: Any) -> int | None:
+    return value if type(value) is int and 0 <= value <= 100000 else None
+
+
+def governance_diagnostics(database: Database) -> dict[str, Any]:
+    report = database.latest_governance_vulnerability_report()
+    if not isinstance(report, dict):
+        return {"attestation": "missing", "layers": {layer: "missing" for layer in GOVERNANCE_LAYERS}, "routine": "missing",
+                "blockers": [], "grace": "missing", "os_security_pending": None, "reboot_required": None,
+                "npm_high_or_critical": None, "remediation_lanes": None}
+    layers = {layer: _closed(report[layer].get("status"), LAYER_STATUSES) if isinstance(report.get(layer), dict) else "missing"
+              for layer in GOVERNANCE_LAYERS}
+    automation = _mapping(report.get("security_automation"))
+    detail = automation.get("detail")
+    routine = ("missing" if not automation else "reboot_action" if isinstance(detail, str) and detail.startswith("reboot_")
+               and detail != "reboot_requested" else _closed(detail, ROUTINE_STATUSES))
+    raw_blockers = automation.get("healthy_blockers")
+    blockers = sorted({_closed(item, ROUTINE_BLOCKERS) for item in raw_blockers}) if isinstance(raw_blockers, list) else []
+    grace = _mapping(report.get("post_deploy_grace"))
+    grace_reason = ("missing" if not grace else "active" if grace.get("active") is True
+                    else _closed(grace.get("reason"), GRACE_REASONS))
+    operating_system = _mapping(report.get("operating_system"))
+    additional = automation.get("additional_by_severity")
+    npm = (sum(_small_count(_mapping(additional).get(level)) or 0 for level in ("critical", "high"))
+           if isinstance(additional, dict) else None)
+    lanes = _mapping(report.get("remediation_lanes"))
+    reboot = operating_system.get("reboot_required")
+    return {"attestation": _closed(report.get("status"), LAYER_STATUSES), "layers": layers, "routine": routine,
+            "blockers": blockers, "grace": grace_reason,
+            "os_security_pending": _small_count(operating_system.get("security_updates_pending")),
+            "reboot_required": reboot if isinstance(reboot, bool) else None,
+            "npm_high_or_critical": npm, "remediation_lanes": _small_count(lanes.get("count"))}
+
+
+def diagnostics(database: Database) -> dict[str, Any]:
+    families = {family: 0 for family in JOB_FAILURE_FAMILIES}
+    for incident in database.list_operational_incidents(limit=INCIDENT_SCAN_LIMIT):
+        key = str(incident.get("incident_key") or "")
+        if incident.get("status") in ACTIVE_STATUSES and incident_kind(key) == "notification:job_failure":
+            families[job_failure_family(key)] += 1
+    return {"job_failure_families": {family: count for family, count in families.items() if count},
+            "governance": governance_diagnostics(database)}
+
+
+def force_read_only_session(environ: MutableMapping[str, str] | None = None) -> str:
+    """Every transaction of this process is read-only in PostgreSQL itself (libpq reads PGOPTIONS)."""
+    env: MutableMapping[str, str] = os.environ if environ is None else environ
+    current = env.get("PGOPTIONS", "").replace(READ_ONLY_PGOPTION, " ").split()
+    env["PGOPTIONS"] = " ".join([*current, READ_ONLY_PGOPTION])
+    return env["PGOPTIONS"]
+
+
+def incident_kind(incident_key: str) -> str:
+    """A closed vocabulary: the key itself never leaves (a notification key carries a free title)."""
+    if incident_key == GOVERNANCE_INCIDENT_KIND:
+        return GOVERNANCE_INCIDENT_KIND
+    parts = incident_key.split(":", 2)
+    if len(parts) >= 2 and parts[0] == "notification" and parts[1] in NOTIFICATION_KINDS:
+        return f"notification:{parts[1]}"
+    return "other"
+
+
+def _utc(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+
+def _iso(value: datetime) -> str:
+    return value.replace(microsecond=0).isoformat()
+
+
+def _hours(start: datetime, now: datetime) -> float:
+    return round(max(0.0, (now - start).total_seconds()) / 3600, 1)
+
+
+def incidents_aggregate(database: Database, now: datetime) -> dict[str, Any]:
+    incidents = database.list_operational_incidents(limit=INCIDENT_SCAN_LIMIT)
+    groups: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    totals = {"active": 0, "open": 0, "acknowledged": 0, "critical": 0, "over_24h": 0}
+    oldest: float | None = None
+    for incident in incidents:
+        status = incident.get("status")
+        if status not in ACTIVE_STATUSES:
+            continue
+        key = str(incident.get("incident_key") or "")
+        source = incident.get("source") if incident.get("source") in INCIDENT_SOURCES else "other"
+        severity = incident.get("severity") if incident.get("severity") in INCIDENT_SEVERITIES else "other"
+        # the current episode (opened_at keeps the first opening forever, even after resolve/reopen)
+        started = _utc(database.operational_incident_open_since(key)) or _utc(incident.get("opened_at")) or now
+        last_seen = _utc(incident.get("last_seen_at")) or started
+        age = _hours(started, now)
+        group = groups.setdefault((incident_kind(key), str(source), str(severity), str(status)), {
+            "kind": incident_kind(key), "source": source, "severity": severity, "status": status,
+            "count": 0, "over_24h": 0, "oldest_started_at": _iso(started), "oldest_age_hours": age,
+            "last_seen_at": _iso(last_seen),
+        })
+        group["count"] += 1
+        group["over_24h"] += age > OVER_24H_HOURS
+        if age >= group["oldest_age_hours"]:
+            group["oldest_age_hours"], group["oldest_started_at"] = age, _iso(started)
+        group["last_seen_at"] = max(group["last_seen_at"], _iso(last_seen))
+        totals["active"] += 1
+        totals[str(status)] += 1
+        totals["critical"] += severity == "critical"
+        totals["over_24h"] += age > OVER_24H_HOURS
+        oldest = age if oldest is None else max(oldest, age)
+    return {
+        "scanned": len(incidents),
+        "totals": {**totals, "oldest_age_hours": oldest},
+        "groups": sorted(groups.values(), key=lambda item: (item["kind"], item["source"], item["severity"], item["status"])),
+    }
+
+
+def _refuse_network(*_args: Any, **_kwargs: Any) -> Any:
+    raise RuntimeError("the read-only incidents report never reaches the network")
+
+
+def health_cards(settings: Settings, database: Database, now: datetime) -> dict[str, Any]:
+    """Red/amber cards among the LOCAL cards of the health panel (database rows and evidence files only):
+    governance, incidents and the Day D/valuation controls. The external probes (and the healthcheck ping)
+    are never run here."""
+    from .system_health import SystemHealthService  # lazy: system_health → governance_vulnerability → this module
+
+    service = SystemHealthService(settings, database, None, None, None, None, external_get=_refuse_network)
+    loaders = {
+        "governance": lambda: [service._governance_vulnerability_health(now), service._operational_incident_health(now)],
+        "controls": lambda: service._day_d_and_valuation_health(now),
+    }
+    cards: list[dict[str, str]] = []
+    evaluated = 0
+    for group in HEALTH_GROUPS:
+        for item in service._safe_items(group, loaders[group], now):
+            evaluated += 1
+            if item.status in HEALTH_STATUSES:
+                card = HEALTH_CARDS.get(item.name, "probe_failed" if item.name == group else "unmapped")
+                cards.append({"group": group, "card": card, "status": item.status})
+    return {"evaluated": evaluated, "cards": sorted(cards, key=lambda item: (item["group"], item["card"], item["status"]))}
+
+
+def stale_running_ingestion(database: Database, now: datetime) -> dict[str, Any]:
+    """Ingestion runs still `running` more than 30 min after they started, within the last 7 days: a count and the
+    oldest age only (the source code and the run metadata, which may list symbols, never leave). Older leftovers are
+    out of scope so the age stays bounded."""
+    cutoff = now - timedelta(minutes=STALE_RUNNING_MINUTES)
+    horizon = now - STALE_RUNNING_HORIZON
+    if not database.database_url:
+        runs = getattr(database, "_ingestion_runs", {}).values()
+        started = [_utc(run.get("started_at")) for run in runs if run.get("status") == "running"]
+        started = [moment for moment in started if moment is not None and moment >= horizon]
+    else:
+        with database.connection() as connection:
+            rows = connection.execute(
+                "SELECT started_at FROM ingestion_runs WHERE status = 'running' AND started_at < %s AND started_at >= %s",
+                (cutoff, horizon),
+            ).fetchall()
+        started = [_utc(row[0]) for row in rows]
+    ages = [int((now - moment).total_seconds() // 60) for moment in started if moment is not None and moment < cutoff]
+    return {"threshold_minutes": STALE_RUNNING_MINUTES, "count": len(ages), "oldest_age_minutes": max(ages, default=None)}
+
+
+def report_sha256(report: dict[str, Any]) -> str:
+    body = {key: value for key, value in report.items() if key != "report_sha256"}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def incidents_report(settings: Settings, database: Database, now: datetime | None = None) -> dict[str, Any]:
+    moment = _utc(now) or datetime.now(timezone.utc)
+    build = os.environ.get("C3PO_BUILD_SHA") or ""
+    report: dict[str, Any] = {
+        "schema": REPORT_SCHEMA,
+        "generated_at": _iso(moment),
+        "build_sha": build if re.fullmatch(r"[0-9a-f]{40}", build) else None,
+        "incidents": incidents_aggregate(database, moment),
+        "health": health_cards(settings, database, moment),
+        "stale_running_ingestion": stale_running_ingestion(database, moment),
+        "diagnostics": diagnostics(database),
+    }
+    report["report_sha256"] = report_sha256(report)
+    return report
+
+
+def main(argv: list[str] | None = None, *, settings: Settings | None = None, database: Database | None = None,
+         now: datetime | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Read-only aggregate of open operational incidents and red/amber local "
+                                                 "health cards (no keys, titles, details or symbols).")
+    parser.add_argument("--report-json", action="store_true", required=True, help="print the aggregate report as one JSON line")
+    parser.parse_args(argv)
+    force_read_only_session()
+    settings = settings or get_settings()
+    database = database or Database(settings)
+    print(json.dumps(incidents_report(settings, database, now), sort_keys=True, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

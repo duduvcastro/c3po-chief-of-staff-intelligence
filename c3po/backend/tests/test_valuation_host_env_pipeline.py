@@ -32,6 +32,8 @@ def test_the_step_reads_the_contact_from_a_secret_and_the_switches_from_variable
     assert env["ASFILED_BACKFILL"] == "${{ vars.C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL }}"
     assert env["CVM_OVERLAY_SHADOW"] == "${{ vars.C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW }}"
     assert env["CVM_OVERLAY_ENABLED"] == "${{ vars.C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED }}"
+    assert env["DECISOR_SHADOW"] == "${{ vars.C3PO_VALUATION_DECISOR_SHADOW }}"
+    assert env["EARNINGS_CALENDAR_ENABLED"] == "${{ vars.C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED }}"
 
 
 def test_the_step_cannot_be_skipped_and_runs_right_before_the_host_merge() -> None:
@@ -61,7 +63,8 @@ bash_missing = pytest.mark.skipif(shutil.which("bash") is None, reason="bash is 
 
 @bash_missing
 def test_valid_values_are_staged_and_empty_values_write_nothing(tmp_path: Path) -> None:
-    code, staged, _ = _run(tmp_path, SEC_CONTACT="ops.contact@example.com", ASFILED_ENABLED="true", ASFILED_BACKFILL="30")
+    code, staged, _ = _run(tmp_path, SEC_CONTACT="ops.contact@example.com", ASFILED_ENABLED="true", ASFILED_BACKFILL="30", DECISOR_SHADOW="true",
+                           EARNINGS_CALENDAR_ENABLED="false")
     assert code == 0
     assert staged.splitlines() == [
         "C3PO_PUSH_VAPID_PRIVATE_KEY=p",
@@ -69,7 +72,11 @@ def test_valid_values_are_staged_and_empty_values_write_nothing(tmp_path: Path) 
         "C3PO_SEC_CONTACT=ops.contact@example.com",
         "C3PO_VALUATION_ASFILED_ENABLED=true",
         "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL=30",
+        "C3PO_VALUATION_DECISOR_SHADOW=true",
+        "C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=false",
     ]
+    code, staged, _ = _run(tmp_path, EARNINGS_CALENDAR_ENABLED="true")
+    assert code == 0 and staged.splitlines()[-1] == "C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=true"
     code, staged, _ = _run(tmp_path)
     assert code == 0 and staged.splitlines() == ["C3PO_PUSH_VAPID_PRIVATE_KEY=p", "C3PO_PUSH_VAPID_PUBLIC_KEY=q"]
 
@@ -125,6 +132,15 @@ def test_the_staged_names_are_the_names_the_code_reads() -> None:
         {"CVM_OVERLAY_SHADOW": "true", "CVM_OVERLAY_ENABLED": "true;C3PO_INJECTED=1"},
         {"SEC_CONTACT": "ops@example.com\r"},
         {"SEC_CONTACT": "ops@example.com\u2028C3PO_INJECTED=1"},
+        {"DECISOR_SHADOW": "on"},
+        {"DECISOR_SHADOW": "True"},
+        {"DECISOR_SHADOW": "true\nC3PO_INJECTED=1"},
+        {"DECISOR_SHADOW": "x\nC3PO_INJECTED=true"},
+        {"EARNINGS_CALENDAR_ENABLED": "1"},
+        {"EARNINGS_CALENDAR_ENABLED": "false "},
+        {"EARNINGS_CALENDAR_ENABLED": "false\nC3PO_INJECTED=1"},
+        {"EARNINGS_CALENDAR_ENABLED": "x\nC3PO_INJECTED=false"},
+        {"EARNINGS_CALENDAR_ENABLED": "true\r"},
     ],
 )
 def test_an_invalid_value_fails_the_deploy_before_anything_is_staged(tmp_path: Path, values: dict[str, str]) -> None:

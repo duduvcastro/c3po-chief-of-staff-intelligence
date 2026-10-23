@@ -150,7 +150,7 @@ def test_fixable_high_and_critical_runtime_findings_have_explicit_upgrades() -> 
     assert "cryptography>=50,<51" in requirements
     assert "apk upgrade --no-cache \\\n    && apk del --no-cache curl" in frontend
     assert frontend.count("C3PO_SECURITY_REBUILD") == 2
-    assert "golang:1.26.9-alpine3.24@sha256:" in database  # Go stdlib fixes in the gosu binary (CVE-2026-78667 et al., 19/10/2026)
+    assert "golang:1.26.10-alpine3.24@sha256:" in database  # Go stdlib fixes in the gosu binary (CVE-2026-78667 et al., 19/10; CVE-2026-111943, 21/10/2026)
     assert 'go mod edit -require="github.com/moby/sys/user@${GOSU_MOBY_SYS_USER_VERSION}"' in database
     assert "ARG GOSU_MOBY_SYS_USER_VERSION=v0.4.1" in database
     assert "ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513" in database

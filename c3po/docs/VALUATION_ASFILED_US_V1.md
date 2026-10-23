@@ -169,8 +169,16 @@ instante real **mais** o deslocamento UTC de Nova York.
     passe, então um TP que entre na geração depois (ex.: ciclo das 00:00 promovido após um protocolo das 16:30) ainda é
     marcado.
 * Marca `stale` pendente é reconferida a cada passe, qualquer que seja a idade. `stale_us_tps` devolve as pendentes por
-  símbolo — o que a frente de decisão (052) deve ler antes de confiar num TP dos EUA. **Ainda sem leitor:** o decisor V1
-  lê só `tp_stale` da linha servida (portão inerte); o leitor causal da 053 está pendente (`VALUATION_DECISOR_V1.md`).
+  símbolo com tudo o que a tabela tem agora (operação, testes). **Leitor da decisão:** `valuation_staleness.us_staleness_at(database, at)` (fora deste arquivo, produtor congelado do backtest PIT) —
+  causal: só marcas com `recorded_at` ≤ `at` e, no PostgreSQL, `created_at` ≤ `at` − margem; por (protocolo, símbolo) o estado
+  mais recente entre elas; tabela ausente → `unavailable` (nada é criado). O decisor V1 o lê uma vez por rodada no
+  relógio da rodada: TP dos EUA com marca `stale` pendente sai `OBSERVAR` / `TP_STALE_AFTER_FILING` com o protocolo
+  nomeado no registro. O poll é julgado **primeiro**: sem uma execução `sec_asfiled` bem-sucedida e com progresso
+  (`records_read` > 0; um passe limitado pela SEC é gravado `partial`), iniciada em D − 6 h ou depois e concluída até
+  D − ε (60 s), todo nome dos EUA sai `OBSERVAR` / `STALENESS_SOURCE_STALE`, exista a tabela ou não — tabela vazia não é
+  evidência enquanto ninguém olha; com poll vivo e sem a tabela, `OBSERVAR` / `STALENESS_SOURCE_UNAVAILABLE`
+  (`VALUATION_DECISOR_V1.md`); a margem do decisor é ε. A 053 é aplicada na partida do container
+  (`Database.initialize()`).
 
 ## Chaves (variáveis de ambiente, não `Settings`)
 
@@ -188,6 +196,7 @@ do compose põe os valores do host no ambiente do processo; os nomes são os mes
 | `C3PO_VALUATION_ASFILED_ENABLED` | desligada | poll do worker de IR, gatilho de reavaliação, corte noturno, gancho sombra do produtor EUA |
 | `C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL` | 10 (0 a 200) | backfill do poll as-filed |
 | `C3PO_VALUATION_DECISOR_SHADOW` | desligada | fase noturna do decisor, gravação e saúde da fase |
+| `C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED` | desligada | fase noturna do calendário de resultados (uma chamada EODHD) e saúde da fase |
 
 Valor ilegível volta ao padrão (chave: desligada); número fora da faixa é trazido para dentro dela.
 

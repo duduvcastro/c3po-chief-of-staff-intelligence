@@ -1,11 +1,11 @@
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, time as wall_time, timedelta
+from datetime import date, datetime, time as wall_time, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from . import valuation_env
+from . import ingestion_process, valuation_env
 from .chewie_fundamentals import ChewieFundamentalsService
 from .maintenance_gate import job, startup_job
 from .config import Settings, get_settings
@@ -20,10 +20,12 @@ from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerService
 from .official_fundamentals import ensure_builtin_official_fundamentals
 from .observability import HealthcheckPing, init_sentry
-from .r2d2_cash_yield import R2D2CashYieldService
+from .operational_incidents import OperationalIncidentService
+from .r2d2_cash_yield import CashYieldDataError, CashYieldPendingData, R2D2CashYieldService
 from .push_notifications import PushNotificationService
 from .valuation_asfiled import evaluate_us_filings
-from .valuation_decision import last_run_at as decision_last_run_at, run_shadow as run_decisor_shadow
+from .valuation_decision import last_run_at as decision_last_run_at, not_before as decision_not_before, run_shadow as run_decisor_shadow
+from .valuation_earnings_calendar import MAX_FAILURES_PER_NIGHT as EARNINGS_CALENDAR_MAX_FAILURES, EarningsCalendarService
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
@@ -31,6 +33,7 @@ from .valuation_v2_shadow import ValuationV2ShadowService
 from .valuation_v3_shadow import ValuationV3ShadowService
 from .valuation_price_history import PriceHistoryService
 from .valuation_worker_contract import (
+    VALUATION_WORKER_ADVISORY_PHASES,
     VALUATION_WORKER_CANONICAL_PHASE,
     VALUATION_WORKER_PHASES,
     VALUATION_WORKER_SOURCE_TYPE,
@@ -49,6 +52,12 @@ OFFHOURS_END_HOUR = 8
 CASH_YIELD_PHASE_KEY = "cash_yield"
 CASH_YIELD_FAILURE_ACTION = "r2d2.cash_yield.failed"
 CASH_YIELD_RECOVERY_ACTION = "r2d2.cash_yield.recovered"
+# One incident per phase and failure episode (the key carries no date). Legacy
+# per-night keys ``<key>:<YYYY-MM-DD>`` share the prefix and close on recovery.
+PHASE_INCIDENT_KEY_PREFIX = "notification:job_failure:valuation-phase-failure:"
+# Severity by persistence: a failing night that retries is attention; the incident
+# becomes critical on the Nth consecutive failing night, or at once on a data fault.
+PHASE_FAILURE_CRITICAL_NIGHTS = 2
 
 
 @dataclass(frozen=True)
@@ -58,6 +67,13 @@ class OffhoursPhase:
     operation: Callable[[], Any]
     start_hour: int = OFFHOURS_START_HOUR
     end_hour: int = OFFHOURS_END_HOUR
+    max_failures: int | None = None  # failed attempts per scheduled night after which the phase waits for the next one
+    not_before: Callable[[], datetime | None] | None = None  # an instant before which the phase must not run yet ("not yet": nothing recorded)
+
+    @property
+    def advisory(self) -> bool:
+        """An advisory phase never pages: its failure neither fails the worker's check nor pushes a job failure."""
+        return self.key in VALUATION_WORKER_ADVISORY_PHASES
 
 
 @dataclass(frozen=True)
@@ -141,6 +157,101 @@ def _record_cash_yield_recovery(database: Database, *, scheduled_for: datetime) 
         subject_id,
         {"scheduled_for": scheduled_for.isoformat()},
     )
+
+
+def phase_incident_key(phase_key: str) -> str:
+    return f"{PHASE_INCIDENT_KEY_PREFIX}{phase_key}"
+
+
+def _is_data_fault(error: Exception) -> bool:
+    """A real data/integrity fault (invalid feed, negative rate, canonical-entry
+    mismatch). Expected pending states never reach here: they do not raise."""
+    return isinstance(error, CashYieldDataError) and not isinstance(error, CashYieldPendingData)
+
+
+def phase_failure_severity(*, consecutive_nights: int, data_fault: bool) -> str:
+    if data_fault or consecutive_nights >= PHASE_FAILURE_CRITICAL_NIGHTS:
+        return "critical"
+    return "attention"
+
+
+def _signal_phase_failure(
+    database: Database,
+    push_notifications: PushNotificationService | None,
+    *,
+    phase_key: str,
+    night: date,
+    error: Exception,
+    at: datetime,
+) -> dict[str, Any] | None:
+    """Record the failing night on the phase's single open incident.
+
+    Retries inside the same night carry identical evidence and add no event; each
+    new failing night adds one ``observed`` event, so ``event_count`` tracks the
+    nights. The push goes out once per episode, when the incident is critical.
+    """
+    try:
+        incidents = OperationalIncidentService(database)
+        key = phase_incident_key(phase_key)
+        open_since = incidents.open_since(key)
+        first_night = open_since.astimezone(SAO_PAULO).date() if open_since else night
+        consecutive_nights = max(1, (night - first_night).days + 1)
+        data_fault = _is_data_fault(error)
+        severity = phase_failure_severity(
+            consecutive_nights=consecutive_nights, data_fault=data_fault,
+        )
+        name = VALUATION_WORKER_PHASES[phase_key]["name"]
+        error_class = type(error).__name__
+        evidence = {
+            "phase": phase_key,
+            "night": night.isoformat(),
+            "episode_first_night": first_night.isoformat(),
+            "consecutive_nights": consecutive_nights,
+            "error_class": error_class,
+            "fault": "data" if data_fault else "retryable",
+            "severity": severity,
+            "critical_after_nights": PHASE_FAILURE_CRITICAL_NIGHTS,
+        }
+        detail = (
+            f"{error_class}: {'data fault' if data_fault else 'off-hours phase will retry'}"
+            f" · {consecutive_nights} consecutive night(s) since {first_night.isoformat()}"
+        )
+        incident = incidents.signal(
+            incident_key=key, source="worker", severity=severity, title=f"{name} failed",
+            detail=detail, deep_link="/?view=health", evidence=evidence, at=at,
+        )
+        # Escalate inside an episode (never lower it); a reopened incident starts a
+        # new episode, so its severity is derived again instead of inherited.
+        if incident.get("severity") != severity and (severity == "critical" or open_since is None):
+            incident = incidents.set_severity(
+                incident_key=key, severity=severity, detail=f"Severity {severity} · {detail}",
+                evidence=evidence, at=at,
+            ) or incident
+        if severity == "critical" and push_notifications:
+            push_notifications.notify(
+                category="job_failure",
+                title=f"{name} failed",
+                body=f"{error_class}: failing for {consecutive_nights} night(s)",
+                deep_link="/?view=health",
+                event_key=f"valuation-phase-failure:{phase_key}:episode:{first_night.isoformat()}",
+                record_incident=False,
+            )
+        return incident
+    except Exception:
+        logger.exception("Phase incident recording failed without affecting the worker")
+        return None
+
+
+def _resolve_phase_incident(database: Database, *, phase_key: str, observed_at: datetime) -> int:
+    try:
+        return OperationalIncidentService(database).resolve_recovered_family(
+            phase_incident_key(phase_key),
+            observed_at=observed_at,
+            detail=f"{VALUATION_WORKER_PHASES[phase_key]['name']} succeeded again; incident closed automatically",
+        )
+    except Exception:
+        logger.exception("Phase incident recovery failed without affecting the worker")
+        return 0
 
 
 def _run_recorded_phase(
@@ -256,7 +367,17 @@ def run_worker_iteration(
             phase_statuses[phase.key] = "pending"
             continue
         if now < phase_window_end:
-            start_worker_healthcheck()
+            if phase.max_failures is not None and database.count_ingestion_runs(
+                    VALUATION_WORKER_PHASES[phase.key]["code"], "failed", scheduled_for=phase_due_at.isoformat()) >= phase.max_failures:
+                phase_statuses[phase.key] = "retry_cap"  # this night's attempts are spent: the next night tries again
+                continue
+            ready_at = phase.not_before() if phase.not_before is not None else None
+            if ready_at is not None and now < ready_at:  # not yet: nothing run, nothing recorded, the worker wakes at ready_at
+                phase_statuses[phase.key] = "deferred"
+                wake_targets.append(ready_at)
+                continue
+            if not phase.advisory:
+                start_worker_healthcheck()
             if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                 cash_yield_healthcheck.ping("start")
             try:
@@ -275,8 +396,15 @@ def run_worker_iteration(
                 )
                 if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                     cash_yield_healthcheck.ping("success")
+                _resolve_phase_incident(database, phase_key=phase.key, observed_at=now)
             except Exception as exc:
                 phase_statuses[phase.key] = "failed"
+                if phase.advisory:  # recorded (its ingestion run), retried inside the window up to its cap, never paged
+                    logger.warning("%s failed (advisory, not paged): %s", VALUATION_WORKER_PHASES[phase.key]["name"], type(exc).__name__)
+                    retry_at = now + OFFHOURS_RETRY_DELAY
+                    if retry_at < phase_window_end:
+                        wake_targets.append(retry_at)
+                    continue
                 failed_work = True
                 if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                     cash_yield_healthcheck.ping("fail")
@@ -284,14 +412,14 @@ def run_worker_iteration(
                     "%s failed; keeping prior evidence and retrying inside the window",
                     VALUATION_WORKER_PHASES[phase.key]["name"],
                 )
-                if push_notifications:
-                    push_notifications.notify(
-                        category="job_failure",
-                        title=f"{VALUATION_WORKER_PHASES[phase.key]['name']} failed",
-                        body=f"{type(exc).__name__}: off-hours phase will retry",
-                        deep_link="/?view=health",
-                        event_key=f"valuation-phase-failure:{phase.key}:{phase_due_at.date()}",
-                    )
+                _signal_phase_failure(
+                    database,
+                    push_notifications,
+                    phase_key=phase.key,
+                    night=phase_due_at.date(),
+                    error=exc,
+                    at=now,
+                )
                 retry_at = now + OFFHOURS_RETRY_DELAY
                 if retry_at < phase_window_end:
                     wake_targets.append(retry_at)
@@ -337,12 +465,31 @@ def run_nightly(
             logger.exception("US as-filed revaluation after the cut failed; the IR worker re-checks on its next poll")
 
 
+def idle_until_wake(seconds: float, stale_sweep: ingestion_process.PeriodicReaper, *,
+                    sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
+    """The loop's sleep, in naps no longer than the stale-run sweep's interval: between naps the sweep runs when due
+    (at most hourly, admitted by the maintenance gate), so a run orphaned for 24 h is cleared while the worker idles."""
+    deadline = clock() + seconds
+    while (left := deadline - clock()) > 0:
+        if stale_sweep.due():
+            with job() as admitted:
+                if admitted:
+                    stale_sweep()
+        sleep(min(left, max(5.0, stale_sweep.seconds_until_due())))
+
+
 def main() -> None:
     with startup_job():
         settings = get_settings()
         init_sentry(settings, service_name="valuation-worker")
         database = Database(settings)
         database.initialize()
+        # before any run of this process: the runs a previous process of this worker left 'running' (a deploy) are failed
+        ingestion_process.reap_at_startup(database, ingestion_process.VALUATION_WORKER)
+        # and, of any role or none, every run 'running' for more than 24 h — now and then hourly while idle (this worker only)
+        stale_sweep = ingestion_process.PeriodicReaper(
+            lambda: ingestion_process.reap_stale_safely(database, ingestion_process.VALUATION_WORKER))
+        stale_sweep()
         push_notifications = PushNotificationService(settings, database)
         ensure_builtin_official_fundamentals(database)
         try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
@@ -376,6 +523,7 @@ def main() -> None:
         v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
         v3_shadow = ValuationV3ShadowService(database)
         price_history = PriceHistoryService(settings, database, market_data.http)
+        earnings_calendar = EarningsCalendarService(settings, database)
         cash_yield = R2D2CashYieldService(
             settings,
             database,
@@ -411,8 +559,13 @@ def main() -> None:
                     end_hour=10,
                 ),
             ) if settings.r2d2_cash_yield_accounting_enabled else ()),
+            # Decisor V1 events: ONE EODHD whole-market earnings-calendar call, before the decisor reads it; dormant until the mesa enables it
+            *((OffhoursPhase("earnings_calendar", earnings_calendar.last_run_at, earnings_calendar.run, max_failures=EARNINGS_CALENDAR_MAX_FAILURES),)
+              if valuation_env.earnings_calendar_enabled() else ()),
             # Decisor V1 (migration 052): LAST, after the official cut and every existing phase — it never delays one; dormant until the mesa enables it
-            *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True)),)
+            # ...and only once the newest calendar is older than ε: one received inside the margin would be out of its read
+            *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True),
+                             not_before=lambda: decision_not_before(database)),)
               if valuation_env.decisor_shadow_enabled() else ()),
         )
 
@@ -465,7 +618,7 @@ def main() -> None:
             now = datetime.now(SAO_PAULO)
             wake_at = result.next_wake_at
             logger.info("Next valuation-worker wake-up at %s", wake_at.isoformat())
-        time.sleep(max(30, int((wake_at - now).total_seconds())))
+        idle_until_wake(max(30, int((wake_at - now).total_seconds())), stale_sweep)
 
 
 if __name__ == "__main__":

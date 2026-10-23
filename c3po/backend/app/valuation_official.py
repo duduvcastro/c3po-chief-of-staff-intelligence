@@ -218,6 +218,9 @@ Rev 9 / P1 — the declared residue closed, the receipt the owner reads, the ord
 * THE ORDER AS A COMMAND: ``--switch-to-internal --before-after-sha256 H --reason …`` (and ``--rollback-to-blend --reason …``,
   never locked) take the same proposal options as ``--before-after`` and execute ``select_generation`` with the host's wall
   clock; they print the new generation without the targeted symbols.
+* THE LOCK COMMIT (a separate commit, merged only after the owner accepts the before/after): ``OFFICIAL_TP_REPLACEMENT_AUTHORIZED
+  = True`` and ``OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256`` naming the accepted ``report_sha256`` — committed with
+  ``RECEIPT_PLACEHOLDER`` until the acceptance, so the commit switches nothing before the hash is written.
 
 Rev 9 / P1, cross-review (2026-10-17):
 * THE FREEZE (F1): the lock commit is merged and deployed AFTER the owner accepts the receipt, so the head must not move
@@ -264,8 +267,9 @@ SOURCE_V3_2_SHADOW = "v3_2_shadow"  # the point-in-time re-execution of the V3 e
 # The sources a prediction RECORD may carry (rev 7 TP-B: sources coexist in `valuation_predictions`). The official SELECTION keeps
 # reading `OFFICIAL_SOURCES` only: `_selected_source`, `_new_generation` and the store's selection writer refuse `v3_2_shadow` as before.
 RECORDABLE_SOURCES: tuple[str, ...] = (*OFFICIAL_SOURCES, SOURCE_V3_2_SHADOW)
-OFFICIAL_TP_REPLACEMENT_AUTHORIZED = False  # the Passo 1 lock (spec §7-bis item 4): a switch to SOURCE_INTERNAL is refused while False; flips ONLY by a commit citing the mesa's receipt
-OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = None  # the before/after report_sha256 the owner accepted, named by the commit that flips the lock: a switch must cite exactly it
+OFFICIAL_TP_REPLACEMENT_AUTHORIZED = True  # the Passo 1 lock (spec §7-bis item 4), FLIPPED by this commit together with the receipt it names below — merged only after the owner accepts that before/after receipt
+RECEIPT_PLACEHOLDER = "PENDING-OWNER-ACCEPTANCE"  # not hex-64: while the receipt below is this, a switch is refused even with the lock flipped
+OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = "52e0f8252529db161c5743797e9a3fd9e253155703470567a9027cb04bce1910"  # the report_sha256 the owner accepted on 20/10/2026 11:2x BRT (frozen generation 034a6c0b): a switch must cite exactly it
 BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V3"  # V3 (rev 9): the served view of both arms (status/BUY/upside/score); V2 (C395-1) bound the AFTER composition
 BUY_STATUS = "full_match"  # what the receipt counts as a CANDIDATE: the screeners' candidate gate (the B3 list also dedups issuers and asks the power zone)
 ONE_PAGER_RATING_CUTS: tuple[tuple[str, float], ...] = (  # the One Pager's rating of the upside (one_pager.py, pinned): the first cut the upside reaches

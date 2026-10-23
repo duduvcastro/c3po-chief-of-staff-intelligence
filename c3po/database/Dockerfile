@@ -1,4 +1,4 @@
-FROM golang:1.26.9-alpine3.24@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS gosu-build
+FROM golang:1.26.10-alpine3.24@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS gosu-build
 
 ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513
 # gosu 1.19 pins golang.org/x/sys v0.1.0 in its go.mod (upstream master too), which the
@@ -7,8 +7,9 @@ ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513
 # binary's embedded build info is asserted so the fix is provable from the image.
 ARG GOSU_X_SYS_VERSION=v0.47.0
 # The same gosu go.mod pins github.com/moby/sys/user v0.1.0, reported by the production scan of 08/10/2026
-# (CVE-2026-61801, medium, fixed in 0.4.1; PR #446). Raised and asserted the same way. The builder is Go 1.26.9: the
-# PR scan of 19/10/2026 reported 13 fixable Go stdlib findings (3 high) in the gosu binary built with 1.25.13.
+# (CVE-2026-61801, medium, fixed in 0.4.1; PR #446). Raised and asserted the same way. The builder is Go 1.26.10: the
+# PR scan of 19/10/2026 reported 13 fixable Go stdlib findings (3 high) in the gosu binary built with 1.25.13, and the
+# production scan of 21/10/2026 one high (CVE-2026-111943) fixed in Go 1.26.10.
 ARG GOSU_MOBY_SYS_USER_VERSION=v0.4.1
 ARG C3PO_SECURITY_REBUILD=bootstrap
 RUN test -n "$C3PO_SECURITY_REBUILD" \
