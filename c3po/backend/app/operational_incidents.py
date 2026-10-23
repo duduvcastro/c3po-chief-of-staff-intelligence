@@ -168,7 +168,7 @@ class OperationalIncidentService:
 # AGGREGATES ONLY. Every string it prints comes from a closed vocabulary below: no incident key, title,
 # detail, evidence, actor, card name or card detail ever leaves the process (they may name a symbol or a
 # person). The runner re-verifies the exact schema before anything is uploaded or posted.
-REPORT_SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v2"  # v2: + stale_running_ingestion
+REPORT_SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v3"  # v2: + stale_running_ingestion; v3: + diagnostics
 READ_ONLY_PGOPTION = "-c default_transaction_read_only=on"
 GOVERNANCE_INCIDENT_KIND = "governance-vulnerability"  # governance_vulnerability.GOVERNANCE_INCIDENT_KEY (no import: cycle)
 NOTIFICATION_KINDS = ("job_failure", "disk_threshold")
@@ -193,6 +193,89 @@ INCIDENT_SCAN_LIMIT = 1000
 OVER_24H_HOURS = 24.0
 STALE_RUNNING_MINUTES = 30
 STALE_RUNNING_HORIZON = timedelta(days=7)
+
+
+# Diagnostics (v3): why an incident stays open, in closed vocabularies only. A job failure's family is the fixed
+# event-key prefix its producer writes (never the free title or the date); the governance block repeats the latest
+# attestation's own status words and the security routine's blocker codes, and drops anything else to "other".
+JOB_FAILURE_FAMILIES = ("security-automation-failure", "governance-job-failure", "valuation-phase-failure",
+                        "valuation-canonical-failure", "other")
+GOVERNANCE_LAYERS = ("dependabot", "governance", "operating_system", "production_images", "remediation_lanes",
+                     "security_automation")
+LAYER_STATUSES = ("healthy", "attention", "offline", "missing", "other")
+ROUTINE_STATUSES = (
+    "observed", "preliminary", "failed", "maintenance_hold", "reboot_requested", "reboot_action", "blocked_missing_evidence",
+    "waiting_npm_evidence", "blocked_unhealthy_host", "waiting_maintenance_window", "blocked_scan_dispatch",
+    "waiting_main_deploy", "blocked_branch_protection", "waiting_pipeline", "waiting_security_tests", "waiting_branch_rules",
+    "baseline_changed_or_hold", "merged_waiting_deploy_and_rescan", "no_validated_candidate", "missing", "other",
+)
+ROUTINE_BLOCKERS = (
+    "deploy_lag", "npm_evidence_pending", "image_scan_predates_deploy", "errors", "alerts", "os_security_pending",
+    "reboot_required", "image_findings_or_unavailable", "unhealthy_host", "routine_failed", "other",
+)
+GRACE_REASONS = (
+    "active", "status_not_attention", "layer_not_healthy", "routine_not_waiting", "npm_findings", "blockers_not_post_deploy",
+    "pending_mismatch", "revision_mismatch", "anchor_invalid", "deployed_at_invalid", "expired", "missing", "other",
+)
+
+
+def job_failure_family(incident_key: str) -> str:
+    parts = incident_key.split(":", 3)
+    if len(parts) >= 3 and parts[0] == "notification" and parts[1] == "job_failure" and parts[2] in JOB_FAILURE_FAMILIES:
+        return parts[2]
+    return "other"
+
+
+def _closed(value: Any, allowed: tuple[str, ...]) -> str:
+    return value if isinstance(value, str) and value in allowed else "other"
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _small_count(value: Any) -> int | None:
+    return value if type(value) is int and 0 <= value <= 100000 else None
+
+
+def governance_diagnostics(database: Database) -> dict[str, Any]:
+    report = database.latest_governance_vulnerability_report()
+    if not isinstance(report, dict):
+        return {"attestation": "missing", "layers": {layer: "missing" for layer in GOVERNANCE_LAYERS}, "routine": "missing",
+                "blockers": [], "grace": "missing", "os_security_pending": None, "reboot_required": None,
+                "npm_high_or_critical": None, "remediation_lanes": None}
+    layers = {layer: _closed(report[layer].get("status"), LAYER_STATUSES) if isinstance(report.get(layer), dict) else "missing"
+              for layer in GOVERNANCE_LAYERS}
+    automation = _mapping(report.get("security_automation"))
+    detail = automation.get("detail")
+    routine = ("missing" if not automation else "reboot_action" if isinstance(detail, str) and detail.startswith("reboot_")
+               and detail != "reboot_requested" else _closed(detail, ROUTINE_STATUSES))
+    raw_blockers = automation.get("healthy_blockers")
+    blockers = sorted({_closed(item, ROUTINE_BLOCKERS) for item in raw_blockers}) if isinstance(raw_blockers, list) else []
+    grace = _mapping(report.get("post_deploy_grace"))
+    grace_reason = ("missing" if not grace else "active" if grace.get("active") is True
+                    else _closed(grace.get("reason"), GRACE_REASONS))
+    operating_system = _mapping(report.get("operating_system"))
+    additional = automation.get("additional_by_severity")
+    npm = (sum(_small_count(_mapping(additional).get(level)) or 0 for level in ("critical", "high"))
+           if isinstance(additional, dict) else None)
+    lanes = _mapping(report.get("remediation_lanes"))
+    reboot = operating_system.get("reboot_required")
+    return {"attestation": _closed(report.get("status"), LAYER_STATUSES), "layers": layers, "routine": routine,
+            "blockers": blockers, "grace": grace_reason,
+            "os_security_pending": _small_count(operating_system.get("security_updates_pending")),
+            "reboot_required": reboot if isinstance(reboot, bool) else None,
+            "npm_high_or_critical": npm, "remediation_lanes": _small_count(lanes.get("count"))}
+
+
+def diagnostics(database: Database) -> dict[str, Any]:
+    families = {family: 0 for family in JOB_FAILURE_FAMILIES}
+    for incident in database.list_operational_incidents(limit=INCIDENT_SCAN_LIMIT):
+        key = str(incident.get("incident_key") or "")
+        if incident.get("status") in ACTIVE_STATUSES and incident_kind(key) == "notification:job_failure":
+            families[job_failure_family(key)] += 1
+    return {"job_failure_families": {family: count for family, count in families.items() if count},
+            "governance": governance_diagnostics(database)}
 
 
 def force_read_only_session(environ: MutableMapping[str, str] | None = None) -> str:
@@ -327,6 +410,7 @@ def incidents_report(settings: Settings, database: Database, now: datetime | Non
         "incidents": incidents_aggregate(database, moment),
         "health": health_cards(settings, database, moment),
         "stale_running_ingestion": stale_running_ingestion(database, moment),
+        "diagnostics": diagnostics(database),
     }
     report["report_sha256"] = report_sha256(report)
     return report

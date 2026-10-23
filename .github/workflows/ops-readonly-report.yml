@@ -137,8 +137,8 @@ jobs:
           from pathlib import Path
 
           source, out, comments_path, channel_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])
-          SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v2"
-          TOP = {"schema", "generated_at", "build_sha", "incidents", "health", "stale_running_ingestion", "report_sha256"}
+          SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v3"
+          TOP = {"schema", "generated_at", "build_sha", "incidents", "health", "stale_running_ingestion", "diagnostics", "report_sha256"}
           STALE = {"threshold_minutes", "count", "oldest_age_minutes"}
           SLOTS = {"30 6 * * *": "0330", "30 11 * * *": "0830"}
           INCIDENTS = {"scanned", "totals", "groups"}
@@ -158,6 +158,24 @@ jobs:
                        "v3_pre_ab_gate", "day_d_disk_reserve", "b2_zero_cap_evidence", "probe_failed", "unmapped"},
               "status": {"attention", "offline"},
           }
+          DIAGNOSTICS = {"job_failure_families", "governance"}
+          FAMILIES = {"security-automation-failure", "governance-job-failure", "valuation-phase-failure",
+                      "valuation-canonical-failure", "other"}
+          GOVERNANCE = {"attestation", "layers", "routine", "blockers", "grace", "os_security_pending", "reboot_required",
+                        "npm_high_or_critical", "remediation_lanes"}
+          LAYERS = {"dependabot", "governance", "operating_system", "production_images", "remediation_lanes", "security_automation"}
+          LAYER_STATUSES = {"healthy", "attention", "offline", "missing", "other"}
+          ROUTINE = {"observed", "preliminary", "failed", "maintenance_hold", "reboot_requested", "reboot_action",
+                     "blocked_missing_evidence", "waiting_npm_evidence", "blocked_unhealthy_host", "waiting_maintenance_window",
+                     "blocked_scan_dispatch", "waiting_main_deploy", "blocked_branch_protection", "waiting_pipeline",
+                     "waiting_security_tests", "waiting_branch_rules", "baseline_changed_or_hold",
+                     "merged_waiting_deploy_and_rescan", "no_validated_candidate", "missing", "other"}
+          BLOCKERS = {"deploy_lag", "npm_evidence_pending", "image_scan_predates_deploy", "errors", "alerts",
+                      "os_security_pending", "reboot_required", "image_findings_or_unavailable", "unhealthy_host",
+                      "routine_failed", "other"}
+          GRACE = {"active", "status_not_attention", "layer_not_healthy", "routine_not_waiting", "npm_findings",
+                   "blockers_not_post_deploy", "pending_mismatch", "revision_mismatch", "anchor_invalid",
+                   "deployed_at_invalid", "expired", "missing", "other"}
           TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+00:00")
 
           def refuse(message):
@@ -235,6 +253,28 @@ jobs:
               count(stale["oldest_age_minutes"], "oldest_age_minutes")
           if (stale["count"] == 0) != (stale["oldest_age_minutes"] is None):
               refuse("the stale runs do not match their oldest age")
+          diag = exact(report["diagnostics"], DIAGNOSTICS, "diagnostics")
+          families = diag["job_failure_families"]
+          if not isinstance(families, dict) or not set(families) <= FAMILIES:
+              refuse("job_failure_families is not in its closed vocabulary")
+          for name in families:
+              count(families[name], "family count")
+          gov = exact(diag["governance"], GOVERNANCE, "governance diagnostics")
+          word(gov["attestation"], LAYER_STATUSES, "attestation")
+          layers = exact(gov["layers"], LAYERS, "layers")
+          for name in LAYERS:
+              word(layers[name], LAYER_STATUSES, "layer status")
+          word(gov["routine"], ROUTINE, "routine")
+          word(gov["grace"], GRACE, "grace")
+          if not isinstance(gov["blockers"], list) or len(gov["blockers"]) > len(BLOCKERS) or gov["blockers"] != sorted(set(gov["blockers"])):
+              refuse("blockers is not a sorted set")
+          for item in gov["blockers"]:
+              word(item, BLOCKERS, "blocker")
+          for name in ("os_security_pending", "npm_high_or_critical", "remediation_lanes"):
+              if gov[name] is not None:
+                  count(gov[name], name)
+          if gov["reboot_required"] not in (True, False, None):
+              refuse("reboot_required is not a boolean")
           body = {key: value for key, value in report.items() if key != "report_sha256"}
           digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
           if report["report_sha256"] != digest:
@@ -265,6 +305,16 @@ jobs:
               lines += ["| grupo | cartão | estado |", "|---|---|---|"]
               lines += [f"| {c['group']} | {c['card']} | {'vermelho' if c['status'] == 'offline' else 'âmbar'} |" for c in health["cards"]]
               lines.append("")
+          gov = report["diagnostics"]["governance"]
+          families = report["diagnostics"]["job_failure_families"]
+          lines += ["Diagnóstico (vocabulário fechado):",
+                    "- Falhas de job por família: " + (", ".join(f"{name} {n}" for name, n in sorted(families.items())) or "nenhuma"),
+                    f"- Atestado de governança: {gov['attestation']}; camadas: "
+                    + ", ".join(f"{name} {status}" for name, status in sorted(gov["layers"].items())),
+                    f"- Rotina de segurança: {gov['routine']}; bloqueadores: {', '.join(gov['blockers']) or 'nenhum'}; "
+                    f"carência pós-deploy: {gov['grace']}",
+                    f"- SO: atualizações de segurança pendentes {gov['os_security_pending']}, reboot pendente {gov['reboot_required']}; "
+                    f"npm alto/crítico {gov['npm_high_or_critical']}; lanes de remediação {gov['remediation_lanes']}", ""]
           lines.append(f"Somente agregados (sem chaves, títulos, detalhes ou símbolos). report_sha256 `{report['report_sha256']}`; "
                        f"revisão implantada `{report['build_sha']}`.")
           summary = "\n".join(lines) + "\n"

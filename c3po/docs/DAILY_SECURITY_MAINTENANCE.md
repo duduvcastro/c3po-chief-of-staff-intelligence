@@ -271,6 +271,8 @@ O mesmo workflow é a varredura noturna: roda também às 06:30 UTC (03:30 BRT, 
 relatório (esquema `C3PO-OPS-INCIDENTS-REPORT-v2`) passou a trazer também as ingestões ainda `running` há mais de
 30 min, só como contagem e idade da mais antiga (código da fonte e metadados, que podem listar símbolos, não saem).
 
+Desde 23/10/2026 o esquema é `C3PO-OPS-INCIDENTS-REPORT-v3`: o bloco `diagnostics` diz por que um incidente continua aberto, só em vocabulário fechado. Ele traz as falhas de job ativas por família (o prefixo fixo da chave, como `security-automation-failure`, nunca o título nem a data) e, do último atestado de governança, o estado de cada camada, o estado e os bloqueadores da rotina de segurança, o motivo da carência pós-deploy, as atualizações de segurança do SO pendentes, o reboot pendente, a contagem npm alta/crítica e as lanes de remediação. Qualquer palavra fora do vocabulário sai como `other`.
+
 Regra de publicação, substituindo a de "uma vez por dia": se houver cartão de saúde **vermelho**, incidente
 **crítico** aberto ou incidente aberto há mais de 24 h, sai **um** comentário por execução no canal (padrão #429),
 com o marcador `<!-- c3po-ops-readonly-report:AAAA-MM-DD:HHMM -->` (dia BRT e horário do agendamento, 0330 ou
