@@ -83,6 +83,46 @@ def test_the_cli_prints_aggregates_only(tmp_path: Path, capsys: pytest.CaptureFi
     assert all(status in {"attention", "offline"} for status in cards.values())
     assert report["health"]["evaluated"] >= len(cards)
     assert report["stale_running_ingestion"] == {"threshold_minutes": 30, "count": 1, "oldest_age_minutes": 95}
+    assert report["diagnostics"]["job_failure_families"] == {"other": 1}  # a free title is never a family
+    assert report["diagnostics"]["governance"]["attestation"] == "missing"
+
+
+def test_the_diagnostics_name_families_and_routine_blockers_in_closed_vocabularies(tmp_path: Path) -> None:
+    settings = Settings(database_url="", day_d_dataset_root=tmp_path)
+    database = Database(settings)
+    service = OperationalIncidentService(database)
+    for key in ("notification:job_failure:security-automation-failure:2026-10-22",
+                "notification:job_failure:security-automation-failure:2026-10-23",
+                f"notification:job_failure:valuation-phase-failure:{SYMBOL}",
+                f"notification:job_failure:{SYMBOL}-failure:2026-10-23"):
+        service.signal(incident_key=key, source="worker", severity="critical", title=SYMBOL, detail=SYMBOL,
+                       deep_link="/", evidence={}, at=NOW - timedelta(hours=2))
+    report = {"status": "attention", "dependabot": {"status": "healthy"}, "governance": {"status": "healthy"},
+              "operating_system": {"status": "attention", "security_updates_pending": 3, "reboot_required": True},
+              "production_images": {"status": "healthy"}, "remediation_lanes": {"status": SYMBOL, "count": 0},
+              "security_automation": {"status": "attention", "detail": "reboot_deferred",
+                                      "healthy_blockers": ["reboot_required", "os_security_pending", SYMBOL, "reboot_required"],
+                                      "additional_by_severity": {"critical": 0, "high": 1, "medium": 2, "low": 0}},
+              "post_deploy_grace": {"active": False, "reason": "layer_not_healthy", "layer": SYMBOL}}
+    database.latest_governance_vulnerability_report = lambda: report  # type: ignore[method-assign]
+    diagnostics = module.diagnostics(database)
+    assert diagnostics == {
+        "job_failure_families": {"security-automation-failure": 2, "valuation-phase-failure": 1, "other": 1},
+        "governance": {"attestation": "attention",
+                       "layers": {"dependabot": "healthy", "governance": "healthy", "operating_system": "attention",
+                                  "production_images": "healthy", "remediation_lanes": "other", "security_automation": "attention"},
+                       "routine": "reboot_action", "blockers": ["os_security_pending", "other", "reboot_required"],
+                       "grace": "layer_not_healthy", "os_security_pending": 3, "reboot_required": True,
+                       "npm_high_or_critical": 1, "remediation_lanes": 0},
+    }
+    assert SYMBOL not in json.dumps(diagnostics)
+    full = module.incidents_report(settings, database, NOW)
+    verified = _verify(tmp_path, json.dumps(full))
+    assert verified.returncode == 0, verified.stderr
+    summary = (tmp_path / "verify" / "ops-readonly-report" / "summary.md").read_text(encoding="utf-8")
+    assert "- Falhas de job por família: other 1, security-automation-failure 2, valuation-phase-failure 1" in summary
+    assert "bloqueadores: os_security_pending, other, reboot_required; carência pós-deploy: layer_not_healthy" in summary
+    assert "reboot pendente True" in summary and SYMBOL not in summary
 
 
 def test_the_report_never_reaches_the_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -217,6 +257,13 @@ def test_the_verifier_rejects_any_key_or_string_outside_the_whitelist(tmp_path: 
         "stale_running_ingestion: the keys": mutated(lambda r: r["stale_running_ingestion"].update(sources=[SYMBOL])),
         "stale count is not a non-negative count": mutated(lambda r: r["stale_running_ingestion"].update(count=-1)),
         "do not match their oldest age": mutated(lambda r: r["stale_running_ingestion"].update(oldest_age_minutes=None)),
+        "diagnostics: the keys": mutated(lambda r: r["diagnostics"].update(keys=[SYMBOL])),
+        "job_failure_families is not in its closed vocabulary": mutated(
+            lambda r: r["diagnostics"]["job_failure_families"].update({SYMBOL: 1})),
+        "blocker is not in its closed vocabulary": mutated(lambda r: r["diagnostics"]["governance"].update(blockers=[SYMBOL])),
+        "routine is not in its closed vocabulary": mutated(lambda r: r["diagnostics"]["governance"].update(routine=SYMBOL)),
+        "layers: the keys": mutated(lambda r: r["diagnostics"]["governance"]["layers"].update(symbol="healthy")),
+        "reboot_required is not a boolean": mutated(lambda r: r["diagnostics"]["governance"].update(reboot_required=SYMBOL)),
         "report_sha256 does not recompute": json.dumps({**base, "generated_at": "2026-10-20T11:00:01+00:00"}),
         "not a single JSON document": "{" + SYMBOL,
     }
