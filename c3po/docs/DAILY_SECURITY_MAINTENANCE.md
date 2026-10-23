@@ -289,3 +289,5 @@ público).
 ## Correções incluídas nesta implantação
 
 `sharp` 0.35.0 → 0.35.4 (GHSA-rgj7-g3m4-5g8c) e Next.js 15.5.22 → 15.5.24 (GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4). A auditoria npm do lockfile final retornou zero avisos. Isso comprova a resolução das dependências no checkout, não uma implantação já realizada nem exploração no host.
+
+**Fechamento do alarme de falha da rotina (23/10/2026).** O incidente crítico `security-automation-failure:<data>` abre quando a rotina fica indisponível ou offline. Antes, ele só fechava com a rotina 100% saudável. Agora fecha assim que um relatório novo e verificado mostra a rotina rodando de novo: sem erros, fora de offline, fora de transição (relatório preliminar, `failed`, `maintenance_hold`, reboot em curso). O que ainda impede o saudável, por exemplo uma atualização de segurança do SO à espera da próxima execução do unattended-upgrades, continua no incidente de governança (atenção) e no cartão âmbar.
