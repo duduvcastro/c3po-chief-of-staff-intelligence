@@ -121,6 +121,9 @@ def test_stale_reports_still_dispatch_recovery_and_do_not_merge(tmp_path, monkey
     (tmp_path / ".deploy-version").write_text("a" * 40)
     monkeypatch.setattr(daily, "HOLD", tmp_path / "hold")
     monkeypatch.setattr(daily, "promote", lambda *args: pytest.fail("must not merge without evidence"))
+    monkeypatch.setattr(daily, "boot_receipt", lambda *args, **kwargs: None)
+    probes = []
+    monkeypatch.setattr(daily, "healthy_host", lambda _: probes.append(1) or True)
     class GH:
         calls = []
         def pages(self, path):
@@ -137,6 +140,9 @@ def test_stale_reports_still_dispatch_recovery_and_do_not_merge(tmp_path, monkey
     assert report["status"] == "blocked_missing_evidence" and report["healthy"] is False
     assert set(report["errors"]) == {"host_evidence_unavailable", "image_evidence_unavailable",
                                       "npm_evidence_unavailable", "watchdog_evidence_unavailable"}
+    assert report["healthy_blockers"] == ["errors", "os_security_pending", "reboot_required",
+                                          "image_findings_or_unavailable"]
+    assert probes == [1]
     daily.cycle(tmp_path, gh, datetime(2026, 9, 12, 11, tzinfo=timezone.utc), {"automatic_merge": True}, report)
     assert len(gh.calls) == 2
 
@@ -429,6 +435,13 @@ def _deployed_before(tmp_path, now):
     os.utime(tmp_path / ".deploy-version", (stamp, stamp))
 
 
+def _scanned(tmp_path):
+    """The current deploy has already had its post-deploy scans dispatched."""
+    marker = tmp_path / ".deploy-version"
+    return {"last_dispatched_deploy": marker.read_text().strip(),
+            "last_dispatched_deploy_at": datetime.fromtimestamp(marker.stat().st_mtime, timezone.utc).isoformat()}
+
+
 def test_new_main_npm_lag_is_pending_with_same_cycle_dispatch_even_before_10utc(tmp_path, monkeypatch):
     # 01/10/2026: every new main opened a CRITICAL incident until the next
     # dispatch, which after a night deploy only came at 10 UTC (7-8h later).
@@ -442,13 +455,13 @@ def test_new_main_npm_lag_is_pending_with_same_cycle_dispatch_even_before_10utc(
 
     report = daily.cycle(tmp_path, gh, night, {"automatic_merge": True}, previous)
 
-    assert gh.writes == [DEPENDENCY_DISPATCH]
+    assert gh.writes == [DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
     assert report["errors"] == [] and report["pending"] == ["npm_evidence_pending"]
     assert report["status"] == "waiting_npm_evidence" and report["healthy"] is False
     assert report["last_dispatched_main"] == "a" * 40
     assert report["npm_lag_since"] == night.isoformat()
-    # The revision dispatch does not consume the day's 10 UTC scans.
-    assert report["last_dispatch_date"] == "2026-09-11" and report["last_dispatched_deploy"] == "b" * 40
+    # The new deploy is scanned now, without consuming the day's 10 UTC scan.
+    assert report["last_dispatch_date"] == "2026-09-11" and report["last_dispatched_deploy"] == "a" * 40
     # The inventory published before the dispatch already carries the pending, never the error.
     published = json.loads((tmp_path / "runtime/security" / daily.REPORT).read_text())
     assert published["pending"] == ["npm_evidence_pending"] and published["errors"] == []
@@ -456,14 +469,14 @@ def test_new_main_npm_lag_is_pending_with_same_cycle_dispatch_even_before_10utc(
 
     later = night + timedelta(hours=1)
     again = daily.cycle(tmp_path, gh, later, {"automatic_merge": True}, report)
-    assert gh.writes == [DEPENDENCY_DISPATCH]
+    assert gh.writes == [DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
     assert again["errors"] == [] and again["pending"] == ["npm_evidence_pending"]
     assert again["npm_lag_since"] == night.isoformat()
 
     _npm(monkeypatch, _audit("a" * 40))
     morning = night.replace(hour=10)
     ready = daily.cycle(tmp_path, gh, morning, {"automatic_merge": True}, again)
-    assert gh.writes == [DEPENDENCY_DISPATCH, DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
+    assert gh.writes == [DEPENDENCY_DISPATCH, IMAGE_DISPATCH, DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
     assert ready["errors"] == [] and ready["pending"] == [] and ready["healthy"] is True
     assert ready["npm_lag_since"] is None
     assert ready["last_dispatch_date"] == "2026-09-12" and promoted == [1]
@@ -480,7 +493,7 @@ def test_npm_lag_grace_window_boundary(tmp_path, monkeypatch, elapsed, pending):
     _npm(monkeypatch, _audit("b" * 40))
     gh = _EscalationGH()
     first = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
-                        {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+                        {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40, **_scanned(tmp_path)})
     assert first["pending"] == ["npm_evidence_pending"] and first["npm_lag_since"] == now.isoformat()
 
     report = daily.cycle(tmp_path, gh, now + elapsed, {"automatic_merge": True}, first)
@@ -501,7 +514,7 @@ def test_chained_main_moves_never_restart_the_npm_lag_clock(tmp_path, monkeypatc
     start = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
     _maintenance_ready(tmp_path, monkeypatch, start)
     _npm(monkeypatch, _audit("b" * 40))
-    report = {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40}
+    report = {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40, **_scanned(tmp_path)}
     writes = []
     for elapsed, main in ((timedelta(0), "a"), (timedelta(hours=1), "c"), (timedelta(hours=2), "d")):
         gh = _EscalationGH(main=main * 40, workflow_runs={
@@ -573,7 +586,7 @@ def test_falsy_last_dispatched_main_is_never_a_dispatch_already_issued(tmp_path,
     _maintenance_ready(tmp_path, monkeypatch, now)
     _npm(monkeypatch, _audit("b" * 40))
     refused = _EscalationGH(dispatch_error=HTTPError("https://api.github.com/private", 403, "body", {}, None))
-    previous = {"main_sha": "b" * 40, "last_dispatched_main": stored}
+    previous = {"main_sha": "b" * 40, "last_dispatched_main": stored, **_scanned(tmp_path)}
 
     report = daily.cycle(tmp_path, refused, now, {"automatic_merge": True}, previous)
     assert report["pending"] == [] and "npm_evidence_unavailable" in report["errors"]
@@ -610,7 +623,7 @@ def test_failed_dependency_security_run_denies_the_npm_pending(tmp_path, monkeyp
         "dependency-security.yml": [{"status": "completed", "conclusion": "failure"}]})
 
     report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
-                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40, **_scanned(tmp_path)})
 
     assert report["pending"] == []
     assert report["errors"] == ["dependency-security.yml:failure", "npm_evidence_unavailable"]
@@ -625,7 +638,7 @@ def test_main_moving_without_deploy_redispatches_dependency_security_only(tmp_pa
     (tmp_path / ".deploy-version").write_text("b" * 40)
     _npm(monkeypatch, _audit("b" * 40))
     previous = {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40,
-                "last_dispatch_date": "2026-09-12", "last_dispatched_deploy": "b" * 40}
+                "last_dispatch_date": "2026-09-12", **_scanned(tmp_path)}
     gh = _EscalationGH()
 
     report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, previous)
@@ -666,7 +679,7 @@ def test_only_a_well_formed_audit_of_an_earlier_revision_can_be_pending(tmp_path
     gh = _EscalationGH()
 
     report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
-                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40, **_scanned(tmp_path)})
 
     assert report["pending"] == [] and report["errors"] == ["npm_evidence_unavailable"]
     assert gh.writes == [DEPENDENCY_DISPATCH]
@@ -682,7 +695,230 @@ def test_state_file_from_the_previous_version_dispatches_once(tmp_path, monkeypa
     report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, legacy)
     again = daily.cycle(tmp_path, gh, now + timedelta(hours=1), {"automatic_merge": True}, report)
 
-    assert gh.writes == [DEPENDENCY_DISPATCH]
+    assert gh.writes == [DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
     assert report["errors"] == [] and report["pending"] == []
     assert report["npm_lag_since"] is None and again["npm_lag_since"] is None
     assert again["last_dispatched_main"] == "a" * 40
+    assert again["last_dispatched_deploy_at"] == report["deployed_at"]
+
+
+def _clean_image(at):
+    return {"scan_status": "complete", "errors": [], "finding_total": 0, "generated_at": at.isoformat()}
+
+
+class _SecurityCycleWorld:
+    """Mutable reports and deploy markers; every external operation is a double."""
+
+    def __init__(self, tmp_path, monkeypatch, now):
+        _maintenance_ready(tmp_path, monkeypatch, now)
+        self.root = tmp_path
+        self.main = self.npm_revision = "a" * 40
+        self.npm_alerts = []
+        self.os_pending = 0
+        self.reboot_required = False
+        self.image = _clean_image(now)
+        self.host_ok = True
+        self.probes = 0
+        self.deploy("a" * 40, now - timedelta(hours=2))
+        monkeypatch.setattr(daily, "load_evidence", self.evidence)
+        monkeypatch.setattr(daily, "healthy_host", self.probe)
+        monkeypatch.setattr(daily, "request_reboot", lambda *args, **kwargs: "deferred")
+
+    def deploy(self, revision, at):
+        marker = self.root / ".deploy-version"
+        marker.write_text(revision + "\n")
+        os.utime(marker, (at.timestamp(), at.timestamp()))
+
+    def probe(self, _root):
+        self.probes += 1
+        if isinstance(self.host_ok, Exception):
+            raise self.host_ok
+        return self.host_ok
+
+    def evidence(self, path, now, *args):
+        if path.name == "host-os-vulnerability-report.json":
+            return {"schema": "C3PO_HOST_OS_VULNERABILITY_REPORT-v1", "report_sha256": "0" * 64,
+                    "updates": {"security_pending": self.os_pending}, "reboot_required": self.reboot_required}
+        if path.name == "container-production-vulnerability-report.json":
+            if self.image is None:
+                raise ValueError("synthetic unavailable report")
+            return {"report_sha256": "1" * 64, **self.image}
+        if path.name == "repository-npm-advisories.json":
+            return _audit(self.npm_revision, alerts=list(self.npm_alerts))
+        return {"schema": "C3PO_SECURITY_WATCHDOG-v1", "errors": [], "status": "verified",
+                "generated_at": now.isoformat()}
+
+    def previous(self, **changes):
+        return {"last_dispatched_main": self.main, **_scanned(self.root), **changes}
+
+    def gh(self, **changes):
+        return _EscalationGH(main=self.main, **changes)
+
+
+def _previous_healthy(report, images, marker_mtime, host_ok):
+    """The pre-change conjunction is an independent compatibility oracle."""
+    return (report["deployed_sha"] == report["main_sha"] and not report["errors"] and not report["pending"]
+            and not report["alerts"] and report["security_pending"] == 0
+            and report["reboot_required"] is False and images.get("scan_status") == "complete"
+            and images.get("errors") == [] and images.get("finding_total") == 0
+            and datetime.fromisoformat(images["generated_at"]).timestamp() >= marker_mtime and host_ok)
+
+
+@pytest.mark.parametrize("deploy_lag", [False, True])
+@pytest.mark.parametrize("npm_pending", [False, True])
+@pytest.mark.parametrize("os_pending", [False, True])
+@pytest.mark.parametrize("image_state", ["clean", "old", "findings", "unavailable"])
+@pytest.mark.parametrize("host_ok", [False, True])
+def test_blockers_preserve_every_term_of_the_previous_healthy_gate(
+        tmp_path, monkeypatch, deploy_lag, npm_pending, os_pending, image_state, host_ok):
+    now = datetime(2026, 10, 22, 4, 10, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    world.main = "b" * 40 if deploy_lag else "a" * 40
+    world.npm_revision = "c" * 40 if npm_pending else world.main
+    world.os_pending = 1 if os_pending else 0
+    world.host_ok = host_ok
+    if image_state == "old":
+        world.image = _clean_image(now - timedelta(hours=3))
+    elif image_state == "findings":
+        # An old scan with real findings is never classified as a transient drift.
+        world.image = {**_clean_image(now - timedelta(hours=3)), "finding_total": 2}
+    elif image_state == "unavailable":
+        world.image = None
+    report = daily.cycle(tmp_path, world.gh(), now, {"automatic_merge": True}, world.previous())
+    expected = ((["deploy_lag"] if deploy_lag else [])
+                + (["errors"] if image_state == "unavailable" else [])
+                + (["npm_evidence_pending"] if npm_pending else [])
+                + (["os_security_pending"] if os_pending else [])
+                + (["image_scan_predates_deploy"] if image_state == "old" else
+                   ["image_findings_or_unavailable"] if image_state in ("findings", "unavailable") else [])
+                + ([] if host_ok else ["unhealthy_host"]))
+    assert report["healthy_blockers"] == expected
+    images = world.image or {}
+    assert report["healthy"] is bool(_previous_healthy(
+        report, images, (tmp_path / ".deploy-version").stat().st_mtime, host_ok))
+    assert report["healthy"] is (expected == []) and world.probes == 1
+
+
+@pytest.mark.parametrize("blocker", ["errors", "alerts", "reboot_required"])
+def test_other_healthy_blockers_are_named_separately(tmp_path, monkeypatch, blocker):
+    now = datetime(2026, 10, 22, 4, 10, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    runs = {}
+    if blocker == "errors":
+        runs = {"c3po-pipeline.yml": [{"status": "completed", "conclusion": "failure"}]}
+    elif blocker == "alerts":
+        for path, content in files().items():
+            (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / path).write_text(content)
+        world.npm_alerts = [alert(severity="medium")]
+    else:
+        world.reboot_required = True
+    report = daily.cycle(tmp_path, world.gh(workflow_runs=runs), now, {"automatic_merge": True}, world.previous())
+    assert report["healthy_blockers"] == [blocker] and report["healthy"] is False
+
+
+@pytest.mark.parametrize("probe", [False, RuntimeError("synthetic private Docker response")])
+def test_pending_never_hides_an_unhealthy_host_or_failed_probe(tmp_path, monkeypatch, probe):
+    now = datetime(2026, 10, 22, 13, 10, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    world.npm_revision = "b" * 40
+    world.host_ok = probe
+    report = daily.cycle(tmp_path, world.gh(), now, {"automatic_merge": True}, world.previous())
+    assert report["healthy_blockers"] == ["npm_evidence_pending", "unhealthy_host"]
+    assert report["status"] == "waiting_npm_evidence" and world.probes == 1
+    assert report["healthy"] is False and "private" not in json.dumps(report)
+
+
+def test_chained_merges_and_same_sha_redeploys_do_not_restart_postdeploy_anchors(tmp_path, monkeypatch):
+    day = datetime(2026, 10, 22, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, day)
+    world.image = _clean_image(day - timedelta(minutes=20))
+    world.deploy("a" * 40, day - timedelta(hours=5))
+    report = world.previous(last_dispatch_date="2026-10-21")
+
+    def cycle(hour):
+        nonlocal report
+        world.npm_revision = world.main
+        gh = world.gh()
+        report = daily.cycle(tmp_path, gh, day.replace(hour=hour, minute=10), {"automatic_merge": True}, report)
+        return gh.writes
+
+    world.main = "b" * 40
+    assert cycle(0) == [DEPENDENCY_DISPATCH]
+    lag = report["deploy_lag_since"]
+    world.main = "c" * 40
+    assert cycle(1) == [DEPENDENCY_DISPATCH]
+    assert report["deploy_lag_since"] == lag == day.replace(minute=10).isoformat()
+    world.deploy("c" * 40, day.replace(hour=1, minute=50))
+    assert cycle(2) == [DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
+    drift = report["image_drift_since"]
+    assert report["deploy_lag_since"] is None and drift == day.replace(hour=2, minute=10).isoformat()
+    world.deploy("c" * 40, day.replace(hour=2, minute=55))
+    assert cycle(3) == [DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
+    assert report["image_drift_since"] == drift
+    assert report["deployed_at"] == day.replace(hour=2, minute=55).isoformat()
+    assert report["last_dispatched_deploy_at"] == report["deployed_at"]
+    world.image = _clean_image(day.replace(hour=3, minute=30))
+    assert cycle(4) == []
+    assert report["image_drift_since"] is None and report["deploy_lag_since"] is None
+    assert report["healthy"] is True and report["healthy_blockers"] == []
+    assert report["last_dispatch_date"] == "2026-10-21"
+
+
+@pytest.mark.parametrize("field", ["deploy_lag_since", "image_drift_since"])
+@pytest.mark.parametrize("stored", [None, "", False, 0, [], {}, "invalid", "2026-10-22T03:10:00", "2099-01-01T00:00:00+00:00"])
+def test_only_missing_or_none_postdeploy_anchors_start_a_new_clock(tmp_path, monkeypatch, field, stored):
+    now = datetime(2026, 10, 22, 4, 10, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    if field == "deploy_lag_since":
+        world.main = world.npm_revision = "b" * 40
+    else:
+        world.image = _clean_image(now - timedelta(hours=3))
+    report = daily.cycle(tmp_path, world.gh(), now, {"automatic_merge": True}, world.previous(**{field: stored}))
+    expected = now.isoformat() if stored is None else stored
+    assert report[field] == expected and type(report[field]) is type(expected)
+
+
+def test_night_deploy_scan_does_not_replace_the_10utc_daily_verification(tmp_path, monkeypatch):
+    watchdog = importlib.import_module("c3po_security_watchdog")
+    day = datetime(2026, 10, 22, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, day.replace(hour=3))
+    world.image = _clean_image(day.replace(hour=3, minute=35))
+    report = world.previous(last_dispatch_date="2026-10-21")
+    world.main = world.npm_revision = "b" * 40
+    world.deploy("b" * 40, day.replace(hour=4))
+    scans, verified = [], []
+    for hour in range(4, 12):
+        now = day.replace(hour=hour, minute=10)
+        gh = world.gh()
+        report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, report)
+        if IMAGE_DISPATCH in gh.writes:
+            scans.append(hour)
+            world.image = _clean_image(now + timedelta(minutes=20))
+        if watchdog.daily_execution_verified(report, now):
+            verified.append(hour)
+    assert scans == [4, 10] and verified == [10, 11]
+    assert report["last_dispatch_date"] == "2026-10-22"
+
+
+def test_failed_cycle_replaces_transient_blockers_but_preserves_anchors(tmp_path, monkeypatch):
+    directory = tmp_path / "runtime/security"
+    directory.mkdir(parents=True)
+    previous = {"status": "waiting_maintenance_window", "healthy": False, "errors": [], "pending": [],
+                "healthy_blockers": ["image_scan_predates_deploy"], "image_drift_since": "2026-10-22T13:17:05+00:00",
+                "deploy_lag_since": None, "npm_lag_since": None, "deployed_at": "2026-10-22T13:17:00+00:00",
+                "last_dispatched_deploy": "a" * 40, "last_dispatched_deploy_at": "2026-10-22T13:17:00+00:00"}
+    daily.write_report(directory / daily.REPORT, previous)
+    monkeypatch.setattr(sys, "argv", ["c3po_security_daily.py", "--root", str(tmp_path)])
+    def unavailable(_root):
+        raise RuntimeError("synthetic private Docker response")
+    monkeypatch.setattr(daily, "github_token", unavailable)
+    with pytest.raises(SystemExit):
+        daily.main()
+    failed = json.loads((directory / daily.REPORT).read_text())
+    assert failed["healthy"] is False and failed["status"] == "failed"
+    assert failed["healthy_blockers"] == ["routine_failed"] and failed["errors"] == ["RuntimeError"]
+    assert "private" not in json.dumps(failed)
+    for key in ("image_drift_since", "deploy_lag_since", "npm_lag_since", "deployed_at",
+                "last_dispatched_deploy", "last_dispatched_deploy_at"):
+        assert failed[key] == previous[key]

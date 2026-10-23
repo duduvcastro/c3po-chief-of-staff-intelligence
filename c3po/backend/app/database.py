@@ -39,6 +39,18 @@ WHERE run.status = 'running'
   )
 RETURNING run.id::text
 """
+# Database.reap_stale_ingestion_runs (app/ingestion_process.py): every run still 'running' more than max_age after it
+# started, of any role or none and any source; both sides on the database clock; one atomic UPDATE, idempotent
+REAP_STALE_INGESTION_RUNS_SQL = """
+UPDATE ingestion_runs AS run
+SET status = 'failed',
+    completed_at = now(),
+    error_summary = %(error_summary)s,
+    metadata = run.metadata || jsonb_build_object('reaped_at', now(), 'reaped_by', %(reaped_by)s::text)
+WHERE run.status = 'running'
+  AND run.started_at < now() - %(max_age)s::interval
+RETURNING run.id::text
+"""
 # what the price-series producer hands the capture writer once it knows the latest stored hashes (V3.2, migration 049):
 # (manifest inputs, manifest outputs, published_at == the capture clock, snapshot_id, bars to insert)
 PriceHistoryCapture = tuple[dict[str, Any], dict[str, Any], datetime, str, list[dict[str, Any]]]
@@ -442,6 +454,72 @@ class Database:
             (item for item in self.list_operational_incidents(limit=1000) if item["id"] == incident_id),
             None,
         )
+
+    def set_operational_incident_severity(
+        self,
+        *,
+        incident_key: str,
+        severity: str,
+        detail: str,
+        evidence: dict[str, Any],
+        evidence_sha256: str,
+        at: datetime,
+    ) -> dict[str, Any] | None:
+        """Set an unresolved incident's severity (the caller owns the rule).
+
+        ``record_operational_incident`` fixes severity when the row is first
+        created; this lets a caller escalate an episode or re-derive it when a
+        resolved incident reopens. The change is recorded as an append-only
+        ``observed`` event carrying the evidence that justified it; a resolved,
+        absent or unchanged incident is returned as it is.
+        """
+        if severity not in {"attention", "critical"}:
+            raise ValueError("invalid incident severity")
+        if not self.database_url:
+            incident = self._operational_incidents.get(incident_key)
+            current = self.operational_incident_by_key(incident_key)
+            if (
+                incident is None or current is None
+                or current["status"] == "resolved" or incident["severity"] == severity
+            ):
+                return current
+            incident["severity"] = severity
+            self._operational_incident_events.append({
+                "id": str(uuid4()), "incident_id": incident["id"], "event_type": "observed",
+                "actor_email": "system", "detail": detail, "evidence": dict(evidence),
+                "evidence_sha256": evidence_sha256, "occurred_at": at,
+            })
+            return self.operational_incident_by_key(incident_key)
+        with self.connection() as connection:
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"operational-incident:{incident_key}",),
+            )
+            row = connection.execute(
+                "SELECT id, severity FROM operational_incidents WHERE incident_key = %s",
+                (incident_key,),
+            ).fetchone()
+            state = connection.execute(
+                """SELECT event_type FROM operational_incident_events
+                   WHERE incident_id = %s
+                     AND event_type IN ('opened','reopened','acknowledged','resolved')
+                   ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+                (row[0],),
+            ).fetchone() if row else None
+            if row and row[1] != severity and state and state[0] != "resolved":
+                connection.execute(
+                    "UPDATE operational_incidents SET severity = %s WHERE id = %s",
+                    (severity, row[0]),
+                )
+                connection.execute(
+                    """INSERT INTO operational_incident_events
+                       (id, incident_id, event_type, actor_email, detail, evidence,
+                        evidence_sha256, occurred_at)
+                       VALUES (%s,%s,'observed','system',%s,%s::jsonb,%s,%s)""",
+                    (uuid4(), row[0], detail, json.dumps(evidence), evidence_sha256, at),
+                )
+            connection.commit()
+        return self.operational_incident_by_key(incident_key)
 
     def operational_incident_open_since(self, incident_key: str) -> datetime | None:
         """When the current unresolved episode began: the latest opened/reopened
@@ -2111,6 +2189,40 @@ class Database:
             connection.commit()
         return [str(row[0]) for row in rows]
 
+    def reap_stale_ingestion_runs(
+        self,
+        *,
+        max_age: timedelta,
+        reaped_by: str,
+        error_summary: str,
+        now: datetime | None = None,
+    ) -> list[str]:
+        """Fail every run still ``running`` more than ``max_age`` after it started, whatever its role (or none) and its
+        source (app/ingestion_process.py). PostgreSQL reads its own clock (``now()``) for both sides; ``now`` is the
+        in-memory double's clock only. One atomic step guarded by ``status = 'running'``; returns the reaped ids."""
+        if not self.database_url:
+            with _INGESTION_REAP_LOCK:
+                reaped_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+                reaped: list[str] = []
+                for run in self._ingestion_runs.values():
+                    if run.get("status") != "running" or not run["started_at"] < reaped_at - max_age:
+                        continue
+                    run.update({
+                        "status": "failed",
+                        "completed_at": reaped_at,
+                        "error_summary": error_summary,
+                        "metadata": {**(run.get("metadata") or {}), "reaped_at": reaped_at.isoformat(), "reaped_by": reaped_by},
+                    })
+                    reaped.append(str(run["id"]))
+                return reaped
+        with self.connection() as connection:
+            rows = connection.execute(
+                REAP_STALE_INGESTION_RUNS_SQL,
+                {"max_age": max_age, "reaped_by": reaped_by, "error_summary": error_summary},
+            ).fetchall()
+            connection.commit()
+        return [str(row[0]) for row in rows]
+
     def save_quotes(self, source_code: str, run_id: str, quotes: list[Any]) -> None:
         if not quotes:
             return
@@ -2493,6 +2605,76 @@ class Database:
             }
             for row in rows
         }
+
+    def ingestion_run_completed_at_or_before(self, source_code: str, cutoff: datetime, *, status: str = "succeeded",
+                                             min_records_read: int = 0) -> dict[str, Any] | None:
+        """The latest run of ``source_code`` with ``status`` and at least ``min_records_read`` records read that COMPLETED at
+        or before ``cutoff`` — a causal read for the Decisor V1 (the as-filed poll's liveness): a run still running at the
+        cutoff, completed after it, failed, partial or without progress is not seen."""
+        if not self.database_url:
+            matches = [
+                run for run in self._ingestion_runs.values()
+                if run.get("source_code") == source_code and run.get("status") == status
+                and int(run.get("records_read") or 0) >= min_records_read
+                and isinstance(run.get("completed_at"), datetime) and run["completed_at"] <= cutoff
+            ]
+            if not matches:
+                return None
+            run = max(matches, key=lambda item: item["completed_at"])
+            return {"id": str(run["id"]), "status": run["status"], "started_at": run.get("started_at"), "completed_at": run["completed_at"],
+                    "records_read": int(run.get("records_read") or 0), "metadata": copy.deepcopy(dict(run.get("metadata") or {}))}
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT run.id::text, run.status, run.started_at, run.completed_at, COALESCE(run.records_read, 0), run.metadata
+                FROM ingestion_runs run
+                JOIN data_sources source ON source.id = run.source_id
+                WHERE source.code = %s AND run.status = %s AND COALESCE(run.records_read, 0) >= %s
+                  AND run.completed_at IS NOT NULL AND run.completed_at <= %s
+                ORDER BY run.completed_at DESC LIMIT 1
+                """,
+                (source_code, status, min_records_read, cutoff),
+            ).fetchone()
+        if not row:
+            return None
+        found = dict(zip(("id", "status", "started_at", "completed_at", "records_read", "metadata"), row))
+        metadata = found.get("metadata")
+        found["metadata"] = metadata if isinstance(metadata, dict) else (json.loads(metadata) if metadata else {})
+        return found
+
+    def update_ingestion_run_metadata(self, run_id: str, metadata: dict[str, Any]) -> None:
+        """Merge ``metadata`` into one run's metadata (the keys given replace theirs) — what a run learned while running
+        (the as-filed poll's unobserved issuers)."""
+        if not self.database_url:
+            run = self._ingestion_runs.get(run_id)
+            if run is not None:
+                run["metadata"] = {**(run.get("metadata") or {}), **copy.deepcopy(metadata)}
+            return
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE ingestion_runs SET metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb WHERE id = %s",
+                (json.dumps(metadata), run_id),
+            )
+            connection.commit()
+
+    def count_ingestion_runs(self, source_code: str, status: str, *, scheduled_for: str) -> int:
+        """How many runs of ``source_code`` ended with ``status`` for ONE scheduled cycle (``metadata.scheduled_for``, the
+        valuation worker's phase clock) — the retry cap of an advisory phase."""
+        if not self.database_url:
+            return sum(1 for run in self._ingestion_runs.values()
+                       if run.get("source_code") == source_code and run.get("status") == status
+                       and (run.get("metadata") or {}).get("scheduled_for") == scheduled_for)
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT count(*)
+                FROM ingestion_runs run
+                JOIN data_sources source ON source.id = run.source_id
+                WHERE source.code = %s AND run.status = %s AND run.metadata->>'scheduled_for' = %s
+                """,
+                (source_code, status, scheduled_for),
+            ).fetchone()
+        return int(row[0]) if row else 0
 
     def list_portfolio_events(self) -> list[dict[str, Any]]:
         if not self.database_url:
@@ -3498,6 +3680,45 @@ class Database:
             for symbol, raw_metadata in rows
         }
 
+    def news_sentiment_at(self, symbols: list[str], cutoff: datetime, market: str = "US") -> dict[str, dict[str, Any]]:
+        """The weekly Finnhub news-sentiment row of each symbol AS READ at ``cutoff`` — the latest ``published_at`` at or
+        before it — with its ``published_at`` and ``external_id`` (Decisor V1, ``NEWS_SENTIMENT_NEGATIVE``). The source
+        upserts one row per symbol per ISO week and overwrites its values on every poll: a later read of the same row may
+        carry other numbers — only the value a decision recorded is reproducible."""
+        clean = sorted({symbol.upper() for symbol in symbols if symbol})
+        if not clean:
+            return {}
+        if not self.database_url:
+            output: dict[str, dict[str, Any]] = {}
+            for symbol in clean:
+                matches = [
+                    event for event in self._ir_events.values()
+                    if event.get("symbol") == symbol and event.get("market") == market and event.get("source_code") == "finnhub"
+                    and event.get("event_type") == "News Sentiment" and isinstance(event.get("published_at"), datetime)
+                    and event["published_at"] <= cutoff
+                ]
+                if matches:
+                    event = max(matches, key=lambda item: item["published_at"])
+                    output[symbol] = {"raw_metadata": dict(event.get("raw_metadata") or {}), "published_at": event["published_at"],
+                                      "external_id": event.get("external_id")}
+            return output
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (symbol) symbol, raw_metadata, published_at, external_id
+                FROM ir_events
+                WHERE market = %s AND source_code = 'finnhub' AND event_type = 'News Sentiment'
+                  AND symbol = ANY(%s) AND published_at <= %s
+                ORDER BY symbol, published_at DESC
+                """,
+                (market, clean, cutoff),
+            ).fetchall()
+        return {
+            symbol: {"raw_metadata": raw_metadata if isinstance(raw_metadata, dict) else (json.loads(raw_metadata) if raw_metadata else {}),
+                     "published_at": published_at, "external_id": external_id}
+            for symbol, raw_metadata, published_at, external_id in rows
+        }
+
     def reconcile_ir_results(self, fundamentals_by_symbol: dict[str, str | None], market: str = "B3") -> None:
         """Auto-incorporate only financial-result filings covered by an equal/newer reporting period."""
         valid_fundamentals: dict[str, str] = {}
@@ -4287,6 +4508,34 @@ class Database:
             ).fetchall()
         return [record for record in (self._decision_record(row) for row in rows) if record is not None]
 
+    def valuation_decisions_of_session(self, markets: list[str], session_date: str) -> tuple[list[dict[str, Any]], int]:
+        """Every decision of ``markets`` decided FOR ``session_date`` (every run), oldest first (``_DECISION_ORDER``
+        reversed), verified — and how many stored rows of that session do NOT verify (not served; the encrypted verdict
+        export refuses the night then). The reader of ``valuation_verdict_export``; it enumerates a night only for that
+        export, which leaves the host encrypted. Copies."""
+        wanted = sorted({str(market) for market in markets if market})
+        if not wanted:
+            return [], 0
+        if not self.database_url:
+            from .valuation_decision import stored_decision  # local import: that module depends on this storage API
+            matches = [(self._decision_order_key(index, r), r) for index, r in enumerate(self._valuation_decisions)
+                       if r["market"] in wanted and str(r["session_date"]) == str(session_date)]
+            matches.sort(key=lambda entry: entry[0])
+            verified = [stored_decision(r) for _, r in matches]
+            return [record for record in verified if record is not None], sum(1 for record in verified if record is None)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT {self._DECISION_COLUMNS}
+                FROM valuation_decisions
+                WHERE market = ANY(%s) AND session_date = %s::date
+                ORDER BY prediction_instant, published_at, created_at
+                """,
+                (wanted, str(session_date)),
+            ).fetchall()
+        verified = [self._decision_record(row) for row in rows]
+        return [record for record in verified if record is not None], sum(1 for record in verified if record is None)
+
     def latest_valuation_decision_run(self) -> dict[str, Any] | None:
         """The latest decision run (``run_id``, ``generation_id``, both clocks as UTC ISO) by publication — what the nightly
         phase compares with the generation in force (``valuation_decision.last_run_at``)."""
@@ -5018,6 +5267,66 @@ class Database:
         if not row:
             return None
         return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
+
+    def analysis_snapshots_published_between(self, analysis_type: str, entity_key: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Every snapshot of ``analysis_type``/``entity_key`` published in [``start``, ``end``], oldest first (the Decisor V1
+        reads the union of the earnings calendars received in its window)."""
+        if not self.database_url:
+            matches = [
+                copy.deepcopy(item) for item in self._analysis_snapshots
+                if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
+                and start <= item.get("published_at") <= end
+            ]
+            return sorted(matches, key=lambda item: item["published_at"])
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text
+                FROM analysis_snapshots
+                WHERE analysis_type = %s AND entity_key = %s AND published_at >= %s AND published_at <= %s
+                ORDER BY published_at
+                """,
+                (analysis_type, entity_key, start, end),
+            ).fetchall()
+        return [dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row)) for row in rows]
+
+    def v2_forward_eps_at_or_before(self, market: str, symbols: list[str], cutoff: datetime) -> dict[str, Any] | None:
+        """The consensus EPS term structure (``fy1_estimate``, ``forward_estimates``) of ``symbols`` in the latest
+        ``valuation_v2_data/<market>_V2_DATA`` snapshot published at or before ``cutoff`` — only those keys of only those
+        packets (the snapshot also carries ten years of ratios per name: PostgreSQL extracts, nothing else is decoded).
+        ``{"snapshot_id", "published_at", "packets": {symbol: {...}}}``, or ``None`` without a snapshot (Decisor V1,
+        ``CONSENSUS_EPS_CUT_30D``)."""
+        wanted = sorted({symbol.upper() for symbol in symbols if symbol})
+        entity_key = f"{market}_V2_DATA"
+        if not self.database_url:
+            snapshot = self.analysis_snapshot_at_or_before("valuation_v2_data", entity_key, cutoff)
+            if snapshot is None:
+                return None
+            raw = (snapshot.get("outputs") or {}).get("packets") if isinstance(snapshot.get("outputs"), dict) else None
+            packets = raw if isinstance(raw, dict) else {}
+            return {"snapshot_id": str(snapshot["id"]), "published_at": snapshot["published_at"],
+                    "packets": {symbol: {"fy1_estimate": copy.deepcopy(packets[symbol].get("fy1_estimate")),
+                                         "forward_estimates": copy.deepcopy(packets[symbol].get("forward_estimates"))}
+                                for symbol in wanted if isinstance(packets.get(symbol), dict)}}
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT snapshot.id::text, snapshot.published_at,
+                       COALESCE((SELECT jsonb_object_agg(packet.key, jsonb_build_object('fy1_estimate', packet.value->'fy1_estimate',
+                                                                                        'forward_estimates', packet.value->'forward_estimates'))
+                                 FROM jsonb_each(CASE WHEN jsonb_typeof(snapshot.outputs->'packets') = 'object'
+                                                      THEN snapshot.outputs->'packets' ELSE '{}'::jsonb END) AS packet(key, value)
+                                 WHERE packet.key = ANY(%s) AND jsonb_typeof(packet.value) = 'object'), '{}'::jsonb)
+                FROM analysis_snapshots snapshot
+                WHERE snapshot.analysis_type = 'valuation_v2_data' AND snapshot.entity_key = %s AND snapshot.published_at <= %s
+                ORDER BY snapshot.published_at DESC LIMIT 1
+                """,
+                (wanted, entity_key, cutoff),
+            ).fetchone()
+        if not row:
+            return None
+        packets_raw = row[2] if isinstance(row[2], dict) else (json.loads(row[2]) if row[2] else {})
+        return {"snapshot_id": str(row[0]), "published_at": row[1], "packets": packets_raw}
 
     def backfill_valuation_change_baseline(self) -> None:
         if not self.database_url:

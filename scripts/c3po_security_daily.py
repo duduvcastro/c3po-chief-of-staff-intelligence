@@ -296,7 +296,11 @@ def cycle(root, gh, now, config, previous):
     except (ValueError, KeyError, OSError, RuntimeError):
         images = {}
         evidence_errors.append("image_evidence_unavailable")
-    deployed = (root / ".deploy-version").read_text().strip()
+    marker = root / ".deploy-version"
+    deployed = marker.read_text().strip()
+    marker_mtime = marker.stat().st_mtime
+    # A redeploy of the same revision is still a new deploy to scan.
+    deployed_at = datetime.fromtimestamp(marker_mtime, timezone.utc).isoformat()
     main_sha = gh.request("/git/ref/heads/main")["object"]["sha"]
     for workflow in ("dependency-security.yml", "container-vulnerability-scan.yml", "c3po-pipeline.yml"):
         # Checking the most recent result prevents a green inventory from hiding a
@@ -316,12 +320,28 @@ def cycle(root, gh, now, config, previous):
     npm_lag_since = previous.get("npm_lag_since")
     if npm_lag_since is None:
         npm_lag_since = now.isoformat()
+    # Start each wait at its first observation. Further merges or redeploys
+    # never extend it; only recovery clears an anchor. Preserve malformed and
+    # falsy stored values too, so the consumer cannot restart their grace.
+    deploy_lag_since = previous.get("deploy_lag_since")
+    if deployed == main_sha:
+        deploy_lag_since = None
+    elif deploy_lag_since is None:
+        deploy_lag_since = now.isoformat()
+    image_drift_since = previous.get("image_drift_since")
+    scanned_at = datetime.fromisoformat(images["generated_at"]).timestamp() if images else None
+    if scanned_at is not None:
+        if scanned_at >= marker_mtime:
+            image_drift_since = None
+        elif image_drift_since is None:
+            image_drift_since = now.isoformat()
     today = now.date().isoformat()
-    # Daily and post-deploy scans keep the maintenance-hour gate. A new main
-    # re-dispatches only dependency-security, at any hour, so its npm evidence
-    # is regenerated from the same cycle that first sees the mismatch.
-    scan_due = now.hour >= 10 and (previous.get("last_dispatch_date") != today
-                                   or previous.get("last_dispatched_deploy") != deployed)
+    # Every deploy is scanned at any hour. Only the daily scan consumes the
+    # day's verification, so a night deploy cannot replace the 10 UTC scan.
+    daily_due = now.hour >= 10 and previous.get("last_dispatch_date") != today
+    post_deploy_due = ((previous.get("last_dispatched_deploy"), previous.get("last_dispatched_deploy_at"))
+                       != (deployed, deployed_at))
+    scan_due = daily_due or post_deploy_due
     revision_due = previous.get("last_dispatched_main") != main_sha
     pending = []
     try:
@@ -362,7 +382,10 @@ def cycle(root, gh, now, config, previous):
               "escalation_errors": escalation_errors,
               "last_dispatch_date": previous.get("last_dispatch_date"),
               "last_dispatched_deploy": previous.get("last_dispatched_deploy"),
+              "last_dispatched_deploy_at": previous.get("last_dispatched_deploy_at"),
               "last_dispatched_main": previous.get("last_dispatched_main"),
+              "deployed_at": deployed_at, "deploy_lag_since": deploy_lag_since,
+              "image_drift_since": image_drift_since,
               "npm_lag_since": npm_lag_since, "status": "observed"}
     report["automatic_reboot"] = config.get("automatic_reboot") is True
     report["reboot"] = reboot
@@ -383,9 +406,10 @@ def cycle(root, gh, now, config, previous):
             if scan_due:
                 gh.request("/actions/workflows/container-vulnerability-scan.yml/dispatches", "POST",
                            {"ref": "main", "inputs": {"controller_dry_run_phase": "none"}})
-                # Only the daily/deploy scan counts as the day's dispatch.
-                report["last_dispatch_date"] = today
+                if daily_due:
+                    report["last_dispatch_date"] = today
                 report["last_dispatched_deploy"] = deployed
+                report["last_dispatched_deploy_at"] = deployed_at
         except OSError as exc:
             # A failed scan request remains an operational failure, but does not
             # invalidate independent, fresh evidence for an OS reboot. Never
@@ -396,6 +420,12 @@ def cycle(root, gh, now, config, previous):
         # No regeneration requested for this main: the mismatch is today's error.
         pending.clear()
         evidence_errors.append("npm_evidence_unavailable")
+    # Check even when another blocker already closes the gates: a down host
+    # must remain visible alongside a transient wait. Never expose probe errors.
+    try:
+        host_ok = healthy_host(root) is True
+    except Exception:
+        host_ok = False
     if HOLD.exists():
         report["status"] = "maintenance_hold"
     elif MARKER.exists():
@@ -405,7 +435,7 @@ def cycle(root, gh, now, config, previous):
     elif pending:
         # Same gates as missing evidence (no promotion, no reboot), not an error.
         report["status"] = "waiting_npm_evidence"
-    elif not healthy_host(root):
+    elif not host_ok:
         report["status"] = "blocked_unhealthy_host"
     elif report["reboot_required"] is True and deployed == main_sha:
         report["reboot_action"] = request_reboot(root, gh, config, now, command=command,
@@ -422,12 +452,27 @@ def cycle(root, gh, now, config, previous):
             gh, alerts, deployed, images, may_write=may_write)
     report["errors"] = evidence_errors + dispatch_errors
     # No "resolved" state until fresh scanners and application health prove it.
-    report["healthy"] = (deployed == main_sha and not report["errors"] and not pending and not alerts
-                         and report["security_pending"] == 0
-                         and report["reboot_required"] is False and images.get("scan_status") == "complete"
-                         and images.get("errors") == [] and images.get("finding_total") == 0
-                         and datetime.fromisoformat(images["generated_at"]).timestamp() >= (root / ".deploy-version").stat().st_mtime
-                         and healthy_host(root))
+    blockers = []
+    if deployed != main_sha:
+        blockers.append("deploy_lag")
+    if report["errors"]:
+        blockers.append("errors")
+    blockers.extend(pending)
+    if alerts:
+        blockers.append("alerts")
+    if report["security_pending"] != 0:
+        blockers.append("os_security_pending")
+    if report["reboot_required"] is not False:
+        blockers.append("reboot_required")
+    if not (images.get("scan_status") == "complete" and images.get("errors") == []
+            and images.get("finding_total") == 0):
+        blockers.append("image_findings_or_unavailable")
+    elif scanned_at is None or scanned_at < marker_mtime:
+        blockers.append("image_scan_predates_deploy")
+    if not host_ok:
+        blockers.append("unhealthy_host")
+    report["healthy_blockers"] = blockers
+    report["healthy"] = not blockers
     return report
 
 
@@ -462,7 +507,7 @@ def main():
             report = cycle(args.root, gh, now, config, previous)
         except Exception as exc:
             report = {**previous, "schema": "C3PO_SECURITY_AUTOMATION-v1", "generated_at": now.isoformat(),
-                      "healthy": False, "status": "failed", "pending": [],
+                      "healthy": False, "healthy_blockers": ["routine_failed"], "status": "failed", "pending": [],
                       "errors": [type(exc).__name__ + (f":{exc.code}" if isinstance(exc, HTTPError) else "")]}
             write_report(path, report)
             raise SystemExit("Security automation failed; see sanitized report") from None
