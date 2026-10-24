@@ -447,6 +447,8 @@ STATEMENT_FILES: tuple[tuple[str, str, tuple[_Concept, ...], bool], ...] = (
     ("BPP", "liabilities", LIABILITY_CONCEPTS, False),
 )
 
+FLOW_GROUPS = frozenset(group for _, group, _, flow in STATEMENT_FILES if flow)
+
 VintageSink = Callable[[CvmVintageBatch], Any]
 
 
@@ -867,7 +869,15 @@ def _period_documents(
     tax_id: str,
 ) -> dict[str, dict[str, Any]]:
     """The filing behind each period: the income statement's cumulative row, else its standalone row, else the
-    balance sheet. ``receivedOn`` is the CVM receipt date (DT_RECEB) of that version."""
+    balance sheet. ``receivedOn`` is the CVM receipt date (DT_RECEB) of that version. ``contributing`` lists EVERY
+    document version a figure of the period was read from — each statement (DRE, DVA, DFC, balance sheet) ending on it
+    and, for the flows, the earlier cumulative of the same year it was differenced against — with its own receipt date,
+    so the overlay's receipt guard can check all of them."""
+    receipt = {key: value.get("DT_RECEB") or None for key, value in documents.items() if key[0] == tax_id}
+
+    def stamped(document: dict[str, Any]) -> dict[str, Any]:
+        return {**document, "receivedOn": receipt.get((tax_id, document["referenceDate"], document["version"]))}
+
     chosen: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
     for group_rank, group in enumerate(("income", "cash_flow", "assets", "liabilities")):
         for (start, end), document in span_documents.get(group, {}).items():
@@ -878,6 +888,19 @@ def _period_documents(
                 chosen[end] = (priority, document)
     output: dict[str, dict[str, Any]] = {}
     for end, (_, document) in sorted(chosen.items()):
-        index = documents.get((tax_id, document["referenceDate"], document["version"]), {})
-        output[end] = {**document, "receivedOn": index.get("DT_RECEB") or None}
+        end_date = date.fromisoformat(end)
+        prior = _quarter_end(end_date.year, end_date.month - 3).isoformat() if end_date.month > 3 else None
+        contributing: dict[tuple[str, str, int], dict[str, Any]] = {}
+        for group, spans in span_documents.items():
+            for (start, span_end), item in spans.items():
+                differenced = prior is not None and group in FLOW_GROUPS and start == f"{end[:4]}-01-01" and span_end == prior
+                if span_end == end or differenced:
+                    contributing[(item["document"], item["referenceDate"], item["version"])] = item
+        output[end] = {
+            **stamped(document),
+            "contributing": [
+                {key: value for key, value in stamped(item).items() if key in {"document", "referenceDate", "version", "receivedOn"}}
+                for _, item in sorted(contributing.items())
+            ],
+        }
     return output

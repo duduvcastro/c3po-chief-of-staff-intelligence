@@ -22,6 +22,7 @@ os.environ["PLUGGY_ITEM_IDS"] = ""
 # The SEC contact/pace and the as-filed/decisor switches are read from the environment (app/valuation_env.py), not
 # Settings: start every run from their defaults, whatever the shell or container exports. Tests that need one set it
 # with monkeypatch.
+os.environ["C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW"] = ""  # the B3 CVM overlay shadow (its own line, merge-friendly)
 os.environ["C3PO_SEC_CONTACT"] = ""
 os.environ["C3PO_SEC_MAX_REQUESTS_PER_SECOND"] = ""
 os.environ["C3PO_VALUATION_ASFILED_ENABLED"] = ""
