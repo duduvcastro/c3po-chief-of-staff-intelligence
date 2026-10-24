@@ -146,7 +146,8 @@ def test_the_decisor_diagnostics_count_reason_codes_never_symbols(monkeypatch: p
     assert calls == [export.LAST_COMPLETED, "2026-10-22"]  # the evening falls back to the night before
     assert result == {"night": "2026-10-22", "status": "ok", "rows": 3,
                       "by_verdict": {"COMPRA_PERMITIDA": 1, "OBSERVAR": 1, "VETO": 1},
-                      "reasons": {"ALL_GATES_PASSED": 1, "PRICE_ABOVE_BUY_IN": 2, "TP_SESSION_STALE": 1, "other": 1}}
+                      "reasons": {"ALL_GATES_PASSED": 1, "PRICE_ABOVE_BUY_IN": 2, "TP_SESSION_STALE": 1, "other": 1},
+                      "sole_blocker": {}}  # the OBSERVAR row is held by its known code AND an unknown one
     assert SYMBOL not in json.dumps(result) and "QQQQ" not in json.dumps(result)
 
     def refused(_database: Any, night: str, *, now: datetime) -> dict[str, Any]:
@@ -156,7 +157,20 @@ def test_the_decisor_diagnostics_count_reason_codes_never_symbols(monkeypatch: p
     assert module.decisor_diagnostics(None, NOW)["status"] == "RUN_INCONSISTENT"  # type: ignore[arg-type]
     monkeypatch.setattr(export, "night_verdicts", lambda *_a, **_k: 1 / 0)
     assert module.decisor_diagnostics(None, NOW) == {"night": None, "status": "error", "rows": 0, "by_verdict": {},  # type: ignore[arg-type]
-                                                    "reasons": {}}
+                                                    "reasons": {}, "sole_blocker": {}}
+
+
+def test_the_sole_blocker_counts_rows_that_one_gate_alone_holds(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import valuation_verdict_export as export
+
+    rows = [{"verdict": "OBSERVAR", "reasons": ["E_PROFILE_WARMING_UP", "EARNINGS_DATE_ESTIMATED"]},  # a mark never holds
+            {"verdict": "OBSERVAR", "reasons": ["E_PROFILE_WARMING_UP", "PRICE_ABOVE_BUY_IN"]},
+            {"verdict": "VETO", "reasons": ["NOT_VALIDATED", "E_PROFILE_WARMING_UP"]},
+            {"verdict": "OBSERVAR", "reasons": ["E_PROFILE_WARMING_UP"]}]
+    monkeypatch.setattr(export, "night_verdicts", lambda *_a, **_k: {"document": {"night": "2026-10-22", "rows": rows}})
+    result = module.decisor_diagnostics(None, NOW)  # type: ignore[arg-type]
+    assert result["sole_blocker"] == {"E_PROFILE_WARMING_UP": 2}
+    assert result["reasons"]["E_PROFILE_WARMING_UP"] == 4
 
 
 def test_the_runner_vocabularies_match_the_decisor_and_the_export() -> None:
@@ -311,6 +325,8 @@ def test_the_verifier_rejects_any_key_or_string_outside_the_whitelist(tmp_path: 
         "layers: the keys": mutated(lambda r: r["diagnostics"]["governance"]["layers"].update(symbol="healthy")),
         "reboot_required is not a boolean": mutated(lambda r: r["diagnostics"]["governance"].update(reboot_required=SYMBOL)),
         "decisor reasons is not in its closed vocabulary": mutated(lambda r: r["diagnostics"]["decisor"]["reasons"].update({SYMBOL: 1})),
+        "decisor sole_blocker is not in its closed vocabulary": mutated(
+            lambda r: r["diagnostics"]["decisor"]["sole_blocker"].update({SYMBOL: 1})),
         "decisor night is not a date": mutated(lambda r: r["diagnostics"]["decisor"].update(night=SYMBOL)),
         "decisor status is not in its closed vocabulary": mutated(lambda r: r["diagnostics"]["decisor"].update(status=SYMBOL)),
         "the decisor verdicts do not add up": mutated(lambda r: r["diagnostics"]["decisor"].update(rows=7)),

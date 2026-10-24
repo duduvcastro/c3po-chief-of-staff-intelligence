@@ -278,6 +278,13 @@ def decisor_reason_codes() -> tuple[str, ...]:
     return tuple(sorted({ALL_GATES_PASSED, *VETO_CODES, *OBSERVAR_CODES, *EVENT_CODES}))
 
 
+def decisor_blocking_codes() -> frozenset[str]:
+    """The codes that withhold a permission (a VETO code or an OBSERVAR code); the event marks never do."""
+    from .valuation_decision import OBSERVAR_CODES, VETO_CODES  # lazy: heavy module
+
+    return frozenset({*VETO_CODES, *OBSERVAR_CODES})
+
+
 def decisor_diagnostics(database: Database, now: datetime) -> dict[str, Any]:
     """The last completed US night's verdicts as the lab export sees them: how many rows carry each reason code (a row
     counts once per code it carries). Read-only; the symbols never leave this function."""
@@ -293,20 +300,30 @@ def decisor_diagnostics(database: Database, now: datetime) -> dict[str, Any]:
             # the evening after a close: that night is decided only at dawn, so read the night before it
             document = night_verdicts(database, resolve_night(LAST_COMPLETED, now=now - timedelta(days=1)), now=now)["document"]
     except ExportRefused as refusal:
-        return {"night": None, "status": _closed(refusal.code, DECISOR_STATUSES), "rows": 0, "by_verdict": {}, "reasons": {}}
+        return {"night": None, "status": _closed(refusal.code, DECISOR_STATUSES), "rows": 0, "by_verdict": {}, "reasons": {},
+                "sole_blocker": {}}
     except Exception:  # noqa: BLE001 - a diagnostic never breaks the report; the status says it failed
-        return {"night": None, "status": "error", "rows": 0, "by_verdict": {}, "reasons": {}}
+        return {"night": None, "status": "error", "rows": 0, "by_verdict": {}, "reasons": {}, "sole_blocker": {}}
     rows = document["rows"]
+    blocking = decisor_blocking_codes()
     reasons: dict[str, int] = {}
     verdicts: dict[str, int] = {}
+    sole: dict[str, int] = {}
     for row in rows:
         verdict = _closed(row.get("verdict"), ("COMPRA_PERMITIDA", "OBSERVAR", "VETO"))
         verdicts[verdict] = verdicts.get(verdict, 0) + 1
-        for code in {_closed(code, known) for code in row.get("reasons") or []}:
+        carried = {_closed(code, known) for code in row.get("reasons") or []}
+        for code in carried:
             reasons[code] = reasons.get(code, 0) + 1
+        # the one gate that alone withholds this row's permission: lifting it would make the row a permission
+        held = {code for code in carried if code in blocking or code == "other"}
+        if len(held) == 1:
+            code = next(iter(held))
+            sole[code] = sole.get(code, 0) + 1
     night = document.get("night")
     return {"night": night if isinstance(night, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", night) else None,
-            "status": "ok", "rows": len(rows), "by_verdict": dict(sorted(verdicts.items())), "reasons": dict(sorted(reasons.items()))}
+            "status": "ok", "rows": len(rows), "by_verdict": dict(sorted(verdicts.items())), "reasons": dict(sorted(reasons.items())),
+            "sole_blocker": dict(sorted(sole.items()))}
 
 
 def diagnostics(database: Database, now: datetime | None = None) -> dict[str, Any]:
