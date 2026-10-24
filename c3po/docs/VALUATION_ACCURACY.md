@@ -34,6 +34,20 @@ which is what this harness does.
   (read-only, same `\copy` pattern as the R2D2 exports) so this can be
   run against real data without new database access.
 
+## Since migration 054: Ben Kenobi Records states the SERVED official TP
+
+`valuation_change_records` used to copy the producer row's `our_tp` -- the
+internal TP blended with the consensus -- which, after the 20/10 switch to
+`official_internal_v1`, no service showed. It now records the official TP the
+selection SERVES (`Database.capture_served_valuation_changes`, after every
+generation): each record carries `tp_source` and `generation_id` (columns,
+repeated in `metadata` with the served cycle and row hash, so the CSV export
+carries them too). Rows written before stay as they were (`tp_source` NULL:
+the legacy producer blend or One Pager rows). `load_valuation_calls` gives a
+served record its source (`calls_by_source` key `official_internal_v1:<version>`)
+and keeps the legacy rows in the `valuation_change_records` group: never grade
+the two regimes as one series.
+
 ## Known gap: needs a real price source, same as backtest.py
 
 `valuation_accuracy.py` ships with no market data, on purpose -- see
