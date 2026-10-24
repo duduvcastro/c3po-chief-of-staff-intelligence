@@ -35,13 +35,13 @@ day_change = 4.58
 consensus = 323.29
 consensus_analysts = 62
 
-# Shared five-method framework used by the Chief of Staff screening model.
+# Shared five-method internal model used by the Chief of Staff screening model (neutral method labels; owner order 20/10/2026).
 valuation_methods = [
-    ("Goldman Sachs", 359.0282945462299),
-    ("Morgan Stanley", 358.17139054973177),
-    ("Bridgewater", 380.043263717395),
-    ("JPMorgan", 363.49465033806894),
-    ("BlackRock", 376.43800490283525),
+    ("Múltiplos de Lucro + EV/EBITDA", 359.0282945462299),
+    ("Fluxo de Caixa Descontado", 358.17139054973177),
+    ("Blend Ajustado ao Risco", 380.043263717395),
+    ("Momentum de Lucro", 363.49465033806894),
+    ("Qualidade & Fluxo de Caixa", 376.43800490283525),
 ]
 target = sum(value for _, value in valuation_methods) / len(valuation_methods)
 buy_in = 209.51

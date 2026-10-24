@@ -160,16 +160,6 @@ def signed_percentile(values: list[float], fraction: float, fallback: float = 0.
     return clean[lower] * (1 - weight) + clean[upper] * weight
 
 
-def robust_weighted_mean(values: dict[str, float], weights: dict[str, float]) -> float:
-    usable = {name: value for name, value in values.items() if value > 0 and weights.get(name, 0.0) > 0}
-    if not usable:
-        return 0.0
-    center = statistics.median(usable.values())
-    normalized = {name: clamp(value, center * 0.70, center * 1.30) for name, value in usable.items()}
-    total_weight = sum(weights[name] for name in normalized)
-    return sum(value * weights[name] for name, value in normalized.items()) / total_weight
-
-
 def batches(values: list[str], size: int = BATCH_SIZE) -> list[list[str]]:
     return [values[index:index + size] for index in range(0, len(values), size)]
 
@@ -715,7 +705,7 @@ class B3ScreenerService:
                 "valuation": "Sector-adapted DCF, earnings, relative, residual/dividend and public-consensus methods reconciled across Brapi and EODHD All-In-One",
                 "score": "Power Score: 35% return, 25% inverse risk, 15% quality, 15% confidence, 10% entry",
                 "tp_upside": f"C3PO TP upside >= Selic + 6 p.p. = {tp_upside_cutoff:.1f}%",
-                "entry": "Weighted median of five framework buy-ins, capped by the shared return hurdle; price distance <= 15%",
+                "entry": "Lower of the entry-return hurdle and the 60-session market-structure entry; price distance <= 15%",
                 "risk": f"Risk <= min(40, eligible-universe median) = {risk_cutoff:.1f}/100",
             "confidence": f"Validated TP only: score >= {MIN_TP_VALIDATION_SCORE:.0f}/100, confidence >= {MIN_VALUATION_CONFIDENCE:.0f}, dispersion <= {MAX_METHOD_DISPERSION:.0f}%, two sources, quarterly fundamentals <= {MAX_FUNDAMENTALS_AGE_DAYS} days and internal/consensus gap <= {MAX_TP_CONSENSUS_GAP:.0f}%",
             },
@@ -2222,11 +2212,7 @@ class B3ScreenerService:
             method_dispersion=method_dispersion,
         )
 
-        dynamic_required_return = clamp(macro.get("selic", 0.145), 0.07, 0.20) + 0.02
         expected_dividend = row["price"] * dividend_yield if dividend_yield and 0 < dividend_yield <= 0.20 else 0.0
-        risk_premium = clamp(risk_score / 100 * 0.08, 0.0, 0.08)
-        confidence_penalty = clamp((100 - valuation_confidence) / 100 * 0.06, 0.0, 0.06)
-        valuation_discount = 1 + dynamic_required_return + risk_premium + confidence_penalty
         entry_return_hurdle = self._entry_return_hurdle_percent(macro)
         sustainable_growth = self._sustainable_growth(profile, growth)
         convergence_years = 3.0 if valuation_confidence >= MIN_VALUATION_CONFIDENCE and method_dispersion <= MAX_METHOD_DISPERSION else 5.0
@@ -2240,18 +2226,15 @@ class B3ScreenerService:
         quarterly_drawdown = clamp(annual_volatility * math.sqrt(63 / 252), 0.10, 0.30)
         technical_floor = (row.get("last_close") or row["price"]) * (1 - quarterly_drawdown)
         technical_entry = max(raw_technical_entry, technical_floor)
-        # The entry rule is applied to ONE target price (`_entry_from_tp`): to the blend, as always (bit for bit the same
-        # buy-in and models as before the extraction), and — Passo 1, official_internal_v1 — to the INTERNAL TP, so the
-        # internal record carries a buy-in derived by the same rule without recomputing any method.
+        # The entry rule is applied to ONE target price (`_entry_from_tp`): to the blend, and — Passo 1, official_internal_v1 —
+        # to the INTERNAL TP, so the internal record carries a buy-in derived by the same rule without recomputing any method.
         buy_in, buy_in_models = self._entry_from_tp(
-            our_tp, normalized_methods, valuation_discount=valuation_discount, dynamic_required_return=dynamic_required_return,
-            risk_premium=risk_premium, confidence_penalty=confidence_penalty, expected_dividend=expected_dividend,
-            sustainable_growth=sustainable_growth, entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
+            our_tp, expected_dividend=expected_dividend, sustainable_growth=sustainable_growth,
+            entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
         )
         internal_buy_in, internal_buy_in_models = self._entry_from_tp(
-            internal_tp, normalized_methods, valuation_discount=valuation_discount, dynamic_required_return=dynamic_required_return,
-            risk_premium=risk_premium, confidence_penalty=confidence_penalty, expected_dividend=expected_dividend,
-            sustainable_growth=sustainable_growth, entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
+            internal_tp, expected_dividend=expected_dividend, sustainable_growth=sustainable_growth,
+            entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
         )
         upside = (our_tp / row["price"] - 1) * 100
         total_return = self._expected_12m_return(
@@ -2356,51 +2339,21 @@ class B3ScreenerService:
     @staticmethod
     def _entry_from_tp(
         tp: float,
-        methods: dict[str, float],
         *,
-        valuation_discount: float,
-        dynamic_required_return: float,
-        risk_premium: float,
-        confidence_penalty: float,
         expected_dividend: float,
         sustainable_growth: float,
         entry_return_hurdle: float,
         technical_entry: float,
     ) -> tuple[float, dict[str, float]]:
-        """The disciplined buy-in the B3 producer derives from ONE target price, and its models: the three models that
-        discount a method (Morgan Stanley / JPMorgan / Goldman Sachs) do not depend on the TP; Bridgewater, BlackRock and
-        the Return Hurdle do; Market Structure is technical. ``buy_in = min(framework, hurdle, technical)``. Extracted
-        from ``_value_row`` unchanged (same operations, same order — the blend's buy-in is bit for bit what it was) so that
-        Passo 1 can apply the SAME rule to the internal TP (``official_internal_v1``) without recomputing a method."""
-        earnings_base = methods.get("earnings") or methods.get("cycle_earnings")
-        enterprise_base = methods.get("enterprise") or methods.get("cycle_enterprise")
-        goldman_base = enterprise_base or methods.get("book") or earnings_base
-        buy_in_models: dict[str, float] = {}
-        if methods.get("dcf"):
-            buy_in_models["Morgan Stanley"] = methods["dcf"] / valuation_discount
-        if earnings_base:
-            buy_in_models["JPMorgan"] = earnings_base / valuation_discount
-        if goldman_base:
-            buy_in_models["Goldman Sachs"] = goldman_base / valuation_discount
-        buy_in_models["Bridgewater"] = tp / (
-            1 + dynamic_required_return + risk_premium * 1.50 + confidence_penalty
-        )
-        buy_in_models["BlackRock"] = (tp + expected_dividend) / (
-            1 + dynamic_required_return + risk_premium * 0.50 + confidence_penalty * 0.50
-        )
-        framework_weights = {
-            "Morgan Stanley": 0.30,
-            "JPMorgan": 0.25,
-            "Goldman Sachs": 0.20,
-            "Bridgewater": 0.15,
-            "BlackRock": 0.10,
-        }
-        framework_entry = robust_weighted_mean(buy_in_models, framework_weights)
+        """The disciplined buy-in the B3 producer derives from ONE target price, and its two models:
+        ``buy_in = min(return hurdle, market structure)``. The Return Hurdle discounts the forward TP plus the expected
+        dividend by the entry-return hurdle; Market Structure is the technical (60-session) entry and does not depend on
+        the TP. Owner order of 20/10/2026: no other entry criterion exists (the former weighted framework model was
+        removed). Passo 1 applies the SAME rule to the internal TP (``official_internal_v1``) without recomputing a method."""
         forward_tp = tp * (1 + sustainable_growth)
         hurdle_entry = (forward_tp + expected_dividend) / (1 + entry_return_hurdle / 100)
-        buy_in_models["Market Structure"] = technical_entry
-        buy_in_models["Return Hurdle"] = hurdle_entry
-        return min(framework_entry, hurdle_entry, technical_entry), buy_in_models
+        buy_in_models: dict[str, float] = {"Market Structure": technical_entry, "Return Hurdle": hurdle_entry}
+        return min(hurdle_entry, technical_entry), buy_in_models
 
     @staticmethod
     def _validate_target_price(
@@ -3103,7 +3056,7 @@ class B3ScreenerService:
             "sector_taxonomy": "Every B3 issuer is classified nightly using EODHD GICS/industry, cross-checked with Brapi and reviewed C3PO overrides. Relative valuation uses the narrowest peer group with at least four eligible companies, then canonical sector, then valuation profile.",
             "target_price": "Sector-adapted internal valuation blended with 20%-35% normalized public consensus. A second validation layer rejects the TP unless methods converge, Brapi and EODHD agree, fundamentals are fresh and the internal/public-consensus gap is within 40%.",
             "cvm_first": "Official CVM/SEC/RI disclosures enrich valuation inputs and remain visible in the audit trail. A pending disclosure never excludes a security from Candidates, Jedi Force or One Pager by itself.",
-            "buy_in": "Winsorized risk- and confidence-adjusted weighted mean of Morgan Stanley 30%, JPMorgan 25%, Goldman Sachs 20%, Bridgewater 15% and BlackRock 10%, capped by both the entry-return hurdle and a 60-session market-structure entry.",
+            "buy_in": "Lower of two entries: the entry-return hurdle (forward TP plus expected dividend, discounted by the hurdle) and a 60-session market-structure entry.",
             "cadence": "Full screening and valuation basis recompute once daily at 00:00 America/Sao_Paulo; intraday requests reuse the PostgreSQL snapshot.",
             "learning": "Rolling 90-day calibration measures forecast bias and directional accuracy by valuation profile. Adjustments require minimum samples and are capped at +/-5%.",
             "score_weights": {

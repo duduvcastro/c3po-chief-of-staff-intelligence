@@ -35,11 +35,11 @@ buy_in = 354.07
 upside = (target / price - 1.0) * 100.0
 
 valuation_methods = [
-    ("Goldman Sachs", 599.81),
-    ("Morgan Stanley", 627.90),
-    ("Bridgewater", 633.49),
-    ("JPMorgan", 631.14),
-    ("BlackRock", 616.66),
+    ("Múltiplos de Lucro + EV/EBITDA", 599.81),
+    ("Fluxo de Caixa Descontado", 627.90),
+    ("Blend Ajustado ao Risco", 633.49),
+    ("Momentum de Lucro", 631.14),
+    ("Qualidade & Fluxo de Caixa", 616.66),
 ]
 
 styles = {

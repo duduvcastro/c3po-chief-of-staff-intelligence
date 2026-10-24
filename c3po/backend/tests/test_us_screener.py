@@ -45,11 +45,11 @@ class DummyOnePagers:
             "risk_score": 29.0,
             "dispersion": 12.0,
             "methods": {
-                "Goldman Sachs": 140.0,
-                "Morgan Stanley": 146.0,
-                "Bridgewater": 138.0,
-                "JPMorgan": 149.0,
-                "BlackRock": 152.0,
+                "Múltiplos de Lucro + EV/EBITDA": 140.0,
+                "Fluxo de Caixa Descontado": 146.0,
+                "Blend Ajustado ao Risco": 138.0,
+                "Momentum de Lucro": 149.0,
+                "Qualidade & Fluxo de Caixa": 152.0,
             },
             "thesis": ["Durable growth and cash generation support the valuation."],
             "risks": ["Execution and multiple compression remain the principal risks."],
@@ -191,7 +191,7 @@ def test_stock_rows_carry_the_internal_buy_in_derived_by_the_producers_own_entry
     from app.valuation_official_engine import official_buy_in_v1, official_entry_discount_v1
 
     with_consensus = service()._analyze_stock("NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
-    methods = {"Goldman Sachs": 140.0, "Morgan Stanley": 146.0, "Bridgewater": 138.0, "JPMorgan": 149.0, "BlackRock": 152.0}
+    methods = {"Múltiplos de Lucro + EV/EBITDA": 140.0, "Fluxo de Caixa Descontado": 146.0, "Blend Ajustado ao Risco": 138.0, "Momentum de Lucro": 149.0, "Qualidade & Fluxo de Caixa": 152.0}
     expected = official_buy_in_v1(methods.values(), official_entry_discount_v1("US", 29.0, 82.0), statistics.mean(methods.values()))
     assert with_consensus["buy_in"] == 94.0 and with_consensus["internal_buy_in"] == expected and expected != 94.0
     assert with_consensus["internal_buy_in"] == pytest.approx(145.0 / (1 + 0.12 + 0.29 * 0.11 + 0.18 * 0.06))  # the 90 % cap never binds for the internal TP
