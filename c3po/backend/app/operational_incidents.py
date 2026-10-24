@@ -268,14 +268,56 @@ def governance_diagnostics(database: Database) -> dict[str, Any]:
             "npm_high_or_critical": npm, "remediation_lanes": _small_count(lanes.get("count"))}
 
 
-def diagnostics(database: Database) -> dict[str, Any]:
+DECISOR_STATUSES = ("ok", "CALENDAR_UNAVAILABLE", "DECISIONS_ONLY_AFTER_NEXT_OPEN", "GENERATION_NOT_DECIDED", "NIGHT_INVALID",
+                    "NIGHT_NOT_CLOSED", "NOT_A_SESSION", "NO_DECISIONS", "RUN_INCONSISTENT", "UNVERIFIED_DECISIONS", "error", "other")
+
+
+def decisor_reason_codes() -> tuple[str, ...]:
+    from .valuation_decision import ALL_GATES_PASSED, EVENT_CODES, OBSERVAR_CODES, VETO_CODES  # lazy: heavy module
+
+    return tuple(sorted({ALL_GATES_PASSED, *VETO_CODES, *OBSERVAR_CODES, *EVENT_CODES}))
+
+
+def decisor_diagnostics(database: Database, now: datetime) -> dict[str, Any]:
+    """The last completed US night's verdicts as the lab export sees them: how many rows carry each reason code (a row
+    counts once per code it carries). Read-only; the symbols never leave this function."""
+    from .valuation_verdict_export import LAST_COMPLETED, ExportRefused, night_verdicts, resolve_night  # lazy: heavy module
+
+    known = decisor_reason_codes()
+    try:
+        try:
+            document = night_verdicts(database, LAST_COMPLETED, now=now)["document"]
+        except ExportRefused as refusal:
+            if refusal.code != "NO_DECISIONS":
+                raise
+            # the evening after a close: that night is decided only at dawn, so read the night before it
+            document = night_verdicts(database, resolve_night(LAST_COMPLETED, now=now - timedelta(days=1)), now=now)["document"]
+    except ExportRefused as refusal:
+        return {"night": None, "status": _closed(refusal.code, DECISOR_STATUSES), "rows": 0, "by_verdict": {}, "reasons": {}}
+    except Exception:  # noqa: BLE001 - a diagnostic never breaks the report; the status says it failed
+        return {"night": None, "status": "error", "rows": 0, "by_verdict": {}, "reasons": {}}
+    rows = document["rows"]
+    reasons: dict[str, int] = {}
+    verdicts: dict[str, int] = {}
+    for row in rows:
+        verdict = _closed(row.get("verdict"), ("COMPRA_PERMITIDA", "OBSERVAR", "VETO"))
+        verdicts[verdict] = verdicts.get(verdict, 0) + 1
+        for code in {_closed(code, known) for code in row.get("reasons") or []}:
+            reasons[code] = reasons.get(code, 0) + 1
+    night = document.get("night")
+    return {"night": night if isinstance(night, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", night) else None,
+            "status": "ok", "rows": len(rows), "by_verdict": dict(sorted(verdicts.items())), "reasons": dict(sorted(reasons.items()))}
+
+
+def diagnostics(database: Database, now: datetime | None = None) -> dict[str, Any]:
     families = {family: 0 for family in JOB_FAILURE_FAMILIES}
     for incident in database.list_operational_incidents(limit=INCIDENT_SCAN_LIMIT):
         key = str(incident.get("incident_key") or "")
         if incident.get("status") in ACTIVE_STATUSES and incident_kind(key) == "notification:job_failure":
             families[job_failure_family(key)] += 1
     return {"job_failure_families": {family: count for family, count in families.items() if count},
-            "governance": governance_diagnostics(database)}
+            "governance": governance_diagnostics(database),
+            "decisor": decisor_diagnostics(database, now or datetime.now(timezone.utc))}
 
 
 def force_read_only_session(environ: MutableMapping[str, str] | None = None) -> str:
@@ -410,7 +452,7 @@ def incidents_report(settings: Settings, database: Database, now: datetime | Non
         "incidents": incidents_aggregate(database, moment),
         "health": health_cards(settings, database, moment),
         "stale_running_ingestion": stale_running_ingestion(database, moment),
-        "diagnostics": diagnostics(database),
+        "diagnostics": diagnostics(database, moment),
     }
     report["report_sha256"] = report_sha256(report)
     return report
