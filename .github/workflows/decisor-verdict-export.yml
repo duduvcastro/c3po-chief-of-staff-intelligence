@@ -1,5 +1,5 @@
 name: Decisor verdict export (encrypted)
-run-name: Decisor verdict export ${{ inputs.night || 'last-completed' }}
+run-name: Decisor verdict export ${{ inputs.night || 'last-completed' }} ${{ inputs.recovery_slot && format('[recovery:{0}]', inputs.recovery_slot) || '' }}
 
 # The Valuation decisor's US verdicts of ONE night, for the R2D2 measurement mode in the PRIVATE lab repository
 # (owner's order of 2026-10-20: from Monday 26/10 the lab takes entries only in the names marked COMPRA_PERMITIDA for
@@ -24,6 +24,11 @@ on:
     - cron: "0 11 * * 1-5"
   workflow_dispatch:
     inputs:
+      recovery_slot:
+        description: Internal recovery correlation (UTC slot); empty for ordinary dispatch
+        required: false
+        default: ''
+        type: string
       night:
         description: NYSE session the verdicts are for (YYYY-MM-DD); empty = the last completed session
         required: false
@@ -62,6 +67,13 @@ jobs:
 
       - name: Check out the workflow revision
         uses: actions/checkout@v6
+
+      - name: Validate the optional recovery slot
+        env:
+          RECOVERY_SLOT: ${{ inputs.recovery_slot }}
+        shell: bash
+        run: |
+          python3 -I scripts/c3po_workflow_schedule_recovery.py --validate-slot decisor-verdict-export.yml "$RECOVERY_SLOT" || exit 1
 
       - name: Configure deployment SSH key
         env:

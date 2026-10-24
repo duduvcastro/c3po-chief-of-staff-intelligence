@@ -141,7 +141,7 @@ def test_the_workflow_ticks_every_30_minutes_with_least_privilege_and_variables_
     triggers = workflow[True]
     assert set(triggers) == {"schedule", "workflow_dispatch"}
     assert triggers["schedule"] == [{"cron": "13,43 * * * *"}]
-    assert set(triggers["workflow_dispatch"]["inputs"]) == {"dry_run"}  # no grid parameter is an input
+    assert set(triggers["workflow_dispatch"]["inputs"]) == {"dry_run", "recovery_slot"}  # no grid parameter is an input
     assert triggers["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True and triggers["workflow_dispatch"]["inputs"]["dry_run"]["type"] == "boolean"
     assert workflow["permissions"] == {"contents": "read"} and workflow["concurrency"] == {"group": "valuation-pit-grid-autopilot", "cancel-in-progress": False}
     (job,) = workflow["jobs"].values()

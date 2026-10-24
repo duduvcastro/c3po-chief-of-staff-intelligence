@@ -1,0 +1,13 @@
+[Unit]
+Description=C3PO hourly missed GitHub schedule check (explicit opt-in)
+
+[Timer]
+# A 20min grace plus hourly sampling means recovery approximately 20..80min
+# after the slot, not a promise to recover exactly at +20min.
+OnCalendar=*-*-* *:03:00 UTC
+AccuracySec=1s
+Persistent=true
+Unit=c3po-workflow-schedule-recovery.service
+
+[Install]
+WantedBy=timers.target
