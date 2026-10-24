@@ -159,7 +159,7 @@ jobs:
               "status": {"attention", "offline"},
           }
           DIAGNOSTICS = {"job_failure_families", "governance", "decisor"}
-          DECISOR = {"night", "status", "rows", "by_verdict", "reasons"}
+          DECISOR = {"night", "status", "rows", "by_verdict", "reasons", "sole_blocker"}
           DECISOR_STATUSES = {"ok", "CALENDAR_UNAVAILABLE", "DECISIONS_ONLY_AFTER_NEXT_OPEN", "GENERATION_NOT_DECIDED", "NIGHT_INVALID",
                               "NIGHT_NOT_CLOSED", "NOT_A_SESSION", "NO_DECISIONS", "RUN_INCONSISTENT", "UNVERIFIED_DECISIONS", "error", "other"}
           DECISOR_VERDICTS = {"COMPRA_PERMITIDA", "OBSERVAR", "VETO", "other"}
@@ -292,7 +292,7 @@ jobs:
                                                or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", decisor["night"]) is None):
               refuse("decisor night is not a date")
           count(decisor["rows"], "decisor rows")
-          for name, allowed in (("by_verdict", DECISOR_VERDICTS), ("reasons", REASON_CODES)):
+          for name, allowed in (("by_verdict", DECISOR_VERDICTS), ("reasons", REASON_CODES), ("sole_blocker", REASON_CODES)):
               if not isinstance(decisor[name], dict) or not set(decisor[name]) <= allowed:
                   refuse(f"decisor {name} is not in its closed vocabulary")
               for key in decisor[name]:
@@ -344,6 +344,9 @@ jobs:
                     + (", ".join(f"{name} {n}" for name, n in decisor["by_verdict"].items()) or "nenhum")
                     + "; motivos (linhas com o código): "
                     + (", ".join(f"{name} {n}" for name, n in sorted(decisor["reasons"].items(), key=lambda item: (-item[1], item[0])))
+                       or "nenhum")
+                    + "; único bloqueio (linhas que só esse código segura): "
+                    + (", ".join(f"{name} {n}" for name, n in sorted(decisor["sole_blocker"].items(), key=lambda item: (-item[1], item[0])))
                        or "nenhum"), ""]
           lines.append(f"Somente agregados (sem chaves, títulos, detalhes ou símbolos). report_sha256 `{report['report_sha256']}`; "
                        f"revisão implantada `{report['build_sha']}`.")
