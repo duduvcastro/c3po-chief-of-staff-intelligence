@@ -1339,6 +1339,9 @@ def global_search(
                 "currency": item.get("currency"),
                 "old_tp": item.get("old_tp"),
                 "new_tp": item.get("new_tp"),
+                "tp_source": item.get("tp_source"),  # Ben Kenobi Records: the served official source, None for a legacy record
+                "legacy": item.get("legacy", True),
+                "tp_source_label": item.get("tp_source_label"),
             })
             if len(valuations) >= 6:
                 break

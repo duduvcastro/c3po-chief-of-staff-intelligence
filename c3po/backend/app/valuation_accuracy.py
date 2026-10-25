@@ -22,6 +22,8 @@ from typing import Any, Callable, Iterable
 
 logger = logging.getLogger(__name__)
 
+SERVED_CAPTURE = "served_generation_v1"  # metadata.capture of a Ben Kenobi record taken from the official selection (Database._SERVED_CAPTURE)
+
 CONFIDENCE_BUCKETS: tuple[tuple[float, float, str], ...] = (
     (0.0, 60.0, "<60"),
     (60.0, 75.0, "60-75"),
@@ -72,6 +74,15 @@ def load_valuation_calls(rows: Iterable[dict[str, Any]]) -> list[ValuationCall]:
     Skips rows with no usable target price or price-at-call -- an "initial"
     record with a missing ``price`` (data was incomplete that day) can't be
     graded, so it's dropped rather than guessed at.
+
+    A record of the official selection (``tp_source`` set — the column of
+    migration 054, or ``metadata.tp_source`` with ``metadata.capture =
+    served_generation_v1`` in the CSV export, which selects the original
+    columns) is a call of that source: it carries the identity of the served
+    record it states (source, version, cycle, row hash), so ``calls_by_source``
+    never pools it with the LEGACY records (no ``tp_source``: the producer's
+    blend row or the One Pager's row), which keep the
+    ``valuation_change_records`` group.
     """
     calls: list[ValuationCall] = []
     for row in rows:
@@ -82,6 +93,15 @@ def load_valuation_calls(rows: Iterable[dict[str, Any]]) -> list[ValuationCall]:
         changed_at = row["changed_at"]
         if isinstance(changed_at, str):
             changed_at = _parse_timestamp(changed_at)
+        raw_metadata = row.get("metadata")
+        if isinstance(raw_metadata, str):  # the CSV export carries the JSONB column as text
+            try:
+                raw_metadata = json.loads(raw_metadata) if raw_metadata.strip() else {}
+            except ValueError:
+                raw_metadata = {}
+        metadata: dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
+        stamped = metadata.get("tp_source") if metadata.get("capture") == SERVED_CAPTURE else None
+        served_source = str(row.get("tp_source") or stamped or "").strip() or None
         calls.append(ValuationCall(
             market=str(row.get("market") or "").upper(),
             symbol=str(row.get("symbol") or "").upper(),
@@ -89,6 +109,10 @@ def load_valuation_calls(rows: Iterable[dict[str, Any]]) -> list[ValuationCall]:
             price_at_call=price_at_call,
             target_price=target_price,
             confidence=_float(row.get("new_confidence"), 50.0),
+            source=served_source,
+            source_version=str(metadata.get("tp_source_version")) if served_source and metadata.get("tp_source_version") else None,
+            cycle_id=str(metadata.get("official_cycle_id")) if served_source and metadata.get("official_cycle_id") else None,
+            row_sha256=str(metadata.get("official_row_sha256")) if served_source and metadata.get("official_row_sha256") else None,
         ))
     calls.sort(key=lambda call: call.changed_at)
     return calls

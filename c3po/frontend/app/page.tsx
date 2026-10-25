@@ -1180,6 +1180,12 @@ interface ValuationChangeRecord {
   methodology_name: string;
   methodology_version: number | null;
   metadata: Record<string, unknown>;
+  /** Ben Kenobi Records states the SERVED official TP (migration 054): the source and generation of the served row; both null
+   *  on a LEGACY record (written before, never rewritten), whose tp_source_label names the stream that wrote it. */
+  tp_source?: string | null;
+  generation_id?: string | null;
+  legacy?: boolean;
+  tp_source_label?: string | null;
 }
 
 interface ValuationChangeResponse {
@@ -1256,6 +1262,9 @@ interface GlobalSearchValuation {
   currency: string;
   old_tp: number | null;
   new_tp: number;
+  tp_source?: string | null;
+  legacy?: boolean;
+  tp_source_label?: string | null;
 }
 
 interface GlobalSearchDocument {
@@ -2052,7 +2061,7 @@ function GlobalSearch({
       group: "valuations",
       title: `${valuation.symbol} · ${valuation.company_name}`,
       subtitle: valuation.trigger_title,
-      meta: `C3PO TP ${formatCurrency(valuation.new_tp, valuation.currency)}`,
+      meta: `C3PO TP ${formatCurrency(valuation.new_tp, valuation.currency)} · ${valuation.tp_source ? "TP oficial servido" : "registro legado"}`,
       view: "intelligence",
       query: valuation.symbol,
       icon: BenKenobiRecordsIcon,
@@ -6932,7 +6941,7 @@ function IQRecordRow({ record }: { record: ValuationChangeRecord }) {
           <a href={record.source_url} target="_blank" rel="noreferrer"><ExternalLink size={13} />{record.source_name || "Abrir fonte"}</a>
         ) : <small>{record.source_name}</small>}
       </div>
-      <IQValueChange label="C3PO TP" oldValue={record.old_tp} newValue={record.new_tp} currency={record.currency} change={record.tp_change_percent} />
+      <IQValueChange label="C3PO TP" oldValue={record.old_tp} newValue={record.new_tp} currency={record.currency} change={record.tp_change_percent} note={<IQTpSourceBadge record={record} />} />
       <IQValueChange label="Buy-in" oldValue={record.old_buy_in} newValue={record.new_buy_in} currency={record.currency} />
       <IQValueChange label="Consenso" oldValue={record.old_consensus_tp} newValue={record.new_consensus_tp} currency={record.currency} />
       <div className="iq-record-method" data-label="Metodologia & motivo">
@@ -6944,18 +6953,51 @@ function IQRecordRow({ record }: { record: ValuationChangeRecord }) {
   );
 }
 
+const LEGACY_TP_SOURCE_LABELS: Record<string, string> = {
+  legacy_producer_blend: "Registro legado · TP do produtor (blend com consenso)",
+  legacy_one_pager: "Registro legado · One Pager (fonte não registrada)"
+};
+
+/** What a Ben Kenobi record states as its TP source: the SERVED official source — the one TP every C3PO service shows — or a
+ *  LEGACY record, written before the ledger followed the official selection and kept exactly as it was recorded. */
+function valuationRecordTpSource(record: Pick<ValuationChangeRecord, "tp_source" | "generation_id" | "tp_source_label">) {
+  if (record.tp_source) {
+    return {
+      served: true,
+      label: `TP oficial servido · ${record.tp_source}`,
+      detail: `TP oficial servido pela geração ${(record.generation_id ?? "-").slice(0, 8)}: o mesmo TP de Last Jedi, Dark Side e One Pager.`
+    };
+  }
+  return {
+    served: false,
+    label: LEGACY_TP_SOURCE_LABELS[record.tp_source_label ?? ""] ?? "Registro legado",
+    detail: "Registro anterior ao registro do TP oficial servido, mantido como foi gravado (o histórico nunca é reescrito)."
+  };
+}
+
+function IQTpSourceBadge({ record }: { record: ValuationChangeRecord }) {
+  const source = valuationRecordTpSource(record);
+  return (
+    <small className={`iq-tp-source ${source.served ? "iq-tp-source-served" : "iq-tp-source-legacy"}`} title={source.detail}>
+      {source.label}
+    </small>
+  );
+}
+
 function IQValueChange({
   label,
   oldValue,
   newValue,
   currency,
-  change
+  change,
+  note
 }: {
   label: string;
   oldValue: number | null;
   newValue: number | null;
   currency: string;
   change?: number | null;
+  note?: ReactNode;
 }) {
   const calculatedChange = change ?? (
     oldValue !== null && oldValue !== 0 && newValue !== null
@@ -6983,6 +7025,7 @@ function IQValueChange({
         <span>Novo</span>
         <strong>{newValue !== null ? formatCurrency(newValue, currency) : "N/D"}</strong>
       </div>
+      {note}
     </div>
   );
 }
@@ -6994,7 +7037,8 @@ function valuationChangedFieldLabels(record: ValuationChangeRecord) {
     c3po_tp: "C3PO TP",
     buy_in: "Buy-in",
     consensus_tp: "Consenso",
-    confidence: "Confiança"
+    confidence: "Confiança",
+    tp_source: "Fonte do TP"
   };
   const fields = raw.map((item) => labels[String(item)]).filter((item): item is string => Boolean(item));
   return fields.length ? fields : [record.trigger_type === "initial" ? "Base de valuation" : "Premissas do valuation"];
@@ -7006,6 +7050,7 @@ function valuationChangeReason(record: ValuationChangeRecord, changedFields: str
   if (record.trigger_type === "financial_results") return `Novo resultado oficial incorporado aos fundamentos, com impacto em ${affected}.`;
   if (record.trigger_type === "material_event") return `Material oficial alterou premissas do modelo e recalculou ${affected}.`;
   if (record.trigger_type === "web_research") return `Nova evidência validada no RI, SEC ou web recalibrou ${affected}.`;
+  if (changedFields.includes("Fonte do TP")) return "Mudou a fonte do TP oficial servido: daqui em diante o registro mostra o TP que todos os serviços exibem.";
   if (record.trigger_type === "methodology") return `Novos pesos ou parâmetros da metodologia recalcularam ${affected}.`;
   return `Fundamentos, consenso ou dados de mercado atualizados recalibraram ${affected}.`;
 }

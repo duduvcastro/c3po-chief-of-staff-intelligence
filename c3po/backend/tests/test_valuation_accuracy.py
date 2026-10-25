@@ -123,3 +123,33 @@ def test_coverage_summary_reports_calls_symbols_and_date_range() -> None:
 
 def test_coverage_summary_empty() -> None:
     assert coverage_summary([]) == {"calls": 0, "distinct_symbols": 0, "date_range": None}
+
+
+def test_served_ben_kenobi_records_are_graded_by_their_source_never_pooled_with_legacy_ones() -> None:
+    """Migration 054: a record of the official selection states its source (the column, or — in the CSV export, which selects
+    the original columns — ``metadata.tp_source`` under ``metadata.capture``); the legacy records (producer blend rows, One
+    Pager rows) keep the ``valuation_change_records`` group."""
+    import json
+
+    from app.database import Database
+    from app.valuation_accuracy import SERVED_CAPTURE, calls_by_source
+
+    assert SERVED_CAPTURE == Database._SERVED_CAPTURE
+    at = datetime(2026, 10, 21, 3, 0, tzinfo=timezone.utc)
+    stamp = {"capture": SERVED_CAPTURE, "tp_source": "official_internal_v1", "tp_source_version": "9", "official_cycle_id": "c-1",
+             "official_row_sha256": "a" * 64}
+    rows = [
+        {**_call("PETR4", at, 33.0, 37.0), "market": "B3", "tp_source": "official_internal_v1", "metadata": stamp},  # the API / a DB row
+        {**_call("KO", at, 64.0, 66.0), "market": "NYSE", "metadata": json.dumps(stamp)},  # the CSV export: no tp_source column
+        {**_call("VALE3", at, 62.0, 72.0), "market": "B3", "metadata": json.dumps({"analysis_type": "valuation_universe"})},  # legacy
+        {**_call("AAPL", at, 220.0, 250.0), "market": "NASDAQ", "metadata": {"tp_source": "official_blend_v1"}},  # no capture stamp: legacy
+        {**_call("MSFT", at, 400.0, 450.0), "metadata": "not json"},
+    ]
+
+    calls = load_valuation_calls(rows)
+    groups = calls_by_source(calls)
+
+    assert sorted((key, sorted(call.symbol for call in group)) for key, group in groups.items()) == [
+        ("official_internal_v1:9", ["KO", "PETR4"]), ("valuation_change_records", ["AAPL", "MSFT", "VALE3"])]
+    served = next(call for call in calls if call.symbol == "KO")
+    assert (served.source, served.source_version, served.cycle_id, served.row_sha256) == ("official_internal_v1", "9", "c-1", "a" * 64)
