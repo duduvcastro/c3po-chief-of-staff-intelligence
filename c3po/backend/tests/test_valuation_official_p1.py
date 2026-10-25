@@ -55,14 +55,14 @@ def _row(symbol: str, *, tp: float, buy_in: float, price: float, internal_tp: fl
     row: dict[str, Any] = {
         "symbol": symbol, "our_tp": tp, "buy_in": buy_in, "price": price, "internal_tp": internal_tp, "public_consensus_tp": tp * 1.1,
         "analyst_count": 12, "consensus_weight_percent": 25.0, "consensus_origin_source": "brapi", "consensus_as_of": "2026-09-01",
-        "methods": {"dcf": tp * 1.01, "multiples": tp * 0.99}, "buy_in_models": {"Bridgewater": buy_in * 1.02, "Market Structure": buy_in * 0.98},
+        "methods": {"dcf": tp * 1.01, "multiples": tp * 0.99}, "buy_in_models": {"Return Hurdle": buy_in * 1.02, "Market Structure": buy_in * 0.98},
         "calibration_factor": 1.02, "risk_score": 40.0, "valuation_confidence": 70.0, "method_dispersion_percent": 3.0, "signal_quality": "validated",
         "bear_tp": tp * 0.8, "bull_tp": tp * 1.2, "upside_percent": (tp / price - 1) * 100, "price_vs_buy_in_percent": (price / buy_in - 1) * 100,
         "expected_total_return_percent": 21.5, "score": 80.0, "status": "full_match", "as_of": "2026-09-07T22:00:00+00:00",
     }
     if internal_buy_in is not None:
         row["internal_buy_in"] = internal_buy_in
-        row["internal_buy_in_models"] = {"Bridgewater": internal_buy_in * 1.02, "Market Structure": buy_in * 0.98}
+        row["internal_buy_in_models"] = {"Return Hurdle": internal_buy_in * 1.02, "Market Structure": buy_in * 0.98}
         if view:
             row.update({"internal_score": 79.0, "internal_status": "near_buy", "internal_expected_total_return_percent": 20.5})
     return {**row, **extra}
@@ -139,7 +139,7 @@ def test_one_cycle_is_recorded_in_both_official_sources_from_the_same_rows() -> 
     assert internal["decomposition"]["consensus"] == blend["decomposition"]["consensus"] and internal["decomposition"]["consensus"]["payload_sha256"] == blend["decomposition"]["consensus"]["payload_sha256"]
     # methods, calibration and provenance identical; the models are the internal ones; the bands are the producer's INTERNAL bands (none today → null, never rescaled)
     assert internal["decomposition"]["methods"] == blend["decomposition"]["methods"] and internal["decomposition"]["provenance"] == blend["decomposition"]["provenance"]
-    assert internal["decomposition"]["buy_in_models"] == {"Bridgewater": 31.0 * 1.02, "Market Structure": 32.0 * 0.98} and blend["decomposition"]["buy_in_models"] == {"Bridgewater": 32.0 * 1.02, "Market Structure": 32.0 * 0.98}
+    assert internal["decomposition"]["buy_in_models"] == {"Return Hurdle": 31.0 * 1.02, "Market Structure": 32.0 * 0.98} and blend["decomposition"]["buy_in_models"] == {"Return Hurdle": 32.0 * 1.02, "Market Structure": 32.0 * 0.98}
     assert blend["bear_tp"] == 32.0 and blend["bull_tp"] == 48.0 and internal["bear_tp"] is None and internal["bull_tp"] is None
     assert internal["decomposition"]["bands"] == {"bear_tp": None, "bull_tp": None}
     # the internal identity recomputes, the PostgreSQL-shaped reader round-trips it, and the recording is idempotent
@@ -155,7 +155,7 @@ def test_one_cycle_is_recorded_in_both_official_sources_from_the_same_rows() -> 
     # a row without internal models keeps the producer's models in the internal record; an unknown source is refused
     plain = {key: value for key, value in _row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0, internal_buy_in=196.0).items() if key != "internal_buy_in_models"}
     record = official.prediction_from_row(plain, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, source=SOURCE_INTERNAL)
-    assert record is not None and record["decomposition"]["buy_in_models"] == {"Bridgewater": 200.0 * 1.02, "Market Structure": 200.0 * 0.98}
+    assert record is not None and record["decomposition"]["buy_in_models"] == {"Return Hurdle": 200.0 * 1.02, "Market Structure": 200.0 * 0.98}
     with pytest.raises(ValueError, match="unknown recordable source"):  # v3_2_shadow became RECORDABLE (valuation_pit_rerun); an unknown source is still refused
         official.prediction_from_row(plain, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, source="made_up_v9")
     # the recording counts both sources: three rows → six records
@@ -542,7 +542,7 @@ def test_q2_the_served_buy_in_models_are_the_records_after_the_switch_and_the_bl
     assert blend_record is not None and internal_record is not None
     # a blend generation: the served models are the row's own values, bit for bit (they are what the blend record stored)
     served = official.official_row(database, "B3", "PETR4")
-    assert served is not None and served["buy_in_models"] == row["buy_in_models"] == {"Bridgewater": 32.0 * 1.02, "Market Structure": 32.0 * 0.98}
+    assert served is not None and served["buy_in_models"] == row["buy_in_models"] == {"Return Hurdle": 32.0 * 1.02, "Market Structure": 32.0 * 0.98}
     assert served["buy_in_models"] == blend_record["decomposition"]["buy_in_models"]
     assert all(type(served["buy_in_models"][key]) is type(row["buy_in_models"][key]) for key in row["buy_in_models"])
     assert official.official_rows(database, "B3")["PETR4"]["buy_in_models"] == row["buy_in_models"]
@@ -550,12 +550,12 @@ def test_q2_the_served_buy_in_models_are_the_records_after_the_switch_and_the_bl
     g1, _ = _switch(database, monkeypatch, cycles=cycles)
     served = official.official_row(database, "B3", "PETR4")
     assert served is not None and served["tp_source"] == SOURCE_INTERNAL and served["buy_in"] == 31.0
-    assert served["buy_in_models"] == row["internal_buy_in_models"] == {"Bridgewater": 31.0 * 1.02, "Market Structure": 32.0 * 0.98}
+    assert served["buy_in_models"] == row["internal_buy_in_models"] == {"Return Hurdle": 31.0 * 1.02, "Market Structure": 32.0 * 0.98}
     assert served["buy_in_models"] == internal_record["decomposition"]["buy_in_models"] and served["buy_in_models"] != row["buy_in_models"]
     assert official.official_rows(database, "B3")["PETR4"]["buy_in_models"] == row["internal_buy_in_models"]
     # the served map is a copy: mutating it reaches neither the record cache nor the store
-    served["buy_in_models"]["Bridgewater"] = 0.0
-    assert official.official_row(database, "B3", "PETR4")["buy_in_models"]["Bridgewater"] == 31.0 * 1.02  # type: ignore[index]
+    served["buy_in_models"]["Return Hurdle"] = 0.0
+    assert official.official_row(database, "B3", "PETR4")["buy_in_models"]["Return Hurdle"] == 31.0 * 1.02  # type: ignore[index]
     assert database.valuation_prediction_record(cycles["B3"], "PETR4", source=SOURCE_INTERNAL) == internal_record
     # a record WITHOUT models (a producer that emits none) leaves the row's field untouched; a targeted admission is served from ITS record
     nyse_plain = _publish_universe(database, "NYSE", [{key: value for key, value in _row("KO", tp=75.0, buy_in=63.0, price=66.0, internal_tp=74.0, internal_buy_in=62.0).items()

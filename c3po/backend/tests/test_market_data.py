@@ -416,18 +416,18 @@ PETROBRAS_BENCHMARK = {"peer:Oil, Gas & Fuels": {
     "cycle_pe": 6.75, "cycle_ev_ebitda": 4.62, "price_to_book": 1.19,
     "roe": 0.052, "growth": 0.164, "profit_margin": 0.098, "ebitda_margin": 0.288,
 }}
-# The blend's buy-in and models for this row at PR #393 rev 7 (head b3d52e99), captured BEFORE `_entry_from_tp` was extracted
-# (repr of every float): Passo 1 must reproduce them bit for bit.
-PETROBRAS_BUY_IN_AT_PASSO_0 = 36.19465234616745
-PETROBRAS_BUY_IN_MODELS_AT_PASSO_0 = {
-    "Morgan Stanley": 21.630626217193438, "JPMorgan": 43.29708804095021, "Goldman Sachs": 35.482273898861806,
-    "Bridgewater": 38.918782114338974, "BlackRock": 42.631639949955094, "Market Structure": 40.971671411899436, "Return Hurdle": 42.9755789491881,
-}
+# The blend's two entry models for this row (repr of every float). Both are bit for bit the "Market Structure" and
+# "Return Hurdle" values captured at PR #393 rev 7 (head b3d52e99), before `_entry_from_tp` was extracted: the owner order of
+# 20/10/2026 removed only the weighted framework model (then 36.19465234616745, the binding minimum), so the buy-in is now
+# the lower of the two remaining entries.
+PETROBRAS_BUY_IN = 40.971671411899436
+PETROBRAS_BUY_IN_MODELS = {"Market Structure": 40.971671411899436, "Return Hurdle": 42.9755789491881}
 
 
-def test_b3_rows_carry_the_internal_buy_in_by_the_same_entry_rule_and_the_blend_buy_in_is_unchanged() -> None:
-    """Passo 1 (official_internal_v1): `_value_row` applies its entry rule (`_entry_from_tp`) twice — to the blend, exactly
-    as before the extraction (pinned values), and to the internal TP, whose buy-in and models the internal record reads."""
+def test_b3_rows_carry_the_internal_buy_in_by_the_same_entry_rule_lower_of_hurdle_and_market_structure() -> None:
+    """Passo 1 (official_internal_v1): `_value_row` applies its entry rule (`_entry_from_tp`) twice — to the blend (pinned
+    values) and to the internal TP, whose buy-in and models the internal record reads. The rule is the lower of the
+    return-hurdle and market-structure entries (owner order of 20/10/2026: no framework model)."""
     macro = {"selic": 0.14, "ipca12m": 0.045}
     service = B3ScreenerService.__new__(B3ScreenerService)
     service._calibration_factors = {}
@@ -435,23 +435,19 @@ def test_b3_rows_carry_the_internal_buy_in_by_the_same_entry_rule_and_the_blend_
     row.update(B3ScreenerService._cyclical_market_multiples(row))
     service._value_row(row, PETROBRAS_BENCHMARK, macro)
     assert row["consensus_weight_percent"] == 35.0 and row["our_tp"] != row["internal_tp"]
-    assert row["buy_in"] == PETROBRAS_BUY_IN_AT_PASSO_0 and row["buy_in_models"] == PETROBRAS_BUY_IN_MODELS_AT_PASSO_0
+    assert row["buy_in"] == PETROBRAS_BUY_IN and row["buy_in_models"] == PETROBRAS_BUY_IN_MODELS
+    assert row["buy_in"] == min(row["buy_in_models"]["Return Hurdle"], row["buy_in_models"]["Market Structure"])
     # the same rule on the internal TP: rebuilt here from the row's own fields and the producer's helpers
-    dynamic_required_return = 0.14 + 0.02
-    risk_premium = min(max(row["risk_score"] / 100 * 0.08, 0.0), 0.08)
-    confidence_penalty = min(max((100 - row["valuation_confidence"]) / 100 * 0.06, 0.0), 0.06)
-    rule = dict(valuation_discount=1 + dynamic_required_return + risk_premium + confidence_penalty, dynamic_required_return=dynamic_required_return,
-                risk_premium=risk_premium, confidence_penalty=confidence_penalty, expected_dividend=row["expected_dividend"],
-                sustainable_growth=row["sustainable_growth"], entry_return_hurdle=B3ScreenerService._entry_return_hurdle_percent(macro),
+    rule = dict(expected_dividend=row["expected_dividend"], sustainable_growth=row["sustainable_growth"],
+                entry_return_hurdle=B3ScreenerService._entry_return_hurdle_percent(macro),
                 technical_entry=row["buy_in_models"]["Market Structure"])
-    assert B3ScreenerService._entry_from_tp(row["our_tp"], row["methods"], **rule) == (row["buy_in"], row["buy_in_models"])
-    internal_buy_in, internal_models = B3ScreenerService._entry_from_tp(row["internal_tp"], row["methods"], **rule)
+    assert B3ScreenerService._entry_from_tp(row["our_tp"], **rule) == (row["buy_in"], row["buy_in_models"])
+    internal_buy_in, internal_models = B3ScreenerService._entry_from_tp(row["internal_tp"], **rule)
     assert row["internal_buy_in"] == internal_buy_in and row["internal_buy_in_models"] == internal_models
-    for name in ("Morgan Stanley", "JPMorgan", "Goldman Sachs", "Market Structure"):  # models independent of the TP: identical
-        assert internal_models[name] == row["buy_in_models"][name]
-    for name in ("Bridgewater", "BlackRock", "Return Hurdle"):  # models derived from the TP: the internal ones
-        assert internal_models[name] < row["buy_in_models"][name]
-    assert internal_buy_in == min(internal_models["Return Hurdle"], internal_models["Market Structure"], internal_buy_in) and 0 < internal_buy_in < row["buy_in"]
+    assert set(internal_models) == set(row["buy_in_models"]) == {"Market Structure", "Return Hurdle"}  # the only two entry models
+    assert internal_models["Market Structure"] == row["buy_in_models"]["Market Structure"]  # technical: independent of the TP
+    assert internal_models["Return Hurdle"] < row["buy_in_models"]["Return Hurdle"]  # derived from the (lower) internal TP
+    assert internal_buy_in == min(internal_models["Return Hurdle"], internal_models["Market Structure"]) and 0 < internal_buy_in < row["buy_in"]
     # without a consensus the blend IS the internal TP: one buy-in
     bare = {**_petrobras_row(), "public_consensus_tp": None, "analyst_count": 0, "consensus_source_count": 0}
     bare.update(B3ScreenerService._cyclical_market_multiples(bare))
@@ -511,7 +507,7 @@ def test_b3_rows_carry_the_internal_view_by_the_same_rules_and_the_internal_reco
     row = _petrobras_row()
     row.update(B3ScreenerService._cyclical_market_multiples(row))
     service._value_row(row, PETROBRAS_BENCHMARK, macro)
-    assert row["buy_in"] == PETROBRAS_BUY_IN_AT_PASSO_0 and row["consensus_weight_percent"] == 35.0  # the blend is untouched
+    assert row["buy_in"] == PETROBRAS_BUY_IN and row["consensus_weight_percent"] == 35.0  # the blend is untouched
     cutoff = B3ScreenerService._tp_upside_cutoff_percent(macro)
     assert row["status"] == _b3_status_before_rev9(row["upside_percent"], row["price_vs_buy_in_percent"], row["valuation_confidence"],
                                                    row["method_dispersion_percent"], row["tp_validation_status"], cutoff)
