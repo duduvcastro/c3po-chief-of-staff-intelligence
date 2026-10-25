@@ -2014,6 +2014,9 @@ button { cursor: pointer; }
 .iq-value-positive { color: var(--green); }
 .iq-value-negative { color: var(--red); }
 .iq-value-neutral { color: var(--blue); }
+.iq-tp-source { display: block; max-width: 100%; margin-top: 6px; font-size: 7px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; text-transform: uppercase; } /* Ben Kenobi: the TP source each record states */
+.iq-tp-source-served { color: var(--green); }
+.iq-tp-source-legacy { color: #8b939c; }
 .iq-record-method strong { display: block; color: var(--gold-deep); font-size: 9px; line-height: 1.35; }
 .iq-record-method p { margin: 7px 0 0; color: #5f6975; font-size: 8px; line-height: 1.45; }
 .iq-record-method small { display: block; margin-top: 5px; color: #8d96a0; font-size: 8px; }

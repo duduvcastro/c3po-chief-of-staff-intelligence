@@ -68,6 +68,7 @@ def test_capture_valuation_changes_labels_nasdaq_and_nyse_by_exchange(tmp_path) 
     Market is now derived from the snapshot's own entity_key (NASDAQ_UNIVERSE/
     NYSE_UNIVERSE/B3_UNIVERSE), which is authoritative, so Ben Kenobi Records can
     classify by exchange (B3/NASDAQ/NYSE) instead of a generic B3/US split.
+    Since the ledger records the SERVED rows of the official selection, the market is the served market (the generation's).
     """
     database = Database(Settings(database_url="", migrations_dir=tmp_path))
     methodology_id = database.ensure_methodology_version("us-screener", 1, {}, "test")
@@ -77,13 +78,13 @@ def test_capture_valuation_changes_labels_nasdaq_and_nyse_by_exchange(tmp_path) 
         database.save_analysis_snapshot(
             "valuation_universe", f"{market}_UNIVERSE", methodology_id,
             {"methodology_version": 1, "market": market},
-            {"rows": [{"symbol": symbol, "our_tp": 250.0, "company_name": f"{symbol} Inc"}]},
+            {"rows": [{"symbol": symbol, "our_tp": 250.0, "buy_in": 200.0, "internal_tp": 240.0, "price": 220.0, "company_name": f"{symbol} Inc"}]},
             now,
         )
     database.save_analysis_snapshot(
         "valuation_universe", "B3_UNIVERSE", methodology_id,
         {"source": "brapi", "methodology_version": "V1", "cvm_first": True},
-        {"rows": [{"symbol": "PETR4", "our_tp": 40.0, "company_name": "Petrobras"}]},
+        {"rows": [{"symbol": "PETR4", "our_tp": 40.0, "buy_in": 32.0, "internal_tp": 38.0, "price": 36.0, "company_name": "Petrobras"}]},
         now,
     )
 
