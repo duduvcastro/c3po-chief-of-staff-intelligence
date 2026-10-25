@@ -1,0 +1,25 @@
+[Unit]
+Description=C3PO missed GitHub schedule recovery (explicit opt-in)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/c3po/workflow-recovery.token
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/c3po-workflow-recovery/c3po_workflow_schedule_recovery.py --act
+LoadCredential=github-token:/etc/c3po/workflow-recovery.token
+StateDirectory=c3po-workflow-schedule-recovery
+StateDirectoryMode=0700
+TimeoutStartSec=8min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/c3po-workflow-schedule-recovery

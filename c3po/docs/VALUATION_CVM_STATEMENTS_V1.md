@@ -79,12 +79,119 @@ do ambiente, como as dos produtores do R2D2 V2 (`C3PO_R2D2_V2_PRODUCERS_ENABLED`
 
 | variável | padrão | efeito |
 |---|---|---|
-| `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED` | desligada | o screener B3 serve o overlay campo a campo (`B3ScreenerService._eodhd_fundamentals_with_receipts`) |
+| `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED` | desligada | o screener B3 serve o overlay campo a campo (`B3ScreenerService._eodhd_fundamentals_with_receipts`); só `true` liga |
+| `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW` | desligada | o ciclo noturno B3 calcula também a variante campo a campo, ao lado da servida, e grava uma snapshot agregada por ciclo (`app/valuation_env.py`; ver Rollout) |
 | `C3PO_CVM_STATEMENTS_CAPTURE_ENABLED` | ligada | o IR worker coleta as demonstrações completas (tipo `official_statements`, lido só pelo overlay acima) e captura safras |
 | `C3PO_CVM_STATEMENTS_INTERVAL_HOURS` | 24 (6 a 336) | espaçamento das coletas; conta a partir do último sucesso, sobrevive a reinícios |
 
 Com a primeira chave desligada nenhum número servido muda. A coleta grava em `analysis_snapshots`
 (`analysis_type = official_statements`, uma snapshot por símbolo só quando algo mudou; append-only).
+
+## Correção ponta a ponta (verificação de 19/10/2026)
+
+Testes em `tests/test_valuation_cvm_overlay_shadow.py` (arquivos sintéticos da CVM no layout real, `cvm_statement_fixtures.py`).
+
+- **Precedência por campo.** CVM consolidado > CVM individual (só para emissor sem nenhum consolidado; escopo por
+  emissor, nunca misturado entre campos) > EODHD. A linha oficial sobrescreve só os campos que traz no mesmo período; o
+  campo que a CVM não traz fica o do EODHD. Banco/seguradora: receita, EBIT, EBITDA e dívida ficam do provedor.
+- **Trava de recebimento (uma trava, não uma leitura no ponto do tempo).** `official_overlays(..., as_of=)` lê a
+  **última** snapshot — nunca a que vigorava num instante passado — e a recusa se foi gravada depois do corte ou se
+  **qualquer** documento que contribuiu para ela só fica disponível depois do corte: toda versão de ITR/DFP de cada
+  período (DRE, DVA, DFC, balanço e o acumulado anterior contra o qual o trimestre foi diferenciado;
+  `periodDocuments[*].contributing`). Disponível = **fim do dia de recebimento** (`DT_RECEB`) em São Paulo, a convenção
+  do produtor (`published_at`, `accepted_at` das safras). Recusada a última, vale a anterior que a trava admitir (até 3),
+  para o símbolo não voltar às linhas do legado pelo resto do dia; senão o legado, recusado do mesmo jeito pelo seu
+  `published_at`; senão o provedor. Recebimento desconhecido não recusa. No ciclo noturno nada é descartado (documentos
+  do dia ficam disponíveis à meia-noite); contado na sombra (`receipt_guard_excluded`).
+- **EBITDA.** EBIT (DRE) + |D&A| (DVA `7.04.01`) por trimestre; TTM só com quatro trimestres consecutivos que tenham o
+  campo. No mesmo pacote sintético, o legado serve 60 mil (dois trimestres do provedor: a metade) e o campo a campo serve
+  134 mil (quatro trimestres CVM), com o EV/EBITDA recalculado.
+- **Unidades.** `VL_CONTA` × escala: `MIL` × 1.000, `MILHAO`/`MILHOES` × 1.000.000, `UNIDADE` × 1; só `MOEDA = REAL`. O
+  mesmo trimestre arquivado em `MIL` e em `UNIDADE` dá os mesmos reais — a unidade do EODHD. A composição do capital não
+  tem coluna de escala (quantidade de ações): ações CVM a 100× ou mais das do EODHD são ignoradas (fica o EODHD) e
+  contadas (`shares_scale_skipped`); o screener já troca por ações implícitas (valor de mercado ÷ preço) quando a pista
+  diverge mais de 30 %.
+- **Documentos reapresentados.** Nova `VERSAO` do mesmo documento vence a anterior (no extrator e na snapshot que o
+  overlay lê, na coleta seguinte, com o seu próprio `receivedOn`); o documento do próprio período vence o comparativo
+  reapresentado de um documento posterior (como arquivado).
+
+**Defeitos encontrados e corrigidos (nenhum arquivo congelado tocado):**
+
+1. **Trimestre servido como ano (fluxo de caixa).** O `freeCashflow`/`operatingCashflow` de topo do EODHD é o do
+   **último trimestre** (`eodhd._latest_statement`), e com qualquer overlay o screener lê esses campos do payload
+   sobreposto em vez do TTM da Brapi. O overlay campo a campo deixava esse trimestre no lugar, servido como TTM (FCF ÷ 4
+   no DCF e no yield) — sem janela completa e também quando o overlay não se aplica (sem overlay, ou mais antigo que o
+   provedor). Agora, em todos os casos: janela completa só de trimestres CVM; ou uma janela que use trimestres do
+   provedor, só se a série do provedor passar a trava abaixo; ou o TTM do próprio provedor que passe a trava; senão o
+   campo fica de fora (o nome pode então cair no portão de FCF positivo — a sombra conta em `names.only_before`).
+2. **Trava do fluxo de caixa do provedor.** Se as linhas trimestrais de caixa do EODHD `.SA` forem acumuladas no ano
+   (como a DFC da CVM), quatro delas somam 1T + 1S + 9M + ano (prova do revisor: 20/10/40/30 → 100 servidos contra 30
+   reais). A série do provedor só é aceita se **não parecer acumulada** (tamanho subindo a cada trimestre dentro do
+   exercício e voltando no 1T seguinte) **e**, quando a janela termina no fim do exercício (dezembro), se o TTM bater em
+   até 5 % com o anual do próprio provedor (`annualCashFlow` normalizado ou `Financials.Cash_Flow.yearly`). O payload
+   normalizado de hoje não traz o anual de caixa (`eodhd.py`, congelado esta semana): janela que termina em dezembro cai
+   fora até lá. Cada disparo é contado no recibo (`cash_flow_guard`: `cumulative`, `annual_missing`, `annual_mismatch`,
+   por campo × nome). **Conferir um payload `.SA` real na primeira noite da sombra** (as linhas `Cash_Flow.quarterly` são
+   trimestres avulsos ou acumulados?) antes de aceitar o recibo.
+3. **Trava de recebimento implícita.** O overlay lia a última snapshot sem conferir recebimento nem instante de
+   gravação; agora a trava acima é verificada (`official_overlays`), documento por documento.
+4. **Ações fora de escala.** Ações CVM a 100× ou mais das do EODHD são ignoradas e contadas (`shares_scale_skipped`).
+
+**Observações (não corrigidas aqui):**
+
+- Com overlay (legado ou campo a campo) o screener passa a ler ROE, margens, D/E, FCF, caixa, dívida, receita e EBITDA
+  do payload sobreposto, não da Brapi (`B3ScreenerService._prepare_rows`, ramo `official_fundamentals`). É anterior a
+  esta frente; a sombra mede o efeito total, não só o das linhas da CVM.
+- Q4 e o TTM misturam um DFP reapresentado com os nove meses originais do ITR quando o emissor reapresenta o ano (limite
+  já descrito abaixo); o TTM de dezembro é o DFP exato.
+- Sem `Highlights`, o EODHD cai para a receita/EBITDA do último trimestre (`eodhd.py`, congelado esta semana): afeta o
+  fallback do provedor, não as linhas da CVM.
+
+## Rollout: sombra → recibo → aceite do dono → ligar
+
+Nada servido muda até o passo 4. Toda chave é variável do repositório (não segredo), validada `^(true|false)$` e gravada
+na `.env` do host pelo passo `Stage host env settings` do `c3po-pipeline.yml` no próximo deploy; variável vazia não
+grava nada (a `.env` mantém o que tem) — para desligar, defina `false`.
+
+1. **Sombra.** `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW=true` (e `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED`
+   vazia ou `false`); deploy. Só o **ciclo noturno** do `valuation-worker` (`B3ScreenerService(nightly_cvm_shadow=True)`)
+   roda a sombra — nunca o build completo frio de outro processo nem o de `refresh_symbols`. O build entrega ao
+   `ShadowCapture` os mesmos payloads EODHD que consumiu, no mesmo instante; depois de publicar o ciclo servido, **uma
+   chamada** avalia o universo três vezes com o mesmo catálogo, cotações, Brapi, histórico, macro e consenso **e com as
+   mesmas leituras do banco e o mesmo instante do passe servido** — eventos de RI, atividade de insiders e o corte,
+   gravados uma vez pelo passe servido e reaproveitados nas três variantes (uma escrita do IR worker entre o ciclo e a
+   sombra nunca é atribuída à CVM; achado do Codex na #459):
+   **antes** (os fundamentos servidos, recalculados ali — o recibo diz quantos batem com as linhas do ciclo publicado em
+   TP interno, buy-in interno e status, `before_vs_served`, e em todos, `names.before_matches_served`), **só a correção do fluxo de caixa** (sem linha CVM, para essa correção não ser
+   atribuída à CVM) e **depois** (overlay campo a campo). Grava **uma** snapshot `analysis_snapshots`
+   (`analysis_type = valuation_cvm_overlay_shadow`, entidade `B3_UNIVERSE`):
+   - `aggregate` (sem nenhum símbolo): `n`, mediana e p90 de `variante/referência − 1` e do módulo — TP e buy-in
+     internos depois/antes, TP só a correção/antes (`cash_flow_fix_internal_tp`) e depois/só a correção
+     (`cvm_rows_internal_tp`); contagem de nomes por campo com origem `cvm`/`eodhd`/`mixed`/`absent`; disparos da trava
+     do fluxo de caixa; EBITDA que muda (> 1 %), com a assinatura do defeito da metade no legado e corrigidos; origem do
+     overlay (`statements`, `legacy`, `stale` = mais antigo que o provedor e não aplicado, `none`);
+     `receipt_guard_excluded`; `shares_scale_skipped`; hash do detalhe privado. `report_sha256` = hash canônico do
+     agregado; `producer_build_sha` = `C3PO_BUILD_SHA` do processo que o calculou; `attestation_sha256` = hash do
+     agregado com o produtor (o recibo recusa se qualquer um dos dois não recalcular);
+   - `private_detail` por símbolo (TP e buy-in internos do ciclo servido, antes, só a correção e depois; EBITDA,
+     origens): fica no banco do host, nunca sai.
+   O tipo não é ciclo, registro de predição nem selecionável. Qualquer falha é registrada no log e o build segue. Os
+   números do agregado são arredondados a 8 casas e nunca `-0,0` (o `numeric` do PostgreSQL não tem zero negativo).
+2. **Recibo.** Disparar `valuation-readonly-report.yml` com `report = cvm-before-after`. Lê só leitura
+   (`PGOPTIONS default_transaction_read_only=on`, `docker compose exec` no `api` em execução) a última snapshot da
+   sombra, recalcula o `report_sha256` e o `attestation_sha256` (têm de bater com os gravados), anexa a identidade da snapshot, a revisão que
+   produziu (`producer_build_sha`) e a que leu (`reader_build_sha`), tudo sob `receipt_sha256`. O runner confere as
+   chaves exatas de cada bloco (nenhum bloco pode ser indexado por símbolo), os dois hashes e as duas revisões; o resumo
+   em português é renderizado por um segundo exec e só é publicado se a revisão que o renderizou for a que leu o recibo.
+   Artefato: `valuation-cvm-before-after-<run>` (`report.json`, `summary.md`, `metadata.json`, `SHA256SUMS`).
+3. **Aceite do dono.** O dono lê o resumo e aceita citando o `report_sha256`. Pré-condição já descrita acima: decidir
+   o One Pager (a) repin para `apply_official_statements_map` ou (b) deixar de exibir EV/EBITDA/TTM do overlay.
+4. **Ligar.** `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED=true`; deploy. A sombra pode ficar ligada: antes e depois
+   passam a ser o mesmo overlay e o agregado vira uma verificação de identidade (`served_overlay = fieldwise`, zero
+   mudanças); ou `C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW=false`. Reverter: `ENABLED=false` e deploy.
+
+`C3PO_CVM_STATEMENTS_CAPTURE_ENABLED` (padrão ligada) precisa continuar ligada em todos os passos: sem a coleta não há
+demonstrações para a sombra comparar. Não é gravada pelo pipeline (só na `.env` do host, se for preciso desligar).
 
 ## Safras (migração 051 da frente XBRL: `statement_filings` + `statement_vintages`)
 

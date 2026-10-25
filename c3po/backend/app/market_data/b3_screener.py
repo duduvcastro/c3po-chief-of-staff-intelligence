@@ -1,7 +1,9 @@
 import logging
 import math
+import os
 import re
 import statistics
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from threading import Lock, RLock
 from typing import Any
@@ -13,6 +15,8 @@ from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixP
 from ..investor_relations import normalize_company_name
 from ..official_fundamentals import apply_official_fundamentals_map
 from ..official_statements import apply_official_statements_map, fieldwise_overlay_enabled
+from .. import valuation_cvm_overlay_shadow as cvm_shadow_module
+from ..valuation_env import cvm_overlay_shadow_enabled
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
@@ -27,6 +31,15 @@ from ..valuation_policy import (
 
 
 logger = logging.getLogger(__name__)
+
+# The valuation cut of a row-preparation REPLAY (the CVM overlay shadow): unset — the served path — every clock read
+# below is the wall clock, exactly as before; set, the date-level ages and the insider lookback read the cut the served
+# pass recorded, so the shadow's three variants and the served rows are valued at one instant (``_prepare_rows``).
+_VALUATION_CUT: ContextVar[datetime | None] = ContextVar("b3_valuation_cut", default=None)
+
+
+def _valuation_now() -> datetime:
+    return _VALUATION_CUT.get() or datetime.now(timezone.utc)
 
 UNIVERSE_LIMIT = 350
 CATALOG_FETCH_LIMIT = 700
@@ -160,23 +173,17 @@ def signed_percentile(values: list[float], fraction: float, fallback: float = 0.
     return clean[lower] * (1 - weight) + clean[upper] * weight
 
 
-def robust_weighted_mean(values: dict[str, float], weights: dict[str, float]) -> float:
-    usable = {name: value for name, value in values.items() if value > 0 and weights.get(name, 0.0) > 0}
-    if not usable:
-        return 0.0
-    center = statistics.median(usable.values())
-    normalized = {name: clamp(value, center * 0.70, center * 1.30) for name, value in usable.items()}
-    total_weight = sum(weights[name] for name in normalized)
-    return sum(value * weights[name] for name, value in normalized.items()) / total_weight
-
-
 def batches(values: list[str], size: int = BATCH_SIZE) -> list[list[str]]:
     return [values[index:index + size] for index in range(0, len(values), size)]
 
 
 class B3ScreenerService:
-    def __init__(self, settings: Settings, database: Database, http: JsonHttpClient) -> None:
+    def __init__(self, settings: Settings, database: Database, http: JsonHttpClient, *, nightly_cvm_shadow: bool = False) -> None:
         self.settings = settings
+        # the CVM field-wise overlay shadow runs only in the valuation worker's nightly build (and only under its switch):
+        # never in another process's full build, never in refresh_symbols' cold build
+        self._nightly_cvm_shadow = nightly_cvm_shadow
+        self._cvm_shadow_suppressed = False
         self.database = database
         self.http = http
         self._lock = RLock()
@@ -215,7 +222,7 @@ class B3ScreenerService:
             with self._lock:
                 now = datetime.now(timezone.utc)
                 self._load_calibration_factors()
-                response = self._build(now)
+                response = self._build(now, cvm_shadow=self._nightly_cvm_shadow and not self._cvm_shadow_suppressed)
                 self._cached = response
                 self._cache_expires_at = None
                 return response
@@ -359,7 +366,11 @@ class B3ScreenerService:
         with self._lock:
             self._hydrate_persisted_state(force=True)
             if not self._matrix_rows:
-                self.screen(refresh=True)
+                self._cvm_shadow_suppressed = True  # a cold full build on behalf of a few symbols is not the nightly cycle
+                try:
+                    self.screen(refresh=True)
+                finally:
+                    self._cvm_shadow_suppressed = False
             existing_symbols = {str(row.get("symbol") or "") for row in self._matrix_rows}
             for symbol in clean_symbols:
                 self._eodhd_cache.pop(symbol, None)
@@ -554,7 +565,7 @@ class B3ScreenerService:
                 if number(factor) is not None
             }
 
-    def _build(self, generated_at: datetime) -> B3CandidateResponse:
+    def _build(self, generated_at: datetime, *, cvm_shadow: bool = False) -> B3CandidateResponse:
         if not self.settings.brapi_token:
             raise RuntimeError("Brapi credential is not configured")
 
@@ -604,10 +615,12 @@ class B3ScreenerService:
             historical_map = self._historical_map(symbols)
             eodhd_map: dict[str, dict[str, Any]] = {}
             eodhd_receipts: dict[str, datetime] = {}
+            # C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW (default off): the same EODHD payloads, overlaid field by field too
+            cvm_capture = cvm_shadow_module.ShadowCapture() if cvm_shadow and cvm_overlay_shadow_enabled() else None
             if self.settings.eodhd_api_token and symbols:
                 # EODHD must run before the quality gate so it can rescue missing
                 # Brapi fields instead of only confirming rows that already passed.
-                eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts(symbols)  # payload and receipt from the same pairs
+                eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts(symbols, shadow=cvm_capture)  # payload and receipt from the same pairs
                 missing_history = [
                     symbol for symbol in symbols
                     if historical_map.get(symbol, {}).get("history_days", 0) < MIN_HISTORY_DAYS
@@ -639,12 +652,13 @@ class B3ScreenerService:
             reference_brapi_at = datetime.now(timezone.utc)  # FACT: brapi's financial data for the reference units received
             reference_receipts: dict[str, datetime] = {}
             if self.settings.eodhd_api_token and reference_quotes:
-                reference_eodhd, reference_receipts = self._eodhd_fundamentals_with_receipts(list(reference_quotes))
+                reference_eodhd, reference_receipts = self._eodhd_fundamentals_with_receipts(list(reference_quotes), shadow=cvm_capture)
                 eodhd_map.update(reference_eodhd)
                 eodhd_receipts.update(reference_receipts)  # a unit re-read here overwrites BOTH maps from the same pairs (never payload2 with receipt1)
             consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map,
                                                                   consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": reference_receipts})
             coverage_audit: dict[str, int] = {}
+            served_inputs: dict[str, Any] | None = {} if cvm_capture is not None else None  # recorded for the shadow's replays
             rows = self._prepare_rows(
                 catalog,
                 quotes,
@@ -656,6 +670,7 @@ class B3ScreenerService:
                 consensus_references,
                 coverage_audit=coverage_audit,
                 consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
+                row_inputs=served_inputs,
             )
             sector_audit, sector_counts = self._sector_coverage_audit(catalog, eodhd_map)
             coverage_audit.update(sector_counts)
@@ -680,7 +695,65 @@ class B3ScreenerService:
         methodology_id = self._persist_universe(generated_at, macro)  # the cycle is published (records → generation) BEFORE anything is served
         response = self._candidate_response(generated_at, len(symbols), rows, macro)
         self._persist_candidates(response, macro, methodology_id)
+        if cvm_capture is not None:  # after the served cycle and its candidates: the shadow can only add a snapshot of its own
+            self._persist_cvm_overlay_shadow(
+                cvm_capture,
+                generated_at=generated_at,
+                served_rows=rows,
+                universe_symbols=symbols,
+                prepare_inputs=(catalog, quotes, statistics_map, financial_map, historical_map, macro),
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
+                references=(reference_quotes, reference_financial, {"brapi": reference_brapi_at, "eodhd": reference_receipts}),
+                served_inputs=served_inputs or {},
+            )
         return response
+
+    def _persist_cvm_overlay_shadow(
+        self,
+        capture: "cvm_shadow_module.ShadowCapture",
+        *,
+        generated_at: datetime,
+        served_rows: list[dict[str, Any]],
+        universe_symbols: list[str],
+        prepare_inputs: tuple[Any, ...],
+        consensus_fetched_at: dict[str, Any],
+        references: tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, Any]],
+        served_inputs: dict[str, Any],
+    ) -> None:
+        """The CVM field-wise overlay shadow of this cycle (``valuation_cvm_overlay_shadow``): the universe valued again —
+        same catalog, quotes, Brapi data, history, macro and consensus receipts — over the field-wise overlay of the very
+        EODHD payloads the served build consumed, then ONE aggregate snapshot. Nothing served, recorded or cached changes;
+        any failure is logged and swallowed (the served cycle is already published)."""
+        try:
+            if capture.failure is not None:
+                logger.warning("CVM field-wise overlay shadow skipped this cycle: overlaying failed (%s)", capture.failure)
+                return
+            if capture.statements_as_of is None:  # no EODHD payload was consumed (no token, no symbol): nothing to compare
+                logger.warning("CVM field-wise overlay shadow skipped this cycle: the build consumed no EODHD fundamentals")
+                return
+            catalog, quotes, statistics_map, financial_map, historical_map, macro = prepare_inputs
+            reference_quotes, reference_financial, reference_fetched_at = references
+
+            def valued(fundamentals: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+                references_rows = self._consensus_reference_rows(reference_quotes, reference_financial, fundamentals,
+                                                                 consensus_fetched_at=reference_fetched_at)
+                return self._prepare_rows(catalog, quotes, statistics_map, financial_map, historical_map, macro, fundamentals,
+                                          references_rows, consensus_fetched_at=consensus_fetched_at, row_inputs=served_inputs)
+
+            # the three variants in ONE call, on the served pass's own store reads and cut (IR events, insider activity,
+            # the instant): before (the served fundamentals, recomputed here and compared with the published rows —
+            # internal TP, buy-in and status), the cash-flow fix alone (no CVM row) and after (the field-wise overlay)
+            before_rows = valued(dict(capture.served))
+            cash_flow_fix_rows = valued(dict(capture.cash_flow_fixed))
+            after_rows = valued(dict(capture.shadow))
+            outputs = cvm_shadow_module.build_shadow_outputs(
+                capture, served_rows=served_rows, before_rows=before_rows, cash_flow_fix_rows=cash_flow_fix_rows, after_rows=after_rows,
+                universe_symbols=universe_symbols, cycle_id=getattr(self, "_published_cycle_id", None), basis_at=generated_at,
+                producer_build_sha=os.environ.get("C3PO_BUILD_SHA"),  # the build of THIS process, the one that computed the aggregate
+            )
+            cvm_shadow_module.save_shadow_snapshot(self.database, outputs, published_at=datetime.now(timezone.utc))
+        except Exception:
+            logger.exception("CVM field-wise overlay shadow failed; the served B3 cycle is unaffected")
 
     def _candidate_response(
         self,
@@ -715,7 +788,7 @@ class B3ScreenerService:
                 "valuation": "Sector-adapted DCF, earnings, relative, residual/dividend and public-consensus methods reconciled across Brapi and EODHD All-In-One",
                 "score": "Power Score: 35% return, 25% inverse risk, 15% quality, 15% confidence, 10% entry",
                 "tp_upside": f"C3PO TP upside >= Selic + 6 p.p. = {tp_upside_cutoff:.1f}%",
-                "entry": "Weighted median of five framework buy-ins, capped by the shared return hurdle; price distance <= 15%",
+                "entry": "Lower of the entry-return hurdle and the 60-session market-structure entry; price distance <= 15%",
                 "risk": f"Risk <= min(40, eligible-universe median) = {risk_cutoff:.1f}/100",
             "confidence": f"Validated TP only: score >= {MIN_TP_VALIDATION_SCORE:.0f}/100, confidence >= {MIN_VALUATION_CONFIDENCE:.0f}, dispersion <= {MAX_METHOD_DISPERSION:.0f}%, two sources, quarterly fundamentals <= {MAX_FUNDAMENTALS_AGE_DAYS} days and internal/consensus gap <= {MAX_TP_CONSENSUS_GAP:.0f}%",
             },
@@ -730,12 +803,19 @@ class B3ScreenerService:
     def _eodhd_fundamental_map(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
         return self._eodhd_fundamentals_with_receipts(symbols)[0]
 
-    def _eodhd_fundamentals_with_receipts(self, symbols: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, datetime]]:
+    def _eodhd_fundamentals_with_receipts(
+        self,
+        symbols: list[str],
+        *,
+        shadow: "cvm_shadow_module.ShadowCapture | None" = None,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, datetime]]:
         """EODHD fundamentals for ``symbols`` AND the receipt instant of each — the instant the provider's answer carrying
         that payload arrived (a cache read keeps it; a failed re-fetch keeps the old pair). Payload and receipt are ONE
         immutable pair per symbol, installed by a single assignment after the answer arrives and read as one object, so
         the receipt a row is stamped with belongs to the payload the row consumed even when a targeted build installs a
-        newer answer concurrently (F398-2). Symbols never received are absent from both maps: no instant is invented."""
+        newer answer concurrently (F398-2). Symbols never received are absent from both maps: no instant is invented.
+        ``shadow`` (the nightly build, under C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW) also receives these very payloads
+        overlaid field by field; it never raises and never changes what is returned."""
         now = datetime.now(timezone.utc)
         clean_symbols = list(dict.fromkeys(symbol.upper() for symbol in symbols if symbol))
         cache_is_fresh = bool(self._eodhd_cache_expires_at and now < self._eodhd_cache_expires_at)
@@ -762,8 +842,12 @@ class B3ScreenerService:
         cache = self._eodhd_cache  # one attribute load: a concurrent expiry rebinding the dict cannot split the reads below
         entries = {symbol: entry for symbol in clean_symbols if (entry := cache.get(symbol)) is not None}  # one dict read per symbol: the pair
         # C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED (default off): complete CVM statements overlaid field by field
-        overlay = apply_official_statements_map if fieldwise_overlay_enabled() else apply_official_fundamentals_map
-        fundamentals = overlay(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
+        fieldwise = fieldwise_overlay_enabled()
+        overlay = apply_official_statements_map if fieldwise else apply_official_fundamentals_map
+        payloads = {symbol: entry[0] for symbol, entry in entries.items()}
+        fundamentals = overlay(self.database, payloads, market="B3")
+        if shadow is not None:
+            shadow.add(self.database, payloads, fundamentals, served_overlay="fieldwise" if fieldwise else "legacy", market="B3")
         return fundamentals, {symbol: entry[1] for symbol, entry in entries.items()}
 
     def _eodhd_receipts(self, symbols: list[str]) -> dict[str, datetime]:
@@ -1189,6 +1273,36 @@ class B3ScreenerService:
         enforce_screening_gates: bool = True,
         enforce_quality_gate: bool = True,
         consensus_fetched_at: dict[str, Any] | None = None,  # per provider: brapi = one receipt instant for this build; eodhd = per-symbol receipts (cached) — facts, never the cycle clock (PROMO-2 c)
+        row_inputs: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """``row_inputs`` (the CVM overlay shadow only): an EMPTY dict RECORDS what this pass read from the store and the
+        clock — the IR events, the insider activity and the cut instant; a filled one REPLAYS them, with the cut set for
+        every date-level age of the pass. ``None`` (every served caller) reads as always."""
+        if row_inputs:
+            token = _VALUATION_CUT.set(row_inputs["cut"])
+            try:
+                return self._prepare_rows_at(catalog, quotes, stats, financial, history, macro, eodhd, consensus_references, coverage_audit,
+                                             enforce_screening_gates, enforce_quality_gate, consensus_fetched_at, row_inputs)
+            finally:
+                _VALUATION_CUT.reset(token)
+        return self._prepare_rows_at(catalog, quotes, stats, financial, history, macro, eodhd, consensus_references, coverage_audit,
+                                     enforce_screening_gates, enforce_quality_gate, consensus_fetched_at, row_inputs)
+
+    def _prepare_rows_at(
+        self,
+        catalog: list[dict[str, Any]],
+        quotes: dict[str, Any],
+        stats: dict[str, dict[str, Any]],
+        financial: dict[str, dict[str, Any]],
+        history: dict[str, dict[str, float]],
+        macro: dict[str, float],
+        eodhd: dict[str, dict[str, Any]] | None,
+        consensus_references: list[dict[str, Any]] | None,
+        coverage_audit: dict[str, int] | None,
+        enforce_screening_gates: bool,
+        enforce_quality_gate: bool,
+        consensus_fetched_at: dict[str, Any] | None,
+        row_inputs: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
         eodhd = eodhd or {}
         if coverage_audit is not None:
@@ -1201,10 +1315,16 @@ class B3ScreenerService:
 
         rows: list[dict[str, Any]] = []
         catalog_symbols = [str(item.get("symbol", "")).upper() for item in catalog if item.get("symbol")]
-        ir_events = self.database.latest_valuation_ir_events(catalog_symbols, market="B3")
-        insider_activity = self.database.insider_transaction_activity(
-            catalog_symbols, "B3", datetime.now(timezone.utc) - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS),
-        )
+        if row_inputs:  # a replay: the served pass's reads, never re-read (an IR update in between is not the CVM's doing)
+            ir_events, insider_activity = row_inputs["ir_events"], row_inputs["insider_activity"]
+        else:
+            cut = _valuation_now()
+            ir_events = self.database.latest_valuation_ir_events(catalog_symbols, market="B3")
+            insider_activity = self.database.insider_transaction_activity(
+                catalog_symbols, "B3", cut - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS),
+            )
+            if row_inputs is not None:
+                row_inputs.update({"cut": cut, "ir_events": ir_events, "insider_activity": insider_activity})
         for item in catalog:
             symbol = str(item.get("symbol", "")).upper()
             quote = quotes.get(symbol)
@@ -1637,7 +1757,7 @@ class B3ScreenerService:
             try:
                 consensus_date = date.fromisoformat(official["as_of"])
                 consensus_age = (
-                    datetime.now(ZoneInfo("America/Sao_Paulo")).date() - consensus_date
+                    _valuation_now().astimezone(ZoneInfo("America/Sao_Paulo")).date() - consensus_date
                 ).days
             except (TypeError, ValueError):
                 continue
@@ -2222,11 +2342,7 @@ class B3ScreenerService:
             method_dispersion=method_dispersion,
         )
 
-        dynamic_required_return = clamp(macro.get("selic", 0.145), 0.07, 0.20) + 0.02
         expected_dividend = row["price"] * dividend_yield if dividend_yield and 0 < dividend_yield <= 0.20 else 0.0
-        risk_premium = clamp(risk_score / 100 * 0.08, 0.0, 0.08)
-        confidence_penalty = clamp((100 - valuation_confidence) / 100 * 0.06, 0.0, 0.06)
-        valuation_discount = 1 + dynamic_required_return + risk_premium + confidence_penalty
         entry_return_hurdle = self._entry_return_hurdle_percent(macro)
         sustainable_growth = self._sustainable_growth(profile, growth)
         convergence_years = 3.0 if valuation_confidence >= MIN_VALUATION_CONFIDENCE and method_dispersion <= MAX_METHOD_DISPERSION else 5.0
@@ -2240,18 +2356,15 @@ class B3ScreenerService:
         quarterly_drawdown = clamp(annual_volatility * math.sqrt(63 / 252), 0.10, 0.30)
         technical_floor = (row.get("last_close") or row["price"]) * (1 - quarterly_drawdown)
         technical_entry = max(raw_technical_entry, technical_floor)
-        # The entry rule is applied to ONE target price (`_entry_from_tp`): to the blend, as always (bit for bit the same
-        # buy-in and models as before the extraction), and — Passo 1, official_internal_v1 — to the INTERNAL TP, so the
-        # internal record carries a buy-in derived by the same rule without recomputing any method.
+        # The entry rule is applied to ONE target price (`_entry_from_tp`): to the blend, and — Passo 1, official_internal_v1 —
+        # to the INTERNAL TP, so the internal record carries a buy-in derived by the same rule without recomputing any method.
         buy_in, buy_in_models = self._entry_from_tp(
-            our_tp, normalized_methods, valuation_discount=valuation_discount, dynamic_required_return=dynamic_required_return,
-            risk_premium=risk_premium, confidence_penalty=confidence_penalty, expected_dividend=expected_dividend,
-            sustainable_growth=sustainable_growth, entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
+            our_tp, expected_dividend=expected_dividend, sustainable_growth=sustainable_growth,
+            entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
         )
         internal_buy_in, internal_buy_in_models = self._entry_from_tp(
-            internal_tp, normalized_methods, valuation_discount=valuation_discount, dynamic_required_return=dynamic_required_return,
-            risk_premium=risk_premium, confidence_penalty=confidence_penalty, expected_dividend=expected_dividend,
-            sustainable_growth=sustainable_growth, entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
+            internal_tp, expected_dividend=expected_dividend, sustainable_growth=sustainable_growth,
+            entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
         )
         upside = (our_tp / row["price"] - 1) * 100
         total_return = self._expected_12m_return(
@@ -2356,51 +2469,21 @@ class B3ScreenerService:
     @staticmethod
     def _entry_from_tp(
         tp: float,
-        methods: dict[str, float],
         *,
-        valuation_discount: float,
-        dynamic_required_return: float,
-        risk_premium: float,
-        confidence_penalty: float,
         expected_dividend: float,
         sustainable_growth: float,
         entry_return_hurdle: float,
         technical_entry: float,
     ) -> tuple[float, dict[str, float]]:
-        """The disciplined buy-in the B3 producer derives from ONE target price, and its models: the three models that
-        discount a method (Morgan Stanley / JPMorgan / Goldman Sachs) do not depend on the TP; Bridgewater, BlackRock and
-        the Return Hurdle do; Market Structure is technical. ``buy_in = min(framework, hurdle, technical)``. Extracted
-        from ``_value_row`` unchanged (same operations, same order — the blend's buy-in is bit for bit what it was) so that
-        Passo 1 can apply the SAME rule to the internal TP (``official_internal_v1``) without recomputing a method."""
-        earnings_base = methods.get("earnings") or methods.get("cycle_earnings")
-        enterprise_base = methods.get("enterprise") or methods.get("cycle_enterprise")
-        goldman_base = enterprise_base or methods.get("book") or earnings_base
-        buy_in_models: dict[str, float] = {}
-        if methods.get("dcf"):
-            buy_in_models["Morgan Stanley"] = methods["dcf"] / valuation_discount
-        if earnings_base:
-            buy_in_models["JPMorgan"] = earnings_base / valuation_discount
-        if goldman_base:
-            buy_in_models["Goldman Sachs"] = goldman_base / valuation_discount
-        buy_in_models["Bridgewater"] = tp / (
-            1 + dynamic_required_return + risk_premium * 1.50 + confidence_penalty
-        )
-        buy_in_models["BlackRock"] = (tp + expected_dividend) / (
-            1 + dynamic_required_return + risk_premium * 0.50 + confidence_penalty * 0.50
-        )
-        framework_weights = {
-            "Morgan Stanley": 0.30,
-            "JPMorgan": 0.25,
-            "Goldman Sachs": 0.20,
-            "Bridgewater": 0.15,
-            "BlackRock": 0.10,
-        }
-        framework_entry = robust_weighted_mean(buy_in_models, framework_weights)
+        """The disciplined buy-in the B3 producer derives from ONE target price, and its two models:
+        ``buy_in = min(return hurdle, market structure)``. The Return Hurdle discounts the forward TP plus the expected
+        dividend by the entry-return hurdle; Market Structure is the technical (60-session) entry and does not depend on
+        the TP. Owner order of 20/10/2026: no other entry criterion exists (the former weighted framework model was
+        removed). Passo 1 applies the SAME rule to the internal TP (``official_internal_v1``) without recomputing a method."""
         forward_tp = tp * (1 + sustainable_growth)
         hurdle_entry = (forward_tp + expected_dividend) / (1 + entry_return_hurdle / 100)
-        buy_in_models["Market Structure"] = technical_entry
-        buy_in_models["Return Hurdle"] = hurdle_entry
-        return min(framework_entry, hurdle_entry, technical_entry), buy_in_models
+        buy_in_models: dict[str, float] = {"Market Structure": technical_entry, "Return Hurdle": hurdle_entry}
+        return min(hurdle_entry, technical_entry), buy_in_models
 
     @staticmethod
     def _validate_target_price(
@@ -2489,7 +2572,7 @@ class B3ScreenerService:
             fundamentals_date = date.fromisoformat(str(value)[:10])
         except ValueError:
             return None
-        return max((datetime.now(ZoneInfo("America/Sao_Paulo")).date() - fundamentals_date).days, 0)
+        return max((_valuation_now().astimezone(ZoneInfo("America/Sao_Paulo")).date() - fundamentals_date).days, 0)
 
     @staticmethod
     def _ir_freshness(fundamentals_as_of: Any, event: dict[str, Any] | None) -> dict[str, Any]:
@@ -3103,7 +3186,7 @@ class B3ScreenerService:
             "sector_taxonomy": "Every B3 issuer is classified nightly using EODHD GICS/industry, cross-checked with Brapi and reviewed C3PO overrides. Relative valuation uses the narrowest peer group with at least four eligible companies, then canonical sector, then valuation profile.",
             "target_price": "Sector-adapted internal valuation blended with 20%-35% normalized public consensus. A second validation layer rejects the TP unless methods converge, Brapi and EODHD agree, fundamentals are fresh and the internal/public-consensus gap is within 40%.",
             "cvm_first": "Official CVM/SEC/RI disclosures enrich valuation inputs and remain visible in the audit trail. A pending disclosure never excludes a security from Candidates, Jedi Force or One Pager by itself.",
-            "buy_in": "Winsorized risk- and confidence-adjusted weighted mean of Morgan Stanley 30%, JPMorgan 25%, Goldman Sachs 20%, Bridgewater 15% and BlackRock 10%, capped by both the entry-return hurdle and a 60-session market-structure entry.",
+            "buy_in": "Lower of two entries: the entry-return hurdle (forward TP plus expected dividend, discounted by the hurdle) and a 60-session market-structure entry.",
             "cadence": "Full screening and valuation basis recompute once daily at 00:00 America/Sao_Paulo; intraday requests reuse the PostgreSQL snapshot.",
             "learning": "Rolling 90-day calibration measures forecast bias and directional accuracy by valuation profile. Adjustments require minimum samples and are capped at +/-5%.",
             "score_weights": {
@@ -3126,7 +3209,7 @@ class B3ScreenerService:
         # response/basis clock) which precedes those answers. _matrix_basis_at follows it (staleness compares like with like).
         published_at = datetime.now(timezone.utc)
         self._matrix_basis_at = published_at
-        self.database.save_analysis_snapshot(
+        self._published_cycle_id = self.database.save_analysis_snapshot(
             "valuation_universe",
             "B3_UNIVERSE",
             methodology_id,
