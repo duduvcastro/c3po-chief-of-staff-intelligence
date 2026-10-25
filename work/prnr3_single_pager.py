@@ -102,7 +102,9 @@ def build_single_pager_data():
     multiples = ms.fetch_candidate_multiples(TICKER, SYMBOL, "")
     price_context = ms.fetch_candidate_price_context(SYMBOL)
     model = ms.candidate_modeled_target_snapshot(item, price, consensus_value, multiples, price_context)
-    base_our_tp = model.get("target_value") or consensus_value
+    base_our_tp = model.get("target_value")  # the internal TP only: never the consensus (owner order 20/10/2026)
+    if base_our_tp is None:
+        raise SystemExit(f"{TICKER}: no internal TP (price unavailable); the consensus is never used as the TP")
     our_tp = base_our_tp * (1 + PREVIEW_2T26["tp_adjustment"])
     buy_in = ms.candidate_buy_in_value(TICKER, price, our_tp, price_context, multiples)
     summary_snapshot = ms.latest_summary_candidate_snapshot(TICKER)
@@ -766,14 +768,9 @@ def priner_ev_ebitda_display(data):
 
 
 def method_display_name(name):
-    mapping = {
-        "Goldman-style screener": "Goldman Sachs",
-        "Morgan Stanley-style DCF": "Morgan Stanley",
-        "Bridgewater-style risk": "Bridgewater",
-        "JPMorgan-style earnings": "JPMorgan",
-        "BlackRock-style portfolio": "BlackRock",
-    }
-    return mapping.get(name, name.replace("-style", ""))
+    """The method's label as the model names it: the neutral labels of the One Pager (since 2026-08-20). Owner order of
+    20/10/2026: no house name is ever displayed, so no house-attributed mapping exists here."""
+    return name
 
 
 def valuation_method_row(name, value, max_method, min_method):

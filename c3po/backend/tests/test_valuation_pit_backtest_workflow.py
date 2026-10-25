@@ -151,6 +151,29 @@ def _verify_order(root: Path, digest: str, **env: str) -> subprocess.CompletedPr
     return _python(ORDER_STEP, str(root), env={**base, **env})
 
 
+def test_the_owners_order_may_name_a_sub_range_for_a_recompute_that_spans_chunks(tmp_path: Path) -> None:
+    # 24/10/2026: the complete grid was VOID (statements_table_not_stable); its recompute needs more than one chunk, and a
+    # recompute always restarts at the grid's first session — the order (never a dispatch input) names where to resume
+    output = tmp_path / "output"
+    root, digest = _order(tmp_path / "r", recompute_existing=True, from_session="2023-01-03", to_session="2025-06-17")
+    result = _verify_order(root, digest, RECOMPUTE="true", GITHUB_OUTPUT=str(output))
+    assert result.returncode == 0, result.stderr
+    assert output.read_text(encoding="utf-8") == "from_session=2023-01-03\nto_session=2025-06-17\n"
+    plain_root, plain = _order(tmp_path / "p")
+    output.unlink()
+    assert _verify_order(plain_root, plain, GITHUB_OUTPUT=str(output)).returncode == 0
+    assert output.read_text(encoding="utf-8") == "from_session=\nto_session=\n"  # no sub-range: the whole grid
+    for changes, message in (({"from_session": "2023-1-3"}, "from_session is not a YYYY-MM-DD date"),
+                             ({"to_session": 20250617}, "to_session is not a YYYY-MM-DD date"),
+                             ({"from_session": "2025-06-18", "to_session": "2025-06-17"}, "from_session is after its to_session")):
+        bad_root, bad = _order(tmp_path / message[:4], recompute_existing=True, **changes)
+        refused = _verify_order(bad_root, bad, RECOMPUTE="true")
+        assert refused.returncode != 0 and message in refused.stderr, (changes, refused.stderr)
+    host = _step("Run on the host")
+    assert host["env"]["FROM_SESSION"] == "${{ steps.order.outputs.from_session }}" and "--from \"$FROM_SESSION\"" in host["run"]
+    assert host["env"]["TO_SESSION"] == "${{ steps.order.outputs.to_session }}" and "--to \"$TO_SESSION\"" in host["run"]
+
+
 def test_the_owners_order_binds_the_mode_the_pins_the_flag_the_cap_and_the_deadline(tmp_path: Path) -> None:
     root, digest = _order(tmp_path)
     accepted = _verify_order(root, digest)

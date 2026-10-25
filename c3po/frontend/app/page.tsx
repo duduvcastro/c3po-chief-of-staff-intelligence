@@ -5949,7 +5949,7 @@ function CandidatesView({ reports, marketProviders }: { reports: ReportItem[]; m
           <div><span>TP upside gate</span><strong>{screen?.criteria.tp_upside ?? "C3PO TP upside >= Selic + 6 p.p."}</strong></div>
           <div><span>Risk gate</span><strong>{screen?.criteria.risk ?? "Below eligible-universe median"}</strong></div>
           <div><span>Confidence gate</span><strong>{screen?.criteria.confidence ?? "Confidence and method agreement"}</strong></div>
-          <div><span>Buy-in framework</span><strong>Five institutional lenses + market structure</strong></div>
+          <div><span>Buy-in rule</span><strong>{screen?.criteria.entry ?? "Lower of the return-hurdle and market-structure entries"}</strong></div>
           <div><span>Valuation model</span><strong>Five sector-adapted methods</strong></div>
           <div><span>Power Score weights</span><strong>{screen?.criteria.score ?? "Return · risk · quality · confidence · entry"}</strong></div>
           <div><span>Published snapshots</span><strong>{reports.filter((report) => report.name.includes("summary")).length}</strong></div>
