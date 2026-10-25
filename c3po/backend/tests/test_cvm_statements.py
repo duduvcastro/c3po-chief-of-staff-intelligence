@@ -81,6 +81,11 @@ def test_own_filing_wins_over_restated_comparative_and_latest_version_dates_publ
     # the Q2 ITR comparative restated last year's first half (+5); the as-filed Q2 of last year stays 110
     assert income[f"{PREVIOUS}-06-30"]["totalRevenue"] == 110_000
     documents = payload["official_metrics"]["periodDocuments"]
+    # every version a figure of 2Q was read from: the restated 2Q ITR (v2) and the 1Q ITR its cumulatives were differenced against
+    assert documents[f"{YEAR}-06-30"].pop("contributing") == [
+        {"document": "ITR", "referenceDate": f"{YEAR}-03-31", "version": 1, "receivedOn": f"{YEAR}-04-10"},
+        {"document": "ITR", "referenceDate": f"{YEAR}-06-30", "version": 2, "receivedOn": f"{YEAR}-08-02"},
+    ]
     assert documents[f"{YEAR}-06-30"] == {
         "document": "ITR", "referenceDate": f"{YEAR}-06-30", "version": 2,
         "sourceUrl": f"https://example.invalid/itr/{YEAR}.zip", "receivedOn": f"{YEAR}-08-02",
