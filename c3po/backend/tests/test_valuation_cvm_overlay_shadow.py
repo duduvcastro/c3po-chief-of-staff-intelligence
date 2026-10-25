@@ -630,11 +630,13 @@ def test_an_ir_update_between_the_served_pass_and_the_shadow_is_never_attributed
     # only the one name the CVM rows (and the cash-flow fix) touch can move; the update moves no other buy-in
     assert aggregate["internal_buy_in"]["changed"] <= 1 and aggregate["cash_flow_fix_internal_tp"]["changed"] <= 1
 
-    # the same update re-read by the shadow (the defect) would move every buy-in: proven by replaying the variants unrecorded
+    # the same update re-read by the shadow (the defect) would move every risk score: proven by replaying the variants
+    # unrecorded. Since #467 (no house-framework entry) the buy-in no longer reads the risk score, so the risk score itself
+    # is the witness of the re-read
     replayed = service._prepare_rows(*_shadow_inputs(service), row_inputs=None)
     assert state["reads_after_update"] == 2
     served = {row["symbol"]: row for row in service._matrix_rows}
-    moved = sum(1 for row in replayed if abs(row["internal_buy_in"] / served[row["symbol"]]["internal_buy_in"] - 1) > 1e-9)
+    moved = sum(1 for row in replayed if abs(row["risk_score"] - served[row["symbol"]]["risk_score"]) > 1e-9)
     assert moved > 1
 
 
