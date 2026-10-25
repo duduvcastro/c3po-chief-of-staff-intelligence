@@ -922,3 +922,410 @@ def test_failed_cycle_replaces_transient_blockers_but_preserves_anchors(tmp_path
     for key in ("image_drift_since", "deploy_lag_since", "npm_lag_since", "deployed_at",
                 "last_dispatched_deploy", "last_dispatched_deploy_at"):
         assert failed[key] == previous[key]
+
+
+class _ApprovalGH:
+    """Representative bot run: completed/action_required and empty PR links."""
+
+    def __init__(self):
+        self.main, self.sha = "a" * 40, "b" * 40
+        self.base = files()
+        output, applied, blocked = deps.prepare(self.base, [alert()])
+        self.head = {p: v for p, v in output.items() if self.base[p] != v}
+        self.head[deps.RECEIPT] = json.dumps({"schema": "C3PO_DEPENDENCY_REMEDIATION-v1",
+            "base_sha": self.main, "applied": applied, "blocked": blocked})
+        self.changed = [{"filename": p, "status": "added" if p == deps.RECEIPT else "modified"} for p in self.head]
+        self.pr = {"number": 17, "state": "open", "draft": False, "user": {"login": "github-actions[bot]"},
+            "head": {"sha": self.sha, "ref": "automation/dependency-security-daily",
+                     "repo": {"id": daily.REPO_ID, "full_name": daily.REPO}},
+            "base": {"ref": "main", "repo": {"id": daily.REPO_ID}}}
+        self.associations = None
+        self.run = {"id": 100, "run_attempt": 1, "head_sha": self.sha,
+            "head_branch": self.pr["head"]["ref"], "event": "pull_request", "workflow_id": 55,
+            "path": ".github/workflows/c3po-pipeline.yml", "status": "completed", "conclusion": "action_required",
+            "repository": {"id": daily.REPO_ID}, "head_repository": {"id": daily.REPO_ID}, "pull_requests": []}
+        self.proofs = [{"id": 90, "run_attempt": 1, "head_sha": self.sha, "event": "workflow_dispatch",
+                        "head_branch": self.pr["head"]["ref"], "status": "completed", "conclusion": "success"}]
+        self.extra_runs = []
+        self.jobs = [{"name": name, "conclusion": "success", "status": "completed", "run_id": 90,
+                      "head_sha": self.sha} for name in daily.REQUIRED_JOBS]
+        self.writes, self.reads = [], []
+        self.post_error = self.post_result = None
+        self.on_read = lambda _path: None
+
+    def clone(self, value):
+        return json.loads(json.dumps(value))
+
+    def request(self, path, method="GET", body=None):
+        if method != "GET":
+            assert method == "POST" and body is None
+            assert path in {f"/actions/runs/{run['id']}/approve" for run in [self.run, *self.extra_runs]}
+            self.writes.append((method, path))
+            if self.post_error:
+                raise self.post_error
+            return self.post_result
+        self.reads.append(path)
+        self.on_read(path)
+        if path == "/git/ref/heads/main":
+            return {"object": {"sha": self.main}}
+        if path == "/pulls/17":
+            return self.clone(self.pr)
+        if path == "/actions/runs/100":
+            return self.clone(self.run)
+        for run in self.proofs + self.extra_runs:
+            if path == f"/actions/runs/{run['id']}":
+                return self.clone(run)
+        for number, filename in enumerate(sorted(daily.CI_APPROVAL_WORKFLOWS), 54):
+            if path == "/actions/workflows/" + filename:
+                return {"id": number, "path": ".github/workflows/" + filename, "state": "active"}
+        raise AssertionError(path)
+
+    def pages(self, path, key=None):
+        if path == "/pulls?state=open&base=main":
+            return [self.clone(self.pr)]
+        if path == "/pulls/17/files":
+            return self.clone(self.changed)
+        if path == f"/commits/{self.sha}/pulls":
+            return self.clone([self.pr] if self.associations is None else self.associations)
+        if "event=workflow_dispatch" in path:
+            return self.clone(self.proofs)
+        if path == "/actions/runs/90/attempts/1/jobs":
+            return self.clone(self.jobs)
+        if path.startswith("/actions/workflows/") and "event=pull_request" in path:
+            runs = [self.run, *self.extra_runs]
+            if "status=action_required" in path:
+                runs = [run for run in runs if daily._requires_approval(run)]
+            return self.clone(runs) if "/" + self.run["path"].rsplit("/", 1)[1] + "/" in path else []
+        raise AssertionError(path)
+
+    def file(self, path, sha):
+        return self.base[path] if sha == "a" * 40 else self.head[path]
+
+    def approve(self, history, checkpoint=lambda: None, may_write=lambda: True, window_open=lambda: True):
+        return daily.approve_ci(self, [alert()], "a" * 40, {}, history,
+                                datetime(2026, 10, 24, 10, tzinfo=timezone.utc), checkpoint, may_write,
+                                window_open=window_open)
+
+
+def test_ci_approval_uses_exact_dispatch_attempt_and_journals_bodyless_acceptance():
+    gh, history, snapshots = _ApprovalGH(), [], []
+    def checkpoint():
+        snapshots.append(gh.clone(history))
+        if history[-1]["state"] == "intent":
+            assert not gh.writes
+    assert gh.approve(history, checkpoint) == ("waiting_ci_approval", 17, [])
+    assert gh.writes == [("POST", "/actions/runs/100/approve")]
+    assert [s[-1]["state"] for s in snapshots] == ["intent", "accepted"]
+    assert history[-1]["run_attempt"] == 1 and history[-1]["head_sha"] == gh.sha
+    assert gh.reads.count("/actions/runs/90") == 3
+    assert gh.approve(history) == ("waiting_ci_approval", 17, [])
+    assert len(gh.writes) == 1
+
+
+@pytest.mark.parametrize("problem", ["human", "fork", "draft", "closed", "base", "prefix", "extra_file",
+    "renamed", "injected_content", "ambiguous_pr", "wrong_event", "wrong_workflow", "wrong_sha", "wrong_branch",
+    "wrong_repo", "proof_failure", "proof_skipped", "proof_missing_job", "proof_old_sha", "proof_new_failure"])
+def test_ci_approval_rejects_untrusted_candidates_and_incomplete_proofs(problem):
+    gh = _ApprovalGH()
+    if problem == "human": gh.pr["user"]["login"] = "operator"
+    elif problem == "fork": gh.pr["head"]["repo"]["id"] = 1
+    elif problem == "draft": gh.pr["draft"] = True
+    elif problem == "closed": gh.pr["state"] = "closed"
+    elif problem == "base": gh.pr["base"]["ref"] = "other"
+    elif problem == "prefix": gh.pr["head"]["ref"] = "automation/controller-positive-dry-run-fixture"
+    elif problem == "extra_file": gh.changed.append({"filename": ".github/workflows/evil.yml", "status": "added"})
+    elif problem == "renamed": gh.changed[0]["status"] = "renamed"
+    elif problem == "injected_content":
+        gh.changed.append({"filename": "c3po/frontend/package.json", "status": "modified"})
+        gh.head["c3po/frontend/package.json"] = '{"scripts":{"build":"curl attacker"}}'
+    elif problem == "ambiguous_pr": gh.associations = [gh.pr, gh.pr]
+    elif problem == "wrong_event": gh.run["event"] = "pull_request_target"
+    elif problem == "wrong_workflow": gh.run["workflow_id"] = 999
+    elif problem == "wrong_sha": gh.run["head_sha"] = "c" * 40
+    elif problem == "wrong_branch": gh.run["head_branch"] = "main"
+    elif problem == "wrong_repo": gh.run["head_repository"]["id"] = 1
+    elif problem == "proof_failure": gh.proofs[0]["conclusion"] = "failure"
+    elif problem == "proof_skipped": gh.proofs[0]["conclusion"] = "skipped"
+    elif problem == "proof_missing_job": gh.jobs.pop()
+    elif problem == "proof_old_sha": gh.proofs[0]["head_sha"] = "c" * 40
+    elif problem == "proof_new_failure": gh.proofs.append({**gh.proofs[0], "id": 91, "conclusion": "failure"})
+    status, _, _ = gh.approve([])
+    assert status in ("idle", "waiting_security_tests")
+    assert not gh.writes
+
+
+@pytest.mark.parametrize("change", ["main", "head", "attempt", "proof", "files", "hold"])
+def test_ci_approval_rechecks_after_durable_intent_and_never_writes_on_drift(change):
+    gh, history = _ApprovalGH(), []
+    def checkpoint():
+        if history[-1]["state"] != "intent": return
+        if change == "main": gh.main = "c" * 40
+        elif change == "head": gh.pr["head"]["sha"] = "c" * 40
+        elif change == "attempt": gh.run["run_attempt"] = 2
+        elif change == "proof": gh.proofs[0]["conclusion"] = "failure"
+    if change == "files":
+        reads = []
+        def on_read(path):
+            if path != "/pulls/17": return
+            reads.append(path)
+            if len(reads) == 1:
+                gh.changed.append({"filename": "unrelated.py", "status": "added"})
+        gh.on_read = on_read
+    status, _, _ = gh.approve(history, checkpoint, may_write=lambda: change != "hold")
+    assert status in ("waiting_ci_approval", "baseline_changed_or_hold") and not gh.writes
+
+
+@pytest.mark.parametrize("outcome", ["403", "404", "timeout", "unexpected_body"])
+def test_ci_approval_unknown_post_never_resends_or_claims_success(outcome):
+    gh, history = _ApprovalGH(), []
+    if outcome in ("403", "404"):
+        gh.post_error = HTTPError("https://private.invalid/token", int(outcome), "private response", None, None)
+    elif outcome == "timeout": gh.post_error = URLError("private response with token")
+    else: gh.post_result = {"message": "not documented acceptance"}
+    assert gh.approve(history)[0] == "blocked_ci_approval"
+    assert history[-1]["state"] == "unknown" and "private" not in json.dumps(history)
+    assert daily.reconcile_ci_approvals(gh, history) == (["ci_approval:outcome_unconfirmed"], [])
+    gh.approve(history)
+    assert len(gh.writes) == 1
+    gh.run.update(run_attempt=2, status="in_progress", conclusion=None)
+    assert daily.reconcile_ci_approvals(gh, history) == ([], ["ci_approval_pending"])
+    gh.run.update(status="completed", conclusion="success")
+    assert daily.reconcile_ci_approvals(gh, history) == ([], [])
+    assert history[-1]["state"] == "superseded"
+
+
+def test_ci_approval_crash_after_intent_is_reconciled_without_resending():
+    gh, history = _ApprovalGH(), []
+    with pytest.raises(KeyboardInterrupt):
+        gh.approve(history, checkpoint=lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
+    assert history[-1]["state"] == "intent" and not gh.writes
+    assert daily.reconcile_ci_approvals(gh, history)[0] == ["ci_approval:outcome_unconfirmed"]
+    gh.approve(history)
+    assert not gh.writes
+
+
+@pytest.mark.parametrize("configured", [None, False, "true", 1])
+def test_ci_approval_requires_literal_opt_in_and_preserves_promotion(tmp_path, monkeypatch, configured):
+    now = datetime(2026, 10, 24, 10, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    monkeypatch.setattr(daily, "approve_ci", lambda *a, **k: pytest.fail("approval was not opted in"))
+    config = {"automatic_merge": True}
+    if configured is not None: config["automatic_ci_approval"] = configured
+    report = daily.cycle(tmp_path, world.gh(), now, config, world.previous())
+    assert report["ci_approval"]["enabled"] is False
+    assert report["status"] == "no_validated_candidate" and report["healthy"] is True
+
+
+@pytest.mark.parametrize("blocker", ["hold", "trial", "host", "window", "merge_disabled"])
+def test_ci_approval_opt_in_preserves_existing_maintenance_gates(tmp_path, monkeypatch, blocker):
+    now = datetime(2026, 10, 24, 12 if blocker == "window" else 10, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    if blocker == "hold": (tmp_path / "hold").touch()
+    elif blocker == "trial": monkeypatch.setattr(daily, "trial_present", lambda _: True)
+    elif blocker == "host": world.host_ok = False
+    monkeypatch.setattr(daily, "approve_ci", lambda *a, **k: pytest.fail("blocked approval"))
+    report = daily.cycle(tmp_path, world.gh(), now,
+        {"automatic_merge": blocker != "merge_disabled", "automatic_ci_approval": True}, world.previous())
+    assert report["ci_approval"]["history"] == []
+
+
+def test_ci_approval_acceptance_is_pending_never_healthy_or_same_cycle_merge(tmp_path, monkeypatch):
+    now = datetime(2026, 10, 24, 10, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    def approve(*args, **kwargs):
+        return "waiting_ci_approval", 17, []
+    monkeypatch.setattr(daily, "approve_ci", approve)
+    monkeypatch.setattr(daily, "promote", lambda *a, **k: pytest.fail("same-cycle merge path"))
+    report = daily.cycle(tmp_path, world.gh(), now,
+        {"automatic_merge": True, "automatic_ci_approval": True}, world.previous())
+    assert report["status"] == "waiting_ci_approval" and report["healthy"] is False
+    assert report["pending"] == ["ci_approval_pending"] and report["healthy_blockers"] == ["ci_approval_pending"]
+
+
+def test_ci_approval_checks_window_after_health_probe(tmp_path, monkeypatch):
+    now = datetime(2026, 10, 24, 11, 59, 59, tzinfo=timezone.utc)
+    world = _SecurityCycleWorld(tmp_path, monkeypatch, now)
+    clock = [now]
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None): return clock[0]
+    monkeypatch.setattr(daily, "datetime", Clock)
+    probes = []
+    def probe(_):
+        probes.append(1)
+        if len(probes) > 1: clock[0] = now + timedelta(seconds=2)
+        return True
+    monkeypatch.setattr(daily, "healthy_host", probe)
+    def approve(*args, **kwargs):
+        assert kwargs["may_write"]() is False
+        return "baseline_changed_or_hold", 17, []
+    monkeypatch.setattr(daily, "approve_ci", approve)
+    report = daily.cycle(tmp_path, world.gh(), now,
+        {"automatic_merge": True, "automatic_ci_approval": True}, world.previous())
+    assert report["status"] == "baseline_changed_or_hold"
+
+
+@pytest.mark.parametrize("status,body", [(201, b""), (201, b"null"), (201, b" "),
+                                         (200, b""), (202, b""), (204, b"")])
+def test_ci_approval_http_contract_requires_bodyless_201(monkeypatch, status, body):
+    import urllib.request
+    class Response:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def read(self): return body
+    response = Response()
+    response.status = status
+    class Opener:
+        def open(self, request, timeout):
+            assert request.full_url == "https://api.github.com/repos/" + daily.REPO + "/actions/runs/100/approve"
+            assert request.method == "POST" and request.data is None
+            return response
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *_: Opener())
+    gh = daily.GitHub("synthetic-test-token")
+    if status == 201 and not body:
+        assert gh.request("/actions/runs/100/approve", "POST") is None
+    else:
+        with pytest.raises(ValueError, match="Unexpected CI approval"):
+            gh.request("/actions/runs/100/approve", "POST")
+
+
+@pytest.mark.parametrize("linked", [True, False])
+def test_ci_approval_can_bind_populated_or_empty_pr_association(linked):
+    gh = _ApprovalGH()
+    if linked:
+        gh.run["pull_requests"] = [{"number": gh.pr["number"], "head": gh.pr["head"], "base": gh.pr["base"]}]
+        gh.associations = []  # The explicit matching association is sufficient.
+    assert gh.approve([])[0] == "waiting_ci_approval" and len(gh.writes) == 1
+
+
+def test_ci_approval_container_lane_keeps_its_narrow_content_gate(monkeypatch):
+    gh = _ApprovalGH()
+    branch = "automation/container-security-rebuild-current"
+    gh.pr["head"]["ref"] = gh.run["head_branch"] = gh.proofs[0]["head_branch"] = branch
+    trigger_path = "c3po/security/container-rebuild-trigger.json"
+    trigger = {"schema": "C3PO_CONTAINER_REBUILD_TRIGGER-v1", "dry_run": False, "source_revision": gh.main,
+               "run_url": "https://github.com/example/scan", "artifact_name": "scan",
+               "remediation_key": "key", "evidence_scope": "production_runtime", "fix_available": {"high": 1},
+               "finding_total": 1, "findings": [{"package": "synthetic"}]}
+    gh.head = {trigger_path: json.dumps(trigger)}
+    gh.changed = [{"filename": trigger_path, "status": "added"}]
+    monkeypatch.setattr(daily, "validate_report", lambda _: (trigger["fix_available"], trigger["findings"]))
+    monkeypatch.setattr(daily, "build_trigger", lambda *a, **k: trigger)
+    assert gh.approve([])[0] == "waiting_ci_approval" and len(gh.writes) == 1
+    gh.writes.clear()
+    gh.changed.append({"filename": "c3po/backend/requirements.txt", "status": "modified"})
+    assert gh.approve([])[0] == "idle" and not gh.writes
+
+
+@pytest.mark.parametrize("resolved", ["closed", "new_head"])
+def test_ci_approval_failed_old_receipt_retires_without_erasing_failure(resolved):
+    gh, history = _ApprovalGH(), []
+    gh.approve(history)
+    gh.run["conclusion"] = "failure"
+    assert daily.reconcile_ci_approvals(gh, history) == (["ci_approval:run_not_successful"], [])
+    assert history[0]["observed_conclusion"] == "failure"
+    if resolved == "closed": gh.pr["state"] = "closed"
+    else: gh.pr["head"]["sha"] = "c" * 40
+    assert daily.reconcile_ci_approvals(gh, history) == ([], [])
+    assert history[0]["state"] == "retired" and history[0]["observed_conclusion"] == "failure"
+    assert len(gh.writes) == 1
+
+
+def test_ci_approval_failed_cycle_preserves_durable_intent(tmp_path, monkeypatch):
+    directory = tmp_path / "runtime/security"
+    directory.mkdir(parents=True)
+    gh, history = _ApprovalGH(), []
+    gh.approve(history)
+    monkeypatch.setattr(sys, "argv", ["c3po_security_daily.py", "--root", str(tmp_path)])
+    monkeypatch.setattr(daily, "github_token", lambda _: "synthetic-token")
+    monkeypatch.setattr(daily, "GitHub", lambda _: gh)
+    monkeypatch.setattr(daily, "ensure_workflows", lambda *_: None)
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    monkeypatch.setattr(daily, "CONFIG", config)
+    def failed_cycle(*args):
+        daily.write_report(directory / daily.REPORT, {"ci_approval": {"history": history}})
+        raise RuntimeError("private response")
+    monkeypatch.setattr(daily, "cycle", failed_cycle)
+    with pytest.raises(SystemExit): daily.main()
+    failed = json.loads((directory / daily.REPORT).read_text())
+    assert failed["ci_approval"]["history"] == history and failed["healthy"] is False
+    assert failed["errors"] == ["RuntimeError"] and "private" not in json.dumps(failed)
+
+
+def test_ci_approval_history_limit_and_invalid_receipts_fail_closed():
+    gh, history = _ApprovalGH(), []
+    gh.approve(history)
+    with pytest.raises(ValueError): daily.ci_approval_history({"ci_approval": {"history": [{"state": "unknown"}]}})
+    history[0]["run_id"] = 1
+    history *= daily.CI_APPROVAL_HISTORY_LIMIT
+    gh.writes.clear()
+    assert gh.approve(history)[2] == ["ci_approval:history_full"]
+    assert not gh.writes
+
+
+@pytest.mark.parametrize("drift", ["head_during_proof", "head_during_health", "window_during_final_reads"])
+def test_ci_approval_final_reads_follow_slow_proof_and_health(drift):
+    gh, history = _ApprovalGH(), []
+    live_window = [True]
+    def on_read(path):
+        if not history or history[-1]["state"] != "intent": return
+        if drift == "head_during_proof" and path == "/actions/runs/90":
+            gh.pr["head"]["sha"] = "c" * 40
+        if drift == "window_during_final_reads" and path == "/pulls/17":
+            live_window[0] = False
+    gh.on_read = on_read
+    def health():
+        if drift == "head_during_health": gh.pr["head"]["sha"] = "c" * 40
+        return True
+    assert gh.approve(history, may_write=health, window_open=lambda: live_window[0])[0] == "baseline_changed_or_hold"
+    assert not gh.writes and history[-1]["state"] == "not_sent"
+
+
+def test_ci_approval_proof_attempt_change_during_job_reads_is_not_green():
+    gh = _ApprovalGH()
+    def on_read(path):
+        if path == "/actions/runs/90": gh.proofs[0]["run_attempt"] = 2
+    gh.on_read = on_read
+    assert gh.approve([])[0] == "waiting_security_tests" and not gh.writes
+
+
+def test_ci_approval_backend_ci_is_allowlisted_but_still_needs_dispatch_proof():
+    gh = _ApprovalGH()
+    gh.run.update(path=".github/workflows/backend-postgres.yml", workflow_id=54)
+    assert gh.approve([])[0] == "waiting_ci_approval" and len(gh.writes) == 1
+
+
+@pytest.mark.parametrize("conclusion", ["success", "action_required", "failure"])
+def test_ci_approval_new_run_same_sha_can_replace_old_failed_receipt(conclusion):
+    gh, history = _ApprovalGH(), []
+    gh.approve(history)
+    gh.run["conclusion"] = "failure"
+    gh.extra_runs = [{**gh.clone(gh.run), "id": 101, "conclusion": conclusion}]
+    errors, pending = daily.reconcile_ci_approvals(gh, history)
+    if conclusion == "failure":
+        assert errors == ["ci_approval:run_not_successful"]
+        assert history[0]["state"] == "accepted"
+    else:
+        assert not errors and not pending
+        assert history[0]["state"] == "retired" and history[0]["retired_reason"] == "newer_run"
+        assert history[0]["replacement_run_id"] == 101
+        assert history[0]["observed_conclusion"] == "failure" and history[0]["post_outcome"] == "accepted"
+    assert len(gh.writes) == 1
+
+
+@pytest.mark.parametrize("replacement", ["success", "action_required"])
+def test_ci_approval_retired_action_required_run_does_not_block_replacement(replacement):
+    gh, history = _ApprovalGH(), []
+    gh.approve(history)  # Run100 may still be action_required after this request.
+    gh.extra_runs = [{**gh.clone(gh.run), "id": 101, "conclusion": replacement}]
+    assert daily.reconcile_ci_approvals(gh, history) == ([], [])
+    assert history[0]["state"] == "retired"
+    status, _, errors = gh.approve(history)
+    assert not errors
+    if replacement == "success":
+        assert status == "idle" and gh.writes == [("POST", "/actions/runs/100/approve")]
+    else:
+        assert status == "waiting_ci_approval"
+        assert gh.writes == [("POST", "/actions/runs/100/approve"), ("POST", "/actions/runs/101/approve")]
