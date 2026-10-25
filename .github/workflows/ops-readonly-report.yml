@@ -1,4 +1,5 @@
 name: Ops read-only incidents report
+run-name: Ops read-only incidents report ${{ inputs.recovery_slot && format('[recovery:{0}]', inputs.recovery_slot) || format('[schedule:{0}]', github.event.schedule) }}
 
 # Twice a day (03:30 BRT, after the nightly phases, and 08:30 BRT, after the nightly valuation cycle ends at 08:15 BRT) and on
 # dispatch: an AGGREGATE of the open/acknowledged operational incidents, of the red/amber LOCAL health cards (governance,
@@ -25,6 +26,12 @@ on:
     - cron: "30 6 * * *"
     - cron: "30 11 * * *"
   workflow_dispatch:
+    inputs:
+      recovery_slot:
+        description: Internal recovery correlation (UTC slot); empty for ordinary dispatch
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -53,6 +60,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Validate the optional recovery slot
+        env:
+          RECOVERY_SLOT: ${{ inputs.recovery_slot }}
+        shell: bash
+        run: |
+          python3 -I scripts/c3po_workflow_schedule_recovery.py --validate-slot ops-readonly-report.yml "$RECOVERY_SLOT" || exit 1
 
       - name: Configure deployment SSH key
         id: ssh
@@ -121,6 +135,7 @@ jobs:
         id: verify
         env:
           EVENT_SCHEDULE: ${{ github.event.schedule }}
+          RECOVERY_SLOT: ${{ inputs.recovery_slot }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
@@ -355,8 +370,10 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
               handle.write(summary)
 
-          slot = SLOTS.get(os.environ.get("EVENT_SCHEDULE") or "", f"{brt:%H%M}")
-          marker = f"<!-- c3po-ops-readonly-report:{brt.date().isoformat()}:{slot} -->"
+          recovery = os.environ.get("RECOVERY_SLOT") or ""
+          slot_clock = datetime.fromisoformat(recovery.replace("Z", "+00:00")).astimezone(timezone(timedelta(hours=-3))) if recovery else brt
+          slot = f"{slot_clock:%H%M}" if recovery else SLOTS.get(os.environ.get("EVENT_SCHEDULE") or "", f"{brt:%H%M}")
+          marker = f"<!-- c3po-ops-readonly-report:{slot_clock.date().isoformat()}:{slot} -->"
           red_cards = [card for card in health["cards"] if card["status"] == "offline"]
           failing = bool(red_cards) or totals["critical"] > 0
           post = False

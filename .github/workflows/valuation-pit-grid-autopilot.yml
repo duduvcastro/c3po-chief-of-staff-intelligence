@@ -1,5 +1,5 @@
 name: Valuation PIT grid autopilot
-run-name: Valuation PIT grid autopilot — ${{ github.event_name == 'schedule' && 'tick' || (inputs.dry_run && 'dry-run' || 'act') }}
+run-name: Valuation PIT grid autopilot — ${{ github.event_name == 'schedule' && 'tick' || (inputs.dry_run && 'dry-run' || 'act') }} ${{ inputs.recovery_slot && format('[recovery:{0}]', inputs.recovery_slot) || '' }}
 
 # Dispatches the chunks of the US PIT grid (PREREG_VALUATION_PIT_BACKTEST_US_V1 §14 d) while nobody is at the keyboard,
 # under the owner's order already signed (owner order 2) or its direct successor (order 3, issued by Fable under the
@@ -27,6 +27,11 @@ on:
     - cron: "13,43 * * * *"
   workflow_dispatch:
     inputs:
+      recovery_slot:
+        description: Internal recovery correlation (UTC slot); empty for ordinary dispatch
+        required: false
+        default: ''
+        type: string
       dry_run:
         description: Decide and show what this tick would do, without dispatching or posting (untick to act, from main, with C3PO_PIT_GRID_AUTOPILOT=on)
         required: false
@@ -65,6 +70,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Validate the optional recovery slot
+        env:
+          RECOVERY_SLOT: ${{ inputs.recovery_slot }}
+        shell: bash
+        run: |
+          python3 -I scripts/c3po_workflow_schedule_recovery.py --validate-slot valuation-pit-grid-autopilot.yml "$RECOVERY_SLOT" || exit 1
 
       - name: List the backtest runs
         id: select
