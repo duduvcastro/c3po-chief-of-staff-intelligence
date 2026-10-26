@@ -257,3 +257,12 @@ def test_a_book_with_a_tiny_nav_is_refused_and_the_stored_book_survives(monkeypa
     assert dashboard["nav_session_delta"]["total_delta_percent"] is not None
     assert all(point["daily_return_percent"] is not None for point in dashboard["track_record"])
     assert all(position["allocation_percent"] is not None for position in dashboard["positions"] + live["positions"])
+
+
+def test_the_opening_book_of_the_next_session_shows_the_evening_before() -> None:
+    database = Database(Settings(database_url=""))
+    tomorrow = "2026-10-27"
+    opening = _book(nav_usd=930549.46, cash_usd=930549.46, positions=[], as_of="2026-10-27T09:30:00-04:00")
+    r2d2_lab_live.store(database, dict(_payload(day=tomorrow), book=opening), now=NOW)
+    day, config, book, _ = r2d2_lab_live.latest_book(database, now=NOW)
+    assert (day, config, book["nav_usd"], book["positions"]) == (tomorrow, "TIT-1", 930549.46, [])

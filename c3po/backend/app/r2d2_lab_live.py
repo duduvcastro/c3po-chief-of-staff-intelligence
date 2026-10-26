@@ -248,7 +248,8 @@ def learning_curve(database: Any, *, now: datetime | None = None, days: int = 90
 
 def _lab_snapshots(database: Any, now: datetime | None, days: int) -> list[tuple[str, dict[str, Any]]]:
     today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date()
-    keys = [(today - timedelta(days=offset)).isoformat() for offset in range(days)]
+    # the next session too: the opening book of tomorrow is posted the evening before (lab book_post.yml)
+    keys = [(today - timedelta(days=offset)).isoformat() for offset in range(-1, days)]
     found = []
     for day, snapshot in sorted(database.latest_analysis_snapshots(ANALYSIS_TYPE, keys).items()):
         outputs = snapshot.get("outputs")
@@ -305,7 +306,7 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
                        daily_pnl_usd=round(outputs["book"]["nav_usd"] - outputs["book"]["nav_start_usd"], 2),
                        daily_return_percent=round((outputs["book"]["nav_usd"] / outputs["book"]["nav_start_usd"] - 1) * 100, 4),
                        is_final=session_day < today)
-        for session_day, outputs in sessions if session_day not in known]
+        for session_day, outputs in sessions if session_day not in known and session_day <= today]
     delta = R2D2NavSessionDelta(
         status="available", session_date=day, previous_session_date=None, current_total_nav_usd=round(nav, 2),
         previous_total_nav_usd=round(start, 2), total_delta_usd=round(nav - start, 2),
