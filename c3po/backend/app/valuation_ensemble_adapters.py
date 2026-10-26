@@ -194,12 +194,19 @@ def _cvm_field(concept: str) -> tuple[str, bool] | None:
 
 
 def _ni_term(row: Mapping[str,Any], coefficient: int) -> dict[str,Any]:
+    captured=None;capture_status="not_recorded";capture_reason=None
+    if row.get("first_seen_at") is not None:
+        try:captured=_instant(row["first_seen_at"]).isoformat();capture_status="valid"
+        except NotEvaluable:
+            # Local bookkeeping outside the canonical fact hash is observation
+            # evidence, not a reason to invalidate an otherwise unused fact.
+            capture_status="invalid";capture_reason="unattested_local_capture_instant"
     return {"coefficient":coefficient,"row":{
         **{key:_jsonable(row.get(key)) for key in ("market","issuer_key","source","doc_id","form","concept","unit")},
         "document_version":_jsonable(row.get("document_version",1)),"row_hash":str(row["row_hash"]),
         "period_start":_jsonable(row.get("period_start")),"period_end":_jsonable(row["period_end"]),
         "accepted_at":_instant(row["accepted_at"]).isoformat(),"effective_value":float(row["value"]),
-        "captured_at":_instant(row["first_seen_at"]).isoformat() if row.get("first_seen_at") else None}}
+        "captured_at":captured,"capture_metadata_status":capture_status,"capture_metadata_reason":capture_reason}}
 
 
 def _ni_support(start: date, end: date, rows: Sequence[Mapping[str,Any]], derived: bool) -> dict[str,Any]:
@@ -226,7 +233,7 @@ def _ni_window(durations: Mapping[tuple[date,date],Mapping[str,Any]], quarters: 
         "reason":None,"selected_quarters_newest_first":selected,"selected_window_start":chronological[0][0].isoformat(),
         "selected_window_end":chronological[-1][1].isoformat(),"join_gap_days":gaps,"exact_continuity":all(x==0 for x in gaps),
         "unique_support":False,"required_opening_date":None,"alternative_exact_paths":[],
-        "support_path_count_lower_bound":0,"support_inventory_complete":True,
+        "support_path_count_lower_bound":0,"support_inventory_complete":True,"metadata_refusals":[],
         "uniqueness_equivalence":"ordered_quarter_spans_and_canonical_signed_raw_terms_not_just_equal_values_or_boundary",
         "fiscal_period_authority":"not_established_by_duration_heuristics","source_scope_class_basis":"unattested",
         "changes_existing_income_value":False,"emits_beginning_book_fact":False}
@@ -242,6 +249,14 @@ def _ni_window(durations: Mapping[tuple[date,date],Mapping[str,Any]], quarters: 
     candidates: dict[str,dict[str,Any]]={};by_start: dict[date,list[tuple[int,date,Mapping[str,Any]]]]={}
     for (start,end),row in sorted(durations.items()):
         months=duration_months(start,end)
+        if months is not None:
+            observation=_ni_term(row,1)["row"]
+            if observation["capture_metadata_status"]=="invalid":
+                # Never omit a failed alternative and certify the remaining graph
+                # unique. Preserve the existing NI computation, but stop its new
+                # support assessment with an explicit incomplete observation.
+                result.update(reason="ni_support_local_capture_metadata_invalid",support_inventory_complete=False,
+                    metadata_refusals=[observation]);return result
         if months==3:
             item=_ni_support(start,end,[row],False);candidates[item["support_sha256"]]=item
         if months is not None:by_start.setdefault(start,[]).append((months,end,row))
@@ -292,15 +307,18 @@ def _ni_window(durations: Mapping[tuple[date,date],Mapping[str,Any]], quarters: 
 def _opening_book_observation(window: Mapping[str,Any] | None, book_spans: Mapping[tuple[date|None,date],Mapping[str,Any]],
                               blocked: bool) -> dict[str,Any]:
     result: dict[str,Any]={"status":"not_determinable","reason":"net_income_ttm_unavailable","window":window,
-        "candidate":None,"model_fact_emitted":False,"used_in_computation":False,
+        "candidate":None,"metadata_refusals":[],"model_fact_emitted":False,"used_in_computation":False,
         "scope_class_basis_comparability":"unattested","historical_admissibility":False}
     if window is None:return result
     if window["status"]!="boundary_determinable":result["reason"]=window["reason"];return result
     if blocked:result["reason"]="opening_equity_ineligible_or_ambiguous";return result
     required=date.fromisoformat(window["required_opening_date"]);row=book_spans.get((None,required))
     if row is None:result["reason"]="exact_opening_equity_row_missing";return result
+    observation=_ni_term(row,1)["row"]
+    if observation["capture_metadata_status"]=="invalid":
+        result.update(status="candidate_refused",reason="opening_equity_local_capture_metadata_invalid",metadata_refusals=[observation]);return result
     result.update(status="observed_exact_date_candidate",reason="opening_scope_class_basis_comparability_unattested",
-        candidate={"row":_ni_term(row,1)["row"],"value":float(row["value"]),"unit":str(row["unit"]),
+        candidate={"row":observation,"value":float(row["value"]),"unit":str(row["unit"]),
                    "period_end":required.isoformat(),"positive_value":float(row["value"])>0,
                    "model_fact_emitted":False,"used_in_computation":False})
     return result

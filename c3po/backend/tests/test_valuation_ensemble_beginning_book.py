@@ -8,7 +8,7 @@ import pytest
 
 from app.statement_vintages import vintage_row_hash
 from app.valuation_ensemble_adapters import BundleSources, adapt_company
-from app.valuation_ensemble_inputs import canonical_hash
+from app.valuation_ensemble_inputs import canonical_hash, NotEvaluable
 from app.valuation_ensemble_caller import run_shadow_cross_section
 from app.valuation_ensemble_capture import CaptureRequest, OfficialCaptureClient, read_capture_receipt
 from app.valuation_ensemble_originals import extract_sec_instance
@@ -58,6 +58,54 @@ def test_direct_consumed_chain_observes_exact_candidate_without_supplying_a_fact
     assert not opening["model_fact_emitted"] and not opening["used_in_computation"]
     assert opening["reason"]=="opening_scope_class_basis_comparability_unattested"
     assert result.company.facts["net_income_ttm"].evidence.payload_sha256==canonical_hash(result.provenance["fact_derivations"]["net_income_ttm"])
+
+
+@pytest.mark.parametrize("route",["opening_equity","old_unused_income"])
+def test_invalid_local_capture_metadata_in_new_observations_preserves_durable_computation_and_denominators(tmp_path,route):
+    bundle=bundle_with_income(DIRECT,opening=None)
+    row=(fact("us-gaap:StockholdersEquity",80,end=date(2020,3,31)) if route=="opening_equity" else
+         fact("us-gaap:NetIncomeLoss",7,start=date(2010,1,1),end=date(2010,3,31)))
+    row["first_seen_at"]="bad";assert row["row_hash"]==vintage_row_hash(row)
+    bundle["facts"].append(row);store=FileReceiptStore(tmp_path/"receipts")
+    result=run_shadow_cross_section(BundleSources(bundle),(request(),replace(request(),symbol="MISSING")),premises(),store,reader_kind="offline_export")
+    saved=store.read(result["run_key"])
+    assert saved["input_inventory"]["requested_companies"]==2
+    assert all(cell["requested"]==2 and cell["admissible"]==0 for cell in saved["input_inventory"]["models"].values())
+    company=next(store.read(ref["run_key"]) for ref in saved["company_receipts"] if ref["symbol"]=="XYZ")
+    assert company["computation"]["inputs"]["facts"]["net_income_ttm"]["value"]==18
+    assert company["computation"]["inputs"]["facts"]["book_equity"]["value"]==90
+    observation=company["adaptation"]["beginning_book_observation"]
+    expected=("opening_equity_local_capture_metadata_invalid" if route=="opening_equity" else "ni_support_local_capture_metadata_invalid")
+    assert observation["reason"]==expected and observation["candidate"] is None
+    refusals=observation.get("metadata_refusals") or observation["window"]["metadata_refusals"]
+    assert refusals[0]["captured_at"] is None and refusals[0]["capture_metadata_status"]=="invalid"
+    assert refusals[0]["capture_metadata_reason"]=="unattested_local_capture_instant"
+    if route=="old_unused_income":
+        assert not observation["window"]["support_inventory_complete"] and not observation["window"]["unique_support"]
+        assert observation["window"]["required_opening_date"] is None
+    metric=saved["input_inventory"]["models"]["residual_income"]
+    assert metric["beginning_book_observation_reasons"][expected]==1 and metric["beginning_book_facts_consumed"]==0
+    assert "book_equity_beginning" not in company["computation"]["inputs"]["facts"]
+
+
+@pytest.mark.parametrize("consumed",["income","latest_book"])
+def test_existing_strict_capture_metadata_validation_for_consumed_facts_is_unchanged(consumed):
+    bundle=bundle_with_income(DIRECT)
+    row=next(row for row in bundle["facts"] if row["concept"]==("us-gaap:NetIncomeLoss" if consumed=="income" else "us-gaap:StockholdersEquity")
+        and row["period_end"]==date(2021,3,31))
+    row["first_seen_at"]="bad";assert row["row_hash"]==vintage_row_hash(row)
+    with pytest.raises(NotEvaluable,match="unattested_instant"):adapt_company(BundleSources(bundle),request())
+
+
+def test_local_metadata_refusal_never_masks_a_later_persistence_failure(tmp_path,monkeypatch):
+    bundle=bundle_with_income(DIRECT)
+    row=next(row for row in bundle["facts"] if row["concept"]=="us-gaap:StockholdersEquity" and row["period_end"]==date(2020,3,31))
+    row["first_seen_at"]="bad"
+    store=FileReceiptStore(tmp_path/"receipts")
+    def disk_failure(receipt):raise OSError("synthetic_disk_failure")
+    monkeypatch.setattr(store,"put",disk_failure)
+    with pytest.raises(OSError,match="synthetic_disk_failure"):
+        run_shadow_cross_section(BundleSources(bundle),(request(),),premises(),store,reader_kind="offline_export")
 
 
 def test_ytd_telescoping_keeps_signed_and_cancelled_terms_in_the_actual_window():

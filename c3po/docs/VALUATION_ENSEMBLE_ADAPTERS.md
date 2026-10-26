@@ -81,6 +81,15 @@ Candidate/pair/search bounds of 4096 are engineering limits: exhausted assessmen
 indeterminate, never evidence of uniqueness. The existing helper's ±3-day tolerance does
 not authorize filling a gap/overlap or choosing a nearby opening balance.
 
+Malformed local `first_seen_at` metadata on a newly observed, otherwise unused alternative
+or opening row is retained as an explicit metadata refusal with no valid capture instant.
+It cannot abort an existing NI/book computation or erase requested-company denominators.
+An unassessable alternative makes support assessment incomplete and indeterminate; it is
+never silently skipped to certify uniqueness. Missing capture metadata stays separately
+`not_recorded`, not a fabricated timestamp. The original strict validation of rows actually
+consumed by the existing financial reductions is unchanged, as is propagation of
+filesystem/persistence failures.
+
 Only a demonstrated exact unique path identifies a required opening date: the oldest
 consumed quarter start minus one day under the existing inclusive-date convention. In
 FY-minus-9M, the effective quarter starts after the shorter period's end, not at the raw
