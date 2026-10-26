@@ -124,7 +124,9 @@ class QuotaWindow:
             atomic_json(self.path, self.state)
         self.blocked_reason = self.state.get("hold_reason")
 
-    def reserve(self, provider: str, units: int) -> None:
+    def reserve(self, provider: str, units: object) -> None:
+        # A JSON rate card is untrusted input. The existing guards below narrow
+        # it to an integer before any budget arithmetic or state mutation.
         with self.lock:
             if self.blocked_reason:
                 raise CollectionPaused(self.blocked_reason)
@@ -160,7 +162,8 @@ class QuotaWindow:
 
 
 class CanonicalAdapter(Protocol):
-    identity: Mapping[str, Any]
+    @property
+    def identity(self) -> Mapping[str, Any]: ...
 
     def collect(self, listing: Listing, quota: QuotaWindow) -> Mapping[str, Any]: ...
 

@@ -155,7 +155,7 @@ def test_read_requires_new_trusted_attestation_and_json_boolean_cannot_enable_it
     scope(database, symbols, version)
     expanded.run_full_universe_decisions(database, now=RUN, record=True, artifact_verifier=synthetic_verifier)
     assert not expanded.latest_permissions(database, "B3", [symbols[0]], now=RUN)[symbols[0]]["buy_permission"]
-    for verifier in (lambda *args: True, lambda *args: {"approved_for_buy": True}, lambda *args: {}):
+    for verifier in (lambda *args: None, lambda *args: True, lambda *args: {"approved_for_buy": True}, lambda *args: {}):
         view = expanded.latest_permissions(database, "B3", [symbols[0]], now=RUN, artifact_verifier=verifier)[symbols[0]]
         assert not view["buy_permission"] and view["effective_reason_codes"] == [expanded.ARTIFACTS_UNATTESTED]
     def broken_verifier(*args):

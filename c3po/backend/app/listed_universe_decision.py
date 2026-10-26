@@ -156,7 +156,9 @@ def _attest(verifier: ArtifactVerifier | None, snapshot: Mapping[str, Any] | Non
     # original record and the population store from a buggy injected verifier.
     try:
         value = verifier(copy.deepcopy(snapshot), copy.deepcopy(original), at)
-        return copy.deepcopy(dict(value)) if _attestation_valid(value, _scope_reference(snapshot), snapshot["outputs"], original, at) else None
+        if not isinstance(value, Mapping) or not _attestation_valid(value, _scope_reference(snapshot), snapshot["outputs"], original, at):
+            return None
+        return copy.deepcopy(dict(value))
     except Exception:
         return None
 

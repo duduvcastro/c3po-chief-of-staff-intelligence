@@ -403,3 +403,35 @@ def test_actual_b3_canonical_engine_evaluates_below_minimum_inputs_without_exclu
     assert rows[symbol]["price"] == 1.0 and rows[symbol]["adtv_90d"] == 1000.0
     assert rows[symbol]["our_tp"] > 0 and rows[symbol]["internal_tp"] > 0
     assert not database._valuation_official_selections and quota.state["reservations"] == 0
+
+
+def test_canonical_transport_interface_never_adds_hidden_retries(tmp_path):
+    from app.market_data.http import JsonHttpClient, MarketDataRequestError
+    class Client:
+        calls = 0
+        def get(self, url, **kwargs):
+            self.calls += 1
+            return httpx.Response(500, json={"unavailable": True}, request=httpx.Request("GET", url))
+    quota = QuotaWindow(tmp_path, window="test", limits={"TEST": 5}, rate_card=RATE)
+    client = Client()
+    http = BudgetedHttp(quota, client=client)
+    assert isinstance(http, JsonHttpClient)
+    with pytest.raises(MarketDataRequestError):
+        http.get_json("https://provider.test/A")
+    assert client.calls == quota.state["reservations"] == 1
+    assert quota.state["used"]["TEST"] == 1 and quota.state["http_observations"]["status_counts"] == {"500": 1}
+
+
+@pytest.mark.parametrize("units", [None, True, "20", 0, -1, {}, []])
+def test_untrusted_rate_card_units_remain_closed_before_any_request(tmp_path, units):
+    class Client:
+        def get(self, *args, **kwargs):
+            raise AssertionError("malformed quota must never reach a provider")
+    rate = {"read": {**RATE["read"], "units": units}}
+    quota = QuotaWindow(tmp_path, window="test", limits={"TEST": 20}, rate_card=rate)
+    with pytest.raises(CollectionPaused, match="rate_card"):
+        BudgetedHttp(quota, client=Client()).get_json("https://provider.test/A")
+    assert quota.state["reservations"] == quota.state["http_observations"]["attempts_started"] == 0
+    assert quota.state["used"]["TEST"] == 0
+    with pytest.raises(CollectionPaused, match="rate_card"):
+        quota.check()  # a canonical soft catch cannot reinterpret this as missing data

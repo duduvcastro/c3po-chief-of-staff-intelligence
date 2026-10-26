@@ -479,7 +479,7 @@ def capacity_preflight(runs: Mapping[str, Mapping], *, policy: Mapping | None = 
             or not re.fullmatch(r"[a-f0-9]{64}", str(sec.get("cik_population_sha256") or ""))):
         blockers.append("complete_sec_population_sweep_backfill_and_shared_rate_unverified")
     pending_backfill = sec.get("backfill_pending_ciks")
-    if _number(pending_backfill) and pending_backfill > 0:
+    if isinstance(pending_backfill, (int, float)) and _number(pending_backfill) and pending_backfill > 0:
         try:
             budget, polls = sec["backfill_budget_per_poll"], sec["backfill_expected_polls"]
             backfill_plan = (_number(budget, integer=True) and budget > 0 and _number(polls, integer=True)
