@@ -252,6 +252,7 @@ interface R2D2DashboardData {
   checkpoint_days: number;
   operating_days_elapsed: number;
   starting_capital_usd: number;
+  book_source?: "v2" | "lab_live";
   nav_usd: number;
   accounting_nav_usd: number;
   accounting_nav_ex_interest_usd: number;
@@ -3945,7 +3946,8 @@ function R2D2RisingView() {
   const positionFeedUpdatedAt = liveTelemetry?.generated_at ?? data.generated_at;
   // Owner, 26/10/2026: posted cash interest is money, available for trading. Until the ledger credits it into the
   // operating cash (Codex, #429), the screen adds it here; drop this addition in the same change that credits it.
-  const postedInterest = Math.max(0, data.interest_income_epoch_usd ?? 0);
+  // The live lab book (book_source "lab_live") started from the NAV with interest: its cash already holds it.
+  const postedInterest = data.book_source === "lab_live" ? 0 : Math.max(0, data.interest_income_epoch_usd ?? 0);
   const markedNav = (liveTelemetry?.nav_usd ?? data.nav_usd) + postedInterest;
   const cash = (liveTelemetry?.cash_usd ?? data.cash_usd) + postedInterest;
   const openPositions = liveTelemetry?.open_positions ?? data.open_positions;
@@ -4274,7 +4276,7 @@ function R2D2RisingView() {
               )}
             </div>
           </div>
-        )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No open positions</strong><span>The R2D2 V2 book is paused. Today&apos;s live lab fills appear in the Daily Buy / Sell Log.</span></div></div>}
+        )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No open positions</strong><span>{data.book_source === "lab_live" ? "R2D2 live holds no stock right now; every buy appears here and in the Daily Buy / Sell Log." : "The R2D2 V2 book is paused. Today\u2019s live lab fills appear in the Daily Buy / Sell Log."}</span></div></div>}
       </section>
 
       <section className="panel r2d2-allocation-panel">

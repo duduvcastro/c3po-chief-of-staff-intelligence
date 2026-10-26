@@ -917,6 +917,8 @@ class R2D2NavSessionDelta(BaseModel):
 
 
 class R2D2DashboardResponse(BaseModel):
+    # "v2": the R2D2 V2 book; "lab_live": the live lab book posted to /api/v1/r2d2/lab-live (owner 26/10/2026)
+    book_source: Literal["v2", "lab_live"] = "v2"
     experiment_code: str
     status: Literal["scheduled", "running", "paused", "completed"]
     entries_paused: bool = False
