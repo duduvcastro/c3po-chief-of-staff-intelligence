@@ -148,3 +148,34 @@ def test_a_declared_oversized_body_is_refused_before_it_is_read(monkeypatch) -> 
         response = client.post("/api/v1/r2d2/lab-live", content=b"{}", headers={
             "Authorization": "Bearer " + TOKEN, "Content-Length": str(r2d2_lab_live.MAX_BODY_BYTES + 1)})
     assert response.status_code == 413
+
+
+def test_the_learning_curve_counts_each_lab_session_with_closed_trades() -> None:
+    database = Database(Settings(database_url=""))
+    sell = _fill(id="TIT-1:AAPL:sell", side="SELL", executed_at="2026-10-26T10:05:00-04:00",
+                 realized_pnl_usd=50.0, realized_return_percent=0.05)
+    loss = _fill(id="TIT-1:SHEL:sell", symbol="SHEL", side="SELL", executed_at="2026-10-26T11:05:00-04:00",
+                 realized_pnl_usd=-20.0, realized_return_percent=-0.02)
+    r2d2_lab_live.store(database, _payload(_fill(), sell, loss), now=NOW)
+    r2d2_lab_live.store(database, _payload(_fill(id="TIT-1:AAPL:buy2", executed_at="2026-10-23T09:35:00-04:00"),
+                                           day="2026-10-23"), now=NOW)  # buys only: no point
+    points = r2d2_lab_live.learning_curve(database, now=NOW)
+    assert [(p.session_date, p.positive_trades, p.negative_trades, p.positive_percent) for p in points] == [
+        ("2026-10-26", 1, 1, 50.0)]
+
+
+def test_the_dashboard_appends_the_lab_sessions_to_the_learning_curve(monkeypatch) -> None:
+    monkeypatch.setenv(r2d2_lab_live.TOKEN_ENV, TOKEN)
+    now = datetime.now(timezone.utc)
+    day = now.astimezone(NEW_YORK).date().isoformat()
+    sell = _fill(id="TIT-1:ZZLC:sell", symbol="ZZLC", side="SELL", executed_at=now.isoformat(),
+                 realized_pnl_usd=12.0, realized_return_percent=0.2)
+    app_main.r2d2_read_cache.invalidate()
+    with TestClient(app_main.app) as client:
+        posted = client.post("/api/v1/r2d2/lab-live", content=json.dumps(_payload(sell, day=day)),
+                             headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
+        curve = client.get("/api/v1/r2d2").json()["learning_curve"]
+    app_main.r2d2_read_cache.invalidate()
+    assert posted.status_code == 202
+    assert curve[-1]["session_date"] == day and curve[-1]["positive_trades"] >= 1
+    assert [point["session_date"] for point in curve] == sorted(point["session_date"] for point in curve)
