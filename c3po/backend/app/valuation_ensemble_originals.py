@@ -18,6 +18,7 @@ from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from zoneinfo import ZoneInfo
 
 from .valuation_ensemble_inputs import NotEvaluable, canonical_hash, utc
@@ -280,14 +281,17 @@ def extract_sec_instance(artifact: SourceBytes, header_bytes: SourceBytes) -> di
 
 
 def _csv_rows(raw: bytes, required: set[str]) -> Iterator[dict[str,str]]:
-    reader=csv.DictReader(io.StringIO(raw.decode("latin-1")),delimiter=";",strict=True)
-    names=reader.fieldnames or []
-    if len(names)!=len(set(names)) or not required<=set(names):
-        raise NotEvaluable("original_csv_missing_or_duplicate_columns")
-    for row in reader:
-        if None in row or any(value is None for value in row.values()):
-            raise NotEvaluable("original_csv_column_count_mismatch")
-        yield row
+    try:
+        reader=csv.DictReader(io.StringIO(raw.decode("latin-1")),delimiter=";",strict=True)
+        names=reader.fieldnames or []
+        if len(names)!=len(set(names)) or not required<=set(names):
+            raise NotEvaluable("original_csv_missing_or_duplicate_columns")
+        for row in reader:
+            if None in row or any(value is None for value in row.values()):
+                raise NotEvaluable("original_csv_column_count_mismatch")
+            yield row
+    except csv.Error as exc:
+        raise NotEvaluable("invalid_original_csv") from exc
 
 
 def extract_cvm_archive(artifact: SourceBytes, *, document_ids: tuple[str,...] | None=None) -> dict[str,Any]:
@@ -309,7 +313,7 @@ def extract_cvm_archive(artifact: SourceBytes, *, document_ids: tuple[str,...] |
                         or info.flag_bits&1 or info.file_size>MAX_BYTES or info.external_attr>>16&0o170000==0o120000):
                     raise NotEvaluable("original_archive_member_unsafe_or_duplicate")
                 members[name]=archive.read(info)
-    except (zipfile.BadZipFile,RuntimeError) as exc:
+    except (zipfile.BadZipFile,RuntimeError,zlib.error) as exc:
         raise NotEvaluable("invalid_original_archive") from exc
     index_name=prefix+year+".csv"
     if index_name not in members:

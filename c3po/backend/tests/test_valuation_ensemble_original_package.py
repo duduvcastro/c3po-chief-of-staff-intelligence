@@ -3,9 +3,12 @@ from copy import deepcopy
 from dataclasses import replace
 from decimal import Decimal
 from datetime import timedelta
+import hashlib
+import io
 import json
 import os
 from pathlib import Path
+import zipfile
 
 import pytest
 
@@ -97,6 +100,51 @@ def test_corrupt_original_is_a_counted_refusal_and_does_not_drop_requested_compa
     assert metric["requested"]==2 and metric["computable"]==1
     assert metric["all_required_input_bytes_available"]==0 and metric["admissible"]==0
     assert companies[0]["input_audit"]["models"]["capitalized_operating_cash_flow"]["required_facts"]
+
+
+@pytest.mark.parametrize("damage,reason",[
+    ("deflate","invalid_original_archive"),
+    ("csv_body","invalid_original_csv"),
+    ("csv_header","invalid_original_csv"),
+])
+def test_malformed_cvm_member_is_a_counted_refusal_in_a_mixed_caller_package(tmp_path,damage,reason):
+    b,package,request=sec_case();buffer=io.BytesIO();index_name="itr_cia_aberta_2021.csv"
+    with zipfile.ZipFile(io.BytesIO(cvm_package().payload())) as source:
+        with zipfile.ZipFile(buffer,"w",compression=zipfile.ZIP_DEFLATED) as target:
+            for name in source.namelist():
+                raw=source.read(name)
+                if name==index_name and damage=="csv_body":raw=raw.splitlines()[0]+b'\n"unterminated'
+                if name==index_name and damage=="csv_header":raw=b'"unterminated'
+                target.writestr(name,raw)
+    payload=bytearray(buffer.getvalue())
+    if damage=="deflate":
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:info=archive.getinfo(index_name)
+        offset=info.header_offset
+        start=offset+30+int.from_bytes(payload[offset+26:offset+28],"little")+int.from_bytes(payload[offset+28:offset+30],"little")
+        assert info.compress_size>=3
+        payload[start:start+3]=b"\xff\xff\xff"
+    supplied=artifact("cvm_archive",CVM_URL,bytes(payload))
+    mixed=OriginalPackage((*package.items,OriginalItem("bad_cvm",supplied)))
+    _,originals,result,saved,companies=run_case(tmp_path,b,mixed,(request,replace(request,symbol="MISSING")))
+    assert len(companies)==result["requested_companies"]==2
+    assert all(metric["requested"]==2 and metric["admissible"]==0 for metric in saved["input_inventory"]["models"].values())
+    assert saved["input_inventory"]["models"]["capitalized_operating_cash_flow"]["all_required_checked_content_equal"]==1
+    assert saved["original_package"]["artifact_refusals"]=={reason:1}
+    items={item["artifact_id"]:item for item in saved["original_package"]["artifacts"]}
+    assert items["header"]["status"]==items["instance"]["status"]=="ingested"
+    rejected=items["bad_cvm"]
+    assert rejected["status"]=="refused" and rejected["reason"]==reason
+    assert rejected["actual_supplied_sha256"]==rejected["expected_sha256"]==hashlib.sha256(payload).hexdigest()
+    assert rejected["supplied_byte_count"]==len(payload)
+    assert not (originals.objects/(rejected["actual_supplied_sha256"]+".bin")).exists()
+
+
+def test_original_persistence_failure_is_not_reclassified_as_a_malformed_artifact(tmp_path,monkeypatch):
+    b,package,request=sec_case()
+    def failed_write(self,original):raise OSError("synthetic_original_persistence_failure")
+    monkeypatch.setattr(OriginalEvidenceStore,"_put_bytes",failed_write)
+    with pytest.raises(OSError,match="synthetic_original_persistence_failure"):
+        run_case(tmp_path,b,package,(request,))
 
 
 def test_conflicting_document_roles_cannot_choose_the_favorable_original(tmp_path):
