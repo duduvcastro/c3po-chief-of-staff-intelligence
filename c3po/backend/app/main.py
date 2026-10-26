@@ -1792,7 +1792,13 @@ def _r2d2_dashboard_with_lab() -> R2D2DashboardResponse:
         known = {point.session_date for point in response.learning_curve}
         update["learning_curve"] = list(response.learning_curve) + [point for point in curve if point.session_date not in known]
     response = response.model_copy(update=update) if update else response
-    return r2d2_lab_live.apply_book(response, database)
+    return r2d2_lab_live.apply_book(response, database, interest=_r2d2_posted_interest())
+
+
+def _r2d2_posted_interest() -> list[tuple[str, float]]:
+    # The T-bill interest the cash-yield ledger posted, per session (owner 26/10/2026: interest is money of the book)
+    entries = r2d2.repo.cash_yield_entries(r2d2.ensure_initialized()["id"])
+    return [(str(row["session_date"])[:10], float(row["interest_income_usd"])) for row in entries]
 
 
 @app.post("/api/v1/r2d2/lab-live", status_code=202)
@@ -1820,7 +1826,8 @@ async def r2d2_lab_live_ingest(request: Request) -> dict:
 
 @app.get("/api/v1/r2d2/live-positions", response_model=R2D2LivePositionsResponse)
 def r2d2_live_positions() -> R2D2LivePositionsResponse:
-    return r2d2_read_cache.get("live_positions", lambda: r2d2_lab_live.apply_book_live(r2d2.live_positions(), database))
+    return r2d2_read_cache.get("live_positions", lambda: r2d2_lab_live.apply_book_live(
+        r2d2.live_positions(), database, interest=_r2d2_posted_interest()))
 
 
 @app.post("/api/v1/feedback", response_model=FeedbackResponse, status_code=201)
