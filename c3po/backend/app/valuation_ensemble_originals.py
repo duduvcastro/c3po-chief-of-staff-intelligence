@@ -92,6 +92,15 @@ def _decimal(value: Any) -> Decimal:
     return result
 
 
+def _scale_decimal_exact(value: Decimal, exponent: int) -> Decimal:
+    # A power-of-ten unit conversion is a representation change, not arithmetic
+    # under the process-wide Decimal precision (which could round the original).
+    parts=value.as_tuple()
+    if not isinstance(parts.exponent,int):
+        raise NotEvaluable("nonfinite_original_numeric")
+    return Decimal((parts.sign,parts.digits,parts.exponent+exponent))
+
+
 def extract_sec_header(artifact: SourceBytes) -> dict[str,Any]:
     from .sec_xbrl import parse_filing_header
     reference=artifact.check()
@@ -105,7 +114,7 @@ def extract_sec_header(artifact: SourceBytes) -> dict[str,Any]:
     accession=_one(fields("ACCESSION NUMBER"),"accession")
     form=_one(fields("CONFORMED SUBMISSION TYPE"),"form")
     cik=_cik(_one(fields("CENTRAL INDEX KEY"),"CIK"))
-    if not re.fullmatch(r"\d{10}-\d{2}-\d{6}",accession or ""):
+    if accession is None or not re.fullmatch(r"\d{10}-\d{2}-\d{6}",accession):
         raise NotEvaluable("invalid_original_accession")
     parsed=urlsplit(artifact.source_url)
     expected_prefix=f"/Archives/edgar/data/{int(cik)}/"
@@ -136,6 +145,7 @@ def _xml(artifact: SourceBytes) -> tuple[ET.Element,dict[str,str]]:
     if re.search(r"<!\s*(?:DOCTYPE|ENTITY)",text,re.IGNORECASE):
         raise NotEvaluable("original_xml_dtd_or_entity_not_allowed")
     namespaces={}
+    root: ET.Element | None=None
     try:
         count=depth=0
         parsed=ET.iterparse(io.StringIO(text),events=("start-ns","start","end"))
@@ -146,15 +156,15 @@ def _xml(artifact: SourceBytes) -> tuple[ET.Element,dict[str,str]]:
                     raise NotEvaluable("original_xml_namespace_rebinding_unsupported")
                 namespaces[prefix]=uri
             elif event=="start":
+                if root is None:root=item
                 count+=1;depth+=1
                 if count>250000 or depth>128:
                     raise NotEvaluable("original_xml_structure_limit")
             else:
                 depth-=1
-        root=parsed.root
     except ET.ParseError as exc:
         raise NotEvaluable("original_xml_not_supported_well_formed_instance") from exc
-    if root.tag!="{"+XBRLI+"}xbrl":
+    if root is None or root.tag!="{"+XBRLI+"}xbrl":
         raise NotEvaluable("only_native_xbrl_instance_supported_no_inline_transformations")
     return root,namespaces
 
@@ -346,11 +356,11 @@ def extract_cvm_archive(artifact: SourceBytes, *, document_ids: tuple[str,...] |
             else:
                 from .cvm_fundamentals import _fold
                 scale=_fold(row["ESCALA_MOEDA"])
-                scales={"UNIDADE":Decimal(1),"UNIDADES":Decimal(1),"MIL":Decimal(1000),"MILHAO":Decimal(1000000),"MILHOES":Decimal(1000000)}
+                scales={"UNIDADE":0,"UNIDADES":0,"MIL":3,"MILHAO":6,"MILHOES":6}
                 if scale not in scales or _fold(row["MOEDA"])!="REAL":
                     unbound_rows+=1;continue
                 description=re.sub(r"\s+"," ",row["DS_CONTA"]).strip()
-                values=[("cvm:"+statement+":"+row["CD_CONTA"].strip()+":"+description,"BRL",str(_decimal(row["VL_CONTA"])*scales[scale]),
+                values=[("cvm:"+statement+":"+row["CD_CONTA"].strip()+":"+description,"BRL",str(_scale_decimal_exact(_decimal(row["VL_CONTA"]),scales[scale])),
                     _date(row["DT_INI_EXERC"]).isoformat() if row.get("DT_INI_EXERC") else None,_date(row["DT_FIM_EXERC"]).isoformat())]
             for concept,unit,value,start,end in values:
                 fact={**base,"concept":concept,"unit":unit,"value":value,"period_start":start,"period_end":end,
@@ -429,6 +439,8 @@ def bind_canonical_rows(extracted: Mapping[str,Any], *, filings: Sequence[Mappin
             try:
                 if type(row.get("document_version")) is not int or row["document_version"]<1:
                     raise NotEvaluable("canonical_document_version_invalid")
+                if kind=="fact" and (not isinstance(row.get("unit"),str) or not row["unit"].strip()):
+                    raise NotEvaluable("canonical_fact_unit_invalid")
                 bound=_bind_canonical_rows_unchecked(extracted,filings=(row,) if kind=="filing" else (),facts=(row,) if kind=="fact" else ())
                 results.extend(bound["rows"])
             except (ValueError,TypeError,KeyError):

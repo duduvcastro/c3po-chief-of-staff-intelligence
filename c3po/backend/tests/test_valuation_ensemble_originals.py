@@ -176,6 +176,16 @@ def test_non_dimensional_scenario_and_boolean_document_version_cannot_bind_as_pl
     assert bind_canonical_rows(out,facts=[row])["not_bound"]==1
 
 
+def test_unsupported_original_unit_cannot_match_a_null_canonical_unit():
+    changed=instance(lambda s:s.replace('<xbrli:unit id="USD"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>',
+        '<xbrli:unit id="USD"><xbrli:divide><xbrli:unitNumerator><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unitNumerator>'
+        '<xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unitDenominator></xbrli:divide></xbrli:unit>'))
+    extracted=extract_sec_instance(changed,header())
+    assert next(x for x in extracted["facts"] if x["concept"]=="us-gaap:NetIncomeLoss")["unit"] is None
+    result=bind_canonical_rows(extracted,facts=[sec_fact(unit=None)])
+    assert result["matched"]==0 and result["not_bound"]==1
+
+
 def test_explicit_instance_identity_cannot_disagree_with_the_separately_verified_header():
     bad=instance(lambda s:s.replace('</xbrli:xbrl>',
         '<dei:EntityCentralIndexKey contextRef="duration">0000999002</dei:EntityCentralIndexKey></xbrli:xbrl>'))
@@ -210,6 +220,23 @@ def test_cvm_canonical_filing_and_values_bind_to_original_entry_and_row_without_
     result=bind_canonical_rows(out,filings=[filing],facts=[row])
     assert result["matched"]==2 and result["not_bound"]==0
     assert result["rows"][0]["symbols_not_authenticated"]
+
+
+def test_cvm_currency_scale_is_exact_independent_of_global_decimal_precision():
+    package=cvm_package();wide="12345678901234567890123456789"
+    name="itr_cia_aberta_BPP_con_2021.csv"
+    original=package.files[name][0];package.files[name][0]=original.replace(";90;S",";"+wide+";S")
+    assert package.files[name][0]!=original
+    extracted=extract_cvm_archive(artifact("cvm_archive",CVM_URL,package.payload()),document_ids=(package.index[0]["ID_DOC"],))
+    value=next(x for x in extracted["facts"] if x["concept"].startswith("cvm:BPP_con:2.03:"))
+    exact=Decimal(wide+"000") # integer string construction does not use Decimal arithmetic
+    assert Decimal(value["value"])==exact
+    row={key:value[key] for key in ("issuer_key","doc_id","document_version","form","accepted_at","filed_date","concept","unit","period_start","period_end")}
+    row.update(market="B3",source="cvm_dados_abertos",value=exact);row["row_hash"]=vintage_row_hash(row)
+    rounded=deepcopy(row);rounded["value"]=Decimal("1.234567890123456789012345679E+31");rounded["row_hash"]=vintage_row_hash(rounded)
+    bound=bind_canonical_rows(extracted,facts=[row,rounded])
+    assert bound["rows"][0]["status"]=="content_matched"
+    assert bound["rows"][1]["status"]=="not_bound"
 
 
 def test_cvm_archive_rejects_ambiguous_document_index_and_unsafe_members():

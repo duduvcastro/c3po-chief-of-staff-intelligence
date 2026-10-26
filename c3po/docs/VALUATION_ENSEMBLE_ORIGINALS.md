@@ -27,6 +27,9 @@ and historical admissibility remains false. There is no trust/admissible boolean
   known currency scale, original values and ordinary/preferred/total issued/treasury
   counts. The requested document ID set may restrict extraction. Revisions remain
   separate document versions. No ticker is obtained from a current issuer map.
+  Power-of-ten scale conversion preserves every original digit without using the
+  process-wide Decimal arithmetic precision. Unsupported original units cannot match
+  a null or invalid canonical unit.
 
 The [SEC XBRL Guide](https://www.sec.gov/files/edgar/filer-information/specifications/xbrl-guide-2024-07-08.pdf),
 sections 3.2.3–3.2.4, documents dimensional share counts and same-context securities facts.
