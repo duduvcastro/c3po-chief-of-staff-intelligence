@@ -230,3 +230,30 @@ def test_without_a_book_the_v2_panels_stay() -> None:
     database = Database(Settings(database_url=""))
     r2d2_lab_live.store(database, _payload(_fill()), now=NOW)
     assert r2d2_lab_live.latest_book(database, now=NOW) is None
+
+
+@pytest.mark.parametrize("overrides", [
+    {"nav_start_usd": 1e-310, "nav_usd": 1.0},     # Codex P2: finite, within the ceiling, a tiny denominator
+    {"nav_usd": 1e-310},
+    {"realized_nav_usd": 0.5},
+])
+def test_a_book_with_a_tiny_nav_is_refused_and_the_stored_book_survives(monkeypatch, overrides) -> None:
+    monkeypatch.setenv(r2d2_lab_live.TOKEN_ENV, TOKEN)
+    now = datetime.now(timezone.utc)
+    day = now.astimezone(NEW_YORK).date().isoformat()
+    good = _book(as_of=now.isoformat(), positions=[dict(_book()["positions"][0], opened_at=now.isoformat())])
+    headers = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}
+    app_main.r2d2_read_cache.invalidate()
+    with TestClient(app_main.app, raise_server_exceptions=False) as client:
+        assert client.post("/api/v1/r2d2/lab-live", content=json.dumps(dict(_payload(day=day), book=good)),
+                           headers=headers).status_code == 202
+        refused = client.post("/api/v1/r2d2/lab-live", content=json.dumps(dict(_payload(day=day), book=dict(good, **overrides))),
+                              headers=headers)
+        dashboard = client.get("/api/v1/r2d2").json()
+        live = client.get("/api/v1/r2d2/live-positions").json()
+    app_main.r2d2_read_cache.invalidate()
+    assert refused.status_code == 422
+    assert dashboard["nav_usd"] == 930669.96 and dashboard["daily_return_percent"] is not None
+    assert dashboard["nav_session_delta"]["total_delta_percent"] is not None
+    assert all(point["daily_return_percent"] is not None for point in dashboard["track_record"])
+    assert all(position["allocation_percent"] is not None for position in dashboard["positions"] + live["positions"])

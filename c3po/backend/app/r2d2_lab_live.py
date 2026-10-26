@@ -40,6 +40,7 @@ CONFIG = re.compile(r"[A-Za-z0-9._\-]{1,24}")
 NEW_YORK = ZoneInfo("America/New_York")
 MAX_POSITIONS = 100
 MAX_NAV_USD = 1e10
+MIN_NAV_USD = 1.0  # Codex P2 (#429 6427358471): every NAV is a denominator on the panels; a tiny one is refused
 BOOK_KEYS = {"nav_start_usd", "nav_usd", "realized_nav_usd", "cash_usd", "as_of", "positions"}
 POSITION_KEYS = {"symbol", "market", "quantity", "average_cost", "last_price", "cost_usd", "unrealized_pnl_usd",
                  "unrealized_return_percent", "stop_price", "opened_at"}
@@ -182,10 +183,14 @@ def _book(book: Any) -> dict[str, Any]:
                                                          bound=MAX_ABS_PERCENT),
                     "stop_price": _number(item["stop_price"], "stop_price", bound=MAX_PRICE),
                     "opened_at": _instant(item["opened_at"], "opened_at").isoformat()})
-    return {"nav_start_usd": _number(book["nav_start_usd"], "nav_start_usd", bound=MAX_NAV_USD, positive=True),
-            "nav_usd": _number(book["nav_usd"], "nav_usd", bound=MAX_NAV_USD, positive=True),
-            "realized_nav_usd": _number(book["realized_nav_usd"], "realized_nav_usd", bound=MAX_NAV_USD, positive=True),
-            "cash_usd": _number(book["cash_usd"], "cash_usd", bound=MAX_NAV_USD),
+    navs = {key: _number(book[key], key, bound=MAX_NAV_USD, positive=True)
+            for key in ("nav_start_usd", "nav_usd", "realized_nav_usd")}
+    if min(navs.values()) < MIN_NAV_USD:
+        raise LabLiveRefused("a book NAV is below the floor")
+    derived = [navs["nav_usd"] / navs["nav_start_usd"]] + [item["quantity"] * item["last_price"] / navs["nav_usd"] for item in out]
+    if not all(math.isfinite(value) and abs(value) <= MAX_NAV_USD for value in derived):
+        raise LabLiveRefused("a book ratio is out of bounds")
+    return {**navs, "cash_usd": _number(book["cash_usd"], "cash_usd", bound=MAX_NAV_USD),
             "as_of": _instant(book["as_of"], "as_of").isoformat(), "positions": out}
 
 
