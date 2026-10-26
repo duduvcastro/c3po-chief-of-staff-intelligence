@@ -1791,7 +1791,8 @@ def _r2d2_dashboard_with_lab() -> R2D2DashboardResponse:
     if curve:
         known = {point.session_date for point in response.learning_curve}
         update["learning_curve"] = list(response.learning_curve) + [point for point in curve if point.session_date not in known]
-    return response.model_copy(update=update) if update else response
+    response = response.model_copy(update=update) if update else response
+    return r2d2_lab_live.apply_book(response, database)
 
 
 @app.post("/api/v1/r2d2/lab-live", status_code=202)
@@ -1813,12 +1814,13 @@ async def r2d2_lab_live_ingest(request: Request) -> dict:
     except r2d2_lab_live.LabLiveRefused as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
     r2d2_read_cache.invalidate("dashboard")
+    r2d2_read_cache.invalidate("live_positions")
     return result
 
 
 @app.get("/api/v1/r2d2/live-positions", response_model=R2D2LivePositionsResponse)
 def r2d2_live_positions() -> R2D2LivePositionsResponse:
-    return r2d2_read_cache.get("live_positions", r2d2.live_positions)
+    return r2d2_read_cache.get("live_positions", lambda: r2d2_lab_live.apply_book_live(r2d2.live_positions(), database))
 
 
 @app.post("/api/v1/feedback", response_model=FeedbackResponse, status_code=201)

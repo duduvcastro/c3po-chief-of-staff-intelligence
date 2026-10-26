@@ -17,7 +17,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
-from .schemas import R2D2LearningCurvePoint, R2D2Trade
+from .schemas import (R2D2DashboardResponse, R2D2LearningCurvePoint, R2D2LivePositionsResponse, R2D2NavSessionDelta,
+                      R2D2Position, R2D2TrackPoint, R2D2Trade)
 
 TOKEN_ENV = "C3PO_R2D2_LAB_TOKEN"
 SCHEMA = "C3PO-R2D2-LAB-LIVE-v1"
@@ -37,6 +38,13 @@ SYMBOL = re.compile(r"[A-Z][A-Z0-9.\-]{0,9}")
 TRADE_ID = re.compile(r"[A-Za-z0-9:._\-]{1,80}")
 CONFIG = re.compile(r"[A-Za-z0-9._\-]{1,24}")
 NEW_YORK = ZoneInfo("America/New_York")
+MAX_POSITIONS = 100
+MAX_NAV_USD = 1e10
+MIN_NAV_USD = 1.0  # Codex P2 (#429 6427358471): every NAV is a denominator on the panels; a tiny one is refused
+BOOK_KEYS = {"nav_start_usd", "nav_usd", "realized_nav_usd", "cash_usd", "as_of", "positions"}
+POSITION_KEYS = {"symbol", "market", "quantity", "average_cost", "last_price", "cost_usd", "unrealized_pnl_usd",
+                 "unrealized_return_percent", "stop_price", "opened_at"}
+BOOK_SOURCE = "lab_live"
 TRADE_KEYS = {"id", "side", "symbol", "market", "quantity", "price", "executed_at", "fees_usd", "realized_pnl_usd",
               "realized_return_percent", "reason"}
 
@@ -94,8 +102,9 @@ def _instant(value: Any, name: str) -> datetime:
 
 def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     """The payload as stored: the exact schema, closed vocabularies, every fill on the posted session day."""
-    if not isinstance(payload, dict) or set(payload) != {"schema", "day", "config", "trades"}:
-        raise LabLiveRefused("the payload keys are not exactly schema, day, config, trades")
+    if not isinstance(payload, dict) or not {"schema", "day", "config", "trades"} <= set(payload) <= {
+            "schema", "day", "config", "trades", "book"}:
+        raise LabLiveRefused("the payload keys are not schema, day, config, trades and an optional book")
     if payload["schema"] != SCHEMA:
         raise LabLiveRefused("unexpected schema")
     try:
@@ -141,7 +150,48 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
                     "quantity": quantity, "price": price, "executed_at": executed.isoformat(),
                     "fees_usd": abs(_number(trade["fees_usd"], "fees_usd", bound=MAX_ABS_USD)), "realized_pnl_usd": pnl,
                     "realized_return_percent": ret, "reason": trade["reason"]})
-    return {"schema": SCHEMA, "day": day.isoformat(), "config": payload["config"], "trades": out}
+    document = {"schema": SCHEMA, "day": day.isoformat(), "config": payload["config"], "trades": out}
+    if "book" in payload:
+        document["book"] = _book(payload["book"])
+    return document
+
+
+def _book(book: Any) -> dict[str, Any]:
+    """The lab's open book: NAV, cash and positions (owner 26/10/2026: one R2D2 book on every panel)."""
+    if not isinstance(book, dict) or set(book) != BOOK_KEYS:
+        raise LabLiveRefused("the book keys are not exactly the expected ones")
+    positions = book["positions"]
+    if not isinstance(positions, list) or len(positions) > MAX_POSITIONS:
+        raise LabLiveRefused("the book positions are not a list of at most %d" % MAX_POSITIONS)
+    out = []
+    for item in positions:
+        if not isinstance(item, dict) or set(item) != POSITION_KEYS:
+            raise LabLiveRefused("a position's keys are not exactly the expected ones")
+        if not isinstance(item["symbol"], str) or SYMBOL.fullmatch(item["symbol"]) is None:
+            raise LabLiveRefused("a position symbol is not a ticker")
+        if item["market"] not in MARKETS:
+            raise LabLiveRefused("a position market is not NASDAQ or NYSE")
+        quantity = _number(item["quantity"], "quantity", bound=MAX_QUANTITY, positive=True)
+        last = _number(item["last_price"], "last_price", bound=MAX_PRICE, positive=True)
+        if not quantity * last <= MAX_GROSS_USD:
+            raise LabLiveRefused("a position value is out of bounds")
+        out.append({"symbol": item["symbol"], "market": item["market"], "quantity": quantity,
+                    "average_cost": _number(item["average_cost"], "average_cost", bound=MAX_PRICE, positive=True),
+                    "last_price": last, "cost_usd": _number(item["cost_usd"], "cost_usd", bound=MAX_GROSS_USD, positive=True),
+                    "unrealized_pnl_usd": _number(item["unrealized_pnl_usd"], "unrealized_pnl_usd", bound=MAX_ABS_USD),
+                    "unrealized_return_percent": _number(item["unrealized_return_percent"], "unrealized_return_percent",
+                                                         bound=MAX_ABS_PERCENT),
+                    "stop_price": _number(item["stop_price"], "stop_price", bound=MAX_PRICE),
+                    "opened_at": _instant(item["opened_at"], "opened_at").isoformat()})
+    navs = {key: _number(book[key], key, bound=MAX_NAV_USD, positive=True)
+            for key in ("nav_start_usd", "nav_usd", "realized_nav_usd")}
+    if min(navs.values()) < MIN_NAV_USD:
+        raise LabLiveRefused("a book NAV is below the floor")
+    derived = [navs["nav_usd"] / navs["nav_start_usd"]] + [item["quantity"] * item["last_price"] / navs["nav_usd"] for item in out]
+    if not all(math.isfinite(value) and abs(value) <= MAX_NAV_USD for value in derived):
+        raise LabLiveRefused("a book ratio is out of bounds")
+    return {**navs, "cash_usd": _number(book["cash_usd"], "cash_usd", bound=MAX_NAV_USD),
+            "as_of": _instant(book["as_of"], "as_of").isoformat(), "positions": out}
 
 
 def store(database: Any, payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
@@ -194,3 +244,92 @@ def learning_curve(database: Any, *, now: datetime | None = None, days: int = 90
             points.append(R2D2LearningCurvePoint(session_date=day, positive_percent=round(positive / (positive + negative) * 100, 1),
                                                  positive_trades=positive, negative_trades=negative))
     return points
+
+
+def _lab_snapshots(database: Any, now: datetime | None, days: int) -> list[tuple[str, dict[str, Any]]]:
+    today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date()
+    keys = [(today - timedelta(days=offset)).isoformat() for offset in range(days)]
+    found = []
+    for day, snapshot in sorted(database.latest_analysis_snapshots(ANALYSIS_TYPE, keys).items()):
+        outputs = snapshot.get("outputs")
+        if isinstance(outputs, dict) and outputs.get("schema") == SCHEMA:
+            found.append((day, outputs))
+    return found
+
+
+def latest_book(database: Any, *, now: datetime | None = None) -> tuple[str, str, dict[str, Any], list[tuple[str, dict[str, Any]]]] | None:
+    """The newest lab session that posted a book (day, config, book) and every session with a book, oldest first."""
+    sessions = [(day, outputs) for day, outputs in _lab_snapshots(database, now, 90) if isinstance(outputs.get("book"), dict)]
+    if not sessions:
+        return None
+    day, outputs = sessions[-1]
+    return day, str(outputs.get("config")), outputs["book"], sessions
+
+
+def _positions(book: dict[str, Any]) -> list[R2D2Position]:
+    nav = book["nav_usd"]
+    as_of = datetime.fromisoformat(book["as_of"])
+    rows = []
+    for item in book["positions"]:
+        value = item["quantity"] * item["last_price"]
+        rows.append(R2D2Position(
+            market=item["market"], symbol=item["symbol"], name=item["symbol"], currency="USD", quantity=item["quantity"],
+            average_cost_local=item["average_cost"], last_price_local=item["last_price"], market_value_usd=round(value, 2),
+            unrealized_pnl_usd=item["unrealized_pnl_usd"], unrealized_return_percent=item["unrealized_return_percent"],
+            mark_pnl_usd=item["unrealized_pnl_usd"], mark_return_percent=item["unrealized_return_percent"],
+            estimated_exit_pnl_usd=item["unrealized_pnl_usd"], estimated_exit_return_percent=item["unrealized_return_percent"],
+            allocation_percent=round(value / nav * 100, 4) if nav > 0 else 0.0, stop_price_local=item["stop_price"],
+            data_status="live", decision_state="hold", quote_status="lab", quote_as_of=as_of,
+            opened_at=datetime.fromisoformat(item["opened_at"]), updated_at=as_of))
+    return sorted(rows, key=lambda row: row.market_value_usd, reverse=True)
+
+
+def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime | None = None) -> R2D2DashboardResponse:
+    """One R2D2 book on every panel (owner 26/10/2026): NAV, cash, positions, daily P&L, the session delta and the
+    track record come from the live lab book once it has posted one; the paused V2 book is the history before it."""
+    found = latest_book(database, now=now)
+    if found is None:
+        return response
+    day, config, book, sessions = found
+    today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat()
+    nav, start = book["nav_usd"], book["nav_start_usd"]
+    daily = nav - start if day == today else 0.0
+    daily_percent = daily / start * 100 if start > 0 else 0.0
+    positions = _positions(book)
+    exposure = sum(position.market_value_usd for position in positions)
+    starting = response.starting_capital_usd
+    total_return = (nav / starting - 1) * 100 if starting > 0 else 0.0
+    known = {point.session_date for point in response.track_record}
+    track = list(response.track_record) + [
+        R2D2TrackPoint(session_date=session_day, nav_usd=round(outputs["book"]["nav_usd"], 2),
+                       daily_pnl_usd=round(outputs["book"]["nav_usd"] - outputs["book"]["nav_start_usd"], 2),
+                       daily_return_percent=round((outputs["book"]["nav_usd"] / outputs["book"]["nav_start_usd"] - 1) * 100, 4),
+                       is_final=session_day < today)
+        for session_day, outputs in sessions if session_day not in known]
+    delta = R2D2NavSessionDelta(
+        status="available", session_date=day, previous_session_date=None, current_total_nav_usd=round(nav, 2),
+        previous_total_nav_usd=round(start, 2), total_delta_usd=round(nav - start, 2),
+        total_delta_percent=round((nav / start - 1) * 100, 4) if start > 0 else 0.0, organic_delta_usd=round(nav - start, 2),
+        organic_delta_percent=round((nav / start - 1) * 100, 4) if start > 0 else 0.0, interest_delta_usd=0.0,
+        interest_delta_percent=0.0, interest_status="not_applicable")
+    return response.model_copy(update={
+        "book_source": BOOK_SOURCE, "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
+        "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),
+        "accounting_nav_ex_interest_usd": round(nav, 2), "accounting_total_nav_usd": round(nav, 2),
+        "cash_usd": round(book["cash_usd"], 2), "gross_exposure_usd": round(exposure, 2), "open_positions": len(positions),
+        "positions": positions, "total_return_percent": round(total_return, 4),
+        "accounting_total_return_percent": round(total_return, 4), "daily_pnl_usd": round(daily, 2),
+        "organic_daily_pnl_usd": round(daily, 2), "daily_return_percent": round(daily_percent, 4), "daily_pnl_date": day,
+        "nav_session_delta": delta, "track_record": track})
+
+
+def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: datetime | None = None) -> R2D2LivePositionsResponse:
+    found = latest_book(database, now=now)
+    if found is None:
+        return response
+    book = found[2]
+    positions = _positions(book)
+    return response.model_copy(update={
+        "nav_usd": round(book["nav_usd"], 2), "cash_usd": round(book["cash_usd"], 2),
+        "gross_exposure_usd": round(sum(position.market_value_usd for position in positions), 2),
+        "open_positions": len(positions), "positions": positions})
