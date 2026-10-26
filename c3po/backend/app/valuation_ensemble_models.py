@@ -118,10 +118,12 @@ def _metric(c: CompanyInputs, model: str) -> tuple[float, float]:
         raise NotEvaluable("enterprise_value_not_positive")
     if model == "ev_sales" or model == "sector_regression":
         return enterprise, c.get("revenue_ttm", positive=True)
-    income = c.get("operating_income_ttm", positive=True)
     if model == "ev_ebitda":
-        income += c.get("d_and_a_ttm", nonnegative=True)
-    return enterprise, income
+        denominator = c.get("operating_income_ttm") + c.get("d_and_a_ttm", nonnegative=True)
+        if denominator <= 0:
+            raise NotEvaluable("ebitda_not_positive")
+        return enterprise, denominator
+    return enterprise, c.get("operating_income_ttm", positive=True)
 
 
 def _peers(c: CompanyInputs, peers: tuple[CompanyInputs, ...], p: Premises) -> tuple[CompanyInputs, ...]:

@@ -181,7 +181,7 @@ def analyst_consensus(targets: tuple[AnalystTarget, ...], company: CompanyInputs
     Horizon agreement is required rather than assumed to be twelve months. There is no
     implicit freshness window; that choice belongs to the future signed protocol.
     """
-    latest: dict[str, AnalystTarget] = {}
+    by_house: dict[str, list[AnalystTarget]] = {}
     refused: dict[str, int] = {}
     for item in targets:
         try:
@@ -194,21 +194,31 @@ def analyst_consensus(targets: tuple[AnalystTarget, ...], company: CompanyInputs
                 raise NotEvaluable("target_not_positive")
             house_id = item.house.strip().casefold()
             item = AnalystTarget(house_id, float(item.target), item.currency, item.horizon_sessions, item.evidence)
-            old = latest.get(house_id)
-            if old is None or utc(item.evidence.available_at) > utc(old.evidence.available_at):
-                latest[house_id] = item
-            elif utc(item.evidence.available_at) == utc(old.evidence.available_at) and item != old:
-                raise NotEvaluable("ambiguous_house_observation")
+            by_house.setdefault(house_id, []).append(item)
         except NotEvaluable as exc:
             refused[str(exc)] = refused.get(str(exc), 0) + 1
-    ordered = [latest[key] for key in sorted(latest)]
+    # Resolve availability first, then ambiguity in that latest vintage only. Historical
+    # conflicts cannot poison a later unambiguous target, regardless of input order.
+    ordered = []
+    ambiguous_houses = []
+    for house_id in sorted(by_house):
+        observations = by_house[house_id]
+        newest = max(utc(x.evidence.available_at) for x in observations)
+        vintage = {x for x in observations if utc(x.evidence.available_at) == newest}
+        if len(vintage) != 1:
+            ambiguous_houses.append(house_id)
+        else:
+            ordered.append(next(iter(vintage)))
+    if ambiguous_houses:
+        refused["ambiguous_house_observation"] = len(ambiguous_houses)
     receipt = {"source": "analyst_consensus_mean", "eligible_houses": len(ordered), "refused": refused,
+               "ambiguous_houses": ambiguous_houses,
                "members": [{"house": x.house, "target": float(x.target), "horizon_sessions": x.horizon_sessions,
                             **x.evidence.receipt()} for x in ordered]}
+    if ambiguous_houses or len({x.horizon_sessions for x in ordered}) > 1:
+        return None, {**receipt, "status": "not_evaluable", "reason": "consensus_horizon_or_identity_ambiguous"}
     if not ordered:
         return None, {**receipt, "status": "not_evaluable", "reason": "no_attested_consensus"}
-    if len({x.horizon_sessions for x in ordered}) != 1 or refused.get("ambiguous_house_observation"):
-        return None, {**receipt, "status": "not_evaluable", "reason": "consensus_horizon_or_identity_ambiguous"}
     # Divide first so finite source targets cannot overflow solely while summing.
     value = math.fsum(float(x.target) / len(ordered) for x in ordered)
     return value, {**receipt, "status": "evaluated", "horizon_sessions": ordered[0].horizon_sessions, "value": value}

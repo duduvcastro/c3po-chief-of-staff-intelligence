@@ -275,3 +275,45 @@ def test_malformed_nonfinite_packet_refuses_receipt_instead_of_serializing_nan()
     c = replace(c, facts={**c.facts,"net_income_ttm":replace(c.facts["net_income_ttm"],value=math.inf)})
     with pytest.raises(NotEvaluable,match="non_serializable_input_packet"):
         build_shadow_receipt(c,premises())
+
+
+def test_old_house_conflicts_do_not_change_the_latest_consensus_under_any_permutation():
+    old1 = replace(targets()[0], target=10,
+                   evidence=evidence("ANALYST_CONSENSUS", at=T-timedelta(days=5), doc="old1"))
+    old2 = replace(old1, target=20, evidence=replace(old1.evidence, document_id="old2"))
+    newest = replace(old1, target=30,
+                     evidence=evidence("ANALYST_CONSENSUS", at=T-timedelta(days=1), doc="new"))
+    receipts = [analyst_consensus(items,company()) for items in permutations((old1,old2,newest))]
+    assert all(value == 30 for value, _ in receipts)
+    assert all(receipt == receipts[0][1] for _, receipt in receipts)
+    assert receipts[0][1]["refused"] == {}
+
+
+def test_conflicts_in_the_latest_house_vintage_refuse_identically_for_every_permutation():
+    old = replace(targets()[0], target=5,
+                  evidence=evidence("ANALYST_CONSENSUS", at=T-timedelta(days=5), doc="old"))
+    newest1 = replace(targets()[0], target=10)
+    newest2 = replace(newest1,target=20,evidence=replace(newest1.evidence,document_id="new-conflict"))
+    receipts = [analyst_consensus(items,company()) for items in permutations((old,newest1,newest2))]
+    assert all(value is None for value, _ in receipts)
+    assert all(receipt == receipts[0][1] for _, receipt in receipts)
+    assert receipts[0][1]["reason"] == "consensus_horizon_or_identity_ambiguous"
+
+
+@pytest.mark.parametrize("ebit", [-2,0])
+def test_ev_ebitda_accepts_nonpositive_ebit_when_its_own_denominator_is_positive(ebit):
+    c = company(operating_income_ttm=ebit,d_and_a_ttm=5)
+    peers = tuple(company(f"EBITDA{i}",operating_income_ttm=ebit,d_and_a_ttm=5) for i in range(3))
+    r = results(c,peers=peers)
+    # Each EV is120; at EBIT=-2 the EBITDA multiple is120/3=40.
+    # Applying that matched denominator to the target gives (120-20)/10=10.
+    assert r["ev_ebitda"].status == "evaluated"
+    assert r["ev_ebitda"].value == pytest.approx(10)
+    assert r["ev_ebit"].status == "not_evaluable"
+
+
+@pytest.mark.parametrize("ebit", [-5,-6])
+def test_ev_ebitda_still_refuses_zero_or_negative_ebitda(ebit):
+    r = results(company(operating_income_ttm=ebit,d_and_a_ttm=5))
+    assert r["ev_ebitda"].status == "not_evaluable"
+    assert r["ev_ebitda"].reason == "ebitda_not_positive"
