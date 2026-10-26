@@ -243,6 +243,23 @@ def test_elapsed_check_after_blocking_read_refuses_body_and_does_not_claim_total
     assert not receipt["object_sha256"] and response.closed
 
 
+@pytest.mark.parametrize("rollback",[.1,.19])
+def test_partial_wall_clock_rollback_after_body_is_a_readable_refusal_without_an_object(tmp_path,rollback):
+    client,_,clock,store=setup(tmp_path,[])
+    class RewindingResponse(Response):
+        def close(self):
+            super().close();clock.wall_adjustment=-rollback
+    response=RewindingResponse(b"complete-synthetic-body")
+    client.transport.responses=[response]
+    result,receipt=capture(client,store)
+    assert result["status"]=="refused" and result["reason"]=="capture_clock_inconsistent"
+    assert receipt["started_at"]<=receipt["finished_at"]<receipt["body_received_at"]
+    assert receipt["body_complete"] is True and receipt["clock_consistent"] is False
+    assert receipt["observed_body_sha256"]==hashlib.sha256(response.body).hexdigest()
+    assert receipt["object_sha256"]==[] and not list(store.objects.iterdir())
+    assert not receipt["historical_admissibility"] and not receipt["buy_permission"]
+
+
 def test_wall_clock_rollback_refuses_capture_without_backdating_bytes(tmp_path):
     client,_,clock,store=setup(tmp_path,[])
     class Rollback(Response):

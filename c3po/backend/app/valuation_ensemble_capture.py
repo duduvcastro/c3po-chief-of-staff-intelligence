@@ -300,7 +300,14 @@ class OfficialCaptureClient:
                 observation.update(status="captured",reason=None)
             except NotEvaluable as exc:observation["reason"]=str(exc);original=None
             finished=utc(self.clock.now());elapsed=self.clock.monotonic()-start
-            consistent=finished>=started and math.isfinite(elapsed) and elapsed>=0
+            # Validate the complete observed wall-clock order before persisting
+            # bytes; a partial rewind can still finish after the overall start.
+            instants=[started,*(datetime.fromisoformat(x["started_at"]) for x in observation["attempts"])]
+            if observation["body_received_at"] is not None:
+                instants.append(datetime.fromisoformat(observation["body_received_at"]))
+            instants.append(finished)
+            consistent=(math.isfinite(elapsed) and elapsed>=0
+                        and all(left<=right for left,right in zip(instants,instants[1:])))
             if not consistent:
                 observation.update(status="refused",reason="capture_clock_inconsistent");original=None
             elif elapsed>=self.limits.max_elapsed_seconds:
