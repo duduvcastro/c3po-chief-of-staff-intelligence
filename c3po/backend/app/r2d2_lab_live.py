@@ -294,8 +294,23 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
     day, config, book, sessions = found
     today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat()
     nav, start = book["nav_usd"], book["nav_start_usd"]
-    daily = nav - start if day == today else 0.0
-    daily_percent = daily / start * 100 if start > 0 else 0.0
+    if day == today:
+        open_nav, close_nav = start, nav
+    elif day > today:
+        # the next session's opening book, posted the evening before: today closed at that opening NAV, and today's
+        # result is today's own book, or (a session without one) the realized result of today's sells
+        close_nav = start
+        today_doc = dict(_lab_snapshots(database, now, 1)).get(today) or {}
+        today_book = today_doc.get("book")
+        if isinstance(today_book, dict):
+            open_nav = today_book["nav_start_usd"]
+        else:
+            open_nav = close_nav - sum(item.get("realized_pnl_usd") or 0.0 for item in today_doc.get("trades") or []
+                                       if item.get("side") == "SELL")
+    else:
+        open_nav = close_nav = nav  # no live session yet today
+    daily = close_nav - open_nav
+    daily_percent = daily / open_nav * 100 if open_nav > 0 else 0.0
     positions = _positions(book)
     exposure = sum(position.market_value_usd for position in positions)
     starting = response.starting_capital_usd
@@ -307,11 +322,13 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
                        daily_return_percent=round((outputs["book"]["nav_usd"] / outputs["book"]["nav_start_usd"] - 1) * 100, 4),
                        is_final=session_day < today)
         for session_day, outputs in sessions if session_day not in known and session_day <= today]
+    if day > today and daily and today not in {point.session_date for point in track}:
+        track.append(R2D2TrackPoint(session_date=today, nav_usd=round(close_nav, 2), daily_pnl_usd=round(daily, 2),
+                                    daily_return_percent=round(daily_percent, 4), is_final=True))
     delta = R2D2NavSessionDelta(
-        status="available", session_date=day, previous_session_date=None, current_total_nav_usd=round(nav, 2),
-        previous_total_nav_usd=round(start, 2), total_delta_usd=round(nav - start, 2),
-        total_delta_percent=round((nav / start - 1) * 100, 4) if start > 0 else 0.0, organic_delta_usd=round(nav - start, 2),
-        organic_delta_percent=round((nav / start - 1) * 100, 4) if start > 0 else 0.0, interest_delta_usd=0.0,
+        status="available", session_date=today, previous_session_date=None, current_total_nav_usd=round(close_nav, 2),
+        previous_total_nav_usd=round(open_nav, 2), total_delta_usd=round(daily, 2), total_delta_percent=round(daily_percent, 4),
+        organic_delta_usd=round(daily, 2), organic_delta_percent=round(daily_percent, 4), interest_delta_usd=0.0,
         interest_delta_percent=0.0, interest_status="not_applicable")
     return response.model_copy(update={
         "book_source": BOOK_SOURCE, "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
@@ -320,7 +337,7 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
         "cash_usd": round(book["cash_usd"], 2), "gross_exposure_usd": round(exposure, 2), "open_positions": len(positions),
         "positions": positions, "total_return_percent": round(total_return, 4),
         "accounting_total_return_percent": round(total_return, 4), "daily_pnl_usd": round(daily, 2),
-        "organic_daily_pnl_usd": round(daily, 2), "daily_return_percent": round(daily_percent, 4), "daily_pnl_date": day,
+        "organic_daily_pnl_usd": round(daily, 2), "daily_return_percent": round(daily_percent, 4), "daily_pnl_date": today,
         "nav_session_delta": delta, "track_record": track})
 
 

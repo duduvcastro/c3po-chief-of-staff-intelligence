@@ -266,3 +266,24 @@ def test_the_opening_book_of_the_next_session_shows_the_evening_before() -> None
     r2d2_lab_live.store(database, dict(_payload(day=tomorrow), book=opening), now=NOW)
     day, config, book, _ = r2d2_lab_live.latest_book(database, now=NOW)
     assert (day, config, book["nav_usd"], book["positions"]) == (tomorrow, "TIT-1", 930549.46, [])
+
+
+def test_the_evening_before_the_daily_pnl_is_todays_result_not_the_opening_book() -> None:
+    """Owner 26/10/2026: with tomorrow's opening book posted, Daily P&L shows today's realized result (+US$ 627.49)."""
+    database = Database(Settings(database_url=""))
+    evening = datetime(2026, 10, 26, 22, 30, tzinfo=timezone.utc)
+    shel = _fill(id="TIT-1:SHEL:sell", symbol="SHEL", side="SELL", executed_at="2026-10-26T09:53:30-04:00",
+                 realized_pnl_usd=484.74, realized_return_percent=0.484)
+    aapl = _fill(id="TIT-1:AAPL:sell", side="SELL", executed_at="2026-10-26T09:35:30-04:00",
+                 realized_pnl_usd=142.75, realized_return_percent=0.143)
+    r2d2_lab_live.store(database, _payload(_fill(), aapl, shel), now=evening)
+    opening = _book(nav_start_usd=931176.95, nav_usd=931176.95, realized_nav_usd=931176.95, cash_usd=931176.95,
+                    positions=[], as_of="2026-10-27T09:30:00-04:00")
+    r2d2_lab_live.store(database, dict(_payload(day="2026-10-27"), book=opening), now=evening)
+    base = app_main.r2d2.dashboard()
+    shown = r2d2_lab_live.apply_book(base, database, now=evening)
+    assert shown.nav_usd == 931176.95 and shown.cash_usd == 931176.95
+    assert shown.daily_pnl_usd == 627.49 and shown.daily_pnl_date == "2026-10-26"
+    assert shown.nav_session_delta.total_delta_usd == 627.49
+    assert shown.nav_session_delta.previous_total_nav_usd == 930549.46
+    assert shown.track_record[-1].session_date == "2026-10-26" and shown.track_record[-1].nav_usd == 931176.95
