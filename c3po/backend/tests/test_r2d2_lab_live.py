@@ -287,6 +287,15 @@ def test_the_evening_before_the_daily_pnl_is_todays_result_not_the_opening_book(
     delta = shown.nav_session_delta  # the session delta adds today's T-bill interest to the trading result
     assert (delta.total_delta_usd, delta.organic_delta_usd, delta.interest_delta_usd) == (941.8, 627.49, 314.31)
     assert delta.previous_total_nav_usd == 930235.15 and delta.interest_status == "posted"
+    # the audit of every panel (owner 26/10): ex-interest, today's episodes, the day scoreboard, the cycle footer
+    assert shown.accounting_nav_ex_interest_usd == round(931176.95 - base.interest_income_epoch_usd, 2)
+    episodes = shown.today_episode_stats
+    assert (episodes.session_date, episodes.closed_episodes, episodes.positive_episodes, episodes.win_rate_percent) == (
+        "2026-10-26", 2, 2, 100.0)
+    assert shown.stats.closed_days == base.stats.closed_days + 1 and shown.stats.positive_days == base.stats.positive_days + 1
+    assert shown.stats.positive_transactions == base.stats.positive_transactions + 2
+    assert shown.last_cycle is not None and shown.last_cycle.trade_count == 3 and shown.last_cycle.status == "completed"
+    assert shown.methodology_version == "R2D2 LIVE · TIT-1"
     assert shown.track_record[-1].session_date == "2026-10-26" and shown.track_record[-1].nav_usd == 931176.95
 
 
@@ -305,3 +314,19 @@ def test_interest_posted_from_the_books_first_session_is_cash_of_the_book() -> N
     assert (delta.previous_total_nav_usd, delta.current_total_nav_usd, delta.total_delta_usd) == (931176.94, 931800.5, 623.56)
     live = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=session, interest=interest)
     assert live.nav_usd == 931800.5 and live.cash_usd == 884300.5
+
+
+def test_the_cycle_counts_are_validated_and_shown() -> None:
+    database = Database(Settings(database_url=""))
+    doc = dict(_payload(_fill()), cycle={"candidates": 183, "signals": 172, "entries": 2, "closed": 2})
+    r2d2_lab_live.store(database, doc, now=NOW)
+    shown = r2d2_lab_live.apply_book(app_main.r2d2.dashboard(), database, now=NOW) if r2d2_lab_live.latest_book(database, now=NOW) else None
+    assert shown is None  # no book: the V2 panels stay
+    later = NOW + timedelta(minutes=1)  # a later post of the day (the store keeps the latest by publication time)
+    r2d2_lab_live.store(database, dict(doc, book=_book()), now=later)
+    shown = r2d2_lab_live.apply_book(app_main.r2d2.dashboard(), database, now=later)
+    assert shown.last_cycle is not None and (shown.last_cycle.scanned_count, shown.last_cycle.signal_count) == (183, 172)
+    for bad in ({"candidates": 1}, {"candidates": -1, "signals": 0, "entries": 0, "closed": 0},
+                {"candidates": True, "signals": 0, "entries": 0, "closed": 0}):
+        with pytest.raises(r2d2_lab_live.LabLiveRefused):
+            r2d2_lab_live.validate(dict(_payload(_fill()), cycle=bad), now=NOW)

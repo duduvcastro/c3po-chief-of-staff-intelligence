@@ -17,8 +17,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
-from .schemas import (R2D2DashboardResponse, R2D2LearningCurvePoint, R2D2LivePositionsResponse, R2D2NavSessionDelta,
-                      R2D2Position, R2D2TrackPoint, R2D2Trade)
+from .schemas import (R2D2CycleStatus, R2D2DashboardResponse, R2D2EpisodeStats, R2D2LearningCurvePoint,
+                      R2D2LivePositionsResponse, R2D2NavSessionDelta, R2D2Position, R2D2SummaryStats, R2D2TrackPoint,
+                      R2D2Trade)
 
 TOKEN_ENV = "C3PO_R2D2_LAB_TOKEN"
 SCHEMA = "C3PO-R2D2-LAB-LIVE-v1"
@@ -45,6 +46,8 @@ BOOK_KEYS = {"nav_start_usd", "nav_usd", "realized_nav_usd", "cash_usd", "as_of"
 POSITION_KEYS = {"symbol", "market", "quantity", "average_cost", "last_price", "cost_usd", "unrealized_pnl_usd",
                  "unrealized_return_percent", "stop_price", "opened_at"}
 BOOK_SOURCE = "lab_live"
+CYCLE_KEYS = {"candidates", "signals", "entries", "closed"}
+SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
 # The one R2D2 book opened on 27/10/2026 from the NAV with interest at the 26/10 close (owner 26/10/2026): the T-bill
 # interest the cash-yield ledger posts for sessions from this one on is money of the book (cash and NAV).
 BOOK_FIRST_SESSION = "2026-10-27"
@@ -106,8 +109,8 @@ def _instant(value: Any, name: str) -> datetime:
 def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     """The payload as stored: the exact schema, closed vocabularies, every fill on the posted session day."""
     if not isinstance(payload, dict) or not {"schema", "day", "config", "trades"} <= set(payload) <= {
-            "schema", "day", "config", "trades", "book"}:
-        raise LabLiveRefused("the payload keys are not schema, day, config, trades and an optional book")
+            "schema", "day", "config", "trades", "book", "cycle"}:
+        raise LabLiveRefused("the payload keys are not schema, day, config, trades and an optional book and cycle")
     if payload["schema"] != SCHEMA:
         raise LabLiveRefused("unexpected schema")
     try:
@@ -156,6 +159,13 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     document = {"schema": SCHEMA, "day": day.isoformat(), "config": payload["config"], "trades": out}
     if "book" in payload:
         document["book"] = _book(payload["book"])
+    if "cycle" in payload:
+        cycle = payload["cycle"]
+        if not isinstance(cycle, dict) or set(cycle) != CYCLE_KEYS or not all(
+                isinstance(cycle[key], int) and not isinstance(cycle[key], bool) and 0 <= cycle[key] <= 1_000_000
+                for key in CYCLE_KEYS):
+            raise LabLiveRefused("the cycle is not exactly candidates, signals, entries, closed counts")
+        document["cycle"] = {key: cycle[key] for key in sorted(CYCLE_KEYS)}
     return document
 
 
@@ -347,15 +357,57 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
         organic_delta_percent=round(daily_percent, 4), interest_delta_usd=round(interest_today, 2),
         interest_delta_percent=round(interest_today / previous * 100, 4) if previous > 0 else 0.0,
         interest_status="posted" if interest_today else "pending")
+    clock = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
+    closed_now = (clock.hour, clock.minute) >= SESSION_CLOSE_ET
+    by_day = dict(_lab_snapshots(database, now, 90))
+    today_doc = by_day.get(today) or {}
+    today_sells = [item.get("realized_pnl_usd") for item in today_doc.get("trades") or [] if item.get("side") == "SELL"]
+    positive = sum(1 for pnl in today_sells if pnl is not None and pnl > 0)
+    negative = sum(1 for pnl in today_sells if pnl is not None and pnl < 0)
+    episodes = R2D2EpisodeStats(
+        session_date=today, closed_episodes=len(today_sells), decided_episodes=positive + negative,
+        positive_episodes=positive, negative_episodes=negative, flat_episodes=len(today_sells) - positive - negative,
+        win_rate_percent=round(positive / (positive + negative) * 100, 2) if positive + negative else 0.0)
+    stats = _scoreboard(response.stats, track, by_day, today, closed_now)
+    cycle = today_doc.get("cycle")
+    last_cycle = response.last_cycle
+    if today_doc:
+        last_cycle = R2D2CycleStatus(
+            status="completed" if closed_now else "running",
+            started_at=datetime.fromisoformat(today + "T09:30:00").replace(tzinfo=NEW_YORK),
+            scanned_count=(cycle or {}).get("candidates", 0), signal_count=(cycle or {}).get("signals", 0),
+            trade_count=len(today_doc.get("trades") or []), metadata={"source": BOOK_SOURCE, "config": str(today_doc.get("config"))})
     return response.model_copy(update={
         "book_source": BOOK_SOURCE, "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
-        "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),
-        "accounting_nav_ex_interest_usd": round(nav, 2), "accounting_total_nav_usd": round(nav, 2),
+        "methodology_version": "R2D2 LIVE · %s" % config, "today_episode_stats": episodes, "stats": stats,
+        "last_cycle": last_cycle, "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),
+        "accounting_nav_ex_interest_usd": round(nav - response.interest_income_epoch_usd, 2),
+        "accounting_total_nav_usd": round(nav, 2),
         "cash_usd": round(book["cash_usd"] + accrued, 2), "gross_exposure_usd": round(exposure, 2), "open_positions": len(positions),
         "positions": positions, "total_return_percent": round(total_return, 4),
         "accounting_total_return_percent": round(total_return, 4), "daily_pnl_usd": round(daily, 2),
         "organic_daily_pnl_usd": round(daily, 2), "daily_return_percent": round(daily_percent, 4), "daily_pnl_date": today,
         "nav_session_delta": delta, "track_record": track})
+
+
+def _scoreboard(v2: R2D2SummaryStats, track: list[R2D2TrackPoint], by_day: dict[str, dict[str, Any]], today: str,
+                closed_now: bool) -> R2D2SummaryStats:
+    """The paused V2 book's lifetime scoreboard plus the live sessions (days from the track, legs from the sells)."""
+    lab_days = [point for point in track if point.session_date in by_day and (point.session_date < today or closed_now)]
+    sells = [item.get("realized_pnl_usd") for day, outputs in by_day.items() if day <= today
+             for item in outputs.get("trades") or [] if item.get("side") == "SELL"]
+    closed = v2.closed_days + len(lab_days)
+    positive_days = v2.positive_days + sum(point.daily_return_percent > 0 for point in lab_days)
+    return R2D2SummaryStats(
+        closed_days=closed, positive_days=positive_days,
+        above_half_percent_days=v2.above_half_percent_days + sum(point.daily_return_percent >= 0.5 for point in lab_days),
+        negative_days=v2.negative_days + sum(point.daily_return_percent < 0 for point in lab_days),
+        below_minus_half_percent_days=v2.below_minus_half_percent_days + sum(point.daily_return_percent <= -0.5 for point in lab_days),
+        flat_days=v2.flat_days + sum(abs(point.daily_return_percent) < 1e-9 for point in lab_days),
+        win_rate_percent=round(positive_days / closed * 100, 2) if closed else 0.0,
+        total_transactions=v2.total_transactions + len(sells),
+        positive_transactions=v2.positive_transactions + sum(1 for pnl in sells if pnl is not None and pnl > 0),
+        negative_transactions=v2.negative_transactions + sum(1 for pnl in sells if pnl is not None and pnl < 0))
 
 
 def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: datetime | None = None,
