@@ -279,37 +279,49 @@ def _document_key(row: Mapping[str,Any]) -> dict[str,Any]:
             "document_version":_jsonable(row.get("document_version",1)),"accepted_at":accepted}
 
 
+def _matches_reference(row: Mapping[str,Any], ref: Mapping[str,Any]) -> bool:
+    return (row.get("row_hash")==ref.get("row_hash") and str(row.get("doc_id"))==ref["doc_id"]
+        and str(row.get("concept"))==ref["concept"] and _instant(row["accepted_at"])==_instant(ref["accepted_at"])
+        and _jsonable(row.get("period_start"))==ref["period_start"] and _jsonable(row.get("period_end"))==ref["period_end"])
+
+
 def reconcile_company_originals(adapted: AdaptedCompany, observed: ObservedSources, package: Mapping[str,Any]) -> dict[str,Any]:
     from .statement_vintages import vintage_row_hash
     derivations=adapted.provenance.get("fact_derivations",{})
     references={name:_references(value) for name,value in derivations.items()}
+    opening=adapted.provenance.get("beginning_book_observation",{})
+    candidate=(opening.get("candidate") or {}).get("row")
     ledger=[]
     for row in observed.fact_rows or []:
-        identity=row_id("fact",row);fields=[]
+        identity=row_id("fact",row);fields=[];observed_for=[]
         try:
             valid=row.get("row_hash")==vintage_row_hash(row)
             if valid:
                 for name,refs in references.items():
-                    if any(row.get("row_hash")==ref.get("row_hash") and str(row.get("doc_id"))==ref["doc_id"]
-                        and str(row.get("concept"))==ref["concept"] and _instant(row["accepted_at"])==_instant(ref["accepted_at"])
-                        and _jsonable(row.get("period_start"))==ref["period_start"] and _jsonable(row.get("period_end"))==ref["period_end"] for ref in refs):
+                    if any(_matches_reference(row,ref) for ref in refs):
                         fields.append(name)
+                if candidate is not None and _matches_reference(row,candidate):
+                    observed_for.append("residual_income_opening_equity_candidate")
         except (ValueError,TypeError,KeyError):valid=False
         key=_document_key(row)
         ledger.append({"canonical_row_id":identity,"row_hash":row.get("row_hash"),"doc_id":str(row.get("doc_id")),
             "document_key":key,"document_key_id":canonical_hash(key),
             "concept":row.get("concept"),"canonical_row":_jsonable(row),"canonical_hash_valid":valid,"used_by_fields":sorted(fields),
+            "observed_for":observed_for,
             "original":_original_status("fact",identity,package,row)})
     issuer=adapted.provenance.get("issuer_id");used_docs={x["doc_id"] for x in ledger if x["used_by_fields"]}
     documents=[]
     usage: dict[str,set[str]]={}
+    observation_usage: dict[str,set[str]]={}
     for line in ledger:usage.setdefault(line["document_key_id"],set()).update(line["used_by_fields"])
+    for line in ledger:observation_usage.setdefault(line["document_key_id"],set()).update(line["observed_for"])
     for row in observed.filing_rows:
         if str(row.get("issuer_key"))==issuer or str(row.get("doc_id")) in used_docs:
             identity=row_id("filing",row)
             key=_document_key(row);key_id=canonical_hash(key)
             documents.append({"canonical_row_id":identity,"doc_id":str(row.get("doc_id")),
                 "document_key":key,"document_key_id":key_id,"used_by_fields":sorted(usage.get(key_id,set())),
+                "observed_for":sorted(observation_usage.get(key_id,set())),
                 "canonical_row":_jsonable(row),"original":_original_status("filing",identity,package,row)})
     fields={}
     for field in sorted(derivations):
@@ -326,8 +338,16 @@ def reconcile_company_originals(adapted: AdaptedCompany, observed: ObservedSourc
             "capture_link_reasons":sorted({reason for x in lines+docs for reason in x["original"]["capture_link_reasons"]}),
             "capture_references":[ref for _,ref in sorted({canonical_hash(ref):ref for x in lines+docs for ref in x["original"]["capture_references"]}.items())],
             "historical_admissibility":False}
+    candidate_rows=[{"canonical_row_id":x["canonical_row_id"],"document_key_id":x["document_key_id"],"original":x["original"]}
+                    for x in ledger if x["observed_for"]]
+    candidate_keys={x["document_key_id"] for x in candidate_rows}
+    opening_links={"status":opening.get("status","not_observed"),"reason":opening.get("reason","fact_stage_not_observed"),
+        "candidate_row_references":sorted(candidate_rows,key=lambda x:x["canonical_row_id"]),
+        "candidate_document_references":[{"canonical_row_id":x["canonical_row_id"],"document_key_id":x["document_key_id"],"original":x["original"]}
+            for x in sorted(documents,key=lambda x:x["canonical_row_id"]) if x["document_key_id"] in candidate_keys],
+        "net_income_ttm_dependencies":fields.get("net_income_ttm"),"model_fact_emitted":False,"used_in_computation":False}
     return {"schema":"VALUATION-ENSEMBLE-COMPANY-ORIGINAL-RECONCILIATION-v1","package_status":package["status"],
         "fact_stage_observed":observed.fact_rows is not None,"observed_fact_rows":len(observed.fact_rows or []),
         "row_ledger":sorted(ledger,key=lambda x:x["canonical_row_id"]),"document_ledger":sorted(documents,key=lambda x:x["canonical_row_id"]),
-        "fields":fields,"package_refusals":package.get("artifact_refusals",{}),
+        "fields":fields,"package_refusals":package.get("artifact_refusals",{}),"beginning_book_observation":opening_links,
         "origin_authentication":"unverified_supplied_bytes","historical_admissibility":False}

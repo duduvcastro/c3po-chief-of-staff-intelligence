@@ -62,6 +62,47 @@ or scope flag is invented. The unchanged pure kernel still accepts an explicitly
 synthetic input as a mathematical control; that is not a source-adapter closure rule or
 proof of real coverage. Goodwill remains separate and cannot be subtracted twice.
 
+## Residual-income opening-book observations
+
+The adapter now preserves the **actual consumed net-income TTM chain** before the
+protected helpers' quarter keys are flattened into raw references. Each selected quarter
+retains its effective start/end, reported/derived status, unchanged helper value and raw
+terms with signed coefficients, canonical row hashes, document/version/issuer/unit and
+acceptance/capture metadata. The combined expression retains zero-coefficient rows that
+cancel algebraically; those rows participated in the existing construction and are not
+erased as evidence. The final NI value and the protected quarter helpers are unchanged.
+
+A separate observation checks exact day adjacency and uniqueness of support. It considers
+reported and eligible same-start derived alternatives, including derivations the helper
+suppressed because a reported quarter already had that ending. Equivalence is an ordered
+quarter path with actual spans and signed canonical row identities, not equal numeric
+values or a shared boundary. More than one compatible path is explicitly ambiguous.
+Candidate/pair/search bounds of 4096 are engineering limits: exhausted assessment is
+indeterminate, never evidence of uniqueness. The existing helper's ±3-day tolerance does
+not authorize filling a gap/overlap or choosing a nearby opening balance.
+
+Only a demonstrated exact unique path identifies a required opening date: the oldest
+consumed quarter start minus one day under the existing inclusive-date convention. In
+FY-minus-9M, the effective quarter starts after the shorter period's end, not at the raw
+FY start. There is no end-minus-365, fiscal-calendar guess, FY-only or new three-total
+`currentYTD+FY-priorYTD` fallback. Duration heuristics are explicitly not fiscal authority.
+
+At that exact date only, the adapter can **observe a book-equity candidate** passing the
+existing source, issuer, currency, hash, period and eligible-version checks. Missing,
+future, conflicting or nearby/end-only equity stays missing. An observed candidate is
+separate from a model input: scope/controller/class/share-basis comparability is still
+unattested, and `book_equity_beginning` is never emitted by this phase. No caller flag
+can promote the candidate. The residual-income kernel therefore remains non-evaluable
+when its required beginning-book fact is absent.
+
+Company/model audits distinguish a determinable boundary, an observed exact-date
+candidate, and a fact actually supplied/used. The existing original/capture reconciliation
+links candidate rows/documents through `observed_for`, separate from `used_by_fields`.
+The NI raw dependencies and candidate original/capture links remain inspectable without
+rereading canonical sources. They cannot satisfy missing model-input completeness merely
+because all candidate bytes match. All16 model denominators include refused companies;
+source-origin, historical identity/class/basis/action and serving gates remain closed.
+
 ## Two clocks and the new study
 
 Regulator acceptance is evidence of when an official filing existed, even when its local

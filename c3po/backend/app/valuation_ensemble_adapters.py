@@ -10,8 +10,8 @@ import math
 import hashlib
 import re
 from collections import Counter
-from dataclasses import dataclass
-from datetime import date, datetime, time
+from dataclasses import dataclass, replace
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Mapping, Protocol, Sequence
 from zoneinfo import ZoneInfo
@@ -193,8 +193,121 @@ def _cvm_field(concept: str) -> tuple[str, bool] | None:
     return None
 
 
+def _ni_term(row: Mapping[str,Any], coefficient: int) -> dict[str,Any]:
+    return {"coefficient":coefficient,"row":{
+        **{key:_jsonable(row.get(key)) for key in ("market","issuer_key","source","doc_id","form","concept","unit")},
+        "document_version":_jsonable(row.get("document_version",1)),"row_hash":str(row["row_hash"]),
+        "period_start":_jsonable(row.get("period_start")),"period_end":_jsonable(row["period_end"]),
+        "accepted_at":_instant(row["accepted_at"]).isoformat(),"effective_value":float(row["value"]),
+        "captured_at":_instant(row["first_seen_at"]).isoformat() if row.get("first_seen_at") else None}}
+
+
+def _ni_support(start: date, end: date, rows: Sequence[Mapping[str,Any]], derived: bool) -> dict[str,Any]:
+    terms=[_ni_term(row,-1 if derived and index==1 else 1) for index,row in enumerate(rows)]
+    value={"period_start":start.isoformat(),"period_end":end.isoformat(),"derived":derived,"terms":terms}
+    value["support_sha256"]=canonical_hash({"period_start":value["period_start"],"period_end":value["period_end"],
+        "derived":derived,"signed_canonical_rows":[[term["coefficient"],term["row"]["row_hash"]] for term in terms]})
+    return value
+
+
+def _ni_window(durations: Mapping[tuple[date,date],Mapping[str,Any]], quarters: Mapping[tuple[date,date],Mapping[str,Any]],
+               chain: Sequence[tuple[date,date]]) -> dict[str,Any]:
+    """Observe the exact consumed support without changing its financial value.
+
+    The protected helpers remain authoritative for the *existing* computation.
+    Exact/unique support below is only a stricter boundary observation, never a
+    fiscal-calendar, source-scope, historical-admission or new TTM closure rule.
+    """
+    from .sec_xbrl import duration_months
+    selected=[_ni_support(start,end,quarters[(start,end)]["facts"],bool(quarters[(start,end)]["derived"])) for start,end in chain]
+    for item,key in zip(selected,chain):item["helper_computed_value"]=float(quarters[key]["value"])
+    chronological=list(reversed(chain));gaps=[(right[0]-left[1]).days-1 for left,right in zip(chronological,chronological[1:])]
+    result: dict[str,Any]={"schema":"VALUATION-ENSEMBLE-NI-WINDOW-OBSERVATION-v1","status":"indeterminate",
+        "reason":None,"selected_quarters_newest_first":selected,"selected_window_start":chronological[0][0].isoformat(),
+        "selected_window_end":chronological[-1][1].isoformat(),"join_gap_days":gaps,"exact_continuity":all(x==0 for x in gaps),
+        "unique_support":False,"required_opening_date":None,"alternative_exact_paths":[],
+        "support_path_count_lower_bound":0,"support_inventory_complete":True,
+        "uniqueness_equivalence":"ordered_quarter_spans_and_canonical_signed_raw_terms_not_just_equal_values_or_boundary",
+        "fiscal_period_authority":"not_established_by_duration_heuristics","source_scope_class_basis":"unattested",
+        "changes_existing_income_value":False,"emits_beginning_book_fact":False}
+    totals: dict[str,dict[str,Any]]={}
+    for quarter in selected:
+        for term in quarter["terms"]:
+            key=canonical_hash(term["row"])
+            if key not in totals:totals[key]={"row":term["row"],"coefficient":0}
+            totals[key]["coefficient"]+=term["coefficient"]
+    result["combined_raw_terms_including_cancellations"]=[value for _,value in sorted(totals.items())]
+    if not result["exact_continuity"]:
+        result["reason"]="ni_selected_quarters_gap_or_overlap";return result
+    candidates: dict[str,dict[str,Any]]={};by_start: dict[date,list[tuple[int,date,Mapping[str,Any]]]]={}
+    for (start,end),row in sorted(durations.items()):
+        months=duration_months(start,end)
+        if months==3:
+            item=_ni_support(start,end,[row],False);candidates[item["support_sha256"]]=item
+        if months is not None:by_start.setdefault(start,[]).append((months,end,row))
+    inspected=0
+    for entries in by_start.values():
+        for index,(short_months,short_end,short) in enumerate(entries):
+            for long_months,long_end,long in entries[index+1:]:
+                inspected+=1
+                if inspected>4096 or len(candidates)>4096:
+                    result.update(reason="ni_support_inventory_bound",support_inventory_complete=False);return result
+                if long_months-short_months==3 and short_end<long_end and short_end<date.max:
+                    start=short_end+timedelta(days=1)
+                    if duration_months(start,long_end)==3:
+                        item=_ni_support(start,long_end,[long,short],True);candidates[item["support_sha256"]]=item
+    if len(candidates)>4096:
+        result.update(reason="ni_support_inventory_bound",support_inventory_complete=False);return result
+    by_end: dict[str,list[dict[str,Any]]]={}
+    for _,item in sorted(candidates.items()):by_end.setdefault(item["period_end"],[]).append(item)
+    paths: list[list[dict[str,Any]]]=[];searched=0;search_bounded=False
+    def search(end: str, path: list[dict[str,Any]]) -> None:
+        nonlocal searched,search_bounded
+        if len(paths)>=2 or search_bounded:return
+        for item in by_end.get(end,[]):
+            searched+=1
+            if searched>4096:search_bounded=True;return
+            selected_path=[*path,item]
+            if len(selected_path)==4:paths.append(selected_path)
+            else:
+                start=date.fromisoformat(item["period_start"])
+                if start>date.min:search((start-timedelta(days=1)).isoformat(),selected_path)
+            if len(paths)>=2 or search_bounded:return
+    search(chain[0][1].isoformat(),[])
+    result["alternative_exact_paths"]=paths;result["support_path_count_lower_bound"]=len(paths)
+    if search_bounded:
+        result.update(reason="ni_support_search_bound",support_inventory_complete=False);return result
+    if len(paths)!=1:
+        result["reason"]="ni_support_ambiguous" if paths else "ni_selected_support_not_exactly_demonstrated"
+        result["support_inventory_complete"]=not bool(paths);return result
+    if [x["support_sha256"] for x in paths[0]]!=[x["support_sha256"] for x in selected]:
+        result["reason"]="ni_helper_selected_support_differs_from_unique_exact_path";return result
+    try:opening=chronological[0][0]-timedelta(days=1)
+    except OverflowError:
+        result["reason"]="ni_opening_date_out_of_range";return result
+    result.update(status="boundary_determinable",reason=None,unique_support=True,required_opening_date=opening.isoformat())
+    return result
+
+
+def _opening_book_observation(window: Mapping[str,Any] | None, book_spans: Mapping[tuple[date|None,date],Mapping[str,Any]],
+                              blocked: bool) -> dict[str,Any]:
+    result: dict[str,Any]={"status":"not_determinable","reason":"net_income_ttm_unavailable","window":window,
+        "candidate":None,"model_fact_emitted":False,"used_in_computation":False,
+        "scope_class_basis_comparability":"unattested","historical_admissibility":False}
+    if window is None:return result
+    if window["status"]!="boundary_determinable":result["reason"]=window["reason"];return result
+    if blocked:result["reason"]="opening_equity_ineligible_or_ambiguous";return result
+    required=date.fromisoformat(window["required_opening_date"]);row=book_spans.get((None,required))
+    if row is None:result["reason"]="exact_opening_equity_row_missing";return result
+    result.update(status="observed_exact_date_candidate",reason="opening_scope_class_basis_comparability_unattested",
+        candidate={"row":_ni_term(row,1)["row"],"value":float(row["value"]),"unit":str(row["unit"]),
+                   "period_end":required.isoformat(),"positive_value":float(row["value"])>0,
+                   "model_fact_emitted":False,"used_in_computation":False})
+    return result
+
+
 def _facts_at_T(rows: Sequence[Mapping[str, Any]], filings: Mapping[str, Mapping[str, Any]], request: CompanyRequest,
-                issuer: str, refused: Counter[str]) -> tuple[dict[str,OfficialFact], dict[str,Any]]:
+                issuer: str, refused: Counter[str]) -> tuple[dict[str,OfficialFact], dict[str,Any],dict[str,Any]]:
     from .statement_vintages import vintage_row_hash
     from .sec_xbrl import discrete_quarters, trailing_quarters
     source, store_market = ("CVM","B3") if request.market == "B3" else ("SEC","US")
@@ -274,6 +387,7 @@ def _facts_at_T(rows: Sequence[Mapping[str, Any]], filings: Mapping[str, Mapping
         by_field.setdefault(field,{})[(start,end)] = best[0]
     facts: dict[str,OfficialFact] = {}
     derivations: dict[str,Any] = {}
+    income_window=None
     for field, spans in by_field.items():
         if field in FLOW_FIELDS:
             durations = {(start,end):row for (start,end),row in spans.items() if start is not None}
@@ -286,6 +400,10 @@ def _facts_at_T(rows: Sequence[Mapping[str, Any]], filings: Mapping[str, Mapping
             value = math.fsum(float(quarters[key]["value"]) for key in chain)
             name = field+"_ttm"
             facts[name],derivations[name] = _reference(used,source=source,value=value,end=max(key[1] for key in chain),rule="four_contiguous_quarters")
+            if field=="net_income":
+                income_window=_ni_window(durations,quarters,chain)
+                derivations[name]["income_window_observation"]=income_window
+                facts[name]=replace(facts[name],evidence=replace(facts[name].evidence,payload_sha256=canonical_hash(derivations[name])))
         else:
             instants = {end:row for (start,end),row in spans.items() if start is None}
             if not instants:
@@ -318,7 +436,8 @@ def _facts_at_T(rows: Sequence[Mapping[str, Any]], filings: Mapping[str, Mapping
         intangible_parts=("finite_lived_intangible_assets_net_reported","indefinite_lived_intangible_assets_excluding_goodwill_reported")
         if "intangible_assets_excluding_goodwill" not in facts and any(name in facts for name in intangible_parts):
             refused["aggregate_completeness_unattested:intangible_assets_excluding_goodwill"]+=1
-    return facts,derivations
+    opening=_opening_book_observation(income_window,by_field.get("book_equity",{}),"book_equity" in blocked_fields)
+    return facts,derivations,opening
 
 
 def adapt_company(sources: Sources, request: CompanyRequest) -> AdaptedCompany:
@@ -378,8 +497,9 @@ def adapt_company(sources: Sources, request: CompanyRequest) -> AdaptedCompany:
         return AdaptedCompany(None,(),provenance)
     issuer = issuers.pop()
     own_filings = {key:x for key,x in registered.items() if str(x["issuer_key"]) == issuer}
-    facts,derivations = _facts_at_T(sources.facts(request.market,issuer,cut),own_filings,request,issuer,refused)
+    facts,derivations,opening = _facts_at_T(sources.facts(request.market,issuer,cut),own_filings,request,issuer,refused)
     provenance.update(issuer_id=issuer,fact_derivations=derivations,facts_available=sorted(facts),
+        beginning_book_observation=opening,
         filing_evidence=[{key:_jsonable(row.get(key)) for key in
             ("doc_id","issuer_key","accepted_at","accepted_source","header_sha256","first_seen_at")}
             for row in sorted(own_filings.values(),key=lambda x:(_instant(x["accepted_at"]),str(x["doc_id"])))])

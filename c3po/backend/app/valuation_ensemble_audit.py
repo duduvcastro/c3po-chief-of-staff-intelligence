@@ -127,6 +127,11 @@ def audit_company(adapted: AdaptedCompany, computation: Mapping[str,Any] | None,
                 "capture_references":{field:original_fields.get(field,{}).get("capture_references",[]) for field in FACTS[model]},
                 "origin_authentication":"unverified_supplied_bytes",
                 "historical_admissibility":False}}
+        if model=="residual_income":
+            model_cells[model]["beginning_book_observation"]={
+                "source_observation":adapted.provenance.get("beginning_book_observation",{"status":"not_observed","reason":"fact_stage_not_observed","candidate":None}),
+                "original_reconciliation":(originals or {}).get("beginning_book_observation"),
+                "candidate_does_not_supply_required_fact":True,"model_fact_emitted":False,"used_in_computation":False}
     return {"schema":"VALUATION-ENSEMBLE-INPUT-AUDIT-v1","scope":"requested_cross_section_only_no_historical_coverage_claim",
         "admissibility":admissibility,"models":model_cells,
         "variants":{key:{"computable":value["status"]=="evaluated","kernel_reason":value.get("reason"),"admissible":False}
@@ -159,6 +164,12 @@ def summarize_audits(audits: list[Mapping[str,Any]]) -> dict[str,Any]:
             "all_required_checked_content_equal":sum(x["original_evidence"]["all_required_checked_content_equal"] for x in cells)}
         metrics[model]["all_required_capture_links_verified"]=sum(x["original_evidence"]["all_required_capture_links_verified"] for x in cells)
         metrics[model]["missing_or_refused_capture_links"]=dict(sorted(capture.items()))
+        if model=="residual_income":
+            observations=[x["beginning_book_observation"]["source_observation"] for x in cells]
+            metrics[model]["opening_boundaries_determinable"]=sum((x.get("window") or {}).get("status")=="boundary_determinable" for x in observations)
+            metrics[model]["exact_date_candidates_observed"]=sum(x.get("candidate") is not None for x in observations)
+            metrics[model]["beginning_book_facts_consumed"]=sum(x["computable"] and x["required_facts"]["book_equity_beginning"]["status"]=="available" for x in cells)
+            metrics[model]["beginning_book_observation_reasons"]=dict(sorted(Counter(x["reason"] for x in observations).items()))
     proof_counts = Counter(reason for audit in audits for reason in audit["admissibility"]["blocking_proofs"])
     return {"requested_companies":len(audits),"models":metrics,
         "blocking_proof_counts":dict(sorted(proof_counts.items())),"historical_coverage_attested":False,
