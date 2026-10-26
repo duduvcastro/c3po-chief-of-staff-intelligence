@@ -22,6 +22,7 @@ from uuid import uuid4
 
 from .listed_universe import Catalogue, Listing, digest, utc
 from .market_data.http import MarketDataRequestError
+from . import listed_universe_telemetry as telemetry
 
 STAGE_ANALYSIS = "full_universe_stage"
 RUN_SCHEMA = "FULL-UNIVERSE-CANONICAL-RUN-v1"
@@ -117,7 +118,9 @@ class QuotaWindow:
                 raise ValueError("quota window policy changed; do not silently reset or enlarge its budget")
         else:
             self.state = {"window": window, "policy_sha256": expected,
-                          "used": {key: 0 for key in limits}, "reservations": 0}
+                          "policy": {"window": window, "limits": self.limits, "rate_card": self.rate_card},
+                          "used": {key: 0 for key in limits}, "reservations": 0,
+                          "http_observations": telemetry.http_observation(complete_history=True)}
             atomic_json(self.path, self.state)
         self.blocked_reason = self.state.get("hold_reason")
 
@@ -144,6 +147,16 @@ class QuotaWindow:
     def check(self) -> None:
         if self.blocked_reason:
             raise CollectionPaused(self.blocked_reason)
+
+    def http_started(self, provider):
+        with self.lock:
+            telemetry.http_started(self.state, provider)
+            atomic_json(self.path, self.state)
+
+    def http_finished(self, provider, *, status, size, seconds):
+        with self.lock:
+            telemetry.http_finished(self.state, provider, status=status, size=size, seconds=seconds)
+            atomic_json(self.path, self.state)
 
 
 class CanonicalAdapter(Protocol):
@@ -207,14 +220,18 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
             if state["identity"] != identity or state["max_attempts"] != max_attempts:
                 raise ValueError("catalogue/producer/context policy changed; do not resume another run")
         else:
+            if any(path.name != "run.lock" for path in directory.iterdir()):
+                raise ValueError("checkpoint missing with existing artifacts; do not reset a measured run or quota")
             state = {"schema": RUN_SCHEMA, "run_id": str(uuid4()), "identity": identity,
                      "market": catalogue.market, "catalogue_manifest_sha256": catalogue.payload()["manifest_sha256"],
-                     "producer_files": producer_identity(), "max_attempts": max_attempts,
+                     "producer_files": producer_identity(), "adapter_identity": ready(adapter.identity), "max_attempts": max_attempts,
+                     "observations": telemetry.observation(complete_history=True),
                      "status": "collecting", "items": {item.symbol: {"status": "pending", "attempts": 0} for item in listings}}
             atomic_json(state_path, state)
         if set(state["items"]) != {item.symbol for item in listings}:
             raise ValueError("checkpoint inventory no longer reconciles")
         quota = QuotaWindow(directory, window=window, limits=limits, rate_card=rate_card)
+        invocation_started = telemetry.begin_invocation(state, state_path, atomic_json)
         processed = 0
         item = None
         try:
@@ -224,9 +241,11 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
                 input_path = directory / "inputs" / name
                 if item["status"] == "inputs_ready":
                     _artifact(directory / item["input_file"], identity=identity, symbol=listing.symbol)
+                    state["observations"]["cached_input_reads"] += 1
                     continue
                 if item["status"] == "valued":
                     _artifact(directory / item["row_file"], identity=identity, symbol=listing.symbol)
+                    state["observations"]["cached_row_reads"] += 1
                     continue
                 if item["status"] == "not_evaluable":
                     continue
@@ -234,6 +253,7 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
                     item.update(status="not_evaluable", reason="listing_classification_pending")
                 elif input_path.exists():
                     _artifact(input_path, identity=identity, symbol=listing.symbol)
+                    state["observations"]["cached_input_reads"] += 1
                     item.update(status="inputs_ready", input_file=str(input_path.relative_to(directory)))
                 else:
                     while item["attempts"] < max_attempts:
@@ -241,7 +261,8 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
                         item["status"] = "fetching"
                         atomic_json(state_path, state)
                         try:
-                            payload = adapter.collect(listing, quota)
+                            with telemetry.phase(state, state_path, atomic_json, "collect"):
+                                payload = adapter.collect(listing, quota)
                             quota.check()  # protected clients may catch a quota exception; never call it missing data
                             _artifact(input_path, identity=identity, symbol=listing.symbol, payload=payload)
                             item.update(status="inputs_ready", input_file=str(input_path.relative_to(directory)))
@@ -254,6 +275,7 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
                             item.update(status="not_evaluable", reason=reason)
                             break
                         except TransientInputFailure:
+                            state["observations"]["input_transient_failures"] += 1
                             quota.check()
                             if item["attempts"] >= max_attempts:
                                 item.update(status="not_evaluable", reason="provider_failure_after_bounded_retries")
@@ -273,10 +295,12 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
                 if context_path.exists():
                     context = _artifact(context_path, identity=identity, symbol="CONTEXT")
                 else:
-                    context = adapter.prepare_context(inputs, quota)
+                    with telemetry.phase(state, state_path, atomic_json, "context"):
+                        context = adapter.prepare_context(inputs, quota)
                     quota.check()
                     _artifact(context_path, identity=identity, symbol="CONTEXT", payload=context)
-                rows = dict(adapter.value(inputs, context, quota))
+                with telemetry.phase(state, state_path, atomic_json, "value"):
+                    rows = dict(adapter.value(inputs, context, quota))
                 quota.check()
                 if set(rows) - set(inputs):
                     raise ValueError("canonical adapter returned a foreign listing")
@@ -298,7 +322,7 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
             if item is not None and item["status"] == "fetching":
                 item.update(status="pending", attempts=max(0, item["attempts"] - 1))
             state["pause_reason"] = str(exc)
-        atomic_json(state_path, state)
+        telemetry.finish_invocation(state, state_path, atomic_json, invocation_started)
         return {"schema": RUN_SCHEMA, "run_id": state["run_id"], "identity": identity,
                 "status": state["status"], "complete": state["status"] == "complete",
                 "inventory_count": len(state["items"]),
@@ -306,6 +330,7 @@ def produce_catalogue(catalogue: Catalogue, directory: Path, adapter: CanonicalA
                 "not_evaluable_count": sum(item["status"] == "not_evaluable" for item in state["items"].values()),
                 "remaining": sum(item["status"] in {"pending", "fetching", "inputs_ready"} for item in state["items"].values()),
                 "pause_reason": state.get("pause_reason"), "quota": quota.state,
+                "observations": state["observations"],
                 "generation_activated": False, "checkpoint_written": True}
 
 
@@ -338,6 +363,7 @@ def stage_predictions(database: Any, directory: Path, *, act: bool = False) -> d
         if not act:
             return {"action": "stage_plan", "valued": len(rows), "not_evaluable": len(unavailable),
                     "written": False, "generation_activated": False}
+        stage_started = telemetry.begin_stage(state, directory / "checkpoint.json", atomic_json)
         predicted = utc(state["completed_at"])
         method = database.ensure_methodology_version("full_universe_stage", 1,
                                                     {"canonical_methodology_version": METHODOLOGY_VERSION},
@@ -379,6 +405,7 @@ def stage_predictions(database: Any, directory: Path, *, act: bool = False) -> d
                 if record is not None:
                     records.append(record)
         recorded = int(database.insert_valuation_predictions(records)) if records else 0
+        telemetry.finish_stage(state, directory / "checkpoint.json", atomic_json, stage_started, len(records), recorded)
         return {"stage_snapshot_id": stage_id, "valued": len(rows), "not_evaluable": len(unavailable),
                 "records_considered": len(records), "records_inserted": recorded,
                 "written": True, "generation_activated": False,

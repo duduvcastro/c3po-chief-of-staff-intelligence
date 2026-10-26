@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
+from time import monotonic
 from urllib.parse import urlparse
 
 import httpx
@@ -30,7 +31,10 @@ class BudgetedHttp:
             self.quota.stop("provider_rate_card_missing")
             raise CollectionPaused("provider_rate_card_missing")
         rule = max(rules, key=lambda item: len(str(item.get("path_prefix") or "/")))
-        self.quota.reserve(str(rule.get("provider")), rule.get("units"))
+        provider = str(rule.get("provider"))
+        self.quota.reserve(provider, rule.get("units"))
+        self.quota.http_started(provider)
+        started, response = monotonic(), None
         try:
             # A transport read is one reservation; no automatic retry/redirect
             # can spend units outside the persistent budget.
@@ -44,6 +48,10 @@ class BudgetedHttp:
             return response.text if text else response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise TransientInputFailure(type(exc).__name__) from exc
+        finally:
+            self.quota.http_finished(provider, status=response.status_code if response is not None else None,
+                                     size=len(response.content) if response is not None else 0,
+                                     seconds=monotonic() - started)
 
     def get_json(self, url, *, params=None, headers=None):
         return self._read(url, params=params, headers=headers)

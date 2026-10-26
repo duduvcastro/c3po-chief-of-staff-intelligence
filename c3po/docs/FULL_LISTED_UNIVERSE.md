@@ -69,6 +69,11 @@ reports inventory unavailable until a manifest has been captured.
 
 No production capture schedule has been installed or activated by this increment.
 
+The [capacity importer and publication preparation](FULL_LISTED_UNIVERSE_RELEASE_PREPARATION.md)
+describe measured runtime counters, read-only evidence reconciliation, unknown
+legacy metrics and the remaining atomic-publication/legacy-writer gates. Capacity
+preparation never activates production or installs a schedule.
+
 ## Resumable canonical producer stage
 
 `python -m app.listed_universe_worker --catalogue <manifest.json> --checkpoint
