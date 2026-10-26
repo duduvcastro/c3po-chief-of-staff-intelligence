@@ -179,3 +179,54 @@ def test_the_dashboard_appends_the_lab_sessions_to_the_learning_curve(monkeypatc
     assert posted.status_code == 202
     assert curve[-1]["session_date"] == day and curve[-1]["positive_trades"] >= 1
     assert [point["session_date"] for point in curve] == sorted(point["session_date"] for point in curve)
+
+
+def _book(**overrides):
+    position = {"symbol": "AAPL", "market": "NASDAQ", "quantity": 186.0, "average_cost": 250.0, "last_price": 251.0,
+                "cost_usd": 46527.47, "unrealized_pnl_usd": 120.5, "unrealized_return_percent": 0.259,
+                "stop_price": 248.6, "opened_at": "2026-10-26T09:35:00-04:00"}
+    book = {"nav_start_usd": 930549.46, "nav_usd": 930669.96, "realized_nav_usd": 930549.46, "cash_usd": 884021.99,
+            "as_of": "2026-10-26T10:00:00-04:00", "positions": [position]}
+    book.update(overrides)
+    return book
+
+
+def test_the_book_is_validated_like_the_fills() -> None:
+    document = r2d2_lab_live.validate(dict(_payload(_fill()), book=_book()), now=NOW)
+    assert document["book"]["positions"][0]["quantity"] == 186.0
+    for bad in (_book(extra=1), _book(nav_usd=0), _book(nav_usd=1e300),
+                _book(positions=[dict(_book()["positions"][0], quantity=10**400)]),
+                _book(positions=[dict(_book()["positions"][0], market="B3")]),
+                _book(positions=[dict(_book()["positions"][0], opened_at="2026-10-26T09:35:00")])):
+        with pytest.raises(r2d2_lab_live.LabLiveRefused):
+            r2d2_lab_live.validate(dict(_payload(_fill()), book=bad), now=NOW)
+
+
+def test_one_book_on_every_panel(monkeypatch) -> None:
+    """Owner 26/10/2026: NAV, cash, positions, daily P&L, session delta and track record come from the live book."""
+    monkeypatch.setenv(r2d2_lab_live.TOKEN_ENV, TOKEN)
+    now = datetime.now(timezone.utc)
+    day = now.astimezone(NEW_YORK).date().isoformat()
+    book = _book(as_of=now.isoformat(), positions=[dict(_book()["positions"][0], opened_at=now.isoformat())])
+    headers = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}
+    app_main.r2d2_read_cache.invalidate()
+    with TestClient(app_main.app) as client:
+        assert client.post("/api/v1/r2d2/lab-live", content=json.dumps(dict(_payload(day=day), book=book)),
+                           headers=headers).status_code == 202
+        dashboard = client.get("/api/v1/r2d2").json()
+        live = client.get("/api/v1/r2d2/live-positions").json()
+    app_main.r2d2_read_cache.invalidate()
+    assert dashboard["book_source"] == "lab_live" and dashboard["status"] == "running"
+    assert dashboard["nav_usd"] == dashboard["accounting_total_nav_usd"] == 930669.96
+    assert dashboard["cash_usd"] == 884021.99 and dashboard["open_positions"] == 1
+    assert dashboard["positions"][0]["symbol"] == "AAPL" and dashboard["positions"][0]["market_value_usd"] == 46686.0
+    assert dashboard["daily_pnl_usd"] == 120.5 and dashboard["daily_pnl_date"] == day
+    assert dashboard["nav_session_delta"]["total_delta_usd"] == 120.5
+    assert dashboard["track_record"][-1]["session_date"] == day and dashboard["track_record"][-1]["nav_usd"] == 930669.96
+    assert live["nav_usd"] == 930669.96 and live["cash_usd"] == 884021.99 and live["positions"][0]["symbol"] == "AAPL"
+
+
+def test_without_a_book_the_v2_panels_stay() -> None:
+    database = Database(Settings(database_url=""))
+    r2d2_lab_live.store(database, _payload(_fill()), now=NOW)
+    assert r2d2_lab_live.latest_book(database, now=NOW) is None
