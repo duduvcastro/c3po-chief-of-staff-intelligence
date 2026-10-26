@@ -124,8 +124,15 @@ def _nasdaq_kind(name: str, etf: str) -> tuple[str, str]:
     # A word in the COMPANY NAME is not an instrument type: Our Bond's common
     # stock and an ADS describing the 'right to receive' shares are equities.
     # Ambiguous/non-ETF entries remain visible until their type is reviewed.
-    if re.search(r"\b(COMMON STOCK|ORDINARY SHARES?|PREFERRED (STOCK|SHARES?)|"
-                 r"DEPOSITARY SHARES?|DEPOSITORY SHARES?|CAPITAL STOCK)\b", name.upper()):
+    description = name.rsplit(" - ", 1)[-1].upper()
+    security_type = re.search(
+        r"\b(?:(?P<equity>COMMON STOCK|ORDINARY SHARES?|PREFERRED (?:STOCK|SHARES?)|"
+        r"DEPOSITARY SHARES?|DEPOSITORY SHARES?|CAPITAL STOCK)|"
+        r"(?P<other>WARRANTS?|RIGHTS?|UNITS?|NOTES?|BONDS?|DEBENTURES?))\b", description,
+    )
+    # The first type is the instrument; later mentions can describe what a
+    # warrant/right converts into. Such contracts are not promoted to equities.
+    if security_type and security_type.group("equity"):
         return "Stock", "equity"
     return "Other", "classification_pending"
 

@@ -24,7 +24,7 @@ interface ListedResponse {
   etfs_on_existing_path: number;
   classification_pending_count: number;
   classified_equity_count: number;
-  catalogue: { received_at: string; source_url: string; manifest_sha256: string };
+  catalogue: { received_at: string; source_date: string; source_url: string; manifest_sha256: string };
   items: ListedItem[];
 }
 
@@ -98,7 +98,7 @@ export function ListedUniverse({ market, apiUrl, module }: {
       <summary><strong>Universo completo · {market}</strong>{data ? ` · ${data.universe_size} instrumentos` : ""}</summary>
       <p>Todos os nomes do inventário oficial, incluindo os que ainda não podem ser avaliados. Os mínimos abaixo são filtros opcionais; a compra exige liberação PIT e as portas do decisor. ETFs seguem na seleção existente.</p>
       {error ? <p role="status">{error}</p> : !data ? <p role="status">Carregando inventário oficial…</p> : <>
-        <p>{data.valued_count} avaliados · {data.not_evaluable_count} não avaliáveis · atualizado em {new Date(data.catalogue.received_at).toLocaleString("pt-BR")}</p>
+        <p>{data.valued_count} avaliados · {data.not_evaluable_count} não avaliáveis · arquivo de {data.catalogue.source_date.slice(0, 10).split("-").reverse().join("/")} · recebido em {new Date(data.catalogue.received_at).toLocaleString("pt-BR")}</p>
         {data.classification_pending_count > 0 && <p role="status">{data.classification_pending_count} instrumentos aguardam classificação. Eles continuam visíveis, sem liberação de compra; a seleção existente de ETFs permanece separada.</p>}
         <div className="research-market-tabs" style={{ flexWrap: "wrap", gap: 12 }}>
           <label>Buscar ação <input aria-label="Buscar no universo completo" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} /></label>

@@ -148,6 +148,24 @@ def test_ambiguous_non_etf_security_is_visible_without_guessing_its_type():
     assert not response["items"][0]["buy_permission"]
 
 
+@pytest.mark.parametrize("symbol,name", [
+    ("OPENL", "Opendoor Technologies Inc - Series A Warrants exercisable for Common Stock"),
+    ("OPENW", "Opendoor Technologies Inc - Series K Warrants exercisable for Common Stock"),
+    ("OPENZ", "Opendoor Technologies Inc - Series Z Warrants exercisable for Common Stock"),
+    ("HAVAR", "Havana Acquisition Corp. - Rights to receive one Ordinary Share"),
+    ("AMPX.W", "Amprius Technologies Inc. Warrants to purchase Common Stock"),
+    ("UNIT", "Example Inc. - Units, each containing one Ordinary Share and one Right"),
+])
+def test_conversion_clause_does_not_reclassify_contract_as_the_underlying_equity(symbol, name):
+    source = parse_nasdaq_directory(nasdaq([f"{symbol}|{name}|Q|N|N|100|N|N"]),
+                                    market="NASDAQ", received_at=NOW)
+    assert source.listings[0].security_type == "Other"
+    assert source.listings[0].listing_class == "classification_pending"
+    response = universe_response(source, {}, now=NOW)
+    assert response["classified_equity_count"] == 0
+    assert [item["symbol"] for item in response["items"]] == [symbol]
+
+
 @pytest.mark.parametrize("mutation", [{"valid_from": None}, {"valid_until": 123}, {"valid_until": True}])
 def test_malformed_scope_date_keeps_inventory_visible_and_denies_permission(mutation):
     response = universe_response(catalogue([Listing("NASDAQ", "CHEAP", "Company")]),
