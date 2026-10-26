@@ -22,9 +22,16 @@ still matters: a reproducible row hash does not independently authenticate the o
 SEC header or a provider's historical claim. This increment verifies the stored content and
 its declared source evidence; it does not redownload or recertify originals.
 
-The symbol-to-issuer mapping comes from official filings accepted by T, never the current
-`symbol_issuers` shortcut. Conflicting registry entries or latest facts are refused
-deterministically. SEC acceptance requires the header-based source and a header hash.
+The diagnostic symbol-to-issuer association uses registry rows accepted by T rather than
+the `symbol_issuers` shortcut. **This does not prove historical instrument identity:**
+the collector attaches detection-time tickers from its supplied map to earlier filings.
+A current ticker association can therefore be projected onto an older accepted document.
+Neither the acceptance cut nor a header hash proves when that symbol represented that
+issuer, class or unit. Original-document authentication and historical instrument/share/
+corporate-action basis remain explicit blocking gates; the adapter's CompanyInputs is
+only a construction packet and cannot become an admissible historical observation.
+Conflicting registry entries or latest facts are refused deterministically.
+SEC acceptance requires the header-based source and a header hash.
 CVM acceptance requires the conservative end of its receipt date in São Paulo. A CVM
 receipt date is never converted to an earlier intraday availability.
 

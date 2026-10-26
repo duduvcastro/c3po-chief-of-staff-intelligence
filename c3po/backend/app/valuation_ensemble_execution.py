@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .valuation_ensemble_adapters import BundleSources, CompanyRequest, Sources, _instant, adapt_company
+from .valuation_ensemble_audit import historical_admissibility
 from .valuation_ensemble_inputs import NotEvaluable, Premises, canonical_hash
 from .valuation_ensemble_persistence import FileReceiptStore
 from .valuation_ensemble_shadow import SOURCE, build_shadow_receipt
@@ -21,6 +22,7 @@ from .valuation_ensemble_shadow import SOURCE, build_shadow_receipt
 
 IMPLEMENTATION_FILES = ("valuation_ensemble_inputs.py","valuation_ensemble_models.py","valuation_ensemble_aggregation.py",
     "valuation_ensemble_shadow.py","valuation_ensemble_adapters.py","valuation_ensemble_persistence.py","valuation_ensemble_execution.py",
+    "valuation_ensemble_audit.py","valuation_ensemble_caller.py",
     "statement_vintages.py","valuation_price_history.py","sec_xbrl.py","cvm_fundamentals.py")
 
 
@@ -40,6 +42,7 @@ def execute_shadow(sources: Sources, request: CompanyRequest, premises: Premises
     receipt = {"schema":"VALUATION-ENSEMBLE-SHADOW-EXECUTION-v1","source":SOURCE,
         "diagnostic_only":True,"served_source_changed":False,"buy_permission":False,"signed_prereg":False,"horizon_sessions":None,
         "status":"computed" if computation else "not_evaluable","adaptation":adapted.provenance,
+        "historical_admissibility":historical_admissibility(adapted),
         "peer_adaptations":[x.provenance for x in peers],"premises":premises.receipt(),"implementation_files":implementation_files(),
         "computation":computation}
     receipt["run_key"] = canonical_hash(receipt)

@@ -313,7 +313,13 @@ def adapt_company(sources: Sources, request: CompanyRequest) -> AdaptedCompany:
         raise NotEvaluable("invalid_company_request")
     refused: Counter[str] = Counter()
     provenance: dict[str,Any] = {"market":request.market,"symbol":request.symbol,"as_of":cut.isoformat(),
-                                 "price_availability_policy":"strict_publication_no_later_than_T","refused":{},"captured_clock_is_not_availability":True}
+        "price_availability_policy":"strict_publication_no_later_than_T","refused":{},"captured_clock_is_not_availability":True,
+        "historical_proof_gates": {
+            "original_document_authentication":{"status":"unattested","reason":"canonical_readers_do_not_expose_original_document_bytes"},
+            "instrument_identity":{"status":"unattested","reason":"filing_symbols_are_detection_time_associations"},
+            "share_basis":{"status":"unattested","reason":"basis_id_is_caller_assertion","basis_id":request.basis_id},
+            "corporate_action_basis":{"status":"unattested","reason":"price_bars_do_not_attest_corporate_action_coverage"},
+        }}
     source = "CVM" if request.market == "B3" else "SEC"
     registered: dict[str,Mapping[str,Any]] = {}
     filing_groups: dict[str,list[Mapping[str,Any]]] = {}
