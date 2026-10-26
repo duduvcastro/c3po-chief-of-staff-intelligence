@@ -34,6 +34,7 @@ def test_the_step_reads_the_contact_from_a_secret_and_the_switches_from_variable
     assert env["CVM_OVERLAY_ENABLED"] == "${{ vars.C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED }}"
     assert env["DECISOR_SHADOW"] == "${{ vars.C3PO_VALUATION_DECISOR_SHADOW }}"
     assert env["EARNINGS_CALENDAR_ENABLED"] == "${{ vars.C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED }}"
+    assert env["LAB_TOKEN"] == "${{ secrets.C3PO_R2D2_LAB_TOKEN }}"
 
 
 def test_the_step_cannot_be_skipped_and_runs_right_before_the_host_merge() -> None:
@@ -75,6 +76,9 @@ def test_valid_values_are_staged_and_empty_values_write_nothing(tmp_path: Path) 
         "C3PO_VALUATION_DECISOR_SHADOW=true",
         "C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=false",
     ]
+    for token in ("f" * 64, "Ab+/9_-." * 6 + "=="):  # hex, base64 or URL-safe: whatever the secret was minted as
+        code, staged, _ = _run(tmp_path, LAB_TOKEN=token)
+        assert code == 0 and staged.splitlines()[-1] == "C3PO_R2D2_LAB_TOKEN=" + token
     code, staged, _ = _run(tmp_path, EARNINGS_CALENDAR_ENABLED="true")
     assert code == 0 and staged.splitlines()[-1] == "C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=true"
     code, staged, _ = _run(tmp_path)
@@ -95,11 +99,12 @@ def test_the_cvm_overlay_switches_are_staged_as_given(tmp_path: Path, shadow: st
 
 
 def test_the_staged_names_are_the_names_the_code_reads() -> None:
-    from app import official_statements, valuation_env
+    from app import official_statements, r2d2_lab_live, valuation_env
 
     run = str(_step()["run"])
     assert f"printf '{valuation_env.CVM_OVERLAY_SHADOW_ENV}=%s\\n'" in run
     assert f"printf '{official_statements.FIELDWISE_OVERLAY_ENV}=%s\\n'" in run
+    assert f"printf '{r2d2_lab_live.TOKEN_ENV}=%s\\n'" in run
 
 
 @bash_missing
@@ -141,6 +146,11 @@ def test_the_staged_names_are_the_names_the_code_reads() -> None:
         {"EARNINGS_CALENDAR_ENABLED": "false\nC3PO_INJECTED=1"},
         {"EARNINGS_CALENDAR_ENABLED": "x\nC3PO_INJECTED=false"},
         {"EARNINGS_CALENDAR_ENABLED": "true\r"},
+        {"LAB_TOKEN": "short"},
+        {"LAB_TOKEN": "f" * 64 + "\nC3PO_INJECTED=1"},
+        {"LAB_TOKEN": "f" * 64 + " "},
+        {"LAB_TOKEN": "f" * 32 + "$(id)" + "f" * 32},
+        {"LAB_TOKEN": "f" * 129},
     ],
 )
 def test_an_invalid_value_fails_the_deploy_before_anything_is_staged(tmp_path: Path, values: dict[str, str]) -> None:

@@ -49,6 +49,7 @@ from .push_notifications import PushNotificationService
 from .operational_incidents import OperationalIncidentService
 from .governance_vulnerability import GovernanceVulnerabilityService
 from .r2d2 import R2D2PaperService
+from . import r2d2_lab_live
 from .read_cache import MarketSessionClock, SingleFlightReadCache
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
@@ -268,6 +269,8 @@ PUBLIC_AUTH_PATHS = {
     "/api/v1/auth/session",
     "/api/v1/auth/activity",
     "/api/v1/auth/logout",
+    # The lab's paper fills: authenticated by the route itself (bearer C3PO_R2D2_LAB_TOKEN), not by a session.
+    "/api/v1/r2d2/lab-live",
 }
 
 PERFORMANCE_TELEMETRY_ROUTES = {
@@ -1775,7 +1778,30 @@ def chewie_fundamentals_report(market: str, symbol: str) -> FileResponse:
 def r2d2_dashboard() -> R2D2DashboardResponse:
     # Read-only payload shared by every poller; single-flight + session-aware TTL
     # (C3PO_CPU_RELIEF_V1, PR B). Never caches a mutation.
-    return r2d2_read_cache.get("dashboard", r2d2.dashboard)
+    return r2d2_read_cache.get("dashboard", _r2d2_dashboard_with_lab)
+
+
+def _r2d2_dashboard_with_lab() -> R2D2DashboardResponse:
+    response = r2d2.dashboard()
+    lab = r2d2_lab_live.today_trades(database)
+    return response.model_copy(update={"trades": lab + list(response.trades)}) if lab else response
+
+
+@app.post("/api/v1/r2d2/lab-live", status_code=202)
+async def r2d2_lab_live_ingest(request: Request) -> dict:
+    # The lab's virtual fills of the day (owner, 26/10/2026): bearer token first, then a bounded body, then the strict
+    # schema. Every refusal is generic; nothing of the request is echoed or logged.
+    if not r2d2_lab_live.authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    body = await request.body()
+    if len(body) > r2d2_lab_live.MAX_BODY_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payload too large")
+    try:
+        result = await asyncio.to_thread(r2d2_lab_live.store, database, r2d2_lab_live.parse(body))
+    except r2d2_lab_live.LabLiveRefused as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
+    r2d2_read_cache.invalidate("dashboard")
+    return result
 
 
 @app.get("/api/v1/r2d2/live-positions", response_model=R2D2LivePositionsResponse)

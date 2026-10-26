@@ -29,3 +29,4 @@ os.environ["C3PO_VALUATION_ASFILED_ENABLED"] = ""
 os.environ["C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL"] = ""
 os.environ["C3PO_VALUATION_DECISOR_SHADOW"] = ""
 os.environ["C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED"] = ""
+os.environ["C3PO_R2D2_LAB_TOKEN"] = ""  # the lab bridge refuses every post unless a test sets it
