@@ -4010,7 +4010,9 @@ function R2D2RisingView() {
         symbol: position.symbol,
         name: position.name,
         market: position.market,
-        rationale: `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
+        rationale: data.book_source === "lab_live"
+          ? "Held by the live rule: profit lock from +0.15% net (peak −0.10), stop −0.5% net, sold in the last 30 seconds if positive."
+          : `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
         detail: `Mark ${signedPositionPercent(position.mark_return_percent, position.mark_pnl_usd)} · net if closed ${signedPositionPercent(position.estimated_exit_return_percent, position.estimated_exit_pnl_usd)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
         tone: "monitor"
       }))
@@ -4271,8 +4273,13 @@ function R2D2RisingView() {
               </span>
               <small>EST. SELL FRICTION</small>
             </div>
-            <div data-label="Technical"><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
-            <div data-label="Trend / flow"><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
+            {data.book_source === "lab_live" ? <>
+              <div data-label="Technical"><strong>—</strong><small>live rule</small></div>
+              <div data-label="Trend / flow"><strong>VWAP rule</strong><small>lock +0.15% · stop −0.5%</small></div>
+            </> : <>
+              <div data-label="Technical"><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
+              <div data-label="Trend / flow"><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
+            </>}
             <span data-label="Stop">{formatCurrency(position.stop_price_local, position.currency)}</span>
             <div data-label="Decision">
               <strong>{position.decision_state}</strong>

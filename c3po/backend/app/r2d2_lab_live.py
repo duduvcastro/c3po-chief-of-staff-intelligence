@@ -288,9 +288,11 @@ def latest_book(database: Any, *, now: datetime | None = None) -> tuple[str, str
     return day, str(outputs.get("config")), outputs["book"], sessions
 
 
-def _positions(book: dict[str, Any]) -> list[R2D2Position]:
+def _positions(book: dict[str, Any], now: datetime | None = None) -> list[R2D2Position]:
     nav = book["nav_usd"]
     as_of = datetime.fromisoformat(book["as_of"])
+    age = max(0.0, ((now or datetime.now(timezone.utc)) - as_of).total_seconds())
+    freshness = "fresh" if age <= 120 else "aging" if age <= 420 else "stale"  # the lab posts the marks every <= 5 min
     rows = []
     for item in book["positions"]:
         value = item["quantity"] * item["last_price"]
@@ -301,7 +303,8 @@ def _positions(book: dict[str, Any]) -> list[R2D2Position]:
             mark_pnl_usd=item["unrealized_pnl_usd"], mark_return_percent=item["unrealized_return_percent"],
             estimated_exit_pnl_usd=item["unrealized_pnl_usd"], estimated_exit_return_percent=item["unrealized_return_percent"],
             allocation_percent=round(value / nav * 100, 4) if nav > 0 else 0.0, stop_price_local=item["stop_price"],
-            data_status="live", decision_state="hold", quote_status="lab", quote_as_of=as_of,
+            data_status="live", decision_state="hold", quote_status="lab", quote_as_of=as_of, quote_age_seconds=round(age, 1),
+            quote_freshness=freshness, trend_state="vwap rule", volume_state="adv rule",
             opened_at=datetime.fromisoformat(item["opened_at"]), updated_at=as_of))
     return sorted(rows, key=lambda row: row.market_value_usd, reverse=True)
 
@@ -343,7 +346,7 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
     nav, close_nav, open_nav = nav + accrued, close_nav + accrued, open_nav + accrued
     previous = open_nav - interest_today  # the NAV at the previous close, before today's T-bill interest
     daily_percent = daily / previous * 100 if previous > 0 else 0.0
-    positions = _positions(book)
+    positions = _positions(book, now)
     exposure = sum(position.market_value_usd for position in positions)
     starting = response.starting_capital_usd
     total_return = (nav / starting - 1) * 100 if starting > 0 else 0.0
@@ -426,7 +429,7 @@ def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: 
         return response
     book = found[2]
     accrued = _interest(interest, (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat())[0]
-    positions = _positions(book)
+    positions = _positions(book, now)
     return response.model_copy(update={
         "nav_usd": round(book["nav_usd"] + accrued, 2), "cash_usd": round(book["cash_usd"] + accrued, 2),
         "gross_exposure_usd": round(sum(position.market_value_usd for position in positions), 2),
