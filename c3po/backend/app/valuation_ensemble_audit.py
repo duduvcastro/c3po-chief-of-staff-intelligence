@@ -50,23 +50,25 @@ GROWTH_PATH = {"dcf_fcff","dcf_fcfe","ddm_multistage"}
 CORE_GATES = ("original_document_authentication","instrument_identity","share_basis","corporate_action_basis")
 
 
-def historical_admissibility(adapted: AdaptedCompany) -> dict[str,Any]:
+def historical_admissibility(adapted: AdaptedCompany, originals: Mapping[str,Any] | None=None) -> dict[str,Any]:
     # These readers expose metadata/hashes and detection-time symbol associations,
     # not independently authenticated originals or historical class/action proofs.
     # Keep the denial structural until a reviewed original-evidence adapter exists.
     gates = adapted.provenance["historical_proof_gates"]
     blocked = [f"{name}:{gates[name]['reason']}" for name in CORE_GATES]
+    if originals is not None and originals["package_status"]!="not_supplied":
+        blocked[0]="original_document_authentication:supplied_package_has_no_authenticated_official_origin"
     if adapted.company is None:
         blocked.append("source_adaptation:"+adapted.provenance["reason"])
     return {"status":"not_admissible","admissible":False,"blocking_proofs":blocked,
-            "proof_adapter":"canonical_metadata_only_no_original_evidence_adapter",
+            "proof_adapter":"no_authenticated_original_or_historical_instrument_proof_adapter",
             "acceptance_cut_is_not_historical_instrument_proof":True}
 
 
 def audit_company(adapted: AdaptedCompany, computation: Mapping[str,Any] | None,
-                  premises: Premises) -> dict[str,Any]:
+                  premises: Premises, *, originals: Mapping[str,Any] | None=None) -> dict[str,Any]:
     c = adapted.company
-    admissibility = historical_admissibility(adapted)
+    admissibility = historical_admissibility(adapted,originals)
     values = {row["model"]:row for row in computation["models"]} if computation else {}
     observed_facts = adapted.provenance.get("facts_available")
     adaptation_reason = "source_adaptation:"+adapted.provenance.get("reason","refused")
@@ -109,10 +111,17 @@ def audit_company(adapted: AdaptedCompany, computation: Mapping[str,Any] | None,
                 dependencies.append("official_sector:"+str(exc))
             dependencies.append("peer_pool_must_satisfy_kernel_same_T_currency_sector_issuer_checks")
         result = values.get(model,{"status":"not_evaluable","reason":adaptation_reason})
+        original_fields=(originals or {}).get("fields",{})
+        missing_bytes=[field for field in FACTS[model] if not original_fields.get(field,{}).get("all_original_bytes_available")]
+        unequal_content=[field for field in FACTS[model] if not original_fields.get(field,{}).get("all_checked_content_equal")]
         model_cells[model] = {"computable":result["status"]=="evaluated",
             "kernel_status":result["status"],"kernel_reason":result.get("reason"),
             "admissible":False,"required_facts":facts,"required_design_premises":design,
-            "other_dependencies":dependencies,"blocking_proofs":admissibility["blocking_proofs"]}
+            "other_dependencies":dependencies,"blocking_proofs":admissibility["blocking_proofs"],
+            "original_evidence":{"all_required_input_bytes_available":not missing_bytes,
+                "all_required_checked_content_equal":not unequal_content,"fields_without_original_bytes":missing_bytes,
+                "fields_without_checked_content":unequal_content,"origin_authentication":"unverified_supplied_bytes",
+                "historical_admissibility":False}}
     return {"schema":"VALUATION-ENSEMBLE-INPUT-AUDIT-v1","scope":"requested_cross_section_only_no_historical_coverage_claim",
         "admissibility":admissibility,"models":model_cells,
         "variants":{key:{"computable":value["status"]=="evaluated","kernel_reason":value.get("reason"),"admissible":False}
@@ -138,7 +147,9 @@ def summarize_audits(audits: list[Mapping[str,Any]]) -> dict[str,Any]:
         metrics[model] = {"requested":len(cells),"computable":sum(x["computable"] for x in cells),
             "admissible":sum(x["admissible"] for x in cells),"kernel_refusals":dict(sorted(kernel.items())),
             "missing_or_ineligible_facts":dict(sorted(facts.items())),"unobserved_facts":dict(sorted(unobserved.items())),
-            "missing_design_premises":dict(sorted(design.items()))}
+            "missing_design_premises":dict(sorted(design.items())),
+            "all_required_input_bytes_available":sum(x["original_evidence"]["all_required_input_bytes_available"] for x in cells),
+            "all_required_checked_content_equal":sum(x["original_evidence"]["all_required_checked_content_equal"] for x in cells)}
     proof_counts = Counter(reason for audit in audits for reason in audit["admissibility"]["blocking_proofs"])
     return {"requested_companies":len(audits),"models":metrics,
         "blocking_proof_counts":dict(sorted(proof_counts.items())),"historical_coverage_attested":False,

@@ -16,6 +16,9 @@ from .valuation_ensemble_audit import audit_company, summarize_audits
 from .valuation_ensemble_execution import _load, implementation_files
 from .valuation_ensemble_inputs import NotEvaluable, Premises, canonical_hash, utc
 from .valuation_ensemble_persistence import FileReceiptStore
+from .valuation_ensemble_original_package import (ObservedSources, OriginalPackage, ingest_original_package,
+    load_original_package, reconcile_company_originals, validate_original_package)
+from .valuation_ensemble_original_store import OriginalEvidenceStore
 from .valuation_ensemble_shadow import SOURCE, build_shadow_receipt
 
 
@@ -28,9 +31,13 @@ def _persist(receipt: dict[str,Any], store: FileReceiptStore) -> dict[str,Any]:
 
 
 def run_shadow_cross_section(sources: Sources, requests: tuple[CompanyRequest,...], premises: Premises,
-                             store: FileReceiptStore, *, reader_kind: str) -> dict[str,Any]:
+                             store: FileReceiptStore, *, reader_kind: str, original_package: OriginalPackage | None=None,
+                             original_store: OriginalEvidenceStore | None=None) -> dict[str,Any]:
     if reader_kind not in {"canonical_readers","offline_export"}:
         raise NotEvaluable("unsupported_shadow_reader_kind")
+    if (original_package is None)!=(original_store is None):
+        raise NotEvaluable("original_package_and_explicit_private_store_required_together")
+    if original_package is not None:validate_original_package(original_package)
     if not requests:
         raise NotEvaluable("explicit_company_requests_required")
     if len({utc(x.as_of) for x in requests})!=1:
@@ -40,22 +47,27 @@ def run_shadow_cross_section(sources: Sources, requests: tuple[CompanyRequest,..
         raise NotEvaluable("duplicate_company_request")
     premises.receipt() # validate all supplied assumptions before reading a source or persisting
     ordered=sorted(requests,key=lambda x:(x.market,x.symbol))
-    adapted=[adapt_company(sources,request) for request in ordered]
+    observations=[ObservedSources(sources) for _ in ordered]
+    adapted=[adapt_company(observed,request) for observed,request in zip(observations,ordered)]
+    package_evidence={"status":"not_supplied","artifacts":[],"artifact_refusals":{},"historical_admissibility":False}
+    if original_package is not None and original_store is not None:
+        package_evidence=ingest_original_package(original_package,observations,original_store)
     implementation=implementation_files()
     references,audits=[],[]
-    for request,item in zip(ordered,adapted):
+    for request,item,observed in zip(ordered,adapted,observations):
         computation=None
         if item.company is not None:
             peers=tuple(x.company for x in adapted if x is not item and x.company is not None)
             computation=build_shadow_receipt(item.company,premises,peers=peers,analyst_targets=item.analyst_targets)
-        audit=audit_company(item,computation,premises)
+        originals=reconcile_company_originals(item,observed,package_evidence)
+        audit=audit_company(item,computation,premises,originals=originals)
         audits.append(audit)
         receipt={"schema":"VALUATION-ENSEMBLE-SHADOW-CALLER-COMPANY-v1","source":SOURCE,
             "diagnostic_only":True,"served_source_changed":False,"buy_permission":False,
             "signed_prereg":False,"horizon_sessions":None,"reader_kind":reader_kind,
             "status":"computed" if computation else "not_evaluable","historical_admissibility":audit["admissibility"],
             "adaptation":item.provenance,"premises":premises.receipt(),"implementation_files":implementation,
-            "computation":computation,"input_audit":audit}
+            "computation":computation,"input_audit":audit,"original_reconciliation":originals}
         stored=_persist(receipt,store)
         references.append({"market":request.market,"symbol":request.symbol,
             "run_key":stored["run_key"],"payload_sha256":stored["payload_sha256"],"status":receipt["status"]})
@@ -65,6 +77,7 @@ def run_shadow_cross_section(sources: Sources, requests: tuple[CompanyRequest,..
         "reader_kind":reader_kind,"as_of":utc(ordered[0].as_of).isoformat(),"status":"historical_admissibility_blocked",
         "requests":[{"market":x.market,"symbol":x.symbol,"as_of":utc(x.as_of).isoformat(),"basis_id":x.basis_id} for x in ordered],
         "company_receipts":references,"input_inventory":metrics,"premises":premises.receipt(),"implementation_files":implementation,
+        "original_package":package_evidence,
         "missing_source_contracts":[
             "canonical readers do not expose original SEC headers/CVM archive bytes for reauthentication",
             "filing symbols are detection-time associations, not a historical symbol-issuer-class validity interval",
@@ -79,7 +92,8 @@ def run_shadow_cross_section(sources: Sources, requests: tuple[CompanyRequest,..
 
 def run_from_canonical_readers(statement_store: Any, price_reader: Any, database: Any,
                                requests: tuple[CompanyRequest,...], premises: Premises,
-                               store: FileReceiptStore) -> dict[str,Any]:
+                               store: FileReceiptStore, *, original_package: OriginalPackage | None=None,
+                               original_store: OriginalEvidenceStore | None=None) -> dict[str,Any]:
     """Caller owns already-open reader handles. This function constructs no DB/client.
 
     Only StatementVintageStore.filings/vintages, PriceHistoryService.series and
@@ -87,7 +101,7 @@ def run_from_canonical_readers(statement_store: Any, price_reader: Any, database
     The sole sink is the explicitly supplied private FileReceiptStore.
     """
     return run_shadow_cross_section(CanonicalSources(statement_store,price_reader,database),requests,premises,store,
-                                    reader_kind="canonical_readers")
+                                    reader_kind="canonical_readers",original_package=original_package,original_store=original_store)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,8 +110,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--requests",required=True)
     parser.add_argument("--premises",required=True)
     parser.add_argument("--receipt-directory",required=True)
+    parser.add_argument("--original-package",help="Explicit offline adjacent-file package; no source capture")
+    parser.add_argument("--original-receipt-directory",help="Explicit private byte-object/manifest sink")
     args=parser.parse_args(argv)
     try:
+        if bool(args.original_package)!=bool(args.original_receipt_directory):
+            raise NotEvaluable("original_package_and_explicit_private_store_required_together")
         packet,design=_load(args.requests),_load(args.premises)
         if packet.get("schema")!="VALUATION-ENSEMBLE-CROSS-SECTION-REQUEST-v1":
             raise NotEvaluable("unsupported_cross_section_request_schema")
@@ -105,8 +123,10 @@ def main(argv: list[str] | None = None) -> int:
             raise NotEvaluable("only_explicit_company_requests_no_study_or_grid_inputs")
         requests=tuple(CompanyRequest(x["market"],x["symbol"],_instant(x["as_of"]),x["basis_id"]) for x in packet["requests"])
         premises=Premises(design["policy_id"],design.get("scalars",{}),tuple(design.get("annual_growth_path",())),design.get("minimum_peers",3))
+        original_package=load_original_package(args.original_package) if args.original_package else None
         result=run_shadow_cross_section(BundleSources(_load(args.source_export)),requests,premises,
-            FileReceiptStore(args.receipt_directory),reader_kind="offline_export")
+            FileReceiptStore(args.receipt_directory),reader_kind="offline_export",original_package=original_package,
+            original_store=OriginalEvidenceStore(args.original_receipt_directory) if args.original_receipt_directory else None)
         print(json.dumps({key:value for key,value in result.items() if key!="receipt_path"},sort_keys=True))
         return 0
     except (OSError,ValueError,TypeError,KeyError) as exc:
