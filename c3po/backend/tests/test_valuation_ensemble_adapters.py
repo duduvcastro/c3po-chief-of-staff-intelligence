@@ -113,6 +113,58 @@ def test_latest_eligible_restatement_changes_value_but_later_filing_does_not_lea
     assert a.provenance["refused"]["fact_available_after_T"]==1
 
 
+@pytest.mark.parametrize("future_change", [
+    {"value":999},
+    {"issuer_key":"another-issuer"},
+    {"source":"provider_guess"},
+    {"period_end":date(2022,3,31)},
+    {"doc_id":"unregistered-document"},
+    {"concept":"us-gaap:UnrelatedFutureConcept"},
+])
+def test_future_fact_content_cannot_invalidate_eligible_historical_fields(future_change):
+    b=source_bundle()
+    baseline=adapt_company(BundleSources(deepcopy(b)),request())
+    old=next(x for x in b["facts"] if x["concept"]=="us-gaap:NetIncomeLoss")
+    accepted=T+timedelta(days=1)
+    b["filings"].append(filing("future",accepted=accepted))
+    future=fact(old["concept"],300,start=old["period_start"],end=old["period_end"],
+                doc="future",accepted=accepted)
+    future.update(future_change) # deliberately leave its original content hash
+    b["facts"].append(future)
+    a=adapt_company(BundleSources(b),request())
+    assert a.company is not None
+    assert a.company.facts==baseline.company.facts
+    assert a.company.get("net_income_ttm")==18
+    assert a.provenance["fact_derivations"]==baseline.provenance["fact_derivations"]
+    assert a.provenance["refused"]["fact_available_after_T"]==1
+    assert "fact_hash_mismatch" not in a.provenance["refused"]
+
+
+def test_boolean_price_cannot_be_coerced_through_a_valid_numeric_bar_hash():
+    from app.valuation_price_history import bar_content_sha256
+    b=source_bundle();bar=b["price_series"]["NASDAQ:XYZ"]["bars"]["2021-06-30"]
+    bar["close"]=1.0;bar["bar_sha256"]=bar_content_sha256(bar)
+    numeric_hash=bar["bar_sha256"]
+    bar["close"]=True
+    assert bar_content_sha256(bar)==numeric_hash # canonical helper normalizes bool
+    a=adapt_company(BundleSources(b),request())
+    assert a.company is None
+    assert a.provenance["reason"]=="invalid_number:price"
+
+
+def test_unclosed_future_price_bar_cannot_invalidate_the_closed_session_at_T():
+    b=source_bundle();baseline=adapt_company(BundleSources(deepcopy(b)),request())
+    # Only the economic session is needed to establish that this row is outside T.
+    b["price_series"]["NASDAQ:XYZ"]["bars"]["wrong-future-key"]={
+        "session_date":"2021-07-01","market":"wrong-market","source":"wrong-source",
+        "symbol":"wrong-symbol","fetched_at":"2026-10-26T03:00:00+00:00",
+        "bar_sha256":"invalid","close":True,
+    }
+    a=adapt_company(BundleSources(b),request())
+    assert a.company==baseline.company
+    assert a.provenance==baseline.provenance
+
+
 def test_backfilled_capture_clock_does_not_replace_regulator_acceptance_clock():
     b=source_bundle()
     for row in b["facts"]:row["first_seen_at"]="2026-10-26T03:00:00+00:00"

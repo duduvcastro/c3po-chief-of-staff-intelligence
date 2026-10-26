@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, Mapping, Protocol, Sequence
 from zoneinfo import ZoneInfo
 
-from .valuation_ensemble_inputs import AnalystTarget, CompanyInputs, Evidence, NotEvaluable, OfficialFact, Price, canonical_hash, utc
+from .valuation_ensemble_inputs import AnalystTarget, CompanyInputs, Evidence, NotEvaluable, OfficialFact, Price, canonical_hash, number, utc
 
 
 @dataclass(frozen=True)
@@ -201,15 +201,18 @@ def _facts_at_T(rows: Sequence[Mapping[str, Any]], filings: Mapping[str, Mapping
     for original in rows:
         try:
             row = dict(original)
+            # An observation outside T cannot invalidate the eligible field at T,
+            # even when its exported content/identity is corrupt. Establish the
+            # causal cut before any check that can populate blocked_concepts.
+            accepted = _instant(row["accepted_at"])
+            if accepted > cut:
+                raise NotEvaluable("fact_available_after_T")
             if row.get("market") != store_market or str(row.get("issuer_key")) != issuer:
                 raise NotEvaluable("wrong_fact_identity")
             if row.get("source") != ("cvm_dados_abertos" if source == "CVM" else "sec_xbrl_companyfacts"):
                 raise NotEvaluable("wrong_fact_source")
             if row.get("row_hash") != vintage_row_hash(row):
                 raise NotEvaluable("fact_hash_mismatch")
-            accepted = _instant(row["accepted_at"])
-            if accepted > cut:
-                raise NotEvaluable("fact_available_after_T")
             doc = filings.get(str(row["doc_id"]))
             if doc is None or accepted != _instant(doc["accepted_at"]):
                 raise NotEvaluable("fact_filing_acceptance_mismatch")
@@ -374,10 +377,10 @@ def adapt_company(sources: Sources, request: CompanyRequest) -> AdaptedCompany:
         bars = []
         for session_key,row in (series.get("bars") or {}).items():
             session = _date(row["session_date"])
-            if session_key != session.isoformat():
-                raise NotEvaluable("price_session_key_mismatch")
             if session_close(request.market,session) > cut:
                 continue
+            if session_key != session.isoformat():
+                raise NotEvaluable("price_session_key_mismatch")
             if row.get("market") != request.market or row.get("symbol") != request.symbol or row.get("source") != PRICE_SOURCE:
                 raise NotEvaluable("price_bar_identity_mismatch")
             if _instant(row.get("fetched_at"))>_instant(series.get("fetched_at")):
@@ -391,7 +394,7 @@ def adapt_company(sources: Sources, request: CompanyRequest) -> AdaptedCompany:
         currency = "BRL" if source == "CVM" else "USD"
         if row.get("currency") != currency:
             raise NotEvaluable("price_currency_mismatch")
-        price = Price(float(row["close"]),currency,_date(row["session_date"]),request.basis_id,
+        price = Price(number(row["close"],"price"),currency,_date(row["session_date"]),request.basis_id,
                       Evidence("PRICE",str(series["publication_id"]),available,str(row["bar_sha256"])))
         # The store has no attested sector/classification contract. Unknown is explicit:
         # equity kernels can run, enterprise/peer models refuse instead of assuming industrial.
