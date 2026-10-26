@@ -47,6 +47,14 @@ POSITION_KEYS = {"symbol", "market", "quantity", "average_cost", "last_price", "
                  "unrealized_return_percent", "stop_price", "opened_at"}
 BOOK_SOURCE = "lab_live"
 CYCLE_KEYS = {"candidates", "signals", "entries", "closed"}
+# The live scenarios as the owner chose them (lab/sim.py CFGS); the Launch Gates panel shows the one in force
+LIVE_RULES = {
+    "TIT-2S3": "Gap ≤ −1% at the open · back above the VWAP until 15:29 ET · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 3 bps",
+    "TIT-2S5": "Gap ≤ −1% at the open · back above the VWAP until 15:29 ET · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
+    "TIT-2": "Gap ≤ −1% at the open · back above the VWAP until 15:29 ET · ADV ≥ US$15M · price ≥ US$5 · no spread limit",
+    "TIT-1": "Gap ≤ −1% at the open · first VWAP cross until 11:29 ET · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 3 bps",
+}
+LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1}
 SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
 # The one R2D2 book opened on 27/10/2026 from the NAV with interest at the 26/10 close (owner 26/10/2026): the T-bill
 # interest the cash-yield ledger posts for sessions from this one on is money of the book (cash and NAV).
@@ -378,7 +386,8 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
             scanned_count=(cycle or {}).get("candidates", 0), signal_count=(cycle or {}).get("signals", 0),
             trade_count=len(today_doc.get("trades") or []), metadata={"source": BOOK_SOURCE, "config": str(today_doc.get("config"))})
     return response.model_copy(update={
-        "book_source": BOOK_SOURCE, "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
+        "book_source": BOOK_SOURCE, "live_rule": LIVE_RULES.get(config), "live_slots": LIVE_SLOTS.get(config),
+        "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
         "methodology_version": "R2D2 LIVE · %s" % config, "today_episode_stats": episodes, "stats": stats,
         "last_cycle": last_cycle, "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),
         "accounting_nav_ex_interest_usd": round(nav - response.interest_income_epoch_usd, 2),

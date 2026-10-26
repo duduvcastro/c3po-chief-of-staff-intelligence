@@ -296,6 +296,7 @@ def test_the_evening_before_the_daily_pnl_is_todays_result_not_the_opening_book(
     assert shown.stats.positive_transactions == base.stats.positive_transactions + 2
     assert shown.last_cycle is not None and shown.last_cycle.trade_count == 3 and shown.last_cycle.status == "completed"
     assert shown.methodology_version == "R2D2 LIVE · TIT-1"
+    assert shown.live_rule is not None and "11:29 ET" in shown.live_rule and shown.live_slots == 1
     assert shown.track_record[-1].session_date == "2026-10-26" and shown.track_record[-1].nav_usd == 931176.95
 
 
