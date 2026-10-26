@@ -142,14 +142,18 @@ SEC_FIELDS = {
     "dividends": ("us-gaap:PaymentsOfDividendsCommonStock",),
     "cash": ("us-gaap:CashAndCashEquivalentsAtCarryingValue", "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"),
     "book_equity": ("us-gaap:StockholdersEquity",),
-    "debt_total": ("us-gaap:LongTermDebt",),
+    "long_term_debt_reported": ("us-gaap:LongTermDebt",),
     "debt_noncurrent": ("us-gaap:LongTermDebtNoncurrent",),
-    "debt_current": ("us-gaap:DebtCurrent", "us-gaap:LongTermDebtCurrent"),
+    "debt_current": ("us-gaap:DebtCurrent",),
+    "long_term_debt_current_reported": ("us-gaap:LongTermDebtCurrent",),
+    "short_term_borrowings_reported": ("us-gaap:ShortTermBorrowings",),
+    "commercial_paper_reported": ("us-gaap:CommercialPaper",),
     "shares": ("dei:EntityCommonStockSharesOutstanding",),
     "current_assets": ("us-gaap:AssetsCurrent",),
     "total_liabilities": ("us-gaap:Liabilities",),
     "goodwill": ("us-gaap:Goodwill",),
-    "intangible_assets_excluding_goodwill": ("us-gaap:FiniteLivedIntangibleAssetsNet",),
+    "finite_lived_intangible_assets_net_reported": ("us-gaap:FiniteLivedIntangibleAssetsNet",),
+    "indefinite_lived_intangible_assets_excluding_goodwill_reported": ("us-gaap:IndefiniteLivedIntangibleAssetsExcludingGoodwill",),
 }
 FLOW_FIELDS = {"revenue", "net_income", "operating_income", "d_and_a", "operating_cash_flow", "capex", "dividends"}
 
@@ -304,6 +308,16 @@ def _facts_at_T(rows: Sequence[Mapping[str, Any]], filings: Mapping[str, Mapping
         combine("total_liabilities","liabilities_current","liabilities_noncurrent")
     # Both debt components must be present; an absent component is never assumed zero.
     combine("debt","debt_noncurrent","debt_current")
+    if source=="SEC":
+        # Reported partial amounts retain their raw concepts and provenance. They
+        # do not establish exhaustive/disjoint coverage or substitute for totals.
+        debt_parts=("debt_current","debt_noncurrent","long_term_debt_reported","long_term_debt_current_reported",
+                    "short_term_borrowings_reported","commercial_paper_reported")
+        if "debt" not in facts and any(name in facts for name in debt_parts):
+            refused["aggregate_completeness_unattested:debt"]+=1
+        intangible_parts=("finite_lived_intangible_assets_net_reported","indefinite_lived_intangible_assets_excluding_goodwill_reported")
+        if "intangible_assets_excluding_goodwill" not in facts and any(name in facts for name in intangible_parts):
+            refused["aggregate_completeness_unattested:intangible_assets_excluding_goodwill"]+=1
     return facts,derivations
 
 

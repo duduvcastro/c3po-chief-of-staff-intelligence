@@ -43,6 +43,25 @@ quarters are not bridged, absent debt components are not zero, ambiguous account
 guessed, and missing treasury shares are not zero. Provenance keeps every contributing
 document, canonical row hash, acceptance and known capture clock, plus the derivation rule.
 
+The SEC debt adapter keeps `DebtCurrent` distinct from the reported partial concepts
+`LongTermDebtCurrent`, `ShortTermBorrowings` and `CommercialPaper`. Only compatible
+noncurrent/current aggregate limbs form the existing `debt` input; partial amounts are
+not silently summed, and a borrowing total is never augmented by a possible subset.
+`LongTermDebt` remains `long_term_debt_reported`, with its raw concept preserved. It is
+not labeled as all debt or presumed to include any unproved current/other component.
+Missing complete limbs produce `aggregate_completeness_unattested:debt`, not a zero fill.
+
+`FiniteLivedIntangibleAssetsNet` and
+`IndefiniteLivedIntangibleAssetsExcludingGoodwill` are retained as separate reported
+components. Neither is aliased to the model's entire `intangible_assets_excluding_goodwill`
+input, and their mere presence does not demonstrate exhaustive, disjoint, same-scope/context
+coverage. Until a reviewed original/accounting contract establishes a complete aggregate,
+the adapter records `aggregate_completeness_unattested:intangible_assets_excluding_goodwill`
+and the tangible-book model remains non-evaluable. No aggregate tag, absent-as-zero rule
+or scope flag is invented. The unchanged pure kernel still accepts an explicitly complete
+synthetic input as a mathematical control; that is not a source-adapter closure rule or
+proof of real coverage. Goodwill remains separate and cannot be subtracted twice.
+
 ## Two clocks and the new study
 
 Regulator acceptance is evidence of when an official filing existed, even when its local
