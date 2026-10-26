@@ -1,0 +1,24 @@
+{
+  "schema": "FULL-LISTED-UNIVERSE-CAPACITY-v1",
+  "state": "PENDING_FACTUAL_MEASUREMENTS",
+  "production_release_allowed": false,
+  "provider_quotas": {"EODHD": null, "FMP": null, "Finnhub": null},
+  "full_size_cycle_duration_seconds": null,
+  "host_cpu_peak_percent": null,
+  "host_memory_peak_bytes": null,
+  "host_free_memory_bytes": null,
+  "distinct_sec_ciks": null,
+  "sec_configured_requests_per_second": null,
+  "sec_complete_sweep_seconds": null,
+  "sec_backfill_issuers_per_poll_proposal": null,
+  "sec_backfill_completion_estimate": null,
+  "fable_review": null,
+  "remaining": [
+    "Current provider contracted quotas and shared-worker headroom",
+    "Full-size night duration and retry/throttle distribution",
+    "Live host CPU, RAM/RSS, free memory, disk/DB headroom and PIT coexistence",
+    "Actual distinct CIKs, SEC sweep time/freshness and backfill work budget",
+    "Instrument classification review and full-size producer/decisor integration"
+  ],
+  "no_live_measurement_inferred_from_code_or_inventory_counts": true
+}
