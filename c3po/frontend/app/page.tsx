@@ -3943,8 +3943,11 @@ function R2D2RisingView() {
   };
   const positions = liveTelemetry?.positions ?? data.positions;
   const positionFeedUpdatedAt = liveTelemetry?.generated_at ?? data.generated_at;
-  const markedNav = liveTelemetry?.nav_usd ?? data.nav_usd;
-  const cash = liveTelemetry?.cash_usd ?? data.cash_usd;
+  // Owner, 26/10/2026: posted cash interest is money, available for trading. Until the ledger credits it into the
+  // operating cash (Codex, #429), the screen adds it here; drop this addition in the same change that credits it.
+  const postedInterest = Math.max(0, data.interest_income_epoch_usd ?? 0);
+  const markedNav = (liveTelemetry?.nav_usd ?? data.nav_usd) + postedInterest;
+  const cash = (liveTelemetry?.cash_usd ?? data.cash_usd) + postedInterest;
   const openPositions = liveTelemetry?.open_positions ?? data.open_positions;
   const cashPercent = markedNav > 0 ? cash / markedNav * 100 : 100;
   const accountingTotalNav = data.accounting_total_nav_usd ?? data.accounting_nav_usd;
@@ -4065,7 +4068,7 @@ function R2D2RisingView() {
         value: position.market_value_usd,
         color: allocationPalette[index % (allocationPalette.length - 1)]
       })),
-    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available", value: cash, color: allocationPalette[allocationPalette.length - 1] }
+    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: postedInterest > 0 ? `Available · includes ${moneyExact(postedInterest)} interest` : "Available", value: cash, color: allocationPalette[allocationPalette.length - 1] }
   ].map((item) => ({
     ...item,
     percent: allocationTotal > 0 ? item.value / allocationTotal * 100 : 0
@@ -4271,7 +4274,7 @@ function R2D2RisingView() {
               )}
             </div>
           </div>
-        )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No paper positions yet</strong><span>The first eligible cycle begins when the exchanges open on 17/08/2026.</span></div></div>}
+        )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No open positions</strong><span>The R2D2 V2 book is paused. Today&apos;s live lab fills appear in the Daily Buy / Sell Log.</span></div></div>}
       </section>
 
       <section className="panel r2d2-allocation-panel">

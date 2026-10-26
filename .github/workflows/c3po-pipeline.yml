@@ -617,6 +617,8 @@ jobs:
           # The Decisor V1 switches (c3po/docs/VALUATION_DECISOR_V1.md): shadow recording and the nightly earnings calendar.
           DECISOR_SHADOW: ${{ vars.C3PO_VALUATION_DECISOR_SHADOW }}
           EARNINGS_CALENDAR_ENABLED: ${{ vars.C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED }}
+          # The R2D2 lab's paper fills (owner, 26/10/2026): the bearer the lab posts with; the same secret in both repositories.
+          LAB_TOKEN: ${{ secrets.C3PO_R2D2_LAB_TOKEN }}
           LC_ALL: C  # the regex character ranges compare bytes on any runner image
         run: |
           test -n "$PUSH_PRIVATE"
@@ -651,6 +653,10 @@ jobs:
             echo "C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED must be true or false" >&2
             exit 1
           fi
+          if [ -n "$LAB_TOKEN" ] && ! [[ "$LAB_TOKEN" =~ ^[A-Za-z0-9._~+/=-]{32,128}$ ]]; then
+            echo "C3PO_R2D2_LAB_TOKEN must be 32 to 128 hex, base64 or URL-safe characters" >&2
+            exit 1
+          fi
           umask 077
           {
             printf 'C3PO_PUSH_VAPID_PRIVATE_KEY=%s\n' "$PUSH_PRIVATE"
@@ -662,6 +668,7 @@ jobs:
             if [ -n "$ASFILED_BACKFILL" ]; then printf 'C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL=%s\n' "$ASFILED_BACKFILL"; fi
             if [ -n "$DECISOR_SHADOW" ]; then printf 'C3PO_VALUATION_DECISOR_SHADOW=%s\n' "$DECISOR_SHADOW"; fi
             if [ -n "$EARNINGS_CALENDAR_ENABLED" ]; then printf 'C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=%s\n' "$EARNINGS_CALENDAR_ENABLED"; fi
+            if [ -n "$LAB_TOKEN" ]; then printf 'C3PO_R2D2_LAB_TOKEN=%s\n' "$LAB_TOKEN"; fi
           } > /tmp/c3po-push.env
           scp -i ~/.ssh/c3po_deploy \
             /tmp/c3po-push.env \
