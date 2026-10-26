@@ -99,6 +99,14 @@ The emitted plan is preparation only. A stage is not an official producer cycle:
 `record_snapshot`/automatic activation per market. Calling it three times would
 allow intermediate generations; it is not an atomic publication mechanism.
 
+`app.listed_universe_publication` now binds the real storage read set and exercises
+an all-or-nothing three-market composition/CAS on a private in-memory copy. It has
+no production writer or activation interface. The real legacy writer regression
+still demonstrates a later coverage reduction, so ownership stays blocked even
+after the synthetic atomic path passes. The exact storage/lock boundary and
+remaining implementation are documented in
+`FULL_LISTED_UNIVERSE_PUBLICATION_CONTRACT.md`.
+
 Release therefore still needs a reviewed additive storage/publisher transaction:
 
 1. Re-read the genuine current generation, selected source/version, freeze and
