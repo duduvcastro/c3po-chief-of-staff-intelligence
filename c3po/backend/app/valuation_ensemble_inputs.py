@@ -86,14 +86,14 @@ class CompanyInputs:
     facts: Mapping[str, OfficialFact]
     sector: str = ""
     sector_evidence: Evidence | None = None
-    financial_company: bool = False
+    financial_company: bool | None = False
     issuer_id: str = ""
 
     def validate(self) -> None:
         cut = utc(self.as_of)
         if (not isinstance(self.market, str) or self.market not in {"NASDAQ", "NYSE", "B3"}
                 or any(not isinstance(x, str) or not x.strip() for x in (self.symbol, self.basis_id, self.issuer_id))
-                or not isinstance(self.financial_company, bool)):
+                or (self.financial_company is not None and not isinstance(self.financial_company, bool))):
             raise NotEvaluable("invalid_company_identity")
         if self.currency != ("BRL" if self.market == "B3" else "USD"):
             raise NotEvaluable("market_currency_mismatch")

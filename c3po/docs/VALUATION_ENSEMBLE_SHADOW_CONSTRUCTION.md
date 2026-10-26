@@ -11,7 +11,8 @@ reason. No replacement number, live-provider fallback, default rate or default g
 is supplied. SEC/CVM facts and price observations require document/publication identities,
 hashes, units and clocks. These input hashes are *attestations supplied by an adapter*, not a
 claim that this library has downloaded and verified the original filings. Official-data
-adapters and coverage inventories are subsequent increments.
+adapters are described in the separate adapter document; historical coverage inventories
+and live integration remain subsequent work.
 
 ## Formulas and inputs
 

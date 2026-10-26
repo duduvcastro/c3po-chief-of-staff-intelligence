@@ -39,6 +39,8 @@ def _net_debt(c: CompanyInputs) -> float:
 
 
 def _enterprise_allowed(c: CompanyInputs) -> None:
+    if c.financial_company is None:
+        raise NotEvaluable("financial_classification_unattested")
     if c.financial_company:
         raise NotEvaluable("enterprise_model_not_applicable_to_financial_company")
 
