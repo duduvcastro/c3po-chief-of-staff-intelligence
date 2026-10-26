@@ -136,13 +136,14 @@ design for future local DDL/adapter work, not installed DDL or a claimed gate:
    atomically. Revoke public function execution and review the caller grants.
    A caller's JSON/GUC `owner` claim or `activated_by` string is not authority.
 3. Database triggers on universe/targeted snapshot writes and selection writes
-   can reject direct legacy writes while a genuine database-owned enforcement
-   epoch is active. Only the isolated publication/operator interfaces could
-   append then. The epoch is an actual enforced database transition, not a
-   caller-supplied boolean or matching receipt. The design must withstand old
-   app processes, direct INSERT and queued transactions, not just the new CLI.
-4. Do not enable an epoch as a stand-alone toggle. Enabling must join the first
-   validated cohort/CAS and ownership transition under the same lock protocol.
+   can reject direct legacy writes once installed. The concrete dormant artifact
+   uses a constant installed fence; epoch visibility under an old MVCC snapshot
+   must not decide whether a legacy writer is allowed. Readiness epochs only
+   gate the dedicated publisher. The design must withstand old app processes,
+   direct INSERT and queued transactions, not just the new CLI.
+4. Do not install the fence as a stand-alone toggle. A future reviewed cutover
+   must coordinate the first validated cohort/CAS, readiness and writer ownership
+   transition under the same lock protocol. That cutover is not implemented.
    A rejected legacy IR/on-demand write would otherwise fail its current task;
    legitimate targeted updates need a compatible reviewed function/queue route.
    Nightly/cache-miss writers need a reviewed disable/redirect or safe refusal
@@ -162,6 +163,12 @@ those tests exist, this is a pending additive option, not implemented ownership.
 No numeric SQL migration was added: Database.initialize automatically applies
 numbered migrations, and silently adding an enforcement mechanism there would
 change the served deployment on restart.
+
+The next prepared artifact is now in
+`deployment/full-universe/ownership.review.sql`, with a single-connection
+rollback-only adapter in `app.listed_universe_pg`. Neither is installed or a
+production committer. The principal, migration-startup and writer/IR/operator
+compatibility boundaries are detailed in `FULL_LISTED_UNIVERSE_PG_REVIEW.md`.
 
 The remaining release gates are consequently concrete: real PostgreSQL atomic
 adapter/concurrency proof; persistent legacy-writer enforcement; source-verified
