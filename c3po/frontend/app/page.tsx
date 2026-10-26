@@ -4053,19 +4053,26 @@ function R2D2RisingView() {
     { label: "Days ≤ -0.5%", value: data.stats.below_minus_half_percent_days, detail: "Material down sessions", tone: "critical" }
   ];
   const allocationPalette = ["#316fbb", "#2c9b70", "#7b61c9", "#d99b38", "#d45b55", "#4f9fb3", "#96733d", "#6b7b91", "#c35f99", "#9baf48", "#d1aa2f"];
-  const allocationTotal = positions.reduce((sum, position) => sum + position.market_value_usd, 0) + cash;
+  // Posted cash interest belongs to the NAV but, by the frozen accounting rule (R2D2_CASH_YIELD_ACCOUNTING_V1), never to
+  // the operating cash the strategy trades with: it is its own slice, so the allocation adds up to the NAV.
+  const postedInterest = Math.max(0, data.interest_income_epoch_usd ?? 0);
+  const allocationTotal = positions.reduce((sum, position) => sum + position.market_value_usd, 0) + cash + postedInterest;
   const allocationItems = [
     ...[...positions]
       .sort((left, right) => right.market_value_usd - left.market_value_usd)
       .map((position, index) => ({
+        kind: "position",
         label: position.symbol,
         name: position.name,
         logoUrl: position.logo_url,
         detail: position.market,
         value: position.market_value_usd,
-        color: allocationPalette[index % (allocationPalette.length - 1)]
+        color: allocationPalette[index % (allocationPalette.length - 2)]
       })),
-    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available", value: cash, color: allocationPalette[allocationPalette.length - 1] }
+    { kind: "cash", label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available for trading", value: cash, color: allocationPalette[allocationPalette.length - 1] },
+    ...(postedInterest > 0
+      ? [{ kind: "cash", label: "Interest", name: "Posted cash interest", logoUrl: "/market-marks/usd.svg", detail: "Posted interest · not used for trading", value: postedInterest, color: allocationPalette[allocationPalette.length - 2] }]
+      : [])
   ].map((item) => ({
     ...item,
     percent: allocationTotal > 0 ? item.value / allocationTotal * 100 : 0
@@ -4271,7 +4278,7 @@ function R2D2RisingView() {
               )}
             </div>
           </div>
-        )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No paper positions yet</strong><span>The first eligible cycle begins when the exchanges open on 17/08/2026.</span></div></div>}
+        )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No open positions</strong><span>The R2D2 V2 book is paused. Today&apos;s live lab fills appear in the Daily Buy / Sell Log.</span></div></div>}
       </section>
 
       <section className="panel r2d2-allocation-panel">
@@ -4311,7 +4318,7 @@ function R2D2RisingView() {
               <strong title={moneyExact(accountingTotalNav)}>{money(accountingTotalNav)}</strong>
               <small>Including posted interest</small>
               <small>Marked allocation: {money(allocationTotal)}</small>
-              <small>{openPositions} positions + cash</small>
+              <small>{openPositions} positions + cash{postedInterest > 0 ? " + interest" : ""}</small>
             </div>
             {hoveredAllocation ? (
               <div
@@ -4333,11 +4340,11 @@ function R2D2RisingView() {
               >
                 <i style={{ backgroundColor: item.color }} />
                 <span className="r2d2-allocation-logo">
-                  {item.label === "Cash"
+                  {item.kind === "cash"
                     ? <img src={item.logoUrl ?? "/market-marks/usd.svg"} alt="USD" />
                     : <CompanyLogo logoUrl={item.logoUrl} symbol={item.label} />}
                 </span>
-                <div>{item.label === "Cash" ? <strong>Cash</strong> : <R2D2Ticker symbol={item.label} name={item.name} />}<small>{item.detail}</small></div>
+                <div>{item.kind === "cash" ? <strong>{item.label}</strong> : <R2D2Ticker symbol={item.label} name={item.name} />}<small>{item.detail}</small></div>
                 <span>{moneyExact(item.value)}</span>
                 <b>{item.percent.toFixed(1)}%</b>
               </div>
