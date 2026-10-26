@@ -13,11 +13,11 @@ import json
 import math
 import os
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
-from .schemas import R2D2Trade
+from .schemas import R2D2LearningCurvePoint, R2D2Trade
 
 TOKEN_ENV = "C3PO_R2D2_LAB_TOKEN"
 SCHEMA = "C3PO-R2D2-LAB-LIVE-v1"
@@ -175,3 +175,22 @@ def today_trades(database: Any, *, now: datetime | None = None) -> list[R2D2Trad
             reason="R2D2 ao vivo (%s, papel): %s" % (outputs.get("config"), item["reason"]),
             executed_at=executed, quote_as_of=executed))
     return sorted(trades, key=lambda trade: trade.executed_at, reverse=True)
+
+
+def learning_curve(database: Any, *, now: datetime | None = None, days: int = 90) -> list[R2D2LearningCurvePoint]:
+    """One point per lab session with closed trades (positive and negative realized sells), oldest first: the live
+    R2D2 continues the Learning Curve after the paused V2 book's sessions."""
+    today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date()
+    keys = [(today - timedelta(days=offset)).isoformat() for offset in range(days)]
+    points = []
+    for day, snapshot in sorted(database.latest_analysis_snapshots(ANALYSIS_TYPE, keys).items()):
+        outputs = snapshot.get("outputs")
+        if not isinstance(outputs, dict) or outputs.get("schema") != SCHEMA:
+            continue
+        results = [item.get("realized_pnl_usd") for item in outputs.get("trades") or [] if item.get("side") == "SELL"]
+        positive = sum(1 for pnl in results if pnl is not None and pnl > 0)
+        negative = sum(1 for pnl in results if pnl is not None and pnl < 0)
+        if positive + negative:
+            points.append(R2D2LearningCurvePoint(session_date=day, positive_percent=round(positive / (positive + negative) * 100, 1),
+                                                 positive_trades=positive, negative_trades=negative))
+    return points

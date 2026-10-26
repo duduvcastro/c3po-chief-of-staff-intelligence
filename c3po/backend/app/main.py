@@ -1783,8 +1783,15 @@ def r2d2_dashboard() -> R2D2DashboardResponse:
 
 def _r2d2_dashboard_with_lab() -> R2D2DashboardResponse:
     response = r2d2.dashboard()
+    update: dict = {}
     lab = r2d2_lab_live.today_trades(database)
-    return response.model_copy(update={"trades": lab + list(response.trades)}) if lab else response
+    if lab:
+        update["trades"] = lab + list(response.trades)
+    curve = r2d2_lab_live.learning_curve(database)
+    if curve:
+        known = {point.session_date for point in response.learning_curve}
+        update["learning_curve"] = list(response.learning_curve) + [point for point in curve if point.session_date not in known]
+    return response.model_copy(update=update) if update else response
 
 
 @app.post("/api/v1/r2d2/lab-live", status_code=202)
