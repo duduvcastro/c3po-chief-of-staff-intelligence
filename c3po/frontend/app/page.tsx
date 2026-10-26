@@ -253,6 +253,8 @@ interface R2D2DashboardData {
   operating_days_elapsed: number;
   starting_capital_usd: number;
   book_source?: "v2" | "lab_live";
+  live_rule?: string | null;
+  live_slots?: number | null;
   nav_usd: number;
   accounting_nav_usd: number;
   accounting_nav_ex_interest_usd: number;
@@ -4008,12 +4010,23 @@ function R2D2RisingView() {
         symbol: position.symbol,
         name: position.name,
         market: position.market,
-        rationale: `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
+        rationale: data.book_source === "lab_live"
+          ? "Held by the live rule: profit lock from +0.15% net (peak −0.10), stop −0.5% net, sold in the last 30 seconds if positive."
+          : `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
         detail: `Mark ${signedPositionPercent(position.mark_return_percent, position.mark_pnl_usd)} · net if closed ${signedPositionPercent(position.estimated_exit_return_percent, position.estimated_exit_pnl_usd)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
         tone: "monitor"
       }))
   ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
-  const launchChecks = [
+  const slots = data.live_slots ?? 20;
+  const launchChecks = data.book_source === "lab_live" ? [
+    { label: "Market feeds", detail: "Massive real time · NBBO quotes and minute bars · Nasdaq + NYSE", state: "ready" },
+    { label: "Entry rule", detail: data.live_rule ?? data.methodology_version, state: "ready" },
+    { label: "Risk mandate", detail: `No leverage · up to ${slots} positions of ${(100 / slots).toFixed(0)}% · stop −0.5% net · profit lock from +0.15% net (peak −0.10)`, state: "ready" },
+    { label: "Session close", detail: "Positives sold in the last 30 seconds · negatives carried to the next session", state: "ready" },
+    { label: "Paper execution", detail: "One-minute replay on real-time data · fills at the real bid/ask · no broker, no orders", state: "ready" },
+    { label: "Valuation decisor", detail: "Shadow · not gating entries", state: "pending" },
+    { label: "Daily measurement", detail: "Variants measured in paper every night next to the live rule", state: "ready" }
+  ] : [
     { label: "Market feeds", detail: "EODHD live · Nasdaq + NYSE · B3 execution disabled", state: "ready" },
     { label: "Canonical valuation", detail: "Dark Side + Last Jedi + Laser Pager", state: "ready" },
     { label: "Risk mandate", detail: "No leverage · failed-entry defense -0.3% · hard stop -0.65%", state: "ready" },
@@ -4260,8 +4273,13 @@ function R2D2RisingView() {
               </span>
               <small>EST. SELL FRICTION</small>
             </div>
-            <div data-label="Technical"><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
-            <div data-label="Trend / flow"><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
+            {data.book_source === "lab_live" ? <>
+              <div data-label="Technical"><strong>—</strong><small>live rule</small></div>
+              <div data-label="Trend / flow"><strong>VWAP rule</strong><small>lock +0.15% · stop −0.5%</small></div>
+            </> : <>
+              <div data-label="Technical"><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
+              <div data-label="Trend / flow"><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
+            </>}
             <span data-label="Stop">{formatCurrency(position.stop_price_local, position.currency)}</span>
             <div data-label="Decision">
               <strong>{position.decision_state}</strong>

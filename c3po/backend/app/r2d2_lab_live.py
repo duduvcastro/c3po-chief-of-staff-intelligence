@@ -17,8 +17,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
-from .schemas import (R2D2DashboardResponse, R2D2LearningCurvePoint, R2D2LivePositionsResponse, R2D2NavSessionDelta,
-                      R2D2Position, R2D2TrackPoint, R2D2Trade)
+from .schemas import (R2D2CycleStatus, R2D2DashboardResponse, R2D2EpisodeStats, R2D2LearningCurvePoint,
+                      R2D2LivePositionsResponse, R2D2NavSessionDelta, R2D2Position, R2D2SummaryStats, R2D2TrackPoint,
+                      R2D2Trade)
 
 TOKEN_ENV = "C3PO_R2D2_LAB_TOKEN"
 SCHEMA = "C3PO-R2D2-LAB-LIVE-v1"
@@ -45,6 +46,19 @@ BOOK_KEYS = {"nav_start_usd", "nav_usd", "realized_nav_usd", "cash_usd", "as_of"
 POSITION_KEYS = {"symbol", "market", "quantity", "average_cost", "last_price", "cost_usd", "unrealized_pnl_usd",
                  "unrealized_return_percent", "stop_price", "opened_at"}
 BOOK_SOURCE = "lab_live"
+CYCLE_KEYS = {"candidates", "signals", "entries", "closed"}
+# The live scenarios as the owner chose them (lab/sim.py CFGS); the Launch Gates panel shows the one in force
+LIVE_RULES = {
+    "TIT-2S3": "Gap ≤ −1% at the open · back above the VWAP until 15:29 ET · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 3 bps",
+    "TIT-2S5": "Gap ≤ −1% at the open · back above the VWAP until 15:29 ET · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
+    "TIT-2": "Gap ≤ −1% at the open · back above the VWAP until 15:29 ET · ADV ≥ US$15M · price ≥ US$5 · no spread limit",
+    "TIT-1": "Gap ≤ −1% at the open · first VWAP cross until 11:29 ET · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 3 bps",
+}
+LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1}
+SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
+# The one R2D2 book opened on 27/10/2026 from the NAV with interest at the 26/10 close (owner 26/10/2026): the T-bill
+# interest the cash-yield ledger posts for sessions from this one on is money of the book (cash and NAV).
+BOOK_FIRST_SESSION = "2026-10-27"
 TRADE_KEYS = {"id", "side", "symbol", "market", "quantity", "price", "executed_at", "fees_usd", "realized_pnl_usd",
               "realized_return_percent", "reason"}
 
@@ -103,8 +117,8 @@ def _instant(value: Any, name: str) -> datetime:
 def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     """The payload as stored: the exact schema, closed vocabularies, every fill on the posted session day."""
     if not isinstance(payload, dict) or not {"schema", "day", "config", "trades"} <= set(payload) <= {
-            "schema", "day", "config", "trades", "book"}:
-        raise LabLiveRefused("the payload keys are not schema, day, config, trades and an optional book")
+            "schema", "day", "config", "trades", "book", "cycle"}:
+        raise LabLiveRefused("the payload keys are not schema, day, config, trades and an optional book and cycle")
     if payload["schema"] != SCHEMA:
         raise LabLiveRefused("unexpected schema")
     try:
@@ -153,6 +167,13 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     document = {"schema": SCHEMA, "day": day.isoformat(), "config": payload["config"], "trades": out}
     if "book" in payload:
         document["book"] = _book(payload["book"])
+    if "cycle" in payload:
+        cycle = payload["cycle"]
+        if not isinstance(cycle, dict) or set(cycle) != CYCLE_KEYS or not all(
+                isinstance(cycle[key], int) and not isinstance(cycle[key], bool) and 0 <= cycle[key] <= 1_000_000
+                for key in CYCLE_KEYS):
+            raise LabLiveRefused("the cycle is not exactly candidates, signals, entries, closed counts")
+        document["cycle"] = {key: cycle[key] for key in sorted(CYCLE_KEYS)}
     return document
 
 
@@ -267,9 +288,11 @@ def latest_book(database: Any, *, now: datetime | None = None) -> tuple[str, str
     return day, str(outputs.get("config")), outputs["book"], sessions
 
 
-def _positions(book: dict[str, Any]) -> list[R2D2Position]:
+def _positions(book: dict[str, Any], now: datetime | None = None) -> list[R2D2Position]:
     nav = book["nav_usd"]
     as_of = datetime.fromisoformat(book["as_of"])
+    age = max(0.0, ((now or datetime.now(timezone.utc)) - as_of).total_seconds())
+    freshness = "fresh" if age <= 120 else "aging" if age <= 420 else "stale"  # the lab posts the marks every <= 5 min
     rows = []
     for item in book["positions"]:
         value = item["quantity"] * item["last_price"]
@@ -280,12 +303,21 @@ def _positions(book: dict[str, Any]) -> list[R2D2Position]:
             mark_pnl_usd=item["unrealized_pnl_usd"], mark_return_percent=item["unrealized_return_percent"],
             estimated_exit_pnl_usd=item["unrealized_pnl_usd"], estimated_exit_return_percent=item["unrealized_return_percent"],
             allocation_percent=round(value / nav * 100, 4) if nav > 0 else 0.0, stop_price_local=item["stop_price"],
-            data_status="live", decision_state="hold", quote_status="lab", quote_as_of=as_of,
+            data_status="live", decision_state="hold", quote_status="lab", quote_as_of=as_of, quote_age_seconds=round(age, 1),
+            quote_freshness=freshness, trend_state="vwap rule", volume_state="adv rule",
             opened_at=datetime.fromisoformat(item["opened_at"]), updated_at=as_of))
     return sorted(rows, key=lambda row: row.market_value_usd, reverse=True)
 
 
-def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime | None = None) -> R2D2DashboardResponse:
+def _interest(interest: list[tuple[str, float]] | None, today: str) -> tuple[float, float]:
+    """(interest of the book since its first session, interest posted for today's session)."""
+    rows = interest or []
+    return (sum(amount for day, amount in rows if BOOK_FIRST_SESSION <= day <= today),
+            sum(amount for day, amount in rows if day == today))
+
+
+def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime | None = None,
+               interest: list[tuple[str, float]] | None = None) -> R2D2DashboardResponse:
     """One R2D2 book on every panel (owner 26/10/2026): NAV, cash, positions, daily P&L, the session delta and the
     track record come from the live lab book once it has posted one; the paused V2 book is the history before it."""
     found = latest_book(database, now=now)
@@ -310,8 +342,11 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
     else:
         open_nav = close_nav = nav  # no live session yet today
     daily = close_nav - open_nav
-    daily_percent = daily / open_nav * 100 if open_nav > 0 else 0.0
-    positions = _positions(book)
+    accrued, interest_today = _interest(interest, today)
+    nav, close_nav, open_nav = nav + accrued, close_nav + accrued, open_nav + accrued
+    previous = open_nav - interest_today  # the NAV at the previous close, before today's T-bill interest
+    daily_percent = daily / previous * 100 if previous > 0 else 0.0
+    positions = _positions(book, now)
     exposure = sum(position.market_value_usd for position in positions)
     starting = response.starting_capital_usd
     total_return = (nav / starting - 1) * 100 if starting > 0 else 0.0
@@ -325,29 +360,77 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
     if day > today and daily and today not in {point.session_date for point in track}:
         track.append(R2D2TrackPoint(session_date=today, nav_usd=round(close_nav, 2), daily_pnl_usd=round(daily, 2),
                                     daily_return_percent=round(daily_percent, 4), is_final=True))
+    total = close_nav - previous
     delta = R2D2NavSessionDelta(
         status="available", session_date=today, previous_session_date=None, current_total_nav_usd=round(close_nav, 2),
-        previous_total_nav_usd=round(open_nav, 2), total_delta_usd=round(daily, 2), total_delta_percent=round(daily_percent, 4),
-        organic_delta_usd=round(daily, 2), organic_delta_percent=round(daily_percent, 4), interest_delta_usd=0.0,
-        interest_delta_percent=0.0, interest_status="not_applicable")
+        previous_total_nav_usd=round(previous, 2), total_delta_usd=round(total, 2),
+        total_delta_percent=round(total / previous * 100, 4) if previous > 0 else 0.0, organic_delta_usd=round(daily, 2),
+        organic_delta_percent=round(daily_percent, 4), interest_delta_usd=round(interest_today, 2),
+        interest_delta_percent=round(interest_today / previous * 100, 4) if previous > 0 else 0.0,
+        interest_status="posted" if interest_today else "pending")
+    clock = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
+    closed_now = (clock.hour, clock.minute) >= SESSION_CLOSE_ET
+    by_day = dict(_lab_snapshots(database, now, 90))
+    today_doc = by_day.get(today) or {}
+    today_sells = [item.get("realized_pnl_usd") for item in today_doc.get("trades") or [] if item.get("side") == "SELL"]
+    positive = sum(1 for pnl in today_sells if pnl is not None and pnl > 0)
+    negative = sum(1 for pnl in today_sells if pnl is not None and pnl < 0)
+    episodes = R2D2EpisodeStats(
+        session_date=today, closed_episodes=len(today_sells), decided_episodes=positive + negative,
+        positive_episodes=positive, negative_episodes=negative, flat_episodes=len(today_sells) - positive - negative,
+        win_rate_percent=round(positive / (positive + negative) * 100, 2) if positive + negative else 0.0)
+    stats = _scoreboard(response.stats, track, by_day, today, closed_now)
+    cycle = today_doc.get("cycle")
+    last_cycle = response.last_cycle
+    if today_doc:
+        last_cycle = R2D2CycleStatus(
+            status="completed" if closed_now else "running",
+            started_at=datetime.fromisoformat(today + "T09:30:00").replace(tzinfo=NEW_YORK),
+            scanned_count=(cycle or {}).get("candidates", 0), signal_count=(cycle or {}).get("signals", 0),
+            trade_count=len(today_doc.get("trades") or []), metadata={"source": BOOK_SOURCE, "config": str(today_doc.get("config"))})
     return response.model_copy(update={
-        "book_source": BOOK_SOURCE, "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
-        "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),
-        "accounting_nav_ex_interest_usd": round(nav, 2), "accounting_total_nav_usd": round(nav, 2),
-        "cash_usd": round(book["cash_usd"], 2), "gross_exposure_usd": round(exposure, 2), "open_positions": len(positions),
+        "book_source": BOOK_SOURCE, "live_rule": LIVE_RULES.get(config), "live_slots": LIVE_SLOTS.get(config),
+        "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
+        "methodology_version": "R2D2 LIVE · %s" % config, "today_episode_stats": episodes, "stats": stats,
+        "last_cycle": last_cycle, "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),
+        "accounting_nav_ex_interest_usd": round(nav - response.interest_income_epoch_usd, 2),
+        "accounting_total_nav_usd": round(nav, 2),
+        "cash_usd": round(book["cash_usd"] + accrued, 2), "gross_exposure_usd": round(exposure, 2), "open_positions": len(positions),
         "positions": positions, "total_return_percent": round(total_return, 4),
         "accounting_total_return_percent": round(total_return, 4), "daily_pnl_usd": round(daily, 2),
         "organic_daily_pnl_usd": round(daily, 2), "daily_return_percent": round(daily_percent, 4), "daily_pnl_date": today,
         "nav_session_delta": delta, "track_record": track})
 
 
-def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: datetime | None = None) -> R2D2LivePositionsResponse:
+def _scoreboard(v2: R2D2SummaryStats, track: list[R2D2TrackPoint], by_day: dict[str, dict[str, Any]], today: str,
+                closed_now: bool) -> R2D2SummaryStats:
+    """The paused V2 book's lifetime scoreboard plus the live sessions (days from the track, legs from the sells)."""
+    lab_days = [point for point in track if point.session_date in by_day and (point.session_date < today or closed_now)]
+    sells = [item.get("realized_pnl_usd") for day, outputs in by_day.items() if day <= today
+             for item in outputs.get("trades") or [] if item.get("side") == "SELL"]
+    closed = v2.closed_days + len(lab_days)
+    positive_days = v2.positive_days + sum(point.daily_return_percent > 0 for point in lab_days)
+    return R2D2SummaryStats(
+        closed_days=closed, positive_days=positive_days,
+        above_half_percent_days=v2.above_half_percent_days + sum(point.daily_return_percent >= 0.5 for point in lab_days),
+        negative_days=v2.negative_days + sum(point.daily_return_percent < 0 for point in lab_days),
+        below_minus_half_percent_days=v2.below_minus_half_percent_days + sum(point.daily_return_percent <= -0.5 for point in lab_days),
+        flat_days=v2.flat_days + sum(abs(point.daily_return_percent) < 1e-9 for point in lab_days),
+        win_rate_percent=round(positive_days / closed * 100, 2) if closed else 0.0,
+        total_transactions=v2.total_transactions + len(sells),
+        positive_transactions=v2.positive_transactions + sum(1 for pnl in sells if pnl is not None and pnl > 0),
+        negative_transactions=v2.negative_transactions + sum(1 for pnl in sells if pnl is not None and pnl < 0))
+
+
+def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: datetime | None = None,
+                    interest: list[tuple[str, float]] | None = None) -> R2D2LivePositionsResponse:
     found = latest_book(database, now=now)
     if found is None:
         return response
     book = found[2]
-    positions = _positions(book)
+    accrued = _interest(interest, (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat())[0]
+    positions = _positions(book, now)
     return response.model_copy(update={
-        "nav_usd": round(book["nav_usd"], 2), "cash_usd": round(book["cash_usd"], 2),
+        "nav_usd": round(book["nav_usd"] + accrued, 2), "cash_usd": round(book["cash_usd"] + accrued, 2),
         "gross_exposure_usd": round(sum(position.market_value_usd for position in positions), 2),
         "open_positions": len(positions), "positions": positions})
