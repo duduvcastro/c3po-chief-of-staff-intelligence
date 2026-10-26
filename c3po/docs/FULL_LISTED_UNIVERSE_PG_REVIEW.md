@@ -155,3 +155,9 @@ verified operator integration; an ordered fence installation and readiness epoch
 provider/host/SEC capacity, exact-head Fable GO and a genuine PIT-free window;
 and actual post-commit capture/cache validation. The scientific BOTH_FAIL stays
 closed and new-name buying remains independently default-deny.
+
+Dormant real integration cases are now prepared under
+`backend/pg_contract_review/`. Its README lists the external disposable-cluster
+preconditions and the distinction between future SQL fixture commits and the
+application's closed production committer. Only its pure local guard tests and
+Python static checks were executed during preparation; no PostgreSQL case ran.
