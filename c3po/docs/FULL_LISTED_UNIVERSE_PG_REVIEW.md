@@ -96,6 +96,17 @@ The SQL is an explicit future installation candidate, with these boundaries:
 The DDL was not installed or SQL-parsed. These are intended invariants subject
 to real PostgreSQL/privilege tests, not a live ownership attestation.
 
+Independent review found a concrete gap in the initial prediction fence: a B3
+record could point to the NASDAQ cycle of the same cohort while preserving B3
+stage values, and native per-market counts would ignore that extra record. The
+revised DDL requires the exact market-to-cycle-to-stage FK binding, validates the
+cycle/stage namespace and market, and rejects foreign-market records during
+selection. Missing/invalid markets and null/missing bindings are refused. The
+adapter also checks this binding before any cohort DML. A synthetic fixture
+preserves the independent witness and exercises that adapter rejection with all
+native records still present. This regression does not execute the SQL fence;
+the equivalent direct-INSERT PostgreSQL test remains required.
+
 ## Startup/migration compatibility is a concrete pending gate
 
 Observed source: `backend/app/database.py:211–224` opens the configured

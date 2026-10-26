@@ -228,7 +228,19 @@ BEGIN
     END IF;
   ELSIF TG_TABLE_NAME='valuation_predictions' THEN
     market_key := NEW.market;
-    SELECT * INTO original FROM public.valuation_predictions p WHERE p.cycle_id=(cohort.stages->>market_key)::uuid
+    IF market_key IS NULL OR market_key NOT IN ('B3','NASDAQ','NYSE') OR NEW.cycle_id IS NULL
+        OR NEW.cycle_id::text IS DISTINCT FROM cohort.cycles->>market_key
+        OR NOT EXISTS (SELECT 1 FROM public.analysis_snapshots s WHERE s.id=NEW.cycle_id
+                        AND s.analysis_type='valuation_universe' AND s.entity_key=market_key||'_UNIVERSE') THEN
+      RAISE EXCEPTION USING ERRCODE='PZ004', MESSAGE='prediction_market_cycle_binding_required';
+    END IF;
+    SELECT * INTO stage FROM public.analysis_snapshots s WHERE s.id=(cohort.stages->>market_key)::uuid;
+    IF NOT FOUND OR stage.analysis_type IS DISTINCT FROM 'full_universe_stage'
+        OR stage.entity_key IS DISTINCT FROM market_key
+        OR stage.inputs->>'source_manifest_sha256' IS DISTINCT FROM cohort.catalogues->>market_key THEN
+      RAISE EXCEPTION USING ERRCODE='PZ004', MESSAGE='prediction_market_stage_binding_required';
+    END IF;
+    SELECT * INTO original FROM public.valuation_predictions p WHERE p.cycle_id=stage.id
       AND p.source=NEW.source AND p.market=market_key AND p.symbol=NEW.symbol;
     IF NOT FOUND OR NEW.source NOT IN ('official_blend_v1','official_internal_v1') OR NEW.scope <> 'universe'
         OR ROW(NEW.source_version,NEW.session_date,NEW.prediction_instant,NEW.tp,NEW.buy_in,NEW.internal_tp,
@@ -262,6 +274,8 @@ BEGIN
     FOREACH market_key IN ARRAY ARRAY['B3','NASDAQ','NYSE'] LOOP
       IF NOT EXISTS (SELECT 1 FROM public.analysis_snapshots s WHERE s.id=(NEW.cycles->>market_key)::uuid
                      AND s.analysis_type='valuation_universe' AND s.entity_key=market_key||'_UNIVERSE')
+          OR EXISTS (SELECT 1 FROM public.valuation_predictions p WHERE p.cycle_id=(NEW.cycles->>market_key)::uuid
+                      AND p.market IS DISTINCT FROM market_key)
           OR (SELECT count(*) FROM public.valuation_predictions p WHERE p.cycle_id=(NEW.cycles->>market_key)::uuid
                AND p.market=market_key AND p.scope='universe' AND p.source_version=epoch.source_version
                AND p.source IN ('official_blend_v1','official_internal_v1')) IS DISTINCT FROM

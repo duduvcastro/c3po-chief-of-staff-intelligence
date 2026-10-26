@@ -156,6 +156,61 @@ def test_failure_at_each_storage_phase_rolls_back_without_per_market_commits(mon
     assert connection.rollbacks == 1 and connection.commits == 0 and connection.writes == []
 
 
+@pytest.mark.parametrize("damage", ["cross_market_cycle", "null_cycle", "null_market", "unknown_market", "cross_market_stage",
+                                  "null_stage", "null_cycle_map", "snapshot_market"])
+def test_mutated_compiler_output_cannot_cross_market_cycle_stage_boundary(monkeypatch, compiled, damage):
+    candidate = copy.deepcopy(compiled)
+    record = next(item for item in candidate["records"] if item["market"] == "B3")
+    if damage == "cross_market_cycle":
+        # Exact independent witness class: B3 record retains B3 stage/values,
+        # but points to another valid cycle inside the same cohort.
+        record["cycle_id"] = candidate["generation"]["cycles"]["NASDAQ"]
+    elif damage == "null_cycle":
+        record["cycle_id"] = None
+    elif damage == "null_market":
+        record["market"] = None
+    elif damage == "unknown_market":
+        record["market"] = "US"
+    elif damage == "cross_market_stage":
+        record["decomposition"]["provenance"]["rerun_of"] = candidate["preparation"]["stage_ids"]["NASDAQ"]
+    elif damage == "null_stage":
+        candidate["preparation"]["stage_ids"]["B3"] = None
+    elif damage == "null_cycle_map":
+        candidate["generation"]["cycles"]["B3"] = None
+    else:
+        candidate["snapshots"][0]["entity_key"] = "FOREIGN_UNIVERSE"
+    connection = ConnectionDouble()
+    with pytest.raises(pg.PublicationContractError, match="market_cycle_stage_binding"):
+        rehearse(monkeypatch, connection, candidate)
+    assert connection.writes == [] and connection.counts == {} and connection.rollbacks == 1 and connection.commits == 0
+
+
+def test_independent_direct_insert_witness_is_rejected_even_with_complete_native_records(monkeypatch, compiled):
+    witness = json.loads((Path(__file__).parent/"fixtures/listed_universe_pg/cross_market_insert.json").read_text())
+    assert witness["witness_sha256"] == "ba30e65a3ca476b2844c897059ffa478b7717cced8a728a985080e42690bee27"
+    candidate = copy.deepcopy(compiled)
+    old_cycles = candidate["generation"]["cycles"]
+    for snapshot in candidate["snapshots"]:
+        market = next(m for m, cycle in old_cycles.items() if cycle == snapshot["id"])
+        snapshot["id"] = witness["cohort"]["cycles"][market]
+        snapshot["inputs"]["rerun_of"] = witness["cohort"]["stages"][market]
+    for record in candidate["records"]:
+        market = record["market"]
+        record["cycle_id"] = witness["cohort"]["cycles"][market]
+        record["decomposition"]["provenance"]["rerun_of"] = witness["cohort"]["stages"][market]
+        record["row_sha256"] = pg.publication.official.canonical_sha256({key: value for key, value in record.items() if key not in {"id", "row_sha256"}})
+    candidate["generation"]["cycles"] = witness["cohort"]["cycles"]
+    candidate["preparation"]["stage_ids"] = witness["cohort"]["stages"]
+    candidate["records"].append(witness["foreign_record"])
+    # All 24 native records remain: a count filtered by its own market/cycle
+    # would ignore the extra. The actual adapter boundary must still refuse it.
+    assert len(candidate["records"]) == 25
+    connection = ConnectionDouble()
+    with pytest.raises(pg.PublicationContractError, match="prediction_market_cycle_stage_binding"):
+        rehearse(monkeypatch, connection, candidate)
+    assert connection.writes == [] and connection.rollbacks == 1 and connection.commits == 0
+
+
 @pytest.mark.parametrize("roles", [("c3po", "c3po"), (pg.PUBLISHER, "c3po"), ("c3po", pg.PUBLISHER), None])
 def test_authenticated_principal_cannot_be_replaced_by_set_role_or_flags(monkeypatch, compiled, roles):
     connection = ConnectionDouble()

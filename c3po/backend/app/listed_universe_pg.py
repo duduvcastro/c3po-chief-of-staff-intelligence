@@ -157,6 +157,7 @@ def _epoch(connection: Connection, at: datetime) -> dict[str, Any]:
 
 def _write_cohort(connection: Connection, compiled: Mapping[str, Any], epoch: Mapping[str, Any]) -> dict[str, Any]:
     preparation, generation = compiled["preparation"], copy.deepcopy(compiled["generation"])
+    _validate_compiled_bindings(compiled)
     if generation["source"] != epoch["source"] or generation["source_version"] != epoch["source_version"]:
         raise ProductionReleaseClosed("epoch_does_not_preserve_selected_source_and_version")
     connection.execute(REGISTER, (preparation["transaction_id"], epoch["epoch_id"], preparation["expected_predecessor"],
@@ -186,6 +187,28 @@ def _write_cohort(connection: Connection, compiled: Mapping[str, Any], epoch: Ma
         generation["validated_complete"], generation["activated_at"], generation["activated_by"],
         generation["previous_generation_id"], json.dumps(generation["receipt"])))
     return generation
+
+
+def _validate_compiled_bindings(compiled: Mapping[str, Any]) -> None:
+    """Defend the SQL boundary too; this is not a substitute for DB triggers."""
+    cycles, stages = compiled["generation"]["cycles"], compiled["preparation"]["stage_ids"]
+    if (set(cycles) != set(publication.MARKETS) or set(stages) != set(publication.MARKETS)
+            or len(set(cycles.values())) != 3 or len(set(stages.values())) != 3
+            or not all(isinstance(value, str) and value for value in [*cycles.values(), *stages.values()])):
+        raise PublicationContractError("complete_market_cycle_stage_binding_required")
+    snapshots = {item["id"]: item for item in compiled["snapshots"]}
+    if set(snapshots) != set(cycles.values()) or len(compiled["snapshots"]) != 3:
+        raise PublicationContractError("complete_market_cycle_stage_binding_required")
+    for market, cycle in cycles.items():
+        snapshot = snapshots[cycle]
+        if (snapshot.get("analysis_type") != "valuation_universe" or snapshot.get("entity_key") != market + "_UNIVERSE"
+                or snapshot.get("inputs", {}).get("rerun_of") != stages[market]):
+            raise PublicationContractError("snapshot_market_cycle_stage_binding_required")
+    for record in compiled["records"]:
+        market = record.get("market")
+        if (market not in publication.MARKETS or record.get("cycle_id") != cycles[market]
+                or record.get("decomposition", {}).get("provenance", {}).get("rerun_of") != stages[market]):
+            raise PublicationContractError("prediction_market_cycle_stage_binding_required")
 
 
 def _verify_inserted(connection: Connection, compiled: Mapping[str, Any]) -> None:
