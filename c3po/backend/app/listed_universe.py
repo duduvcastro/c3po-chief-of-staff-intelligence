@@ -258,10 +258,12 @@ def catalogue_from_payload(payload: Mapping[str, Any]) -> Catalogue:
 
 def buy_scope_allows(evidence: Mapping[str, Any] | None, *, market: str, symbol: str,
                      tp_source_version: str | None, now: datetime) -> bool:
-    """A restrictive membership guard, never a replacement for the decisor gates.
+    """Structural membership predicate, NOT scientific-artifact verification.
 
     No scope is installed by this module. FAIL/VOID/missing/malformed/expired scope
-    cannot grant permission. A pass for one version or exchange covers no other.
+    cannot match. A pass for one version or exchange covers no other. A matching
+    header is not authority: the expanded consumer separately requires a trusted
+    server-side artifact attestor, which this predicate does not install.
     """
     if not isinstance(evidence, Mapping) or evidence.get("schema") != "PIT-BUY-POPULATION-v1":
         return False
@@ -287,6 +289,7 @@ def buy_scope_allows(evidence: Mapping[str, Any] | None, *, market: str, symbol:
 def universe_response(catalogue: Catalogue, canonical_rows: Mapping[str, Mapping[str, Any]], *,
                       observations: Mapping[str, Mapping[str, Any]] | None = None,
                       population: Mapping[str, Any] | None = None,
+                      permissions: Mapping[str, Mapping[str, Any]] | None = None,
                       now: datetime | None = None) -> dict[str, Any]:
     """Join ALL official stock/pending listings; no rank, minimum or quantity cap.
 
@@ -295,6 +298,7 @@ def universe_response(catalogue: Catalogue, canonical_rows: Mapping[str, Mapping
     """
     instant = utc(now or datetime.now(timezone.utc))
     observations = observations or {}
+    permissions = permissions or {}
     items = []
     for listing in catalogue.listings:
         if listing.security_type == "ETF":
@@ -328,13 +332,15 @@ def universe_response(catalogue: Catalogue, canonical_rows: Mapping[str, Mapping
             reasons.append("insufficient_history")
         scope = buy_scope_allows(population, market=listing.market, symbol=listing.symbol,
                                 tp_source_version=row.get("tp_source_version"), now=instant)
-        existing_permission = row.get("decisor_verdict") == "COMPRA_PERMITIDA"
+        permission = permissions.get(listing.symbol) or {}
+        existing_permission = permission.get("buy_permission") is True and permission.get("pit_artifacts_attested") is True
         items.append({
             "symbol": listing.symbol, "name": listing.name, "market": listing.market,
             "listing_class": listing.listing_class, "isin": listing.isin,
             "valuation_status": "not_evaluable" if reasons else "valued", "not_evaluable_reasons": reasons,
             "price": price, "our_tp": tp, "buy_in": positive(row.get("buy_in")),
-            "minimum_badges": badges, "pit_buy_scope_verified": scope,
+            "minimum_badges": badges, "pit_population_member": scope,
+            "pit_buy_scope_verified": bool(scope and permission.get("pit_artifacts_attested") is True),
             "buy_permission": bool(existing_permission and scope and not reasons),
             "buy_permission_reason": ("existing_decisor_and_verified_pit_scope" if existing_permission and scope and not reasons
                                       else "pit_buy_scope_unverified" if not scope else "decisor_gates_not_passed"),
@@ -355,18 +361,23 @@ def universe_response(catalogue: Catalogue, canonical_rows: Mapping[str, Mapping
 
 def read_universe(database: Any, market: str, *, now: datetime | None = None) -> dict[str, Any]:
     """Read-only API path: no upstream fetch, producer build or database write."""
-    from .valuation_official import current_generation, official_rows
+    from .valuation_official import generation_at, official_rows, item_stamp
+    from .listed_universe_decision import latest_permissions
 
     market = market.upper()
     if market not in MARKETS:
         raise ValueError("unknown market")
-    stored = database.latest_analysis_snapshot(CATALOGUE_ANALYSIS, market)
+    instant = utc(now or datetime.now(timezone.utc))
+    stored = database.analysis_snapshot_at_or_before(CATALOGUE_ANALYSIS, market, instant)
     if not stored:
         raise LookupError("Official listing inventory has not been captured for this market")
     catalogue = catalogue_from_payload(stored["outputs"])
     if catalogue.market != market:
         raise ValueError("stored catalogue market mismatch")
-    generation = current_generation(database)
-    rows = official_rows(database, market, generation=generation) if generation else {}
-    scope = database.latest_analysis_snapshot(POPULATION_ANALYSIS, market)
-    return universe_response(catalogue, rows, population=scope.get("outputs") if scope else None, now=now)
+    generation = generation_at(database, instant)
+    raw_rows = official_rows(database, market, generation=generation) if generation else {}
+    rows = {symbol: {**row, **item_stamp(row)} for symbol, row in raw_rows.items()}
+    scope = database.analysis_snapshot_at_or_before(POPULATION_ANALYSIS, market, instant)
+    permissions = latest_permissions(database, market, rows, now=instant)  # no artifact verifier installed: default-deny
+    return universe_response(catalogue, rows, population=scope.get("outputs") if scope else None,
+                             permissions=permissions, now=instant)

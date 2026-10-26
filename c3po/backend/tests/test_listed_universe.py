@@ -82,7 +82,8 @@ def test_minimum_failures_are_badges_and_do_not_remove_or_replace_the_canonical_
     source = catalogue([Listing("NASDAQ", "CHEAP", "Low price company")])
     row = canonical()
     before = copy.deepcopy(row)
-    result = universe_response(source, {"CHEAP": row}, population=scope(), now=NOW)["items"][0]
+    result = universe_response(source, {"CHEAP": row}, population=scope(), now=NOW,
+                               permissions={"CHEAP": {"buy_permission": True, "pit_artifacts_attested": True}})["items"][0]
     assert result["valuation_status"] == "valued"
     assert result["our_tp"] == 10.0
     assert all(badge["status"] == "below_minimum" for badge in result["minimum_badges"].values())
@@ -110,7 +111,8 @@ def test_scope_is_bound_to_market_version_time_and_population_digest(mutation):
 def test_membership_cannot_turn_a_decisor_rejection_into_permission():
     item = universe_response(catalogue([Listing("NASDAQ", "CHEAP", "Company")]),
                              {"CHEAP": canonical(verdict="OBSERVAR")}, population=scope(), now=NOW)["items"][0]
-    assert item["pit_buy_scope_verified"] is True
+    assert item["pit_population_member"] is True
+    assert item["pit_buy_scope_verified"] is False
     assert item["buy_permission"] is False
 
 
@@ -279,7 +281,7 @@ def test_b3_zip_has_one_bounded_file_and_does_not_extract_to_filesystem():
 
 def test_inventory_routes_reuse_existing_view_permissions_and_report_missing_capture():
     class Store:
-        def latest_analysis_snapshot(self, *args):
+        def analysis_snapshot_at_or_before(self, *args):
             return None
 
     app = FastAPI()
@@ -294,9 +296,45 @@ def test_inventory_routes_reuse_existing_view_permissions_and_report_missing_cap
 
 def test_api_missing_inventory_does_not_fetch_a_provider_or_synthesize_a_capped_fallback():
     class Store:
-        def latest_analysis_snapshot(self, kind, market):
+        def analysis_snapshot_at_or_before(self, kind, market, at):
             assert kind == CATALOGUE_ANALYSIS and market == "NASDAQ"
             return None
 
     with pytest.raises(LookupError, match="not been captured"):
         read_universe(Store(), "NASDAQ", now=NOW)
+
+
+def test_real_canonical_generation_id_is_stamped_without_mutating_official_rows(monkeypatch):
+    from app.config import Settings
+    from app.database import Database
+    from app import valuation_official as official
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW - timedelta(hours=1)
+    monkeypatch.setattr(official, "datetime", Clock)
+    database = Database(Settings(database_url="", auth_cookie_secure=False))
+    row = {key: value for key, value in canonical().items()
+           if key not in {"official_generation_id", "tp_source", "tp_source_version", "official_row_sha256", "decisor_verdict"}}
+    row.update({"internal_tp": 9.0, "internal_buy_in": 7.0,
+                         "internal_score": 70.0, "internal_status": "full_match",
+                         "internal_expected_total_return_percent": 10.0})
+    at = NOW - timedelta(hours=2)
+    method = database.ensure_methodology_version("fixture", 32, {}, "fixture")
+    for market in ["B3", "NASDAQ", "NYSE"]:
+        database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", method,
+                                        {"methodology_version": 32}, {"rows": [row], "universe_size": 1}, at)
+    record_catalogue(database, catalogue([Listing("NASDAQ", "CHEAP", "Company")]))
+    generation = official.generation_at(database, NOW)
+    raw = official.official_rows(database, "NASDAQ", generation=generation)
+    assert raw["CHEAP"]["generation_id"] == generation["generation_id"]
+    assert "official_generation_id" not in raw["CHEAP"]
+    before = copy.deepcopy(raw)
+    monkeypatch.setattr(official, "official_rows", lambda *args, **kwargs: raw)
+    response = read_universe(database, "NASDAQ", now=NOW)
+    item = response["items"][0]
+    assert item["valuation_status"] == "valued"
+    assert item["official_generation_id"] == generation["generation_id"]
+    assert item["our_tp"] == raw["CHEAP"]["our_tp"]
+    assert raw == before
+    assert not item["buy_permission"]  # a TP record is not an artifact attestation

@@ -18,7 +18,9 @@
     "Full-size night duration and retry/throttle distribution",
     "Live host CPU, RAM/RSS, free memory, disk/DB headroom and PIT coexistence",
     "Actual distinct CIKs, SEC sweep time/freshness and backfill work budget",
-    "Instrument classification review and full-size producer/decisor integration"
+    "Instrument classification review; opt-in producer/Decisor code is implemented but live full-size run, scheduling and generation promotion are not attested",
+    "Disjoint per-market quota allocations after account-wide shared-worker headroom is measured",
+    "Explicit reviewed scientific artifact verifier and valid PIT population before any buy permission"
   ],
   "no_live_measurement_inferred_from_code_or_inventory_counts": true
 }
