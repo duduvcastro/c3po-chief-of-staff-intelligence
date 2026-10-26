@@ -344,9 +344,12 @@ def read_capture_receipt(store: OriginalEvidenceStore, run_key: str) -> dict[str
             raise NotEvaluable("capture_receipt_contract_mismatch")
         if receipt["status"]=="captured":
             received=utc(datetime.fromisoformat(receipt["body_received_at"]))
+            instants=[utc(datetime.fromisoformat(receipt["started_at"])),
+                *(utc(datetime.fromisoformat(x["started_at"])) for x in receipt["attempts"]),
+                received,utc(datetime.fromisoformat(receipt["finished_at"]))]
             if (receipt["object_sha256"]!=[receipt["observed_body_sha256"]] or receipt["body_complete"] is not True
                     or receipt["clock_consistent"] is not True or receipt["reason"] is not None
-                    or not utc(datetime.fromisoformat(receipt["started_at"]))<=received<=utc(datetime.fromisoformat(receipt["finished_at"]))
+                    or not all(left<=right for left,right in zip(instants,instants[1:]))
                     or _uri(receipt["kind"],receipt["requested_uri"])!=_uri(receipt["kind"],receipt["final_uri"])):
                 raise NotEvaluable("capture_receipt_object_or_clock_mismatch")
         elif receipt["status"]!="refused" or receipt["object_sha256"]!=[]:

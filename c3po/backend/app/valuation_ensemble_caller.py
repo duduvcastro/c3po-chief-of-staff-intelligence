@@ -17,7 +17,7 @@ from .valuation_ensemble_execution import _load, implementation_files
 from .valuation_ensemble_inputs import NotEvaluable, Premises, canonical_hash, utc
 from .valuation_ensemble_persistence import FileReceiptStore
 from .valuation_ensemble_original_package import (ObservedSources, OriginalPackage, ingest_original_package,
-    load_original_package, reconcile_company_originals, validate_original_package)
+    load_original_package, reconcile_company_originals, validate_original_package, validate_capture_store)
 from .valuation_ensemble_original_store import OriginalEvidenceStore
 from .valuation_ensemble_shadow import SOURCE, build_shadow_receipt
 
@@ -32,12 +32,15 @@ def _persist(receipt: dict[str,Any], store: FileReceiptStore) -> dict[str,Any]:
 
 def run_shadow_cross_section(sources: Sources, requests: tuple[CompanyRequest,...], premises: Premises,
                              store: FileReceiptStore, *, reader_kind: str, original_package: OriginalPackage | None=None,
-                             original_store: OriginalEvidenceStore | None=None) -> dict[str,Any]:
+                             original_store: OriginalEvidenceStore | None=None,
+                             capture_store: OriginalEvidenceStore | None=None) -> dict[str,Any]:
     if reader_kind not in {"canonical_readers","offline_export"}:
         raise NotEvaluable("unsupported_shadow_reader_kind")
     if (original_package is None)!=(original_store is None):
         raise NotEvaluable("original_package_and_explicit_private_store_required_together")
-    if original_package is not None:validate_original_package(original_package)
+    if original_package is not None:
+        validate_original_package(original_package);validate_capture_store(original_package,capture_store)
+    elif capture_store is not None:raise NotEvaluable("capture_store_requires_original_package_references")
     if not requests:
         raise NotEvaluable("explicit_company_requests_required")
     if len({utc(x.as_of) for x in requests})!=1:
@@ -51,7 +54,7 @@ def run_shadow_cross_section(sources: Sources, requests: tuple[CompanyRequest,..
     adapted=[adapt_company(observed,request) for observed,request in zip(observations,ordered)]
     package_evidence={"status":"not_supplied","artifacts":[],"artifact_refusals":{},"historical_admissibility":False}
     if original_package is not None and original_store is not None:
-        package_evidence=ingest_original_package(original_package,observations,original_store)
+        package_evidence=ingest_original_package(original_package,observations,original_store,capture_store=capture_store)
     implementation=implementation_files()
     references,audits=[],[]
     for request,item,observed in zip(ordered,adapted,observations):
@@ -93,7 +96,8 @@ def run_shadow_cross_section(sources: Sources, requests: tuple[CompanyRequest,..
 def run_from_canonical_readers(statement_store: Any, price_reader: Any, database: Any,
                                requests: tuple[CompanyRequest,...], premises: Premises,
                                store: FileReceiptStore, *, original_package: OriginalPackage | None=None,
-                               original_store: OriginalEvidenceStore | None=None) -> dict[str,Any]:
+                               original_store: OriginalEvidenceStore | None=None,
+                               capture_store: OriginalEvidenceStore | None=None) -> dict[str,Any]:
     """Caller owns already-open reader handles. This function constructs no DB/client.
 
     Only StatementVintageStore.filings/vintages, PriceHistoryService.series and
@@ -101,7 +105,7 @@ def run_from_canonical_readers(statement_store: Any, price_reader: Any, database
     The sole sink is the explicitly supplied private FileReceiptStore.
     """
     return run_shadow_cross_section(CanonicalSources(statement_store,price_reader,database),requests,premises,store,
-                                    reader_kind="canonical_readers",original_package=original_package,original_store=original_store)
+                                    reader_kind="canonical_readers",original_package=original_package,original_store=original_store,capture_store=capture_store)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--receipt-directory",required=True)
     parser.add_argument("--original-package",help="Explicit offline adjacent-file package; no source capture")
     parser.add_argument("--original-receipt-directory",help="Explicit private byte-object/manifest sink")
+    parser.add_argument("--capture-receipt-directory",help="Explicit existing private capture receipts/objects; never executes capture")
     args=parser.parse_args(argv)
     try:
         if bool(args.original_package)!=bool(args.original_receipt_directory):
@@ -126,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
         original_package=load_original_package(args.original_package) if args.original_package else None
         result=run_shadow_cross_section(BundleSources(_load(args.source_export)),requests,premises,
             FileReceiptStore(args.receipt_directory),reader_kind="offline_export",original_package=original_package,
-            original_store=OriginalEvidenceStore(args.original_receipt_directory) if args.original_receipt_directory else None)
+            original_store=OriginalEvidenceStore(args.original_receipt_directory) if args.original_receipt_directory else None,
+            capture_store=OriginalEvidenceStore(args.capture_receipt_directory) if args.capture_receipt_directory else None)
         print(json.dumps({key:value for key,value in result.items() if key!="receipt_path"},sort_keys=True))
         return 0
     except (OSError,ValueError,TypeError,KeyError) as exc:

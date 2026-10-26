@@ -24,6 +24,7 @@ IMPLEMENTATION_FILES = ("valuation_ensemble_inputs.py","valuation_ensemble_model
     "valuation_ensemble_shadow.py","valuation_ensemble_adapters.py","valuation_ensemble_persistence.py","valuation_ensemble_execution.py",
     "valuation_ensemble_audit.py","valuation_ensemble_caller.py",
     "valuation_ensemble_originals.py","valuation_ensemble_original_store.py","valuation_ensemble_original_package.py",
+    "valuation_ensemble_capture.py",
     "statement_vintages.py","valuation_price_history.py","sec_xbrl.py","cvm_fundamentals.py")
 
 

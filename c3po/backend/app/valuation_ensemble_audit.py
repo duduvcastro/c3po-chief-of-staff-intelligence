@@ -114,13 +114,18 @@ def audit_company(adapted: AdaptedCompany, computation: Mapping[str,Any] | None,
         original_fields=(originals or {}).get("fields",{})
         missing_bytes=[field for field in FACTS[model] if not original_fields.get(field,{}).get("all_original_bytes_available")]
         unequal_content=[field for field in FACTS[model] if not original_fields.get(field,{}).get("all_checked_content_equal")]
+        missing_capture=[field for field in FACTS[model] if not original_fields.get(field,{}).get("all_capture_links_verified")]
         model_cells[model] = {"computable":result["status"]=="evaluated",
             "kernel_status":result["status"],"kernel_reason":result.get("reason"),
             "admissible":False,"required_facts":facts,"required_design_premises":design,
             "other_dependencies":dependencies,"blocking_proofs":admissibility["blocking_proofs"],
             "original_evidence":{"all_required_input_bytes_available":not missing_bytes,
                 "all_required_checked_content_equal":not unequal_content,"fields_without_original_bytes":missing_bytes,
-                "fields_without_checked_content":unequal_content,"origin_authentication":"unverified_supplied_bytes",
+                "fields_without_checked_content":unequal_content,"all_required_capture_links_verified":not missing_capture,
+                "fields_without_verified_capture_links":missing_capture,
+                "capture_link_reasons":{field:original_fields.get(field,{}).get("capture_link_reasons",["field_not_observed_or_capture_not_supplied"]) for field in missing_capture},
+                "capture_references":{field:original_fields.get(field,{}).get("capture_references",[]) for field in FACTS[model]},
+                "origin_authentication":"unverified_supplied_bytes",
                 "historical_admissibility":False}}
     return {"schema":"VALUATION-ENSEMBLE-INPUT-AUDIT-v1","scope":"requested_cross_section_only_no_historical_coverage_claim",
         "admissibility":admissibility,"models":model_cells,
@@ -132,7 +137,7 @@ def summarize_audits(audits: list[Mapping[str,Any]]) -> dict[str,Any]:
     metrics = {}
     for model in MODEL_IDS:
         cells = [audit["models"][model] for audit in audits]
-        facts, unobserved, design, kernel = Counter(), Counter(), Counter(), Counter()
+        facts, unobserved, design, kernel, capture = Counter(), Counter(), Counter(), Counter(), Counter()
         for cell in cells:
             if cell["kernel_reason"]:
                 kernel[cell["kernel_reason"]] += 1
@@ -144,12 +149,16 @@ def summarize_audits(audits: list[Mapping[str,Any]]) -> dict[str,Any]:
             for name,value in cell["required_design_premises"].items():
                 if value["status"]!="supplied_design_premise":
                     design[name+":"+value["reason"]] += 1
+            for field,reasons in cell["original_evidence"]["capture_link_reasons"].items():
+                for reason in reasons:capture[field+":"+reason]+=1
         metrics[model] = {"requested":len(cells),"computable":sum(x["computable"] for x in cells),
             "admissible":sum(x["admissible"] for x in cells),"kernel_refusals":dict(sorted(kernel.items())),
             "missing_or_ineligible_facts":dict(sorted(facts.items())),"unobserved_facts":dict(sorted(unobserved.items())),
             "missing_design_premises":dict(sorted(design.items())),
             "all_required_input_bytes_available":sum(x["original_evidence"]["all_required_input_bytes_available"] for x in cells),
             "all_required_checked_content_equal":sum(x["original_evidence"]["all_required_checked_content_equal"] for x in cells)}
+        metrics[model]["all_required_capture_links_verified"]=sum(x["original_evidence"]["all_required_capture_links_verified"] for x in cells)
+        metrics[model]["missing_or_refused_capture_links"]=dict(sorted(capture.items()))
     proof_counts = Counter(reason for audit in audits for reason in audit["admissibility"]["blocking_proofs"])
     return {"requested_companies":len(audits),"models":metrics,
         "blocking_proof_counts":dict(sorted(proof_counts.items())),"historical_coverage_attested":False,

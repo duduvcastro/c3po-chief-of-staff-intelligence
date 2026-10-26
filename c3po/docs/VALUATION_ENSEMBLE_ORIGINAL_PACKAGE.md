@@ -33,12 +33,53 @@ The package JSON has exactly `schema=VALUATION-ENSEMBLE-ORIGINAL-PACKAGE-v1` and
 | `local_file` | A simple filename adjacent to the package JSON, opened without following a final symlink |
 | `header_id` | Required only for a SEC instance; references its separately supplied header item |
 | `document_ids` | Optional nonempty list selecting CVM document IDs |
+| `capture_run_key` / `capture_payload_sha256` | Optional pair linking an existing private capture observation; never an origin/trust flag |
 
 The package cannot contain a trust, admissible or source-authenticated boolean. Unknown
 fields, duplicate IDs, invalid dependency references and paths outside adjacent simple
 filenames are configuration refusals. JSON or local-file errors also refuse the call.
 These errors are distinct from a readable artifact whose digest/layout fails validation:
 that artifact receives a concrete refusal in an otherwise complete inventory.
+
+## Optional capture-to-content bridge
+
+`OriginalItem.capture` can hold an explicit `CaptureReference(run_key,payload_sha256)`.
+The caller/ingestion API then also requires `capture_store: OriginalEvidenceStore`;
+the offline CLI uses `--capture-receipt-directory`. A store without references or
+references without a store is a configuration refusal before canonical readers run.
+This option reads existing private receipts/objects only. It never constructs a client,
+opens a connection or executes capture. The normal adjacent-file package still works
+without capture references, with transport provenance explicitly missing.
+
+The bridge reuses `read_capture_receipt` and existing binary-object checks. A reference
+must identify the exact run/payload pair and a successful capture. Its kind, **final URI**,
+body-receipt clock, expected/actual SHA-256 and actual stored bytes must agree with the
+supplied `SourceBytes`. HTTP Date/Last-Modified cannot replace the capture clock or
+historical availability. Readback checks the order of start, each attempt, complete-body
+receipt and finish clocks. A refused capture can have a complete body/digest and even
+share bytes with a different successful capture; it still cannot supply this link.
+
+Missing/divergent receipts, objects, clocks or contents become individual artifact
+refusals. Successfully extracted document identities remain alongside those refusals
+so the affected canonical rows, derived fields and model requirements retain the concrete
+reason. Missing objects are evidence absence; other filesystem/persistence failures
+continue to propagate. No favorable fallback silently replaces an explicitly refused link.
+
+The immutable item identity includes the capture run/payload pair. Identical bytes from
+distinct capture observations therefore produce distinct cross-section receipts, while
+replays of the same package remain immutable and order independent. Own-artifact and
+header capture references travel together through document/row/field/model dependencies;
+all contributing components must have verified links **and** checked content equality.
+Model inventories add `all_required_capture_links_verified` and concrete missing/refused
+link counts while retaining all requested companies in every denominator.
+
+`verified_link` means only that these private records, clocks and bytes agree. The bridge
+preserves `recorded_transport_execution=injected_transport_not_source_authentication`
+for test doubles; a recorded concrete-client label also remains an untrusted observation
+requiring independent review. No supplied receipt, JSON flag, hash or URL authenticates
+origin. Original-layout/content checks, computation and historical admissibility remain
+separate; all scientific/source/identity/class/basis/action gates stay closed. All bridge
+tests use synthetic transports and bytes, without real captures or historical coverage.
 
 ## Reconciliation and receipts
 
