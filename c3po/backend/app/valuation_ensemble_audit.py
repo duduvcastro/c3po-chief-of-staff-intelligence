@@ -170,6 +170,15 @@ def summarize_audits(audits: list[Mapping[str,Any]]) -> dict[str,Any]:
             metrics[model]["exact_date_candidates_observed"]=sum(x.get("candidate") is not None for x in observations)
             metrics[model]["beginning_book_facts_consumed"]=sum(x["computable"] and x["required_facts"]["book_equity_beginning"]["status"]=="available" for x in cells)
             metrics[model]["beginning_book_observation_reasons"]=dict(sorted(Counter(x["reason"] for x in observations).items()))
+            literal=[(x["beginning_book_observation"].get("original_reconciliation") or {}).get("literal_original_observation",{}) for x in cells]
+            metrics[model]["opening_original_link_statuses"]=dict(sorted(Counter(
+                x.get("candidate_original_link",{}).get("status","unavailable") for x in literal).items()))
+            terms=[term for observation in literal for term in observation.get("consumed_income_raw_terms_including_cancellations",[])]
+            metrics[model]["income_raw_term_original_link_statuses"]=dict(sorted(Counter(x["original_link"]["status"] for x in terms).items()))
+            metrics[model]["literal_issuer_unit_scope_dimension_statuses"]=dict(sorted(Counter(
+                axis+":"+term["literal_observations"][axis]["status"] for term in terms
+                for axis in ("issuer","normalized_unit","reported_statement_scope_label","explicit_dimensions")).items()))
+            metrics[model]["income_raw_term_denominator_including_cancellations"]=len(terms)
     proof_counts = Counter(reason for audit in audits for reason in audit["admissibility"]["blocking_proofs"])
     return {"requested_companies":len(audits),"models":metrics,
         "blocking_proof_counts":dict(sorted(proof_counts.items())),"historical_coverage_attested":False,

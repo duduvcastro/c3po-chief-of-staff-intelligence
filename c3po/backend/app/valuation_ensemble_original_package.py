@@ -232,6 +232,23 @@ def ingest_original_package(package: OriginalPackage, observations: Sequence[Obs
         if manifest is None:raise NotEvaluable("persisted_original_manifest_not_found")
         ordered=[(kind,identity) for kind in ("filing","fact") for identity,_ in rows[kind]]
         bound=[{"type":kind,"canonical_row_id":identity,**binding} for (kind,identity),binding in zip(ordered,manifest["canonical_binding"]["rows"])]
+        # Project only the occurrence already bound in this already-read manifest.
+        # A digest shared by two occurrences is still ambiguous, not a selection.
+        extraction=manifest["extraction"]
+        for binding in bound:
+            if binding["type"]!="fact":continue
+            matches=[fact for fact in extraction.get("facts",[]) if binding["status"]=="content_matched"
+                and fact.get("original_fact_sha256")==binding.get("original_fact_sha256")]
+            observation: dict[str,Any]={"status":"unavailable","reason":binding.get("reason") or "bound_original_occurrence_missing",
+                "original_fact_sha256":binding.get("original_fact_sha256")}
+            if len(matches)>1:observation.update(status="ambiguous",reason="bound_original_occurrence_ambiguous")
+            elif len(matches)==1:
+                fact=matches[0]
+                observation.update(status="observed_unique",reason=None,kind=extraction["kind"],
+                    **{key:deepcopy(fact.get(key,extraction.get(key))) for key in
+                       ("issuer_key","doc_id","document_version","accepted_at","concept","unit","period_start","period_end",
+                        "context_id","context","entry","csv_line","raw_row_sha256","raw_row","decimals","lexical")})
+            binding["original_fact_observation"]=observation
         receipts.append({"artifact_id":name,"kind":item.artifact.kind,"status":"ingested","reason":None,
             **_item_identity(item),
             "manifest_run_key":result["run_key"],"manifest_payload_sha256":result["payload_sha256"],
@@ -243,7 +260,7 @@ def ingest_original_package(package: OriginalPackage, observations: Sequence[Obs
 
 
 def _original_status(kind: str, identity: str, package: Mapping[str,Any], row: Mapping[str,Any]) -> dict[str,Any]:
-    matched=[];available=[];reasons=[];capture_links=[];capture_matches=[];capture_reasons=[]
+    matched=[];available=[];reasons=[];capture_links=[];capture_matches=[];capture_reasons=[];occurrences=[]
     for artifact in package.get("artifacts",[]):
         if any(_document_key(doc)==_document_key(row) for doc in artifact.get("documents",[])):
             provenance=artifact["capture_provenance"];capture_links.append(provenance)
@@ -258,7 +275,10 @@ def _original_status(kind: str, identity: str, package: Mapping[str,Any], row: M
                     matched.append(reference)
                     if artifact["capture_provenance"]["all_required_links_verified"]:capture_matches.append(reference)
                 elif binding.get("reason"):reasons.append(binding["reason"])
+                if kind=="fact":occurrences.append({**reference,"artifact_id":artifact["artifact_id"],
+                    "binding_status":binding["status"],"observation":binding["original_fact_observation"]})
     return {"bytes_available":bool(available),"checked_content_equal":bool(matched),"manifest_references":available,
+        "bound_original_occurrences":occurrences,
         "capture_linked_content_equal":bool(capture_matches),"capture_references":capture_links,
         "capture_link_reasons":[] if capture_matches else sorted(set(capture_reasons or ["canonical_content_or_capture_link_not_verified"])),
         "reason":None if matched else ";".join(sorted(set(reasons))) if reasons else
@@ -283,6 +303,65 @@ def _matches_reference(row: Mapping[str,Any], ref: Mapping[str,Any]) -> bool:
     return (row.get("row_hash")==ref.get("row_hash") and str(row.get("doc_id"))==ref["doc_id"]
         and str(row.get("concept"))==ref["concept"] and _instant(row["accepted_at"])==_instant(ref["accepted_at"])
         and _jsonable(row.get("period_start"))==ref["period_start"] and _jsonable(row.get("period_end"))==ref["period_end"])
+
+
+def _opening_literal_link(ref: Mapping[str,Any] | None, ledger: Sequence[Mapping[str,Any]]) -> dict[str,Any]:
+    """Resolve this RI observation only; partial references never pick a full row."""
+    matches={line["canonical_row_id"]:line for line in ledger if ref is not None and line["canonical_hash_valid"]
+        and _matches_reference(line["canonical_row"],ref)}
+    result: dict[str,Any]={"status":"unavailable","reason":"canonical_reference_not_observed" if ref is None else "canonical_reference_no_full_row_match",
+        "canonical_row_ids":sorted(matches),"original_occurrence":None,
+        "reference_resolution":"unique_full_observed_row_matching_existing_partial_reference"}
+    if len(matches)>1:result.update(status="ambiguous",reason="canonical_reference_matches_multiple_full_rows")
+    elif len(matches)==1:
+        line=next(iter(matches.values()));occurrences=line["original"]["bound_original_occurrences"]
+        result.update(document_key_id=line["document_key_id"],original=line["original"])
+        if len(occurrences)>1:result.update(status="ambiguous",reason="multiple_bound_original_occurrence_references")
+        elif not occurrences:result["reason"]=line["original"]["reason"] or "bound_original_occurrence_missing"
+        else:
+            occurrence=occurrences[0];observation=occurrence["observation"]
+            result.update(status="observed_unique" if observation["status"]=="observed_unique" else observation["status"],
+                reason=observation["reason"],original_occurrence=occurrence)
+    return result
+
+
+def _opening_literal_pair(candidate: Mapping[str,Any], income: Mapping[str,Any]) -> dict[str,Any]:
+    """Literal source labels only, with no common/controller/class interpretation."""
+    left=(candidate.get("original_occurrence") or {}).get("observation",{})
+    right=(income.get("original_occurrence") or {}).get("observation",{})
+    available=candidate["status"]==income["status"]=="observed_unique"
+    def compare(a: Any,b: Any) -> dict[str,Any]:
+        return {"candidate":a,"income":b,"status":"unavailable" if not available or a is None or b is None
+                else "literal_equal" if a==b else "literal_mismatch"}
+    def scope(value: Mapping[str,Any]) -> str | None:
+        parts=str(value.get("concept")).split(":",3)
+        return parts[1].rsplit("_",1)[-1] if len(parts)==4 and parts[0]=="cvm" and parts[1].endswith(("_con","_ind")) else None
+    return {"issuer":compare(left.get("issuer_key"),right.get("issuer_key")),
+        "normalized_unit":compare(left.get("unit"),right.get("unit")),
+        "reported_statement_scope_label":compare(scope(left),scope(right)),
+        "explicit_dimensions":compare((left.get("context") or {}).get("dimensions"),(right.get("context") or {}).get("dimensions")),
+        "typed_dimension_present":compare((left.get("context") or {}).get("typed_dimension_present"),(right.get("context") or {}).get("typed_dimension_present")),
+        "unsupported_context_content_present":compare((left.get("context") or {}).get("unsupported_context_content_present"),(right.get("context") or {}).get("unsupported_context_content_present")),
+        "reported_concepts":{"candidate":left.get("concept"),"income":right.get("concept"),"equivalence":"not_established_by_alias_selection"},
+        "class":{"status":"unattested","reason":"no_reviewed_economic_class_or_attribution_contract"},
+        "share_basis":{"status":"unattested","reason":"caller_basis_id_is_not_historical_allocation_or_action_proof"},
+        "context_and_document_ids":"document_local_provenance_not_cross_period_equality_tests",
+        "scope_class_basis_comparability":"unattested"}
+
+
+def _opening_literal_observation(opening: Mapping[str,Any], ledger: Sequence[Mapping[str,Any]]) -> dict[str,Any]:
+    candidate=_opening_literal_link((opening.get("candidate") or {}).get("row"),ledger)
+    window=opening.get("window") or {};terms=[]
+    for term in window.get("combined_raw_terms_including_cancellations",[]):
+        income=_opening_literal_link(term["row"],ledger)
+        occurrences=[{"support_sha256":quarter["support_sha256"],"period_start":quarter["period_start"],"period_end":quarter["period_end"],
+            "derived":quarter["derived"],"coefficient":raw["coefficient"]}
+            for quarter in window.get("selected_quarters_newest_first",[]) for raw in quarter["terms"] if raw["row"]==term["row"]]
+        terms.append({"coefficient":term["coefficient"],"row_reference":term["row"],"selected_quarter_occurrences":occurrences,
+            "original_link":income,"literal_observations":_opening_literal_pair(candidate,income)})
+    return {"candidate_original_link":candidate,"consumed_income_raw_terms_including_cancellations":terms,
+        "scope":"literal_original_observations_only_not_economic_comparability","scope_class_basis_comparability":"unattested",
+        "model_fact_emitted":False,"used_in_computation":False,"historical_admissibility":False}
 
 
 def reconcile_company_originals(adapted: AdaptedCompany, observed: ObservedSources, package: Mapping[str,Any]) -> dict[str,Any]:
@@ -345,6 +424,7 @@ def reconcile_company_originals(adapted: AdaptedCompany, observed: ObservedSourc
         "candidate_row_references":sorted(candidate_rows,key=lambda x:x["canonical_row_id"]),
         "candidate_document_references":[{"canonical_row_id":x["canonical_row_id"],"document_key_id":x["document_key_id"],"original":x["original"]}
             for x in sorted(documents,key=lambda x:x["canonical_row_id"]) if x["document_key_id"] in candidate_keys],
+        "literal_original_observation":_opening_literal_observation(opening,ledger),
         "net_income_ttm_dependencies":fields.get("net_income_ttm"),"model_fact_emitted":False,"used_in_computation":False}
     return {"schema":"VALUATION-ENSEMBLE-COMPANY-ORIGINAL-RECONCILIATION-v1","package_status":package["status"],
         "fact_stage_observed":observed.fact_rows is not None,"observed_fact_rows":len(observed.fact_rows or []),

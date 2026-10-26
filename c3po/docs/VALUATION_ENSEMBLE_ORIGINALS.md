@@ -95,3 +95,32 @@ Only extraction and integrity mechanics are exercised with synthetic fixtures he
 No real original, official transport, historical coverage, classification policy or per-
 share basis is attested. All prior gates, owner PREREG signature/horizon on 29 October,
 grade no earlier than 30 October and the unchanged served source remain in force.
+
+
+### Opening-equity and consumed-income literal lineage
+
+The residual-income observation resolves the candidate and every signed raw term
+of the NI TTM support, including canceled terms with coefficient zero, against
+the exact canonical row snapshot already consumed by the caller. If its existing
+partial reference matches multiple full observed rows, the link is ambiguous; no
+row is selected by value, order, local metadata or a shared canonical hash. The
+original occurrence must be unique within the same already-read manifest and its
+existing canonical binding. No extra original parsing, manifest read or source
+reader call is introduced.
+
+The private ledger carries that occurrence's original fact digest, context or CVM
+entry/raw-row labels, and manifest/object/capture references. The RI audit compares
+only observed issuer, normalized unit, explicit dimensions and reported con/ind
+labels. Different document/vintage/context identifiers across periods are retained
+as provenance rather than required to match. Missing, refused, unsupported and
+ambiguous links remain explicit, including on canceled income dependencies.
+
+These are literal observations. Equal CIK/currency, empty explicit dimensions or
+two con labels do not attest common/controller/NCI attribution, a consolidation
+perimeter, class rights, share allocation or a corporate-action basis. SEC unit
+normalization does not preserve a raw unit definition; concept aliases do not
+establish economic equivalence. The caller's basis string remains an assertion.
+The candidate stays separate from consumed facts, scope/class/basis stays
+unattested, and book_equity_beginning is never emitted. Origin/historical gates,
+injected capture labels and all 16 company/model denominators remain unchanged.
+Synthetic fixtures demonstrate code behavior only, not official historical coverage.
