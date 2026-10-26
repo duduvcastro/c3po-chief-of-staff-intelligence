@@ -1793,11 +1793,16 @@ async def r2d2_lab_live_ingest(request: Request) -> dict:
     # schema. Every refusal is generic; nothing of the request is echoed or logged.
     if not r2d2_lab_live.authorized(request.headers.get("authorization")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
-    body = await request.body()
-    if len(body) > r2d2_lab_live.MAX_BODY_BYTES:
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > r2d2_lab_live.MAX_BODY_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payload too large")
+    body = bytearray()
+    async for chunk in request.stream():  # stop at the limit: never buffer more than it
+        body.extend(chunk)
+        if len(body) > r2d2_lab_live.MAX_BODY_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payload too large")
     try:
-        result = await asyncio.to_thread(r2d2_lab_live.store, database, r2d2_lab_live.parse(body))
+        result = await asyncio.to_thread(r2d2_lab_live.store, database, r2d2_lab_live.parse(bytes(body)))
     except r2d2_lab_live.LabLiveRefused as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
     r2d2_read_cache.invalidate("dashboard")

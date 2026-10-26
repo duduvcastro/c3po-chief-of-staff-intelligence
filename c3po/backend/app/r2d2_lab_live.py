@@ -25,6 +25,13 @@ ANALYSIS_TYPE = "r2d2_lab_live"
 METHODOLOGY_KEY = "r2d2_lab_live"
 MAX_TRADES = 400
 MAX_BODY_BYTES = 256 * 1024
+# Plausibility bounds of one paper fill (Codex P2, #429 6424142588): every stored number, and every number derived
+# from it on the screen (gross = price × quantity), stays finite; nothing out of bounds is coerced, it is refused.
+MAX_PRICE = 1e6
+MAX_QUANTITY = 1e9
+MAX_GROSS_USD = 1e10
+MAX_ABS_USD = 1e9
+MAX_ABS_PERCENT = 1e4
 MARKETS = ("NASDAQ", "NYSE")
 SYMBOL = re.compile(r"[A-Z][A-Z0-9.\-]{0,9}")
 TRADE_ID = re.compile(r"[A-Za-z0-9:._\-]{1,80}")
@@ -57,14 +64,20 @@ def parse(body: bytes) -> Any:
         raise LabLiveRefused("the body is not JSON") from None
 
 
-def _number(value: Any, name: str, *, positive: bool = False, nullable: bool = False) -> float | None:
+def _number(value: Any, name: str, *, bound: float, positive: bool = False, nullable: bool = False) -> float | None:
     if value is None and nullable:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
-        raise LabLiveRefused(f"{name} is not a finite number")
-    if positive and float(value) <= 0:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise LabLiveRefused(f"{name} is not a number")
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        raise LabLiveRefused(f"{name} is not a finite number") from None
+    if not math.isfinite(number) or abs(number) > bound:
+        raise LabLiveRefused(f"{name} is out of bounds")
+    if positive and number <= 0:
         raise LabLiveRefused(f"{name} is not positive")
-    return float(value)
+    return number
 
 
 def _instant(value: Any, name: str) -> datetime:
@@ -114,14 +127,17 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
             raise LabLiveRefused("a fill is not on the posted session day")
         if not isinstance(trade["reason"], str) or not 0 < len(trade["reason"]) <= 200:
             raise LabLiveRefused("reason is not a short text")
-        pnl = _number(trade["realized_pnl_usd"], "realized_pnl_usd", nullable=True)
-        ret = _number(trade["realized_return_percent"], "realized_return_percent", nullable=True)
+        pnl = _number(trade["realized_pnl_usd"], "realized_pnl_usd", bound=MAX_ABS_USD, nullable=True)
+        ret = _number(trade["realized_return_percent"], "realized_return_percent", bound=MAX_ABS_PERCENT, nullable=True)
         if trade["side"] == "BUY" and (pnl is not None or ret is not None):
             raise LabLiveRefused("a BUY carries no realized result")
+        quantity = _number(trade["quantity"], "quantity", bound=MAX_QUANTITY, positive=True)
+        price = _number(trade["price"], "price", bound=MAX_PRICE, positive=True)
+        if not quantity * price <= MAX_GROSS_USD:
+            raise LabLiveRefused("price × quantity is out of bounds")
         out.append({"id": trade["id"], "side": trade["side"], "symbol": trade["symbol"], "market": trade["market"],
-                    "quantity": _number(trade["quantity"], "quantity", positive=True),
-                    "price": _number(trade["price"], "price", positive=True), "executed_at": executed.isoformat(),
-                    "fees_usd": abs(_number(trade["fees_usd"], "fees_usd") or 0.0), "realized_pnl_usd": pnl,
+                    "quantity": quantity, "price": price, "executed_at": executed.isoformat(),
+                    "fees_usd": abs(_number(trade["fees_usd"], "fees_usd", bound=MAX_ABS_USD)), "realized_pnl_usd": pnl,
                     "realized_return_percent": ret, "reason": trade["reason"]})
     return {"schema": SCHEMA, "day": day.isoformat(), "config": payload["config"], "trades": out}
 

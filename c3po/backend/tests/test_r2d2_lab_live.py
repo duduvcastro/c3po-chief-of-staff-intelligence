@@ -113,3 +113,38 @@ def test_the_route_needs_the_bearer_and_feeds_the_daily_log(monkeypatch) -> None
     assert accepted.status_code == 202 and accepted.json() == {"day": day, "config": "TIT-1", "fills": 1}
     assert not any(trade["id"] == "lab:TIT-1:ZZZT:buy" for trade in before["trades"])
     assert after["trades"][0]["id"] == "lab:TIT-1:ZZZT:buy" and after["trades"][0]["market"] == "NASDAQ"
+
+
+@pytest.mark.parametrize("fields", [
+    {"quantity": 10**400},                          # float() overflows: refused, never a 500
+    {"quantity": 1e308, "price": 1e308},            # each finite, the product is not
+    {"quantity": 1e9, "price": 1e6},                # each within bounds, gross above the bound
+    {"price": 1e7},
+    {"fees_usd": 1e300},
+])
+def test_out_of_bounds_numbers_are_refused_and_the_stored_day_survives(monkeypatch, fields) -> None:
+    """Codex P2 (#429 6424142588): 422 for every overflow or non-finite derived value, the previous post untouched."""
+    monkeypatch.setenv(r2d2_lab_live.TOKEN_ENV, TOKEN)
+    now = datetime.now(timezone.utc)
+    day = now.astimezone(NEW_YORK).date().isoformat()
+    good = _payload(_fill(id="TIT-1:GOOD:buy", symbol="GOOD", executed_at=now.isoformat()), day=day)
+    bad = _payload(_fill(id="TIT-1:BAD:buy", symbol="BAD", executed_at=now.isoformat(), **fields), day=day)
+    headers = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}
+    app_main.r2d2_read_cache.invalidate()
+    with TestClient(app_main.app, raise_server_exceptions=False) as client:
+        assert client.post("/api/v1/r2d2/lab-live", content=json.dumps(good), headers=headers).status_code == 202
+        refused = client.post("/api/v1/r2d2/lab-live", content=json.dumps(bad), headers=headers)
+        shown = client.get("/api/v1/r2d2").json()
+    app_main.r2d2_read_cache.invalidate()
+    assert refused.status_code == 422
+    ids = [trade["id"] for trade in shown["trades"]]
+    assert "lab:TIT-1:GOOD:buy" in ids and "lab:TIT-1:BAD:buy" not in ids
+    assert all(trade["gross_value_usd"] is not None for trade in shown["trades"])
+
+
+def test_a_declared_oversized_body_is_refused_before_it_is_read(monkeypatch) -> None:
+    monkeypatch.setenv(r2d2_lab_live.TOKEN_ENV, TOKEN)
+    with TestClient(app_main.app) as client:
+        response = client.post("/api/v1/r2d2/lab-live", content=b"{}", headers={
+            "Authorization": "Bearer " + TOKEN, "Content-Length": str(r2d2_lab_live.MAX_BODY_BYTES + 1)})
+    assert response.status_code == 413
