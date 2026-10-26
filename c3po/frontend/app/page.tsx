@@ -3943,8 +3943,11 @@ function R2D2RisingView() {
   };
   const positions = liveTelemetry?.positions ?? data.positions;
   const positionFeedUpdatedAt = liveTelemetry?.generated_at ?? data.generated_at;
-  const markedNav = liveTelemetry?.nav_usd ?? data.nav_usd;
-  const cash = liveTelemetry?.cash_usd ?? data.cash_usd;
+  // Owner, 26/10/2026: posted cash interest is money, available for trading. Until the ledger credits it into the
+  // operating cash (Codex, #429), the screen adds it here; drop this addition in the same change that credits it.
+  const postedInterest = Math.max(0, data.interest_income_epoch_usd ?? 0);
+  const markedNav = (liveTelemetry?.nav_usd ?? data.nav_usd) + postedInterest;
+  const cash = (liveTelemetry?.cash_usd ?? data.cash_usd) + postedInterest;
   const openPositions = liveTelemetry?.open_positions ?? data.open_positions;
   const cashPercent = markedNav > 0 ? cash / markedNav * 100 : 100;
   const accountingTotalNav = data.accounting_total_nav_usd ?? data.accounting_nav_usd;
@@ -4053,26 +4056,19 @@ function R2D2RisingView() {
     { label: "Days ≤ -0.5%", value: data.stats.below_minus_half_percent_days, detail: "Material down sessions", tone: "critical" }
   ];
   const allocationPalette = ["#316fbb", "#2c9b70", "#7b61c9", "#d99b38", "#d45b55", "#4f9fb3", "#96733d", "#6b7b91", "#c35f99", "#9baf48", "#d1aa2f"];
-  // Posted cash interest belongs to the NAV but, by the frozen accounting rule (R2D2_CASH_YIELD_ACCOUNTING_V1), never to
-  // the operating cash the strategy trades with: it is its own slice, so the allocation adds up to the NAV.
-  const postedInterest = Math.max(0, data.interest_income_epoch_usd ?? 0);
-  const allocationTotal = positions.reduce((sum, position) => sum + position.market_value_usd, 0) + cash + postedInterest;
+  const allocationTotal = positions.reduce((sum, position) => sum + position.market_value_usd, 0) + cash;
   const allocationItems = [
     ...[...positions]
       .sort((left, right) => right.market_value_usd - left.market_value_usd)
       .map((position, index) => ({
-        kind: "position",
         label: position.symbol,
         name: position.name,
         logoUrl: position.logo_url,
         detail: position.market,
         value: position.market_value_usd,
-        color: allocationPalette[index % (allocationPalette.length - 2)]
+        color: allocationPalette[index % (allocationPalette.length - 1)]
       })),
-    { kind: "cash", label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available for trading", value: cash, color: allocationPalette[allocationPalette.length - 1] },
-    ...(postedInterest > 0
-      ? [{ kind: "cash", label: "Interest", name: "Posted cash interest", logoUrl: "/market-marks/usd.svg", detail: "Posted interest · not used for trading", value: postedInterest, color: allocationPalette[allocationPalette.length - 2] }]
-      : [])
+    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: postedInterest > 0 ? `Available · includes ${moneyExact(postedInterest)} interest` : "Available", value: cash, color: allocationPalette[allocationPalette.length - 1] }
   ].map((item) => ({
     ...item,
     percent: allocationTotal > 0 ? item.value / allocationTotal * 100 : 0
@@ -4318,7 +4314,7 @@ function R2D2RisingView() {
               <strong title={moneyExact(accountingTotalNav)}>{money(accountingTotalNav)}</strong>
               <small>Including posted interest</small>
               <small>Marked allocation: {money(allocationTotal)}</small>
-              <small>{openPositions} positions + cash{postedInterest > 0 ? " + interest" : ""}</small>
+              <small>{openPositions} positions + cash</small>
             </div>
             {hoveredAllocation ? (
               <div
@@ -4340,11 +4336,11 @@ function R2D2RisingView() {
               >
                 <i style={{ backgroundColor: item.color }} />
                 <span className="r2d2-allocation-logo">
-                  {item.kind === "cash"
+                  {item.label === "Cash"
                     ? <img src={item.logoUrl ?? "/market-marks/usd.svg"} alt="USD" />
                     : <CompanyLogo logoUrl={item.logoUrl} symbol={item.label} />}
                 </span>
-                <div>{item.kind === "cash" ? <strong>{item.label}</strong> : <R2D2Ticker symbol={item.label} name={item.name} />}<small>{item.detail}</small></div>
+                <div>{item.label === "Cash" ? <strong>Cash</strong> : <R2D2Ticker symbol={item.label} name={item.name} />}<small>{item.detail}</small></div>
                 <span>{moneyExact(item.value)}</span>
                 <b>{item.percent.toFixed(1)}%</b>
               </div>
