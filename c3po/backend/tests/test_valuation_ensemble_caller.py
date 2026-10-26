@@ -55,7 +55,7 @@ def test_canonical_caller_uses_existing_readers_only_and_keeps_refusals_in_denom
     assert set(metrics["models"])==set(MODEL_IDS)
     assert all(x["requested"]==2 and x["admissible"]==0 for x in metrics["models"].values())
     assert metrics["models"]["capitalized_operating_cash_flow"]["computable"]==1
-    assert metrics["models"]["capitalized_operating_cash_flow"]["kernel_refusals"]=={"source_adaptation_refused":1}
+    assert metrics["models"]["capitalized_operating_cash_flow"]["kernel_refusals"]=={"source_adaptation:official_symbol_issuer_unattested":1}
     assert not metrics["historical_coverage_attested"]
     assert sorted(calls)==sorted(["filings","filings","vintages","series","snapshot"])
     assert before==(len(database._statement_filings),len(database._statement_vintages),len(database._analysis_snapshots))
@@ -75,6 +75,36 @@ def test_missingness_inventories_all_inputs_not_only_the_first_kernel_refusal(tm
         "tax_rate:missing_premise:tax_rate":1,"terminal_growth:missing_premise:terminal_growth":1,
         "wacc:missing_premise:wacc":1,
     }
+
+
+def test_price_refusal_does_not_turn_validated_official_facts_into_missing_inputs(tmp_path):
+    b=source_bundle();b["price_series"]["NASDAQ:XYZ"]={"status":"no_vintage"}
+    store,_,saved=run_bundle(tmp_path,b)
+    company=store.read(saved["company_receipts"][0]["run_key"])
+    assert company["status"]=="not_evaluable"
+    assert {"operating_cash_flow_ttm","shares"}<=set(company["adaptation"]["facts_available"])
+    cell=company["input_audit"]["models"]["capitalized_operating_cash_flow"]
+    assert all(x["status"]=="available" for x in cell["required_facts"].values())
+    metric=saved["input_inventory"]["models"]["capitalized_operating_cash_flow"]
+    assert metric["missing_or_ineligible_facts"]=={}
+    assert metric["unobserved_facts"]=={}
+    assert not metric["computable"] and not metric["admissible"]
+    assert metric["kernel_refusals"]=={"source_adaptation:price_series:no_vintage":1}
+
+
+def test_unreached_fact_stage_is_unobserved_rather_than_falsely_missing(tmp_path):
+    store,_,saved=run_bundle(tmp_path,requests=(replace(request(),symbol="MISSING"),))
+    company=store.read(saved["company_receipts"][0]["run_key"])
+    assert "facts_available" not in company["adaptation"]
+    cell=company["input_audit"]["models"]["capitalized_operating_cash_flow"]
+    assert all(x["status"]=="not_observed" for x in cell["required_facts"].values())
+    metric=saved["input_inventory"]["models"]["capitalized_operating_cash_flow"]
+    assert metric["missing_or_ineligible_facts"]=={}
+    assert metric["unobserved_facts"]=={
+        "operating_cash_flow_ttm:source_adaptation:official_symbol_issuer_unattested":1,
+        "shares:source_adaptation:official_symbol_issuer_unattested":1,
+    }
+    assert metric["requested"]==1 and not metric["computable"] and not metric["admissible"]
 
 
 def test_detection_time_reused_ticker_is_never_historical_instrument_or_class_proof(tmp_path):

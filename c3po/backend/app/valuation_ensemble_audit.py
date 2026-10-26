@@ -68,13 +68,24 @@ def audit_company(adapted: AdaptedCompany, computation: Mapping[str,Any] | None,
     c = adapted.company
     admissibility = historical_admissibility(adapted)
     values = {row["model"]:row for row in computation["models"]} if computation else {}
+    observed_facts = adapted.provenance.get("facts_available")
+    adaptation_reason = "source_adaptation:"+adapted.provenance.get("reason","refused")
     model_cells = {}
     for model in MODEL_IDS:
         facts, design, dependencies = {}, {}, []
         for field in FACTS[model]:
+            if c is None:
+                # Fact reduction precedes price adaptation. A later price refusal
+                # cannot erase validated facts, while an unreached fact stage says
+                # nothing about whether those facts exist in the source.
+                if observed_facts is None:
+                    facts[field] = {"status":"not_observed","reason":adaptation_reason}
+                elif field in observed_facts:
+                    facts[field] = {"status":"available"}
+                else:
+                    facts[field] = {"status":"missing_or_ineligible","reason":"missing_fact:"+field}
+                continue
             try:
-                if c is None:
-                    raise NotEvaluable("source_adaptation_refused")
                 c.get(field)
                 facts[field] = {"status":"available"}
             except NotEvaluable as exc:
@@ -97,7 +108,7 @@ def audit_company(adapted: AdaptedCompany, computation: Mapping[str,Any] | None,
             except NotEvaluable as exc:
                 dependencies.append("official_sector:"+str(exc))
             dependencies.append("peer_pool_must_satisfy_kernel_same_T_currency_sector_issuer_checks")
-        result = values.get(model,{"status":"not_evaluable","reason":"source_adaptation_refused"})
+        result = values.get(model,{"status":"not_evaluable","reason":adaptation_reason})
         model_cells[model] = {"computable":result["status"]=="evaluated",
             "kernel_status":result["status"],"kernel_reason":result.get("reason"),
             "admissible":False,"required_facts":facts,"required_design_premises":design,
@@ -112,19 +123,22 @@ def summarize_audits(audits: list[Mapping[str,Any]]) -> dict[str,Any]:
     metrics = {}
     for model in MODEL_IDS:
         cells = [audit["models"][model] for audit in audits]
-        facts, design, kernel = Counter(), Counter(), Counter()
+        facts, unobserved, design, kernel = Counter(), Counter(), Counter(), Counter()
         for cell in cells:
             if cell["kernel_reason"]:
                 kernel[cell["kernel_reason"]] += 1
             for field,value in cell["required_facts"].items():
-                if value["status"]!="available":
+                if value["status"]=="not_observed":
+                    unobserved[field+":"+value["reason"]] += 1
+                elif value["status"]!="available":
                     facts[field+":"+value["reason"]] += 1
             for name,value in cell["required_design_premises"].items():
                 if value["status"]!="supplied_design_premise":
                     design[name+":"+value["reason"]] += 1
         metrics[model] = {"requested":len(cells),"computable":sum(x["computable"] for x in cells),
             "admissible":sum(x["admissible"] for x in cells),"kernel_refusals":dict(sorted(kernel.items())),
-            "missing_or_ineligible_facts":dict(sorted(facts.items())),"missing_design_premises":dict(sorted(design.items()))}
+            "missing_or_ineligible_facts":dict(sorted(facts.items())),"unobserved_facts":dict(sorted(unobserved.items())),
+            "missing_design_premises":dict(sorted(design.items()))}
     proof_counts = Counter(reason for audit in audits for reason in audit["admissibility"]["blocking_proofs"])
     return {"requested_companies":len(audits),"models":metrics,
         "blocking_proof_counts":dict(sorted(proof_counts.items())),"historical_coverage_attested":False,

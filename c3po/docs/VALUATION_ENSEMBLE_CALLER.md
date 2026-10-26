@@ -19,7 +19,10 @@ historical-admissibility gates. The cross-section receipt references those objec
 counts actual computability, missing/ineligible inputs, missing design assumptions and
 blocking proofs for all sixteen models. A field marked available here has passed the
 source/unit/time/finite-number check; model-specific economic constraints are still applied
-by its kernel and recorded separately. This inventory describes only the requested inputs.
+by its kernel and recorded separately. A later price refusal does not erase already
+validated facts. A fact stage that was not reached is counted separately as `not_observed`,
+never as proof that the required facts are missing. Actual source-adaptation refusal
+reasons remain visible alongside model computability. This inventory describes only the requested inputs.
 Offline fixture results do not attest real historical coverage.
 
 ## The gates that remain closed
