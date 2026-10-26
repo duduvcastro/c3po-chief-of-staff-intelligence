@@ -64,9 +64,11 @@ def parse(body: bytes) -> Any:
         raise LabLiveRefused("the body is not JSON") from None
 
 
-def _number(value: Any, name: str, *, bound: float, positive: bool = False, nullable: bool = False) -> float | None:
-    if value is None and nullable:
-        return None
+def _optional(value: Any, name: str, *, bound: float) -> float | None:
+    return None if value is None else _number(value, name, bound=bound)
+
+
+def _number(value: Any, name: str, *, bound: float, positive: bool = False) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise LabLiveRefused(f"{name} is not a number")
     try:
@@ -127,8 +129,8 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
             raise LabLiveRefused("a fill is not on the posted session day")
         if not isinstance(trade["reason"], str) or not 0 < len(trade["reason"]) <= 200:
             raise LabLiveRefused("reason is not a short text")
-        pnl = _number(trade["realized_pnl_usd"], "realized_pnl_usd", bound=MAX_ABS_USD, nullable=True)
-        ret = _number(trade["realized_return_percent"], "realized_return_percent", bound=MAX_ABS_PERCENT, nullable=True)
+        pnl = _optional(trade["realized_pnl_usd"], "realized_pnl_usd", bound=MAX_ABS_USD)
+        ret = _optional(trade["realized_return_percent"], "realized_return_percent", bound=MAX_ABS_PERCENT)
         if trade["side"] == "BUY" and (pnl is not None or ret is not None):
             raise LabLiveRefused("a BUY carries no realized result")
         quantity = _number(trade["quantity"], "quantity", bound=MAX_QUANTITY, positive=True)
