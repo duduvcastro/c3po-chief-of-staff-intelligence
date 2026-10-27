@@ -15,7 +15,7 @@ from app.valuation_ensemble_pin import (
 FILES = {f"c3po/backend/app/{name}": "a" * 64 for name in (
     "valuation_ensemble_grid.py", "valuation_ensemble_grid_consensus.py", "valuation_ensemble_report.py",
     "valuation_ensemble_executor.py", "valuation_ensemble_pin.py", "valuation_ensemble_models.py",
-    "valuation_ensemble_inputs.py", "valuation_ensemble_aggregation.py", "valuation_pit_rerun.py",
+    "valuation_ensemble_inputs.py", "valuation_ensemble_aggregation.py", "valuation_pit_rerun.py", "valuation_accuracy_report.py",
 )}
 FILES[".github/workflows/valuation-ensemble-grid.yml"] = "b" * 64
 COMMIT = "c" * 40
@@ -105,6 +105,12 @@ def test_source_byte_tamper_new_extra_module_and_omitted_file_all_refuse():
     assert "ensemble_instrument_file_inventory_mismatch" in validate_instrument_pin(pin, file_hashes=extra, binding=binding)
     del pin["files"]["c3po/backend/app/valuation_ensemble_models.py"]
     assert "ensemble_instrument_file_inventory_mismatch" in validate_instrument_pin(pin, file_hashes=FILES, binding=anchored(pin, binding))
+
+
+def test_transitive_statistical_dependency_is_required_even_if_both_supplied_maps_omit_it():
+    pin, binding = packet()
+    del pin["files"]["c3po/backend/app/valuation_accuracy_report.py"]
+    assert "ensemble_instrument_required_file_missing" in validate_instrument_pin(pin, file_hashes=pin["files"], binding=anchored(pin, binding))
 
 
 def test_matching_malformed_file_keys_fail_closed_without_typeerror():
