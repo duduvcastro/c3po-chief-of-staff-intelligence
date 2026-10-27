@@ -5,7 +5,7 @@
 **Contexto (dono, 26/10/2026):**
 - A grade do TP servido reprovou (`served_internal_tp` FAIL: IC executável 0,0167 em `h = 21`).
 - O dono decidiu medir um **ensemble**: 16 modelos calculados das demonstrações oficiais (SEC/CVM) e do preço, mais o consenso dos analistas como **uma fonte a mais, nunca âncora**, em três agregações (média, mediana e média aparada a 20%), cada uma com e sem consenso.
-- A primária pré-registrada é a **mediana com consenso**.
+- A primária pré-registrada é a **média sem o maior e sem o menor, com consenso** (`minmax_trimmed_mean_with_consensus`). O dono decidiu às 21:3x de 26/10: "fica na media sem o maior e sem o menor". Antes era a mediana com consenso.
 - **Horizonte, decidido pelo dono às 21:0x de 26/10:** 6 meses decide e 12 meses é obrigatório.
 - **Precisão (dono, 21:1x de 26/10):** "Ser maior não basta, tem q ser mais preciso"; "quero o mais preciso". O critério central é a **precisão**: o novo TP tem de errar **menos que o TP atual** o preço que a ação de fato atingiu. Ordenar melhor continua obrigatório e não basta.
 - **Prazo do dono:** "precisamos adiantar isso"; leitura alvo na quarta 28/10.
@@ -24,20 +24,19 @@
 
 ## 1. Pergunta e objeto
 
-1. **Pergunta primária:** a **mediana com consenso** do ensemble, calculada ponto-no-tempo em cada `T` da grade sobre os **mesmos insumos PIT** da reexecução do rev 3, é **mais precisa que o TP servido** (reexecutado sobre os mesmos `T` e nomes)? Isto é, ela erra menos o preço que cada ação de fato atingiu em 6 meses (`h = 126` sessões), com confiança estatística, e em 12 meses?
+1. **Pergunta primária:** a **média sem o maior e sem o menor, com consenso** do ensemble, calculada ponto-no-tempo em cada `T` da grade sobre os **mesmos insumos PIT** da reexecução do rev 3, é **mais precisa que o TP servido** (reexecutado sobre os mesmos `T` e nomes)? Isto é, ela erra menos o preço que cada ação de fato atingiu em 6 meses (`h = 126` sessões), com confiança estatística, e em 12 meses?
    - Além disso, o seu upside `u = tp / price − 1` **ordena** os retornos executáveis dos 6 meses seguintes no corte transversal triado dos EUA?
-2. **Objeto medido:** os registros da fonte `ensemble_pit` gravados pelo modo grade do ensemble (`valuation_ensemble`, PR #487) para as corridas listadas no manifesto do ensemble, e só deles. Agregação primária: `median_with_consensus`. O comparador é a fonte `official_internal_pit` do manifesto do rev 3.
+2. **Objeto medido:** os registros da fonte `ensemble_pit` gravados pelo modo grade do ensemble (`valuation_ensemble`, PR #487) para as corridas listadas no manifesto do ensemble, e só deles. Agregação primária: `minmax_trimmed_mean_with_consensus`: a média dos valores válidos depois de descartar **exatamente um** menor e **um** maior. Com 3 valores, é o do meio. O comparador é a fonte `official_internal_pit` do manifesto do rev 3.
 3. **Modelos:**
    - os 16 modelos do código vinculado (§6), cada um com premissas explícitas no código;
    - cada modelo devolve um valor por ação **positivo** ou uma **razão de não avaliação**, contada e nunca preenchida;
-   - **Regra do dono (26/10, 21:2x):** "a mediana dos modelos que trouxeram valor, tirando o menor e maior para não haver distorções".
-     - Para n ≥ 3, tirar o maior e o menor não muda a mediana; a regra é a mediana dos valores válidos.
+   - **Regra do dono (26/10, 21:2x e 21:3x):** os valores que os modelos trouxeram, "tirando o menor e maior para não haver distorções", e então a **média** dos que sobram.
      - Uma ação entra na agregação com **≥ `MIN_MODELS = 3`** valores válidos, o mínimo em que existe um maior e um menor a descartar. Abaixo disso, a ação é não avaliável (`ensemble_fewer_than_min_models`) e é contada; nada é preenchido.
      - O consenso, quando presente, conta como um dos valores da variante com consenso.
      - O recibo publica a distribuição do número de valores por ação e a cobertura resultante.
    - o consenso entra como mais um valor só quando o snapshot PIT de consenso que o `valuation_pit_served` lê em `T` o traz para o nome; ausente, a variante com consenso usa só os modelos;
    - nenhum valor futuro a `T`: demonstrações com `accepted_at ≤ T`, preço `close(D)`, consenso com `as_of ≤ T`.
-4. **Agregações secundárias** (média e aparada a 20%, com e sem consenso, e a mediana sem consenso): **sempre publicadas, nunca decisórias**. Não há correção de multiplicidade porque só a primária decide.
+4. **Agregações secundárias:** a mesma média sem o maior e o menor **sem consenso**; a mediana, a média e a média aparada a 20%, cada uma com e sem consenso. São sempre publicadas e nunca decisórias. Não há correção de multiplicidade porque só a primária decide.
 
 ## 2. Universo, dados e grade
 
@@ -108,7 +107,7 @@
 
 - **Código vinculado:**
   - o modo grade do ensemble (PR #487, ou a PR que a substitua) mergeado em `main`;
-  - os 16 modelos e as 6 agregações nomeados no recibo, com o `sha256` dos arquivos `valuation_ensemble_*.py` e das constantes deste documento dentro do payload hasheado (rev 3 §13 e §15).
+  - os 16 modelos e as 8 agregações nomeados no recibo, com o `sha256` dos arquivos `valuation_ensemble_*.py` e das constantes deste documento dentro do payload hasheado (rev 3 §13 e §15).
 - **Operação:**
   - ordem do dono no formato das ordens da grade (`c3po/ops/owner-orders/<sha>.json`), com `from_session`/`to_session` (#485);
   - backfill as-filed pausado;
@@ -117,7 +116,7 @@
   - pré-checagem *running/blocking* do host (`host-check`) zerada antes de cada trecho.
 - **Recibo:** `VALUATION-ENSEMBLE-PIT-REPORT-v1`, com:
   - os campos do rev 3 §12 por horizonte;
-  - as seis agregações;
+  - as oito agregações;
   - as diferenças pareadas contra o TP servido (`ΔIC` e `ΔE`) e o erro do preço parado;
   - contagens de não avaliação por modelo e por razão;
   - `prereg_sha256`.
