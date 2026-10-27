@@ -22,6 +22,7 @@ concurrency:
 jobs:
   status:
     runs-on: ubuntu-latest
+    environment: production  # the host's address and known hosts are the production environment's (the repository-level ones predate the host migration)
     timeout-minutes: 10
     steps:
       - name: Configure deployment SSH key
