@@ -270,7 +270,8 @@ def test_p2_3_a_restart_restores_the_tapes_and_never_selects_again() -> None:
     engine.state.candidates_fixed = True
     engine.state.stream_context = stream.export({"AAA"})
     saved = EngineState.from_json(json.loads(json.dumps(engine.state.to_json())))
-    fresh = _stream_with_session()
+    fresh = LiveEngineStream("")
+    fresh.start_session(DAY, restoring=True)
     fresh.restore(saved.stream_context)
     assert fresh.view("AAA").vwap == stream.view("AAA").vwap == 99.5
     resumed = Engine(saved, DAY, [Member("AAA", "NASDAQ", 100.0, 50e6), Member("ZZZ", "NYSE", 50.0, 20e6)])
@@ -474,3 +475,40 @@ def test_r2_p2_5_the_heartbeat_carries_numbers_and_a_closed_state_never_an_error
     pattern = run.split('grep -oE "', 1)[1].split('" | tail', 1)[0]
     assert re.search(pattern, "r2d2-live-1  | 2026-10-28 10:00:00 INFO app.r2d2_live_engine " + line)
     assert not re.search(pattern, "R2D2 live heartbeat: stream connected (auth refused for AAPL), trades 1")
+
+
+
+def test_r2b_a_retry_after_the_first_checkpoint_failed_keeps_the_opening_and_the_vwap(tmp_path: Path, monkeypatch) -> None:
+    """Codex 501/6452206633: the first save of the day fails before anything is durable; main retries with the SAME stream.
+    The retry is not 'resumed' (no checkpoint of today), yet the stream's tapes of today must survive."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1_000_000.0))
+    real_save = engine_module.save_state
+    failures = {"left": 1}
+
+    def flaky_save(db, state, moment):
+        if failures["left"]:
+            failures["left"] -= 1
+            raise RuntimeError("the first checkpoint failed")
+        return real_save(db, state, moment)
+    monkeypatch.setattr(engine_module, "save_state", flaky_save)
+    stream = LiveEngineStream("")
+    monkeypatch.setattr(stream, "set_group", lambda *a, **k: None)
+    clock = {"t": _at(9, 30, 30)}
+
+    def sleep(seconds):
+        if clock["t"] < _at(9, 30, 40) <= clock["t"] + timedelta(seconds=max(seconds, 0.05)):
+            stream.record_trade("AAA", 98.0, 1000, _at(9, 30, 40))  # the opening print, 2% below the previous close
+        clock["t"] += timedelta(seconds=max(seconds, 0.05))
+    with pytest.raises(RuntimeError, match="first checkpoint"):
+        run_session(stream=stream, database=database, get_json=lambda *a, **k: None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep)
+    assert stream.opening == {"AAA": 98.0}
+    stream.record_trade("AAA", 100.5, 100, _at(9, 32))  # the feed goes on between the failure and the retry
+    clock["t"] = _at(16, 0, 1)
+    state = run_session(stream=stream, database=database, get_json=lambda *a, **k: None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                        cache_dir=tmp_path, now=lambda: clock["t"], sleep=lambda s: None)
+    assert stream.opening == {"AAA": 98.0}
+    assert abs((stream.view("AAA").vwap or 0) - (98.0 * 1000 + 100.5 * 100) / 1100) < 1e-9
+    assert state.candidates == {"AAA": pytest.approx(-2.0)}

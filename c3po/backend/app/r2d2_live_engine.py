@@ -148,14 +148,17 @@ class LiveEngineStream(EodhdRealtimeStream):
 
     def restore(self, context: dict[str, dict[str, Any]], now: datetime | None = None) -> None:
         """Install the saved tapes, then the trades held since ``start_session(restoring=True)``, atomically. Minutes up to
-        the restore's may miss the trades of the gap: ``signal_view`` reads only later ones (a full minute observed live)."""
+        the restore's may miss the trades of the gap: ``signal_view`` reads only later ones (a full minute observed live).
+        Only a PENDING restore installs anything: tapes already live are never replaced."""
         local = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
         with self._view_lock:
+            if self._pending is None:
+                return
             self.restored_minute = local.hour * 60 + local.minute
             known = set(Tape.__dataclass_fields__)
             self.tapes = {symbol: Tape(**{key: value for key, value in values.items() if key in known})
                           for symbol, values in context.items()}
-            held, self._pending = self._pending or [], None
+            held, self._pending = self._pending, None
             for symbol, price, size, minute, stamp in held:
                 self.tapes.setdefault(symbol, Tape()).add(price, size, minute, stamp)
 
@@ -647,8 +650,11 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             sleep(5.0)
     engine = Engine(state, day, universe)
     stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
-    if getattr(stream, "session", None) == day and engine.resumed:
-        pass  # an in-process retry: the stream's live tapes of today are more complete than the checkpoint
+    if getattr(stream, "session", None) == day:
+        # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
+        # complete; a restore a failed attempt left pending is finished first (its held trades applied, nothing cleared)
+        if getattr(stream, "restoring", False):
+            stream.restore(state.stream_context if engine.resumed else {}, now())
     elif engine.resumed and hasattr(stream, "restore"):
         stream.start_session(day, restoring=True)
         stream.restore(state.stream_context, now())  # a fresh process continues the tapes of the candidates and positions
