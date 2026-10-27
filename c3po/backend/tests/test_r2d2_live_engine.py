@@ -367,11 +367,51 @@ def test_r2_p2_2_a_restart_holds_the_feed_until_the_saved_prefix_is_installed() 
     restarted.start_session(DAY, restoring=True)
     restarted.record_trade("AAA", *after[0][:2], after[0][2])  # the feed delivers it BEFORE the restore
     assert restarted.restoring and restarted.signal_view("AAA", 12 * 60 + 1) is None
-    restarted.restore(context)
+    restarted.restore(context, _at(12, 0, 2))
     restarted.record_trade("AAA", *after[1][:2], after[1][2])
     assert not restarted.restoring
-    assert restarted.signal_view("AAA", 12 * 60 + 1) == continuous.signal_view("AAA", 12 * 60 + 1)
     assert restarted.view("AAA").vwap == continuous.view("AAA").vwap and restarted.view("AAA").price == continuous.view("AAA").price
+    # the restore's minute may miss the trades of the gap: no signal from it; the next full minute observed live signals
+    assert restarted.signal_view("AAA", 12 * 60 + 1) is None
+    for stream in (continuous, restarted):
+        stream.record_trade("AAA", 99.2, 100, _at(12, 1, 30))
+        stream.record_trade("AAA", 99.3, 100, _at(12, 2, 1))
+    assert restarted.signal_view("AAA", 12 * 60 + 2) == continuous.signal_view("AAA", 12 * 60 + 2) is not None
+
+
+def test_r2_an_in_process_retry_keeps_the_live_tapes_and_the_opening_is_the_earliest_print(tmp_path: Path, monkeypatch) -> None:
+    stream = _stream_with_session()
+    stream.record_trade("AAA", 101.0, 10, _at(9, 30, 5))
+    stream.record_trade("AAA", 100.0, 10, _at(9, 30, 1))  # a late, earlier print is the opening
+    assert stream.opening == {"AAA": 100.0}
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    resumed = EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True,
+                          stream_context={"AAA": {"pv": 1.0, "volume": 1.0, "last_price": 1.0, "minute": 571}})
+    monkeypatch.setattr(engine_module, "load_state", lambda db, seed: resumed)
+    calls: list[str] = []
+    monkeypatch.setattr(stream, "start_session", lambda *a, **k: calls.append("start"))
+    monkeypatch.setattr(stream, "restore", lambda *a, **k: calls.append("restore"))
+    monkeypatch.setattr(stream, "set_group", lambda *a, **k: None)
+    clock = {"t": _at(16, 0, 1)}
+    run_session(stream=stream, database=database, get_json=lambda *a, **k: None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                cache_dir=tmp_path, now=lambda: clock["t"], sleep=lambda s: None)
+    assert calls == [] and stream.view("AAA").price == 101.0  # the live tape was kept, not replaced by the checkpoint
+
+
+def test_r2_a_long_holiday_never_wedges_the_reconcile() -> None:
+    database = Database(Settings(database_url=""))
+    engine = Engine(EngineState(nav_realized=1_000_000.0), DAY, [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    engine.state.candidates, engine.state.below = {"AAA": -2.0}, {"AAA": False}
+    engine._buy("AAA", 101.01, -2.0, 2.0, _at(10, 0))
+    saved = EngineState.from_json(json.loads(json.dumps(engine.state.to_json())))
+    later = DAY + timedelta(days=6)
+    assert engine_module.reconcile_previous(database, saved, later, _at(9, 0) + timedelta(days=6)) is True  # refused by the screen
+    assert saved.last_session == DAY.isoformat() and saved.session == ""  # closed: the next session starts
+    assert engine_module.reconcile_previous(database, saved, later, _at(9, 1) + timedelta(days=6)) is True  # still pending, never raises
+    flat = EngineState(nav_realized=1.0, session=DAY.isoformat())
+    assert engine_module.reconcile_previous(database, flat, later, _at(9, 0) + timedelta(days=6)) is True  # unclosed, no fills: closed
+    assert flat.last_session == DAY.isoformat() and flat.session == ""
 
 
 def test_r2_p2_4_a_late_trade_of_the_completed_minute_moves_its_close_and_vwap() -> None:

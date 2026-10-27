@@ -62,6 +62,7 @@ class Tape:
     pv: float = 0.0
     volume: float = 0.0
     opening: float | None = None
+    opening_at: float | None = None  # epoch seconds of the opening print (the earliest one, not the first to arrive)
     last_price: float | None = None
     last_at: float | None = None  # epoch seconds of the last trade (the ordering guard)
     minute: int = -1
@@ -83,8 +84,8 @@ class Tape:
         """One regular-session trade, in arrival order. In time order it moves the last price, and its minute's first trade
         closes the previous minute; a LATE trade (older than the last) counts in the VWAP and, when it belongs to an already
         completed minute, in that minute's close and VWAP — the same state the trades would have built in time order."""
-        if self.opening is None:
-            self.opening = price
+        if self.opening is None or (self.opening_at is not None and stamp < self.opening_at):
+            self.opening, self.opening_at = price, stamp
         late = self.last_at is not None and stamp < self.last_at
         if not late:
             if self.minute >= 0 and minute > self.minute:  # the first trade of a new minute closes the previous one
@@ -114,6 +115,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.tapes: dict[str, Tape] = {}
         self.nbbo: dict[str, tuple[float, float, datetime]] = {}
         self._pending: list[tuple[str, float, float, int, float]] | None = None
+        self.restored_minute: int | None = None  # the minute of a restore: earlier minutes may miss the trades of the gap
 
     def start_session(self, day: date, *, restoring: bool = False) -> None:
         """A new session's tapes. ``restoring``: the trades the feed delivers until ``restore`` are HELD, then applied on top
@@ -122,6 +124,7 @@ class LiveEngineStream(EodhdRealtimeStream):
             self.session = day
             self.tapes = {}
             self._pending = [] if restoring else None
+            self.restored_minute = None
 
     @property
     def opening(self) -> dict[str, float]:
@@ -143,9 +146,12 @@ class LiveEngineStream(EodhdRealtimeStream):
         with self._view_lock:
             return self._pending is not None
 
-    def restore(self, context: dict[str, dict[str, Any]]) -> None:
-        """Install the saved tapes, then the trades held since ``start_session(restoring=True)``, atomically."""
+    def restore(self, context: dict[str, dict[str, Any]], now: datetime | None = None) -> None:
+        """Install the saved tapes, then the trades held since ``start_session(restoring=True)``, atomically. Minutes up to
+        the restore's may miss the trades of the gap: ``signal_view`` reads only later ones (a full minute observed live)."""
+        local = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
         with self._view_lock:
+            self.restored_minute = local.hour * 60 + local.minute
             known = set(Tape.__dataclass_fields__)
             self.tapes = {symbol: Tape(**{key: value for key, value in values.items() if key in known})
                           for symbol, values in context.items()}
@@ -211,10 +217,13 @@ class LiveEngineStream(EodhdRealtimeStream):
             tape = self.tapes.get(symbol)
             if tape is None or tape.last_price is None:
                 return None
+            # after a restore, a minute at or before the restore may miss the trades of the gap: no signal from it
+            floor = self.restored_minute + 1 if self.restored_minute is not None else -1
             if tape.minute < minute:  # no trade yet in the current minute: the last trade closed a completed minute
                 vwap = tape.vwap
-                return (tape.last_price, vwap) if vwap is not None else None
-            if tape.closed_minute < 0 or tape.closed_minute >= minute or tape.closed_price is None or tape.closed_vwap is None:
+                return (tape.last_price, vwap) if vwap is not None and tape.minute >= floor else None
+            if (tape.closed_minute < 0 or tape.closed_minute >= minute or tape.closed_minute < floor or tape.closed_price is None
+                    or tape.closed_vwap is None):
                 return None
             return tape.closed_price, tape.closed_vwap
 
@@ -567,10 +576,12 @@ def reconcile_previous(database: Any, state: EngineState, day: date, now: dateti
     A session the checkpoint never closed (a crash before the close) is closed first; then its public document is
     published again unless the stored one already carries exactly these fills. True when anything was written."""
     prior = state.session or state.last_session
-    if not state.fills or not prior or prior == day.isoformat():
+    if not prior or prior == day.isoformat():
         return False
     prior_day = date.fromisoformat(prior)
     unclosed = state.session == prior
+    if not unclosed and not state.fills:
+        return False
     keep = state.session
     state.session = prior  # an Engine on the prior day that keeps its fills
     engine = Engine(state, prior_day, [])
@@ -578,12 +589,18 @@ def reconcile_previous(database: Any, state: EngineState, day: date, now: dateti
         engine.close_session()
     else:
         state.session = keep
-    stored = ((database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}).get("trades")
     close_at = datetime.combine(prior_day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
-    if stored == engine.document(close_at)["trades"] and not unclosed:
+    stored = ((database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}).get("trades")
+    pending = bool(state.fills) and stored != engine.document(close_at)["trades"]
+    if not unclosed and not pending:
         return False
-    save_state(database, state, now)
-    publish(database, engine, now, as_of=close_at)
+    if unclosed:
+        save_state(database, state, now)
+    if pending:
+        try:
+            publish(database, engine, now, as_of=close_at)
+        except r2d2_lab_live.LabLiveRefused:  # a document too old for the screen (a long holiday): the state is consistent
+            logger.info("R2D2 live: previous session %s not republished (refused by the screen)", prior)
     return True
 
 
@@ -623,13 +640,20 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
 
     universe = build_universe(get_json, base_url, token, day, cache_dir)
     state = load_state(database, lambda: seed_from_lab_book(database, now()))
-    guarded(lambda: reconcile_previous(database, state, day, now()))
+    reconciled: list[bool] = []
+    while not reconciled:  # never a new session over the previous one's pending state (the gate may refuse: wait)
+        guarded(lambda: reconciled.append(reconcile_previous(database, state, day, now())))
+        if not reconciled:
+            sleep(5.0)
     engine = Engine(state, day, universe)
     stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
-    restoring = engine.resumed and hasattr(stream, "restore")
-    stream.start_session(day, restoring=restoring) if restoring else stream.start_session(day)
-    if restoring:
-        stream.restore(state.stream_context)  # a restart continues the tapes of the candidates and positions
+    if getattr(stream, "session", None) == day and engine.resumed:
+        pass  # an in-process retry: the stream's live tapes of today are more complete than the checkpoint
+    elif engine.resumed and hasattr(stream, "restore"):
+        stream.start_session(day, restoring=True)
+        stream.restore(state.stream_context, now())  # a fresh process continues the tapes of the candidates and positions
+    else:
+        stream.start_session(day)
     logger.info("R2D2 live: session %s%s, universe %d, carried %d, NAV %.2f", day, " (resumed)" if engine.resumed else "",
                 len(universe), len(state.positions), state.nav_realized)
     signal = getattr(stream, "signal_view", None)
