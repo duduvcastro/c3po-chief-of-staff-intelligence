@@ -36,7 +36,8 @@ CONFIG = "TIT-2S3-RT"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"
 STREAM_GROUP = "r2d2-live"
-UNIVERSE_SIZE = 550
+# The stream's capacity is per account (550 on this plan, EODHD's default is 50): the api's own stream keeps the rest
+UNIVERSE_SIZE = int(os.environ.get("C3PO_R2D2_LIVE_UNIVERSE_SIZE", "500"))
 ADV_DAYS = 20
 MIN_ADV_DAYS = 15
 FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's cost model)
@@ -59,7 +60,7 @@ class LiveEngineStream(EodhdRealtimeStream):
     last quote with its bid and ask, the session VWAP from the trades (price × size) and the first regular trade (the
     open) of the session being traded."""
 
-    def __init__(self, api_token: str, *, max_symbols: int = UNIVERSE_SIZE) -> None:
+    def __init__(self, api_token: str, *, max_symbols: int = 550) -> None:
         super().__init__(api_token, max_symbols=max_symbols)
         self._view_lock = Lock()
         self.session: date | None = None
@@ -479,6 +480,11 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         elif clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
             guarded(lambda: (publish(database, engine, moment), save_state(database, engine.state, moment)))
             last_marks = clock_time.monotonic()
+            logger.info("R2D2 live heartbeat: stream %s%s, trades %d, quotes %d, candidates %d, signals %d, positions %d, "
+                        "fills %d, NAV %.2f", getattr(stream, "status", "?"),
+                        (" (" + stream.last_error + ")") if getattr(stream, "last_error", "") else "",
+                        len(getattr(stream, "last_trade", {})), len(getattr(stream, "nbbo", {})), len(engine.candidates),
+                        engine.signals, len(engine.state.positions), len(engine.fills), engine.book(moment)["nav_usd"])
         sleep(1.0)
     engine.close_session()
     final = now()
@@ -496,7 +502,27 @@ def next_session(today: date) -> date:
     return date.fromisoformat(str(sessions[0])[:10])
 
 
+def status(database: Any, now: datetime) -> dict[str, Any]:
+    """A read-only summary for the operator (no symbols): the engine state and today's document."""
+    snapshot = database.latest_analysis_snapshot(STATE_TYPE, STATE_KEY) or {}
+    state = snapshot.get("outputs") or {}
+    day = now.astimezone(NEW_YORK).date().isoformat()
+    document = (database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, day) or {}).get("outputs") or {}
+    book = document.get("book") or {}
+    return {"now": now.isoformat(), "state_saved_at": str(snapshot.get("published_at")), "last_session": state.get("last_session"),
+            "session_in_progress": state.get("session"), "nav_realized": state.get("nav_realized"),
+            "positions": len(state.get("positions") or []), "today_config": document.get("config"),
+            "today_fills": len(document.get("trades") or []), "today_cycle": document.get("cycle"),
+            "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of")}
+
+
 def main() -> None:
+    import sys
+    if "--status" in sys.argv:
+        from .config import get_settings as settings_of
+        from .database import Database as DatabaseOf
+        print(json.dumps(status(DatabaseOf(settings_of()), datetime.now(timezone.utc)), default=str))
+        return
     from .config import get_settings
     from .database import Database
     from .maintenance_gate import job, startup_job

@@ -180,3 +180,11 @@ def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, mo
     assert [t["side"] for t in doc["trades"]] == ["BUY", "SELL"]
     assert doc["book"]["nav_start_usd"] == 931176.94 and doc["book"]["nav_usd"] > 931176.94
     assert stream.groups["r2d2-live"] == []
+
+
+def test_the_status_summary_has_no_symbols(tmp_path: Path, monkeypatch) -> None:
+    database = Database(Settings(database_url=""))
+    engine_module.save_state(database, EngineState(nav_realized=931176.94, last_session="2026-10-27"), _at(9, 0))
+    summary = engine_module.status(database, _at(9, 1))
+    assert summary["nav_realized"] == 931176.94 and summary["positions"] == 0 and summary["last_session"] == "2026-10-27"
+    assert "AAA" not in json.dumps(summary)
