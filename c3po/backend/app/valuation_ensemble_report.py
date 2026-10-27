@@ -114,7 +114,18 @@ def session_statistics(rows: Sequence[Mapping[str, Any]], variant: str, horizon:
     paired_ic: list[tuple[float, float, float]] = []
     errors: list[tuple[float, float, float]] = []
     for row in rows:
-        price, tp = _number(row.get("price"), positive=True), target_of(row, variant)
+        price = _number(row.get("price"), positive=True)
+        # Read the stored variant; this consumer does not produce a target price.
+        variants = row.get("variants")
+        if not isinstance(variants, Mapping):
+            continue
+        target = variants.get(variant)
+        if isinstance(target, Mapping):
+            if target.get("status") != "evaluated":
+                continue
+            tp = _number(target.get("value"), positive=True)
+        else:
+            tp = _number(target, positive=True)
         if price is None or tp is None:
             continue
         u = _upside(tp, price)
