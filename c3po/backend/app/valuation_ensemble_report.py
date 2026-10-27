@@ -303,6 +303,17 @@ def _slot(entry: Mapping[str, Any]) -> tuple[str, str, str]:
     return str(entry.get("market")), str(entry.get("session_date")), str(entry.get("as_of"))
 
 
+def deduplicate_exchanges(records: Sequence[Mapping[str, Any]]) -> tuple[list[Mapping[str, Any]], int]:
+    """Rev3's one exchange per (symbol,D), shared by ensemble and comparator."""
+    priority = {"NASDAQ": 0, "NYSE": 1}
+    chosen: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for row in records:
+        key = str(row["session_date"]), str(row["symbol"])
+        if key not in chosen or priority[str(row["market"])] < priority[str(chosen[key]["market"])]:
+            chosen[key] = row
+    return [chosen[key] for key in sorted(chosen)], len(records) - len(chosen)
+
+
 def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], records: Sequence[Mapping[str, Any]],
                      index_of: Mapping[str, int], mature_through: Mapping[int, int | None], partition_last: int | None) -> list[str]:
     """Metadata and content checks, before calling the outcome reader.
@@ -315,6 +326,9 @@ def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], recor
                          "partition_last": partition_last}
     if manifest.get("report_calendar") != expected_calendar:
         errors.append("ensemble_report_calendar_not_the_published_manifest")
+    from .valuation_ensemble_calendar import report_calendar_for
+    if report_calendar_for(rev3) != expected_calendar:
+        errors.append("ensemble_report_calendar_not_derived_from_rev3")
     if manifest.get("schema") != MANIFEST_SCHEMA or manifest.get("source") != SOURCE:
         errors.append("ensemble_manifest_schema_or_source")
     if manifest.get("complete") is not True or rev3.get("complete") is not True:
@@ -359,19 +373,21 @@ def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], recor
     if index_of and sorted(index_of.values()) != list(range(max(index_of.values()) + 1)):
         errors.append("calendar_index_has_gaps")
     grouped: dict[str, list[Mapping[str, Any]]] = {}
-    identities: set[tuple[str, str]] = set()
+    identities: set[tuple[str, str, str]] = set()
     run_slots = {str(entry.get("run_key")): _slot(entry) for entry in grid}
     if len(run_slots) != len(grid) or any(not key or key == "None" for key in run_slots):
         errors.append("ensemble_duplicate_or_missing_run_identity")
     for row in records:
         key = str(row.get("run_key"))
         slot = run_slots.get(key)
-        identity = str(row.get("session_date")), str(row.get("symbol"))
+        identity = str(row.get("market")), str(row.get("session_date")), str(row.get("symbol"))
         if identity in identities:
             errors.append("duplicate_symbol_session")
         identities.add(identity)
         if slot is None or slot[:2] != (str(row.get("market")), str(row.get("session_date"))) or row.get("source") != SOURCE:
             errors.append("ensemble_record_not_in_manifest")
+        if row.get("market") not in {"NASDAQ", "NYSE"}:
+            errors.append("ensemble_record_market_not_US")
         if type(row.get("screened")) is not bool or not row.get("symbol"):
             errors.append("ensemble_invalid_record_identity_or_screen")
         variants = row.get("variants")
@@ -502,6 +518,11 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
     if errors:
         base["verdict"] = verdict({}, coverage={}, void=sorted(set(errors)))
         return {"schema": SCHEMA, "payload": base, "payload_sha256": canonical_hash(base)}
+    original_records = records
+    records, duplicate_count = deduplicate_exchanges(records)
+    base["refused_records"] = {"duplicate_across_exchanges": duplicate_count} if duplicate_count else {}
+    base["raw_records"] = len(original_records)
+    base["admissible_records"] = len(records)
     labelled: dict[int, list[dict[str, Any]]] = {h: [] for h in HORIZONS}
     calls = 0
     for row in sorted(records, key=lambda x: (str(x["session_date"]), str(x["market"]), str(x["symbol"]))):

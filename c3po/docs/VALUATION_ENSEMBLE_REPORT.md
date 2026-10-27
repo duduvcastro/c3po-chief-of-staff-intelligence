@@ -31,6 +31,9 @@ sessão e horizonte, compartilhando o rótulo entre as oito variantes. Um manife
 ou pino inválido produz `VOID`, zero chamadas de rótulos e nenhuma estatística.
 Uma observação imatura nem chega ao leitor. A elegibilidade do denominador de
 atrito vem da maturidade pinada, e não de uma flag fornecida com um rótulo ausente.
+Como no rev 3, um nome duplicado entre as duas bolsas é contado e usa somente
+NASDAQ, antes de NYSE; a mesma escolha serve para ensemble e comparador. Uma
+duplicata dentro da mesma bolsa permanece uma falha de integridade.
 
 O executor deriva `report_calendar` do calendário XNYS e do corte da publicação de
 preços pinada. Não se permite mudar o calendário ou a maturidade depois de publicar

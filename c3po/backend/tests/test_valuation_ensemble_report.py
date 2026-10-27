@@ -11,6 +11,7 @@ from app import valuation_accuracy_report as accuracy
 from app import valuation_ensemble_report as report
 from app import valuation_ensemble_pin as instrument_pin
 from app import valuation_ensemble_grid as grid
+from app import valuation_ensemble_calendar as calendar
 from app.valuation_ensemble_inputs import canonical_hash
 from app.valuation_ensemble_aggregation import aggregate_grid_variants
 from app.valuation_ensemble_models import MODEL_IDS, ModelValue
@@ -194,6 +195,8 @@ def fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], list[dict[
     # This suite isolates the report's phase order. The grid helper's concrete
     # snapshot/price/target checks are exercised by its own synthetic reader suite.
     expected_source_pins = copy.deepcopy(entry["input_pins"])
+    expected_report_calendar = copy.deepcopy(manifest["report_calendar"])
+    monkeypatch.setattr(calendar, "report_calendar_for", lambda rev3: copy.deepcopy(expected_report_calendar))
     monkeypatch.setattr(grid, "paired_source_identity", lambda v3, served: dict(expected_source_pins), raising=False)
     monkeypatch.setattr(grid, "validate_record_pair", lambda records, v3, served, **kw: [], raising=False)
     return manifest, rows, rev3, pin, binding, files
@@ -227,6 +230,8 @@ def test_valid_report_reads_once_per_name_horizon_not_per_variant_and_counts_mis
     manifest, rows, rev3, pin, binding, files = fixture(monkeypatch)
     manifest["report_calendar"]["mature_through"] = {str(h): 0 for h in (21, 22, 63, 64, 126, 127, 252, 253)}
     manifest["manifest_sha256"] = report.manifest_sha256(manifest)
+    expected_report_calendar = copy.deepcopy(manifest["report_calendar"])
+    monkeypatch.setattr(calendar, "report_calendar_for", lambda rev3: copy.deepcopy(expected_report_calendar))
     calls = []
     def labels(item: Any, h: int) -> dict[str, Any]:
         calls.append((item["symbol"], h))
@@ -343,3 +348,24 @@ def test_invalid_pin_does_not_read_even_source_snapshots(monkeypatch: pytest.Mon
         label_reader=forbidden, index_of={"2025-01-02": 0}, mature_through={}, partition_last=0,
         expected_manifest_sha256=manifest["manifest_sha256"], paired_sources_reader=forbidden)
     assert result["payload"]["verdict"]["status"] == "VOID" and result["payload"]["labels_read"] == 0
+
+
+def test_calendar_metadata_even_with_republished_manifest_must_be_the_actual_pinned_calendar(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest, rows, rev3, pin, binding, files = fixture(monkeypatch)
+    manifest["report_calendar"]["mature_through"] = {"126": 0}
+    manifest["manifest_sha256"] = report.manifest_sha256(manifest)
+    def no_reads(*args: Any) -> Any:
+        raise AssertionError("Fake calendar reached a reader")
+    result = report.build_report(manifest, rows, rev3_manifest=rev3, pin=pin, binding=binding, file_hashes=files,
+        label_reader=no_reads, index_of={"2025-01-02": 0}, mature_through={126: 0}, partition_last=0,
+        expected_manifest_sha256=manifest["manifest_sha256"], paired_sources_reader=no_reads)
+    assert result["payload"]["verdict"]["reasons"] == ["ensemble_report_calendar_not_derived_from_rev3"]
+
+
+def test_cross_exchange_duplicates_choose_one_shared_name_before_labels() -> None:
+    nasdaq = {**row(0), "market": "NASDAQ", "served_tp": 11}
+    nyse = {**row(0), "market": "NYSE", "served_tp": 999}
+    other = {**row(1), "market": "NYSE"}
+    records, refused = report.deduplicate_exchanges([nyse, other, nasdaq])
+    assert refused == 1 and records == [nasdaq, other]
+    assert report.deduplicate_exchanges([nasdaq, other, nyse]) == (records, 1)
