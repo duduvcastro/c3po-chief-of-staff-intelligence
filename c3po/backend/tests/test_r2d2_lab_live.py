@@ -432,3 +432,34 @@ def test_allocation_uses_the_effective_nav_with_interest() -> None:
     expected = round(186.0 * 251.0 / 931800.5 * 100, 4)
     assert shown.nav_usd == live.nav_usd == 931800.5
     assert shown.positions[0].allocation_percent == live.positions[0].allocation_percent == expected
+
+
+def test_open_positions_move_with_the_live_tick_during_the_session() -> None:
+    """Owner 27/10/2026: the price on the screen in real time. A live tick re-marks value, result and NAV on both
+    routes; cash never moves; after the close (or without a tick) the lab's own mark stays."""
+    database = Database(Settings(database_url=""))
+    session = datetime(2026, 10, 27, 14, 43, tzinfo=timezone.utc)  # 10:43 ET
+    position = dict(_book()["positions"][0], symbol="BTI", market="NYSE", quantity=782.042, average_cost=59.55, last_price=59.57,
+                    cost_usd=46558.84, unrealized_pnl_usd=16.45, unrealized_return_percent=0.035, opened_at="2026-10-27T10:00:00-04:00")
+    book = _book(nav_start_usd=931176.94, nav_usd=931193.39, realized_nav_usd=931176.94, cash_usd=884618.10,
+                 as_of="2026-10-27T10:43:00-04:00", positions=[position])
+    r2d2_lab_live.store(database, dict(_payload(day="2026-10-27"), book=book), now=session)
+    tick_at = session + timedelta(seconds=40)
+
+    def quotes(references):
+        assert references == {"BTI": 59.57}
+        return {"BTI": (59.70, tick_at)}
+
+    move = 782.042 * (59.70 - 59.57)
+    live = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
+    assert live.positions[0].last_price_local == 59.70 and live.positions[0].quote_status == "live"
+    assert live.positions[0].quote_freshness == "fresh" and live.positions[0].quote_age_seconds == 1.0
+    assert live.nav_usd == round(931193.39 + move, 2) and live.cash_usd == 884618.10
+    assert abs(live.positions[0].unrealized_pnl_usd - (16.45 + move)) < 1e-6
+    shown = r2d2_lab_live.apply_book(app_main.r2d2.dashboard(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
+    assert shown.nav_usd == live.nav_usd and shown.daily_pnl_usd == round(931193.39 + move - 931176.94, 2)
+    after_close = datetime(2026, 10, 27, 20, 30, tzinfo=timezone.utc)
+    closed = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=after_close, quotes=quotes)
+    assert closed.positions[0].last_price_local == 59.57 and closed.nav_usd == 931193.39
+    no_tick = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at, quotes=lambda refs: {})
+    assert no_tick.positions[0].last_price_local == 59.57 and no_tick.positions[0].quote_status == "lab"

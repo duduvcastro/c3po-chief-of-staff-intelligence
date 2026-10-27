@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import asyncio
 import hashlib
 import ipaddress
@@ -41,7 +41,7 @@ from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data import LiveMarketsService, MarketDataService, RealtimeMarketsService
 from .market_data.indices import IndexQuotesService
 from .market_data.b3_screener import B3ScreenerService
-from .market_data.eodhd_stream import EodhdRealtimeStream
+from .market_data.eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from .market_data.http import MarketDataRequestError
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
@@ -1792,7 +1792,24 @@ def _r2d2_dashboard_with_lab() -> R2D2DashboardResponse:
         known = {point.session_date for point in response.learning_curve}
         update["learning_curve"] = list(response.learning_curve) + [point for point in curve if point.session_date not in known]
     response = response.model_copy(update=update) if update else response
-    return r2d2_lab_live.apply_book(response, database, interest=_r2d2_posted_interest())
+    return r2d2_lab_live.apply_book(response, database, interest=_r2d2_posted_interest(), quotes=_r2d2_lab_quotes)
+
+
+def _r2d2_lab_quotes(references: dict[str, float]) -> dict[str, tuple[float, datetime]]:
+    # The live R2D2's open positions at the EODHD live price, as the V2 positions were (owner 27/10/2026): a tick counts
+    # only when live, fresh and plausible against the lab's own mark (usable_display_tick)
+    stream = getattr(r2d2.realtime, "stream", None)
+    if stream is None or not references:
+        return {}
+    stream.set_group("r2d2-lab-live", sorted(references), priority=140)
+    now = datetime.now(timezone.utc)
+    ticks: dict[str, tuple[float, datetime]] = {}
+    for symbol, reference in references.items():
+        tick = stream.quote(symbol)
+        if tick is not None and r2d2._live_us_quote(tick, now) and usable_display_tick(tick, reference):
+            as_of = tick.as_of if tick.as_of.tzinfo else tick.as_of.replace(tzinfo=timezone.utc)
+            ticks[symbol] = (float(tick.price), as_of)
+    return ticks
 
 
 def _r2d2_posted_interest() -> list[tuple[str, float]]:
@@ -1821,13 +1838,17 @@ async def r2d2_lab_live_ingest(request: Request) -> dict:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
     r2d2_read_cache.invalidate("dashboard")
     r2d2_read_cache.invalidate("live_positions")
+    r2d2_read_cache.invalidate("lab_book")
     return result
 
 
 @app.get("/api/v1/r2d2/live-positions", response_model=R2D2LivePositionsResponse)
 def r2d2_live_positions() -> R2D2LivePositionsResponse:
-    return r2d2_read_cache.get("live_positions", lambda: r2d2_lab_live.apply_book_live(
-        r2d2.live_positions(), database, interest=_r2d2_posted_interest()))
+    # The stored book and the V2 telemetry come from the short cache; the live re-mark runs on EVERY request, so the
+    # screen moves each second with the EODHD ticks (owner 27/10/2026: "a cada segundo")
+    base = r2d2_read_cache.get("live_positions", r2d2.live_positions)
+    book, interest = r2d2_read_cache.get("lab_book", lambda: (r2d2_lab_live.latest_book(database), _r2d2_posted_interest()))
+    return r2d2_lab_live.apply_book_live(base, database, interest=interest, quotes=_r2d2_lab_quotes, found=book)
 
 
 @app.post("/api/v1/feedback", response_model=FeedbackResponse, status_code=201)
