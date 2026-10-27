@@ -2,9 +2,9 @@
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
 The rule in force is the one the owner chose on 26/10 (TIT-2S3): stocks that open at least 1% below the previous close,
-20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the price crosses back above the
-session VWAP, at the real ask, with a quoted spread of at most 3 bps, up to 15:29:59 ET, 20 positions of NAV/20,
-re-entry allowed after an exit. Every second each open position is checked at the real bid: hard stop at -0.5% net,
+20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when a MINUTE CLOSE crosses back above
+the session VWAP (the measured signal), executed at once at the real ask, with a quoted spread of at most 3 bps, up to
+15:29:59 ET, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid: hard stop at -0.5% net,
 profit lock armed at +0.15% net trailing the peak by 0.10, every positive position sold from 15:59:30 ET; the
 negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
@@ -226,12 +226,13 @@ class EngineState:
     below: dict[str, bool] = field(default_factory=dict)
     signals: int = 0
     fills: list[dict[str, Any]] = field(default_factory=list)
+    last_signal_minute: int = -1  # minutes after midnight ET of the last minute close the entries were checked on
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
                 "positions": [asdict(position) for position in self.positions.values()], "session": self.session,
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
-                "fills": self.fills}
+                "fills": self.fills, "last_signal_minute": self.last_signal_minute}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -239,7 +240,8 @@ class EngineState:
         return cls(nav_realized=float(data["nav_realized"]), positions=positions, last_session=str(data.get("last_session") or ""),
                    session=str(data.get("session") or ""), nav_start=data.get("nav_start"),
                    candidates=dict(data.get("candidates") or {}), below=dict(data.get("below") or {}),
-                   signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []))
+                   signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []),
+                   last_signal_minute=int(data.get("last_signal_minute", -1)))
 
 
 class Engine:
@@ -253,6 +255,7 @@ class Engine:
         self.resumed = state.session == day.isoformat()
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
+            state.last_signal_minute = -1
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
 
@@ -312,7 +315,12 @@ class Engine:
                 reason = "t30_positive"
             if reason:
                 new.append(self._sell(position, market.bid, net, reason, now))
-        if local <= LAST_ENTRY:
+        # The buy signal is the measured one: the cross back above the VWAP on a MINUTE CLOSE (the first check of each
+        # new minute reads the previous minute's last trade), executed at once at the real ask; checking every
+        # second would buy the noise around the VWAP. The exits above run every second.
+        minute = local.hour * 60 + local.minute
+        if local <= LAST_ENTRY and minute != self.state.last_signal_minute:
+            self.state.last_signal_minute = minute
             for symbol, gap in self.candidates.items():
                 market = view(symbol)
                 if market.price is None or market.vwap is None:

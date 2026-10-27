@@ -188,3 +188,19 @@ def test_the_status_summary_has_no_symbols(tmp_path: Path, monkeypatch) -> None:
     summary = engine_module.status(database, _at(9, 1))
     assert summary["nav_realized"] == 931176.94 and summary["positions"] == 0 and summary["last_session"] == "2026-10-27"
     assert "AAA" not in json.dumps(summary)
+
+
+def test_buys_are_checked_once_per_minute_close_and_exits_every_second() -> None:
+    """The measured signal: a VWAP cross on a minute close, not every second (owner 27/10, the noise around the VWAP)."""
+    engine = _engine()
+    below = lambda t: {"AAA": _view(97.9, 98.0, 97.89, 97.91, t)}  # noqa: E731
+    above = lambda t: {"AAA": _view(98.1, 98.0, 98.095, 98.105, t)}  # noqa: E731
+    t = _at(9, 40, 0)
+    engine.step(t, lambda s: below(t).get(s, MarketView()))
+    t = _at(9, 40, 30)  # the same minute: the cross waits for the next minute close
+    assert engine.step(t, lambda s: above(t).get(s, MarketView())) == []
+    t = _at(9, 41, 0)
+    assert [f["symbol"] for f in engine.step(t, lambda s: above(t).get(s, MarketView()))] == ["AAA"]
+    t = _at(9, 41, 5)  # an exit is checked at any second
+    fills = engine.step(t, lambda s: _view(97.5, 98.0, 97.5, 97.51, t) if s == "AAA" else MarketView())
+    assert [(f["side"], f["reason"].split(",")[0]) for f in fills] == [("SELL", "venda: stop")]
