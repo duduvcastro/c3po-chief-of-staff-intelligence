@@ -293,3 +293,24 @@ def test_the_single_look_is_kept_on_the_host(tmp_path: Path) -> None:
     assert stored is not None and stored["payload_sha256"] == "2" * 64
     with pytest.raises(ValueError, match="single_look_spent_on_another_manifest"):
         driver.earlier_reading(reports, "c" * 64)
+
+
+def test_a_blocking_ingestion_that_starts_during_the_asfiled_wait_refuses_and_completes_no_section(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    legacy, order_sha, pin_sha = _legacy(tmp_path, context, monkeypatch)
+    ops = _Database()
+    ops._ingestion_runs["poll"] = {"status": "running", "source_code": "sec_asfiled", "started_at": NOW - timedelta(minutes=1)}
+    state = {"blocking": 0}
+
+    def sleep(_seconds: float) -> None:  # the poll ends while the nightly worker starts
+        ops._ingestion_runs["poll"]["status"] = "succeeded"
+        state["blocking"] = 1
+    guard = driver.operational_guard(ops, clock=lambda: NOW, blocking=lambda db, now: state["blocking"], sleep=sleep, monotonic=lambda: 0.0)
+    with pytest.raises(ValueError, match="blocking_ingestion"):
+        driver.run_chunk(context["database"], None, rev3=context["rev3"], order_sha256=order_sha, pin_sha256=pin_sha, binding=context["binding"],
+                         max_runs=4, stop_before=NOW + timedelta(minutes=30), legacy_root=legacy, store_root=tmp_path / "store",
+                         clock=context["clock"], prices_for=context["prices"], guard=guard)
+    journal = tmp_path / "store" / f"journal-{order_sha}-{pin_sha}.jsonl"
+    assert driver.read_journal(journal) == [] and "compute" not in context["events"]
+    headers = [path for path in (tmp_path / "store" / "receipts").glob("*.json") if json.loads(path.read_text()).get("schema") == driver.SECTION_SCHEMA]
+    assert headers == []

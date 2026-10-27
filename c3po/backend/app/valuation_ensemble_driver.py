@@ -281,16 +281,19 @@ def operational_guard(database: Any, *, clock: Callable[[], datetime], blocking:
                       wait_seconds: float = ASFILED_WAIT_SECONDS) -> Callable[[], None]:
     """Raises on a blocked or unknown state, returns ``None`` otherwise (the executor's contract): no nightly valuation
     worker or long ingestion running (the rev3 rule), and no as-filed poll in flight — waited for up to
-    ``wait_seconds`` (a poll lasts seconds), then a refusal. A query that cannot answer propagates: fail closed."""
+    ``wait_seconds`` (a poll lasts seconds), then a refusal. ``None`` only when BOTH are clear in the same pass: after a
+    wait the blocking rule is read again (a nightly worker may start while a poll ends). A query that cannot answer
+    propagates: fail closed."""
     def guard() -> None:
-        if blocking(database, clock()):
-            raise ValueError("ensemble_guard_blocking_ingestion")
         deadline = monotonic() + wait_seconds
-        while asfiled_running(database, clock()):
+        while True:
+            if blocking(database, clock()):
+                raise ValueError("ensemble_guard_blocking_ingestion")
+            if not asfiled_running(database, clock()):
+                return None
             if monotonic() >= deadline:
                 raise ValueError("ensemble_guard_asfiled_poll_running")
             sleep(5.0)
-        return None
     return guard
 
 
