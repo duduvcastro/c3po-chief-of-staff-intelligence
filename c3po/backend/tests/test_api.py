@@ -279,7 +279,9 @@ def test_r2d2_reads_are_served_from_the_single_flight_cache(monkeypatch) -> None
     assert first.status_code == second.status_code == 200
     assert live_first.status_code == live_second.status_code == 200
     assert first.json() == second.json()
-    assert live_first.json() == live_second.json()
+    # the live R2D2 book is re-marked on every request (owner 27/10/2026: real time): only its stamp may differ
+    assert {k: v for k, v in live_first.json().items() if k != "generated_at"} == \
+        {k: v for k, v in live_second.json().items() if k != "generated_at"}
     assert calls == {"dashboard": 1, "live": 1}
     assert isinstance(first.json()["market_session_open"], bool)
     assert isinstance(live_first.json()["market_session_open"], bool)

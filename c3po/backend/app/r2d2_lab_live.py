@@ -14,7 +14,7 @@ import math
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 
 from .schemas import (R2D2CycleStatus, R2D2DashboardResponse, R2D2EpisodeStats, R2D2LearningCurvePoint,
@@ -298,11 +298,14 @@ def _positions(book: dict[str, Any], now: datetime | None = None, nav: float | N
     """The open positions; ``nav`` is the effective NAV the panels show (the book's NAV plus the interest it earned),
     the denominator of every allocation (Codex #494 finding 3)."""
     effective: float = book["nav_usd"] if nav is None else nav
-    as_of = datetime.fromisoformat(book["as_of"])
-    age = max(0.0, ((now or datetime.now(timezone.utc)) - as_of).total_seconds())
-    freshness = "fresh" if age <= 120 else "aging" if age <= 420 else "stale"  # the lab posts the marks every <= 5 min
+    book_as_of = datetime.fromisoformat(book["as_of"])
+    clock = now or datetime.now(timezone.utc)
     rows = []
     for item in book["positions"]:
+        # a live tick re-marked this position (owner 27/10: the price on the screen in real time): its own instant
+        as_of = datetime.fromisoformat(item["mark_as_of"]) if item.get("mark_as_of") else book_as_of
+        age = max(0.0, (clock - as_of).total_seconds())
+        freshness = "fresh" if age <= 120 else "aging" if age <= 420 else "stale"
         value = item["quantity"] * item["last_price"]
         rows.append(R2D2Position(
             market=item["market"], symbol=item["symbol"], name=item["symbol"], currency="USD", quantity=item["quantity"],
@@ -311,10 +314,37 @@ def _positions(book: dict[str, Any], now: datetime | None = None, nav: float | N
             mark_pnl_usd=item["unrealized_pnl_usd"], mark_return_percent=item["unrealized_return_percent"],
             estimated_exit_pnl_usd=item["unrealized_pnl_usd"], estimated_exit_return_percent=item["unrealized_return_percent"],
             allocation_percent=round(value / effective * 100, 4) if effective > 0 else 0.0, stop_price_local=item["stop_price"],
-            data_status="live", decision_state="hold", quote_status="lab", quote_as_of=as_of, quote_age_seconds=round(age, 1),
+            data_status="live", decision_state="hold", quote_status="live" if item.get("mark_as_of") else "lab",
+            quote_as_of=as_of, quote_age_seconds=round(age, 1),
             quote_freshness=freshness, trend_state="vwap rule", volume_state="adv rule",
             opened_at=datetime.fromisoformat(item["opened_at"]), updated_at=as_of))
     return sorted(rows, key=lambda row: row.market_value_usd, reverse=True)
+
+
+LiveQuotes = Callable[[dict[str, float]], dict[str, tuple[float, datetime]]]
+
+
+def remark(book: dict[str, Any], quotes: LiveQuotes | None) -> tuple[dict[str, Any], float]:
+    """The book re-marked with live ticks for the screen (owner 27/10/2026: "não me parece que o monitoramento do preço
+    esta sendo em tempo real"): each position with a plausible live price moves its value and result by quantity × (tick
+    − the lab's mark), and the NAV with them; cash never moves. Display only: the lab still decides on its own marks.
+    Returns the re-marked book and the NAV move."""
+    if quotes is None or not book["positions"]:
+        return book, 0.0
+    ticks = quotes({item["symbol"]: item["last_price"] for item in book["positions"]})
+    positions, move = [], 0.0
+    for item in book["positions"]:
+        tick = ticks.get(item["symbol"])
+        if tick is None or not math.isfinite(tick[0]) or tick[0] <= 0:
+            positions.append(item)
+            continue
+        price, as_of = tick
+        delta = item["quantity"] * (price - item["last_price"])
+        move += delta
+        result = item["unrealized_pnl_usd"] + delta
+        positions.append({**item, "last_price": price, "unrealized_pnl_usd": result,
+                          "unrealized_return_percent": result / item["cost_usd"] * 100, "mark_as_of": as_of.isoformat()})
+    return {**book, "positions": positions, "nav_usd": book["nav_usd"] + move}, move
 
 
 def _interest(interest: list[tuple[str, float]] | None, today: str) -> tuple[float, float]:
@@ -325,7 +355,7 @@ def _interest(interest: list[tuple[str, float]] | None, today: str) -> tuple[flo
 
 
 def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime | None = None,
-               interest: list[tuple[str, float]] | None = None) -> R2D2DashboardResponse:
+               interest: list[tuple[str, float]] | None = None, quotes: LiveQuotes | None = None) -> R2D2DashboardResponse:
     """One R2D2 book on every panel (owner 26/10/2026): NAV, cash, positions, daily P&L, the session delta and the
     track record come from the live lab book once it has posted one; the paused V2 book is the history before it."""
     found = latest_book(database, now=now)
@@ -337,6 +367,11 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
     closed_now = (clock.hour, clock.minute) >= SESSION_CLOSE_ET
     by_day = dict(_lab_snapshots(database, now, 90))
     results = _session_results(by_day, today)
+    live_move = 0.0
+    if day == today and not closed_now:  # the session in progress: the open positions at the live price
+        book, live_move = remark(book, quotes)
+        if today in results:
+            results[today] = (results[today][0], results[today][1] + live_move)
     accrued, interest_today = _interest(interest, today)
     if today in results:
         open_nav, close_nav = results[today]
@@ -472,14 +507,22 @@ def _scoreboard(v2: R2D2SummaryStats, track: list[R2D2TrackPoint], by_day: dict[
 
 
 def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: datetime | None = None,
-                    interest: list[tuple[str, float]] | None = None) -> R2D2LivePositionsResponse:
-    found = latest_book(database, now=now)
-    if found is None:
+                    interest: list[tuple[str, float]] | None = None, quotes: LiveQuotes | None = None,
+                    found: tuple[str, str, dict[str, Any], list[tuple[str, dict[str, Any]]]] | None | bool = False
+                    ) -> R2D2LivePositionsResponse:
+    """``found``: the latest book already read (the route reads it from the short cache and re-marks every request)."""
+    if found is False:
+        found = latest_book(database, now=now)
+    if not isinstance(found, tuple):
         return response
-    book = found[2]
-    accrued = _interest(interest, (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat())[0]
+    day, book = found[0], found[2]
+    clock = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
+    if day == clock.date().isoformat() and (clock.hour, clock.minute) < SESSION_CLOSE_ET:
+        book = remark(book, quotes)[0]
+    accrued = _interest(interest, clock.date().isoformat())[0]
     positions = _positions(book, now, nav=book["nav_usd"] + accrued)
     return response.model_copy(update={
+        "generated_at": now or datetime.now(timezone.utc), "refresh_seconds": 1,
         "nav_usd": round(book["nav_usd"] + accrued, 2), "cash_usd": round(book["cash_usd"] + accrued, 2),
         "gross_exposure_usd": round(sum(position.market_value_usd for position in positions), 2),
         "open_positions": len(positions), "positions": positions})
