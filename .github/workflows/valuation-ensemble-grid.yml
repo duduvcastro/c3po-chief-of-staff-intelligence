@@ -279,12 +279,14 @@ jobs:
         if: inputs.mode == 'grid'
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL_ISSUE: ${{ vars.C3PO_ESCALATION_ISSUE }}
           COMMIT: ${{ steps.inputs.outputs.commit }}
           SIGNATURE: ${{ steps.inputs.outputs.signature }}
           GO: ${{ steps.inputs.outputs.go }}
         shell: bash
         run: |
           set -uo pipefail
+          [[ "$CHANNEL_ISSUE" =~ ^[1-9][0-9]{0,9}$ ]] || { echo 'the channel issue (C3PO_ESCALATION_ISSUE) is not set' >&2; exit 2; }
           for id in "$SIGNATURE" "$GO"; do
             [[ "$id" =~ ^[1-9][0-9]{0,19}$ ]] || exit 1
             gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" > "$RUNNER_TEMP/comment-$id.json" || { echo "comment $id is not a comment of this repository" >&2; exit 2; }
@@ -294,13 +296,16 @@ jobs:
           import sys
 
           comment = json.load(open(sys.argv[1], encoding="utf-8"))
-          if not str(comment.get("html_url") or "").startswith(f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/"):
-              sys.exit("the comment is not of this repository")
+          repository, issue = os.environ["GITHUB_REPOSITORY"], os.environ["CHANNEL_ISSUE"]
+          if str(comment.get("issue_url") or "") != f"https://api.github.com/repos/{repository}/issues/{issue}":
+              sys.exit("the comment is not on this repository's channel issue")
+          if comment.get("author_association") != "OWNER":  # the channel's receipts are posted by the owner's account (public repo)
+              sys.exit("the comment was not written by the repository owner's account")
           if os.environ["COMMIT"] not in str(comment.get("body") or ""):
               sys.exit("the comment does not cite the instrument commit")
           PY
           done
-          echo 'both channel comments exist in this repository and cite the instrument commit'
+          echo "both channel comments are the owner account's, on issue #$CHANNEL_ISSUE, and cite the instrument commit"
 
       - name: Download the rev3 grid manifest
         if: inputs.mode == 'grid'
@@ -353,8 +358,10 @@ jobs:
         run: |
           set -uo pipefail
           [[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          mkdir -p "$RUNNER_TEMP/raw" || exit 1
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "umask 077 && cat > /tmp/valuation-ensemble-rev3-$RUN_ID.json" < "$RUNNER_TEMP/rev3/manifest.json" || { echo 'the rev3 manifest could not be sent to the host' >&2; exit 1; }
+            "umask 077 && cat > /tmp/valuation-ensemble-rev3-$RUN_ID.json" < "$RUNNER_TEMP/rev3/manifest.json" 2>> "$RUNNER_TEMP/raw/stderr.log" \
+            || { echo 'the rev3 manifest could not be sent to the host (ssh stderr kept private)' >&2; exit 1; }
 
       - name: Run on the host
         id: host
@@ -395,7 +402,8 @@ jobs:
           #   20 ingestion check run   21 blocking ingestion  22 free disk read     23 disk below need   24 memory below need
           #   25 leg floor             26 host clock          27 services query     28 timers query      29 timer next elapse
           #   30 timer elapse parse    31 ingestion parse     32 memory read        33 lock open         34 lock error
-          #   36 as-filed backfill not paused                 37 data volume        38 rev3 manifest file
+          #   36 as-filed backfill not paused / Investor Relations worker absent      37 data volume        38 rev3 manifest file
+          #   39 the order or the pin is not in the deployed checkout (deploy first)
           APP_DIR=/opt/chief-of-staff-digital
           cd "$APP_DIR" || exit 10
           [[ "$DEADLINE" =~ ^[0-9]+$ ]] || { echo 'the deadline is not an integer' >&2; exit 10; }
@@ -435,7 +443,12 @@ jobs:
             exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null
           fi
           [ "$MODE" = grid ] || { echo 'unknown mode' >&2; exit 16; }
+          [ -n "$ir" ] || { echo 'the Investor Relations worker is not running: the backfill setting cannot be read (fail closed)' >&2; exit 36; }
           [ "$backfill" = 0 ] || { echo 'the as-filed backfill is not paused (C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL must be 0): the grade must wait' >&2; exit 36; }
+          # the driver reads the order and the pin from the DEPLOYED checkout (/legacy): the commit that added them must be deployed
+          for file in "c3po/ops/owner-orders/$ORDER.json" "c3po/ops/valuation-ensemble/$PIN.json"; do
+            [ -f "$APP_DIR/$file" ] && [ ! -L "$APP_DIR/$file" ] || { echo "$file is not in the deployed checkout: deploy the commit that adds it first" >&2; exit 39; }
+          done
           [ -f "$rev3_file" ] && [ ! -L "$rev3_file" ] || { echo 'the rev3 manifest did not reach the host' >&2; exit 38; }
           for flag in /run/c3po-security/reboot.pending /var/run/reboot-required; do
             if [ -e "$flag" ]; then
@@ -472,6 +485,10 @@ jobs:
             || { echo 'the running ingestions cannot be read: refused (fail closed)' >&2; exit 31; }
           [[ "$blocking" =~ ^[0-9]+$ ]] || { echo 'the running ingestions cannot be read: refused (fail closed)' >&2; exit 31; }
           [ "$blocking" = 0 ] || { echo 'the nightly valuation worker or a long ingestion is running: the grade must wait' >&2; exit 21; }
+          docker_disk=$(df -P /var/lib/docker) || { echo 'the free disk of /var/lib/docker cannot be read: refused (fail closed)' >&2; exit 22; }
+          docker_kb=$(printf '%s\n' "$docker_disk" | awk 'NR == 2 {print $4}') || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+          [[ "$docker_kb" =~ ^[0-9]+$ ]] || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
+          [ "$docker_kb" -ge 6291456 ] || { echo "free disk of /var/lib/docker ${docker_kb} KiB below 6 GiB (the database volume)" >&2; exit 23; }
           disk=$(df -P "$data") || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
           avail_kb=$(printf '%s\n' "$disk" | awk 'NR == 2 {print $4}') || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
           [[ "$avail_kb" =~ ^[0-9]+$ ]] || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
@@ -531,10 +548,21 @@ jobs:
           summary = [f"## Valuation ensemble grid — {mode}", f"- remote exit status: {rc}"]
           # only lines of the expected shapes leave the runner: the preflight's and the host check's own lines, the driver's
           # JSON lines (aggregates by construction); anything else is COUNTED, never printed (this repository is public)
-          shapes = re.compile(r"^(PREFLIGHT disk_kb=\d+ mem_kb=\d+|LAUNCHED \d+-\d+|REBOOT (pending|absent) [/a-z.-]+|BACKFILL issuers_per_poll=[0-9a-z]*|DISK \d+ \d+ [/A-Za-z0-9._-]+|MEM [A-Za-z]+ \d+)$")
-          kept, unexpected, chunk = [], 0, None
+          # host lines: the preflight's and the host check's, BEFORE the driver starts (after LAUNCHED only the driver's JSON lines)
+          shapes = re.compile(r"^(PREFLIGHT disk_kb=\d+ mem_kb=\d+|REBOOT (pending|absent) [/a-z0-9.-]+|BACKFILL issuers_per_poll=[0-9a-z]*|DISK \d+ \d+ [/a-z0-9._-]+|MEM (MemTotal|MemAvailable|SwapTotal|SwapFree) \d+)$")
+          fields = {"start": ("kind", "max_runs", "stop_before"),
+                    "refused": ("kind", "reason", "peak_rss_kb"),
+                    "chunk": ("kind", "manifest_sha256", "complete", "remaining", "entries", "computed_this_chunk", "prior_entries",
+                              "journaled_this_chunk", "stopped", "elapsed_seconds", "prior_verify_seconds", "compute_seconds", "seconds_per_section",
+                              "receipt_bytes_written", "peak_rss_kb", "owner_order_sha256", "instrument_pin_sha256")}
+          code = re.compile(r"^([a-z0-9_:./=;-]{1,1000}|exception:[A-Za-z_]{1,80})$")  # the driver's codes, or an exception's class
+          kept, unexpected, chunk, chunks, launched = [], 0, None, 0, False
           for line in lines:
-              if shapes.match(line):
+              if not launched and re.fullmatch(r"LAUNCHED \d+-\d+", line):
+                  kept.append(line)
+                  launched = True
+                  continue
+              if not launched and shapes.match(line):
                   kept.append(line)
                   continue
               try:
@@ -542,13 +570,19 @@ jobs:
               except ValueError:
                   unexpected += 1
                   continue
-              if isinstance(value, dict) and value.get("kind") in ("start", "chunk", "refused"):
-                  kept.append(json.dumps(value, sort_keys=True))
+              if launched and isinstance(value, dict) and value.get("kind") in fields:
+                  reduced = {key: value.get(key) for key in fields[value["kind"]]}
+                  if any(isinstance(item, str) and not code.match(item) and key != "stop_before" for key, item in reduced.items()) \
+                          or (reduced.get("stop_before") is not None and not re.fullmatch(r"[0-9T:+.-]{10,40}", str(reduced["stop_before"]))):
+                      unexpected += 1
+                      continue
+                  kept.append(json.dumps(reduced, sort_keys=True))
                   if value["kind"] in ("chunk", "refused"):
-                      chunk = value
-              elif isinstance(value, dict) and value.get("kind") == "host_check":
+                      chunk = reduced
+                      chunks += 1
+              elif not launched and isinstance(value, dict) and value.get("kind") == "host_check":
                   runs = value.get("ingestion_runs") or {}
-                  kept.append(f"HOST-CHECK ingestion running={runs.get('running')} blocking={runs.get('blocking')}")
+                  kept.append(f"HOST-CHECK ingestion running={int(runs.get('running') or 0)} blocking={int(runs.get('blocking') or 0)}")
               else:
                   unexpected += 1
           metadata.update({"lines": kept, "unexpected_lines": unexpected, "result": chunk})
@@ -560,6 +594,8 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
               handle.write("\n".join(summary) + "\n")
           print("\n".join(summary))
+          if mode == "grid" and rc == "0" and (chunks != 1 or not chunk or chunk.get("kind") != "chunk"):
+              (Path(os.environ["RUNNER_TEMP"]) / "verify-failed").write_text("the host exited 0 without exactly one chunk result\n", encoding="utf-8")
           PY
 
       - name: Publish the aggregates
@@ -606,5 +642,9 @@ jobs:
         run: |
           if [ "$RC" != 0 ]; then
             echo "the host step exited with status $RC (its stderr is kept private)" >&2
+            exit 1
+          fi
+          if [ -e "$RUNNER_TEMP/verify-failed" ]; then
+            echo "the outputs were refused: $(cat "$RUNNER_TEMP/verify-failed")" >&2
             exit 1
           fi

@@ -117,6 +117,7 @@ class _Database:
 
     def __init__(self) -> None:
         self._ingestion_runs: dict[str, dict[str, Any]] = {}
+        self._data_sources: dict[str, dict[str, Any]] = {}
 
 
 def test_the_guard_refuses_blocking_ingestions_and_waits_for_an_asfiled_poll() -> None:
@@ -163,3 +164,40 @@ def test_the_price_reader_is_the_rev3_pin() -> None:
     assert driver.price_pin_of({"price_pin": {"requested_at": "2026-10-19T18:30:00-03:00"}}) == datetime(2026, 10, 19, 21, 30, tzinfo=timezone.utc)
     with pytest.raises(ValueError):
         driver.price_pin_of({"price_pin": {}})
+
+
+def test_refusal_codes_keep_every_executor_token_and_paths_but_never_a_ticker() -> None:
+    joined = "ensemble_instrument_mismatch:c3po/backend/app/valuation_ensemble_grid.py;ensemble_instrument_technical_GO_comment_id_mismatch"
+    assert driver.refusal_code(ValueError(joined)) == joined.replace("technical_GO", "technical_go")
+    assert driver.refusal_code(ValueError("ensemble_owner_order_expired;AAPL")) == "exception:ValueError"
+
+
+def test_one_driver_at_a_time_on_the_store(tmp_path: Path) -> None:
+    with driver.ChunkLock(tmp_path):
+        with pytest.raises(ValueError, match="another_chunk_is_running"):
+            with driver.ChunkLock(tmp_path):
+                pass
+    with driver.ChunkLock(tmp_path):  # released on exit
+        pass
+
+
+def test_the_pinned_blocking_rule_is_rev3s() -> None:
+    database = _Database()
+    database._data_sources = {"nightly": {"id": "s1", "source_type": "valuation_worker"}, "ir": {"id": "s2", "source_type": "regulatory_disclosure"}}
+    database._ingestion_runs = {"short-ir": {"status": "running", "source_id": "s2", "started_at": NOW - timedelta(minutes=2)}}
+    assert driver.blocking_ingestions(database, NOW) == 0
+    database._ingestion_runs["nightly"] = {"status": "running", "source_id": "s1", "started_at": NOW - timedelta(minutes=1)}
+    database._ingestion_runs["long"] = {"status": "running", "source_id": "s2", "started_at": NOW - timedelta(minutes=45)}
+    database._ingestion_runs["stale"] = {"status": "running", "source_id": "s2", "started_at": NOW - timedelta(hours=13)}
+    assert driver.blocking_ingestions(database, NOW) == 2
+
+
+def test_the_chunk_reports_verification_and_compute_time_apart(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    legacy, order_sha, pin_sha = _legacy(tmp_path, context, monkeypatch)
+    result = _run(context, tmp_path, legacy, order_sha, pin_sha, 2)
+    assert {"prior_verify_seconds", "compute_seconds", "seconds_per_section"} <= set(result)
+    assert result["elapsed_seconds"] >= result["compute_seconds"] >= 0
+    done = _run(context, tmp_path, legacy, order_sha, pin_sha, 4)
+    finished = _run(context, tmp_path, legacy, order_sha, pin_sha, 4)  # nothing left: verification only
+    assert done["complete"] and finished["computed_this_chunk"] == 0 and finished["seconds_per_section"] is None and finished["compute_seconds"] == 0

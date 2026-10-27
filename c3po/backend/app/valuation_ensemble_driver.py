@@ -27,6 +27,7 @@ to stderr, which the workflow keeps private.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -60,7 +61,9 @@ ASFILED_WAIT_SECONDS = 180  # a poll in flight is waited for (it lasts seconds);
 INGESTION_WINDOW = timedelta(hours=12)
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
-_CODE = re.compile(r"[a-z0-9_:;.=-]{1,300}")
+_CODE = re.compile(r"[a-z0-9_:./=-]{1,200}")  # a code or a repository path: lower case, so never a ticker
+NIGHTLY_SOURCE_TYPE = "valuation_worker"  # the nightly valuation worker (the rev3 rule of valuation_pit_grid.running_ingestions)
+INGESTION_LONG_RUNNING = timedelta(minutes=30)
 
 
 # ------------------------------------------------------------------ pinned inputs
@@ -87,7 +90,7 @@ def checkout_file(root: Path, relative: Path, *, limit: int = MAX_CHECKOUT_BYTES
 
 def running_files(checkout: Mapping[str, str], app_dir: Path) -> None:
     """Refuse unless every instrument module of the checkout is byte-identical to the one this process imports, and the
-    two hold the same ensemble modules (the image is the checkout's revision: nothing else may run under its pin)."""
+    two hold the same ensemble modules (the image is the checkout's revision: nothing else may run under its pin; the guard's queries are this pinned module's own)."""
     names = {name.removeprefix(APP_PREFIX) for name in checkout if name.startswith(APP_PREFIX)}
     running = {path.name for path in app_dir.glob("valuation_ensemble_*.py")}
     if running != {name for name in names if name.startswith("valuation_ensemble_")}:
@@ -169,17 +172,38 @@ class JournaledStore(FileReceiptStore):
         return path, created
 
 
+def write_all(fd: int, data: bytes) -> None:
+    """``os.write`` until every byte is written (a short write on a nearly full disk is a refusal, never half a line)."""
+    view = memoryview(data)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError("ensemble_driver_short_write")
+        view = view[written:]
+
+
+def fsync_directory(directory: Path) -> None:
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def append_journal(journal: Path, entry: Mapping[str, Any]) -> None:
     line = (json.dumps({"schema": JOURNAL_SCHEMA, "entry": entry}, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False) + "\n").encode()
+    created = not journal.exists()
     fd = os.open(journal, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
             raise ValueError("ensemble_driver_journal_not_private_regular_owned_file")
-        os.write(fd, line)
+        write_all(fd, line)
         os.fsync(fd)
     finally:
         os.close(fd)
+    if created:
+        fsync_directory(journal.parent)
 
 
 def read_journal(journal: Path) -> list[dict[str, Any]]:
@@ -224,10 +248,11 @@ def write_manifest(directory: Path, manifest: Mapping[str, Any]) -> Path:
             raise ValueError("ensemble_driver_manifest_collision") from None
         return path
     try:
-        os.write(fd, raw)
+        write_all(fd, raw)
         os.fsync(fd)
     finally:
         os.close(fd)
+    fsync_directory(directory)
     return path
 
 
@@ -239,7 +264,7 @@ def asfiled_running(database: Any, now: datetime) -> int:
     if not database.database_url:
         runs = getattr(database, "_ingestion_runs", {})
         return sum(1 for run in runs.values() if run.get("status") == "running" and run.get("source_code") == ASFILED_SOURCE_CODE
-                   and utc(run["started_at"] if isinstance(run["started_at"], datetime) else datetime.fromisoformat(str(run["started_at"]))) >= since)
+                   and _started(run) >= since)
     with database.connection() as connection:
         row = connection.execute(
             "SELECT count(*) FROM ingestion_runs run JOIN data_sources source ON source.id = run.source_id "
@@ -265,9 +290,51 @@ def operational_guard(database: Any, *, clock: Callable[[], datetime], blocking:
     return guard
 
 
-def _blocking(database: Any, now: datetime) -> int:
-    from .valuation_pit_grid import running_ingestions
-    return int(running_ingestions(database, now)["blocking"])
+def blocking_ingestions(database: Any, now: datetime) -> int:
+    """The rev3 rule (``valuation_pit_grid.running_ingestions``), kept here so the guard runs pinned code only: the runs
+    still ``running`` that started in the last 12 h and are the nightly valuation worker's or have run for 30 min. Read only."""
+    since, long_ago = utc(now) - INGESTION_WINDOW, utc(now) - INGESTION_LONG_RUNNING
+    if not database.database_url:
+        runs = getattr(database, "_ingestion_runs", {})
+        sources = {str(source.get("id")): str(source.get("source_type")) for source in getattr(database, "_data_sources", {}).values()}
+        active = [run for run in runs.values() if run.get("status") == "running" and _started(run) >= since]
+        return sum(1 for run in active if sources.get(str(run.get("source_id"))) == NIGHTLY_SOURCE_TYPE or _started(run) <= long_ago)
+    with database.connection() as connection:
+        row = connection.execute(
+            "SELECT count(*) FILTER (WHERE source.source_type = %s OR run.started_at <= %s) FROM ingestion_runs run "
+            "LEFT JOIN data_sources source ON source.id = run.source_id WHERE run.status = 'running' AND run.started_at >= %s",
+            (NIGHTLY_SOURCE_TYPE, long_ago, since)).fetchone()
+    return int(row[0]) if row else 0
+
+
+def _started(run: Mapping[str, Any]) -> datetime:
+    value = run["started_at"]
+    return utc(value if isinstance(value, datetime) else datetime.fromisoformat(str(value)))
+
+
+class ChunkLock:
+    """One driver at a time on the store: an exclusive ``flock`` on ``<store>/driver.lock`` for the whole chunk (a driver a
+    failed cleanup left running keeps it; a second one refuses instead of sharing the journal)."""
+
+    def __init__(self, root: Path) -> None:
+        self.path = root / "driver.lock"
+        self.fd: int | None = None
+
+    def __enter__(self) -> "ChunkLock":
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            raise ValueError("ensemble_driver_another_chunk_is_running") from None
+        self.fd = fd
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self.fd is not None:
+            fcntl.flock(self.fd, fcntl.LOCK_UN)
+            os.close(self.fd)
+            self.fd = None
 
 
 # ------------------------------------------------------------------ one chunk
@@ -299,23 +366,33 @@ def run_chunk(database: Any, settings: Any, *, rev3: Mapping[str, Any], order_sh
             return PinnedPrices(reader, str(v3_ref["market"]), as_of=as_of, pinned_at=pinned_at, pin_mode="explicit")
         prices_for = pinned
     root = private_directory(store_root)
-    manifests = private_directory(root / "manifests")
-    journal = root / f"journal-{order_sha256}-{pin_sha256}.jsonl"
-    store = JournaledStore(private_directory(root / "receipts"), journal=journal, pairs=pairs, owner_order_sha256=order_sha256)
-    prior = tuple(read_journal(journal))
-    started = time.monotonic()
-    manifest = execute_grade_chunk(
-        database, rev3_manifest=rev3, pin=pin, binding=binding, file_hashes=files, owner_order_bytes=order_bytes,
-        owner_order_sha256=order_sha256, store=store, prices_for=prices_for,
-        operational_guard=guard or operational_guard(database, clock=now, blocking=_blocking),
-        report_calendar=report_calendar_for(rev3), max_runs=max_runs, stop_before=stop_before, clock=now, prior_entries=prior)
-    elapsed = time.monotonic() - started
-    write_manifest(manifests, manifest)
+    with ChunkLock(root):
+        manifests = private_directory(root / "manifests")
+        journal = root / f"journal-{order_sha256}-{pin_sha256}.jsonl"
+        store = JournaledStore(private_directory(root / "receipts"), journal=journal, pairs=pairs, owner_order_sha256=order_sha256)
+        prior = tuple(read_journal(journal))
+        started = time.monotonic()
+        first_section: list[float] = []  # the executor verifies every prior entry BEFORE its first section's prices
+
+        def timed_prices(v3_ref: Mapping[str, Any]) -> Any:
+            if not first_section:
+                first_section.append(time.monotonic())
+            return prices_for(v3_ref)
+        manifest = execute_grade_chunk(
+            database, rev3_manifest=rev3, pin=pin, binding=binding, file_hashes=files, owner_order_bytes=order_bytes,
+            owner_order_sha256=order_sha256, store=store, prices_for=timed_prices,
+            operational_guard=guard or operational_guard(database, clock=now, blocking=blocking_ingestions),
+            report_calendar=report_calendar_for(rev3), max_runs=max_runs, stop_before=stop_before, clock=now, prior_entries=prior)
+        ended = time.monotonic()
+        write_manifest(manifests, manifest)
     computed = int(manifest["computed_this_chunk"])
+    verified_until = first_section[0] if first_section else ended
+    compute_seconds = ended - verified_until
     return {"schema": CHUNK_SCHEMA, "kind": "chunk", "manifest_sha256": manifest["manifest_sha256"], "complete": manifest["complete"],
             "remaining": manifest["remaining"], "entries": len(manifest["entries"]), "computed_this_chunk": computed,
             "prior_entries": len(prior), "journaled_this_chunk": store.journaled, "stopped": manifest["stopped"],
-            "elapsed_seconds": round(elapsed, 1), "seconds_per_section": round(elapsed / computed, 1) if computed else None,
+            "elapsed_seconds": round(ended - started, 1), "prior_verify_seconds": round(verified_until - started, 1),
+            "compute_seconds": round(compute_seconds, 1), "seconds_per_section": round(compute_seconds / computed, 1) if computed else None,
             "receipt_bytes_written": store.bytes_written, "peak_rss_kb": peak_rss_kb(),
             "owner_order_sha256": order_sha256, "instrument_pin_sha256": pin_sha256}
 
@@ -326,9 +403,12 @@ def peak_rss_kb() -> int:
 
 
 def refusal_code(error: BaseException) -> str:
-    """A refusal's printable reason: the executor's own lowercase code, never free text (a ticker is upper case)."""
-    text = str(error).strip()
-    return text if _CODE.fullmatch(text) else f"exception:{type(error).__name__}"
+    """A refusal's printable reason: the executor's own codes (``;``-joined, a file path allowed), never free text — a
+    token that is not a lower-case code (a ticker is upper case) reduces the whole reason to the exception's class."""
+    tokens = [token.strip().replace("technical_GO", "technical_go") for token in str(error).split(";")]
+    if tokens and all(_CODE.fullmatch(token) for token in tokens):
+        return ";".join(tokens)
+    return f"exception:{type(error).__name__}"
 
 
 def _instant(parser: argparse.ArgumentParser, value: str) -> datetime:
