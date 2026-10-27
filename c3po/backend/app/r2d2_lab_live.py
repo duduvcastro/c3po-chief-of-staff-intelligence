@@ -167,6 +167,12 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     document = {"schema": SCHEMA, "day": day.isoformat(), "config": payload["config"], "trades": out}
     if "book" in payload:
         document["book"] = _book(payload["book"])
+        opening = document["book"]
+        if day > clock.astimezone(NEW_YORK).date() and not (
+                abs(opening["nav_usd"] - opening["nav_start_usd"]) <= 0.01
+                and abs(opening["realized_nav_usd"] - opening["nav_start_usd"]) <= 0.01):
+            # a book posted before its session opens is an opening book: one NAV, no marks (Codex #496 finding 2)
+            raise LabLiveRefused("an opening book has NAVs that differ")
     if "cycle" in payload:
         cycle = payload["cycle"]
         if not isinstance(cycle, dict) or set(cycle) != CYCLE_KEYS or not all(
@@ -337,11 +343,11 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
     else:  # no live session yet today: the latest book, unchanged
         open_nav = close_nav = book["nav_usd"] if day < today else book["nav_start_usd"]
     daily = close_nav - open_nav
-    nav = (book["nav_usd"] if day <= today else close_nav) + accrued
+    nav = book["nav_usd"] + accrued  # an opening book has one NAV (validated): the same in both routes, totals and allocation
     close_nav, open_nav = close_nav + accrued, open_nav + accrued
     previous = open_nav - interest_today  # the NAV at the previous close, before today's T-bill interest
     daily_percent = daily / previous * 100 if previous > 0 else 0.0
-    positions = _positions(book, now, nav=book["nav_usd"] + accrued)
+    positions = _positions(book, now, nav=nav)
     exposure = sum(position.market_value_usd for position in positions)
     starting = response.starting_capital_usd
     total_return = (nav / starting - 1) * 100 if starting > 0 else 0.0
@@ -366,7 +372,7 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
         interest_delta_percent=round(interest_today / previous * 100, 4) if previous > 0 else 0.0,
         interest_status="posted" if interest_today else "pending")
     today_doc = by_day.get(today) or {}
-    closed_results = _closed_episodes(today_doc.get("trades") or [])
+    closed_results = _closed_episodes(by_day, today)
     positive = sum(1 for pnl in closed_results if pnl > 0)
     negative = sum(1 for pnl in closed_results if pnl < 0)
     episodes = R2D2EpisodeStats(
@@ -418,26 +424,29 @@ def _session_results(by_day: dict[str, dict[str, Any]], today: str) -> dict[str,
     return results
 
 
-def _closed_episodes(trades: list[dict[str, Any]]) -> list[float]:
-    """The realized result of every position closed in the session, one per episode (Codex #494 finding 2): per symbol,
-    in time order, an episode opens with a BUY into a flat book (or with a SELL of a position carried from an earlier
-    session) and closes when its quantity returns to zero; partial sells add up inside it."""
+def _closed_episodes(by_day: dict[str, dict[str, Any]], today: str) -> list[float]:
+    """The result of every position closed TODAY, one per episode (Codex #494 finding 2, #496 finding 1): the fills of
+    every stored session up to today, per symbol and in time order. An episode opens with a BUY into a flat position
+    and closes when its quantity returns to zero; partial sells, on any day, add up inside it. A SELL with no opening
+    in the documents (a position older than the live book) has no proven size: it closes nothing and is not counted."""
+    fills = [item for day, outputs in by_day.items() if day <= today for item in outputs.get("trades") or []]
     closed: list[float] = []
     by_symbol: dict[str, list[dict[str, Any]]] = {}
-    for item in trades:
+    for item in fills:
         by_symbol.setdefault(item["symbol"], []).append(item)
-    for fills in by_symbol.values():
+    for symbol_fills in by_symbol.values():
         quantity, result = 0.0, 0.0
-        for item in sorted(fills, key=lambda fill: (fill["executed_at"], fill["side"] != "BUY")):
+        for item in sorted(symbol_fills, key=lambda fill: (fill["executed_at"], fill["side"] != "BUY")):
             if item["side"] == "BUY":
                 quantity += item["quantity"]
                 continue
-            if quantity <= 1e-9:  # a position carried from an earlier session: its buy is not in this document
-                quantity = item["quantity"]
+            if quantity <= 1e-9:
+                continue  # no proven opening: never certify a close by the size of the sell
             result += item.get("realized_pnl_usd") or 0.0
             quantity -= item["quantity"]
             if quantity <= 1e-6 * max(item["quantity"], 1.0):
-                closed.append(result)
+                if datetime.fromisoformat(item["executed_at"]).astimezone(NEW_YORK).date().isoformat() == today:
+                    closed.append(result)
                 quantity, result = 0.0, 0.0
     return closed
 
