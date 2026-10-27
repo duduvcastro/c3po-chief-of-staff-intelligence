@@ -102,6 +102,31 @@
         }
       ]
     },
+    "r2d2-live": {
+      "command": [
+        "python",
+        "-m",
+        "app.r2d2_live_engine"
+      ],
+      "environment": {
+        "C3PO_BUILD_SHA": "development",
+        "C3PO_MAINTENANCE_GATE_DIR": "/run/c3po-maintenance"
+      },
+      "image": "c3po/backend:production",
+      "networks": {
+        "c3po_internal": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo/runtime/security/maintenance",
+          "target": "/run/c3po-maintenance",
+          "read_only": true,
+          "bind": {}
+        }
+      ]
+    },
     "r2d2-shadow-candidate-worker": {
       "command": [
         "python",
