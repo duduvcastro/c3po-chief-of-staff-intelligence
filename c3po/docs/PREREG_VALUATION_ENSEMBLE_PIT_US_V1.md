@@ -34,7 +34,11 @@
      - Uma ação entra na agregação com **≥ `MIN_MODELS = 3`** valores válidos, o mínimo em que existe um maior e um menor a descartar. Abaixo disso, a ação é não avaliável (`ensemble_fewer_than_min_models`) e é contada; nada é preenchido.
      - O consenso, quando presente, conta como um dos valores da variante com consenso.
      - O recibo publica a distribuição do número de valores por ação e a cobertura resultante.
-   - o consenso entra como mais um valor só quando o snapshot PIT de consenso que o `valuation_pit_served` lê em `T` o traz para o nome; ausente, a variante com consenso usa só os modelos;
+   - **O consenso (P2-1 do Codex, 6430457023):** o `valuation_pit_served` **não** lê consenso. O leitor vinculado é o de `valuation_pit_rerun`, nas corridas V3 irmãs do manifesto do rev 3: mesma bolsa, mesmo `T`, mesmo snapshot de metas pinado no início da grade.
+     - **Elegibilidade:** é a de `valuation_pit_rerun.consensus_at`: a última meta elegível de cada casa com `published_at ≤ T`, `publishedDate` sem fuso lida como UTC (premissa declarada `consensus_published_date_zone`), moeda pelo campo e **≥ 3 casas**.
+     - **Valor do consenso no ensemble:** a **média** dessas metas por casa, porque o dono pediu "a média do consenso de todos os analistas". A mediana que o `consensus_at` grava (`public_consensus_tp`) é publicada ao lado, descritiva.
+     - **Recibo:** registra, por nome e `T`, `analyst_count`, `consensus_published_at` (a meta mais recente usada) e o id do snapshot de metas.
+     - **Sem consenso** (menos de 3 casas, B3, snapshot ausente): a variante com consenso usa só os modelos. A razão é contada (`consensus:<razão>`, as mesmas do `consensus_at`). Trocar o leitor ou o snapshot exige nova revisão;
    - nenhum valor futuro a `T`: demonstrações com `accepted_at ≤ T`, preço `close(D)`, consenso com `as_of ≤ T`.
 4. **Agregações secundárias:** a mesma média sem o maior e o menor **sem consenso**; a mediana, a média e a média aparada a 20%, cada uma com e sem consenso. São sempre publicadas e nunca decisórias. Não há correção de multiplicidade porque só a primária decide.
 
@@ -96,18 +100,32 @@
 
 ## 5. Poder (leitura honesta)
 
-- Com `B ≈ 9` blocos (8 graus de liberdade, t crítico ≈ 1,86) e `dp` realista do IC por sessão entre 0,10 e 0,20 (rev 3 §8), um IC verdadeiro de 0,05 em `h = 126` passa a condição 2 em cerca de metade a dois terços das vezes.
+- **Potência da condição 2, corrigida pelo P2-2 do Codex (6430457023):**
+  - **Modelo:** com `B ≈ 9` blocos (8 graus de liberdade, t crítico 1,8595), passo 5 e o processo gaussiano triangular de 126 sessões herdado do rev 3.
+  - **Resultado:** um IC verdadeiro de 0,05 em `h = 126` passa a condição 2 em **≈ 41 %, 25 % e 18 %** das vezes com `dp` por sessão de 0,10, 0,15 e 0,20.
+  - **Fonte:** cálculo do Codex com 100.000 réplicas por covariância exata das médias de bloco; a revisão independente achou 41,3 / 24,7 / 18,0 %.
+  - **Alcance:** são probabilidades **só da condição 2**. O PASS completo, com as condições 4 a 8, é **menos** provável.
+  - **Leitura honesta:** o desenho tem **pouco poder**; um `FAIL` é o resultado mais provável mesmo com sinal real moderado. O dono decidiu medir assim.
 - Abaixo de 0,03, o teste quase não detecta.
 - A condição 6 exige ordenar melhor que o TP servido, cujo IC descritivo em `h = 126` na passada final foi **0,050** (`p` 0,057).
 - A condição 7 exige erro **significativamente** menor que o do TP servido. Na grade de domingo, o nível do TP servido ficou pior que o preço parado (M3), então há espaço para melhorar. A potência dessa condição é publicada no `design_table()`, com o `dp` realizado de `ΔE`.
 - O `dp` realizado por sessão é publicado para situar a leitura e não muda nenhuma constante.
-- O código vinculado deve conter `design_table()` com estas probabilidades, em simulação reprodutível (`DESIGN_SEED = 20261026`) com a mesma grade.
+- O código vinculado deve conter `design_table()` que reproduza estes números (`DESIGN_SEED = 20261026`, a mesma grade, covariância exata das médias de bloco) e a potência da condição 7 com o `dp` de `ΔE`. O recibo publica as duas.
 
 ## 6. Código, operação e recibo
 
-- **Código vinculado:**
-  - o modo grade do ensemble (PR #487, ou a PR que a substitua) mergeado em `main`;
-  - os 16 modelos e as 8 agregações nomeados no recibo, com o `sha256` dos arquivos `valuation_ensemble_*.py` e das constantes deste documento dentro do payload hasheado (rev 3 §13 e §15).
+- **Identidade do instrumento (P2-3 do Codex, 6430457023), vínculo em dois passos:**
+  1. **Este documento** fixa as regras e é vinculado pelo hash dos seus bytes, com a assinatura do dono.
+  2. **Pino do instrumento:** antes da **primeira corrida** do ensemble na grade, um recibo **`VALUATION-ENSEMBLE-INSTRUMENT-PIN-v1`** é publicado no canal técnico, com GO técnico do Codex e assinatura do dono. Ele lista:
+     - o `prereg_sha256` e o `prereg_commit` deste documento;
+     - **o commit de `main`** do instrumento;
+     - o `sha256` de **cada arquivo** do instrumento: os módulos `c3po/backend/app/valuation_ensemble_*.py` (com as premissas dos 16 modelos e as 8 agregações), o leitor de consenso (`valuation_pit_rerun.py`), o módulo do relatório, o executor e o seu workflow;
+     - as constantes deste documento (§4, §5, §1.3).
+- **Garantias do pino:**
+  - **um só pino por revisão:** um segundo pino exige nova revisão deste documento;
+  - **o executor recusa** correr se qualquer arquivo listado difere do pino;
+  - **o relatório anula** (`VOID`: `ensemble_instrument_not_pinned`, `ensemble_instrument_mismatch:<arquivo>`) se não houver pino ou se o código de qualquer corrida do manifesto diferir dele, **antes de ler rótulos**;
+  - assim, duas implementações com o mesmo texto não podem ambas reclamar este pré-registro. A que vale é a do pino, fixada antes dos rótulos.
 - **Operação:**
   - ordem do dono no formato das ordens da grade (`c3po/ops/owner-orders/<sha>.json`), com `from_session`/`to_session` (#485);
   - backfill as-filed pausado;
