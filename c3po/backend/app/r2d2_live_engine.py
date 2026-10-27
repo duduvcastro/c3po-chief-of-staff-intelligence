@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 
 from . import r2d2_lab_live
@@ -67,11 +67,39 @@ class Tape:
     minute: int = -1
     closed_minute: int = -1
     closed_price: float | None = None
-    closed_vwap: float | None = None
+    closed_at: float | None = None  # epoch seconds of the trade that closed the completed minute
+    closed_pv: float = 0.0  # every trade up to the END of the completed minute, late ones included (Codex #500 P2-4)
+    closed_volume: float = 0.0
 
     @property
     def vwap(self) -> float | None:
         return self.pv / self.volume if self.volume > 0 else None
+
+    @property
+    def closed_vwap(self) -> float | None:
+        return self.closed_pv / self.closed_volume if self.closed_volume > 0 else None
+
+    def add(self, price: float, size: float, minute: int, stamp: float) -> None:
+        """One regular-session trade, in arrival order. In time order it moves the last price, and its minute's first trade
+        closes the previous minute; a LATE trade (older than the last) counts in the VWAP and, when it belongs to an already
+        completed minute, in that minute's close and VWAP — the same state the trades would have built in time order."""
+        if self.opening is None:
+            self.opening = price
+        late = self.last_at is not None and stamp < self.last_at
+        if not late:
+            if self.minute >= 0 and minute > self.minute:  # the first trade of a new minute closes the previous one
+                self.closed_minute, self.closed_price, self.closed_at = self.minute, self.last_price, self.last_at
+                self.closed_pv, self.closed_volume = self.pv, self.volume
+            self.minute, self.last_price, self.last_at = max(self.minute, minute), price, stamp
+        elif minute < self.minute:  # a late trade of a completed minute
+            if size > 0:
+                self.closed_pv += price * size
+                self.closed_volume += size
+            if (minute, stamp) >= (self.closed_minute, self.closed_at if self.closed_at is not None else float("-inf")):
+                self.closed_minute, self.closed_price, self.closed_at = minute, price, stamp
+        if size > 0:
+            self.pv += price * size
+            self.volume += size
 
 
 class LiveEngineStream(EodhdRealtimeStream):
@@ -85,11 +113,15 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.session: date | None = None
         self.tapes: dict[str, Tape] = {}
         self.nbbo: dict[str, tuple[float, float, datetime]] = {}
+        self._pending: list[tuple[str, float, float, int, float]] | None = None
 
-    def start_session(self, day: date) -> None:
+    def start_session(self, day: date, *, restoring: bool = False) -> None:
+        """A new session's tapes. ``restoring``: the trades the feed delivers until ``restore`` are HELD, then applied on top
+        of the saved prefix in arrival order — none lost, none counted twice, no signal from a partial tape (Codex #500 P2-2)."""
         with self._view_lock:
             self.session = day
             self.tapes = {}
+            self._pending = [] if restoring else None
 
     @property
     def opening(self) -> dict[str, float]:
@@ -106,10 +138,20 @@ class LiveEngineStream(EodhdRealtimeStream):
         with self._view_lock:
             return {symbol: asdict(tape) for symbol, tape in self.tapes.items() if symbol in symbols}
 
-    def restore(self, context: dict[str, dict[str, Any]]) -> None:
+    @property
+    def restoring(self) -> bool:
         with self._view_lock:
-            for symbol, values in context.items():
-                self.tapes.setdefault(symbol, Tape(**values))
+            return self._pending is not None
+
+    def restore(self, context: dict[str, dict[str, Any]]) -> None:
+        """Install the saved tapes, then the trades held since ``start_session(restoring=True)``, atomically."""
+        with self._view_lock:
+            known = set(Tape.__dataclass_fields__)
+            self.tapes = {symbol: Tape(**{key: value for key, value in values.items() if key in known})
+                          for symbol, values in context.items()}
+            held, self._pending = self._pending or [], None
+            for symbol, price, size, minute, stamp in held:
+                self.tapes.setdefault(symbol, Tape()).add(price, size, minute, stamp)
 
     def _record(self, payload: str | bytes) -> None:
         super()._record(payload)
@@ -130,17 +172,10 @@ class LiveEngineStream(EodhdRealtimeStream):
         with self._view_lock:
             if self.session is None or local.date() != self.session or local.time() < SESSION_OPEN:
                 return
-            tape = self.tapes.setdefault(symbol, Tape())
-            if tape.opening is None:
-                tape.opening = price
-            late = tape.last_at is not None and at.timestamp() < tape.last_at
-            if not late:
-                if tape.minute >= 0 and minute > tape.minute:  # the first trade of a new minute closes the previous
-                    tape.closed_minute, tape.closed_price, tape.closed_vwap = tape.minute, tape.last_price, tape.vwap
-                tape.minute, tape.last_price, tape.last_at = max(tape.minute, minute), price, at.timestamp()
-            if size > 0:
-                tape.pv += price * size
-                tape.volume += size
+            if self._pending is not None:  # a restart: held until the saved prefix is installed (Codex #500 P2-2)
+                self._pending.append((symbol, price, size, minute, at.timestamp()))
+                return
+            self.tapes.setdefault(symbol, Tape()).add(price, size, minute, at.timestamp())
 
     def _record_quote(self, payload: str | bytes) -> None:
         super()._record_quote(payload)
@@ -523,11 +558,58 @@ def seed_from_lab_book(database: Any, now: datetime) -> EngineState | None:
 ENGINE_MAX_TRADES = 20_000  # a whole session at any cadence (Codex #500 P2-6); the public route keeps its own cap
 
 
-def publish(database: Any, engine: Engine, now: datetime) -> dict[str, Any]:
-    return r2d2_lab_live.store(database, engine.document(now), now=now, max_trades=ENGINE_MAX_TRADES)
+def publish(database: Any, engine: Engine, now: datetime, *, as_of: datetime | None = None) -> dict[str, Any]:
+    return r2d2_lab_live.store(database, engine.document(as_of or now), now=now, max_trades=ENGINE_MAX_TRADES)
+
+
+def reconcile_previous(database: Any, state: EngineState, day: date, now: datetime) -> bool:
+    """Before a NEW session clears the fills: the previous session's document as its checkpoint holds it (Codex #500 P2-3).
+    A session the checkpoint never closed (a crash before the close) is closed first; then its public document is
+    published again unless the stored one already carries exactly these fills. True when anything was written."""
+    prior = state.session or state.last_session
+    if not state.fills or not prior or prior == day.isoformat():
+        return False
+    prior_day = date.fromisoformat(prior)
+    unclosed = state.session == prior
+    keep = state.session
+    state.session = prior  # an Engine on the prior day that keeps its fills
+    engine = Engine(state, prior_day, [])
+    if unclosed:
+        engine.close_session()
+    else:
+        state.session = keep
+    stored = ((database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}).get("trades")
+    close_at = datetime.combine(prior_day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    if stored == engine.document(close_at)["trades"] and not unclosed:
+        return False
+    save_state(database, state, now)
+    publish(database, engine, now, as_of=close_at)
+    return True
 
 
 # ------------------------------------------------------------------ the service
+def subscription(universe: list[Member], positions: Mapping[str, Any], size: int | None = None) -> list[str]:
+    """EVERY held name first (its exits need its quote, inside or outside the new universe), then the universe's names
+    without a position up to ``size`` (Codex #500 P2-1: a reservation never pushes another held name out)."""
+    limit = UNIVERSE_SIZE if size is None else size
+    held = sorted(positions)
+    rest = [member.symbol for member in universe if member.symbol not in positions]
+    return held + rest[: max(0, limit - len(held))]
+
+
+STREAM_STATES = frozenset({"connecting", "connected", "error", "stopped", "idle"})
+
+
+def heartbeat(stream: Any, engine: "Engine", moment: datetime) -> str:
+    """The heartbeat line: numbers and a closed set of stream states only — never an error text (the status workflow
+    publishes it in a public repository; Codex #500 P2-5)."""
+    state = str(getattr(stream, "status", "") or "")
+    return ("R2D2 live heartbeat: stream=%s error=%d trades=%d quotes=%d candidates=%d signals=%d positions=%d fills=%d nav=%.2f"
+            % (state if state in STREAM_STATES else "other", 1 if getattr(stream, "last_error", "") else 0,
+               len(getattr(stream, "last_trade", {})), len(getattr(stream, "nbbo", {})), len(engine.candidates), engine.signals,
+               len(engine.state.positions), len(engine.fills), engine.book(moment)["nav_usd"]))
+
+
 def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[..., Any], base_url: str, token: str,
                 day: date, cache_dir: Path, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                 sleep: Callable[[float], None] = clock_time.sleep, job: Callable[[], Any] | None = None) -> EngineState:
@@ -541,13 +623,12 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
 
     universe = build_universe(get_json, base_url, token, day, cache_dir)
     state = load_state(database, lambda: seed_from_lab_book(database, now()))
+    guarded(lambda: reconcile_previous(database, state, day, now()))
     engine = Engine(state, day, universe)
-    # every held name keeps its quote for the exit checks, inside or outside the new universe (Codex #500 P2-2)
-    universe_symbols = [member.symbol for member in universe]
-    carried = [symbol for symbol in state.positions if symbol not in set(universe_symbols)]
-    stream.set_group(STREAM_GROUP, universe_symbols[: max(0, UNIVERSE_SIZE - len(carried))] + carried, priority=200)
-    stream.start_session(day)
-    if engine.resumed and hasattr(stream, "restore"):
+    stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
+    restoring = engine.resumed and hasattr(stream, "restore")
+    stream.start_session(day, restoring=restoring) if restoring else stream.start_session(day)
+    if restoring:
         stream.restore(state.stream_context)  # a restart continues the tapes of the candidates and positions
     logger.info("R2D2 live: session %s%s, universe %d, carried %d, NAV %.2f", day, " (resumed)" if engine.resumed else "",
                 len(universe), len(state.positions), state.nav_realized)
@@ -576,11 +657,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
             guarded(lambda: commit(moment))
             if not fills:
-                logger.info("R2D2 live heartbeat: stream %s%s, trades %d, quotes %d, candidates %d, signals %d, positions %d, "
-                            "fills %d, NAV %.2f", getattr(stream, "status", "?"),
-                            (" (" + stream.last_error + ")") if getattr(stream, "last_error", "") else "",
-                            len(getattr(stream, "last_trade", {})), len(getattr(stream, "nbbo", {})), len(engine.candidates),
-                            engine.signals, len(engine.state.positions), len(engine.fills), engine.book(moment)["nav_usd"])
+                logger.info("%s", heartbeat(stream, engine, moment))
             last_marks = clock_time.monotonic()
         sleep(1.0)
     engine.close_session()

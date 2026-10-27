@@ -338,4 +338,99 @@ def test_p2_7_the_status_workflow_fails_on_access_or_mandatory_reads() -> None:
     assert "|| true" not in run and 'exit "$rc"' in run and "|| rc=$?" in run
     assert "--status </dev/null || exit 13" in run and "[redacted]" in run
     # a public repository: error lines are counted, never printed
-    assert 'grep -cE "ERROR|Traceback|Exception"' in run and 'grep -vE "Traceback|Error"' in run
+    assert 'grep -cE "ERROR|Traceback|Exception"' in run and "grep -oE" in run and "error=[01]" in run
+
+
+# ---- Codex #500 recheck (6446688456)
+def test_r2_p2_1_every_held_name_keeps_its_place_when_the_universe_is_cut() -> None:
+    universe = [Member("X%03d" % i, "NASDAQ", 50.0, 20e6) for i in range(500)]
+    positions = {"X499": object(), "OUT": object()}
+    chosen = engine_module.subscription(universe, positions, size=500)
+    assert len(chosen) == 500 and {"X499", "OUT"} <= set(chosen) and len(set(chosen)) == 500
+    assert engine_module.subscription(universe, {}, size=500) == [m.symbol for m in universe]
+
+
+def _replay(stream: LiveEngineStream, trades) -> None:
+    for price, size, at in trades:
+        stream.record_trade("AAA", price, size, at)
+
+
+def test_r2_p2_2_a_restart_holds_the_feed_until_the_saved_prefix_is_installed() -> None:
+    prefix = [(100.0, 1000, _at(9, 35)), (99.5, 1100, _at(11, 59, 30))]
+    after = [(98.0, 100, _at(12, 0, 1)), (99.0, 100, _at(12, 0, 59) + timedelta(milliseconds=900))]
+    continuous = _stream_with_session()
+    _replay(continuous, prefix + after)
+    saved = _stream_with_session()
+    _replay(saved, prefix)
+    context = json.loads(json.dumps(saved.export({"AAA"})))
+    restarted = LiveEngineStream("")
+    restarted.start_session(DAY, restoring=True)
+    restarted.record_trade("AAA", *after[0][:2], after[0][2])  # the feed delivers it BEFORE the restore
+    assert restarted.restoring and restarted.signal_view("AAA", 12 * 60 + 1) is None
+    restarted.restore(context)
+    restarted.record_trade("AAA", *after[1][:2], after[1][2])
+    assert not restarted.restoring
+    assert restarted.signal_view("AAA", 12 * 60 + 1) == continuous.signal_view("AAA", 12 * 60 + 1)
+    assert restarted.view("AAA").vwap == continuous.view("AAA").vwap and restarted.view("AAA").price == continuous.view("AAA").price
+
+
+def test_r2_p2_4_a_late_trade_of_the_completed_minute_moves_its_close_and_vwap() -> None:
+    trades = [(100.0, 1000, _at(9, 35)), (99.0, 100, _at(9, 40, 30)), (101.5, 1200, _at(9, 40, 59) + timedelta(milliseconds=950)),
+              (101.0, 10, _at(9, 41) + timedelta(milliseconds=100))]
+    in_order, late = _stream_with_session(), _stream_with_session()
+    _replay(in_order, trades)
+    _replay(late, [trades[0], trades[1], trades[3], trades[2]])  # 09:40:59.950 arrives after the 09:41:00.100 tick
+    minute = 9 * 60 + 41
+    assert late.signal_view("AAA", minute) == in_order.signal_view("AAA", minute)
+    close, vwap = late.signal_view("AAA", minute) or (0.0, 0.0)
+    assert close == 101.5 and abs(vwap - (100.0 * 1000 + 99.0 * 100 + 101.5 * 1200) / 2300) < 1e-9
+    assert late.view("AAA").price == 101.0  # the current price is still the newest trade
+    for engine_stream in (in_order, late):
+        engine_stream.record_quote("AAA", 101.0, 101.02, _at(9, 41))
+    engines = [_engine(), _engine()]
+    for engine in engines:
+        engine.state.candidates, engine.state.below = {"AAA": -2.0}, {"AAA": True}
+    decision = _at(9, 41) + timedelta(milliseconds=500)
+    assert [f["symbol"] for f in engines[0].step(decision, in_order.view, in_order.signal_view)] == \
+           [f["symbol"] for f in engines[1].step(decision, late.view, late.signal_view)] == ["AAA"]
+
+
+def test_r2_p2_3_the_previous_sessions_pending_sell_is_published_before_its_fills_are_cleared() -> None:
+    database = Database(Settings(database_url=""))
+    previous = DAY
+    state = EngineState(nav_realized=1_000_000.0)
+    engine = Engine(state, previous, [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    engine.state.candidates = {"AAA": -2.0}
+    engine.state.below = {"AAA": False}
+    engine._buy("AAA", 101.01, -2.0, 2.0, _at(10, 0))  # the BUY, published
+    engine_module.publish(database, engine, _at(10, 0))
+    position = engine.state.positions["AAA"]
+    engine._sell(position, 100.4, position.net_percent(100.4), "hard_stop", _at(15, 59, 59))  # checkpoint saved, the screen write failed
+    saved = EngineState.from_json(json.loads(json.dumps(engine.state.to_json())))
+    stale = (database.latest_analysis_snapshot(engine_module.r2d2_lab_live.ANALYSIS_TYPE, previous.isoformat()) or {})["outputs"]
+    assert [t["side"] for t in stale["trades"]] == ["BUY"]
+    next_day = DAY + timedelta(days=1)
+    assert engine_module.reconcile_previous(database, saved, next_day, _at(9, 0) + timedelta(days=1)) is True
+    fixed = (database.latest_analysis_snapshot(engine_module.r2d2_lab_live.ANALYSIS_TYPE, previous.isoformat()) or {})["outputs"]
+    assert [t["side"] for t in fixed["trades"]] == ["BUY", "SELL"] and saved.last_session == previous.isoformat()
+    assert engine_module.reconcile_previous(database, saved, next_day, _at(9, 1) + timedelta(days=1)) is False  # already in place
+    fresh = Engine(saved, next_day, [])
+    assert not fresh.fills  # cleared only now, after the previous document carries them
+
+
+def test_r2_p2_5_the_heartbeat_carries_numbers_and_a_closed_state_never_an_error_text() -> None:
+    import re
+    import yaml
+
+    class Noisy:
+        status = "auth refused for AAPL"
+        last_error = "401 AAPL token=secret"
+        last_trade: dict = {}
+        nbbo: dict = {}
+    line = engine_module.heartbeat(Noisy(), _engine(), _at(10, 0))
+    assert "AAPL" not in line and "secret" not in line and "stream=other error=1" in line
+    root = Path(__file__).resolve().parents[3]
+    run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
+    pattern = run.split('grep -oE "', 1)[1].split('" | tail', 1)[0]
+    assert re.search(pattern, "r2d2-live-1  | 2026-10-28 10:00:00 INFO app.r2d2_live_engine " + line)
+    assert not re.search(pattern, "R2D2 live heartbeat: stream connected (auth refused for AAPL), trades 1")
