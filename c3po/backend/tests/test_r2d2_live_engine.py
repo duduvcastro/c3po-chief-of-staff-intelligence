@@ -132,10 +132,12 @@ def test_the_stream_keeps_the_open_the_vwap_and_the_nbbo_of_the_session() -> Non
 
 class _FakeStream:
     def __init__(self):
-        self.groups, self.opening = {}, {}
+        self.groups, self.opening, self.subscribed_history = {}, {}, []
 
     def set_group(self, name, symbols, priority=50):
         self.groups[name] = list(symbols)
+        if symbols:
+            self.subscribed_history.append(list(symbols))
 
     def start_session(self, day):
         self.opening = {"AAA": 98.0}
@@ -204,3 +206,134 @@ def test_buys_are_checked_once_per_minute_close_and_exits_every_second() -> None
     t = _at(9, 41, 5)  # an exit is checked at any second
     fills = engine.step(t, lambda s: _view(97.5, 98.0, 97.5, 97.51, t) if s == "AAA" else MarketView())
     assert [(f["side"], f["reason"].split(",")[0]) for f in fills] == [("SELL", "venda: stop")]
+
+
+# ------------------------------------------------------------------ Codex #500 P2 regressions
+def _stream_with_session() -> LiveEngineStream:
+    stream = LiveEngineStream("")
+    stream.start_session(DAY)
+    return stream
+
+
+def test_p2_1_the_signal_reads_the_completed_minute_not_the_open_one() -> None:
+    """Codex probe: 09:40 closes at 99 below a VWAP of ~99.82; a tick at 09:41:00.100 of 101 must not make the 09:41
+    decision buy: the 09:40 close is still below."""
+    stream = _stream_with_session()
+    stream.record_trade("AAA", 100.0, 1000, _at(9, 35))
+    stream.record_trade("AAA", 99.0, 100, _at(9, 40, 30))
+    stream.record_quote("AAA", 100.99, 101.01, _at(9, 41))
+    stream.record_trade("AAA", 101.0, 10, _at(9, 41) + timedelta(milliseconds=100))
+    engine = _engine()
+    engine.state.candidates = {"AAA": -2.0}
+    engine.state.below = {"AAA": True}
+    decision = _at(9, 41) + timedelta(milliseconds=500)
+    assert stream.signal_view("AAA", 9 * 60 + 41) == (99.0, (100.0 * 1000 + 99.0 * 100) / 1100)
+    assert engine.step(decision, stream.view, stream.signal_view) == []
+    stream.record_trade("AAA", 101.5, 10, _at(9, 42) + timedelta(milliseconds=50))  # 09:41 closed at 101 above the VWAP
+    stream.record_quote("AAA", 101.49, 101.51, _at(9, 42))
+    fills = engine.step(_at(9, 42) + timedelta(milliseconds=500), stream.view, stream.signal_view)
+    assert [(f["symbol"], f["price"]) for f in fills] == [("AAA", 101.51)]
+
+
+def test_p2_5_late_messages_never_overwrite_newer_ones() -> None:
+    stream = _stream_with_session()
+    stream.record_quote("AAA", 101.0, 101.02, _at(10, 0, 5))
+    stream.record_quote("AAA", 98.0, 98.02, _at(10, 0, 1))  # late: dropped
+    stream.record_trade("AAA", 101.0, 10, _at(10, 0, 5))
+    stream.record_trade("AAA", 98.0, 10, _at(10, 0, 1))  # late: counts in the VWAP, never moves the last price
+    view = stream.view("AAA")
+    assert (view.bid, view.ask, view.price) == (101.0, 101.02, 101.0)
+    assert abs((view.vwap or 0) - 99.5) < 1e-9
+
+
+def test_p2_2_held_names_outside_the_new_universe_stay_subscribed(tmp_path: Path, monkeypatch) -> None:
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    held = EngineState(nav_realized=1000.0, positions={"OLD": Position("OLD", "NYSE", 1.0, 50.0, 50.0, _at(9, 0).isoformat())})
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: held)
+    stream = _FakeStream()
+    clock = {"t": _at(15, 59, 50)}
+
+    def sleep(seconds):
+        clock["t"] += timedelta(seconds=max(seconds, 1.0))
+
+    run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
+                now=lambda: clock["t"], sleep=sleep)
+    assert "OLD" in stream.subscribed_history[0] and "AAA" in stream.subscribed_history[0]
+
+
+def test_p2_3_a_restart_restores_the_tapes_and_never_selects_again() -> None:
+    stream = _stream_with_session()
+    stream.record_trade("AAA", 100.0, 1000, _at(9, 35))
+    stream.record_trade("AAA", 99.0, 1000, _at(11, 0))
+    engine = _engine()
+    engine.state.candidates_fixed = True
+    engine.state.stream_context = stream.export({"AAA"})
+    saved = EngineState.from_json(json.loads(json.dumps(engine.state.to_json())))
+    fresh = _stream_with_session()
+    fresh.restore(saved.stream_context)
+    assert fresh.view("AAA").vwap == stream.view("AAA").vwap == 99.5
+    resumed = Engine(saved, DAY, [Member("AAA", "NASDAQ", 100.0, 50e6), Member("ZZZ", "NYSE", 50.0, 20e6)])
+    resumed.set_candidates({"ZZZ": 40.0})  # a restart never selects again, even when the first selection was empty
+    assert "ZZZ" not in resumed.candidates
+    empty = Engine(EngineState(nav_realized=1.0), DAY, [Member("ZZZ", "NYSE", 50.0, 20e6)])
+    empty.set_candidates({})
+    assert empty.state.candidates_fixed and not empty.candidates
+    empty.set_candidates({"ZZZ": 40.0})
+    assert not empty.candidates
+
+
+def test_p2_4_a_failure_between_the_checkpoint_and_the_screen_loses_nothing(tmp_path: Path, monkeypatch) -> None:
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1_000_000.0))
+    clock = {"t": _at(9, 30, 30)}
+    stream = _FakeStream()
+    real_publish = engine_module.publish
+    failures = {"left": 0}
+
+    def flaky_publish(db, engine, moment):
+        if engine.fills and failures["left"] > 0:
+            failures["left"] -= 1
+            raise RuntimeError("the screen write failed")
+        return real_publish(db, engine, moment)
+
+    monkeypatch.setattr(engine_module, "publish", flaky_publish)
+
+    def sleep(seconds):
+        clock["t"] += timedelta(seconds=max(seconds, 1.0))
+        t = clock["t"]
+        price = 97.9 if t < _at(9, 40) else 98.1
+        stream.views = {"AAA": _view(price, 98.0, price - 0.005, price + 0.005, t)}
+
+    failures["left"] = 1
+    with pytest.raises(RuntimeError):
+        run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
+                    now=lambda: clock["t"], sleep=sleep)
+    clock["t"] = _at(15, 59, 55)
+    run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
+                now=lambda: clock["t"], sleep=sleep)
+    doc = database.latest_analysis_snapshot("r2d2_lab_live", DAY.isoformat())["outputs"]
+    assert [t["side"] for t in doc["trades"]][:1] == ["BUY"]  # the buy the failed publish did not show is on the screen
+
+
+def test_p2_6_a_long_session_publishes_beyond_the_public_route_cap() -> None:
+    database = Database(Settings(database_url=""))
+    engine = _engine()
+    t = _at(12, 0)
+    for index in range(401):
+        engine.state.fills.append({"side": "BUY", "symbol": "AAA", "market": "NASDAQ", "quantity": 1.0, "price": 100.0,
+                                   "executed_at": (t + timedelta(seconds=index)).isoformat(), "fees_usd": 0.01,
+                                   "realized_pnl_usd": None, "realized_return_percent": None, "reason": "compra"})
+    assert engine_module.publish(database, engine, t + timedelta(minutes=10))["fills"] == 401
+    with pytest.raises(r2d2_lab_live.LabLiveRefused):  # the public route keeps its 400 cap
+        r2d2_lab_live.validate(json.loads(json.dumps(engine.document(t + timedelta(minutes=10)))), now=t)
+
+
+def test_p2_7_the_status_workflow_fails_on_access_or_mandatory_reads() -> None:
+    import yaml
+    root = Path(__file__).resolve().parents[3]
+    workflow = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())
+    run = workflow["jobs"]["status"]["steps"][1]["run"]
+    assert "|| true" not in run and 'exit "$rc"' in run and "|| rc=$?" in run
+    assert "--status </dev/null || exit 13" in run and "[redacted]" in run

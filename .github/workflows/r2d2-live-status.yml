@@ -43,16 +43,23 @@ jobs:
         run: |
           set -uo pipefail
           [[ "$MINUTES" =~ ^[0-9]{1,3}$ ]] && [ "$MINUTES" -ge 1 ] && [ "$MINUTES" -le 240 ] || { echo "minutes must be 1-240"; exit 1; }
+          rc=0
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "MINUTES=$MINUTES bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2>&1
+            "MINUTES=$MINUTES bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2>&1 || rc=$?
           set -uo pipefail
           cd /opt/chief-of-staff-digital || exit 10
           compose=(docker compose --env-file .env -f c3po/compose.yml)
           echo "== container"
-          "${compose[@]}" ps r2d2-live --format '{{.Name}} {{.State}} {{.Status}}' || true
+          state=$("${compose[@]}" ps r2d2-live --format '{{.Name}} {{.State}} {{.Status}}') || exit 11
+          [ -n "$state" ] || { echo "r2d2-live is not running"; exit 12; }
+          echo "$state"
           echo "== summary"
-          "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api python -m app.r2d2_live_engine --status </dev/null || true
+          "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api python -m app.r2d2_live_engine --status </dev/null || exit 13
           echo "== logs (last ${MINUTES} min)"
-          "${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 200 r2d2-live 2>&1 | grep -E "R2D2 live|ERROR|Traceback|Error|EODHD" | tail -80 || true
+          "${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 200 r2d2-live 2>&1 | grep -E "R2D2 live|ERROR|Traceback|Error|EODHD" | tail -80
+          exit 0
           REMOTE
+          # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)
           sed -E 's/(api_token=)[^&[:space:]"]+/\1[redacted]/g' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "remote exit status: $rc"
+          exit "$rc"

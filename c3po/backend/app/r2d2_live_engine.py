@@ -55,25 +55,61 @@ MARKS_EVERY_SECONDS = 60.0
 
 
 # ------------------------------------------------------------------ the stream: last trade, last NBBO, session VWAP
+@dataclass
+class Tape:
+    """One symbol's regular session on the stream: the VWAP accumulators, the open, the last trade, and the close and
+    VWAP of the last COMPLETED minute (the buy signal reads only completed minutes, Codex #500 P2-1)."""
+    pv: float = 0.0
+    volume: float = 0.0
+    opening: float | None = None
+    last_price: float | None = None
+    last_at: float | None = None  # epoch seconds of the last trade (the ordering guard)
+    minute: int = -1
+    closed_minute: int = -1
+    closed_price: float | None = None
+    closed_vwap: float | None = None
+
+    @property
+    def vwap(self) -> float | None:
+        return self.pv / self.volume if self.volume > 0 else None
+
+
 class LiveEngineStream(EodhdRealtimeStream):
-    """The EODHD stream (read-only use of the frozen module) keeping, per symbol, the last regular-session trade, the
-    last quote with its bid and ask, the session VWAP from the trades (price × size) and the first regular trade (the
-    open) of the session being traded."""
+    """The EODHD stream (read-only use of the frozen module) keeping, per symbol, a ``Tape`` of the session being traded
+    and the last quote with its bid and ask. Late messages never overwrite newer ones (Codex #500 P2-5): a trade older
+    than the last one still counts in the VWAP but does not move the last price; an older quote is dropped."""
 
     def __init__(self, api_token: str, *, max_symbols: int = 550) -> None:
         super().__init__(api_token, max_symbols=max_symbols)
         self._view_lock = Lock()
         self.session: date | None = None
-        self.last_trade: dict[str, tuple[float, datetime]] = {}
+        self.tapes: dict[str, Tape] = {}
         self.nbbo: dict[str, tuple[float, float, datetime]] = {}
-        self.opening: dict[str, float] = {}
-        self._pv: dict[str, float] = {}
-        self._volume: dict[str, float] = {}
 
     def start_session(self, day: date) -> None:
         with self._view_lock:
             self.session = day
-            self.last_trade, self.opening, self._pv, self._volume = {}, {}, {}, {}
+            self.tapes = {}
+
+    @property
+    def opening(self) -> dict[str, float]:
+        with self._view_lock:
+            return {symbol: tape.opening for symbol, tape in self.tapes.items() if tape.opening is not None}
+
+    @property
+    def last_trade(self) -> dict[str, Tape]:
+        with self._view_lock:
+            return {symbol: tape for symbol, tape in self.tapes.items() if tape.last_price is not None}
+
+    def export(self, symbols: set[str]) -> dict[str, dict[str, Any]]:
+        """The tapes of ``symbols`` for the engine's checkpoint: a restart continues them (Codex #500 P2-3)."""
+        with self._view_lock:
+            return {symbol: asdict(tape) for symbol, tape in self.tapes.items() if symbol in symbols}
+
+    def restore(self, context: dict[str, dict[str, Any]]) -> None:
+        with self._view_lock:
+            for symbol, values in context.items():
+                self.tapes.setdefault(symbol, Tape(**values))
 
     def _record(self, payload: str | bytes) -> None:
         super()._record(payload)
@@ -86,16 +122,25 @@ class LiveEngineStream(EodhdRealtimeStream):
             return
         if not symbol or price <= 0 or stamp <= 0 or item.get("dp") is True or str(item.get("ms") or "open") != "open":
             return
-        at = datetime.fromtimestamp(stamp / 1000, tz=timezone.utc)
+        self.record_trade(symbol, price, size, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc))
+
+    def record_trade(self, symbol: str, price: float, size: float, at: datetime) -> None:
         local = at.astimezone(NEW_YORK)
+        minute = local.hour * 60 + local.minute
         with self._view_lock:
             if self.session is None or local.date() != self.session or local.time() < SESSION_OPEN:
                 return
-            self.last_trade[symbol] = (price, at)
-            self.opening.setdefault(symbol, price)
+            tape = self.tapes.setdefault(symbol, Tape())
+            if tape.opening is None:
+                tape.opening = price
+            late = tape.last_at is not None and at.timestamp() < tape.last_at
+            if not late:
+                if tape.minute >= 0 and minute > tape.minute:  # the first trade of a new minute closes the previous
+                    tape.closed_minute, tape.closed_price, tape.closed_vwap = tape.minute, tape.last_price, tape.vwap
+                tape.minute, tape.last_price, tape.last_at = max(tape.minute, minute), price, at.timestamp()
             if size > 0:
-                self._pv[symbol] = self._pv.get(symbol, 0.0) + price * size
-                self._volume[symbol] = self._volume.get(symbol, 0.0) + size
+                tape.pv += price * size
+                tape.volume += size
 
     def _record_quote(self, payload: str | bytes) -> None:
         super()._record_quote(payload)
@@ -108,17 +153,35 @@ class LiveEngineStream(EodhdRealtimeStream):
             return
         if not symbol or bid <= 0 or ask <= 0 or ask < bid or stamp <= 0:
             return
+        self.record_quote(symbol, bid, ask, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc))
+
+    def record_quote(self, symbol: str, bid: float, ask: float, at: datetime) -> None:
         with self._view_lock:
-            self.nbbo[symbol] = (bid, ask, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc))
+            current = self.nbbo.get(symbol)
+            if current is None or at >= current[2]:
+                self.nbbo[symbol] = (bid, ask, at)
 
     def view(self, symbol: str) -> "MarketView":
         with self._view_lock:
-            trade = self.last_trade.get(symbol)
+            tape = self.tapes.get(symbol)
             quote = self.nbbo.get(symbol)
-            volume = self._volume.get(symbol, 0.0)
-            vwap = self._pv[symbol] / volume if volume > 0 else None
-        return MarketView(price=trade[0] if trade else None, trade_at=trade[1] if trade else None, vwap=vwap,
+            price, vwap = (tape.last_price, tape.vwap) if tape else (None, None)
+            trade_at = datetime.fromtimestamp(tape.last_at, tz=timezone.utc) if tape and tape.last_at else None
+        return MarketView(price=price, trade_at=trade_at, vwap=vwap,
                           bid=quote[0] if quote else None, ask=quote[1] if quote else None, quote_at=quote[2] if quote else None)
+
+    def signal_view(self, symbol: str, minute: int) -> tuple[float, float] | None:
+        """(close, VWAP) of the last minute COMPLETED before ``minute`` (minutes after midnight ET), or None."""
+        with self._view_lock:
+            tape = self.tapes.get(symbol)
+            if tape is None or tape.last_price is None:
+                return None
+            if tape.minute < minute:  # no trade yet in the current minute: the last trade closed a completed minute
+                vwap = tape.vwap
+                return (tape.last_price, vwap) if vwap is not None else None
+            if tape.closed_minute < 0 or tape.closed_minute >= minute or tape.closed_price is None or tape.closed_vwap is None:
+                return None
+            return tape.closed_price, tape.closed_vwap
 
 
 @dataclass
@@ -227,12 +290,15 @@ class EngineState:
     signals: int = 0
     fills: list[dict[str, Any]] = field(default_factory=list)
     last_signal_minute: int = -1  # minutes after midnight ET of the last minute close the entries were checked on
+    candidates_fixed: bool = False  # the selection at the open happened (even when it found none)
+    stream_context: dict[str, dict[str, Any]] = field(default_factory=dict)  # the tapes, for a restart
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
                 "positions": [asdict(position) for position in self.positions.values()], "session": self.session,
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
-                "fills": self.fills, "last_signal_minute": self.last_signal_minute}
+                "fills": self.fills, "last_signal_minute": self.last_signal_minute,
+                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -241,7 +307,8 @@ class EngineState:
                    session=str(data.get("session") or ""), nav_start=data.get("nav_start"),
                    candidates=dict(data.get("candidates") or {}), below=dict(data.get("below") or {}),
                    signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []),
-                   last_signal_minute=int(data.get("last_signal_minute", -1)))
+                   last_signal_minute=int(data.get("last_signal_minute", -1)),
+                   candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}))
 
 
 class Engine:
@@ -255,7 +322,7 @@ class Engine:
         self.resumed = state.session == day.isoformat()
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
-            state.last_signal_minute = -1
+            state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
 
@@ -284,8 +351,9 @@ class Engine:
         self.state.signals = value
 
     def set_candidates(self, opening: dict[str, float]) -> None:
-        if self.resumed and self.candidates:
-            return  # a restart keeps the candidates fixed at the open
+        if self.state.candidates_fixed:
+            return  # fixed once at the open, even when empty: a restart never selects again (Codex #500 P2-3)
+        self.state.candidates_fixed = True
         for symbol, member in self.members.items():
             price = opening.get(symbol)
             if price and member.prev_close > 0:
@@ -293,7 +361,10 @@ class Engine:
                 if gap <= -RULE["gap_min_percent"]:
                     self.candidates[symbol] = gap
 
-    def step(self, now: datetime, view: Callable[[str], MarketView]) -> list[dict[str, Any]]:
+    def step(self, now: datetime, view: Callable[[str], MarketView],
+             signal: Callable[[str, int], tuple[float, float] | None] | None = None) -> list[dict[str, Any]]:
+        """``view``: the live price and quote (exits and execution). ``signal``: (close, VWAP) of the last COMPLETED
+        minute before the given one (the buy signal); without it, the view's last price and VWAP stand in (tests)."""
         local = now.astimezone(NEW_YORK).time()
         new: list[dict[str, Any]] = []
         for symbol, position in list(self.state.positions.items()):
@@ -323,12 +394,17 @@ class Engine:
             self.state.last_signal_minute = minute
             for symbol, gap in self.candidates.items():
                 market = view(symbol)
-                if market.price is None or market.vwap is None:
+                if signal is not None:
+                    closed = signal(symbol, minute)
+                    close, vwap = closed if closed else (None, None)
+                else:
+                    close, vwap = market.price, market.vwap
+                if close is None or vwap is None:
                     continue
-                if market.price < market.vwap:
+                if close < vwap:
                     self.below[symbol] = True
                     continue
-                if market.price <= market.vwap or not self.below.get(symbol):
+                if close <= vwap or not self.below.get(symbol):
                     continue
                 self.below[symbol] = False
                 self.signals += 1
@@ -444,8 +520,11 @@ def seed_from_lab_book(database: Any, now: datetime) -> EngineState | None:
     return EngineState(nav_realized=book["realized_nav_usd"], positions=positions, last_session=found[0])
 
 
+ENGINE_MAX_TRADES = 20_000  # a whole session at any cadence (Codex #500 P2-6); the public route keeps its own cap
+
+
 def publish(database: Any, engine: Engine, now: datetime) -> dict[str, Any]:
-    return r2d2_lab_live.store(database, engine.document(now), now=now)
+    return r2d2_lab_live.store(database, engine.document(now), now=now, max_trades=ENGINE_MAX_TRADES)
 
 
 # ------------------------------------------------------------------ the service
@@ -463,11 +542,24 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     universe = build_universe(get_json, base_url, token, day, cache_dir)
     state = load_state(database, lambda: seed_from_lab_book(database, now()))
     engine = Engine(state, day, universe)
-    symbols = [member.symbol for member in universe]
-    carried = [symbol for symbol in state.positions if symbol not in engine.members]
-    stream.set_group(STREAM_GROUP, symbols[: UNIVERSE_SIZE - len(carried)] + carried, priority=200)
+    # every held name keeps its quote for the exit checks, inside or outside the new universe (Codex #500 P2-2)
+    universe_symbols = [member.symbol for member in universe]
+    carried = [symbol for symbol in state.positions if symbol not in set(universe_symbols)]
+    stream.set_group(STREAM_GROUP, universe_symbols[: max(0, UNIVERSE_SIZE - len(carried))] + carried, priority=200)
     stream.start_session(day)
-    logger.info("R2D2 live: session %s, universe %d, carried %d, NAV %.2f", day, len(universe), len(state.positions), state.nav_realized)
+    if engine.resumed and hasattr(stream, "restore"):
+        stream.restore(state.stream_context)  # a restart continues the tapes of the candidates and positions
+    logger.info("R2D2 live: session %s%s, universe %d, carried %d, NAV %.2f", day, " (resumed)" if engine.resumed else "",
+                len(universe), len(state.positions), state.nav_realized)
+    signal = getattr(stream, "signal_view", None)
+
+    def commit(moment: datetime) -> None:
+        """The checkpoint first, then the screen: the published book never runs ahead of a state a restart can load
+        (Codex #500 P2-4). A failure after the checkpoint is repaired by the next publish from the resumed state."""
+        if hasattr(stream, "export"):
+            engine.state.stream_context = stream.export(set(engine.candidates) | set(engine.state.positions))
+        save_state(database, engine.state, moment)
+        publish(database, engine, moment)
 
     def at(moment: time) -> datetime:
         return datetime.combine(day, moment, tzinfo=NEW_YORK).astimezone(timezone.utc)
@@ -475,28 +567,24 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     while now() < at(OPENING_WINDOW_END):
         sleep(min(1.0, max(0.05, (at(OPENING_WINDOW_END) - now()).total_seconds())))
     engine.set_candidates(dict(stream.opening))
-    guarded(lambda: save_state(database, engine.state, now()))
     logger.info("R2D2 live: %d candidates of %d with an opening print", len(engine.candidates), len(stream.opening))
-    guarded(lambda: publish(database, engine, now()))
+    guarded(lambda: commit(now()))
     last_marks = clock_time.monotonic()
     while now() < at(SESSION_CLOSE):
         moment = now()
-        fills = engine.step(moment, stream.view)
-        if fills:
-            guarded(lambda: (publish(database, engine, moment), save_state(database, engine.state, moment)))
+        fills = engine.step(moment, stream.view, signal)
+        if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
+            guarded(lambda: commit(moment))
+            if not fills:
+                logger.info("R2D2 live heartbeat: stream %s%s, trades %d, quotes %d, candidates %d, signals %d, positions %d, "
+                            "fills %d, NAV %.2f", getattr(stream, "status", "?"),
+                            (" (" + stream.last_error + ")") if getattr(stream, "last_error", "") else "",
+                            len(getattr(stream, "last_trade", {})), len(getattr(stream, "nbbo", {})), len(engine.candidates),
+                            engine.signals, len(engine.state.positions), len(engine.fills), engine.book(moment)["nav_usd"])
             last_marks = clock_time.monotonic()
-        elif clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
-            guarded(lambda: (publish(database, engine, moment), save_state(database, engine.state, moment)))
-            last_marks = clock_time.monotonic()
-            logger.info("R2D2 live heartbeat: stream %s%s, trades %d, quotes %d, candidates %d, signals %d, positions %d, "
-                        "fills %d, NAV %.2f", getattr(stream, "status", "?"),
-                        (" (" + stream.last_error + ")") if getattr(stream, "last_error", "") else "",
-                        len(getattr(stream, "last_trade", {})), len(getattr(stream, "nbbo", {})), len(engine.candidates),
-                        engine.signals, len(engine.state.positions), len(engine.fills), engine.book(moment)["nav_usd"])
         sleep(1.0)
     engine.close_session()
-    final = now()
-    guarded(lambda: (publish(database, engine, final), save_state(database, engine.state, final)))
+    guarded(lambda: commit(now()))
     stream.set_group(STREAM_GROUP, [])
     logger.info("R2D2 live: session %s closed, NAV %.2f, %d fills, %d carried", day, engine.state.nav_realized,
                 len(engine.fills), len(engine.state.positions))
