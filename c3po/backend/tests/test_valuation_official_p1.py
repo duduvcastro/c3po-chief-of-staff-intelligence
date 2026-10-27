@@ -1075,11 +1075,19 @@ def test_f1_a_freeze_ends_by_itself_and_the_cycles_of_its_window_are_then_activa
     assert official.selection_freeze(automatic, now=at) is None and official.selection_freeze(None, now=at) is None
 
 
+def _until_before_midnight(wall: datetime, minutes: int = 5) -> datetime:
+    """``wall + minutes``, kept before the next midnight in São Paulo: a CI run in the last minutes of the day must not
+    trip the nightly bound (the run of 27/10/2026 00:00 BRT failed on it)."""
+    local = wall.astimezone(official.FREEZE_NIGHTLY_ZONE)
+    midnight = datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tzinfo=official.FREEZE_NIGHTLY_ZONE)
+    return min(wall + timedelta(minutes=minutes), wall + (midnight - wall) / 2)
+
+
 def test_f1_the_freeze_refusals_and_the_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     empty = _database()
     wall = _wall()
     with pytest.raises(ValueError, match="nothing to freeze"):
-        official.freeze_selection(empty, now=wall, until=wall + timedelta(minutes=5), reason="x", activated_by="mesa")
+        official.freeze_selection(empty, now=wall, until=_until_before_midnight(wall), reason="x", activated_by="mesa")
     database = _database()
     _three_markets(database)
     head = official.current_generation(database)
@@ -1105,7 +1113,8 @@ def test_f1_the_freeze_refusals_and_the_cli(monkeypatch: pytest.MonkeyPatch, cap
                                                    "activated_at": (official._utc(unknown_head["activated_at"]) + timedelta(microseconds=1)).isoformat()})
     unknown.drop_official_cycle_cache()
     with pytest.raises(ValueError, match="roll back to the blend by explicit order first"):
-        official.freeze_selection(unknown, now=_wall(), until=_wall() + timedelta(minutes=5), reason="x", activated_by="mesa")
+        unknown_wall = _wall()
+        official.freeze_selection(unknown, now=unknown_wall, until=_until_before_midnight(unknown_wall), reason="x", activated_by="mesa")
     # the CLI: --freeze-selection --until (with its offset) --reason; prints the generation without symbols, with the freeze
     monkeypatch.setattr(official, "FREEZE_NIGHTLY_ZONE", _noon_zone())
     monkeypatch.setattr("app.config.get_settings", lambda: Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False))
