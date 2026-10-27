@@ -314,7 +314,7 @@ def test_inventory_cli_is_inert_and_the_workflow_runs_a_grade_only_behind_its_gu
     # database session, the driver with the rev3 manifest on stdin, aggregates only, the cleanup of this run's process
     grid = json.dumps(jobs["grid"])
     for fragment in ("RUN VALUATION ENSEMBLE GRID", "refs/heads/main", "c3po/ops/owner-orders/", "c3po/ops/valuation-ensemble/",
-                     "merge-base --is-ancestor", "VALUATION-ENSEMBLE-INSTRUMENT-{role}", "carries a negation", "two different comments", instrument.REV3_MANIFEST_SHA256,
+                     "merge-base --is-ancestor", "VALUATION-ENSEMBLE-INSTRUMENT-{role}", "the whole body, nothing else", "two different comments", instrument.REV3_MANIFEST_SHA256,
                      "inside the US session or the nightly window", "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL", "exit 36",
                      "--host-check", "exit 21", "r2d2*", "reboot.pending", "flock -s -n 9", "default_transaction_read_only=on",
                      "-m app.valuation_ensemble_driver", "< \\\"$rev3_file\\\"", "unexpected lines (counted, not printed)",

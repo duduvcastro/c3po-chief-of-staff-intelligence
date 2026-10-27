@@ -307,8 +307,9 @@ jobs:
           set -uo pipefail
           [[ "$CHANNEL_ISSUE" =~ ^[1-9][0-9]{0,9}$ ]] || { echo 'the channel issue (C3PO_ESCALATION_ISSUE) is not set' >&2; exit 2; }
           [ "$SIGNATURE" != "$GO" ] || { echo 'the owner signature and the technical GO must be two different comments' >&2; exit 2; }
-          # each comment is a POSITIVE receipt of its own role: an exact receipt line naming the instrument commit, and no
-          # negation anywhere in it (a "NO-GO for <commit>" or a refused signature citing the commit is not an approval)
+          # each comment is a receipt in a CLOSED grammar: its whole body is exactly one line, its role and the instrument
+          # commit — nothing else (no prose that could deny it, no example, no pending note). A long review or an owner's
+          # message is a separate comment; the receipt is its own.
           for pair in "GO:$GO" "OWNER-SIGNATURE:$SIGNATURE"; do
             role=${pair%%:*}
             id=${pair#*:}
@@ -317,7 +318,6 @@ jobs:
             ROLE="$role" python3 -I - "$RUNNER_TEMP/comment-$id.json" <<'PY' || exit 1
           import json
           import os
-          import re
           import sys
 
           comment = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -326,19 +326,12 @@ jobs:
               sys.exit(f"the {role} comment is not on this repository's channel issue")
           if comment.get("author_association") != "OWNER":  # the channel's receipts are posted by the owner's account (public repo)
               sys.exit(f"the {role} comment was not written by the repository owner's account")
-          body = str(comment.get("body") or "")
           receipt = f"VALUATION-ENSEMBLE-INSTRUMENT-{role} {commit}"
-          if not any(line.strip().strip("`*").strip() == receipt for line in body.splitlines()):
-              sys.exit(f"the {role} comment has no receipt line '{receipt}'")
-          negations = ("no-go", "no go", "não assino", "nao assino", "não autoriz", "nao autoriz", "not authori", "no signature",
-                       "sem assinatura", "nenhuma assinatura", "is not given", "not given", "não dou", "nao dou", "recus", "revog", "revok")
-          lowered = body.casefold()
-          found = [word for word in negations if word in lowered]
-          if found or re.search(r"\bnot\s+(a\s+)?(go|approv|sign)", lowered):
-              sys.exit(f"the {role} comment carries a negation: it is not a positive receipt")
+          if str(comment.get("body") or "").strip() != receipt:
+              sys.exit(f"the {role} comment is not exactly the receipt '{receipt}' (the whole body, nothing else)")
           PY
           done
-          echo "the technical GO and the owner signature are positive receipts of the owner account, on issue #$CHANNEL_ISSUE, for the instrument commit"
+          echo "the technical GO and the owner signature are exact receipts of the owner account, on issue #$CHANNEL_ISSUE, for the instrument commit"
 
       - name: Download the rev3 grid manifest
         if: inputs.mode == 'grid' || inputs.mode == 'report'
