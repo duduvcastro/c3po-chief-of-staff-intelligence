@@ -1,0 +1,16 @@
+{
+  "from_session": "2021-06-01",
+  "instrument_pin_sha256": "b77f2400ef5bac57bd266f3e2edb26a9d63356b5c3fc65d47da490c8c8be6f86",
+  "max_runs_cap": 200,
+  "modes": [
+    "grid"
+  ],
+  "not_after": "2026-11-02T08:00:00-03:00",
+  "not_before": "2026-10-27T21:42:52+00:00",
+  "prereg": "PREREG_VALUATION_ENSEMBLE_PIT_US_V1",
+  "prereg_commit": "8b02ba0fbf715a9abb421eea6f00238aad5ef38d",
+  "prereg_sha256": "712b4c171c4d059a31156eba8f7a9624f1195083309471e89e0519271d2e5471",
+  "rev3_manifest_sha256": "73a81bcef1cd93425dfab785ae57c52118ba09493a4b7169e31a0e0b6665f805",
+  "schema": "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1",
+  "to_session": "2026-09-17"
+}

@@ -1,0 +1,177 @@
+# Read-only source adapters and private shadow execution
+
+The second construction increment adds adapters over the existing canonical store
+interfaces, an offline export reader, and an explicit private receipt sink. It does not
+fetch or backfill sources, migrate a database, change a source selector, use a rate feed,
+read realized returns, schedule/dispatch a workflow, launch a grade or select a horizon.
+
+## Canonical source contracts
+
+`CanonicalSources(statement_store, price_reader, database)` calls only:
+
+- `StatementVintageStore.filings` and `vintages`, with the official market/source and an
+  `accepted_at_or_before=T` cut. The adapter rechecks that cut rather than trusting it blindly.
+- `PriceHistoryService.series(..., available_before=T)`, which already verifies its
+  publication/manifest/series chain. The adapter also rechecks bar identity, content hash,
+  session closure, currency and capture/publication clocks.
+- `Database.latest_analysis_snapshot` for the existing hashed-symbol FMP-target source
+  key. Source payload hashes and market/symbol/provider identities must agree.
+
+The existing canonical stores remain untouched. Their trusted source-ingestion boundary
+still matters: a reproducible row hash does not independently authenticate the original
+SEC header or a provider's historical claim. This increment verifies the stored content and
+its declared source evidence; it does not redownload or recertify originals.
+
+The diagnostic symbol-to-issuer association uses registry rows accepted by T rather than
+the `symbol_issuers` shortcut. **This does not prove historical instrument identity:**
+the collector attaches detection-time tickers from its supplied map to earlier filings.
+A current ticker association can therefore be projected onto an older accepted document.
+Neither the acceptance cut nor a header hash proves when that symbol represented that
+issuer, class or unit. Original-document authentication and historical instrument/share/
+corporate-action basis remain explicit blocking gates; the adapter's CompanyInputs is
+only a construction packet and cannot become an admissible historical observation.
+Conflicting registry entries or latest facts are refused deterministically.
+SEC acceptance requires the header-based source and a header hash.
+CVM acceptance requires the conservative end of its receipt date in São Paulo. A CVM
+receipt date is never converted to an earlier intraday availability.
+
+SEC facts map through a separate explicit concept ladder. CVM consolidated accounts use
+the existing official-account predicates and conservative additional balance mappings;
+individual accounts are not mixed into consolidated ones. Four contiguous quarters are
+required for a trailing flow; year-to-date values are quarterized before summation. Missing
+quarters are not bridged, absent debt components are not zero, ambiguous accounts are not
+guessed, and missing treasury shares are not zero. Provenance keeps every contributing
+document, canonical row hash, acceptance and known capture clock, plus the derivation rule.
+
+The SEC debt adapter keeps `DebtCurrent` distinct from the reported partial concepts
+`LongTermDebtCurrent`, `ShortTermBorrowings` and `CommercialPaper`. Only compatible
+noncurrent/current aggregate limbs form the existing `debt` input; partial amounts are
+not silently summed, and a borrowing total is never augmented by a possible subset.
+`LongTermDebt` remains `long_term_debt_reported`, with its raw concept preserved. It is
+not labeled as all debt or presumed to include any unproved current/other component.
+Missing complete limbs produce `aggregate_completeness_unattested:debt`, not a zero fill.
+
+`FiniteLivedIntangibleAssetsNet` and
+`IndefiniteLivedIntangibleAssetsExcludingGoodwill` are retained as separate reported
+components. Neither is aliased to the model's entire `intangible_assets_excluding_goodwill`
+input, and their mere presence does not demonstrate exhaustive, disjoint, same-scope/context
+coverage. Until a reviewed original/accounting contract establishes a complete aggregate,
+the adapter records `aggregate_completeness_unattested:intangible_assets_excluding_goodwill`
+and the tangible-book model remains non-evaluable. No aggregate tag, absent-as-zero rule
+or scope flag is invented. The unchanged pure kernel still accepts an explicitly complete
+synthetic input as a mathematical control; that is not a source-adapter closure rule or
+proof of real coverage. Goodwill remains separate and cannot be subtracted twice.
+
+## Residual-income opening-book observations
+
+The adapter now preserves the **actual consumed net-income TTM chain** before the
+protected helpers' quarter keys are flattened into raw references. Each selected quarter
+retains its effective start/end, reported/derived status, unchanged helper value and raw
+terms with signed coefficients, canonical row hashes, document/version/issuer/unit and
+acceptance/capture metadata. The combined expression retains zero-coefficient rows that
+cancel algebraically; those rows participated in the existing construction and are not
+erased as evidence. The final NI value and the protected quarter helpers are unchanged.
+
+A separate observation checks exact day adjacency and uniqueness of support. It considers
+reported and eligible same-start derived alternatives, including derivations the helper
+suppressed because a reported quarter already had that ending. Equivalence is an ordered
+quarter path with actual spans and signed canonical row identities, not equal numeric
+values or a shared boundary. More than one compatible path is explicitly ambiguous.
+Candidate/pair/search bounds of 4096 are engineering limits: exhausted assessment is
+indeterminate, never evidence of uniqueness. The existing helper's ±3-day tolerance does
+not authorize filling a gap/overlap or choosing a nearby opening balance.
+
+Malformed local `first_seen_at` metadata on a newly observed, otherwise unused alternative
+or opening row is retained as an explicit metadata refusal with no valid capture instant.
+It cannot abort an existing NI/book computation or erase requested-company denominators.
+An unassessable alternative makes support assessment incomplete and indeterminate; it is
+never silently skipped to certify uniqueness. Missing capture metadata stays separately
+`not_recorded`, not a fabricated timestamp. The original strict validation of rows actually
+consumed by the existing financial reductions is unchanged, as is propagation of
+filesystem/persistence failures.
+
+Only a demonstrated exact unique path identifies a required opening date: the oldest
+consumed quarter start minus one day under the existing inclusive-date convention. In
+FY-minus-9M, the effective quarter starts after the shorter period's end, not at the raw
+FY start. There is no end-minus-365, fiscal-calendar guess, FY-only or new three-total
+`currentYTD+FY-priorYTD` fallback. Duration heuristics are explicitly not fiscal authority.
+
+At that exact date only, the adapter can **observe a book-equity candidate** passing the
+existing source, issuer, currency, hash, period and eligible-version checks. Missing,
+future, conflicting or nearby/end-only equity stays missing. An observed candidate is
+separate from a model input: scope/controller/class/share-basis comparability is still
+unattested, and `book_equity_beginning` is never emitted by this phase. No caller flag
+can promote the candidate. The residual-income kernel therefore remains non-evaluable
+when its required beginning-book fact is absent.
+
+Company/model audits distinguish a determinable boundary, an observed exact-date
+candidate, and a fact actually supplied/used. The existing original/capture reconciliation
+links candidate rows/documents through `observed_for`, separate from `used_by_fields`.
+The NI raw dependencies and candidate original/capture links remain inspectable without
+rereading canonical sources. They cannot satisfy missing model-input completeness merely
+because all candidate bytes match. All16 model denominators include refused companies;
+source-origin, historical identity/class/basis/action and serving gates remain closed.
+
+## Two clocks and the new study
+
+Regulator acceptance is evidence of when an official filing existed, even when its local
+capture happened later. Both clocks remain visible in the private receipt.
+
+Prices follow a **strict publication no later than T** rule in this increment. A price
+vintage published in 2026 is refused for T in 2021 even if the bar's session is in 2021.
+A purported publication before its capture is also refused without independent proof.
+The old study's pinned-price exception and pins are not inherited. A future adapter/protocol
+may admit genuine independently proven availability in T while keeping a later capture
+clock; this implementation does not invent that proof or retrodate the capture.
+
+Consensus is the explicit source exception to the official-statements-plus-price scope.
+An old target's own zoned publication, currency, document identity and attested horizon
+must be present. Its source snapshot may have been captured later; that capture is separate
+metadata. Missing horizon/currency is a counted refusal, with no twelve-month default.
+The analyst source horizon never becomes the owner's decisory horizon.
+
+## Offline execution and immutable persistence
+
+`BundleSources` accepts `VALUATION-ENSEMBLE-SOURCE-EXPORT-v1`, an offline export containing
+the canonical `filings` and `facts`, reader outputs in `price_series` keyed `MARKET:SYMBOL`,
+and optional `consensus_snapshots` under the same key. Canonical hashes must be retained.
+It is an export of existing evidence, not a source refresh or synthetic historical coverage.
+
+The entry point is `python -m app.valuation_ensemble_execution` with four explicit inputs:
+`--source-export`, `--request`, `--premises` and `--receipt-directory`. The request contains
+`market`, `symbol`, zoned `as_of`, the caller's declared `basis_id` and optional peer
+requests. Study-horizon, grade and report inputs are refused. The CLI never opens a database
+or network connection. It prints aggregate status and hashes; nominal inputs stay in the
+private receipt. Fixture CLI tests exercise this entry point without production data.
+
+`execute_shadow` also accepts `CanonicalSources` from a caller with an existing read-only
+store/price reader. Connecting and scheduling such a caller is not done here.
+
+`FileReceiptStore` writes only to an explicitly selected private directory, owned by the
+user. It fsyncs a 0600 temporary object, links it atomically under a content-derived run
+key, and fsyncs the directory. Concurrent identical executions create one object. A retry
+verifies the existing object rather than rewriting it. Corruption, a changed payload under
+an existing key, symlinks and public directories are refused. A later non-evaluable receipt
+has its own key and cannot erase an earlier successful receipt. No production valuation
+table receives these objects.
+
+## Scope and remaining work
+
+The only pure-layer contract change is that `financial_company=None` means *unattested*.
+The adapters do not assume an industrial company when official sector classification is
+missing: enterprise and peer models refuse that missing classification. Equity kernels
+can still evaluate admissible official inputs. The prior independent GO on the earlier
+pure-layer commit is not a review of this new increment.
+
+The basis identifier remains an explicit caller assertion, not automatically proven
+share-class allocation. Before historical use, the source/coverage work must establish
+official sector and class mapping, consistent share/corporate-action bases, source-specific
+missing concepts, normalization/maintenance-capex policy, and consensus horizon coverage.
+This adapter does not fabricate those inputs. Many models may consequently remain
+non-evaluable; `computed` means the construction ran, not that every model or the primary
+is evaluable. Offline fixtures prove mechanics, not real historical coverage.
+
+Production integration, coverage/capacity receipts, the Fable review, the separate PREREG
+for the owner's 29 October signature/horizon, and the grade no earlier than 30 October
+remain pending. The served source stays unchanged through the verdict. There is no live
+money operation and no deployment during PIT grade chunks.
