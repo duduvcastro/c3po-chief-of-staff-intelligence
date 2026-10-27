@@ -201,3 +201,67 @@ def test_the_chunk_reports_verification_and_compute_time_apart(monkeypatch: pyte
     done = _run(context, tmp_path, legacy, order_sha, pin_sha, 4)
     finished = _run(context, tmp_path, legacy, order_sha, pin_sha, 4)  # nothing left: verification only
     assert done["complete"] and finished["computed_this_chunk"] == 0 and finished["seconds_per_section"] is None and finished["compute_seconds"] == 0
+
+
+class _Prices:
+    """A pinned publication double: closes 100 at D, adjusted = close; labels by horizon."""
+
+    def __init__(self, publication: str = "pub-1", closes: dict[int, float] | None = None) -> None:
+        self.publication, self.closes = publication, closes or {1: 101.0, 5: 110.0, 6: 111.1}
+        self.reads: list[tuple[str, int]] = []
+
+    def vintage(self, market: str, *, available_before: datetime) -> dict[str, Any]:
+        return {"status": "ok", "publication_id": self.publication, "bars_sha256": "b" * 64}
+
+    def bars(self, market: str, symbol: str, *, available_before: datetime) -> dict[str, Any]:
+        return {"2025-01-02": {"close": 100.0, "adjusted_close": 50.0}}
+
+    def label_bar(self, market: str, symbol: str, session: Any, horizon: int, *, available_before: datetime) -> dict[str, Any]:
+        self.reads.append((symbol, horizon))
+        if horizon not in self.closes:
+            return {"status": "not_yet_mature"}
+        return {"status": "labelled", "adjusted_close": self.closes[horizon] / 2, "close": self.closes[horizon]}
+
+
+def _rev3_pins() -> dict[str, Any]:
+    pin = {"status": "ok", "publication_id": "pub-1", "bars_sha256": "b" * 64, "available_at": "2026-10-19T21:00:00+00:00"}
+    return {"price_pin": {"requested_at": "2026-10-19T21:30:00+00:00", "NASDAQ": dict(pin), "NYSE": dict(pin)}}
+
+
+def test_the_label_reader_is_rev3s_rule_on_the_pinned_publication() -> None:
+    prices = _Prices()
+    reader = driver.LabelReader(prices, _rev3_pins())
+    row = {"market": "NYSE", "symbol": "X", "session_date": "2025-01-02", "price": 100.5}
+    label = reader(row, 5)  # D -> D+5 on adjusted closes (50 -> 55), D+1 -> D+6 (50.5 -> 55.55)
+    assert label["return"] == pytest.approx(0.10) and label["return_executable"] == pytest.approx(0.10) and label["reason"] is None
+    immature = reader(row, 21)
+    assert immature["return"] is None and immature["return_executable"] is None and immature["reason"] == "not_yet_mature"
+    assert reader({**row, "price": 103.0}, 5) == {"return": None, "return_executable": None, "reason": "label_unavailable:basis_mismatch"}
+    with pytest.raises(ValueError, match="label_vintage_not_the_pinned_one"):
+        driver.LabelReader(_Prices(publication="pub-2"), _rev3_pins())
+
+
+def test_the_reading_runs_the_full_report_from_the_private_store_and_publishes_codes_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    legacy, order_sha, pin_sha = _legacy(tmp_path, context, monkeypatch)
+    done = _run(context, tmp_path, legacy, order_sha, pin_sha, 4)
+    assert done["complete"]
+    labels: list[Any] = []
+    result = driver.run_report(context["database"], None, rev3=context["rev3"], pin_sha256=pin_sha, binding=context["binding"],
+                               manifest_sha256=done["manifest_sha256"], legacy_root=legacy, store_root=tmp_path / "store",
+                               label_reader=lambda row, h: labels.append(h) or {}, paired_sources_reader=lambda entry: ({}, {}))
+    payload = result["payload"]
+    # the executor's synthetic sections carry no models or variants: the reading is VOID, before any label
+    assert payload["verdict"]["status"] == "VOID" and payload["labels_read"] == 0 and labels == []
+    assert "SYNTHETIC" not in json.dumps(result)
+    private = list((tmp_path / "store" / "reports").glob("*.json"))
+    assert len(private) == 1 and oct(private[0].stat().st_mode & 0o777) == "0o600"
+    assert json.loads(private[0].read_text())["payload_sha256"] == result["payload_sha256"]
+    with pytest.raises(FileNotFoundError):
+        driver.run_report(context["database"], None, rev3=context["rev3"], pin_sha256=pin_sha, binding=context["binding"], manifest_sha256="e" * 64,
+                          legacy_root=legacy, store_root=tmp_path / "store", label_reader=lambda row, h: {}, paired_sources_reader=lambda entry: ({}, {}))
+
+
+def test_the_public_reading_reduces_symbol_bearing_reasons() -> None:
+    payload = {"verdict": {"status": "VOID", "reasons": ["ensemble_price_differs_from_rev3:AAA", "ensemble_manifest_not_complete"]}, "labels_read": 0}
+    assert driver.public_payload(payload)["verdict"]["reasons"] == ["ensemble_manifest_not_complete", "ensemble_price_differs_from_rev3:redacted"]

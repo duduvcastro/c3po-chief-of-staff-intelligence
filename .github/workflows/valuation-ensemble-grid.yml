@@ -8,6 +8,8 @@ run-name: Valuation ensemble grid (PREREG_VALUATION_ENSEMBLE_PIT_US_V1) — ${{ 
 #               publications, coverage, running ingestions) — exempt from the operating window
 #   grid        ONE bounded chunk of app.valuation_ensemble_driver in the running api container (read-only database
 #               session; private receipts under /app/day-d-data/valuation-ensemble)
+#   report      the SINGLE-LOOK reading of the complete grade manifest (manifest_sha256, published by the last chunk), streamed
+#               from the private store; refused when a previous reading of this workflow was not VOID (the look is one)
 # A grid chunk runs only from main, with the ensemble owner's order c3po/ops/owner-orders/<owner_order_sha256>.json and
 # the instrument pin c3po/ops/valuation-ensemble/<pin_sha256>.json of this revision: the order names this pin and the
 # ensemble prereg, authorises mode grid with a cap at least max_runs, not after its deadline; the pin's canonical sha256 is
@@ -33,10 +35,10 @@ on:
         required: true
         type: string
       mode:
-        description: inventory | host-check | grid
+        description: inventory | host-check | grid | report
         required: true
         type: choice
-        options: [inventory, host-check, grid]
+        options: [inventory, host-check, grid, report]
       owner_order_sha256:
         description: grid — sha256 of c3po/ops/owner-orders/<sha>.json at this revision (the owner's ensemble order)
         required: false
@@ -66,6 +68,11 @@ on:
         description: grid — sections COMPUTED in this chunk (1-200, at most the order's cap)
         required: false
         default: '10'
+        type: string
+      manifest_sha256:
+        description: report — the manifest_sha256 of the COMPLETE grade, as the last chunk published it
+        required: false
+        default: ''
         type: string
       rev3_manifest_run_id:
         description: grid — the run id of the rev3 grid chunk whose artifact holds the signed complete manifest
@@ -125,10 +132,12 @@ jobs:
           GO: ${{ inputs.technical_go_comment_id }}
           MAX_RUNS: ${{ inputs.max_runs }}
           REV3_RUN: ${{ inputs.rev3_manifest_run_id }}
+          MANIFEST: ${{ inputs.manifest_sha256 }}
         shell: bash
         run: |
           set -uo pipefail
-          case "$MODE" in host-check|grid) ;; *) echo 'unknown mode' >&2; exit 2 ;; esac
+          case "$MODE" in host-check|grid|report) ;; *) echo 'unknown mode' >&2; exit 2 ;; esac
+          [ -z "$MANIFEST" ] || [[ "$MANIFEST" =~ ^[0-9a-f]{64}$ ]] || { echo 'manifest_sha256 must be 64 lowercase hex' >&2; exit 2; }
           # every value that reaches a remote command line is validated in EVERY mode (quoted there, never free text)
           [ -z "$ORDER" ] || [[ "$ORDER" =~ ^[0-9a-f]{64}$ ]] || { echo 'owner_order_sha256 must be 64 lowercase hex' >&2; exit 2; }
           [ -z "$PIN" ] || [[ "$PIN" =~ ^[0-9a-f]{64}$ ]] || { echo 'pin_sha256 must be 64 lowercase hex' >&2; exit 2; }
@@ -141,6 +150,10 @@ jobs:
             [ -n "$ORDER" ] && [ -n "$PIN" ] && [ -n "$COMMIT" ] && [ -n "$SIGNATURE" ] && [ -n "$GO" ] \
               || { echo 'grid needs owner_order_sha256, pin_sha256, instrument_commit and both comment ids' >&2; exit 2; }
           fi
+          if [ "$MODE" = report ]; then
+            [ -z "$ORDER" ] && [ -n "$MANIFEST" ] && [ -n "$PIN" ] && [ -n "$COMMIT" ] && [ -n "$SIGNATURE" ] && [ -n "$GO" ] \
+              || { echo 'report needs manifest_sha256, pin_sha256, instrument_commit and both comment ids (and no owner order)' >&2; exit 2; }
+          fi
           {
             printf 'mode=%s\n' "$MODE"
             printf 'order=%s\n' "$ORDER"
@@ -149,6 +162,7 @@ jobs:
             printf 'signature=%s\n' "$SIGNATURE"
             printf 'go=%s\n' "$GO"
             printf 'max_runs=%s\n' "$MAX_RUNS"
+            printf 'manifest=%s\n' "$MANIFEST"
           } >> "$GITHUB_OUTPUT" || exit 1
 
       - name: Check the operating window
@@ -182,6 +196,8 @@ jobs:
           deadline = min(upcoming - dt.timedelta(minutes=10), now + dt.timedelta(minutes=320))
           if mode == "grid" and stop_before <= now + dt.timedelta(minutes=15):
               sys.exit("grid refused: less than 35 min before the next window")
+          if mode == "report" and deadline <= now + dt.timedelta(minutes=90):
+              sys.exit("report refused: less than 100 min before the next window")
           print(f"stop_before={stop_before.astimezone(dt.timezone.utc).isoformat(timespec='seconds')}")
           print(f"deadline_epoch={int(deadline.timestamp())}")  # ONE deadline for every process of this run: what is left of it, never a fresh one
           print(f"next_window={upcoming.astimezone(dt.timezone.utc).isoformat(timespec='seconds')}")
@@ -194,8 +210,9 @@ jobs:
           persist-credentials: false
 
       - name: Verify the owner's order, the instrument pin and its commit
-        if: inputs.mode == 'grid'
+        if: inputs.mode == 'grid' || inputs.mode == 'report'
         env:
+          MODE: ${{ steps.inputs.outputs.mode }}
           ORDER: ${{ steps.inputs.outputs.order }}
           PIN: ${{ steps.inputs.outputs.pin }}
           COMMIT: ${{ steps.inputs.outputs.commit }}
@@ -205,7 +222,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          [ "$GITHUB_REF" = refs/heads/main ] || { echo 'a grid chunk runs only from main (the order and the pin are files of main)' >&2; exit 2; }
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo 'grid and report run only from main (the order and the pin are files of main)' >&2; exit 2; }
           git cat-file -e "$COMMIT^{commit}" || { echo 'instrument_commit is not a commit of this repository' >&2; exit 2; }
           git merge-base --is-ancestor "$COMMIT" HEAD || { echo 'instrument_commit is not an ancestor of this revision' >&2; exit 2; }
           python3 -I - "$GITHUB_WORKSPACE" <<'PY' || exit 1
@@ -240,22 +257,24 @@ jobs:
               return parsed.astimezone(dt.timezone.utc) if parsed.tzinfo is not None else None
 
 
-          raw = checkout_file(f"c3po/ops/owner-orders/{order_sha}.json")
-          if hashlib.sha256(raw).hexdigest() != order_sha:
-              sys.exit("the owner's order file does not hash to owner_order_sha256")
-          order = json.loads(raw.decode("utf-8"))
-          now = dt.datetime.now(dt.timezone.utc)
-          if (not isinstance(order, dict) or order.get("schema") != "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1"
-                  or order.get("prereg") != "PREREG_VALUATION_ENSEMBLE_PIT_US_V1" or order.get("modes") != ["grid"]):
-              sys.exit("the owner's order is not an ensemble grid order")
-          if order.get("instrument_pin_sha256") != pin_sha:
-              sys.exit("the owner's order names another instrument pin")
-          deadline = instant(order.get("not_after"))
-          if deadline is None or deadline <= now:
-              sys.exit("the owner's order has expired (not_after)")
-          cap = order.get("max_runs_cap")
-          if type(cap) is not int or not 1 <= int(os.environ["MAX_RUNS"]) <= cap:
-              sys.exit("max_runs exceeds the owner's order's max_runs_cap")
+          deadline, cap = None, None
+          if os.environ["MODE"] == "grid":  # the reading writes nothing but its private copy: it needs the pin, not an order
+              raw = checkout_file(f"c3po/ops/owner-orders/{order_sha}.json")
+              if hashlib.sha256(raw).hexdigest() != order_sha:
+                  sys.exit("the owner's order file does not hash to owner_order_sha256")
+              order = json.loads(raw.decode("utf-8"))
+              now = dt.datetime.now(dt.timezone.utc)
+              if (not isinstance(order, dict) or order.get("schema") != "VALUATION-PIT-BACKTEST-OWNER-ORDER-v1"
+                      or order.get("prereg") != "PREREG_VALUATION_ENSEMBLE_PIT_US_V1" or order.get("modes") != ["grid"]):
+                  sys.exit("the owner's order is not an ensemble grid order")
+              if order.get("instrument_pin_sha256") != pin_sha:
+                  sys.exit("the owner's order names another instrument pin")
+              deadline = instant(order.get("not_after"))
+              if deadline is None or deadline <= now:
+                  sys.exit("the owner's order has expired (not_after)")
+              cap = order.get("max_runs_cap")
+              if type(cap) is not int or not 1 <= int(os.environ["MAX_RUNS"]) <= cap:
+                  sys.exit("max_runs exceeds the owner's order's max_runs_cap")
           pin = json.loads(checkout_file(f"c3po/ops/valuation-ensemble/{pin_sha}.json").decode("utf-8"))
           canonical = hashlib.sha256(json.dumps(pin, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
           if not isinstance(pin, dict) or canonical != pin_sha:
@@ -272,11 +291,11 @@ jobs:
                   sys.exit(f"{name} does not hash, at the instrument commit, as the pin lists it")
               if hashlib.sha256(checkout_file(name)).hexdigest() != digest:
                   sys.exit(f"{name} changed after the instrument commit")
-          print(f"order, pin and instrument verified: {len(files)} files, order not after {deadline.isoformat()}, cap {cap}")
+          print(f"pin and instrument verified: {len(files)} files" + (f"; order not after {deadline.isoformat()}, cap {cap}" if deadline else ""))
           PY
 
       - name: Verify the channel comments
-        if: inputs.mode == 'grid'
+        if: inputs.mode == 'grid' || inputs.mode == 'report'
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL_ISSUE: ${{ vars.C3PO_ESCALATION_ISSUE }}
@@ -308,7 +327,7 @@ jobs:
           echo "both channel comments are the owner account's, on issue #$CHANNEL_ISSUE, and cite the instrument commit"
 
       - name: Download the rev3 grid manifest
-        if: inputs.mode == 'grid'
+        if: inputs.mode == 'grid' || inputs.mode == 'report'
         uses: actions/download-artifact@v4
         with:
           name: valuation-pit-backtest-grid-${{ inputs.rev3_manifest_run_id }}
@@ -317,7 +336,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Check the rev3 grid manifest
-        if: inputs.mode == 'grid'
+        if: inputs.mode == 'grid' || inputs.mode == 'report'
         shell: bash
         run: |
           set -uo pipefail
@@ -336,6 +355,37 @@ jobs:
           print(f"rev3 manifest {digest}: {len(manifest.get('grid') or [])} V3 and {len(manifest.get('served_grid') or [])} served sections")
           PY
 
+      - name: Check the single look
+        if: inputs.mode == 'report'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/previous"
+          mkdir -p "$dir" || exit 1
+          # every earlier report run of this workflow, whatever its conclusion: a reading that printed a verdict spent the look
+          gh run list -R "$GITHUB_REPOSITORY" --workflow valuation-ensemble-grid.yml --limit 200 --json databaseId,displayTitle,status \
+            > "$dir/runs.json" || exit 1
+          for id in $(python3 -I -c 'import json, sys; print(" ".join(str(r["databaseId"]) for r in json.load(open(sys.argv[1])) if str(r.get("displayTitle", "")).endswith("— report") and r.get("status") == "completed"))' "$dir/runs.json"); do
+            [[ "$id" =~ ^[0-9]+$ ]] || continue
+            [ "$id" != "$GITHUB_RUN_ID" ] || continue
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n "valuation-ensemble-grid-report-$id" -D "$dir/$id" >/dev/null 2>&1 || true
+          done
+          python3 -I - "$dir" <<'PY' || exit 1
+          import json
+          import sys
+          from pathlib import Path
+
+          for path in sorted(Path(sys.argv[1]).glob("*/metadata.json")):
+              metadata = json.loads(path.read_text(encoding="utf-8"))
+              result = metadata.get("result") if isinstance(metadata.get("result"), dict) else {}
+              status = ((result.get("payload") or {}).get("verdict") or {}).get("status") if result.get("kind") == "reading" else None
+              if status is not None and status != "VOID":
+                  sys.exit(f"a previous reading (run {metadata.get('run_id')}) was {status}: the single look was spent")
+          print("no previous non-VOID reading of this pre-registration")
+          PY
+
       - name: Configure deployment SSH key
         id: sshkey
         env:
@@ -349,7 +399,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts || exit 1
 
       - name: Send the rev3 manifest to the host
-        if: inputs.mode == 'grid'
+        if: inputs.mode == 'grid' || inputs.mode == 'report'
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
@@ -375,6 +425,7 @@ jobs:
           SIGNATURE: ${{ steps.inputs.outputs.signature }}
           GO: ${{ steps.inputs.outputs.go }}
           MAX_RUNS: ${{ steps.inputs.outputs.max_runs }}
+          MANIFEST: ${{ steps.inputs.outputs.manifest }}
           STOP_BEFORE: ${{ steps.window.outputs.stop_before }}
           DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
           RUN_ID: ${{ github.run_id }}
@@ -393,7 +444,7 @@ jobs:
           rc=0
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' COMMIT='$COMMIT' SIGNATURE='$SIGNATURE' GO='$GO' MAX_RUNS='$MAX_RUNS' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' bash -s" \
+            "MODE='$MODE' ORDER='$ORDER' PIN='$PIN' COMMIT='$COMMIT' SIGNATURE='$SIGNATURE' GO='$GO' MAX_RUNS='$MAX_RUNS' MANIFEST='$MANIFEST' STOP_BEFORE='$STOP_BEFORE' DEADLINE='$DEADLINE' RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' bash -s" \
             > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
           set -uo pipefail
           # every query of the preflight fails CLOSED with its own status: a command that cannot answer refuses the run
@@ -442,11 +493,13 @@ jobs:
             printf '%s\n' "$memory" || exit 14
             exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null
           fi
-          [ "$MODE" = grid ] || { echo 'unknown mode' >&2; exit 16; }
+          case "$MODE" in grid|report) ;; *) echo 'unknown mode' >&2; exit 16 ;; esac
           [ -n "$ir" ] || { echo 'the Investor Relations worker is not running: the backfill setting cannot be read (fail closed)' >&2; exit 36; }
           [ "$backfill" = 0 ] || { echo 'the as-filed backfill is not paused (C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL must be 0): the grade must wait' >&2; exit 36; }
           # the driver reads the order and the pin from the DEPLOYED checkout (/legacy): the commit that added them must be deployed
-          for file in "c3po/ops/owner-orders/$ORDER.json" "c3po/ops/valuation-ensemble/$PIN.json"; do
+          deployed=("c3po/ops/valuation-ensemble/$PIN.json")
+          [ "$MODE" != grid ] || deployed+=("c3po/ops/owner-orders/$ORDER.json")
+          for file in "${deployed[@]}"; do
             [ -f "$APP_DIR/$file" ] && [ ! -L "$APP_DIR/$file" ] || { echo "$file is not in the deployed checkout: deploy the commit that adds it first" >&2; exit 39; }
           done
           [ -f "$rev3_file" ] && [ ! -L "$rev3_file" ] || { echo 'the rev3 manifest did not reach the host' >&2; exit 38; }
@@ -494,9 +547,13 @@ jobs:
           [[ "$avail_kb" =~ ^[0-9]+$ ]] || { echo 'the free disk cannot be read: refused (fail closed)' >&2; exit 22; }
           mem_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) || { echo 'the available memory cannot be read: refused (fail closed)' >&2; exit 32; }
           [[ "$mem_kb" =~ ^[0-9]+$ ]] || { echo 'the available memory cannot be read: refused (fail closed)' >&2; exit 32; }
-          need=$(( 6291456 + MAX_RUNS * 262144 ))  # 6 GiB free + 256 MiB per section of the chunk (receipts of a whole catalogue)
+          sections=$MAX_RUNS
+          [ "$MODE" = grid ] || sections=1  # the reading writes one private copy
+          need=$(( 6291456 + sections * 262144 ))  # 6 GiB free + 256 MiB per section of the chunk (receipts of a whole catalogue)
           [ "$avail_kb" -ge "$need" ] || { echo "free disk ${avail_kb} KiB below ${need} KiB (6 GiB + 256 MiB per section)" >&2; exit 23; }
-          [ "$mem_kb" -ge 3145728 ] || { echo "available memory ${mem_kb} KiB below 3 GiB" >&2; exit 24; }
+          memory_floor=3145728
+          [ "$MODE" = grid ] || memory_floor=8388608  # the reading holds the compact rows of the whole grade and their labels
+          [ "$mem_kb" -ge "$memory_floor" ] || { echo "available memory ${mem_kb} KiB below ${memory_floor} KiB" >&2; exit 24; }
           exec 9>>"$APP_DIR/runtime/security/deployment.lock" || { echo 'the deployment lock cannot be opened: refused (fail closed)' >&2; exit 33; }
           lock_rc=0
           flock -s -n 9 || lock_rc=$?
@@ -513,9 +570,16 @@ jobs:
           echo "LAUNCHED $RUN_TOKEN" || { echo 'LAUNCHED could not be written: not started' >&2; exit 35; }
           # the python carries `-X valuation_pit_run_token=<run id>-<attempt>` (never read by the module) so that the cleanup step
           # stops THIS run's process and nothing else; the rev3 manifest travels on stdin, never in argv
-          "${compose[@]}" exec -T "${readonly_session[@]}" api timeout -s TERM -k 120 "$left" nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" \
-            -m app.valuation_ensemble_driver --owner-order-sha256 "$ORDER" --pin-sha256 "$PIN" --instrument-commit "$COMMIT" \
-            --owner-signature-comment-id "$SIGNATURE" --technical-go-comment-id "$GO" --max-runs "$MAX_RUNS" --stop-before "$STOP_BEFORE" < "$rev3_file"
+          if [ "$MODE" = report ]; then
+            [[ "$MANIFEST" =~ ^[0-9a-f]{64}$ ]] || { echo 'the manifest digest is not 64 hex' >&2; exit 10; }
+            "${compose[@]}" exec -T "${readonly_session[@]}" api timeout -s TERM -k 120 "$left" nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" \
+              -m app.valuation_ensemble_driver --report --manifest-sha256 "$MANIFEST" --pin-sha256 "$PIN" --instrument-commit "$COMMIT" \
+              --owner-signature-comment-id "$SIGNATURE" --technical-go-comment-id "$GO" < "$rev3_file"
+          else
+            "${compose[@]}" exec -T "${readonly_session[@]}" api timeout -s TERM -k 120 "$left" nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" \
+              -m app.valuation_ensemble_driver --owner-order-sha256 "$ORDER" --pin-sha256 "$PIN" --instrument-commit "$COMMIT" \
+              --owner-signature-comment-id "$SIGNATURE" --technical-go-comment-id "$GO" --max-runs "$MAX_RUNS" --stop-before "$STOP_BEFORE" < "$rev3_file"
+          fi
           REMOTE
           lines=$(wc -l < "$raw/stderr.log") || exit 1
           echo "remote exit status: $rc; remote stderr lines (kept private, not printed): $lines"
@@ -550,6 +614,20 @@ jobs:
           # JSON lines (aggregates by construction); anything else is COUNTED, never printed (this repository is public)
           # host lines: the preflight's and the host check's, BEFORE the driver starts (after LAUNCHED only the driver's JSON lines)
           shapes = re.compile(r"^(PREFLIGHT disk_kb=\d+ mem_kb=\d+|REBOOT (pending|absent) [/a-z0-9.-]+|BACKFILL issuers_per_poll=[0-9a-z]*|DISK \d+ \d+ [/a-z0-9._-]+|MEM (MemTotal|MemAvailable|SwapTotal|SwapFree) \d+)$")
+          upper_ok = {"PASS", "FAIL", "VOID", "UNMEASURED", "NEGATIVE", "SINGLE", "US", "NASDAQ", "NYSE"}
+
+
+          def clean(value):  # every string and key of the reading: a code, never a ticker-like upper-case token (the protocol's
+              if isinstance(value, dict):  # constant prose, from the pinned report module, is not a data field)
+                  return all(clean(key) and (key == "protocol" or clean(item)) for key, item in value.items())
+              if isinstance(value, list):
+                  return all(clean(item) for item in value)
+              if isinstance(value, str):
+                  return re.fullmatch(r"[A-Za-z0-9_:./=;+ -]{0,300}", value) is not None and not any(
+                      re.fullmatch(r"[A-Z][A-Z0-9.]{0,9}", token) and token not in upper_ok for token in re.split(r"[:;/ ]", value))
+              return True
+
+
           fields = {"start": ("kind", "max_runs", "stop_before"),
                     "refused": ("kind", "reason", "peak_rss_kb"),
                     "chunk": ("kind", "manifest_sha256", "complete", "remaining", "entries", "computed_this_chunk", "prior_entries",
@@ -570,6 +648,15 @@ jobs:
               except ValueError:
                   unexpected += 1
                   continue
+              if launched and isinstance(value, dict) and value.get("kind") == "reading" and mode == "report":
+                  if not clean(value):
+                      unexpected += 1
+                      continue
+                  kept.append(json.dumps({key: value.get(key) for key in ("kind", "payload_sha256", "manifest_sha256", "elapsed_seconds", "peak_rss_kb")}, sort_keys=True))
+                  chunk = value
+                  chunks += 1
+                  (out / "reading.json").write_text(json.dumps(value, sort_keys=True, indent=1) + "\n", encoding="utf-8")
+                  continue
               if launched and isinstance(value, dict) and value.get("kind") in fields:
                   reduced = {key: value.get(key) for key in fields[value["kind"]]}
                   if any(isinstance(item, str) and not code.match(item) and key != "stop_before" for key, item in reduced.items()) \
@@ -588,14 +675,19 @@ jobs:
           metadata.update({"lines": kept, "unexpected_lines": unexpected, "result": chunk})
           (out / "metadata.json").write_text(json.dumps(metadata, sort_keys=True, indent=1) + "\n", encoding="utf-8")
           summary += [f"    {line}" for line in kept] + [f"- unexpected lines (counted, not printed): {unexpected}"]
+          if chunk and chunk.get("kind") == "reading":
+              verdict = (chunk.get("payload") or {}).get("verdict") or {}
+              summary.append(f"- READING `{chunk.get('payload_sha256')}` over manifest `{chunk.get('manifest_sha256')}`: **{verdict.get('status')}**; "
+                             f"reasons {verdict.get('reasons')}; labels read {(chunk.get('payload') or {}).get('labels_read')}")
           if chunk and chunk.get("kind") == "chunk":
               summary.append(f"- manifest_sha256 `{chunk.get('manifest_sha256')}`; complete {chunk.get('complete')}; remaining {chunk.get('remaining')}; "
                              f"computed {chunk.get('computed_this_chunk')} in {chunk.get('elapsed_seconds')} s ({chunk.get('seconds_per_section')} s per section)")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
               handle.write("\n".join(summary) + "\n")
           print("\n".join(summary))
-          if mode == "grid" and rc == "0" and (chunks != 1 or not chunk or chunk.get("kind") != "chunk"):
-              (Path(os.environ["RUNNER_TEMP"]) / "verify-failed").write_text("the host exited 0 without exactly one chunk result\n", encoding="utf-8")
+          wanted = {"grid": "chunk", "report": "reading"}.get(mode)
+          if wanted and rc == "0" and (chunks != 1 or not chunk or chunk.get("kind") != wanted):
+              (Path(os.environ["RUNNER_TEMP"]) / "verify-failed").write_text(f"the host exited 0 without exactly one {wanted} result\n", encoding="utf-8")
           PY
 
       - name: Publish the aggregates
@@ -607,7 +699,7 @@ jobs:
           retention-days: 90
 
       - name: Stop this run's host processes on cancel or failure
-        if: (cancelled() || failure() || steps.host.outputs.rc != '0') && steps.sshkey.outcome == 'success' && inputs.mode == 'grid'
+        if: (cancelled() || failure() || steps.host.outputs.rc != '0') && steps.sshkey.outcome == 'success' && (inputs.mode == 'grid' || inputs.mode == 'report')
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}

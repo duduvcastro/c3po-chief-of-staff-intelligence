@@ -11,7 +11,7 @@ import random
 import re
 import statistics
 from collections import Counter
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, cast
 
 from . import valuation_accuracy_report as accuracy
 from .valuation_ensemble_aggregation import aggregate_grid_variants
@@ -329,7 +329,7 @@ def deduplicate_exchanges(records: Sequence[Mapping[str, Any]]) -> tuple[list[Ma
     return [chosen[key] for key in sorted(chosen)], len(records) - len(chosen)
 
 
-def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], records: Sequence[Mapping[str, Any]],
+def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], records: Sequence[Mapping[str, Any]] | None,
                      index_of: Mapping[str, int], mature_through: Mapping[int, int | None], partition_last: int | None) -> list[str]:
     """Metadata and content checks, before calling the outcome reader.
 
@@ -387,11 +387,26 @@ def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], recor
     # The complete calendar contains every session, not just every grid instant.
     if index_of and sorted(index_of.values()) != list(range(max(index_of.values()) + 1)):
         errors.append("calendar_index_has_gaps")
-    grouped: dict[str, list[Mapping[str, Any]]] = {}
-    identities: set[tuple[str, str, str]] = set()
     run_slots = {str(entry.get("run_key")): _slot(entry) for entry in grid}
     if len(run_slots) != len(grid) or any(not key or key == "None" for key in run_slots):
         errors.append("ensemble_duplicate_or_missing_run_identity")
+    if records is None:  # the streamed path checks the rows entry by entry (_rows_errors, _entry_errors)
+        return sorted(set(errors))
+    identities: set[tuple[str, str, str]] = set()
+    errors.extend(_rows_errors(records, run_slots, identities))
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for row in records:
+        grouped.setdefault(str(row.get("run_key")), []).append(row)
+    for entry in grid:
+        errors.extend(_entry_errors(entry, grouped.get(str(entry.get("run_key")), [])))
+    return sorted(set(errors))
+
+
+def _rows_errors(records: Sequence[Mapping[str, Any]], run_slots: Mapping[str, tuple[str, str, str]],
+                 identities: set[tuple[str, str, str]]) -> list[str]:
+    """The per-row content checks (identity, manifest slot, screen, eight variants, sixteen models, recomputed aggregation);
+    ``identities`` is shared across calls, so a (market, session, symbol) is unique over the whole grade."""
+    errors: list[str] = []
     for row in records:
         key = str(row.get("run_key"))
         slot = run_slots.get(key)
@@ -435,18 +450,35 @@ def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], recor
                     errors.append("ensemble_aggregation_not_the_model_values")
             except (ValueError, TypeError, KeyError, OverflowError):
                 errors.append("ensemble_model_or_consensus_results_invalid")
-        grouped.setdefault(key, []).append(row)
-    for entry in grid:
-        rows = sorted(grouped.get(str(entry.get("run_key")), []), key=lambda row: str(row.get("symbol")))
-        if entry.get("records_sha256") != canonical_hash(rows):
-            errors.append("ensemble_records_content_mismatch")
-        catalogue_counts = _mapping(entry.get("input_pins")).get("catalogue_counts")
-        stock_rows = sum(_mapping(row.get("catalogue_classification")).get("security_type") == "Stock" for row in rows)
-        if (not isinstance(catalogue_counts, Mapping) or catalogue_counts.get("rows") != len(rows)
-                or type(entry.get("catalogue_stocks")) is not int or entry["catalogue_stocks"] < 1
-                or entry["catalogue_stocks"] != stock_rows):
-            errors.append("ensemble_catalogue_denominator_invalid")
-    return sorted(set(errors))
+    return errors
+
+
+def _entry_errors(entry: Mapping[str, Any], entry_rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """One manifest entry against ALL its rows: the records digest and the catalogue denominators."""
+    errors: list[str] = []
+    rows = sorted(entry_rows, key=lambda row: str(row.get("symbol")))
+    if entry.get("records_sha256") != canonical_hash(rows):
+        errors.append("ensemble_records_content_mismatch")
+    catalogue_counts = _mapping(entry.get("input_pins")).get("catalogue_counts")
+    stock_rows = sum(_mapping(row.get("catalogue_classification")).get("security_type") == "Stock" for row in rows)
+    if (not isinstance(catalogue_counts, Mapping) or catalogue_counts.get("rows") != len(rows)
+            or type(entry.get("catalogue_stocks")) is not int or entry["catalogue_stocks"] < 1
+            or entry["catalogue_stocks"] != stock_rows):
+        errors.append("ensemble_catalogue_denominator_invalid")
+    return errors
+
+
+def compact_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """What the statistic, the label reader and the non-evaluation counts read from a row ALREADY verified in full (its
+    entry's digest, its sixteen models and its recomputed aggregation): the ledgers and the derivations stay behind, so a
+    whole grade (~170k rows of ~50 KB) fits in memory. Every value kept is the row's own."""
+    classification = _mapping(row.get("catalogue_classification"))
+    return {"source": row.get("source"), "market": row.get("market"), "symbol": row.get("symbol"), "session_date": row.get("session_date"),
+            "as_of": row.get("as_of"), "run_key": row.get("run_key"), "price": row.get("price"), "served_tp": row.get("served_tp"),
+            "screened": row.get("screened"), "variants": row.get("variants"),
+            "catalogue_classification": {"security_type": classification.get("security_type")},
+            "models": [{"model": model.get("model"), "status": model.get("status"), "reason": model.get("reason")}
+                       for model in row.get("models") or [] if isinstance(model, Mapping)]}
 
 
 def _paired_sources_errors(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any]],
@@ -458,33 +490,67 @@ def _paired_sources_errors(manifest: Mapping[str, Any], records: Sequence[Mappin
     success flag. The grid helper validates native manifests, IDs, source pins,
     screen and saved served targets; no price outcome is requested here.
     """
-    from .valuation_ensemble_grid import paired_source_identity, validate_record_pair
-
     errors: list[str] = []
     for entry in manifest["entries"]:
-        try:
-            v3, served = reader(entry)
-            if not isinstance(v3, Mapping) or not isinstance(served, Mapping):
-                errors.append("ensemble_rev3_sibling_snapshot_missing")
-                continue
-            observed = paired_source_identity(v3, served)
-            if entry.get("input_pins") != observed:
-                errors.append("ensemble_inputs_differ_from_rev3")
-            if observed.get("v3_run_key") != entry.get("v3_run_key") or observed.get("served_run_key") != entry.get("served_run_key"):
-                errors.append("ensemble_rev3_sibling_identity_mismatch")
-            subset = [record for record in records if record.get("run_key") == entry["run_key"]]
-            errors.extend(validate_record_pair(subset, v3, served, volume_basis=volume_basis))
-        except (OSError, ValueError, TypeError, KeyError, OverflowError):
-            errors.append("ensemble_rev3_sibling_snapshot_invalid")
+        subset = [record for record in records if record.get("run_key") == entry["run_key"]]
+        errors.extend(_paired_entry_errors(entry, subset, reader, volume_basis=volume_basis))
     return sorted(set(errors))
 
 
-def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any]], *, rev3_manifest: Mapping[str, Any],
+def _paired_entry_errors(entry: Mapping[str, Any], subset: Sequence[Mapping[str, Any]],
+                         reader: Callable[[Mapping[str, Any]], tuple[Mapping[str, Any], Mapping[str, Any]]],
+                         *, volume_basis: str) -> list[str]:
+    from .valuation_ensemble_grid import paired_source_identity, validate_record_pair
+
+    errors: list[str] = []
+    try:
+        v3, served = reader(entry)
+        if not isinstance(v3, Mapping) or not isinstance(served, Mapping):
+            return ["ensemble_rev3_sibling_snapshot_missing"]
+        observed = paired_source_identity(v3, served)
+        if entry.get("input_pins") != observed:
+            errors.append("ensemble_inputs_differ_from_rev3")
+        if observed.get("v3_run_key") != entry.get("v3_run_key") or observed.get("served_run_key") != entry.get("served_run_key"):
+            errors.append("ensemble_rev3_sibling_identity_mismatch")
+        errors.extend(validate_record_pair(subset, v3, served, volume_basis=volume_basis))
+    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        errors.append("ensemble_rev3_sibling_snapshot_invalid")
+    return errors
+
+
+def _streamed_records(manifest: Mapping[str, Any], records_for: Callable[[Mapping[str, Any]], Sequence[Mapping[str, Any]]],
+                      reader: Callable[[Mapping[str, Any]], tuple[Mapping[str, Any], Mapping[str, Any]]], volume_basis: str,
+                      errors: list[str]) -> list[dict[str, Any]]:
+    """The rows of each entry, checked in full exactly as ``_manifest_errors`` and ``_paired_sources_errors`` check a whole
+    list, then compacted; errors are appended to ``errors`` (the caller VOIDs the reading on any)."""
+    run_slots = {str(entry.get("run_key")): _slot(entry) for entry in manifest["entries"]}
+    identities: set[tuple[str, str, str]] = set()
+    kept: list[dict[str, Any]] = []
+    for entry in manifest["entries"]:
+        rows = records_for(entry)
+        if isinstance(rows, (str, bytes)) or not isinstance(rows, Sequence) or any(not isinstance(row, Mapping) for row in rows):
+            errors.append("ensemble_records_invalid")
+            continue
+        found = _rows_errors(rows, run_slots, identities)
+        if any(str(row.get("run_key")) != str(entry.get("run_key")) for row in rows):
+            found.append("ensemble_record_not_in_manifest")
+        found += _entry_errors(entry, rows)
+        if not found:
+            found += _paired_entry_errors(entry, [row for row in rows if row.get("run_key") == entry["run_key"]], reader, volume_basis=volume_basis)
+        errors.extend(found)
+        if not found:
+            kept.extend(compact_row(row) for row in rows)
+    errors[:] = sorted(set(errors))
+    return kept
+
+
+def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any]] | None, *, rev3_manifest: Mapping[str, Any],
                  pin: Mapping[str, Any] | None, binding: InstrumentBinding, file_hashes: Mapping[str, str],
                  label_reader: Callable[[Mapping[str, Any], int], Mapping[str, Any]], index_of: Mapping[str, int],
                  mature_through: Mapping[int, int | None], partition_last: int | None = None,
                  expected_manifest_sha256: str | None = None,
-                 paired_sources_reader: Callable[[Mapping[str, Any]], tuple[Mapping[str, Any], Mapping[str, Any]]] | None = None) -> dict[str, Any]:
+                 paired_sources_reader: Callable[[Mapping[str, Any]], tuple[Mapping[str, Any], Mapping[str, Any]]] | None = None,
+                 records_for: Callable[[Mapping[str, Any]], Sequence[Mapping[str, Any]]] | None = None) -> dict[str, Any]:
     """Run the report's two phases. Invalid metadata/PIN returns VOID with zero labels.
 
     ``binding`` is the operator's external trust anchor checked against the public
@@ -495,6 +561,9 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
     ``return`` (D→D+h), ``return_executable`` (D+1→D+1+h), their separate boolean
     ``*_eligible`` flags and a missing-label ``reason``. All figures stay absent
     until the entire manifest, file set, signatures and rule binding pass.
+
+    ``records_for`` (instead of ``records``) streams a whole grade: the rows of ONE entry at a time pass every row, entry
+    and sibling check above, then only their ``compact_row`` stays in memory. Same checks, same statistic.
     """
     from .valuation_ensemble_pin import InstrumentBinding, validate_instrument_pin, validate_manifest_binding
 
@@ -505,7 +574,9 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
     safe_rev3 = rev3_manifest if isinstance(rev3_manifest, Mapping) else {}
     if _digest(expected_manifest_sha256) is None or safe_manifest.get("manifest_sha256") != expected_manifest_sha256:
         errors.append("ensemble_manifest_not_bound_to_published_receipt")
-    rows_valid = isinstance(records, Sequence) and not isinstance(records, (str, bytes)) and all(isinstance(row, Mapping) for row in records)
+    streamed = records is None and callable(records_for)
+    rows_valid = streamed or (records_for is None and isinstance(records, Sequence) and not isinstance(records, (str, bytes))
+                              and all(isinstance(row, Mapping) for row in records))
     if not rows_valid:
         errors.append("ensemble_records_invalid")
     if not isinstance(index_of, Mapping) or not isinstance(mature_through, Mapping):
@@ -522,10 +593,13 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
         if not errors and pin is not None:
             errors.extend(validate_manifest_binding(manifest, pin, binding))
         if not errors:
-            errors.extend(_manifest_errors(manifest, rev3_manifest, records, index_of, mature_through, partition_last))
-        if not errors and paired_sources_reader is not None:
-            errors.extend(_paired_sources_errors(manifest, records, paired_sources_reader,
+            errors.extend(_manifest_errors(manifest, rev3_manifest, None if streamed else records, index_of, mature_through, partition_last))
+        if not errors and paired_sources_reader is not None and not streamed:
+            errors.extend(_paired_sources_errors(manifest, cast(Sequence[Mapping[str, Any]], records), paired_sources_reader,
                                                   volume_basis=str(rev3_manifest["volume_basis"]["decision"])))
+        if not errors and paired_sources_reader is not None and streamed:
+            records = _streamed_records(manifest, cast(Callable[[Mapping[str, Any]], Sequence[Mapping[str, Any]]], records_for),
+                                        paired_sources_reader, str(rev3_manifest["volume_basis"]["decision"]), errors)
     except (ValueError, TypeError, KeyError, OverflowError):
         errors.append("ensemble_manifest_or_records_invalid")
     base: dict[str, Any] = {"schema": SCHEMA, "protocol": protocol(), "prereg_sha256": PREREG_SHA256,
@@ -537,6 +611,7 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
     if errors:
         base["verdict"] = verdict({}, coverage={}, void=sorted(set(errors)))
         return {"schema": SCHEMA, "payload": base, "payload_sha256": canonical_hash(base)}
+    records = cast(Sequence[Mapping[str, Any]], records)
     original_records = records
     records, duplicate_count = deduplicate_exchanges(records)
     base["refused_records"] = {"duplicate_across_exchanges": duplicate_count} if duplicate_count else {}
@@ -545,7 +620,8 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
     base["stock_records"] = sum(_mapping(row.get("catalogue_classification")).get("security_type") == "Stock" for row in records)
     labelled: dict[int, list[dict[str, Any]]] = {h: [] for h in HORIZONS}
     calls = 0
-    for row in sorted(records, key=lambda x: (str(x["session_date"]), str(x["market"]), str(x["symbol"]))):
+    # labels are read symbol after symbol (a reader keeps one series at a time); the lists go back to the statistic's order
+    for row in sorted(records, key=lambda x: (str(x["market"]), str(x["symbol"]), str(x["session_date"]))):
         if _mapping(row.get("catalogue_classification")).get("security_type") != "Stock":
             continue
         if not any(target_of(row, variant) is not None for variant in VARIANTS):
@@ -566,6 +642,8 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
                                 "return_eligible": direct_mature,
                                 "executable_eligible": exec_mature,
                                 "reason": labels.get("reason")})
+    for h in HORIZONS:
+        labelled[h].sort(key=lambda x: (str(x["session_date"]), str(x["market"]), str(x["symbol"])))
     catalogue = sum(entry["catalogue_stocks"] for entry in manifest["entries"])
     grid_sessions = sorted({str(entry["session_date"]) for entry in manifest["entries"]})
     variants: dict[str, Any] = {}

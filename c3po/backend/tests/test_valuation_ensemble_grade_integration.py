@@ -104,7 +104,7 @@ def integrated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any
             "rev3": rev3, "pin": pin, "binding": binding, "files": files, "calendar": descriptor}
 
 
-def _report(context: dict[str, Any], manifest: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
+def _report(context: dict[str, Any], manifest: dict[str, Any], records: list[dict[str, Any]], *, streamed: bool = False) -> dict[str, Any]:
     events = context["events"]
 
     def siblings(entry: Any) -> tuple[Any, Any]:
@@ -123,12 +123,16 @@ def _report(context: dict[str, Any], manifest: dict[str, Any], records: list[dic
         return {"return": None, "return_executable": None, "reason": "synthetic_outcome_not_supplied"}
 
     descriptor = context["calendar"]
-    return report.build_report(manifest, records, rev3_manifest=context["rev3"],
+    def records_for(entry: Any) -> list[dict[str, Any]]:
+        events.append("records_for")
+        return copy.deepcopy([row for row in records if row["run_key"] == entry["run_key"]])
+
+    return report.build_report(manifest, None if streamed else records, rev3_manifest=context["rev3"],
         pin=context["pin"], binding=context["binding"], file_hashes=context["files"],
         expected_manifest_sha256=manifest["manifest_sha256"], paired_sources_reader=siblings,
         label_reader=missing_labels, index_of=descriptor["index_of"],
         mature_through={int(h): value for h, value in descriptor["mature_through"].items()},
-        partition_last=descriptor["partition_last"])
+        partition_last=descriptor["partition_last"], records_for=records_for if streamed else None)
 
 
 def test_real_readers_private_company_artifacts_reload_and_unmeasured_report(integrated: dict[str, Any]) -> None:
@@ -187,3 +191,30 @@ def test_rehashed_price_tamper_is_refused_by_actual_siblings_before_any_label(in
     assert "ensemble_price_differs_from_rev3:AAA" in result["verdict"]["reasons"]
     assert result["labels_read"] == 0 and "missing_label" not in context["events"]
     assert "paired_sources:read" in context["events"] and result["variants"] is None
+
+
+def test_a_streamed_grade_reads_the_same_statistic_as_the_whole_list(integrated: dict[str, Any]) -> None:
+    context = integrated
+    manifest, records = context["manifest"], context["section"]["records"]
+    listed = _report(context, manifest, records)
+    labels_listed = context["events"].count("missing_label")
+    streamed = _report(context, manifest, records, streamed=True)
+    assert streamed == listed and context["events"].count("records_for") == len(manifest["entries"])
+    assert context["events"].count("missing_label") == 2 * labels_listed
+    compact = report.compact_row(records[0])
+    assert "input_ledger" not in compact and "consensus" not in compact and all(set(model) == {"model", "status", "reason"} for model in compact["models"])
+
+
+def test_a_streamed_tampered_row_voids_before_any_label(integrated: dict[str, Any]) -> None:
+    context = integrated
+    records = copy.deepcopy(context["section"]["records"])
+    records[0]["price"] += 1
+    manifest = copy.deepcopy(context["manifest"])
+    manifest["entries"][0]["records_sha256"] = canonical_hash(records)
+    manifest["manifest_sha256"] = canonical_hash({key: value for key, value in manifest.items() if key != "manifest_sha256"})
+    result = _report(context, manifest, records, streamed=True)["payload"]
+    assert result["verdict"]["status"] == "VOID" and result["labels_read"] == 0 and "missing_label" not in context["events"]
+    foreign = copy.deepcopy(context["section"]["records"])
+    foreign[0]["run_key"] = "f" * 64
+    result = _report(context, context["manifest"], foreign, streamed=True)["payload"]
+    assert result["verdict"]["status"] == "VOID" and result["labels_read"] == 0

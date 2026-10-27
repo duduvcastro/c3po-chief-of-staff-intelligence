@@ -54,6 +54,9 @@ APP_PREFIX = "c3po/backend/app/"
 SECTION_SCHEMA = "VALUATION-ENSEMBLE-GRADE-ARTIFACT-v1"
 JOURNAL_SCHEMA = "VALUATION-ENSEMBLE-GRID-JOURNAL-v1"
 CHUNK_SCHEMA = "VALUATION-ENSEMBLE-GRID-CHUNK-v1"
+READING_SCHEMA = "VALUATION-ENSEMBLE-READING-v1"
+MAX_MANIFEST_BYTES = 256 * 1024 * 1024
+PUBLIC_UPPER = frozenset({"PASS", "FAIL", "VOID", "UNMEASURED", "NEGATIVE", "SINGLE", "US", "NASDAQ", "NYSE"})
 MAX_REV3_BYTES = 64 * 1024 * 1024
 MAX_CHECKOUT_BYTES = 1024 * 1024
 ASFILED_SOURCE_CODE = "sec_asfiled"  # the Investor Relations worker's as-filed poll (investor_relations.py)
@@ -235,9 +238,10 @@ def read_journal(journal: Path) -> list[dict[str, Any]]:
     return [by_slot[slot] for slot in sorted(by_slot, key=lambda x: (x[1], x[0], x[2]))]
 
 
-def write_manifest(directory: Path, manifest: Mapping[str, Any]) -> Path:
-    digest = str(manifest["manifest_sha256"])
-    if not _SHA256.fullmatch(digest) or canonical_hash({k: v for k, v in manifest.items() if k != "manifest_sha256"}) != digest:
+def write_manifest(directory: Path, manifest: Mapping[str, Any], *, key: str = "manifest_sha256") -> Path:
+    """A private, immutable JSON document named by its own digest (``key``; the canonical sha256 of the rest)."""
+    digest = str(manifest[key])
+    if not _SHA256.fullmatch(digest) or canonical_hash({k: v for k, v in manifest.items() if k != key}) != digest:
         raise ValueError("ensemble_driver_manifest_digest_invalid")
     raw = (json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False) + "\n").encode()
     path = directory / f"{digest}.json"
@@ -397,6 +401,122 @@ def run_chunk(database: Any, settings: Any, *, rev3: Mapping[str, Any], order_sh
             "owner_order_sha256": order_sha256, "instrument_pin_sha256": pin_sha256}
 
 
+# ------------------------------------------------------------------ the single-look reading
+class LabelReader:
+    """``label_reader(row, h)`` for ``build_report``: the labels of the rev3 PINNED price publication of the row's exchange
+    (cut = its ``available_at`` + 1 µs, checked to resolve exactly that publication before any label), the rev3 rules —
+    the basis check of the row's close(D) against the publication's close at D (``TOL_BASIS``), ``return`` =
+    adjusted_close(D+h) / adjusted_close(D) − 1, ``return_executable`` = adjusted_close(D+1+h) / adjusted_close(D+1) − 1,
+    a missing label's ``reason`` = the label's status. The reader keeps one series at a time; the report reads symbol
+    after symbol."""
+
+    def __init__(self, reader: Any, rev3: Mapping[str, Any]) -> None:
+        from . import valuation_panel as panel
+
+        self.reader, self.panel = reader, panel
+        self.cuts: dict[str, datetime] = {}
+        self.calendar_close: dict[str, datetime | None] = {}
+        pins = rev3.get("price_pin") if isinstance(rev3.get("price_pin"), Mapping) else {}
+        for market in ("NASDAQ", "NYSE"):
+            pin = pins.get(market) if isinstance(pins, Mapping) else None
+            if not isinstance(pin, Mapping) or pin.get("status") != "ok":
+                raise ValueError("ensemble_driver_rev3_price_pin_missing")
+            cut = utc(datetime.fromisoformat(str(pin["available_at"]).replace("Z", "+00:00"))) + timedelta(microseconds=1)
+            vintage = reader.vintage(market, available_before=cut)
+            if (vintage is None or vintage.get("status") != "ok" or str(vintage.get("publication_id")) != str(pin.get("publication_id"))
+                    or vintage.get("bars_sha256") != pin.get("bars_sha256")):
+                raise ValueError("ensemble_driver_label_vintage_not_the_pinned_one")
+            self.cuts[market], self.calendar_close[market] = cut, panel.calendar_horizon(market)
+
+    def _label(self, market: str, symbol: str, session: Any, horizon: int) -> dict[str, Any]:
+        cut = self.cuts[market]
+        return self.panel.resolve_label(self.reader.label_bar(market, symbol, session, horizon, available_before=cut), cut=cut,
+                                        calendar_close=self.calendar_close[market])
+
+    def __call__(self, row: Mapping[str, Any], horizon: int) -> dict[str, Any]:
+        from datetime import date
+
+        market, symbol, day = str(row["market"]), str(row["symbol"]), str(row["session_date"])[:10]
+        positive = self.panel._positive
+        bar = self.reader.bars(market, symbol, available_before=self.cuts[market]).get(day)
+        close, adjusted = (positive(bar.get("close")), positive(bar.get("adjusted_close"))) if bar else (None, None)
+        price = positive(row.get("price"))
+        if close is None or adjusted is None:
+            return {"return": None, "return_executable": None, "reason": "label_unavailable:adjustment_unknown"}
+        if price is None or abs(price - close) / close > self.panel.TOL_BASIS:
+            return {"return": None, "return_executable": None, "reason": "label_unavailable:basis_mismatch"}
+        session = date.fromisoformat(day)
+        at_h, at_1, at_exit = (self._label(market, symbol, session, k) for k in (horizon, 1, horizon + 1))
+
+        def realized(label: Mapping[str, Any]) -> float | None:
+            return positive(label.get("adjusted_close")) if label.get("status") == "labelled" else None
+        exit_h, entry, exit_x = realized(at_h), realized(at_1), realized(at_exit)
+        # the reason of a missing label: the executable pair's first (the report's attrition counts it), else the h label's
+        missing = next((label for value, label in ((entry, at_1), (exit_x, at_exit), (exit_h, at_h)) if value is None), None)
+        reason = None if missing is None else str(missing.get("status"))
+        return {"return": exit_h / adjusted - 1.0 if exit_h is not None else None,
+                "return_executable": exit_x / entry - 1.0 if exit_x is not None and entry is not None else None, "reason": reason}
+
+
+def public_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """The reading as published: the verdict's reasons reduced to their codes (a sibling check names the symbol after a
+    ``:``; it stays in the private copy only). Everything else is aggregates by construction."""
+    result = json.loads(json.dumps(payload, allow_nan=False))
+    verdict = result.get("verdict")
+    if isinstance(verdict, dict) and isinstance(verdict.get("reasons"), list):
+        verdict["reasons"] = sorted({reason if isinstance(reason, str) and _CODE.fullmatch(reason) else str(reason).split(":", 1)[0] + ":redacted"
+                                     for reason in verdict["reasons"]})
+    return result
+
+
+def run_report(database: Any, settings: Any, *, rev3: Mapping[str, Any], pin_sha256: str, binding: InstrumentBinding, manifest_sha256: str,
+               legacy_root: Path = LEGACY_ROOT, store_root: Path = STORE_ROOT, app_dir: Path | None = None,
+               label_reader: Callable[[Mapping[str, Any], int], Mapping[str, Any]] | None = None,
+               paired_sources_reader: Callable[[Mapping[str, Any]], tuple[Any, Any]] | None = None) -> dict[str, Any]:
+    """The single-look reading of the COMPLETE grade manifest ``manifest_sha256`` (the digest the last chunk published),
+    streamed entry by entry from the private store (``build_report(records_for=...)``): every instrument, manifest, row and
+    sibling check runs before the first label. The full reading stays private (``reports/<payload_sha256>.json``)."""
+    from .valuation_ensemble_calendar import report_calendar_for
+    from .valuation_ensemble_executor import load_grade_artifact
+    from .valuation_ensemble_report import build_report
+
+    if not _SHA256.fullmatch(manifest_sha256):
+        raise ValueError("ensemble_driver_manifest_digest_invalid")
+    pin = json.loads(checkout_file(legacy_root, PINS / f"{pin_sha256}.json"))
+    if not isinstance(pin, dict):
+        raise ValueError("ensemble_driver_pin_invalid")
+    files = instrument_file_hashes(legacy_root)
+    running_files(files, app_dir or Path(__file__).resolve().parent)
+    root = private_directory(store_root)
+    with ChunkLock(root):
+        manifest = json.loads(checkout_file(root / "manifests", Path(f"{manifest_sha256}.json"), limit=MAX_MANIFEST_BYTES))
+        store = FileReceiptStore(private_directory(root / "receipts"))
+        calendar = report_calendar_for(rev3)
+        if label_reader is None:
+            from .valuation_accuracy_report import _SymbolReader
+            from .valuation_panel import _CutReads, _NoNetworkHttp
+
+            label_reader = LabelReader(_SymbolReader(settings, _CutReads(database), _NoNetworkHttp()), rev3)
+        if paired_sources_reader is None:
+            def siblings(entry: Mapping[str, Any]) -> tuple[Any, Any]:
+                return (database.analysis_snapshot_by_id(str(entry["v3_cycle_id"])), database.analysis_snapshot_by_id(str(entry["served_cycle_id"])))
+            paired_sources_reader = siblings
+
+        def records_for(entry: Mapping[str, Any]) -> list[dict[str, Any]]:
+            return load_grade_artifact(store, str(entry["receipt_run_key"]))["section"]["records"]
+        started = time.monotonic()
+        reading = build_report(manifest, None, rev3_manifest=rev3, pin=pin, binding=binding, file_hashes=files, label_reader=label_reader,
+                               index_of=calendar["index_of"], mature_through={int(h): v for h, v in calendar["mature_through"].items()},
+                               partition_last=calendar["partition_last"], expected_manifest_sha256=manifest_sha256,
+                               paired_sources_reader=paired_sources_reader, records_for=records_for)
+        elapsed = time.monotonic() - started
+        reports = private_directory(root / "reports")
+        write_manifest(reports, {**reading, "reading_sha256": canonical_hash(reading)}, key="reading_sha256")
+    return {"schema": READING_SCHEMA, "kind": "reading", "payload_sha256": reading["payload_sha256"], "manifest_sha256": manifest_sha256,
+            "instrument_pin_sha256": pin_sha256, "elapsed_seconds": round(elapsed, 1), "peak_rss_kb": peak_rss_kb(),
+            "payload": public_payload(reading["payload"])}
+
+
 def peak_rss_kb() -> int:
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return int(peak // 1024) if sys.platform == "darwin" else int(peak)
@@ -424,21 +544,28 @@ def _instant(parser: argparse.ArgumentParser, value: str) -> datetime:
 def main(argv: list[str] | None = None, *, database: Any = None, settings: Any = None) -> int:
     parser = argparse.ArgumentParser(description="PREREG_VALUATION_ENSEMBLE_PIT_US_V1: one bounded grade chunk on the host (rev3 manifest on stdin). "
                                                  "Prints aggregates only (JSON lines), never a symbol.")
-    parser.add_argument("--owner-order-sha256", required=True)
+    parser.add_argument("--report", action="store_true", help="the single-look reading of the complete manifest --manifest-sha256 (no owner order)")
+    parser.add_argument("--manifest-sha256", default=None)
+    parser.add_argument("--owner-order-sha256", default=None)
     parser.add_argument("--pin-sha256", required=True)
     parser.add_argument("--instrument-commit", required=True)
     parser.add_argument("--owner-signature-comment-id", type=int, required=True)
     parser.add_argument("--technical-go-comment-id", type=int, required=True)
-    parser.add_argument("--max-runs", type=int, required=True)
-    parser.add_argument("--stop-before", required=True)
+    parser.add_argument("--max-runs", type=int, default=None)
+    parser.add_argument("--stop-before", default=None)
     args = parser.parse_args(argv)
-    for option, value, pattern in (("--owner-order-sha256", args.owner_order_sha256, _SHA256), ("--pin-sha256", args.pin_sha256, _SHA256),
-                                   ("--instrument-commit", args.instrument_commit, _COMMIT)):
-        if not pattern.fullmatch(value):
+    checks = [("--pin-sha256", args.pin_sha256, _SHA256), ("--instrument-commit", args.instrument_commit, _COMMIT)]
+    checks.append(("--manifest-sha256", args.manifest_sha256, _SHA256) if args.report else ("--owner-order-sha256", args.owner_order_sha256, _SHA256))
+    for option, value, pattern in checks:
+        if not isinstance(value, str) or not pattern.fullmatch(value):
             parser.error(f"{option} is not lowercase hex of the right length")
-    if not 1 <= args.max_runs <= 200 or args.owner_signature_comment_id <= 0 or args.technical_go_comment_id <= 0:
-        parser.error("--max-runs must be 1-200 and the comment ids positive")
-    stop_before = _instant(parser, args.stop_before)
+    if args.owner_signature_comment_id <= 0 or args.technical_go_comment_id <= 0:
+        parser.error("the comment ids must be positive")
+    if args.report and any(value is not None for value in (args.owner_order_sha256, args.max_runs, args.stop_before)):
+        parser.error("--report takes no owner order, --max-runs or --stop-before")
+    if not args.report and (args.max_runs is None or not 1 <= args.max_runs <= 200 or args.stop_before is None):
+        parser.error("a chunk needs --max-runs 1-200 and --stop-before")
+    stop_before = None if args.report else _instant(parser, args.stop_before)
     binding = InstrumentBinding(expected_pin_sha256=args.pin_sha256, prereg_commit=PREREG_COMMIT, instrument_commit=args.instrument_commit,
                                 owner_signature_comment_id=args.owner_signature_comment_id, technical_GO_comment_id=args.technical_go_comment_id)
     try:
@@ -452,9 +579,14 @@ def main(argv: list[str] | None = None, *, database: Any = None, settings: Any =
             from .database import Database
             database = Database(settings)
         rev3 = read_rev3(sys.stdin.buffer)
-        print(json.dumps({"kind": "start", "max_runs": args.max_runs, "stop_before": stop_before.isoformat()}, sort_keys=True), flush=True)
-        result = run_chunk(database, settings, rev3=rev3, order_sha256=args.owner_order_sha256, pin_sha256=args.pin_sha256, binding=binding,
-                           max_runs=args.max_runs, stop_before=stop_before)
+        if args.report:
+            print(json.dumps({"kind": "start", "max_runs": None, "stop_before": None}, sort_keys=True), flush=True)
+            result = run_report(database, settings, rev3=rev3, pin_sha256=args.pin_sha256, binding=binding, manifest_sha256=args.manifest_sha256)
+        else:
+            assert stop_before is not None
+            print(json.dumps({"kind": "start", "max_runs": args.max_runs, "stop_before": stop_before.isoformat()}, sort_keys=True), flush=True)
+            result = run_chunk(database, settings, rev3=rev3, order_sha256=args.owner_order_sha256, pin_sha256=args.pin_sha256, binding=binding,
+                               max_runs=args.max_runs, stop_before=stop_before)
     except Exception as error:  # noqa: BLE001 - every refusal is one printed code; the traceback stays on stderr (private)
         traceback.print_exc(file=sys.stderr)
         print(json.dumps({"kind": "refused", "reason": refusal_code(error), "peak_rss_kb": peak_rss_kb()}, sort_keys=True), flush=True)

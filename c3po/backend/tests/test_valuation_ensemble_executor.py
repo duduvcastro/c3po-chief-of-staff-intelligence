@@ -318,7 +318,8 @@ def test_inventory_cli_is_inert_and_the_workflow_runs_a_grade_only_behind_its_gu
                      "inside the US session or the nightly window", "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL", "exit 36",
                      "--host-check", "exit 21", "r2d2*", "reboot.pending", "flock -s -n 9", "default_transaction_read_only=on",
                      "-m app.valuation_ensemble_driver", "< \\\"$rev3_file\\\"", "unexpected lines (counted, not printed)",
-                     "valuation_pit_run_token=$RUN_TOKEN", "exit 39", "author_association", "verify-failed", "/var/lib/docker"):
+                     "valuation_pit_run_token=$RUN_TOKEN", "exit 39", "author_association", "verify-failed", "/var/lib/docker",
+                     "the single look was spent", "--report --manifest-sha256", "ticker-like"):
         assert fragment in grid, fragment
 
 

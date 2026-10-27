@@ -397,3 +397,28 @@ def test_full_catalogue_keeps_etf_ledger_without_inflating_stock_coverage_or_rea
     assert names == ["S000"] and result["payload"]["raw_records"] == 2 and result["payload"]["stock_records"] == 1
     assert result["payload"]["variants"][report.PRIMARY]["coverage"]["records_share"] == 1.0
     assert result["payload"]["model_non_evaluations"]["dcf_fcff:missing_fact:capex_ttm"] == 2
+
+
+def test_a_streamed_report_equals_the_whole_list_report_with_real_statistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest, rows, rev3, pin, binding, files = fixture(monkeypatch)
+    manifest["report_calendar"]["mature_through"] = {str(h): 0 for h in (21, 22, 63, 64, 126, 127, 252, 253)}
+    manifest["manifest_sha256"] = report.manifest_sha256(manifest)
+    expected_report_calendar = copy.deepcopy(manifest["report_calendar"])
+    monkeypatch.setattr(calendar, "report_calendar_for", lambda rev3: copy.deepcopy(expected_report_calendar))
+    order: list[str] = []
+
+    def labels(item: Any, h: int) -> dict[str, Any]:  # labels that differ by name: the statistic is computed, not UNMEASURED
+        order.append(str(item["symbol"]))
+        k = int(str(item["symbol"])[-2:]) if str(item["symbol"])[-2:].isdigit() else len(str(item["symbol"]))
+        return {"return": 0.01 * ((k * 7) % 13) - 0.05, "return_executable": 0.01 * ((k * 5) % 11) - 0.04, "reason": None}
+    common = dict(rev3_manifest=rev3, pin=pin, binding=binding, file_hashes=files, label_reader=labels, index_of={"2025-01-02": 0},
+                  mature_through={h: 0 for h in (21, 22, 63, 64, 126, 127, 252, 253)}, partition_last=0,
+                  expected_manifest_sha256=manifest["manifest_sha256"], paired_sources_reader=paired_sources)
+    listed = report.build_report(manifest, rows, **common)
+    first_order = list(order)
+    streamed = report.build_report(manifest, None, records_for=lambda entry: copy.deepcopy(rows), **common)
+    assert streamed == listed and listed["payload"]["labels_read"] == 48
+    assert listed["payload"]["variants"][report.PRIMARY]["horizons"]["126"]["names_per_session"]["median"] == 12
+    assert first_order == sorted(first_order)  # labels are read symbol after symbol
+    both = report.build_report(manifest, rows, records_for=lambda entry: rows, **common)["payload"]
+    assert both["verdict"]["status"] == "VOID" and "ensemble_records_invalid" in both["verdict"]["reasons"]
