@@ -527,7 +527,12 @@ def _streamed_records(manifest: Mapping[str, Any], records_for: Callable[[Mappin
     identities: set[tuple[str, str, str]] = set()
     kept: list[dict[str, Any]] = []
     for entry in manifest["entries"]:
-        rows = records_for(entry)
+        try:
+            rows = records_for(entry)
+        except (OSError, ValueError, TypeError, KeyError) as error:  # a missing or altered private artifact: its own code
+            code = str(error)
+            errors.append(code if re.fullmatch(r"[a-z0-9_]{1,120}", code) else "ensemble_records_invalid")
+            continue
         if isinstance(rows, (str, bytes)) or not isinstance(rows, Sequence) or any(not isinstance(row, Mapping) for row in rows):
             errors.append("ensemble_records_invalid")
             continue

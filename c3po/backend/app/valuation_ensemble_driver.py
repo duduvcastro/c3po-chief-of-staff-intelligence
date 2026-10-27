@@ -458,15 +458,38 @@ class LabelReader:
                 "return_executable": exit_x / entry - 1.0 if exit_x is not None and entry is not None else None, "reason": reason}
 
 
+_SCHEMA_NAME = re.compile(r"[A-Z0-9]+(-[A-Z0-9]+)*-v[0-9]+")
+_INSTANT = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9:.]+([+-][0-9]{2}:[0-9]{2}|Z)?)?")
+
+
+def public_text(value: str) -> str:
+    """A string as published: a lower-case code, a status word, a schema name or an instant as it is; anything else (a
+    sibling check's ``…:SYMBOL``, an exception's text kept as a model reason) reduced to its code prefix + ``:redacted``."""
+    if _CODE.fullmatch(value) or value in PUBLIC_UPPER or _SCHEMA_NAME.fullmatch(value) or _INSTANT.fullmatch(value):
+        return value
+    prefix = value.split(":", 1)[0]
+    return prefix + ":redacted" if prefix != value and _CODE.fullmatch(prefix) else "redacted"
+
+
 def public_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """The reading as published: the verdict's reasons reduced to their codes (a sibling check names the symbol after a
-    ``:``; it stays in the private copy only). Everything else is aggregates by construction."""
-    result = json.loads(json.dumps(payload, allow_nan=False))
-    verdict = result.get("verdict")
-    if isinstance(verdict, dict) and isinstance(verdict.get("reasons"), list):
-        verdict["reasons"] = sorted({reason if isinstance(reason, str) and _CODE.fullmatch(reason) else str(reason).split(":", 1)[0] + ":redacted"
-                                     for reason in verdict["reasons"]})
-    return result
+    """The reading as published: every string and key through ``public_text`` (counts under keys that collapse to one are
+    summed); the protocol block — constant prose of the pinned report module — as it is. The full reading stays private."""
+    def walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            out: dict[str, Any] = {}
+            for key, item in value.items():
+                name = public_text(str(key))
+                item = item if key == "protocol" else walk(item)
+                if name in out and isinstance(out[name], (int, float)) and isinstance(item, (int, float)) and not isinstance(item, bool):
+                    out[name] = out[name] + item
+                else:
+                    out[name] = item
+            return out
+        if isinstance(value, list):
+            items = [walk(item) for item in value]
+            return sorted(set(items)) if items and all(isinstance(item, str) for item in items) else items
+        return public_text(value) if isinstance(value, str) else value
+    return walk(json.loads(json.dumps(payload, allow_nan=False)))
 
 
 def run_report(database: Any, settings: Any, *, rev3: Mapping[str, Any], pin_sha256: str, binding: InstrumentBinding, manifest_sha256: str,
@@ -475,7 +498,8 @@ def run_report(database: Any, settings: Any, *, rev3: Mapping[str, Any], pin_sha
                paired_sources_reader: Callable[[Mapping[str, Any]], tuple[Any, Any]] | None = None) -> dict[str, Any]:
     """The single-look reading of the COMPLETE grade manifest ``manifest_sha256`` (the digest the last chunk published),
     streamed entry by entry from the private store (``build_report(records_for=...)``): every instrument, manifest, row and
-    sibling check runs before the first label. The full reading stays private (``reports/<payload_sha256>.json``)."""
+    sibling check runs before the first label. The full reading stays private (``reports/<reading_sha256>.json``) and is
+    the host's own record of the single look (``earlier_reading``)."""
     from .valuation_ensemble_calendar import report_calendar_for
     from .valuation_ensemble_executor import load_grade_artifact
     from .valuation_ensemble_report import build_report
@@ -489,6 +513,10 @@ def run_report(database: Any, settings: Any, *, rev3: Mapping[str, Any], pin_sha
     running_files(files, app_dir or Path(__file__).resolve().parent)
     root = private_directory(store_root)
     with ChunkLock(root):
+        reports = private_directory(root / "reports")
+        spent = earlier_reading(reports, manifest_sha256)
+        if spent is not None:  # the same manifest: the stored reading, no label read again
+            return reading_line(spent, pin_sha256=pin_sha256, elapsed=0.0, repeated=True)
         manifest = json.loads(checkout_file(root / "manifests", Path(f"{manifest_sha256}.json"), limit=MAX_MANIFEST_BYTES))
         store = FileReceiptStore(private_directory(root / "receipts"))
         calendar = report_calendar_for(rev3)
@@ -510,11 +538,35 @@ def run_report(database: Any, settings: Any, *, rev3: Mapping[str, Any], pin_sha
                                partition_last=calendar["partition_last"], expected_manifest_sha256=manifest_sha256,
                                paired_sources_reader=paired_sources_reader, records_for=records_for)
         elapsed = time.monotonic() - started
-        reports = private_directory(root / "reports")
-        write_manifest(reports, {**reading, "reading_sha256": canonical_hash(reading)}, key="reading_sha256")
-    return {"schema": READING_SCHEMA, "kind": "reading", "payload_sha256": reading["payload_sha256"], "manifest_sha256": manifest_sha256,
-            "instrument_pin_sha256": pin_sha256, "elapsed_seconds": round(elapsed, 1), "peak_rss_kb": peak_rss_kb(),
-            "payload": public_payload(reading["payload"])}
+        document = {**reading, "manifest_sha256": manifest_sha256}
+        write_manifest(reports, {**document, "reading_sha256": canonical_hash(document)}, key="reading_sha256")
+    return reading_line(document, pin_sha256=pin_sha256, elapsed=elapsed, repeated=False)
+
+
+def earlier_reading(reports: Path, manifest_sha256: str) -> dict[str, Any] | None:
+    """The single look, on the host: a stored reading that is not VOID over ANOTHER manifest refuses a new one; one over
+    THIS manifest is returned as it is (no label read again). VOID readings read no label and spend nothing."""
+    found = None
+    for path in sorted(reports.glob("*.json")):
+        document = json.loads(checkout_file(reports, Path(path.name), limit=MAX_MANIFEST_BYTES))
+        status = (((document.get("payload") or {}).get("verdict")) or {}).get("status")
+        if status == "VOID":
+            continue
+        if document.get("manifest_sha256") != manifest_sha256:
+            raise ValueError("ensemble_driver_single_look_spent_on_another_manifest")
+        found = document
+    return found
+
+
+def reading_line(document: Mapping[str, Any], *, pin_sha256: str, elapsed: float, repeated: bool) -> dict[str, Any]:
+    """The printed line: the public payload, its own digest, and the private payload's digest only when nothing was redacted
+    (a redacted VOID reason must not be recoverable by hashing candidate symbols into the public payload)."""
+    public = public_payload(document["payload"])
+    exact = public == json.loads(json.dumps(document["payload"], allow_nan=False))
+    return {"schema": READING_SCHEMA, "kind": "reading", "payload_sha256": document["payload_sha256"] if exact else None,
+            "public_payload_sha256": canonical_hash(public), "redacted": not exact, "repeated": repeated,
+            "manifest_sha256": document["manifest_sha256"], "instrument_pin_sha256": pin_sha256,
+            "elapsed_seconds": round(elapsed, 1), "peak_rss_kb": peak_rss_kb(), "payload": public}
 
 
 def peak_rss_kb() -> int:
@@ -563,8 +615,8 @@ def main(argv: list[str] | None = None, *, database: Any = None, settings: Any =
         parser.error("the comment ids must be positive")
     if args.report and any(value is not None for value in (args.owner_order_sha256, args.max_runs, args.stop_before)):
         parser.error("--report takes no owner order, --max-runs or --stop-before")
-    if not args.report and (args.max_runs is None or not 1 <= args.max_runs <= 200 or args.stop_before is None):
-        parser.error("a chunk needs --max-runs 1-200 and --stop-before")
+    if not args.report and (args.max_runs is None or not 1 <= args.max_runs <= 200 or args.stop_before is None or args.manifest_sha256 is not None):
+        parser.error("a chunk needs --max-runs 1-200 and --stop-before (and no --manifest-sha256)")
     stop_before = None if args.report else _instant(parser, args.stop_before)
     binding = InstrumentBinding(expected_pin_sha256=args.pin_sha256, prereg_commit=PREREG_COMMIT, instrument_commit=args.instrument_commit,
                                 owner_signature_comment_id=args.owner_signature_comment_id, technical_GO_comment_id=args.technical_go_comment_id)
@@ -581,7 +633,7 @@ def main(argv: list[str] | None = None, *, database: Any = None, settings: Any =
         rev3 = read_rev3(sys.stdin.buffer)
         if args.report:
             print(json.dumps({"kind": "start", "max_runs": None, "stop_before": None}, sort_keys=True), flush=True)
-            result = run_report(database, settings, rev3=rev3, pin_sha256=args.pin_sha256, binding=binding, manifest_sha256=args.manifest_sha256)
+            result = run_report(database, settings, rev3=rev3, pin_sha256=args.pin_sha256, binding=binding, manifest_sha256=str(args.manifest_sha256))
         else:
             assert stop_before is not None
             print(json.dumps({"kind": "start", "max_runs": args.max_runs, "stop_before": stop_before.isoformat()}, sort_keys=True), flush=True)

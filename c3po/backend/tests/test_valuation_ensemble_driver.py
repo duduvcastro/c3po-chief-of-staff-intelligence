@@ -265,3 +265,31 @@ def test_the_reading_runs_the_full_report_from_the_private_store_and_publishes_c
 def test_the_public_reading_reduces_symbol_bearing_reasons() -> None:
     payload = {"verdict": {"status": "VOID", "reasons": ["ensemble_price_differs_from_rev3:AAA", "ensemble_manifest_not_complete"]}, "labels_read": 0}
     assert driver.public_payload(payload)["verdict"]["reasons"] == ["ensemble_manifest_not_complete", "ensemble_price_differs_from_rev3:redacted"]
+
+
+def test_every_public_string_is_a_code_and_redaction_drops_the_private_digest() -> None:
+    payload = {"schema": "VALUATION-ENSEMBLE-PIT-REPORT-v1", "protocol": {"precision": "median(abs(...)) D to D+h"},
+               "verdict": {"status": "VOID", "look": "SINGLE", "reasons": ["ensemble_price_differs_from_rev3:BRK-B", "x:SEC"]},
+               "model_non_evaluations": {"dcf_fcff:(34, 'Numerical result out of range')": 2, "dcf_fcff:missing_fact:capex_ttm": 1,
+                                         "graham:(34, 'Numerical result out of range')": 1}, "at": "2026-10-27T13:00:00+00:00"}
+    public = driver.public_payload(payload)
+    assert public["protocol"] == payload["protocol"] and public["schema"] == payload["schema"] and public["at"] == payload["at"]
+    assert public["verdict"] == {"status": "VOID", "look": "SINGLE", "reasons": ["ensemble_price_differs_from_rev3:redacted", "x:redacted"]}
+    assert public["model_non_evaluations"] == {"dcf_fcff:redacted": 2, "dcf_fcff:missing_fact:capex_ttm": 1, "graham:redacted": 1}
+    line = driver.reading_line({"payload": payload, "payload_sha256": "a" * 64, "manifest_sha256": "b" * 64}, pin_sha256="c" * 64, elapsed=1.0, repeated=False)
+    assert line["payload_sha256"] is None and line["redacted"] is True and "BRK" not in json.dumps(line)
+
+
+def test_the_single_look_is_kept_on_the_host(tmp_path: Path) -> None:
+    reports = tmp_path / "reports"
+    reports.mkdir(mode=0o700)
+    assert driver.earlier_reading(reports, "a" * 64) is None
+    void = {"payload": {"verdict": {"status": "VOID"}}, "payload_sha256": "1" * 64, "manifest_sha256": "b" * 64}
+    driver.write_manifest(reports, {**void, "reading_sha256": driver.canonical_hash(void)}, key="reading_sha256")
+    assert driver.earlier_reading(reports, "a" * 64) is None  # a VOID reading read no label: nothing spent
+    read = {"payload": {"verdict": {"status": "FAIL"}}, "payload_sha256": "2" * 64, "manifest_sha256": "a" * 64}
+    driver.write_manifest(reports, {**read, "reading_sha256": driver.canonical_hash(read)}, key="reading_sha256")
+    stored = driver.earlier_reading(reports, "a" * 64)  # the same manifest: the stored reading
+    assert stored is not None and stored["payload_sha256"] == "2" * 64
+    with pytest.raises(ValueError, match="single_look_spent_on_another_manifest"):
+        driver.earlier_reading(reports, "c" * 64)

@@ -364,12 +364,16 @@ jobs:
           set -uo pipefail
           dir="$RUNNER_TEMP/previous"
           mkdir -p "$dir" || exit 1
-          # every earlier report run of this workflow, whatever its conclusion: a reading that printed a verdict spent the look
-          gh run list -R "$GITHUB_REPOSITORY" --workflow valuation-ensemble-grid.yml --limit 200 --json databaseId,displayTitle,status \
+          # the host keeps the look itself (the driver refuses a new manifest after a stored non-VOID reading); this is the
+          # backstop on GitHub's side: every earlier report run of this workflow, whatever its conclusion. A run whose host step
+          # ran but whose reading cannot be read back (no artifact, expired, unreadable) counts as SPENT: the operator decides.
+          gh run list -R "$GITHUB_REPOSITORY" --workflow valuation-ensemble-grid.yml --limit 1000 --json databaseId,displayTitle,status \
             > "$dir/runs.json" || exit 1
-          for id in $(python3 -I -c 'import json, sys; print(" ".join(str(r["databaseId"]) for r in json.load(open(sys.argv[1])) if str(r.get("displayTitle", "")).endswith("— report") and r.get("status") == "completed"))' "$dir/runs.json"); do
+          for id in $(python3 -I -c 'import json, sys; print(" ".join(str(r["databaseId"]) for r in json.load(open(sys.argv[1])) if str(r.get("displayTitle", "")).endswith("— report")))' "$dir/runs.json"); do
             [[ "$id" =~ ^[0-9]+$ ]] || continue
             [ "$id" != "$GITHUB_RUN_ID" ] || continue
+            mkdir -p "$dir/$id" || exit 1
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" > "$dir/$id/jobs.json" || { echo "the jobs of report run $id cannot be read" >&2; exit 1; }
             gh run download "$id" -R "$GITHUB_REPOSITORY" -n "valuation-ensemble-grid-report-$id" -D "$dir/$id" >/dev/null 2>&1 || true
           done
           python3 -I - "$dir" <<'PY' || exit 1
@@ -377,12 +381,28 @@ jobs:
           import sys
           from pathlib import Path
 
-          for path in sorted(Path(sys.argv[1]).glob("*/metadata.json")):
-              metadata = json.loads(path.read_text(encoding="utf-8"))
+          for folder in sorted(path for path in Path(sys.argv[1]).iterdir() if path.is_dir()):
+              steps = [step for job in json.loads((folder / "jobs.json").read_text(encoding="utf-8")).get("jobs") or [] for step in job.get("steps") or []]
+              host = [step for step in steps if step.get("name") == "Run on the host"]
+              if not host or all(step.get("conclusion") == "skipped" for step in host):
+                  continue  # refused before the host: nothing was read
+              if any(step.get("status") != "completed" for step in host):
+                  sys.exit(f"report run {folder.name} is still on the host: wait for it")
+              metadata_path = folder / "metadata.json"
+              if not metadata_path.exists():
+                  sys.exit(f"report run {folder.name} reached the host and its reading cannot be read back: counted as spent")
+              metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+              lines = metadata.get("lines") or []
+              if not any(str(line).startswith("LAUNCHED ") for line in lines):
+                  continue  # the host refused in its preflight: no driver ran
               result = metadata.get("result") if isinstance(metadata.get("result"), dict) else {}
+              if result.get("kind") == "refused" and not str(result.get("reason") or "exception:").startswith("exception:"):
+                  continue  # a coded refusal of the driver's own checks, all before the reading (an exception may come mid-reading)
               status = ((result.get("payload") or {}).get("verdict") or {}).get("status") if result.get("kind") == "reading" else None
-              if status is not None and status != "VOID":
-                  sys.exit(f"a previous reading (run {metadata.get('run_id')}) was {status}: the single look was spent")
+              if status is None:
+                  sys.exit(f"report run {folder.name} launched the driver and published no reading: counted as spent")
+              if status != "VOID":
+                  sys.exit(f"a previous reading (run {folder.name}) was {status}: the single look was spent")
           print("no previous non-VOID reading of this pre-registration")
           PY
 
@@ -623,8 +643,10 @@ jobs:
               if isinstance(value, list):
                   return all(clean(item) for item in value)
               if isinstance(value, str):
+                  if re.fullmatch(r"[A-Z0-9]+(-[A-Z0-9]+)*-v[0-9]+|[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9:.]+([+-][0-9]{2}:[0-9]{2}|Z)?)?", value):
+                      return True  # a schema name or an instant
                   return re.fullmatch(r"[A-Za-z0-9_:./=;+ -]{0,300}", value) is not None and not any(
-                      re.fullmatch(r"[A-Z][A-Z0-9.]{0,9}", token) and token not in upper_ok for token in re.split(r"[:;/ ]", value))
+                      re.fullmatch(r"[A-Z][A-Z0-9.]{0,9}", token) and token not in upper_ok for token in re.split(r"[^A-Za-z0-9.]", value))
               return True
 
 
@@ -652,7 +674,8 @@ jobs:
                   if not clean(value):
                       unexpected += 1
                       continue
-                  kept.append(json.dumps({key: value.get(key) for key in ("kind", "payload_sha256", "manifest_sha256", "elapsed_seconds", "peak_rss_kb")}, sort_keys=True))
+                  kept.append(json.dumps({key: value.get(key) for key in ("kind", "payload_sha256", "public_payload_sha256", "redacted", "repeated",
+                                                                           "manifest_sha256", "elapsed_seconds", "peak_rss_kb")}, sort_keys=True))
                   chunk = value
                   chunks += 1
                   (out / "reading.json").write_text(json.dumps(value, sort_keys=True, indent=1) + "\n", encoding="utf-8")
@@ -677,7 +700,8 @@ jobs:
           summary += [f"    {line}" for line in kept] + [f"- unexpected lines (counted, not printed): {unexpected}"]
           if chunk and chunk.get("kind") == "reading":
               verdict = (chunk.get("payload") or {}).get("verdict") or {}
-              summary.append(f"- READING `{chunk.get('payload_sha256')}` over manifest `{chunk.get('manifest_sha256')}`: **{verdict.get('status')}**; "
+              summary.append(f"- READING (public `{chunk.get('public_payload_sha256')}`, private `{chunk.get('payload_sha256')}`, repeated {chunk.get('repeated')}) "
+                             f"over manifest `{chunk.get('manifest_sha256')}`: **{verdict.get('status')}**; "
                              f"reasons {verdict.get('reasons')}; labels read {(chunk.get('payload') or {}).get('labels_read')}")
           if chunk and chunk.get("kind") == "chunk":
               summary.append(f"- manifest_sha256 `{chunk.get('manifest_sha256')}`; complete {chunk.get('complete')}; remaining {chunk.get('remaining')}; "
