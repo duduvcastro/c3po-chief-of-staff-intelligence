@@ -167,6 +167,12 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     document = {"schema": SCHEMA, "day": day.isoformat(), "config": payload["config"], "trades": out}
     if "book" in payload:
         document["book"] = _book(payload["book"])
+        opening = document["book"]
+        if day > clock.astimezone(NEW_YORK).date() and not (
+                abs(opening["nav_usd"] - opening["nav_start_usd"]) <= 0.01
+                and abs(opening["realized_nav_usd"] - opening["nav_start_usd"]) <= 0.01):
+            # a book posted before its session opens is an opening book: one NAV, no marks (Codex #496 finding 2)
+            raise LabLiveRefused("an opening book has NAVs that differ")
     if "cycle" in payload:
         cycle = payload["cycle"]
         if not isinstance(cycle, dict) or set(cycle) != CYCLE_KEYS or not all(
@@ -288,8 +294,10 @@ def latest_book(database: Any, *, now: datetime | None = None) -> tuple[str, str
     return day, str(outputs.get("config")), outputs["book"], sessions
 
 
-def _positions(book: dict[str, Any], now: datetime | None = None) -> list[R2D2Position]:
-    nav = book["nav_usd"]
+def _positions(book: dict[str, Any], now: datetime | None = None, nav: float | None = None) -> list[R2D2Position]:
+    """The open positions; ``nav`` is the effective NAV the panels show (the book's NAV plus the interest it earned),
+    the denominator of every allocation (Codex #494 finding 3)."""
+    effective: float = book["nav_usd"] if nav is None else nav
     as_of = datetime.fromisoformat(book["as_of"])
     age = max(0.0, ((now or datetime.now(timezone.utc)) - as_of).total_seconds())
     freshness = "fresh" if age <= 120 else "aging" if age <= 420 else "stale"  # the lab posts the marks every <= 5 min
@@ -302,7 +310,7 @@ def _positions(book: dict[str, Any], now: datetime | None = None) -> list[R2D2Po
             unrealized_pnl_usd=item["unrealized_pnl_usd"], unrealized_return_percent=item["unrealized_return_percent"],
             mark_pnl_usd=item["unrealized_pnl_usd"], mark_return_percent=item["unrealized_return_percent"],
             estimated_exit_pnl_usd=item["unrealized_pnl_usd"], estimated_exit_return_percent=item["unrealized_return_percent"],
-            allocation_percent=round(value / nav * 100, 4) if nav > 0 else 0.0, stop_price_local=item["stop_price"],
+            allocation_percent=round(value / effective * 100, 4) if effective > 0 else 0.0, stop_price_local=item["stop_price"],
             data_status="live", decision_state="hold", quote_status="lab", quote_as_of=as_of, quote_age_seconds=round(age, 1),
             quote_freshness=freshness, trend_state="vwap rule", volume_state="adv rule",
             opened_at=datetime.fromisoformat(item["opened_at"]), updated_at=as_of))
@@ -325,41 +333,36 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
         return response
     day, config, book, sessions = found
     today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat()
-    nav, start = book["nav_usd"], book["nav_start_usd"]
-    if day == today:
-        open_nav, close_nav = start, nav
-    elif day > today:
-        # the next session's opening book, posted the evening before: today closed at that opening NAV, and today's
-        # result is today's own book, or (a session without one) the realized result of today's sells
-        close_nav = start
-        today_doc = dict(_lab_snapshots(database, now, 1)).get(today) or {}
-        today_book = today_doc.get("book")
-        if isinstance(today_book, dict):
-            open_nav = today_book["nav_start_usd"]
-        else:
-            open_nav = close_nav - sum(item.get("realized_pnl_usd") or 0.0 for item in today_doc.get("trades") or []
-                                       if item.get("side") == "SELL")
-    else:
-        open_nav = close_nav = nav  # no live session yet today
-    daily = close_nav - open_nav
+    clock = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
+    closed_now = (clock.hour, clock.minute) >= SESSION_CLOSE_ET
+    by_day = dict(_lab_snapshots(database, now, 90))
+    results = _session_results(by_day, today)
     accrued, interest_today = _interest(interest, today)
-    nav, close_nav, open_nav = nav + accrued, close_nav + accrued, open_nav + accrued
+    if today in results:
+        open_nav, close_nav = results[today]
+    else:  # no live session yet today: the latest book, unchanged
+        open_nav = close_nav = book["nav_usd"] if day < today else book["nav_start_usd"]
+    daily = close_nav - open_nav
+    nav = book["nav_usd"] + accrued  # an opening book has one NAV (validated): the same in both routes, totals and allocation
+    close_nav, open_nav = close_nav + accrued, open_nav + accrued
     previous = open_nav - interest_today  # the NAV at the previous close, before today's T-bill interest
     daily_percent = daily / previous * 100 if previous > 0 else 0.0
-    positions = _positions(book, now)
+    positions = _positions(book, now, nav=nav)
     exposure = sum(position.market_value_usd for position in positions)
     starting = response.starting_capital_usd
     total_return = (nav / starting - 1) * 100 if starting > 0 else 0.0
     known = {point.session_date for point in response.track_record}
-    track = list(response.track_record) + [
-        R2D2TrackPoint(session_date=session_day, nav_usd=round(outputs["book"]["nav_usd"], 2),
-                       daily_pnl_usd=round(outputs["book"]["nav_usd"] - outputs["book"]["nav_start_usd"], 2),
-                       daily_return_percent=round((outputs["book"]["nav_usd"] / outputs["book"]["nav_start_usd"] - 1) * 100, 4),
-                       is_final=session_day < today)
-        for session_day, outputs in sessions if session_day not in known and session_day <= today]
-    if day > today and daily and today not in {point.session_date for point in track}:
-        track.append(R2D2TrackPoint(session_date=today, nav_usd=round(close_nav, 2), daily_pnl_usd=round(daily, 2),
-                                    daily_return_percent=round(daily_percent, 4), is_final=True))
+    track = list(response.track_record)
+    for session_day, (session_open, session_close) in sorted(results.items()):
+        if session_day in known:
+            continue
+        session_accrued, session_interest = _interest(interest, session_day)
+        session_previous = session_open + session_accrued - session_interest
+        track.append(R2D2TrackPoint(
+            session_date=session_day, nav_usd=round(session_close + session_accrued, 2),
+            daily_pnl_usd=round(session_close - session_open, 2),
+            daily_return_percent=round((session_close - session_open) / session_previous * 100, 4) if session_previous > 0 else 0.0,
+            is_final=session_day < today or closed_now))
     total = close_nav - previous
     delta = R2D2NavSessionDelta(
         status="available", session_date=today, previous_session_date=None, current_total_nav_usd=round(close_nav, 2),
@@ -368,16 +371,13 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
         organic_delta_percent=round(daily_percent, 4), interest_delta_usd=round(interest_today, 2),
         interest_delta_percent=round(interest_today / previous * 100, 4) if previous > 0 else 0.0,
         interest_status="posted" if interest_today else "pending")
-    clock = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
-    closed_now = (clock.hour, clock.minute) >= SESSION_CLOSE_ET
-    by_day = dict(_lab_snapshots(database, now, 90))
     today_doc = by_day.get(today) or {}
-    today_sells = [item.get("realized_pnl_usd") for item in today_doc.get("trades") or [] if item.get("side") == "SELL"]
-    positive = sum(1 for pnl in today_sells if pnl is not None and pnl > 0)
-    negative = sum(1 for pnl in today_sells if pnl is not None and pnl < 0)
+    closed_results = _closed_episodes(by_day, today)
+    positive = sum(1 for pnl in closed_results if pnl > 0)
+    negative = sum(1 for pnl in closed_results if pnl < 0)
     episodes = R2D2EpisodeStats(
-        session_date=today, closed_episodes=len(today_sells), decided_episodes=positive + negative,
-        positive_episodes=positive, negative_episodes=negative, flat_episodes=len(today_sells) - positive - negative,
+        session_date=today, closed_episodes=len(closed_results), decided_episodes=positive + negative,
+        positive_episodes=positive, negative_episodes=negative, flat_episodes=len(closed_results) - positive - negative,
         win_rate_percent=round(positive / (positive + negative) * 100, 2) if positive + negative else 0.0)
     stats = _scoreboard(response.stats, track, by_day, today, closed_now)
     cycle = today_doc.get("cycle")
@@ -400,6 +400,55 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
         "accounting_total_return_percent": round(total_return, 4), "daily_pnl_usd": round(daily, 2),
         "organic_daily_pnl_usd": round(daily, 2), "daily_return_percent": round(daily_percent, 4), "daily_pnl_date": today,
         "nav_session_delta": delta, "track_record": track})
+
+
+def _session_results(by_day: dict[str, dict[str, Any]], today: str) -> dict[str, tuple[float, float]]:
+    """(opening NAV, closing NAV) of every live session up to today, from the stored documents alone, so the history and
+    the scoreboard survive the New York date change without a new write (Codex #494 finding 1). A session with a book:
+    its own NAVs. A session without one (fills only, e.g. 26/10/2026): it closed at the opening NAV of the next session
+    that posted a book, and opened that much below its realized sells; with no later book it is not shown yet."""
+    book_days = sorted(day for day, outputs in by_day.items() if isinstance(outputs.get("book"), dict))
+    results: dict[str, tuple[float, float]] = {}
+    for day in sorted(day for day in by_day if day <= today):
+        outputs = by_day[day]
+        book = outputs.get("book")
+        if isinstance(book, dict):
+            results[day] = (book["nav_start_usd"], book["nav_usd"])
+            continue
+        trades = outputs.get("trades") or []
+        later = [other for other in book_days if other > day]
+        if not trades or not later:
+            continue
+        close = by_day[later[0]]["book"]["nav_start_usd"]
+        results[day] = (close - sum(item.get("realized_pnl_usd") or 0.0 for item in trades if item.get("side") == "SELL"), close)
+    return results
+
+
+def _closed_episodes(by_day: dict[str, dict[str, Any]], today: str) -> list[float]:
+    """The result of every position closed TODAY, one per episode (Codex #494 finding 2, #496 finding 1): the fills of
+    every stored session up to today, per symbol and in time order. An episode opens with a BUY into a flat position
+    and closes when its quantity returns to zero; partial sells, on any day, add up inside it. A SELL with no opening
+    in the documents (a position older than the live book) has no proven size: it closes nothing and is not counted."""
+    fills = [item for day, outputs in by_day.items() if day <= today for item in outputs.get("trades") or []]
+    closed: list[float] = []
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for item in fills:
+        by_symbol.setdefault(item["symbol"], []).append(item)
+    for symbol_fills in by_symbol.values():
+        quantity, result = 0.0, 0.0
+        for item in sorted(symbol_fills, key=lambda fill: (fill["executed_at"], fill["side"] != "BUY")):
+            if item["side"] == "BUY":
+                quantity += item["quantity"]
+                continue
+            if quantity <= 1e-9:
+                continue  # no proven opening: never certify a close by the size of the sell
+            result += item.get("realized_pnl_usd") or 0.0
+            quantity -= item["quantity"]
+            if quantity <= 1e-6 * max(item["quantity"], 1.0):
+                if datetime.fromisoformat(item["executed_at"]).astimezone(NEW_YORK).date().isoformat() == today:
+                    closed.append(result)
+                quantity, result = 0.0, 0.0
+    return closed
 
 
 def _scoreboard(v2: R2D2SummaryStats, track: list[R2D2TrackPoint], by_day: dict[str, dict[str, Any]], today: str,
@@ -429,7 +478,7 @@ def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: 
         return response
     book = found[2]
     accrued = _interest(interest, (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat())[0]
-    positions = _positions(book, now)
+    positions = _positions(book, now, nav=book["nav_usd"] + accrued)
     return response.model_copy(update={
         "nav_usd": round(book["nav_usd"] + accrued, 2), "cash_usd": round(book["cash_usd"] + accrued, 2),
         "gross_exposure_usd": round(sum(position.market_value_usd for position in positions), 2),
