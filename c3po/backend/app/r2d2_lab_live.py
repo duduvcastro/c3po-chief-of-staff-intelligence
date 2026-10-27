@@ -487,8 +487,10 @@ def closed_episode_details(by_day: dict[str, dict[str, Any]], today: str) -> lis
             quantity -= item["quantity"]
             if quantity <= 1e-6 * max(item["quantity"], 1.0):
                 if datetime.fromisoformat(item["executed_at"]).astimezone(NEW_YORK).date().isoformat() == today:
+                    # a fill id is unique within its day's document only: the episode's identity is the source, the New
+                    # York session and the closing fill (Codex #503: a reused daily id never silences another day's push)
                     closed.append({"symbol": symbol, "net_realized_pnl_usd": result,
-                                   "episode_id": str(item.get("id") or "%s:%s" % (symbol, item["executed_at"]))})
+                                   "episode_id": "lab:%s:%s" % (today, item.get("id") or "%s:%s" % (symbol, item["executed_at"]))})
                 quantity, result = 0.0, 0.0
     return closed
 

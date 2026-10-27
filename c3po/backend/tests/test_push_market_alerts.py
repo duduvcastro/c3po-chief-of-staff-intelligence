@@ -220,6 +220,42 @@ def test_the_live_book_feeds_the_sell_win_and_hourly_pushes():
     service.run_once(now)
     sells = [item for item in notifications.sent if item["category"] == "sell_win"]
     hourly = [item for item in notifications.sent if item["category"] == "hourly_win_rate"]
-    assert [item["body"].split(":")[0] for item in sells] == ["AAPL"] and sells[0]["event_key"] == "sell-win:TIT-1:AAPL:sell"
+    assert [item["body"].split(":")[0] for item in sells] == ["AAPL"] and sells[0]["event_key"] == "sell-win:lab:2026-10-26:TIT-1:AAPL:sell"
     assert len(hourly) == 1 and "1W/2" in hourly[0]["body"] and "50.0%" in hourly[0]["body"]
     assert r2d2_lab_live.episode_summary(database, now=now + timedelta(days=1)) is None  # no document today: V2 answers
+
+
+
+def test_a_fill_id_reused_on_another_session_still_pushes_its_own_winner_once():
+    """Codex #503: fill ids are unique within a day's document only. Two sessions reusing 'TIT-1:AAPL:sell' are two
+    winners (two pushes); repeated ticks and an observer restart of the same session add none."""
+    from datetime import timedelta
+
+    from app import r2d2_lab_live
+    from app.database import Database
+    from app.push_notifications import PushNotificationService
+    from tests.test_r2d2_lab_live import _fill, _payload
+
+    database = Database(Settings(database_url=""))
+    delivered: list[str] = []
+
+    class _Recording(PushNotificationService):
+        def notify(self, **kwargs):  # the real claim of the event key, a recording transport
+            if self.database.claim_push_notification_event(event_key=kwargs["event_key"], category=kwargs["category"],
+                                                           title=kwargs["title"], body=kwargs["body"],
+                                                           deep_link=kwargs.get("deep_link") or "", at=datetime.now(timezone.utc)):
+                delivered.append(kwargs["event_key"])
+            return {"status": "sent"}
+    settings = Settings(database_url="")
+    for day, net in (("2026-10-26", 20.0), ("2026-10-27", 30.0)):
+        now = datetime.fromisoformat(day + "T18:00:00+00:00")
+        buy = _fill(executed_at=day + "T09:35:00-04:00")
+        sell = _fill(id="TIT-1:AAPL:sell", side="SELL", price=250.5, executed_at=day + "T13:00:00-04:00",
+                     realized_pnl_usd=net, realized_return_percent=0.1, reason="trava de lucro")
+        r2d2_lab_live.store(database, _payload(buy, sell, day=day), now=now)
+        for restart in range(2):  # a restarted observer re-reads the same episode
+            service = PushMarketAlertsService(settings, database, _Recording(settings, database))
+            for tick in range(3):
+                service.run_once(now + timedelta(seconds=60 * tick))
+    winners = [key for key in delivered if key.startswith("sell-win:")]
+    assert winners == ["sell-win:lab:2026-10-26:TIT-1:AAPL:sell", "sell-win:lab:2026-10-27:TIT-1:AAPL:sell"]
