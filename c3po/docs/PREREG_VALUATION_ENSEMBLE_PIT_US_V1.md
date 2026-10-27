@@ -7,6 +7,7 @@
 - O dono decidiu medir um **ensemble**: 16 modelos calculados das demonstrações oficiais (SEC/CVM) e do preço, mais o consenso dos analistas como **uma fonte a mais, nunca âncora**, em três agregações (média, mediana e média aparada a 20%), cada uma com e sem consenso.
 - A primária pré-registrada é a **mediana com consenso**.
 - **Horizonte, decidido pelo dono às 21:0x de 26/10:** 6 meses decide e 12 meses é obrigatório.
+- **Precisão (dono, 21:1x de 26/10):** "Ser maior não basta, tem q ser mais preciso"; "quero o mais preciso". O critério central é a **precisão**: o novo TP tem de errar **menos que o TP atual** o preço que a ação de fato atingiu. Ordenar melhor continua obrigatório e não basta.
 - **Prazo do dono:** "precisamos adiantar isso"; leitura alvo na quarta 28/10.
 
 **Herança:** tudo o que este documento não muda segue `PREREG_VALUATION_PIT_BACKTEST_US_V1` rev 3, que é a referência das seções citadas como "rev 3 §n":
@@ -23,7 +24,8 @@
 
 ## 1. Pergunta e objeto
 
-1. **Pergunta primária:** o upside `u = tp / price − 1` da **mediana com consenso** do ensemble, calculada ponto-no-tempo em cada `T` da grade sobre os **mesmos insumos PIT** da reexecução do rev 3, ordena os retornos executáveis dos **6 meses seguintes** (`h = 126` sessões) no corte transversal triado dos EUA, e faz isso **melhor do que o TP servido**, reexecutado sobre os mesmos `T` e nomes?
+1. **Pergunta primária:** a **mediana com consenso** do ensemble, calculada ponto-no-tempo em cada `T` da grade sobre os **mesmos insumos PIT** da reexecução do rev 3, é **mais precisa que o TP servido** (reexecutado sobre os mesmos `T` e nomes)? Isto é, ela erra menos o preço que cada ação de fato atingiu em 6 meses (`h = 126` sessões), com confiança estatística, e em 12 meses?
+   - Além disso, o seu upside `u = tp / price − 1` **ordena** os retornos executáveis dos 6 meses seguintes no corte transversal triado dos EUA?
 2. **Objeto medido:** os registros da fonte `ensemble_pit` gravados pelo modo grade do ensemble (`valuation_ensemble`, PR #487) para as corridas listadas no manifesto do ensemble, e só deles. Agregação primária: `median_with_consensus`. O comparador é a fonte `official_internal_pit` do manifesto do rev 3.
 3. **Modelos:**
    - os 16 modelos do código vinculado (§6), cada um com premissas explícitas no código;
@@ -49,6 +51,15 @@
 - **Metades:** as primeiras e as últimas `⌊B/2⌋` médias de bloco, como no rev 3 §6.4.
 - **Diferença pareada contra o TP servido:** em cada sessão, `ΔIC = IC_ensemble − IC_servido`, sobre a **interseção** dos nomes triados com os dois `u` e `rx(h)`. Média por bloco e estimativa como acima.
 - **Persistência de 63 sessões:** não se aplica em `h ≥ 126`, porque o bloco já é mais longo que 63.
+- **Precisão, o erro de cada TP:**
+  - **Previsto:** o caminho do TP até o horizonte, interpolado geometricamente. Em log, `ŷ(h) = (h / 252) · ln(tp / price)`; em `h = 252` o previsto é o próprio TP (o TP é um alvo de 12 meses).
+  - **Realizado:** `y(h) = ln(1 + r(h))`, com `r(h)` o retorno de fechamento ajustado do rev 3 §4 entre `D` e `D + h`.
+  - **Erro de um nome:** `e = |y(h) − ŷ(h)|`, o erro absoluto em log.
+- **Estatística de precisão por sessão:**
+  - **Conjunto:** a interseção dos nomes triados com os dois TPs (ensemble primário e TP servido) e com `r(h)` disponível; no mínimo 10 nomes.
+  - **Estatística:** `ΔE = mediana(e_servido) − mediana(e_ensemble)`. Positivo = o ensemble erra menos.
+  - **Teste:** média por bloco e teste em blocos como acima (`√1,5`, t de Student com `B − 1` graus de liberdade).
+- **Descritivo, nunca decisório:** o erro de "preço parado" (`ŷ = 0`, isto é, `e = |y(h)|`) e o `ΔE` de cada agregação secundária contra o TP servido e contra o preço parado.
 
 ## 4. Regra de decisão — leitura única
 
@@ -71,8 +82,10 @@
    3. spread de decis executável em `h = 126` **> 0**;
    4. estimativa do IC executável **> 0 nas duas metades**;
    5. **condição obrigatória de 12 meses:** estimativa do IC executável em `h = 252` **> 0**;
-   6. **vence o TP servido:** estimativa da diferença pareada `ΔIC` em `h = 126` **> 0**. A comparação é só da estimativa; o `p` é publicado e não decide;
-   7. atrito em `h = 126` ≤ 0,15 e pisos de cobertura cumpridos.
+   6. **ordena melhor que o TP servido:** estimativa da diferença pareada `ΔIC` em `h = 126` **> 0**;
+   7. **mais preciso que o TP servido em 6 meses:** estimativa de `ΔE` em `h = 126` **> 0**, com **`p_greater ≤ 0,05`**;
+   8. **mais preciso que o TP servido em 12 meses:** estimativa de `ΔE` em `h = 252` **> 0**;
+   9. atrito em `h = 126` ≤ 0,15 e pisos de cobertura cumpridos.
 5. **`FAIL`:** qualquer outro caso, com as condições não cumpridas listadas. "Não demonstrado" não prova ausência de sinal.
 
 - **Leitura única:** a primeira execução não-`VOID` do relatório sobre o manifesto completo do ensemble, com código vinculado, **é** o veredito. Repetir sobre o mesmo manifesto reproduz o mesmo payload e não é outra olhada. Outro manifesto exige nova revisão (rev 3 §7).
@@ -82,7 +95,8 @@
 
 - Com `B ≈ 9` blocos (8 graus de liberdade, t crítico ≈ 1,86) e `dp` realista do IC por sessão entre 0,10 e 0,20 (rev 3 §8), um IC verdadeiro de 0,05 em `h = 126` passa a condição 2 em cerca de metade a dois terços das vezes.
 - Abaixo de 0,03, o teste quase não detecta.
-- A condição 6 exige vencer o TP servido, cujo IC descritivo em `h = 126` na passada final foi **0,050** (`p` 0,057).
+- A condição 6 exige ordenar melhor que o TP servido, cujo IC descritivo em `h = 126` na passada final foi **0,050** (`p` 0,057).
+- A condição 7 exige erro **significativamente** menor que o do TP servido. Na grade de domingo, o nível do TP servido ficou pior que o preço parado (M3), então há espaço para melhorar. A potência dessa condição é publicada no `design_table()`, com o `dp` realizado de `ΔE`.
 - O `dp` realizado por sessão é publicado para situar a leitura e não muda nenhuma constante.
 - O código vinculado deve conter `design_table()` com estas probabilidades, em simulação reprodutível (`DESIGN_SEED = 20261026`) com a mesma grade.
 
@@ -100,7 +114,7 @@
 - **Recibo:** `VALUATION-ENSEMBLE-PIT-REPORT-v1`, com:
   - os campos do rev 3 §12 por horizonte;
   - as seis agregações;
-  - a diferença pareada contra o TP servido;
+  - as diferenças pareadas contra o TP servido (`ΔIC` e `ΔE`) e o erro do preço parado;
   - contagens de não avaliação por modelo e por razão;
   - `prereg_sha256`.
 
