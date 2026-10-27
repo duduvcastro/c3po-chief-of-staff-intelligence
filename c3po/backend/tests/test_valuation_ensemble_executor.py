@@ -86,7 +86,7 @@ def fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     store = FileReceiptStore(tmp_path / "receipts")
     context: dict[str, Any] = {"clock": clock, "events": events, "files": files, "pin": pin, "binding": binding,
                                "rev3": rev3, "order": order, "database": db, "store": store, "calendar": descriptor,
-                               "compute_hook": None}
+                               "compute_hook": None, "record_count": 1, "record_payload_bytes": 0}
     def source_identity(v3_snapshot: Any, served_snapshot: Any) -> dict[str, Any]:
         return {"v3_run_key": v3_snapshot["inputs"]["run_key"], "served_run_key": served_snapshot["inputs"]["run_key"],
                 "v3_cycle_id": v3_snapshot["id"], "served_cycle_id": served_snapshot["id"]}
@@ -98,10 +98,12 @@ def fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
             context["compute_hook"](database, **kw)
         inputs = source_identity(kw["v3_snapshot"], kw["served_snapshot"])
         day = next(item["session_date"] for item in v3 if item["run_key"] == inputs["v3_run_key"])
-        records = [{"source": "ensemble_pit", "market": kw["market"], "symbol": "SYNTHETIC", "session_date": day}]
+        run_key = canonical_hash([kw["market"], day, kw["implementation"]])
+        records = [{"source": "ensemble_pit", "market": kw["market"], "symbol": f"SYNTHETIC{i:04d}", "session_date": day,
+                    "as_of": kw["as_of"].isoformat(), "run_key": run_key,
+                    "synthetic_ledger": "x" * context["record_payload_bytes"]} for i in range(context["record_count"])]
         result = {"market": kw["market"], "session_date": day, "as_of": kw["as_of"].isoformat(),
-                  "run_key": canonical_hash([kw["market"], day, kw["implementation"]]),
-                  "records": records, "records_sha256": canonical_hash(records), "catalogue_stocks": 1,
+                  "run_key": run_key, "records": records, "records_sha256": canonical_hash(records), "catalogue_stocks": context["record_count"],
                   "input_pins": inputs, "implementation": dict(kw["implementation"])}
         result["payload_sha256"] = canonical_hash(result)
         return result
@@ -242,11 +244,14 @@ def test_stop_before_elapsed_does_no_source_work_and_misplaced_snapshots_are_rej
 
 
 def _replace_receipt(context: dict[str, Any], entry: dict[str, Any], mutate: Callable[[dict[str, Any], dict[str, Any]], None]) -> dict[str, Any]:
-    receipt = context["store"].read(entry["receipt_run_key"])
+    receipt = executor.load_grade_artifact(context["store"], entry["receipt_run_key"])
     assert receipt is not None
     receipt = {k: v for k, v in receipt.items() if k not in {"run_key", "payload_sha256"}}
     changed = copy.deepcopy(entry)
     mutate(receipt, changed)
+    section = receipt["section"]
+    section["payload_sha256"] = canonical_hash({k: v for k, v in section.items() if k != "payload_sha256"})
+    del section["records"]  # bounded section header; original company references remain immutable
     receipt["run_key"] = canonical_hash(receipt)
     receipt["payload_sha256"] = canonical_hash(receipt)
     context["store"].put(receipt)
@@ -300,3 +305,109 @@ def test_inventory_cli_and_workflow_are_inert_source_inventory_only(monkeypatch:
     assert "workflow_dispatch:" in text and "--inventory" in text
     assert "contents: read" in text and "persist-credentials: false" in text
     assert not any(fragment in text for fragment in ("schedule:", "push:", "ssh ", "DATABASE_URL", "secrets.", "--run-grade", "dispatches"))
+
+
+def test_six_hundred_synthetic_large_rows_are_roundtrippable_without_relaxing_private_store_cap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    context["record_count"], context["record_payload_bytes"] = 600, 55_000
+    result = run(context, max_runs=1)
+    entry = result["entries"][0]
+    header = context["store"].read(entry["receipt_run_key"])
+    assert header is not None and "records" not in header["section"] and len(header["record_receipts"]) == 600
+    restored = executor.load_grade_artifact(context["store"], entry["receipt_run_key"])
+    records = restored["section"]["records"]
+    assert len(records) == 600 and all(len(item["synthetic_ledger"]) == 55_000 for item in records)
+    assert restored["section"]["records_sha256"] == canonical_hash(records) == entry["records_sha256"]
+    materialized_bytes = len(json.dumps(restored["section"]).encode())
+    assert materialized_bytes > 16 * 1024 * 1024
+    files = list(context["store"].directory.glob("*.json"))
+    assert len(files) == 601 and max(path.stat().st_size for path in files) < 16 * 1024 * 1024
+    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in files)
+    assert context["database"].writes == 0 and result["computed_this_chunk"] == 1
+
+
+@pytest.mark.parametrize("record_count", [1, 3])
+def test_expiration_mid_company_storage_leaves_no_completed_section_header(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, record_count: int) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    context["record_count"] = record_count
+    original = context["store"].put
+    calls = []
+    def put(receipt: Any) -> Any:
+        calls.append(receipt["schema"])
+        result = original(receipt)
+        context["clock"].at = NOW + timedelta(hours=1)
+        return result
+    monkeypatch.setattr(context["store"], "put", put)
+    with pytest.raises(ValueError, match="expired|window_ended"):
+        run(context, max_runs=1)
+    assert calls == ["VALUATION-ENSEMBLE-GRADE-COMPANY-ARTIFACT-v1"]
+    files = list(context["store"].directory.glob("*.json"))
+    assert len(files) == 1
+    orphan = json.loads(files[0].read_text())
+    assert "section" not in orphan
+    with pytest.raises(ValueError, match="section_artifact_missing_or_invalid"):
+        executor.load_grade_artifact(context["store"], orphan["run_key"])
+
+
+@pytest.mark.parametrize("failure", ["missing_company", "duplicate_reference", "wrong_symbol", "wrong_section", "records_digest", "section_digest"])
+def test_section_reassembly_refuses_missing_or_mismatched_company_objects(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    entry = run(context, max_runs=1)["entries"][0]
+    header = context["store"].read(entry["receipt_run_key"])
+    assert header is not None
+    header = {k: v for k, v in header.items() if k not in {"run_key", "payload_sha256"}}
+    if failure == "missing_company":
+        header["record_receipts"][0]["run_key"] = "f" * 64
+    elif failure == "duplicate_reference":
+        header["record_receipts"].append(copy.deepcopy(header["record_receipts"][0]))
+    elif failure == "wrong_symbol":
+        header["record_receipts"][0]["symbol"] = "WRONG"
+    elif failure == "wrong_section":
+        company = context["store"].read(header["record_receipts"][0]["run_key"])
+        assert company is not None
+        company = {k: v for k, v in company.items() if k not in {"run_key", "payload_sha256"}}
+        company["section_run_key"] = "f" * 64
+        company["run_key"] = canonical_hash(company)
+        company["payload_sha256"] = canonical_hash(company)
+        context["store"].put(company)
+        header["record_receipts"][0]["run_key"] = company["run_key"]
+    elif failure == "records_digest":
+        header["section"]["records_sha256"] = "f" * 64
+    else:
+        header["section"]["payload_sha256"] = "f" * 64
+    header["run_key"] = canonical_hash(header)
+    header["payload_sha256"] = canonical_hash(header)
+    context["store"].put(header)
+    with pytest.raises(ValueError, match="artifact|digest"):
+        executor.load_grade_artifact(context["store"], header["run_key"])
+
+
+def test_reusing_a_prior_section_rechecks_expiry_after_header_read_before_company_reads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    entry = run(context, max_runs=1)["entries"][0]
+    context["events"].clear()
+    original = context["store"].read
+    local_reads = []
+    def read(key: str) -> Any:
+        local_reads.append(key)
+        result = original(key)
+        context["clock"].at = NOW + timedelta(hours=1)
+        return result
+    monkeypatch.setattr(context["store"], "read", read)
+    with pytest.raises(ValueError, match="expired|window_ended"):
+        run(context, max_runs=1, prior_entries=(entry,))
+    assert local_reads == [entry["receipt_run_key"]]
+    assert context["events"] == ["guard"]  # no DB reader, factory or section after expiry
+
+
+def test_company_write_error_cannot_publish_a_completed_section_header(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    context = fixture(monkeypatch, tmp_path)
+    calls = []
+    def fail(receipt: Any) -> Any:
+        calls.append(receipt["schema"])
+        raise OSError("synthetic disk failure")
+    monkeypatch.setattr(context["store"], "put", fail)
+    with pytest.raises(OSError, match="synthetic disk failure"):
+        run(context, max_runs=1)
+    assert calls == ["VALUATION-ENSEMBLE-GRADE-COMPANY-ARTIFACT-v1"]
+    assert not list(context["store"].directory.iterdir()) and context["database"].writes == 0
