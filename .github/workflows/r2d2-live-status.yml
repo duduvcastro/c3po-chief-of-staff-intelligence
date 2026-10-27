@@ -1,8 +1,9 @@
 name: R2D2 live status (read-only)
 
 # The live R2D2 runs inside the C3PO server (service r2d2-live, owner 27/10/2026). This read-only check prints the
-# container state, the engine's own summary from the database (no symbols) and its recent log lines, with any API
-# token redacted. It changes nothing on the host.
+# container state, the engine's own summary from the database (no symbols), its count-only log lines and the NUMBER of
+# error lines (this repository is public: no symbol and no error text is printed), any API token redacted. It changes
+# nothing on the host.
 
 on:
   workflow_dispatch:
@@ -55,8 +56,12 @@ jobs:
           echo "$state"
           echo "== summary"
           "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api python -m app.r2d2_live_engine --status </dev/null || exit 13
-          echo "== logs (last ${MINUTES} min)"
-          "${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 200 r2d2-live 2>&1 | grep -E "R2D2 live|ERROR|Traceback|Error|EODHD" | tail -80
+          # This repository is PUBLIC and so are its run logs: only the engine's own count-only lines (no symbol) are
+          # printed, and the error lines are COUNTED, never shown.
+          logs=$("${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 2000 r2d2-live 2>&1) || exit 14
+          echo "== engine lines (last ${MINUTES} min)"
+          printf '%s\n' "$logs" | grep -E "R2D2 live(:| heartbeat:)" | grep -vE "Traceback|Error" | sed -E 's/^[^|]*\| //' | tail -40
+          echo "== error lines (count only): $(printf '%s\n' "$logs" | grep -cE "ERROR|Traceback|Exception")"
           exit 0
           REMOTE
           # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)

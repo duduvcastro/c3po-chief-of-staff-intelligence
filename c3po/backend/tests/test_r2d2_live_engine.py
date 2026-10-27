@@ -337,3 +337,5 @@ def test_p2_7_the_status_workflow_fails_on_access_or_mandatory_reads() -> None:
     run = workflow["jobs"]["status"]["steps"][1]["run"]
     assert "|| true" not in run and 'exit "$rc"' in run and "|| rc=$?" in run
     assert "--status </dev/null || exit 13" in run and "[redacted]" in run
+    # a public repository: error lines are counted, never printed
+    assert 'grep -cE "ERROR|Traceback|Exception"' in run and 'grep -vE "Traceback|Error"' in run
