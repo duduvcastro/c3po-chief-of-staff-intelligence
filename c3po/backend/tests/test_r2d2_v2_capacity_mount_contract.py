@@ -261,7 +261,7 @@ def test_what_the_controllers_observe_on_r2d2_worker_is_unchanged() -> None:
 
     assert list(compose["services"]) == [
         "db", "api", "investor-relations-worker", "valuation-worker", "server-usage-worker",
-        "r2d2-worker", "r2d2-shadow-candidate-worker", "web",
+        "r2d2-worker", "r2d2-shadow-candidate-worker", "r2d2-live", "web",
     ]
     assert set(worker) == {
         "image", "build", "env_file", "environment", "command", "volumes", "depends_on", "restart", "networks",
@@ -585,9 +585,9 @@ def test_operator_notes_match_the_contract() -> None:
     assert "provision the tree first, set the variable second" in flat
     assert "do the full disable (below) before the tree is moved, removed or provisioned again" in flat
     backend = [name for name, service in _render({})["services"].items() if "env_file" in service]
-    assert len(backend) == 6 and all(f"`{name}`" in readme for name in backend)
-    assert "changes the config hash of all six" in flat
-    assert "recreates only the worker; the next plain `up -d` (the deploy runs one) recreates the other five" in flat
+    assert len(backend) == 7 and all(f"`{name}`" in readme for name in backend)
+    assert "changes the config hash of all seven" in flat
+    assert "recreates only the worker; the next plain `up -d` (the deploy runs one) recreates the other six" in flat
     assert "c3po/backend/tests/fixtures/compose_capacity_mount" in readme
     settings = {f"C3PO_{name.upper()}" for name in Settings.model_fields if name.startswith("r2d2_v2_capacity_")}
     assert settings == {

@@ -86,11 +86,11 @@ marker while it holds the lock, so a marker checked before the lock can be stale
 against the deploy and the reboot controller; release it with `exec 9>&-`, also when the marker
 check fails. A manual `up` without `C3PO_BUILD_SHA` gives the worker the build sha `development`.
 
-`.env` is the `env_file` of all six backend services (`api`, `investor-relations-worker`,
-`valuation-worker`, `server-usage-worker`, `r2d2-worker`, `r2d2-shadow-candidate-worker`). Every
-line appended to it or deleted from it, the mount variable included, changes the config hash of all
-six. `up -d --no-deps r2d2-worker` recreates only the worker; the next plain `up -d` (the deploy
-runs one) recreates the other five.
+`.env` is the `env_file` of all seven backend services (`api`, `investor-relations-worker`,
+`valuation-worker`, `server-usage-worker`, `r2d2-worker`, `r2d2-shadow-candidate-worker`,
+`r2d2-live`). Every line appended to it or deleted from it, the mount variable included, changes the
+config hash of all seven. `up -d --no-deps r2d2-worker` recreates only the worker; the next plain
+`up -d` (the deploy runs one) recreates the other six.
 
 ### Step 1: mount only (after the tree and the static config are provisioned)
 

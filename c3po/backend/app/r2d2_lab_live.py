@@ -114,7 +114,7 @@ def _instant(value: Any, name: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
+def validate(payload: Any, *, now: datetime | None = None, max_trades: int = MAX_TRADES) -> dict[str, Any]:
     """The payload as stored: the exact schema, closed vocabularies, every fill on the posted session day."""
     if not isinstance(payload, dict) or not {"schema", "day", "config", "trades"} <= set(payload) <= {
             "schema", "day", "config", "trades", "book", "cycle"}:
@@ -131,8 +131,8 @@ def validate(payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
     if not isinstance(payload["config"], str) or CONFIG.fullmatch(payload["config"]) is None:
         raise LabLiveRefused("config is not a scenario name")
     trades = payload["trades"]
-    if not isinstance(trades, list) or len(trades) > MAX_TRADES:
-        raise LabLiveRefused("trades is not a list of at most %d fills" % MAX_TRADES)
+    if not isinstance(trades, list) or len(trades) > max_trades:
+        raise LabLiveRefused("trades is not a list of at most %d fills" % max_trades)
     seen: set[str] = set()
     out = []
     for trade in trades:
@@ -221,9 +221,10 @@ def _book(book: Any) -> dict[str, Any]:
             "as_of": _instant(book["as_of"], "as_of").isoformat(), "positions": out}
 
 
-def store(database: Any, payload: Any, *, now: datetime | None = None) -> dict[str, Any]:
-    """Validate and store the day's fills (the latest post of a day wins). Returns the counts, never the fills."""
-    document = validate(payload, now=now)
+def store(database: Any, payload: Any, *, now: datetime | None = None, max_trades: int = MAX_TRADES) -> dict[str, Any]:
+    """Validate and store the day's fills (the latest post of a day wins). Returns the counts, never the fills.
+    ``max_trades``: the public route keeps ``MAX_TRADES``; the server's own engine passes its larger cap."""
+    document = validate(payload, now=now, max_trades=max_trades)
     clock = now or datetime.now(timezone.utc)
     methodology = database.ensure_methodology_version(
         METHODOLOGY_KEY, 1, {"schema": SCHEMA, "source": "duduvcastro/c3po-r2d2-lab lab/live.py"},
