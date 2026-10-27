@@ -1,0 +1,25 @@
+name: Verify valuation ensemble instrument
+
+# Manual source-inventory verification only. This workflow does not run a grade,
+# connect to a host/DB, read labels or issue the signed instrument pin. The final
+# operational driver must be reviewed and pinned before the first scientific run.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Inventory the exact checked-out instrument source
+        working-directory: c3po/backend
+        run: python -m app.valuation_ensemble_executor --inventory --repository-root "$GITHUB_WORKSPACE"

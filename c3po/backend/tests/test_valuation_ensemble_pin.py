@@ -20,7 +20,7 @@ FILES = {f"c3po/backend/app/{name}": "a" * 64 for name in (
 FILES[".github/workflows/valuation-ensemble-grid.yml"] = "b" * 64
 for _dependency in ("valuation_pit_backtest_report.py", "valuation_pit_panel.py", "valuation_panel.py",
                     "valuation_price_history.py", "statement_vintages.py", "sec_xbrl.py", "cvm_fundamentals.py",
-                    "valuation_asfiled.py", "valuation_v2_engine.py", "valuation_pit_served.py", "valuation_official.py"):
+                    "valuation_asfiled.py", "valuation_v2_engine.py", "valuation_pit_served.py", "valuation_official.py", "valuation_v3_macro.py"):
     FILES[f"c3po/backend/app/{_dependency}"] = "a" * 64
 COMMIT = "c" * 40
 
