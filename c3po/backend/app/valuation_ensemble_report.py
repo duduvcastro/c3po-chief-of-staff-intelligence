@@ -72,6 +72,10 @@ def _digest(value: Any) -> str | None:
     return value if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) else None
 
 
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
 def target_of(row: Mapping[str, Any], variant: str) -> float | None:
     variants = row.get("variants")
     if not isinstance(variants, Mapping):
@@ -425,7 +429,11 @@ def _manifest_errors(manifest: Mapping[str, Any], rev3: Mapping[str, Any], recor
         rows = sorted(grouped.get(str(entry.get("run_key")), []), key=lambda row: str(row.get("symbol")))
         if entry.get("records_sha256") != canonical_hash(rows):
             errors.append("ensemble_records_content_mismatch")
-        if type(entry.get("catalogue_stocks")) is not int or entry["catalogue_stocks"] < 1 or len(rows) > entry["catalogue_stocks"]:
+        catalogue_counts = _mapping(entry.get("input_pins")).get("catalogue_counts")
+        stock_rows = sum(_mapping(row.get("catalogue_classification")).get("security_type") == "Stock" for row in rows)
+        if (not isinstance(catalogue_counts, Mapping) or catalogue_counts.get("rows") != len(rows)
+                or type(entry.get("catalogue_stocks")) is not int or entry["catalogue_stocks"] < 1
+                or entry["catalogue_stocks"] != stock_rows):
             errors.append("ensemble_catalogue_denominator_invalid")
     return sorted(set(errors))
 
@@ -523,9 +531,12 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
     base["refused_records"] = {"duplicate_across_exchanges": duplicate_count} if duplicate_count else {}
     base["raw_records"] = len(original_records)
     base["admissible_records"] = len(records)
+    base["stock_records"] = sum(_mapping(row.get("catalogue_classification")).get("security_type") == "Stock" for row in records)
     labelled: dict[int, list[dict[str, Any]]] = {h: [] for h in HORIZONS}
     calls = 0
     for row in sorted(records, key=lambda x: (str(x["session_date"]), str(x["market"]), str(x["symbol"]))):
+        if _mapping(row.get("catalogue_classification")).get("security_type") != "Stock":
+            continue
         if not any(target_of(row, variant) is not None for variant in VARIANTS):
             continue
         index = index_of[str(row["session_date"])]
@@ -550,7 +561,8 @@ def build_report(manifest: Mapping[str, Any], records: Sequence[Mapping[str, Any
     for variant in VARIANTS:
         horizons = {str(h): horizon_statistics(labelled[h], variant, h, index_of=index_of, mature_through=mature_through,
                                               partition_last=partition_last, grid_sessions=grid_sessions) for h in HORIZONS}
-        records_share = sum(target_of(row, variant) is not None for row in records) / catalogue if catalogue else None
+        records_share = sum(target_of(row, variant) is not None and
+                            _mapping(row.get("catalogue_classification")).get("security_type") == "Stock" for row in records) / catalogue if catalogue else None
         coverage = {"records_share": records_share, "screened_names_median": horizons["126"]["names_per_session"]["median"]}
         variants[variant] = {"horizons": horizons, "coverage": coverage, "decisory": variant == PRIMARY}
     base.update({"labels_read": calls, "variants": variants,

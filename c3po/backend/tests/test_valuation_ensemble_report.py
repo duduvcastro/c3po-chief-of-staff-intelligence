@@ -24,6 +24,7 @@ def variants(value: float, *, count: int = 3) -> dict[str, Any]:
 
 def row(i: int, *, target: float = 12.0, served: float | None = 11.0, realized: float | None = 0.1) -> dict[str, Any]:
     return {"market": "NASDAQ", "symbol": f"S{i:03d}", "session_date": "2025-01-02", "price": 10.0,
+            "catalogue_classification": {"symbol": f"S{i:03d}", "security_type": "Stock"},
             "served_tp": served, "variants": variants(target), "return": realized, "return_executable": i / 1000,
             "return_eligible": True, "executable_eligible": True, "screened": True,
             "models": [{"model": name, "value": target if i >= 13 else None,
@@ -184,7 +185,7 @@ def fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], list[dict[
     monkeypatch.setattr(instrument_pin, "REV3_MANIFEST_SHA256", rev3["manifest_sha256"])
     entry = {**rev3["grid"][0], "run_key": "synthetic-run", "records_sha256": canonical_hash(rows), "catalogue_stocks": 12,
              "v3_run_key": "synthetic-v3", "served_run_key": "synthetic-served",
-             "input_pins": {"v3_run_key": "synthetic-v3", "served_run_key": "synthetic-served"},
+             "input_pins": {"v3_run_key": "synthetic-v3", "served_run_key": "synthetic-served", "catalogue_counts": {"rows": 12}},
              "instrument_commit": binding.instrument_commit, "instrument_pin_sha256": binding.expected_pin_sha256,
              "implementation_files": files, "started_at": "2026-10-27T13:01:00Z"}
     manifest = {"schema": report.MANIFEST_SCHEMA, "source": report.SOURCE, "complete": True,
@@ -369,3 +370,30 @@ def test_cross_exchange_duplicates_choose_one_shared_name_before_labels() -> Non
     records, refused = report.deduplicate_exchanges([nyse, other, nasdaq])
     assert refused == 1 and records == [nasdaq, other]
     assert report.deduplicate_exchanges([nasdaq, other, nyse]) == (records, 1)
+
+
+def test_full_catalogue_keeps_etf_ledger_without_inflating_stock_coverage_or_reading_its_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest, rows, rev3, pin, binding, files = fixture(monkeypatch)
+    rows = [rows[0], {**rows[1], "catalogue_classification": {"symbol": "S001", "security_type": "ETF"}}]
+    entry = manifest["entries"][0]
+    entry["catalogue_stocks"] = 1
+    entry["input_pins"]["catalogue_counts"]["rows"] = 2
+    entry["records_sha256"] = canonical_hash(rows)
+    manifest["report_calendar"]["mature_through"] = {"126": 0, "127": 0}
+    manifest["manifest_sha256"] = report.manifest_sha256(manifest)
+    expected_calendar = copy.deepcopy(manifest["report_calendar"])
+    expected_source_pins = copy.deepcopy(entry["input_pins"])
+    monkeypatch.setattr(calendar, "report_calendar_for", lambda rev3: copy.deepcopy(expected_calendar))
+    monkeypatch.setattr(grid, "paired_source_identity", lambda *a: copy.deepcopy(expected_source_pins))
+    names = []
+    def labels(item: Any, h: int) -> Any:
+        names.append(item["symbol"])
+        assert item["symbol"] == "S000"
+        return {"return": .1, "return_executable": .1}
+    result = report.build_report(manifest, rows, rev3_manifest=rev3, pin=pin, binding=binding, file_hashes=files,
+        label_reader=labels, index_of={"2025-01-02": 0}, mature_through={126: 0, 127: 0}, partition_last=0,
+        expected_manifest_sha256=manifest["manifest_sha256"], paired_sources_reader=paired_sources)
+    assert result["payload"]["verdict"]["status"] == "UNMEASURED"
+    assert names == ["S000"] and result["payload"]["raw_records"] == 2 and result["payload"]["stock_records"] == 1
+    assert result["payload"]["variants"][report.PRIMARY]["coverage"]["records_share"] == 1.0
+    assert result["payload"]["model_non_evaluations"]["dcf_fcff:missing_fact:capex_ttm"] == 2
