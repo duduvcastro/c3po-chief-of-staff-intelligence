@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import pytest
+import yaml
 
 from app import valuation_ensemble_calendar as calendar
 from app import valuation_ensemble_executor as executor
@@ -294,7 +295,7 @@ def test_prior_artifacts_are_not_boolean_reuse_or_a_cross_pin_shortcut(monkeypat
     assert "compute" not in context["events"] and context["database"].writes == 0
 
 
-def test_inventory_cli_and_workflow_are_inert_source_inventory_only(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_inventory_cli_is_inert_and_the_workflow_runs_a_grade_only_behind_its_guards(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setattr(executor, "execute_grade_chunk", lambda *args, **kwargs: pytest.fail("CLI ran a grade"))
     assert executor.main(["--inventory"]) == 0
     result = json.loads(capsys.readouterr().out)
@@ -302,9 +303,23 @@ def test_inventory_cli_and_workflow_are_inert_source_inventory_only(monkeypatch:
     assert result["files"] and "c3po/backend/app/valuation_ensemble_executor.py" in result["files"]
     workflow = Path(__file__).resolve().parents[3] / ".github/workflows/valuation-ensemble-grid.yml"
     text = workflow.read_text()
-    assert "workflow_dispatch:" in text and "--inventory" in text
+    jobs = yaml.safe_load(text)["jobs"]
+    # dispatch only, read-only token; the inventory job holds no secret and touches no host
+    assert "workflow_dispatch:" in text and not any(fragment in text for fragment in ("schedule:", "push:", "DATABASE_URL", "--run-grade", "dispatches"))
     assert "contents: read" in text and "persist-credentials: false" in text
-    assert not any(fragment in text for fragment in ("schedule:", "push:", "ssh ", "DATABASE_URL", "secrets.", "--run-grade", "dispatches"))
+    inventory = json.dumps(jobs["inventory"])
+    assert "--inventory" in inventory and "secrets." not in inventory and "ssh " not in inventory
+    # the grade job: the approved phrase, main only, the order/pin/commit and comment checks, the rev3 digest, the window,
+    # the host preflight (backfill paused, blocking ingestions, R2D2 timers, reboot), the SHARED deployment lock, a read-only
+    # database session, the driver with the rev3 manifest on stdin, aggregates only, the cleanup of this run's process
+    grid = json.dumps(jobs["grid"])
+    for fragment in ("RUN VALUATION ENSEMBLE GRID", "refs/heads/main", "c3po/ops/owner-orders/", "c3po/ops/valuation-ensemble/",
+                     "merge-base --is-ancestor", "the comment does not cite the instrument commit", instrument.REV3_MANIFEST_SHA256,
+                     "inside the US session or the nightly window", "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL", "exit 36",
+                     "--host-check", "exit 21", "r2d2*", "reboot.pending", "flock -s -n 9", "default_transaction_read_only=on",
+                     "-m app.valuation_ensemble_driver", "< \\\"$rev3_file\\\"", "unexpected lines (counted, not printed)",
+                     "valuation_pit_run_token=$RUN_TOKEN"):
+        assert fragment in grid, fragment
 
 
 def test_six_hundred_synthetic_large_rows_are_roundtrippable_without_relaxing_private_store_cap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
