@@ -331,3 +331,68 @@ def test_the_cycle_counts_are_validated_and_shown() -> None:
                 {"candidates": True, "signals": 0, "entries": 0, "closed": 0}):
         with pytest.raises(r2d2_lab_live.LabLiveRefused):
             r2d2_lab_live.validate(dict(_payload(_fill()), cycle=bad), now=NOW)
+
+
+def _session_26(database) -> None:
+    fills = [_fill(id="T1:AAPL:buy", executed_at="2026-10-26T09:35:00-04:00", quantity=290.617, price=344.1),
+             _fill(id="T1:AAPL:sell", side="SELL", executed_at="2026-10-26T09:35:30-04:00", quantity=290.617, price=344.5,
+                   realized_pnl_usd=142.74, realized_return_percent=0.14),
+             _fill(id="T1:SHEL:buy", symbol="SHEL", market="NYSE", executed_at="2026-10-26T09:36:00-04:00", quantity=937.096,
+                   price=106.9),
+             _fill(id="T1:SHEL:sell", symbol="SHEL", market="NYSE", side="SELL", executed_at="2026-10-26T09:53:30-04:00",
+                   quantity=937.096, price=107.4, realized_pnl_usd=484.74, realized_return_percent=0.48)]
+    r2d2_lab_live.store(database, _payload(*fills), now=datetime(2026, 10, 26, 21, 12, tzinfo=timezone.utc))
+    opening = _book(nav_start_usd=931176.94, nav_usd=931176.94, realized_nav_usd=931176.94, cash_usd=931176.94,
+                    positions=[], as_of="2026-10-27T09:30:00-04:00")
+    r2d2_lab_live.store(database, dict(_payload(day="2026-10-27"), book=opening),
+                        now=datetime(2026, 10, 26, 23, 47, tzinfo=timezone.utc))
+
+
+def test_the_history_survives_the_new_york_date_change_without_a_new_write() -> None:
+    """Codex #494 finding 1: the 26/10 point and the scoreboard are the same before and after midnight in New York."""
+    database = Database(Settings(database_url=""))
+    _session_26(database)
+    base = app_main.r2d2.dashboard()
+    interest = [("2026-10-26", 314.31)]
+    evening = r2d2_lab_live.apply_book(base, database, now=datetime(2026, 10, 26, 23, 50, tzinfo=timezone.utc), interest=interest)
+    night = r2d2_lab_live.apply_book(base, database, now=datetime(2026, 10, 27, 5, 0, tzinfo=timezone.utc), interest=interest)
+    for shown in (evening, night):
+        point = [p for p in shown.track_record if p.session_date == "2026-10-26"]
+        assert len(point) == 1 and point[0].nav_usd == 931176.94 and point[0].daily_pnl_usd == 627.48 and point[0].is_final
+        assert shown.stats.closed_days == base.stats.closed_days + 1
+        assert shown.stats.positive_transactions == base.stats.positive_transactions + 2
+        assert shown.nav_usd == 931176.94 and shown.cash_usd == 931176.94
+    assert evening.daily_pnl_usd == 627.48 and evening.daily_pnl_date == "2026-10-26"
+    assert night.daily_pnl_usd == 0.0 and night.daily_pnl_date == "2026-10-27"  # the new session has not traded yet
+    assert night.today_episode_stats.closed_episodes == 0
+
+
+def test_episodes_are_positions_closed_not_sell_legs() -> None:
+    """Codex #494 finding 2: a partial exit and a full exit in two legs are one episode; a re-entry is another."""
+    legs = [
+        {"symbol": "AAA", "side": "BUY", "quantity": 100.0, "executed_at": "2026-10-26T13:35:00+00:00", "realized_pnl_usd": None},
+        {"symbol": "AAA", "side": "SELL", "quantity": 40.0, "executed_at": "2026-10-26T13:40:00+00:00", "realized_pnl_usd": 10.0},
+        {"symbol": "AAA", "side": "SELL", "quantity": 60.0, "executed_at": "2026-10-26T13:45:00+00:00", "realized_pnl_usd": -4.0},
+        {"symbol": "AAA", "side": "BUY", "quantity": 50.0, "executed_at": "2026-10-26T14:00:00+00:00", "realized_pnl_usd": None},
+        {"symbol": "AAA", "side": "SELL", "quantity": 50.0, "executed_at": "2026-10-26T14:30:00+00:00", "realized_pnl_usd": -3.0},
+        {"symbol": "BBB", "side": "SELL", "quantity": 10.0, "executed_at": "2026-10-26T13:31:00+00:00", "realized_pnl_usd": 2.0},
+        {"symbol": "CCC", "side": "BUY", "quantity": 10.0, "executed_at": "2026-10-26T15:00:00+00:00", "realized_pnl_usd": None},
+        {"symbol": "CCC", "side": "SELL", "quantity": 4.0, "executed_at": "2026-10-26T15:10:00+00:00", "realized_pnl_usd": 1.0},
+    ]
+    closed = r2d2_lab_live._closed_episodes(legs)
+    assert sorted(closed) == [-3.0, 2.0, 6.0]  # AAA twice (+6 in two legs, then -3), BBB carried; CCC still open
+
+
+def test_allocation_uses_the_effective_nav_with_interest() -> None:
+    """Codex #494 finding 3: the allocation's denominator is the NAV both routes return after interest."""
+    database = Database(Settings(database_url=""))
+    session = datetime(2026, 10, 27, 20, 30, tzinfo=timezone.utc)
+    book = _book(nav_start_usd=931176.94, nav_usd=931500.0, realized_nav_usd=931176.94, cash_usd=884000.0,
+                 as_of="2026-10-27T15:00:00-04:00", positions=[dict(_book()["positions"][0], opened_at="2026-10-27T10:00:00-04:00")])
+    r2d2_lab_live.store(database, dict(_payload(day="2026-10-27"), book=book), now=session)
+    interest = [("2026-10-27", 300.5)]
+    shown = r2d2_lab_live.apply_book(app_main.r2d2.dashboard(), database, now=session, interest=interest)
+    live = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=session, interest=interest)
+    expected = round(186.0 * 251.0 / 931800.5 * 100, 4)
+    assert shown.nav_usd == live.nav_usd == 931800.5
+    assert shown.positions[0].allocation_percent == live.positions[0].allocation_percent == expected
