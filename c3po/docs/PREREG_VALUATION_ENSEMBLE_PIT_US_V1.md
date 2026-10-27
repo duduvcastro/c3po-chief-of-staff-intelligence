@@ -30,7 +30,11 @@
 3. **Modelos:**
    - os 16 modelos do código vinculado (§6), cada um com premissas explícitas no código;
    - cada modelo devolve um valor por ação **positivo** ou uma **razão de não avaliação**, contada e nunca preenchida;
-   - uma ação entra na agregação com **≥ `MIN_MODELS = 5`** modelos válidos; abaixo disso é não avaliável (`ensemble_fewer_than_min_models`) e é contada;
+   - **Regra do dono (26/10, 21:2x):** "a mediana dos modelos que trouxeram valor, tirando o menor e maior para não haver distorções".
+     - Para n ≥ 3, tirar o maior e o menor não muda a mediana; a regra é a mediana dos valores válidos.
+     - Uma ação entra na agregação com **≥ `MIN_MODELS = 3`** valores válidos, o mínimo em que existe um maior e um menor a descartar. Abaixo disso, a ação é não avaliável (`ensemble_fewer_than_min_models`) e é contada; nada é preenchido.
+     - O consenso, quando presente, conta como um dos valores da variante com consenso.
+     - O recibo publica a distribuição do número de valores por ação e a cobertura resultante.
    - o consenso entra como mais um valor só quando o snapshot PIT de consenso que o `valuation_pit_served` lê em `T` o traz para o nome; ausente, a variante com consenso usa só os modelos;
    - nenhum valor futuro a `T`: demonstrações com `accepted_at ≤ T`, preço `close(D)`, consenso com `as_of ≤ T`.
 4. **Agregações secundárias** (média e aparada a 20%, com e sem consenso, e a mediana sem consenso): **sempre publicadas, nunca decisórias**. Não há correção de multiplicidade porque só a primária decide.
