@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import asyncio
 import hashlib
 import ipaddress
@@ -41,7 +41,7 @@ from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data import LiveMarketsService, MarketDataService, RealtimeMarketsService
 from .market_data.indices import IndexQuotesService
 from .market_data.b3_screener import B3ScreenerService
-from .market_data.eodhd_stream import EodhdRealtimeStream
+from .market_data.eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from .market_data.http import MarketDataRequestError
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
@@ -49,6 +49,7 @@ from .push_notifications import PushNotificationService
 from .operational_incidents import OperationalIncidentService
 from .governance_vulnerability import GovernanceVulnerabilityService
 from .r2d2 import R2D2PaperService
+from . import r2d2_lab_live
 from .read_cache import MarketSessionClock, SingleFlightReadCache
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
@@ -268,6 +269,8 @@ PUBLIC_AUTH_PATHS = {
     "/api/v1/auth/session",
     "/api/v1/auth/activity",
     "/api/v1/auth/logout",
+    # The lab's paper fills: authenticated by the route itself (bearer C3PO_R2D2_LAB_TOKEN), not by a session.
+    "/api/v1/r2d2/lab-live",
 }
 
 PERFORMANCE_TELEMETRY_ROUTES = {
@@ -1775,12 +1778,77 @@ def chewie_fundamentals_report(market: str, symbol: str) -> FileResponse:
 def r2d2_dashboard() -> R2D2DashboardResponse:
     # Read-only payload shared by every poller; single-flight + session-aware TTL
     # (C3PO_CPU_RELIEF_V1, PR B). Never caches a mutation.
-    return r2d2_read_cache.get("dashboard", r2d2.dashboard)
+    return r2d2_read_cache.get("dashboard", _r2d2_dashboard_with_lab)
+
+
+def _r2d2_dashboard_with_lab() -> R2D2DashboardResponse:
+    response = r2d2.dashboard()
+    update: dict = {}
+    lab = r2d2_lab_live.today_trades(database)
+    if lab:
+        update["trades"] = lab + list(response.trades)
+    curve = r2d2_lab_live.learning_curve(database)
+    if curve:
+        known = {point.session_date for point in response.learning_curve}
+        update["learning_curve"] = list(response.learning_curve) + [point for point in curve if point.session_date not in known]
+    response = response.model_copy(update=update) if update else response
+    return r2d2_lab_live.apply_book(response, database, interest=_r2d2_posted_interest(), quotes=_r2d2_lab_quotes)
+
+
+def _r2d2_lab_quotes(references: dict[str, float]) -> dict[str, tuple[float, datetime]]:
+    # The live R2D2's open positions at the EODHD live price, as the V2 positions were (owner 27/10/2026): a tick counts
+    # only when live, fresh and plausible against the lab's own mark (usable_display_tick)
+    stream = getattr(r2d2.realtime, "stream", None)
+    if stream is None or not references:
+        return {}
+    stream.set_group("r2d2-lab-live", sorted(references), priority=140)
+    now = datetime.now(timezone.utc)
+    ticks: dict[str, tuple[float, datetime]] = {}
+    for symbol, reference in references.items():
+        tick = stream.quote(symbol)
+        if tick is not None and r2d2._live_us_quote(tick, now) and usable_display_tick(tick, reference):
+            as_of = tick.as_of if tick.as_of.tzinfo else tick.as_of.replace(tzinfo=timezone.utc)
+            ticks[symbol] = (float(tick.price), as_of)
+    return ticks
+
+
+def _r2d2_posted_interest() -> list[tuple[str, float]]:
+    # The T-bill interest the cash-yield ledger posted, per session (owner 26/10/2026: interest is money of the book)
+    entries = r2d2.repo.cash_yield_entries(r2d2.ensure_initialized()["id"])
+    return [(str(row["session_date"])[:10], float(row["interest_income_usd"])) for row in entries]
+
+
+@app.post("/api/v1/r2d2/lab-live", status_code=202)
+async def r2d2_lab_live_ingest(request: Request) -> dict:
+    # The lab's virtual fills of the day (owner, 26/10/2026): bearer token first, then a bounded body, then the strict
+    # schema. Every refusal is generic; nothing of the request is echoed or logged.
+    if not r2d2_lab_live.authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > r2d2_lab_live.MAX_BODY_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payload too large")
+    body = bytearray()
+    async for chunk in request.stream():  # stop at the limit: never buffer more than it
+        body.extend(chunk)
+        if len(body) > r2d2_lab_live.MAX_BODY_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payload too large")
+    try:
+        result = await asyncio.to_thread(r2d2_lab_live.store, database, r2d2_lab_live.parse(bytes(body)))
+    except r2d2_lab_live.LabLiveRefused as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
+    r2d2_read_cache.invalidate("dashboard")
+    r2d2_read_cache.invalidate("live_positions")
+    r2d2_read_cache.invalidate("lab_book")
+    return result
 
 
 @app.get("/api/v1/r2d2/live-positions", response_model=R2D2LivePositionsResponse)
 def r2d2_live_positions() -> R2D2LivePositionsResponse:
-    return r2d2_read_cache.get("live_positions", r2d2.live_positions)
+    # The stored book and the V2 telemetry come from the short cache; the live re-mark runs on EVERY request, so the
+    # screen moves each second with the EODHD ticks (owner 27/10/2026: "a cada segundo")
+    base = r2d2_read_cache.get("live_positions", r2d2.live_positions)
+    book, interest = r2d2_read_cache.get("lab_book", lambda: (r2d2_lab_live.latest_book(database), _r2d2_posted_interest()))
+    return r2d2_lab_live.apply_book_live(base, database, interest=interest, quotes=_r2d2_lab_quotes, found=book)
 
 
 @app.post("/api/v1/feedback", response_model=FeedbackResponse, status_code=201)
