@@ -44,12 +44,17 @@ VALUATION_WORKER_PHASES: dict[str, dict[str, str]] = {
         "code": "valuation-worker-decisor-shadow",
         "name": "Valuation decisor V1 shadow cycle",
     },
+    "ensemble_live": {
+        "code": "valuation-worker-ensemble-live",
+        "name": "Valuation ensemble live producer cycle",
+    },
 }
 
 VALUATION_WORKER_CANONICAL_PHASE = "canonical"
 # phases whose failure never pages (no job_failure push, no failed worker check) and never turns the health card offline:
-# their consumers tolerate their absence (the Decisor V1 falls back to the 051 estimate when the calendar is missing)
-VALUATION_WORKER_ADVISORY_PHASES = ("earnings_calendar",)
+# their consumers tolerate their absence (the Decisor V1 falls back to the 051 estimate when the calendar is missing; the live
+# ensemble producer has no consumer until the signed grid passes and the owner switches)
+VALUATION_WORKER_ADVISORY_PHASES = ("earnings_calendar", "ensemble_live")
 VALUATION_WORKER_OFFHOURS_PHASES = (
     "chewie",
     "v2_data",

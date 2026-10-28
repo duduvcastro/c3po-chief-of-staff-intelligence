@@ -1416,6 +1416,7 @@ class SystemHealthService:
             and (phase != "price_history" or getattr(self.settings, "valuation_price_history_enabled", False))
             and (phase != "decisor_shadow" or valuation_env.decisor_shadow_enabled())
             and (phase != "earnings_calendar" or valuation_env.earnings_calendar_enabled())
+            and (phase != "ensemble_live" or valuation_env.ensemble_live_enabled())
         }
         codes = [definition["code"] for definition in definitions.values()]
         try:

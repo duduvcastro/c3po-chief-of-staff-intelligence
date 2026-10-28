@@ -1026,7 +1026,7 @@ class _Push:
 
 
 def test_the_calendar_phase_never_pages_and_stops_after_three_failed_attempts_a_night() -> None:
-    assert VALUATION_WORKER_ADVISORY_PHASES == ("earnings_calendar",)
+    assert VALUATION_WORKER_ADVISORY_PHASES == ("earnings_calendar", "ensemble_live")  # the decisor is never advisory; the live ensemble has no consumer yet
     database = _database()
     attempts: list[int] = []
 

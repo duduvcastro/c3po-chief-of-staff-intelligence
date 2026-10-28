@@ -106,6 +106,21 @@ def _phase_is_due(last_completed_at: datetime | None, due_at: datetime) -> bool:
     return last_completed_at.astimezone(SAO_PAULO) < due_at
 
 
+def ensemble_live_last_run_at(database: Database) -> datetime | None:
+    """The live ensemble producer is imported only when its switch schedules the phase: with it off the worker never loads it."""
+    from .valuation_live_ensemble import last_run_at
+
+    return last_run_at(database)
+
+
+def run_ensemble_live(database: Database, settings: Settings, http: JsonHttpClient) -> dict[str, Any]:
+    """The ``ensemble_live`` phase: tonight's due time (01:00 America/Sao_Paulo) is the ``since`` of a retry, so an exchange
+    already published tonight is skipped and only the missing one is computed again."""
+    from .valuation_live_ensemble import run_nightly
+
+    return run_nightly(database, settings, http, since=start_of_today(datetime.now(SAO_PAULO)) + timedelta(hours=OFFHOURS_START_HOUR))
+
+
 def _result_item_count(result: Any) -> int:
     if result is None:
         return 0
@@ -567,6 +582,12 @@ def main() -> None:
             *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True),
                              not_before=lambda: decision_not_before(database)),)
               if valuation_env.decisor_shadow_enabled() else ()),
+            # The valuation ensemble's LIVE producer (valuation_live_ensemble): after the price series and, last of all, after every
+            # existing phase — it never delays one. Advisory (never pages); dormant until the mesa enables it; a retry inside the
+            # window completes only the exchange still missing tonight
+            *((OffhoursPhase("ensemble_live", lambda: ensemble_live_last_run_at(database),
+                             lambda: run_ensemble_live(database, settings, market_data.http)),)
+              if valuation_env.ensemble_live_enabled() else ()),
         )
 
     while True:
