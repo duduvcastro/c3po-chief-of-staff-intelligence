@@ -335,6 +335,7 @@ def test_p2_7_the_status_workflow_fails_on_access_or_mandatory_reads() -> None:
     import yaml
     root = Path(__file__).resolve().parents[3]
     workflow = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())
+    assert workflow["jobs"]["status"]["environment"] == "production"  # the current host's secrets
     run = workflow["jobs"]["status"]["steps"][1]["run"]
     assert "|| true" not in run and 'exit "$rc"' in run and "|| rc=$?" in run
     assert "--status </dev/null || exit 13" in run and "[redacted]" in run
