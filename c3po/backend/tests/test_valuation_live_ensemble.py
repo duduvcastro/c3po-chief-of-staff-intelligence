@@ -415,6 +415,9 @@ def test_a_failing_listed_chunk_refuses_that_chunk_only(monkeypatch: pytest.Monk
     for row in served_only["records"]:  # the served names (and their tested ones) are untouched
         assert rows[row["symbol"]]["primary_tp"] == row["primary_tp"] and rows[row["symbol"]]["model_values"] == row["model_values"]
     assert section["counts"]["listed_only_coverage"]["chunks_failed"] == 1 and live.unpublishable(section) is None
+    # every population row stays in every model's denominator, the refused chunk included
+    assert all(sum(counts.values()) == section["counts"]["population_rows"] for counts in section["counts"]["model_results"].values())
+    assert section["counts"]["model_results"]["pe"]["not_evaluable:listed_chunk_failed:RuntimeError"] == 3
 
 
 @pytest.mark.usefixtures("_two_tested")
@@ -747,6 +750,7 @@ def test_the_live_phase_never_runs_ahead_of_a_deferred_decisor() -> None:
     phases_source = source[source.index("offhours_phases = ("):source.index("while True:")]
     wiring = phases_source[phases_source.index('OffhoursPhase("ensemble_live"'):]
     for fragment in ("end_hour=ENSEMBLE_LIVE_LAST_START_HOUR", "max_failures=ENSEMBLE_LIVE_MAX_FAILURES", "not_before=lambda: ensemble_live_not_before(",
+                     "clock=lambda: datetime.now(SAO_PAULO)",
                      "decisor_last_run_at=lambda: decision_last_run_at(database)", "decisor_not_before=lambda: decision_not_before(database)"):
         assert fragment in wiring, fragment
 
@@ -837,3 +841,65 @@ def test_the_live_producer_is_outside_the_signed_instrument_and_leaves_its_bytes
     for path, digest in files.items():  # every signed instrument file is byte-identical to the owner-signed pin
         assert hashlib.sha256((REPOSITORY / path).read_bytes()).hexdigest() == digest, path
     assert not any(name.startswith("valuation_ensemble_") for name in live.__name__.split("."))  # outside the pin's glob
+
+
+def test_an_earlier_phase_crossing_the_last_start_admits_no_new_live_run() -> None:
+    # the pass opens at 04:59:59; an earlier phase runs until 05:29:59; the live phase is admitted on ITS clock, not the pass's
+    def phases(effective: bool, ran: list[str], clock: list[datetime]) -> tuple[OffhoursPhase, ...]:
+        def long() -> dict[str, int]:
+            clock[0] = datetime(2026, 9, 11, 5, 29, 59, tzinfo=SAO_PAULO)
+            ran.append("v3_shadow")
+            return {"rows": 1}
+        return (OffhoursPhase("v3_shadow", lambda: None, long),
+                OffhoursPhase("ensemble_live", lambda: None, lambda: ran.append("live") or {"names": 1},
+                              end_hour=valuation_worker.ENSEMBLE_LIVE_LAST_START_HOUR, max_failures=valuation_worker.ENSEMBLE_LIVE_MAX_FAILURES,
+                              clock=(lambda: clock[0]) if effective else None))
+
+    opening = datetime(2026, 9, 11, 4, 59, 59, tzinfo=SAO_PAULO)
+    ran: list[str] = []
+    clock = [opening]
+    result = run_worker_iteration(_database(), now=opening, canonical_due=False, canonical_operation=lambda: None,
+                                  offhours_phases=phases(True, ran, clock))
+    assert result.phase_statuses == {"v3_shadow": "succeeded", "ensemble_live": "outside_window"} and ran == ["v3_shadow"]
+    # the defect it closes: on the pass's opening instant the live run would have started at 05:29:59
+    ran, clock = [], [opening]
+    naive = run_worker_iteration(_database(), now=opening, canonical_due=False, canonical_operation=lambda: None,
+                                 offhours_phases=phases(False, ran, clock))
+    assert naive.phase_statuses["ensemble_live"] == "succeeded" and ran == ["v3_shadow", "live"]
+
+
+@pytest.mark.parametrize(("start", "reads_before_the_cut"), [
+    (datetime(2026, 9, 11, 8, 29, 59, tzinfo=timezone.utc), 1),  # the cut falls inside the resolver's issuer reads
+    (datetime(2026, 9, 11, 8, 29, 46, tzinfo=timezone.utc), 7),  # the resolver finishes; the cut falls inside the preparation
+])
+def test_no_new_read_starts_after_the_cut(monkeypatch: pytest.MonkeyPatch, start: datetime, reads_before_the_cut: int) -> None:
+    _on(monkeypatch)
+    database, http = _live_world()
+    deadline = datetime(2026, 9, 11, 8, 30, tzinfo=timezone.utc)  # 05:30 BRT
+    now = [start]
+    starts: list[datetime] = []
+    original = pit.AsFiledReader.facts
+
+    def slow(self: Any, issuer_key: str, *, as_of: datetime, refused: Any) -> Any:
+        starts.append(now[0])
+        now[0] += timedelta(seconds=2)  # every issuer read takes two seconds
+        return original(self, issuer_key, as_of=as_of, refused=refused)
+
+    monkeypatch.setattr(pit.AsFiledReader, "facts", slow)
+    with pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: now[0], deadline=deadline, markets=("NASDAQ",))
+    assert len(starts) == reads_before_the_cut and all(instant < deadline for instant in starts)  # the read in flight may finish
+    assert database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None and _target_calls(http) == 0
+
+
+def test_the_nightly_run_reads_no_catalogue_published_after_its_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    _on(monkeypatch)
+    database, http = _live_world()
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7},
+                                    {"rows": [{"symbol": s, "sector": SECTOR, "industry": "Machinery", "valuation_profile": "general",
+                                               "security_type": "Stock"} for s in (*SYMBOLS, "LATE")]}, CLOCK + timedelta(minutes=5))
+    _listed(database, (*SYMBOLS, "LATER"), at=CLOCK + timedelta(minutes=5))
+    live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
+    snapshot = database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE")
+    assert snapshot is not None and [row["symbol"] for row in snapshot["outputs"]["records"]] == sorted(SYMBOLS)
+    assert snapshot["outputs"]["context"]["listed"] == {"status": "absent"}

@@ -42,7 +42,9 @@ its run); the resolver's outstandingShares fallback (screen market cap only) rea
 EODHD snapshot exactly as rev3 does, which is stale; ``T`` is the run's clock, not the grid's 01:00 America/Sao_Paulo
 convention; the screen's volume basis is voted tonight (``valuation_pit_grid.volume_check`` over BOTH exchanges'
 publications), not read from the grid's manifest — when undetermined, ``pit_tested`` requires the name under BOTH bases.
-The fetches persist NOTHING to ``valuation_pit_source``: the signed grid's pinned sources stay untouched.
+The fetches persist NOTHING to ``valuation_pit_source``: the signed grid's pinned sources stay untouched. ``pit_tested``
+says that the grid's screen RULE keeps the name tonight (on tonight's inputs); it does not prove that the name was in the
+grid's tested sample on its past dates — a consumer that needs historical membership reads the grid's own records.
 
 Fail closed: an exchange whose price pin, catalogue, statements table or Treasury curve cannot be read writes no snapshot;
 a name it cannot evaluate gets ``origin = not_evaluable:<reason>`` and no number — a target read that fails is a refusal,
@@ -171,6 +173,50 @@ class _DeadlineHttp(JsonHttpClient):
         raise failure
 
 
+class _DeadlineDatabase:
+    """The database as the night's READERS see it: every method call (one read) checks the deadline first, so a slow store
+    never starts a new read after the cut (a read already started may finish). Attributes pass through; writes (``publish``)
+    use the real database. The as-filed store is NOT given this proxy (it keeps lists on the database itself):
+    ``_DeadlineAsFiledReader`` guards its reads instead."""
+
+    def __init__(self, database: Database, *, deadline: datetime, clock: Callable[[], datetime]) -> None:
+        self._database, self._deadline, self._clock = database, deadline, clock
+
+    def __getattr__(self, name: str) -> Any:
+        value = getattr(self._database, name)
+        if not callable(value):
+            return value
+
+        def guarded(*args: Any, **kwargs: Any) -> Any:
+            _check_deadline(self._deadline, self._clock)
+            return value(*args, **kwargs)
+        return guarded
+
+
+def _readers_database(database: Database, deadline: datetime | None, clock: Callable[[], datetime]) -> Database:
+    return database if deadline is None else cast(Database, _DeadlineDatabase(database, deadline=deadline, clock=clock))
+
+
+class _DeadlineAsFiledReader(pit.AsFiledReader):
+    """rev3's as-filed reader with the deadline checked before each read (presence, coverage, one issuer's facts)."""
+
+    def __init__(self, database: Database, *, deadline: datetime | None, clock: Callable[[], datetime]) -> None:
+        super().__init__(database)
+        self._deadline, self._clock = deadline, clock
+
+    def present(self) -> bool:
+        _check_deadline(self._deadline, self._clock)
+        return super().present()
+
+    def coverage(self, market: str) -> dict[str, str]:
+        _check_deadline(self._deadline, self._clock)
+        return super().coverage(market)
+
+    def facts(self, issuer_key: str, *, as_of: datetime, refused: Counter[str]) -> list[dict[str, Any]]:
+        _check_deadline(self._deadline, self._clock)
+        return super().facts(issuer_key, as_of=as_of, refused=refused)
+
+
 class LiveSourceFetch(pit.PitFetchService):
     """The PIT fetcher's own provider reads (``fetch_targets``, ``fetch_macro``: endpoints, pagination, units) with the
     payload kept in memory: ``_persist`` never writes ``valuation_pit_source``, whose snapshots the signed grid pins."""
@@ -232,11 +278,12 @@ def listing_symbol(value: Any) -> str:
     return re.sub(r"[./ ]+", "-", str(value or "").strip().upper())
 
 
-def listed_population(database: Database, market: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def listed_population(database: Database, market: str, *, before: datetime | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Every common stock of the latest listed-universe publication of ``market``, as admitted catalogue rows WITHOUT
     classification (the listing carries none), one row per share class; ``[]`` when none is published or it does not
     verify (manifest, or a malformed ``listings``) — the exchange's served catalogue still runs."""
-    snapshot = database.latest_analysis_snapshot(LISTED_ANALYSIS, market)
+    snapshot = (database.latest_analysis_snapshot(LISTED_ANALYSIS, market) if before is None
+                else database.latest_analysis_snapshot_before(LISTED_ANALYSIS, market, utc(before)))
     if snapshot is None:
         return [], {"status": "absent"}
     outputs = _mapping(snapshot.get("outputs"))
@@ -307,12 +354,18 @@ def _admitted(resolver: pit.PitSourceResolver) -> tuple[dict[str, dict[str, Any]
 def gather_live_inputs(database: Database, *, market: str, as_of: datetime, prices: pit.PinnedPrices, curve: Mapping[str, Any],
                        curve_reference: Mapping[str, Any], targets: TargetReader, volume_basis: str | None,
                        volume_check: Mapping[str, Any] | None = None, reader: pit.AsFiledReader | None = None,
-                       listed: bool = True) -> LiveInputs:
+                       listed: bool = True, deadline: datetime | None = None, clock: Callable[[], datetime] | None = None,
+                       catalogue_cut: datetime | None = None) -> LiveInputs:
     """rev3's admission at ``T``, unchanged, over the served catalogue: ``PitSourceResolver`` (``vintages``, the latest
     catalogue) decides which names have statements, ≥ 90 valid sessions, a close and shares at ``T``, and
     ``PitComputation.screen_inputs`` (which reads only ``self.resolver``) gives the screen inputs the grid's sibling run
-    stored. ``listed``: add the listed-only stocks (admitted later, in chunks). Market-level defects raise."""
+    stored. ``listed``: add the listed-only stocks (admitted later, in chunks). ``deadline``: every read of the resolver
+    (each issuer's facts, each series, each snapshot) checks it before it starts. ``catalogue_cut`` (the nightly run: its
+    ``T``): the served catalogue and the listing are the latest published BEFORE it, never one published during the run;
+    ``None`` (the parity tests, at a past ``T``): the grid's convention, the current catalogue. Market-level defects raise."""
     cut = utc(as_of)
+    tick: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
+    reads = _readers_database(database, deadline, tick)
     if market not in MARKETS:
         raise LiveEnsembleError("unsupported_market")
     if prices.market != market or utc(prices.as_of) != cut:
@@ -321,12 +374,13 @@ def gather_live_inputs(database: Database, *, market: str, as_of: datetime, pric
         raise LiveEnsembleError("treasury_curve_unavailable")
     if volume_basis is not None and volume_basis not in VOLUME_BASES:
         raise LiveEnsembleError("unknown_volume_basis")
-    reader = reader if reader is not None else pit.AsFiledReader(database)
-    resolver = pit.PitSourceResolver(database, market=market, as_of=cut, prices=prices, statements=STATEMENTS, vintages=reader)
+    reader = reader if reader is not None else _DeadlineAsFiledReader(database, deadline=deadline, clock=tick)
+    resolver = pit.PitSourceResolver(reads, market=market, as_of=cut, prices=prices, statements=STATEMENTS, vintages=reader,
+                                     catalogue_pinned_at=utc(catalogue_cut) if catalogue_cut is not None else None)
     resolver.resolve()
     if resolver.catalogue_snapshot_id is None:
         raise LiveEnsembleError("catalogue_missing")
-    catalogue = pit.admitted_catalogue(database.analysis_snapshot_by_id(resolver.catalogue_snapshot_id))
+    catalogue = pit.admitted_catalogue(reads.analysis_snapshot_by_id(resolver.catalogue_snapshot_id))
     roles = [item for item in resolver.references if item.get("role") == "catalogue"]
     if not catalogue or len(roles) != 1 or roles[0].get("classification_sha256") != canonical_hash(catalogue):
         raise LiveEnsembleError("catalogue_changed_during_run")
@@ -336,12 +390,12 @@ def gather_live_inputs(database: Database, *, market: str, as_of: datetime, pric
     extra_rows: list[dict[str, Any]] = []
     listed_reference: dict[str, Any] = {"status": "not_requested"}
     if listed:
-        listed_rows, listed_reference = listed_population(database, market)
+        listed_rows, listed_reference = listed_population(reads, market, before=catalogue_cut)
         served = {listing_symbol(row["symbol"]) for row in catalogue}
         extra_rows = [row for row in listed_rows if row["symbol"] not in served]
     return LiveInputs(market, cut, prices, reader, catalogue, catalogue_reference, screen_inputs, not_admitted, references, dict(curve),
                       dict(curve_reference), targets, volume_basis, dict(volume_check) if volume_check is not None else None,
-                      extra_rows, listed_reference, database)
+                      extra_rows, listed_reference, reads)
 
 
 def _statement_reference(references: Sequence[Mapping[str, Any]], symbol: str) -> Mapping[str, Any] | None:
@@ -420,10 +474,13 @@ class _LiveSection:
         self.reads = Counter[str]()
         self.failure: str | None = None  # the exchange's own preparation failed: it is not published, the other one is
         self.chunks_failed = 0
+        self.deadline: datetime | None = None  # set by _run_sections: checked before every preparation step
+        self.clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
 
     # ---- inputs (compute_grid_section's per-name loop, the same calls in the same order)
     def _prepare(self, name: _Name, screen_inputs: Mapping[str, Mapping[str, Any]], not_admitted: Mapping[str, str],
                  references: Sequence[Mapping[str, Any]], raw_by_issuer: dict[str, list[dict[str, Any]]]) -> None:
+        _check_deadline(self.deadline, self.clock)  # one name is one preparation step: none starts after the cut
         market, cut, prices, reader = self.market, self.cut, self.prices, self.reader
         row, symbol = name.row, name.symbol
         name.screen = dict(screen_inputs[symbol]) if symbol in screen_inputs else None
@@ -492,6 +549,13 @@ class _LiveSection:
                 return "no_asfiled_statements"
         return "not_admitted_at_T:" + not_admitted.get(name.symbol, "unknown")
 
+    @staticmethod
+    def _models_of(name: _Name) -> tuple[ModelValue, ...]:
+        if name.models:
+            return name.models
+        reason = name.pending or name.refusal or "company_inputs_unavailable"
+        return tuple(ModelValue(model, None, "not_evaluable", reason) for model in MODEL_IDS)
+
     def _evaluate(self, names: Iterable[_Name]) -> None:
         for name in names:
             name.models = (evaluate_models(name.company, name.premises, peers=self.peers) if name.company is not None else
@@ -543,6 +607,10 @@ class _LiveSection:
                 for name in chunk:
                     self._prepare(name, screen_inputs, not_admitted, references, raw_by_issuer)
                 self._evaluate(chunk)
+            except LiveEnsembleDeadline:  # the cut came inside the chunk: it and every later one are pending, nothing half-done
+                for name in extras[start:]:
+                    name.company, name.models, name.refusal, name.pending = None, (), None, "pending_preparation"
+                return False
             except Exception as error:  # one chunk's failure refuses that chunk only: never a tested name, never the exchange
                 self.chunks_failed += 1
                 for name in chunk:
@@ -631,8 +699,8 @@ class _LiveSection:
         return {
             "symbol": name.symbol, "security_type": name.row.get("security_type"), "in_served_catalogue": name.served,
             "pit_tested": name.pit_tested, "screened": name.screened,
-            "primary_tp": primary_value, "origin": origin, "models_evaluated": sum(model.status == "evaluated" for model in name.models),
-            "sample_size": sample_size, "model_values": {model.model: model.value for model in name.models}, "consensus": consensus,
+            "primary_tp": primary_value, "origin": origin, "models_evaluated": sum(model.status == "evaluated" for model in self._models_of(name)),
+            "sample_size": sample_size, "model_values": {model.model: model.value for model in self._models_of(name)}, "consensus": consensus,
             "price": pit._positive(_mapping(name.screen).get("close")), "session_date": self.prices.session_date, "as_of": self.cut.isoformat(),
             "inputs_sha256": canonical_sha256({"context_sha256": context_sha256, "symbol": name.symbol, "catalogue_row": name.row,
                                                "screen": name.screen, "issuer": name.issuer, "facts_rows_sha256": name.facts_rows_sha256,
@@ -658,8 +726,8 @@ class _LiveSection:
         context_sha256 = canonical_sha256(context)
         records = [self._finalize(self.names[symbol], context_sha256) for symbol in sorted(self.names)]
         totals: dict[str, Counter[str]] = {model: Counter() for model in MODEL_IDS}
-        for name in self.names.values():
-            for model in name.models:
+        for name in self.names.values():  # every population row in every model's denominator, a refused chunk included
+            for model in self._models_of(name):
                 totals[model.model]["evaluated" if model.status == "evaluated" else "not_evaluable:" + str(model.reason)] += 1
         origins = Counter(record["origin"] for record in records)
         consensus_counts = Counter("used" if record["consensus"].get("used") else "not_used:" + str(record["consensus"].get("reason") or "unavailable")
@@ -710,6 +778,8 @@ def _run_sections(sections: Sequence[_LiveSection], *, deadline: datetime | None
     exchange whose own preparation fails is set aside (``failure``) and the other goes on; an open breaker after the
     tested reads skips the listed-only names (nothing more would be read tonight)."""
     reads = _TargetReads()
+    for section in sections:
+        section.deadline, section.clock = deadline, clock
     for section in sections:
         _check_deadline(deadline, clock)
         try:
@@ -851,11 +921,14 @@ def _run_markets(database: Database, settings: Settings, fetch: LiveSourceFetch,
         failures["treasury_curve:" + type(error).__name__] += len(pending)
         return
     # the volume basis is voted over BOTH exchanges' publications, as the grid votes — also on a retry of one exchange
-    series = PriceHistoryService(settings, database, _NoNetworkHttp())
+    reads = _readers_database(database, deadline, tick)  # every series/snapshot read below checks the deadline before it starts
+    series = PriceHistoryService(settings, reads, _NoNetworkHttp())
     prices: dict[str, pit.PinnedPrices] = {}
     for market in MARKETS:
         try:
             prices[market] = pit.PinnedPrices(series, market, as_of=as_of, pinned_at=as_of, pin_mode="run_start")
+        except LiveEnsembleDeadline:
+            raise
         except Exception as error:
             if market in pending:
                 failures["price_vintage:" + type(error).__name__] += 1
@@ -864,7 +937,9 @@ def _run_markets(database: Database, settings: Settings, fetch: LiveSourceFetch,
     if set(prices) == set(MARKETS):
         _check_deadline(deadline, tick)
         try:
-            volume_basis, volume_check = decide_volume_basis(database, settings, prices)
+            volume_basis, volume_check = decide_volume_basis(reads, settings, prices)
+        except LiveEnsembleDeadline:
+            raise
         except Exception as error:  # the screen flag only: TPs never depend on it
             failures["volume_check:" + type(error).__name__] += 1
             volume_check = {"decision": "volume_check_failed"}
@@ -877,7 +952,8 @@ def _run_markets(database: Database, settings: Settings, fetch: LiveSourceFetch,
         try:
             sections.append(_LiveSection(gather_live_inputs(database, market=market, as_of=as_of, prices=pinned, curve=curve,
                                                             curve_reference=curve_reference, targets=fetch.target_rows,
-                                                            volume_basis=volume_basis, volume_check=volume_check)))
+                                                            volume_basis=volume_basis, volume_check=volume_check,
+                                                            deadline=deadline, clock=tick, catalogue_cut=as_of)))
         except LiveEnsembleDeadline:
             raise
         except LiveEnsembleError as error:
