@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -617,7 +618,7 @@ def test_feed_the_lag_and_the_reasons_a_signal_did_not_buy_are_counted() -> None
     stale = MarketView(price=98.1, trade_at=t, vwap=98.0, bid=98.095, ask=98.105, quote_at=t - timedelta(seconds=6))
     views = {"AAA": stale, "CCC": _view(29.1, 29.0, 29.0, 29.2, t)}  # AAA stream quote 6 s old (its bound: 5 s), CCC 69 bps
     assert engine.step(t, lambda s: views.get(s, MarketView())) == []
-    assert engine.skips == {"held": 0, "slots": 0, "noquote": 0, "stale": 1, "spread": 1} and engine.signals == 2
+    assert engine.skips == {"held": 0, "slots": 0, "noquote": 0, "stale": 1, "spread": 1, "late": 0, "implausible": 0} and engine.signals == 2
     views = {"AAA": _view(97.9, 98.0, 97.89, 97.91, t), "CCC": MarketView(price=28.9, trade_at=t, vwap=29.0)}
     engine.step(_at(9, 42), lambda s: views.get(s, MarketView()))
     views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, _at(9, 43)), "CCC": MarketView(price=29.1, trade_at=t, vwap=29.0)}
@@ -626,7 +627,7 @@ def test_feed_the_lag_and_the_reasons_a_signal_did_not_buy_are_counted() -> None
 
     line = engine_module.feed_line(stream, engine)
     assert line.startswith("R2D2 live feed: trade_messages=0 quote_messages=2 trade_lag_ms=0 quote_lag_ms=")
-    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 nbbo massive=0 stream=3 unanswered=0 stream_would_refuse=0")
+    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 late=0 implausible=0 nbbo massive=0 stream=3 unanswered=0 mismatch=0 stream_would_refuse=0")
     assert stream.lag_max_ms == {"trade": 0, "quote": 0} and stream.messages == {"trade": 0, "quote": 0}  # per interval
     root = Path(__file__).resolve().parents[3]
     run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
@@ -754,8 +755,9 @@ def test_nbbo_a_buy_takes_the_massive_nbbo_where_the_streams_quote_was_wider() -
         return (98.095, 98.105, now - timedelta(seconds=20))  # Massive: 1 bp, quiet for 20 s (the lab takes it)
     fills = engine.step(t, lambda s: views.get(s, MarketView()), nbbo=nbbo)
     assert [(f["side"], f["symbol"], f["price"]) for f in fills] == [("BUY", "AAA", 98.105)]
-    assert "NBBO Massive" in fills[0]["reason"] and asked == [("AAA", t)]
-    assert engine.sources == {"massive": 1, "stream": 0, "unanswered": 0, "stream_would_refuse": 1}
+    assert "NBBO Massive" in fills[0]["reason"] and [s for s, _ in asked] == ["AAA"]
+    assert 0 <= (asked[0][1] - t).total_seconds() < 1  # asked at the effective instant
+    assert engine.sources == {"massive": 1, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 1}
 
 
 def test_nbbo_massive_silent_falls_back_to_the_stream_and_an_old_or_wide_nbbo_is_refused() -> None:
@@ -819,13 +821,16 @@ def test_nbbo_massive_time_per_minute_is_bounded_and_the_stream_stands_in_past_i
     above = {s: _view(98.1, 98.0, 98.095, 98.105, t) for s in ("AAA", "CCC", "DDD", "EEE")}
     asked = []
 
-    def slow(symbol, now):  # each answer takes 2 s: the third name is past the 3 s budget
+    def slow(symbol, now):  # each answer takes 1.49 s (under the 1.5 s deadline): a second call could end past 3 s
         asked.append(symbol)
-        clock["t"] += 2.0
+        clock["t"] += 1.49
         return (98.095, 98.105, now)
     fills = engine.step(t, lambda s: above.get(s, MarketView()), nbbo=slow)
-    assert len(asked) == 2 and len(fills) == 4
-    assert engine.sources == {"massive": 2, "stream": 2, "unanswered": 2, "stream_would_refuse": 0}
+    # a call is made only if its whole 1.5 s deadline fits (Codex 6478311166 P2-1): 0 + 1.5 and 1.49 + 1.5 fit,
+    # 2.98 + 1.5 does not — the waits end at 2.98 s, never past the 3 s budget (the old check let a third run to 4.47 s)
+    assert len(asked) == 2 and clock["t"] <= engine_module.NBBO_STEP_BUDGET_SECONDS and len(fills) == 4
+    assert engine.sources == {"massive": 2, "stream": 2, "unanswered": 2, "mismatch": 0, "stream_would_refuse": 0}
+    assert fills[2]["executed_at"] == (t + timedelta(seconds=2.98)).isoformat()  # the effective instant, not the step's
 
 
 def test_nbbo_the_session_hands_the_reader_to_every_step_and_the_request_lines_stay_out_of_the_logs(tmp_path: Path, monkeypatch) -> None:
@@ -857,3 +862,84 @@ def test_nbbo_the_session_hands_the_reader_to_every_step_and_the_request_lines_s
         run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
                     cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=reader)
     assert received and all(r is reader for r in received)
+
+
+def test_nbbo_an_answer_after_the_last_entry_buys_nothing_and_the_execution_time_is_the_effective_one(monkeypatch) -> None:
+    """Codex 6478311166 P2-2: asked at 15:29:59, answered 1.49 s later (15:30:00.49): past the last entry, no buy."""
+    clock = {"t": 0.0}
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: clock["t"])
+    engine = _engine()
+    t = _at(15, 28, 59)
+    below = {"AAA": _view(97.9, 98.0, 97.89, 97.91, t), "CCC": _view(28.9, 29.0, 28.80, 29.00, t)}
+    engine.step(t, lambda s: below.get(s, MarketView()))
+    t = _at(15, 29, 59)
+    above = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.005, t)}
+
+    def slow(symbol, now):
+        clock["t"] += 1.49
+        return (98.095, 98.105, now)
+    assert engine.step(t, lambda s: above.get(s, MarketView()), nbbo=slow) == []
+    assert not engine.state.positions and engine.skips["late"] == 1 and engine.fills == []
+    clock["t"] = 0.0  # the control: asked at 15:29:57, answered inside the window, executed at the effective instant
+    engine = _engine()
+    engine.step(_at(15, 28, 57), lambda s: below.get(s, MarketView()))
+    fills = engine.step(_at(15, 29, 57), lambda s: above.get(s, MarketView()), nbbo=slow)
+    assert [f["symbol"] for f in fills] == ["AAA"] and fills[0]["executed_at"] == (_at(15, 29, 57) + timedelta(seconds=1.49)).isoformat()
+    assert engine.skips["late"] == 1  # CCC, asked next, answered at 15:30:00.98: past the window
+
+
+@pytest.mark.parametrize("row", [
+    {"bid_price": 1e309, "ask_price": 1e309, "sip_timestamp": 1},  # inf
+    {"bid_price": 98.0, "ask_price": float("nan"), "sip_timestamp": 1},
+    {"bid_price": 98.0, "ask_price": 98.01, "sip_timestamp": 253402300800000000000},  # year 10000
+    {"bid_price": 98.0, "ask_price": 98.01, "sip_timestamp": 10 ** 40},  # overflow
+    {"bid_price": 98.0, "ask_price": 98.01, "sip_timestamp": "x"},
+    {"bid_price": 98.0, "ask_price": 98.01, "sip_timestamp": 1},  # 1970: not the instant's NBBO
+])
+def test_nbbo_an_answer_that_is_no_usable_nbbo_is_refused_whole_and_the_stream_stands_in(row) -> None:
+    """Codex 6478311166 P2-3: refused inside the reader's boundary, before any state; the healthy stream buys."""
+    now = _at(9, 41)
+    reader = engine_module.massive_nbbo(lambda url, params=None: {"results": [dict(row)]}, "https://x", "t")
+    assert reader("AAA", now) is None
+    engine = _crossing_engine()
+    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, now), "CCC": _view(28.9, 29.0, 28.80, 29.00, now)}
+    fills = engine.step(now, lambda s: views.get(s, MarketView()), nbbo=reader)
+    assert [(f["symbol"], f["price"]) for f in fills] == [("AAA", 98.105)] and "cotação do stream" in fills[0]["reason"]
+    assert all(math.isfinite(v) for v in (fills[0]["quantity"], fills[0]["fees_usd"]))
+
+
+def test_nbbo_the_streams_own_records_reject_non_finite_numbers() -> None:
+    stream = LiveEngineStream("x", max_symbols=550)
+    stream.start_session(DAY)
+    stamp = int(_at(10, 0).timestamp() * 1000)
+    stream._record_quote('{"s": "AAA", "bp": 98.0, "ap": Infinity, "t": %d}' % stamp)
+    stream._record_quote('{"s": "AAA", "bp": NaN, "ap": 98.01, "t": %d}' % stamp)
+    stream._record('{"s": "AAA", "p": Infinity, "v": 10, "t": %d, "ms": "open"}' % stamp)
+    assert "AAA" not in stream.nbbo and stream.view("AAA").price is None
+
+
+def test_nbbo_a_finite_but_absurd_or_foreign_quote_is_never_bought_on() -> None:
+    """Pre-review of e8ce1f3: bid = ask = 2e6 (or another instrument's NBBO) passes finiteness and spread; its mid is far
+    from the signal's own close, so Massive's answer is refused and the healthy stream stands in; an absurd stream quote
+    is skipped, state untouched."""
+    now = _at(9, 41)
+    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, now), "CCC": _view(28.9, 29.0, 28.80, 29.00, now)}
+    for answer in ((2e6, 2e6, now), (196.0, 196.01, now)):  # absurd; another class of the name at twice the price
+        engine = _crossing_engine()
+        fills = engine.step(now, lambda s: views.get(s, MarketView()), nbbo=lambda s, t, a=answer: a)
+        assert [(f["symbol"], f["price"]) for f in fills] == [("AAA", 98.105)] and "cotação do stream" in fills[0]["reason"]
+        assert engine.sources["mismatch"] == 1 and engine.sources["massive"] == 0
+    engine = _crossing_engine()
+    absurd = {"AAA": _view(98.1, 98.0, 2e6, 2e6, now)}
+    assert engine.step(now, lambda s: absurd.get(s, MarketView())) == []
+    assert engine.skips["implausible"] == 1 and not engine.state.positions and engine.fills == []
+
+
+def test_nbbo_a_stream_message_stamped_in_the_future_never_pins_the_book() -> None:
+    stream = LiveEngineStream("x", max_symbols=550)
+    stream.start_session(datetime.now(NEW_YORK).date())
+    ahead = int((datetime.now(timezone.utc) + timedelta(hours=3)).timestamp() * 1000)
+    stream._record_quote(json.dumps({"s": "AAA", "bp": 98.0, "ap": 98.01, "t": ahead}))
+    assert "AAA" not in stream.nbbo
+    stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 10, "t": ahead, "ms": "open"}))
+    assert stream.view("AAA").price is None
