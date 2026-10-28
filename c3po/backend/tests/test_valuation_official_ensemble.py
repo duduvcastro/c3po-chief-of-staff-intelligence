@@ -614,3 +614,54 @@ def test_r2d2_never_takes_an_untested_ensemble_tp_as_its_canonical_basis(monkeyp
     canonical = "canonical C3PO valuation universe"
     assert by_symbol["TSTD"]["valuation_basis"] == canonical and by_symbol["FALL"]["valuation_basis"] == canonical
     assert by_symbol["UNTS"]["valuation_basis"] != canonical  # served and labelled on the screens, never R2D2's basis
+
+
+def _edit_display(database: Database, cycle_id: str, symbol: str, **fields: Any) -> None:
+    """An edit of the producer's DISPLAY row in the stored snapshot (the records stay as hashed), then the caches dropped."""
+    snapshot = next(item for item in database._analysis_snapshots if item.get("id") == cycle_id)
+    row = next(item for item in snapshot["outputs"]["rows"] if item.get("symbol") == symbol)
+    row.update(fields)
+    database.drop_official_cycle_cache()
+    database._cycle_records_cache.clear()
+
+
+@pytest.mark.parametrize("edit", [{"ensemble_pit_tested": True}, {"ensemble_origin": "fallback_internal:not_in_live_snapshot"},
+                                  {"ensemble_origin": "fallback_internal:x", "ensemble_pit_tested": True, "internal_tp": 470.0}])
+def test_p2_buy_permission_reads_the_immutable_record_never_the_display_row(edit: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+                                                                           caplog: pytest.LogCaptureFixture) -> None:
+    """Codex P2 on #510: an ensemble record whose provenance says untested stays untested whatever its display row says —
+    the served origin/flag (and the internal TP a fallback must equal) are the hashed record's; the edit is logged."""
+    database = p1._database()
+    cycles = _three_markets(database)
+    _to_internal(database, monkeypatch)
+    _to_ensemble(database, monkeypatch)
+    before = official.official_row(database, "US", "MSFT")
+    assert before is not None and _decide_us(before)["reason_codes"] == [official.ENSEMBLE_UNTESTED_CODE]
+    _edit_display(database, cycles["NASDAQ"], "MSFT", **edit)
+    with caplog.at_level(logging.WARNING, logger="app.valuation_official"):
+        after = official.official_row(database, "US", "MSFT")
+    assert after is not None and after["official_row_sha256"] == before["official_row_sha256"] and after["our_tp"] == before["our_tp"] == 470.0
+    assert (after["ensemble_origin"], after["ensemble_pit_tested"], after["internal_tp"]) == (ENSEMBLE_ORIGIN, False, 490.0)  # the record's word
+    assert official.ensemble_untested(after) and _decide_us(after)["verdict"] == decisor.OBSERVAR
+    assert _decide_us(after)["reason_codes"] == [official.ENSEMBLE_UNTESTED_CODE]
+    assert any("differ from the record's provenance" in entry.getMessage() for entry in caplog.records)
+    # the R2D2-facing rows and the screens' rows read the same: official_rows serves the record's provenance too
+    assert official.official_rows(database, "NASDAQ")["MSFT"]["ensemble_pit_tested"] is False
+
+
+def test_p2_an_unknown_origin_or_flag_and_a_fallback_that_is_not_the_internal_tp_fail_closed() -> None:
+    base = {"tp_source": SOURCE_ENSEMBLE, "our_tp": 100.0, "internal_tp": 100.0}
+    assert official.ensemble_untested({**base, "ensemble_origin": ENSEMBLE_ORIGIN, "ensemble_pit_tested": None})  # unknown flag
+    assert official.ensemble_untested({**base, "ensemble_origin": None, "ensemble_pit_tested": True})  # unknown origin
+    assert official.ensemble_untested({**base, "ensemble_origin": "other", "ensemble_pit_tested": True})
+    assert official.ensemble_untested({**base, "ensemble_origin": "fallback_internal:x", "our_tp": 120.0})  # a "fallback" off the internal TP
+    assert not official.ensemble_untested({**base, "ensemble_origin": "fallback_internal:x"})  # the genuine fallback
+    assert not official.ensemble_untested({**base, "ensemble_origin": ENSEMBLE_ORIGIN, "ensemble_pit_tested": True})
+    assert not official.ensemble_untested({**base, "tp_source": SOURCE_INTERNAL, "ensemble_origin": None})  # never checked outside the ensemble
+    # a record without the provenance keys (never written by the producers) is served with unknowns: untested
+    row = _row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0, internal_buy_in=196.0, ensemble_tp=260.0)
+    record = official.prediction_from_row(row, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=p1.NOW, source=SOURCE_ENSEMBLE)
+    assert record is not None
+    record["decomposition"]["provenance"] = {key: value for key, value in record["decomposition"]["provenance"].items() if not key.startswith("ensemble_")}
+    served = official._served(row, record, generation={"generation_id": "g"}, cycle_id="c", scope="universe", market="NASDAQ")
+    assert served is not None and served["ensemble_origin"] is None and served["ensemble_pit_tested"] is None and official.ensemble_untested(served)

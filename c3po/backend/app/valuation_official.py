@@ -340,6 +340,7 @@ _refusals_logged: dict[str, str] = {}  # symbol → the refused targeted cycle t
 _unrecordable_logged: set[str] = set()  # re-run cycle ids this PROCESS already warned were not recordable (S5): the repeats are INFO
 _integrity_logged: set[str] = set()  # stored record ids this PROCESS already warned could not be verified (F393-11): the repeats are INFO
 _viewless_logged: set[str] = set()  # internal records this PROCESS already warned had no internal view on their row (rev 9): the repeats are INFO
+_provenance_divergence_logged: set[str] = set()  # ensemble records whose display row disagreed with their provenance (rev 10, P2): the repeats are INFO
 
 
 class CalendarUnavailable(RuntimeError):
@@ -1586,7 +1587,11 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
     such a cycle for the internal source, so this is the guard of a hand-made generation. A blend record is served as before.
     Rev 10: the same rule through the prefix map for an ENSEMBLE record (``source_view``: the ``ensemble_*`` view; no view, not
     served). The row's ``ensemble_*`` fields travel ONLY with an ensemble record: a blend or internal record is served without
-    them — exactly the dict served before the producers emitted them, so nothing a consumer receives changes until the switch."""
+    them — exactly the dict served before the producers emitted them, so nothing a consumer receives changes until the switch.
+    For an ensemble record, where its TP comes from — ``ensemble_origin``, ``ensemble_pit_tested`` and the live snapshot's identity
+    (``ENSEMBLE_PROVENANCE_KEYS``) — is served from the IMMUTABLE record's ``decomposition.provenance`` (hashed with it), never
+    from the display row (Codex P2 on #510): a display row that says otherwise is overridden, with a WARNING once per record, so
+    no edit of a snapshot can turn an untested ensemble TP into a buy permission (``ensemble_untested``)."""
     view: dict[str, Any] | None = None
     record_source = str(record.get("source") or "")
     if record_source in VIEW_PREFIXES:
@@ -1616,6 +1621,8 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
         stamped["buy_in_models"] = copy.deepcopy(dict(models))  # Q2: the models of the served buy-in, never the blend's under an internal record
     if view is not None:
         stamped.update(view)  # rev 9: the status/score/expected return of the served (internal) TP, never the blend's
+    if record_source == SOURCE_ENSEMBLE:
+        stamped.update(_ensemble_provenance(record, row, market=market, cycle_id=cycle_id))  # P2: the record's word, never the display row's
     stamped.update({
         "our_tp": tp,
         "buy_in": buy_in,
@@ -1633,14 +1640,44 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
     return stamped
 
 
+def _ensemble_provenance(record: Mapping[str, Any], row: Mapping[str, Any], *, market: str, cycle_id: str) -> dict[str, Any]:
+    """The ensemble fields an ensemble record is SERVED with: its own ``decomposition.provenance`` values for every
+    ``ENSEMBLE_PROVENANCE_KEYS`` key and ``ensemble_pit_tested`` (``None`` when the record does not carry one — unknown, which
+    ``ensemble_untested`` treats as untested) and the record's ``internal_tp``. A display row whose ``ensemble_origin`` or
+    ``ensemble_pit_tested`` differs from the record is logged (WARNING once per record per process, INFO after) and overridden: the hashed record decides (P2)."""
+    decomposition = record.get("decomposition")
+    provenance = decomposition.get("provenance") if isinstance(decomposition, Mapping) else None
+    recorded = dict(provenance) if isinstance(provenance, Mapping) else {}
+    served = {key: copy.deepcopy(recorded.get(key)) for key in (*ENSEMBLE_PROVENANCE_KEYS, "ensemble_pit_tested")}
+    if _positive(record.get("internal_tp")) is not None:  # the internal TP beside it, as hashed: what a genuine fallback must equal
+        served["internal_tp"] = float(record["internal_tp"])
+    diverged = [key for key in ("ensemble_origin", "ensemble_pit_tested") if row.get(key) != served[key]]
+    if diverged:
+        key = f"{record.get('id')}"
+        level = logging.INFO if key in _provenance_divergence_logged else logging.WARNING
+        _provenance_divergence_logged.add(key)
+        logger.log(level, "valuation_official: ensemble record %s/%s of cycle %s — the display row's %s differ from the record's provenance; the record "
+                   "is served (P2: buy permission reads the immutable record, never the display row)", market, record.get("symbol"), cycle_id, diverged)
+    return served
+
+
 def ensemble_untested(row: Mapping[str, Any] | None) -> bool:
-    """Whether a SERVED row's TP is an ensemble TP OUTSIDE the PIT-tested population (rev 10, owner 28/10/2026): served under
-    ``SOURCE_ENSEMBLE``, taken from the ensemble (``ensemble_origin = "ensemble"``, not the internal fallback) and not marked
-    ``ensemble_pit_tested = True`` by the live producer (unknown counts as untested: fail closed). Such a TP is served and
-    labelled, never a buy permission — the decisor (``TP_OUTSIDE_TESTED_POPULATION``) and R2D2's canonical tier read this. A row
-    served under the blend or the internal source, or an ensemble row that falls back to its internal TP, is never untested."""
+    """Whether a SERVED row's TP is an ensemble TP that may NOT be a buy permission (rev 10, owner 28/10/2026): served under
+    ``SOURCE_ENSEMBLE`` and NOT one of the two permitted cases — a genuine internal fallback (``ensemble_origin =
+    "fallback_internal:<reason>"`` AND the served TP is the internal TP) or an ensemble TP the live producer marked
+    ``pit_tested = True`` (``ensemble_origin = "ensemble"``, ``ensemble_pit_tested is True``). Anything else — untested, an
+    unknown flag, an unknown or missing origin, a "fallback" whose TP is not the internal one — is untested: fail closed. The
+    fields are the immutable record's provenance (``_served`` overlays them, P2), never the producer's display row. Such a TP is
+    served and labelled, never a buy permission — the decisor (``TP_OUTSIDE_TESTED_POPULATION``) and R2D2's canonical tier read
+    this. A row served under the blend or the internal source is never untested."""
     item = row or {}
-    return item.get("tp_source") == SOURCE_ENSEMBLE and item.get("ensemble_origin") == ENSEMBLE_ORIGIN and item.get("ensemble_pit_tested") is not True
+    if item.get("tp_source") != SOURCE_ENSEMBLE:
+        return False
+    origin = item.get("ensemble_origin")
+    if isinstance(origin, str) and origin.startswith(ENSEMBLE_FALLBACK_PREFIX):
+        tp, internal_tp = _positive(item.get("our_tp")), _positive(item.get("internal_tp"))
+        return tp is None or tp != internal_tp  # a fallback carries the internal TP, bit for bit; otherwise it is not one
+    return not (origin == ENSEMBLE_ORIGIN and item.get("ensemble_pit_tested") is True)
 
 
 def item_stamp(row: Mapping[str, Any] | None) -> dict[str, Any]:
