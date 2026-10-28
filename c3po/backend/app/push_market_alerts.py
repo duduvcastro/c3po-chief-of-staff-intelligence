@@ -9,6 +9,7 @@ import exchange_calendars as xcals
 
 from .config import Settings
 from .database import Database
+from . import r2d2_lab_live
 from .push_notifications import PushNotificationService
 from .r2d2 import R2D2Repository
 
@@ -73,6 +74,11 @@ class PushMarketAlertsService:
         return self._experiment_id
 
     def _panel_summary(self, now: datetime) -> dict[str, Any] | None:
+        # the live book (owner 26/10/2026: one R2D2 book on every panel) answers whenever it has today's session; the
+        # paused V2 experiment's trades are the fallback (they are empty since the book moved)
+        live = r2d2_lab_live.episode_summary(self.database, now=now)
+        if live is not None:
+            return live
         experiment_id = self._experiment()
         if not experiment_id:
             return None
