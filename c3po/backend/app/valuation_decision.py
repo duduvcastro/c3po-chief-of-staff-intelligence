@@ -35,6 +35,10 @@ The rules (every number in ``DecisorThresholds``, the ONE settings block the PRE
   behind is never decided on the session nobody observed — a cycle published after that close, or a fresh quote, is).
 * quality (VETO): not validated (``tp_validation_status`` when the producer emits it — B3 —, else ``signal_quality`` —
   US); method dispersion above the limit (or unknown); confidence below the limit (or unknown); any data-defect mark.
+* tested population (OBSERVAR; only for a row served under ``official_ensemble_v1``, owner 28/10/2026): an ensemble TP outside
+  the PIT-tested population (``valuation_official.ensemble_untested``: the producer did not mark the name ``pit_tested``) is
+  ``TP_OUTSIDE_TESTED_POPULATION`` — the TP is served and labelled, never a permission. A row served under the blend or the
+  internal source, or an ensemble row carrying its internal TP (the fallback), is not checked: nothing changes before the switch.
 * staleness after a filing (OBSERVAR; US only — migration 053 marks the US TPs against SEC filings, B3 is
   ``not_applicable``): a ``stale`` mark of the name KNOWN AT the run's clock (``valuation_staleness.us_staleness_at``:
   only marks recorded — and inserted — by then, the latest state per filing; a ``cleared`` written later never reaches
@@ -136,6 +140,7 @@ VETO_CODES: tuple[str, ...] = (
 OBSERVAR_CODES: tuple[str, ...] = (
     "E_PROFILE_WARMING_UP", "E_PROFILE_UNAVAILABLE", "MARKET_RATE_UNAVAILABLE", "PRICE_ABOVE_BUY_IN", "TP_MARGIN_INSUFFICIENT",
     "TP_STALE_AFTER_FILING", "STALENESS_SOURCE_UNAVAILABLE", "STALENESS_SOURCE_STALE", "EARNINGS_WITHIN_N", "EARNINGS_CALENDAR_ROW_INVALID",
+    official.ENSEMBLE_UNTESTED_CODE,  # "TP_OUTSIDE_TESTED_POPULATION": an ensemble TP the PIT grid did not test is never a permission (owner 28/10)
 )
 TP_STALE_AFTER_FILING = "TP_STALE_AFTER_FILING"  # a pending 053 'stale' mark known at the run's clock (US)
 STALENESS_SOURCE_UNAVAILABLE = "STALENESS_SOURCE_UNAVAILABLE"  # the 053 table absent: no US name is permitted (fail closed)
@@ -971,6 +976,11 @@ def decide(row: Mapping[str, Any], *, expected_session: str, tp_sessions_behind:
     checks["data_defects"] = {"pass": not marks, "marks": marks, "fields": list(thresholds.data_defect_fields)}
     if marks:
         codes.append("DATA_DEFECT")
+    if row.get("tp_source") == official.SOURCE_ENSEMBLE:  # the ensemble switch (owner 28/10): checked only for a row served under it
+        untested = official.ensemble_untested(row)
+        checks["tested_population"] = {"pass": not untested, "ensemble_origin": row.get("ensemble_origin"), "pit_tested": row.get("ensemble_pit_tested")}
+        if untested:
+            codes.append(official.ENSEMBLE_UNTESTED_CODE)
 
     e_profile = _number(error.get("value")) if error.get("status") == "ok" else None
     if error.get("status") == "warming_up":

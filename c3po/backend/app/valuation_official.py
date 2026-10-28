@@ -238,6 +238,24 @@ Rev 9 / P1, cross-review (2026-10-17):
 * THE RATING (F3): the receipt counts, per arm, the One Pager rating of the served upside (``ONE_PAGER_RATING_CUTS``,
   mirrored from the pinned ``one_pager.py``) besides the candidate gate (``BUY_STATUS``), and the summary no longer calls
   the candidate gate "COMPRA" — the word the One Pager uses for its rating.
+
+Rev 10 — the ENSEMBLE switch (built before the PIT grid reports; merged only after its PASS and the owner's acceptance):
+* a THIRD official source, ``SOURCE_ENSEMBLE`` (``official_ensemble_v1``): the SAME producer cycles, read through the prefix map
+  ``VIEW_PREFIXES`` exactly as the internal source (``prediction_from_row``, ``_usable``, ``source_view``, ``_served``,
+  ``_report_view``): ``ensemble_tp``/``ensemble_buy_in`` and the ensemble view. The producers emit it on every row (the owner's
+  decisions, ``valuation_official_engine.ENSEMBLE_POLICY``): a US stock the nightly live producer evaluated with origin
+  ``ensemble`` carries the ensemble's primary TP, its buy-in by the internal buy-in's rule and the view derived as the internal
+  one; B3, ETFs and every name not evaluable carry the internal TP and view bit for bit (``ensemble_origin =
+  "fallback_internal:<reason>"``) — so every cycle of this revision is selectable for the ensemble. Records are written for the
+  three sources; the ensemble record's provenance names the origin, the live snapshot and ``ensemble_pit_tested``;
+* NO behaviour change until the order: the automatic pass composes for the selected source only, and a blend or internal record
+  is served WITHOUT the row's ``ensemble_*`` fields — the served dict is the one served before this revision;
+* the SWITCH is ``select_generation(source=SOURCE_ENSEMBLE, before_after_sha256=…)`` under its OWN lock
+  (``ENSEMBLE_TP_REPLACEMENT_AUTHORIZED`` / ``ENSEMBLE_TP_REPLACEMENT_RECEIPT_SHA256``, false and the placeholder here), citing the
+  receipt ``before_after_report(source_to=SOURCE_ENSEMBLE)`` (internal → ensemble: names changed, median TP change, fallback
+  counts by reason) recomputed over the order's proposal; CLI ``--before-after --to-ensemble`` and ``--switch-to-ensemble``. The
+  ROLLBACK is ``--rollback-to-internal`` (``select_generation(source=SOURCE_INTERNAL)`` over an ensemble head): never locked;
+* an ensemble TP outside the PIT-tested population (``ensemble_untested``) is served and labelled, never a buy permission.
 """
 from __future__ import annotations
 
@@ -258,7 +276,7 @@ from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
 
-from .valuation_official_engine import OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE_INTERNAL
+from .valuation_official_engine import ENSEMBLE_FALLBACK_PREFIX, ENSEMBLE_ORIGIN, ENSEMBLE_POLICY, OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE_ENSEMBLE, SOURCE_INTERNAL
 
 logger = logging.getLogger(__name__)
 
@@ -270,7 +288,10 @@ RECORDABLE_SOURCES: tuple[str, ...] = (*OFFICIAL_SOURCES, SOURCE_V3_2_SHADOW)
 OFFICIAL_TP_REPLACEMENT_AUTHORIZED = True  # the Passo 1 lock (spec §7-bis item 4), FLIPPED by this commit together with the receipt it names below — merged only after the owner accepts that before/after receipt
 RECEIPT_PLACEHOLDER = "PENDING-OWNER-ACCEPTANCE"  # not hex-64: while the receipt below is this, a switch is refused even with the lock flipped
 OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256: str | None = "52e0f8252529db161c5743797e9a3fd9e253155703470567a9027cb04bce1910"  # the report_sha256 the owner accepted on 20/10/2026 11:2x BRT (frozen generation 034a6c0b): a switch must cite exactly it
+ENSEMBLE_TP_REPLACEMENT_AUTHORIZED = False  # the ENSEMBLE lock (rev 10): flipped only by a commit merged after the PIT grid reports PASS and the owner accepts the receipt it names below
+ENSEMBLE_TP_REPLACEMENT_RECEIPT_SHA256: str | None = RECEIPT_PLACEHOLDER  # the report_sha256 (internal → ensemble) the owner accepted: a switch to the ensemble must cite exactly it
 BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V3"  # V3 (rev 9): the served view of both arms (status/BUY/upside/score); V2 (C395-1) bound the AFTER composition
+ENSEMBLE_BEFORE_AFTER_SCHEMA = "VALUATION_ENSEMBLE_BEFORE_AFTER_V1"  # rev 10: internal → ensemble, the same blocks plus the names changed and the fallback counts
 BUY_STATUS = "full_match"  # what the receipt counts as a CANDIDATE: the screeners' candidate gate (the B3 list also dedups issuers and asks the power zone)
 ONE_PAGER_RATING_CUTS: tuple[tuple[str, float], ...] = (  # the One Pager's rating of the upside (one_pager.py, pinned): the first cut the upside reaches
     ("COMPRA", 25.0), ("ACUMULAR", 10.0), ("NEUTRO", -10.0),
@@ -283,6 +304,17 @@ INTERNAL_VIEW_KEYS = {  # served key → the producer's internal-view field (rev
 }
 INTERNAL_VIEW_OPTIONAL_KEYS = {  # overlaid when the producer emits them (B3: its status depends on a TP plausibility check)
     "tp_validation_status": "internal_tp_validation_status", "tp_validation_reasons": "internal_tp_validation_reasons",
+}
+VIEW_PREFIXES: dict[str, str] = {  # rev 10: the sources whose record reads a producer VIEW of the row, and the prefix of its fields (internal_<k>, ensemble_<k>)
+    SOURCE_INTERNAL: "internal_", SOURCE_ENSEMBLE: "ensemble_",
+}
+ENSEMBLE_PROVENANCE_KEYS = (  # rev 10: the row's ensemble provenance, merged into the ensemble record's decomposition.provenance (hashed with it)
+    "ensemble_origin", "ensemble_snapshot_id", "ensemble_session_date", "ensemble_as_of", "ensemble_context_sha256", "ensemble_inputs_sha256",
+)
+ENSEMBLE_UNTESTED_CODE = "TP_OUTSIDE_TESTED_POPULATION"  # rev 10 (owner 28/10): an ensemble TP outside the PIT-tested population is shown, never a buy permission
+BEFORE_AFTER_ARMS: dict[str, tuple[str, str, str, str]] = {  # the order's target source → (before source, before label, after label, receipt schema)
+    SOURCE_INTERNAL: (SOURCE_BLEND, "blend", "internal", BEFORE_AFTER_SCHEMA),  # Passo 1, unchanged
+    SOURCE_ENSEMBLE: (SOURCE_INTERNAL, "internal", "ensemble", ENSEMBLE_BEFORE_AFTER_SCHEMA),  # rev 10
 }
 P90_METHOD = "linear interpolation at (n-1)*0.9"
 TP_CHANGE_BUCKETS: tuple[tuple[str, float], ...] = (  # rev 9: |tp_internal / tp_blend − 1| below each bound (the last bucket: ge_25pct)
@@ -454,15 +486,31 @@ def internal_view(row: Mapping[str, Any]) -> dict[str, Any] | None:
     and its buy-in, keyed as served (``INTERNAL_VIEW_KEYS``/``INTERNAL_VIEW_OPTIONAL_KEYS``). ``None`` when a required field
     is absent or not a number/text — a row produced before rev 9 — which makes the row unusable for the internal source
     and its internal record unservable: an internal TP is never shown under the blend's status or score. Copies."""
-    score = _number(row.get(INTERNAL_VIEW_KEYS["score"]))
-    expected = _number(row.get(INTERNAL_VIEW_KEYS["expected_total_return_percent"]))
-    status = _text_or_none(row.get(INTERNAL_VIEW_KEYS["status"]))
+    return source_view(row, SOURCE_INTERNAL)
+
+
+def source_view(row: Mapping[str, Any], source: str) -> dict[str, Any] | None:
+    """The producer's view of a row FOR ``source`` (rev 10, the prefix map ``VIEW_PREFIXES``): the internal view (rev 9) for
+    ``SOURCE_INTERNAL`` — ``internal_score``/``internal_status``/``internal_expected_total_return_percent`` and the optional TP
+    validation — and the SAME fields under ``ensemble_`` for ``SOURCE_ENSEMBLE``, keyed as served. ``None`` for a source without
+    a view (the blend) and when a required field is absent or not a number/text — a row produced before the view existed: such
+    a row is not usable for that source and its record is not served (never another arm's status under this TP). An ensemble
+    view also requires the row's ``ensemble_origin`` and ``ensemble_consensus_weight_percent`` (where its TP comes from, and the
+    consensus's share inside it). Copies."""
+    prefix = VIEW_PREFIXES.get(source)
+    if prefix is None:
+        return None
+    score = _number(row.get(prefix + "score"))
+    expected = _number(row.get(prefix + "expected_total_return_percent"))
+    status = _text_or_none(row.get(prefix + "status"))
     if score is None or expected is None or status is None:
         return None
+    if source == SOURCE_ENSEMBLE and (_text_or_none(row.get("ensemble_origin")) is None or _number(row.get("ensemble_consensus_weight_percent")) is None):
+        return None
     view: dict[str, Any] = {"score": score, "status": status, "expected_total_return_percent": expected}
-    for served_key, key in INTERNAL_VIEW_OPTIONAL_KEYS.items():
-        if key in row:
-            view[served_key] = copy.deepcopy(row[key])
+    for served_key in INTERNAL_VIEW_OPTIONAL_KEYS:
+        if prefix + served_key in row:
+            view[served_key] = copy.deepcopy(row[prefix + served_key])
     return view
 
 
@@ -492,13 +540,20 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
     ``weights.convergence_weight`` the ``internal_convergence_weight`` when emitted (else the row's, TP-independent).
     ``extra_provenance`` (the point-in-time re-execution, ``valuation_pit_rerun``): JSON-ready keys MERGED into
     ``decomposition.provenance`` after the fixed ones (a fixed key is never overridden) — hashed with the record, stored in
-    the JSONB column, rebuilt by the PostgreSQL reader as any other provenance field. ``None`` for every producer today."""
+    the JSONB column, rebuilt by the PostgreSQL reader as any other provenance field. ``None`` for every producer today.
+    Rev 10 (the ensemble switch): ``SOURCE_ENSEMBLE`` reads the SAME row through the prefix map (``VIEW_PREFIXES``) exactly as the
+    internal source reads ``internal_*`` — ``ensemble_tp``/``ensemble_buy_in``, ``ensemble_buy_in_models``, ``ensemble_bear_tp``/
+    ``ensemble_bull_tp``, ``ensemble_status``/``ensemble_tp_validation_status``/``ensemble_convergence_weight`` — with the
+    consensus weight the producer computed for the ensemble TP (``ensemble_consensus_weight_percent``: the consensus's share
+    inside the primary; 0 on a fallback row, which carries the internal TP), and the row's ``ENSEMBLE_PROVENANCE_KEYS``
+    (``ensemble_origin`` — ``ensemble`` or ``fallback_internal:<reason>`` — and the live snapshot's identity) merged into
+    ``decomposition.provenance`` after the fixed keys; the blend and internal records are what they were, bit for bit."""
     if source not in RECORDABLE_SOURCES:
         raise ValueError(f"unknown recordable source {source!r}; expected one of {RECORDABLE_SOURCES}")
-    internal = source == SOURCE_INTERNAL
+    prefix = VIEW_PREFIXES.get(source)  # internal_ / ensemble_: the record reads the producer's view of that TP (rev 10); None: the blend (and v3_2_shadow)
     symbol = str(row.get("symbol") or "").strip().upper()
-    if internal:
-        tp, buy_in = _positive(row.get("internal_tp")), _positive(row.get("internal_buy_in"))
+    if prefix is not None:
+        tp, buy_in = _positive(row.get(prefix + "tp")), _positive(row.get(prefix + "buy_in"))
     else:
         tp, buy_in = _positive(row.get("our_tp")), _positive(row.get("buy_in"))
     if not symbol or tp is None or buy_in is None:
@@ -515,16 +570,21 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
         return None
     methods = row.get("methods")
     buy_in_models = row.get("buy_in_models")
-    if internal and isinstance(row.get("internal_buy_in_models"), Mapping):
-        buy_in_models = row.get("internal_buy_in_models")
-    bear_key, bull_key = ("internal_bear_tp", "internal_bull_tp") if internal else ("bear_tp", "bull_tp")
+    if prefix is not None and isinstance(row.get(prefix + "buy_in_models"), Mapping):
+        buy_in_models = row.get(prefix + "buy_in_models")
+    bear_key, bull_key = (prefix + "bear_tp", prefix + "bull_tp") if prefix is not None else ("bear_tp", "bull_tp")
     bear_tp, bull_tp = _positive(row.get(bear_key)), _positive(row.get(bull_key))
-    consensus_weight_percent = 0.0 if internal else _number(row.get("consensus_weight_percent"))
+    if source == SOURCE_INTERNAL:
+        consensus_weight_percent: float | None = 0.0
+    elif source == SOURCE_ENSEMBLE:  # rev 10: the consensus's share inside the ensemble TP, as the producer computed it (0 on a fallback row)
+        consensus_weight_percent = _number(row.get("ensemble_consensus_weight_percent"))
+    else:
+        consensus_weight_percent = _number(row.get("consensus_weight_percent"))
     status, validation_status, convergence_weight = row.get("status"), row.get("tp_validation_status"), row.get("convergence_weight")
-    if internal:  # rev 9: the internal record names the producer's internal view, never the blend's status
-        status = row.get("internal_status")
-        validation_status = row["internal_tp_validation_status"] if "internal_tp_validation_status" in row else validation_status
-        convergence_weight = row["internal_convergence_weight"] if "internal_convergence_weight" in row else convergence_weight
+    if prefix is not None:  # rev 9 (rev 10: any viewed source): the record names the producer's view of ITS TP, never the blend's status
+        status = row.get(prefix + "status")
+        validation_status = row[prefix + "tp_validation_status"] if prefix + "tp_validation_status" in row else validation_status
+        convergence_weight = row[prefix + "convergence_weight"] if prefix + "convergence_weight" in row else convergence_weight
     core = {
         "schema": PREDICTION_SCHEMA,
         "source": source,
@@ -573,6 +633,10 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
             },
         },
     }
+    if source == SOURCE_ENSEMBLE:  # rev 10: where the ensemble TP comes from (the live snapshot, or the internal fallback and why), hashed with the record
+        pit_tested = row.get("ensemble_pit_tested")
+        extra_provenance = {**{key: _text_or_none(row.get(key)) for key in ENSEMBLE_PROVENANCE_KEYS},
+                            "ensemble_pit_tested": pit_tested if isinstance(pit_tested, bool) else None, **dict(extra_provenance or {})}
     if extra_provenance:
         fixed = core["decomposition"]["provenance"]
         core["decomposition"]["provenance"] = {**{str(k): v for k, v in extra_provenance.items() if str(k) not in fixed}, **fixed}
@@ -692,10 +756,17 @@ def _usable(row: Mapping[str, Any], source: str = SOURCE_OFFICIAL) -> bool:
     """A row with everything a prediction of ``source`` needs: symbol, price, blend TP, buy-in, internal TP — and, for
     ``SOURCE_INTERNAL``, the buy-in the producer derived from the internal TP (``internal_buy_in``, Passo 1) and the
     producer's internal view (``internal_view``: score/status/expected return on the internal TP, rev 9) — a row without
-    it would serve the internal TP under the blend's status."""
+    it would serve the internal TP under the blend's status. Rev 10: the SAME rule through the prefix map for
+    ``SOURCE_ENSEMBLE`` — ``ensemble_tp``, ``ensemble_buy_in`` and the ensemble view (``source_view``, with the row's
+    ``ensemble_origin`` and consensus weight). Every row of a producer of this revision has them (the ensemble's TP, or the
+    internal one as the fallback), so its cycle is selectable for the ensemble; a cycle produced before it is carried."""
     base = bool(str(row.get("symbol") or "").strip() and _positive(row.get("price")) and _positive(row.get("our_tp"))
                 and _positive(row.get("buy_in")) and _positive(row.get("internal_tp")))
-    return base and (source != SOURCE_INTERNAL or (_positive(row.get("internal_buy_in")) is not None and internal_view(row) is not None))
+    prefix = VIEW_PREFIXES.get(source)
+    if prefix is None:
+        return base
+    return base and _positive(row.get(prefix + "tp")) is not None and _positive(row.get(prefix + "buy_in")) is not None \
+        and source_view(row, source) is not None
 
 
 def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapping[str, Any]] | None = None,
@@ -1362,11 +1433,27 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
     never locked, no hash required — and the way out of a head whose source is unknown (Q3). When the source changes,
     ``receipt.source_switch`` names ``from`` (the head's source as stored)/``to``/hash. An order over a head the mesa FROZE
     (``freeze_selection``, F1) lands as on any head — the freeze holds the automatic writers, never the mesa — and ends the
-    freeze: ``receipt.ended_freeze`` names it."""
+    freeze: ``receipt.ended_freeze`` names it.
+    Rev 10 (the ensemble switch): a switch to ``SOURCE_ENSEMBLE`` is locked by its OWN lock — ``ENSEMBLE_TP_REPLACEMENT_AUTHORIZED``
+    and ``ENSEMBLE_TP_REPLACEMENT_RECEIPT_SHA256``, flipped by a commit merged only after the PIT grid reports PASS and the owner
+    accepts the receipt — and cites the receipt ``before_after_report(source_to=SOURCE_ENSEMBLE)`` (internal → ensemble) recomputed
+    here over the order's proposal, exactly as Passo 1. The ROLLBACK to the internal source — ``source=SOURCE_INTERNAL`` while
+    the head selects the ensemble — is never locked and cites no hash (stamped ``"rollback"`` unless a version is given); the
+    head it was decided on must still be the head when the order is written. Every other order is what it was."""
     if source not in OFFICIAL_SOURCES:
         raise ValueError(f"unknown official source {source!r}; expected one of {OFFICIAL_SOURCES}")
-    if source != SOURCE_OFFICIAL:
-        if not OFFICIAL_TP_REPLACEMENT_AUTHORIZED:
+    rollback_of: Mapping[str, Any] | None = None  # rev 10: the ensemble head a rollback to the internal source is decided on (never locked)
+    if source == SOURCE_INTERNAL:
+        peek = database.latest_valuation_official_selection()
+        if peek and peek.get("source") == SOURCE_ENSEMBLE:
+            rollback_of = peek
+    if source != SOURCE_OFFICIAL and rollback_of is None:
+        authorized, _ = _switch_lock(source)
+        if not authorized:
+            if source == SOURCE_ENSEMBLE:
+                raise ValueError(f"ensemble_tp_replacement_authorized is false: a switch of the official source to {source!r} is refused until the "
+                                 "commit merged after the PIT grid's PASS and the owner's acceptance flips the lock; the rollback to the internal "
+                                 "source is never locked")
             raise ValueError(f"official_tp_replacement_authorized is false: a switch of the official source to {source!r} is refused until the "
                              "mesa's receipt flips the lock (V3.2 rev 7 §7-bis, Passo 1); the rollback to the blend is never locked")
         if not before_after_sha256 or not _SHA256.match(str(before_after_sha256)):
@@ -1382,6 +1469,9 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
         raise ValueError(f"cycles must name every market; missing: {', '.join(missing)}")
     admissions = _normalized_targeted(targeted or {})
     current = database.latest_valuation_official_selection()
+    if rollback_of is not None and (current is None or current.get("generation_id") != rollback_of.get("generation_id")):
+        raise ValueError(f"selection conflict: the rollback to {source!r} was decided on the ensemble head {rollback_of.get('generation_id')}, but the "
+                         f"current generation is {current.get('generation_id') if current else None} — the mesa re-reads the head")
     if source != SOURCE_OFFICIAL and current is None:  # Q1: no "before" to compare — refused before anything else is read
         raise ValueError(f"a switch to {source!r} requires a generation in force: the before/after receipt compares the cycles it serves, "
                          "and there is none — bootstrap the blend first")
@@ -1397,7 +1487,7 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
         session_dates[market] = str(validation["session_date"])
         versions.add(_source_version(snapshot))
     if source_version is None:  # Q6: a switch is stamped with the validated cycles' methodology versions, as the automatic pass; a rollback keeps "rollback"
-        source_version = "rollback" if source == SOURCE_OFFICIAL else "+".join(sorted(versions))
+        source_version = "rollback" if source == SOURCE_OFFICIAL or rollback_of is not None else "+".join(sorted(versions))
     for symbol, cycle_id in admissions.items():
         snapshot = database.analysis_snapshot_by_id(cycle_id)
         if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS or str(snapshot.get("entity_key") or "").strip().upper() != symbol:
@@ -1407,8 +1497,9 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
         if not validation["valid"] or symbol not in recorded:
             raise ValueError(f"targeted cycle for {symbol} is not complete/valid/recorded for source {source}: {cycle_id} "
                              f"({ {k: validation[k] for k in ('invalid_count', 'unrecorded_count', 'rows', 'calendar_unavailable')} })")
-    if source != SOURCE_OFFICIAL:  # Q1 (after the validations, so an invalid cycle is named as such first): the cited receipt must be THE receipt of the generation in force, recomputed here over THIS proposal (C395-1)
-        expected = before_after_report(database, generation=current, cycles=cycles, targeted=admissions, source_version=source_version)["report_sha256"]  # C395-1: bound to THIS composition
+    if source != SOURCE_OFFICIAL and rollback_of is None:  # Q1 (after the validations, so an invalid cycle is named as such first): the cited receipt must be THE receipt of the generation in force, recomputed here over THIS proposal (C395-1)
+        expected = before_after_report(database, generation=current, cycles=cycles, targeted=admissions, source_version=source_version,
+                                       source_to=source)["report_sha256"]  # C395-1: bound to THIS composition (rev 10: and to the order's arms)
         if str(before_after_sha256) != expected:
             raise ValueError(f"a switch to {source!r} must cite the before/after receipt of the generation in force ({current['generation_id']}) "
                              f"computed over EXACTLY the cycles and targeted admissions this order proposes (and the source_version it stamps): before_after_sha256 "
@@ -1416,7 +1507,7 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
                              "another generation (the chain moved since the mesa read it), over another composition (a different cycle in a "
                              "market, a targeted admission added or dropped, another declared source_version), or is not this receipt; re-run "
                              "before_after_report on the head with the order's cycles/targeted/source_version and cite it (C395-1)")
-        accepted = OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256  # rev 9: the receipt the owner accepted, named by the lock commit
+        _, accepted = _switch_lock(source)  # rev 9: the receipt the owner accepted, named by the lock commit (rev 10: the ensemble's own lock)
         if not isinstance(accepted, str) or not _SHA256.match(accepted):
             raise ValueError(f"a switch to {source!r} is refused: the lock commit names no accepted before/after receipt "
                              f"(OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256 = {accepted!r}) — the commit that flips the lock writes the report_sha256 "
@@ -1439,6 +1530,14 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
     )
     assert generation is not None  # strict mode raises instead of returning None
     return generation
+
+
+def _switch_lock(source: str) -> tuple[bool, str | None]:
+    """``(authorized, accepted receipt)`` of the lock that guards a switch TO ``source``, read at call time (a lock commit edits the
+    module constants; tests patch them): Passo 1's for the internal source, the ensemble's own (rev 10) for the ensemble."""
+    if source == SOURCE_ENSEMBLE:
+        return bool(ENSEMBLE_TP_REPLACEMENT_AUTHORIZED), ENSEMBLE_TP_REPLACEMENT_RECEIPT_SHA256
+    return bool(OFFICIAL_TP_REPLACEMENT_AUTHORIZED), OFFICIAL_TP_REPLACEMENT_RECEIPT_SHA256
 
 
 def current_generation(database: Any) -> dict[str, Any] | None:
@@ -1484,18 +1583,27 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
     ``expected_total_return_percent`` and, when the producer emits them, ``tp_validation_status``/``tp_validation_reasons``
     — are the producer's INTERNAL VIEW of the row (``internal_view``), never the blend's; an internal record whose row has
     no internal view is NOT served (``None``, WARNING once per record per process, INFO after) — the validator never selects
-    such a cycle for the internal source, so this is the guard of a hand-made generation. A blend record is served as before."""
+    such a cycle for the internal source, so this is the guard of a hand-made generation. A blend record is served as before.
+    Rev 10: the same rule through the prefix map for an ENSEMBLE record (``source_view``: the ``ensemble_*`` view; no view, not
+    served). The row's ``ensemble_*`` fields travel ONLY with an ensemble record: a blend or internal record is served without
+    them — exactly the dict served before the producers emitted them, so nothing a consumer receives changes until the switch."""
     view: dict[str, Any] | None = None
-    if record.get("source") == SOURCE_INTERNAL:
-        view = internal_view(row)
+    record_source = str(record.get("source") or "")
+    if record_source in VIEW_PREFIXES:
+        view = source_view(row, record_source)
         if view is None:
-            key = f"{cycle_id}/{record.get('symbol')}"
+            key = f"{cycle_id}/{record.get('symbol')}" if record_source == SOURCE_INTERNAL else f"{record_source}:{cycle_id}/{record.get('symbol')}"
             level = logging.INFO if key in _viewless_logged else logging.WARNING
             _viewless_logged.add(key)
-            logger.log(level, "valuation_official: internal record %s/%s of cycle %s has no internal view on its row (score/status/expected return on the "
-                       "internal TP) — not served: the internal TP is never shown under the blend's status (rev 9)", market, record.get("symbol"), cycle_id)
+            arm = VIEW_PREFIXES[record_source].rstrip("_")
+            logger.log(level, "valuation_official: %s record %s/%s of cycle %s has no %s view on its row (score/status/expected return on the "
+                       "%s TP) — not served: the %s TP is never shown under the blend's status (rev 9)", arm, market, record.get("symbol"), cycle_id,
+                       arm, arm, arm)
             return None
     stamped = copy.deepcopy(dict(row))
+    if record_source != SOURCE_ENSEMBLE:  # rev 10: the ensemble fields reach a consumer only with an ensemble record
+        for key in [key for key in stamped if key.startswith(VIEW_PREFIXES[SOURCE_ENSEMBLE])]:
+            del stamped[key]
     tp, buy_in, price = float(record["tp"]), float(record["buy_in"]), _positive(record.get("price"))
     if price is not None:
         stamped["upside_percent"] = (tp / price - 1) * 100
@@ -1523,6 +1631,16 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
         "official_row_sha256": record["row_sha256"],
     })
     return stamped
+
+
+def ensemble_untested(row: Mapping[str, Any] | None) -> bool:
+    """Whether a SERVED row's TP is an ensemble TP OUTSIDE the PIT-tested population (rev 10, owner 28/10/2026): served under
+    ``SOURCE_ENSEMBLE``, taken from the ensemble (``ensemble_origin = "ensemble"``, not the internal fallback) and not marked
+    ``ensemble_pit_tested = True`` by the live producer (unknown counts as untested: fail closed). Such a TP is served and
+    labelled, never a buy permission — the decisor (``TP_OUTSIDE_TESTED_POPULATION``) and R2D2's canonical tier read this. A row
+    served under the blend or the internal source, or an ensemble row that falls back to its internal TP, is never untested."""
+    item = row or {}
+    return item.get("tp_source") == SOURCE_ENSEMBLE and item.get("ensemble_origin") == ENSEMBLE_ORIGIN and item.get("ensemble_pit_tested") is not True
 
 
 def item_stamp(row: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -1799,7 +1917,8 @@ def _report_view(database: Any, generation: Mapping[str, Any], market: str, reco
         snapshot = database.official_cycle_snapshot(cycle_id)
         rows[cycle_id] = {str(row.get("symbol") or "").strip().upper(): row for row in cycle_rows(snapshot)} if snapshot else {}
     row = rows[cycle_id].get(str(record["symbol"]))
-    if row is None or (record.get("source") == SOURCE_INTERNAL and internal_view(row) is None):
+    source = str(record.get("source") or "")
+    if row is None or (source in VIEW_PREFIXES and source_view(row, source) is None):
         return None
     return _served(row, record, generation=generation, cycle_id=cycle_id, scope=str(record.get("scope") or "universe"), market=market)
 
@@ -1831,7 +1950,7 @@ def _status_block(pairs: list[tuple[str, str]]) -> dict[str, Any]:
 
 def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_detail_path: str | Path | None = None,
                         cycles: Mapping[str, str] | None = None, targeted: Mapping[str, str] | None = None,
-                        source_version: str | None = None) -> dict[str, Any]:
+                        source_version: str | None = None, source_to: str = SOURCE_INTERNAL) -> dict[str, Any]:
     """The before/after receipt of Passo 1 (spec §7-bis item 4): BEFORE = ONE generation (the head unless ``generation``
     is given) as it serves the blend; AFTER = the composition the order PROPOSES — ``cycles`` (every market) and
     ``targeted`` (symbol → cycle, normalized; with ``cycles`` given and ``targeted`` omitted the proposal admits NO
@@ -1865,7 +1984,19 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     read, which is what lets ``select_generation`` check the hash a switch cites (Q1).
     The private file is created EXCLUSIVELY (Q5): ``O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW``, mode ``0o600`` (then
     ``fchmod`` so the umask cannot widen it) — an existing path, a file or a symlink (dangling or not), is refused with
-    ``FileExistsError`` and nothing is overwritten or followed; the report is returned only after the bytes are written."""
+    ``FileExistsError`` and nothing is overwritten or followed; the report is returned only after the bytes are written.
+    Rev 10 — ``source_to`` (``BEFORE_AFTER_ARMS``): ``SOURCE_INTERNAL`` (the default) is the Passo 1 receipt above, byte for byte;
+    ``SOURCE_ENSEMBLE`` is the receipt of the ensemble switch — BEFORE = the generation's cycles under the INTERNAL source, AFTER =
+    the proposal under the ENSEMBLE source, schema ``ENSEMBLE_BEFORE_AFTER_SCHEMA``, the arms labelled ``internal``/``ensemble``
+    (``missing_ensemble``/``only_ensemble``, ``tp_internal``/``tp_ensemble``, …) — with, per market, ``tp_changed`` and
+    ``buy_in_changed`` (the names whose served TP/buy-in moves), ``origins`` (the after records' ``ensemble_origin`` counts:
+    ``ensemble`` and every ``fallback_internal:<reason>``), ``ensemble``/``fallback`` (their totals) and ``fallback_tp_changed``
+    (fallback names whose TP is not the internal one — 0 by construction, a check on the producer), and the applied
+    ``ensemble_policy`` (``ENSEMBLE_POLICY``) in the aggregate."""
+    if source_to not in BEFORE_AFTER_ARMS:
+        raise ValueError(f"no before/after receipt for a switch to {source_to!r}; expected one of {tuple(BEFORE_AFTER_ARMS)}")
+    source_from, arm_from, arm_to, schema = BEFORE_AFTER_ARMS[source_to]
+    ensemble = source_to == SOURCE_ENSEMBLE
     resolved = _resolve(database, generation)
     if not resolved:
         raise ValueError("no official generation in force: nothing to compare")
@@ -1895,68 +2026,87 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     detail_markets: dict[str, dict[str, Any]] = {}
     rows: dict[str, dict[str, dict[str, Any]]] = {}  # cycle id → its rows by symbol, read once for both arms
     for market in MARKETS:
-        blend, _ = _generation_records(database, resolved, market, source=SOURCE_OFFICIAL)
-        internal, _ = _generation_records(database, after_generation, market, source=SOURCE_INTERNAL)
+        before_records, _ = _generation_records(database, resolved, market, source=source_from)
+        after_records, _ = _generation_records(database, after_generation, market, source=source_to)
         pairs: dict[str, dict[str, Any]] = {}
         missing: list[str] = []
         served: list[dict[str, Any]] = []
         unservable = {"before": 0, "after": 0}
         validation_present = False
-        for symbol in sorted(blend):
-            before, after = blend[symbol], internal.get(symbol)
+        for symbol in sorted(before_records):
+            before, after = before_records[symbol], after_records.get(symbol)
             if after is None:
                 missing.append(symbol)
                 continue
             pair: dict[str, Any] = {
-                "tp_blend": float(before["tp"]), "tp_internal": float(after["tp"]), "tp_ratio": float(after["tp"]) / float(before["tp"]) - 1,
-                "buy_in_blend": float(before["buy_in"]), "buy_in_internal": float(after["buy_in"]), "buy_in_ratio": float(after["buy_in"]) / float(before["buy_in"]) - 1,
+                f"tp_{arm_from}": float(before["tp"]), f"tp_{arm_to}": float(after["tp"]), "tp_ratio": float(after["tp"]) / float(before["tp"]) - 1,
+                f"buy_in_{arm_from}": float(before["buy_in"]), f"buy_in_{arm_to}": float(after["buy_in"]),
+                "buy_in_ratio": float(after["buy_in"]) / float(before["buy_in"]) - 1,
             }
+            if ensemble:
+                pair["ensemble_origin"] = _ensemble_origin(after)
             shown_before = _report_view(database, resolved, market, before, rows)
             shown_after = _report_view(database, after_generation, market, after, rows)
             unservable["before"] += shown_before is None
             unservable["after"] += shown_after is None
             if shown_before is not None and shown_after is not None:
                 view = {
-                    "status_blend": str(shown_before.get("status") or "unknown"), "status_internal": str(shown_after.get("status") or "unknown"),
-                    "upside_blend": _number(shown_before.get("upside_percent")), "upside_internal": _number(shown_after.get("upside_percent")),
-                    "score_blend": _number(shown_before.get("score")), "score_internal": _number(shown_after.get("score")),
-                    "validated_blend": shown_before.get("tp_validation_status") == "validated",
-                    "validated_internal": shown_after.get("tp_validation_status") == "validated",
+                    f"status_{arm_from}": str(shown_before.get("status") or "unknown"), f"status_{arm_to}": str(shown_after.get("status") or "unknown"),
+                    f"upside_{arm_from}": _number(shown_before.get("upside_percent")), f"upside_{arm_to}": _number(shown_after.get("upside_percent")),
+                    f"score_{arm_from}": _number(shown_before.get("score")), f"score_{arm_to}": _number(shown_after.get("score")),
+                    f"validated_{arm_from}": shown_before.get("tp_validation_status") == "validated",
+                    f"validated_{arm_to}": shown_after.get("tp_validation_status") == "validated",
                 }
-                view["rating_blend"] = one_pager_rating(view["upside_blend"]) or "unknown"  # F3: what the owner reads on a One Pager
-                view["rating_internal"] = one_pager_rating(view["upside_internal"]) or "unknown"
+                view[f"rating_{arm_from}"] = one_pager_rating(view[f"upside_{arm_from}"]) or "unknown"  # F3: what the owner reads on a One Pager
+                view[f"rating_{arm_to}"] = one_pager_rating(view[f"upside_{arm_to}"]) or "unknown"
                 validation_present = validation_present or "tp_validation_status" in shown_before or "tp_validation_status" in shown_after
                 pair.update(view)
                 served.append(view)
             pairs[symbol] = pair
-        upsides = [(view["upside_blend"], view["upside_internal"]) for view in served if view["upside_blend"] is not None and view["upside_internal"] is not None]
-        scores = [view["score_internal"] - view["score_blend"] for view in served if view["score_blend"] is not None and view["score_internal"] is not None]
+        upsides = [(view[f"upside_{arm_from}"], view[f"upside_{arm_to}"]) for view in served
+                   if view[f"upside_{arm_from}"] is not None and view[f"upside_{arm_to}"] is not None]
+        scores = [view[f"score_{arm_to}"] - view[f"score_{arm_from}"] for view in served
+                  if view[f"score_{arm_from}"] is not None and view[f"score_{arm_to}"] is not None]
         tp_ratios = [pair["tp_ratio"] for pair in pairs.values()]
+        only_after = sorted(set(after_records) - set(before_records))
         markets[market] = {
-            "n": len(pairs), "missing_internal": len(missing), "only_internal": len(set(internal) - set(blend)),
+            "n": len(pairs), f"missing_{arm_to}": len(missing), f"only_{arm_to}": len(only_after),
             "served_pairs": len(served), "before_unservable": unservable["before"], "after_unservable": unservable["after"],
             "tp": _ratio_stats(tp_ratios), "tp_change_buckets": _change_buckets(tp_ratios),
             "buy_in": _ratio_stats([pair["buy_in_ratio"] for pair in pairs.values()]),
-            "status": _status_block([(view["status_blend"], view["status_internal"]) for view in served]),
-            "rating": _status_block([(view["rating_blend"], view["rating_internal"]) for view in served]),  # F3: the One Pager rating of the served upside
-            "buy": {"status": BUY_STATUS, "before": sum(view["status_blend"] == BUY_STATUS for view in served),
-                    "after": sum(view["status_internal"] == BUY_STATUS for view in served),
-                    "entered": sum(view["status_blend"] != BUY_STATUS and view["status_internal"] == BUY_STATUS for view in served),
-                    "left": sum(view["status_blend"] == BUY_STATUS and view["status_internal"] != BUY_STATUS for view in served)},
+            "status": _status_block([(view[f"status_{arm_from}"], view[f"status_{arm_to}"]) for view in served]),
+            "rating": _status_block([(view[f"rating_{arm_from}"], view[f"rating_{arm_to}"]) for view in served]),  # F3: the One Pager rating of the served upside
+            "buy": {"status": BUY_STATUS, "before": sum(view[f"status_{arm_from}"] == BUY_STATUS for view in served),
+                    "after": sum(view[f"status_{arm_to}"] == BUY_STATUS for view in served),
+                    "entered": sum(view[f"status_{arm_from}"] != BUY_STATUS and view[f"status_{arm_to}"] == BUY_STATUS for view in served),
+                    "left": sum(view[f"status_{arm_from}"] == BUY_STATUS and view[f"status_{arm_to}"] != BUY_STATUS for view in served)},
             "upside_percent": {"before": _quantiles([old for old, _ in upsides]), "after": _quantiles([new for _, new in upsides]),
                                "change_pp": _ratio_stats([new - old for old, new in upsides])},
             "score_change": _ratio_stats(scores),
-            "tp_validation": ({"before_validated": sum(view["validated_blend"] for view in served),
-                               "after_validated": sum(view["validated_internal"] for view in served)} if validation_present else None),
+            "tp_validation": ({"before_validated": sum(view[f"validated_{arm_from}"] for view in served),
+                               "after_validated": sum(view[f"validated_{arm_to}"] for view in served)} if validation_present else None),
         }
-        detail_markets[market] = {"pairs": pairs, "missing_internal": missing, "only_internal": sorted(set(internal) - set(blend))}
-    detail = {"schema": f"{BEFORE_AFTER_SCHEMA}_DETAIL", "generation_id": resolved["generation_id"], "markets": detail_markets}
+        if ensemble:  # rev 10: the names that change, and where every after TP comes from (no symbol)
+            origins: dict[str, int] = {}
+            for record in after_records.values():
+                origin = _ensemble_origin(record)
+                origins[origin] = origins.get(origin, 0) + 1
+            markets[market].update({
+                "tp_changed": sum(pair["tp_ratio"] != 0 for pair in pairs.values()),
+                "buy_in_changed": sum(pair["buy_in_ratio"] != 0 for pair in pairs.values()),
+                "origins": dict(sorted(origins.items())),
+                "ensemble": origins.get(ENSEMBLE_ORIGIN, 0),
+                "fallback": sum(count for origin, count in origins.items() if origin.startswith(ENSEMBLE_FALLBACK_PREFIX)),
+                "fallback_tp_changed": sum(pair["tp_ratio"] != 0 for pair in pairs.values() if str(pair["ensemble_origin"]).startswith(ENSEMBLE_FALLBACK_PREFIX)),
+            })
+        detail_markets[market] = {"pairs": pairs, f"missing_{arm_to}": missing, f"only_{arm_to}": only_after}
+    detail = {"schema": f"{schema}_DETAIL", "generation_id": resolved["generation_id"], "markets": detail_markets}
     aggregate = {
-        "schema": BEFORE_AFTER_SCHEMA,
+        "schema": schema,
         "generation_id": resolved["generation_id"],
         "generation_source": generation_source,
-        "source_from": SOURCE_OFFICIAL,
-        "source_to": SOURCE_INTERNAL,
+        "source_from": source_from,
+        "source_to": source_to,
         "cycles": dict(resolved.get("cycles") or {}),
         "targeted_cycles": len(resolved.get("targeted") or {}),  # a count: the aggregate names no symbol
         "after_cycles": after_cycles,  # C395-1: the AFTER composition the hash binds — the order's cycles, per market
@@ -1971,10 +2121,21 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
         "p90_method": P90_METHOD,
         "private_detail_sha256": canonical_sha256(detail),
     }
+    if ensemble:
+        aggregate["ensemble_policy"] = ENSEMBLE_POLICY.receipt()  # rev 10: the owner's decisions (a)/(b) as applied by the producers
     report = {**aggregate, "report_sha256": canonical_sha256(aggregate)}
     if private_detail_path is not None:
         _write_private_detail(Path(private_detail_path), detail)
     return report
+
+
+def _ensemble_origin(record: Mapping[str, Any]) -> str:
+    """Where an ensemble record's TP comes from (rev 10): the ``ensemble_origin`` its producer row named, kept in the record's
+    ``decomposition.provenance`` — ``ensemble`` or ``fallback_internal:<reason>``; ``unknown`` when absent (never written so)."""
+    decomposition = record.get("decomposition")
+    provenance = decomposition.get("provenance") if isinstance(decomposition, Mapping) else None
+    origin = provenance.get("ensemble_origin") if isinstance(provenance, Mapping) else None
+    return str(origin) if origin else "unknown"
 
 
 BEFORE_AFTER_ATTESTATION_KEYS = ("producer_build_sha", "receipt_sha256")
@@ -2089,6 +2250,52 @@ def before_after_markdown(report: Mapping[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def ensemble_before_after_markdown(report: Mapping[str, Any]) -> str:
+    """The ensemble switch's receipt (rev 10, ``ENSEMBLE_BEFORE_AFTER_SCHEMA``: internal → ensemble) as the owner reads it —
+    Portuguese markdown rendered ONLY from the aggregate, no symbol (safe in a CI log); it quotes ``report_sha256``, the hash the
+    ensemble lock commit names and ``--switch-to-ensemble`` cites. Per market: the names whose TP changes, the median change, the
+    fallback counts by reason, and the candidate/rating moves."""
+    markets = {market: item for market, item in (report.get("markets") or {}).items() if isinstance(item, Mapping)}
+    raw_policy = report.get("ensemble_policy")
+    policy: Mapping[str, Any] = raw_policy if isinstance(raw_policy, Mapping) else {}
+    lines = [
+        "## Valuation — antes/depois do TP oficial: interno → ensemble",
+        "",
+        f"- Recibo `report_sha256`: `{report.get('report_sha256')}` (esquema `{report.get('schema')}`)",
+        *([f"- Produzido pela revisão implantada `{report.get('producer_build_sha')}` (`receipt_sha256` `{report.get('receipt_sha256')}`)"]
+          if "producer_build_sha" in report else []),
+        f"- Antes: geração `{report.get('generation_id')}` servindo `{report.get('source_from')}` (fonte em vigor: `{report.get('generation_source')}`)",
+        f"- Depois: `{report.get('source_to')}`, versão `{report.get('after_source_version')}`, {report.get('after_targeted_count')} direcionado(s)",
+        f"- Política: mercados {', '.join(str(m) for m in policy.get('markets') or [])}; só testados no PIT: "
+        f"{'sim' if policy.get('require_pit_tested') else 'não (os não testados ficam rotulados e sem permissão de compra)'}; "
+        f"snapshot com no máximo {_pt_number(policy.get('max_snapshot_age_hours'), digits=0)} h; buy-in: a regra do interno sobre o TP do ensemble",
+        "",
+        "| Mercado | Pares | TP muda | ΔTP mediana | ΔTP p10 / p90 | Ensemble | Fallback | Fallback com TP diferente | Candidatos antes → depois | COMPRA (One Pager) antes → depois |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    top = ONE_PAGER_RATING_CUTS[0][0]
+    for market in MARKETS:
+        if market not in markets:
+            continue
+        item = markets[market]
+        tp, buy, rating = item.get("tp") or {}, item.get("buy") or {}, item.get("rating") or {}
+        ratio = {key: _pt_number(tp.get(key), digits=2, suffix=" %", signed=True, scale=100) for key in ("median", "p10", "p90")}
+        lines.append(f"| {market} | {item.get('n')} | {item.get('tp_changed')} | {ratio['median']} | {ratio['p10']} / {ratio['p90']} | {item.get('ensemble')} "
+                     f"| {item.get('fallback')} | {item.get('fallback_tp_changed')} | {buy.get('before')} → {buy.get('after')} "
+                     f"| {(rating.get('before') or {}).get(top, 0)} → {(rating.get('after') or {}).get(top, 0)} |")
+    lines += ["", "### Origem do TP depois da troca (por mercado)", ""]
+    for market in MARKETS:
+        if market in markets:
+            lines.append(f"- **{market}** — {_pt_counts(markets[market].get('origins'))}.")
+    lines += ["", "Nenhum símbolo é impresso: o detalhe por símbolo fica só no arquivo privado "
+              f"(`private_detail_sha256` `{str(report.get('private_detail_sha256') or '')[:12]}…`)."]
+    unservable = sum(int(item.get("after_unservable") or 0) for item in markets.values())
+    if unservable:
+        lines.append(f"**Atenção:** {unservable} par(es) sem a visão do ensemble (ciclo anterior a esta revisão) — a troca seria recusada pelo "
+                     "validador; é preciso uma noite completa dos três produtores com esta revisão.")
+    return "\n".join(lines) + "\n"
+
+
 def _write_private_detail(path: Path, detail: Mapping[str, Any]) -> None:
     """The per-symbol detail as the canonical JSON bytes ``private_detail_sha256`` hashes, into a file created EXCLUSIVELY
     (Q5): ``O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW`` with mode ``0o600`` — an existing path (a file, or a symlink whether
@@ -2139,9 +2346,10 @@ def targeted_valid_for(database: Any, generation: Mapping[str, Any], *, source: 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Official TP selection (V3.2 rev 7 §7-bis): bootstrap records/generation, show the health, "
-                                                 "publish the Passo 1 before/after receipt (aggregate only; the per-symbol detail goes to --private-detail), "
-                                                 "or execute the mesa's order — the switch to the internal source (locked), the rollback to the blend, or the "
-                                                 "freeze of the head between the receipt and the order.")
+                                                 "publish the Passo 1 before/after receipt (aggregate only; the per-symbol detail goes to --private-detail) "
+                                                 "or the ensemble's (--to-ensemble), or execute the mesa's order — the switch to the internal source (locked), "
+                                                 "the rollback to the blend, the switch to the ensemble (locked, rev 10), the rollback to the internal source, "
+                                                 "or the freeze of the head between the receipt and the order.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--bootstrap", action="store_true")
     group.add_argument("--health", action="store_true")
@@ -2152,12 +2360,19 @@ def main(argv: list[str] | None = None) -> int:
                             "(refused while the lock is false or the hash is not the accepted receipt)")
     group.add_argument("--rollback-to-blend", action="store_true",
                        help="the mesa's order: select_generation(source=official_blend_v1) over the proposal (never locked, no hash)")
+    group.add_argument("--switch-to-ensemble", action="store_true",
+                       help="rev 10, the mesa's order: select_generation(source=official_ensemble_v1) over the proposal, citing --before-after-sha256 "
+                            "(the receipt of --before-after --to-ensemble; refused while the ensemble lock is false or the hash is not its accepted receipt)")
+    group.add_argument("--rollback-to-internal", action="store_true",
+                       help="rev 10, the mesa's order: select_generation(source=official_internal_v1) over an ENSEMBLE head (never locked, no hash)")
     group.add_argument("--freeze-selection", action="store_true",
                        help="the mesa's freeze (F1): re-select the head's own composition with --until, so no automatic writer moves the head "
                             "between the receipt and the order")
     parser.add_argument("--until", metavar="ISO_INSTANT", default=None,
                         help="with --freeze-selection: when the freeze ends by itself, with its offset (e.g. 2026-10-20T21:00:00-03:00)")
     parser.add_argument("--private-detail", metavar="PATH", default=None, help="with --before-after: write the per-symbol detail to PATH (never printed)")
+    parser.add_argument("--to-ensemble", action="store_true",
+                        help="with --before-after: the receipt of the ensemble switch (internal → ensemble), the one --switch-to-ensemble cites")
     parser.add_argument("--markdown", metavar="PATH", default=None,
                         help="with --before-after: APPEND the Portuguese summary of the aggregate to PATH (no symbols; $GITHUB_STEP_SUMMARY works)")
     parser.add_argument("--cycles", metavar="MARKET=CYCLE_ID", action="append", default=None,
@@ -2169,29 +2384,33 @@ def main(argv: list[str] | None = None) -> int:
                         help="with --before-after or an order: the proposal admits no targeted cycle (the head's cycles, targeted={})")
     parser.add_argument("--keep-internal-targeted", action="store_true",
                         help="with --before-after or an order: the proposal keeps the head's targeted admissions valid for the internal source and "
-                             "drops the others (F2; the head's cycles unless --cycles)")
+                             "drops the others (F2; the head's cycles unless --cycles) — valid for the ENSEMBLE source with --to-ensemble/--switch-to-ensemble")
     parser.add_argument("--source-version", metavar="VERSION", default=None,
                         help="with --before-after or an order: the source_version the order declares (else the cycles' union; a rollback: 'rollback')")
-    parser.add_argument("--before-after-sha256", metavar="HASH", default=None, help="with --switch-to-internal: the accepted receipt's report_sha256")
+    parser.add_argument("--before-after-sha256", metavar="HASH", default=None,
+                        help="with --switch-to-internal or --switch-to-ensemble: the accepted receipt's report_sha256")
     parser.add_argument("--reason", metavar="TEXT", default=None,
                         help="with an order or --freeze-selection: the reason written in the generation's receipt (required)")
     args = parser.parse_args(argv)
-    order = args.switch_to_internal or args.rollback_to_blend
+    order = args.switch_to_internal or args.rollback_to_blend or args.switch_to_ensemble or args.rollback_to_internal
+    switch = args.switch_to_internal or args.switch_to_ensemble  # the locked orders: they cite the accepted receipt
     if (args.cycles or args.targeted or args.purge_targeted or args.keep_internal_targeted or args.source_version) and not (args.before_after or order):
-        parser.error("--cycles/--targeted/--purge-targeted/--keep-internal-targeted/--source-version require --before-after, --switch-to-internal "
-                     "or --rollback-to-blend")
+        parser.error("--cycles/--targeted/--purge-targeted/--keep-internal-targeted/--source-version require --before-after, --switch-to-internal, "
+                     "--rollback-to-blend, --switch-to-ensemble or --rollback-to-internal")
     if (args.private_detail or args.markdown) and not args.before_after:
         parser.error("--private-detail/--markdown require --before-after")
+    if args.to_ensemble and not args.before_after:
+        parser.error("--to-ensemble requires --before-after")
     if sum(map(bool, (args.targeted, args.purge_targeted, args.keep_internal_targeted))) > 1:
         parser.error("--targeted, --purge-targeted and --keep-internal-targeted are exclusive")
-    if args.before_after_sha256 and not args.switch_to_internal:
-        parser.error("--before-after-sha256 requires --switch-to-internal")
-    if args.switch_to_internal and not args.before_after_sha256:
-        parser.error("--switch-to-internal requires --before-after-sha256 (the report_sha256 of the receipt the owner accepted)")
+    if args.before_after_sha256 and not switch:
+        parser.error("--before-after-sha256 requires --switch-to-internal or --switch-to-ensemble")
+    if switch and not args.before_after_sha256:
+        parser.error("--switch-to-internal/--switch-to-ensemble require --before-after-sha256 (the report_sha256 of the receipt the owner accepted)")
     if (order or args.freeze_selection) and not (args.reason or "").strip():
-        parser.error("an order (--switch-to-internal/--rollback-to-blend/--freeze-selection) requires --reason")
+        parser.error("an order (--switch-to-internal/--rollback-to-blend/--switch-to-ensemble/--rollback-to-internal/--freeze-selection) requires --reason")
     if args.reason and not (order or args.freeze_selection):
-        parser.error("--reason requires --switch-to-internal, --rollback-to-blend or --freeze-selection")
+        parser.error("--reason requires an order (--switch-to-internal, --rollback-to-blend, --switch-to-ensemble, --rollback-to-internal) or --freeze-selection")
     if bool(args.until) != bool(args.freeze_selection):
         parser.error("--freeze-selection requires --until, and --until requires --freeze-selection")
     freeze_until: datetime | None = None
@@ -2220,16 +2439,19 @@ def main(argv: list[str] | None = None) -> int:
     from .database import Database
     database = Database(get_settings())
 
+    ensemble_proposal = bool(args.to_ensemble or args.switch_to_ensemble)  # rev 10: the receipt and the order of the ensemble switch
+
     def _proposal() -> tuple[dict[str, str] | None, dict[str, str] | None]:
         """The proposal exactly as the receipt reads it: with --cycles/--targeted/--purge-targeted/--keep-internal-targeted, the
         head's cycles overlaid by --cycles and targeted = --targeted, the head's admissions valid for the internal source
-        (``targeted_valid_for``, F2) or none; without them, ``(None, None)`` — the head's own composition."""
+        (``targeted_valid_for``, F2; for the ENSEMBLE source with --to-ensemble/--switch-to-ensemble) or none; without them,
+        ``(None, None)`` — the head's own composition."""
         if not (args.cycles or args.targeted or args.purge_targeted or args.keep_internal_targeted):
             return None, None
         head = database.latest_valuation_official_selection() or {}
         cycles = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles", keys=tuple(MARKETS))}
         if args.keep_internal_targeted:
-            return cycles, targeted_valid_for(database, head)
+            return cycles, targeted_valid_for(database, head, source=SOURCE_ENSEMBLE if ensemble_proposal else SOURCE_INTERNAL)
         return cycles, _pairs(args.targeted, "--targeted")
 
     if args.bootstrap:
@@ -2237,12 +2459,17 @@ def main(argv: list[str] | None = None) -> int:
     elif args.before_after:
         cycles, targeted = _proposal()
         result = attest_before_after(  # the producer's identity, read by THIS process (Codex P2 on #451)
-            before_after_report(database, private_detail_path=args.private_detail, cycles=cycles, targeted=targeted, source_version=args.source_version),
+            before_after_report(database, private_detail_path=args.private_detail, cycles=cycles, targeted=targeted, source_version=args.source_version,
+                                source_to=SOURCE_ENSEMBLE if args.to_ensemble else SOURCE_INTERNAL),
             producer_build_sha=os.environ.get("C3PO_BUILD_SHA"))
         if args.markdown:
             with open(args.markdown, "a", encoding="utf-8") as handle:  # appended: a CI step summary is an existing file
-                handle.write(before_after_markdown(result))
+                handle.write(ensemble_before_after_markdown(result) if args.to_ensemble else before_after_markdown(result))
     elif order:
+        if args.rollback_to_internal:  # rev 10: the rollback of the ENSEMBLE switch only — any other head keeps Passo 1's locked path
+            head = database.latest_valuation_official_selection()
+            if head is None or head.get("source") != SOURCE_ENSEMBLE:
+                parser.error(f"--rollback-to-internal rolls back an ensemble head; the head selects {(head or {}).get('source')!r}")
         cycles, targeted = _proposal()
         if cycles is None:  # no proposal: the head's own composition — the cycles and admissions the receipt without options read
             head = database.latest_valuation_official_selection()
@@ -2250,10 +2477,10 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error("no official generation in force: an order needs a head (bootstrap the blend first)")
             cycles = {market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}
             targeted = _normalized_targeted(head.get("targeted") or {}, strict=False)
+        target = (SOURCE_INTERNAL if args.switch_to_internal or args.rollback_to_internal else SOURCE_ENSEMBLE if args.switch_to_ensemble else SOURCE_OFFICIAL)
         generation = select_generation(
             database, cycles=cycles, targeted=targeted, now=datetime.now(timezone.utc), activated_by="mesa", reason=str(args.reason).strip(),
-            source=SOURCE_INTERNAL if args.switch_to_internal else SOURCE_OFFICIAL, source_version=args.source_version,
-            before_after_sha256=args.before_after_sha256 if args.switch_to_internal else None,
+            source=target, source_version=args.source_version, before_after_sha256=args.before_after_sha256 if switch else None,
         )
         result = _order_summary(generation)
     elif args.freeze_selection:

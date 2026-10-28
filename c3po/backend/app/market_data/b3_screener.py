@@ -22,6 +22,7 @@ from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
 from ..valuation_official import UNRESOLVED, current_generation, item_stamp, official_rows, official_stamp, provenance_sha256, selection_frozen
+from ..valuation_official_engine import ensemble_fallback_view
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -2465,6 +2466,10 @@ class B3ScreenerService:
             "thesis": self._thesis(row, relative_discount, growth, fcf_yield),
             "risk": self._risk(row, risk_penalty),
         })
+        # Ensemble switch (valuation_official rev 10, official_ensemble_v1), owner's decision (a): B3 is outside the ensemble's
+        # population — every B3 row (universe and on-demand alike) carries its INTERNAL TP and internal view as its ensemble
+        # fields, bit for bit, so its cycles stay selectable for the ensemble source and serve exactly the internal numbers.
+        row.update(ensemble_fallback_view(row, "market_outside_ensemble"))
 
     @staticmethod
     def _entry_from_tp(

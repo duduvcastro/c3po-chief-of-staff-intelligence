@@ -183,8 +183,8 @@ jobs:
                           "E_PROFILE_UNAVAILABLE", "E_PROFILE_WARMING_UP", "FUNDAMENTALS_DATE_UNKNOWN", "FUNDAMENTALS_STALE",
                           "MARKET_RATE_UNAVAILABLE", "METHOD_DISPERSION_HIGH", "METHOD_DISPERSION_UNKNOWN", "NEWS_SENTIMENT_NEGATIVE",
                           "NOT_VALIDATED", "PRICE_ABOVE_BUY_IN", "PRICE_MOVED_SINCE_CUT", "PRICE_SESSION_STALE", "PRICE_UNAVAILABLE",
-                          "STALENESS_SOURCE_STALE", "STALENESS_SOURCE_UNAVAILABLE", "TP_MARGIN_INSUFFICIENT", "TP_SESSION_STALE",
-                          "TP_STALE_AFTER_FILING", "TP_STALE_FLAG", "other"}
+                          "STALENESS_SOURCE_STALE", "STALENESS_SOURCE_UNAVAILABLE", "TP_MARGIN_INSUFFICIENT", "TP_OUTSIDE_TESTED_POPULATION",
+                          "TP_SESSION_STALE", "TP_STALE_AFTER_FILING", "TP_STALE_FLAG", "other"}
           FAMILIES = {"security-automation-failure", "governance-job-failure", "valuation-phase-failure",
                       "valuation-canonical-failure", "other"}
           GOVERNANCE = {"attestation", "layers", "routine", "blockers", "grace", "os_security_pending", "reboot_required",

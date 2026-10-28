@@ -393,6 +393,8 @@ class B3Candidate(BaseModel):
     prediction_instant: datetime | None = None  # when the official prediction existed (the record's instant)
     official_row_sha256: str | None = None  # the immutable record hash the served number comes from
     official_published_at: datetime | None = None  # rev 6 (B2): when the record became available (a re-run's re-run date), distinct from prediction_instant
+    ensemble_origin: str | None = None  # valuation_official rev 10: "ensemble" or "fallback_internal:<reason>" — only under official_ensemble_v1
+    ensemble_pit_tested: bool | None = None  # owner 28/10: False/None on an ensemble TP outside the PIT-tested population (labelled; never a buy permission)
 
 
 class B3CandidateResponse(BaseModel):
@@ -469,6 +471,8 @@ class MatrixPowerItem(BaseModel):
     prediction_instant: datetime | None = None  # when the official prediction existed (the record's instant)
     official_row_sha256: str | None = None  # the immutable record hash the served number comes from
     official_published_at: datetime | None = None  # rev 6 (B2): when the record became available (a re-run's re-run date), distinct from prediction_instant
+    ensemble_origin: str | None = None  # valuation_official rev 10: "ensemble" or "fallback_internal:<reason>" — only under official_ensemble_v1
+    ensemble_pit_tested: bool | None = None  # owner 28/10: False/None on an ensemble TP outside the PIT-tested population (labelled; never a buy permission)
 
 
 class MatrixPowerResponse(BaseModel):
