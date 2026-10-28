@@ -28,7 +28,12 @@ Population (owner, 28/10/2026: "o valuation tem que cobrir todos os papeis USA")
 
 Order under the deadline and the breaker: the tested names of BOTH exchanges are read first, then every other evaluable
 name by liquidity (the 20-session median dollar volume), so a deadline reaches the tested names before any other; each
-section records how many names were reached and how many are pending.
+section records how many names were reached and how many are pending. Every provider request is bounded as a WHOLE
+response by the time left (``DeadlineJsonHttpClient``); reads stop at the deadline and finished sections may be written
+until ``PUBLISH_GRACE`` after it. An open breaker after the tested reads skips the listed-only names. An exchange whose
+own preparation fails, or a listed-only chunk that fails, is set aside and counted: the other exchange, and every tested
+name, go on. A listed-only name that cannot be admitted says which coverage it lacks (``no_price_history``,
+``no_asfiled_statements``), counted per section (``counts.listed_only_coverage``).
 
 Where live cannot equal the grid's PIT inputs: the catalogue is today's, not the grid's pinned one; the price publication
 is tonight's (its history can be re-adjusted by the provider since the grid's 120-month vintage); the Treasury and target
@@ -51,10 +56,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Protocol, cast
@@ -62,7 +68,7 @@ from typing import Any, Protocol, cast
 from . import valuation_env, valuation_pit_rerun as pit
 from .config import Settings
 from .database import Database
-from .market_data.http import JsonHttpClient
+from .market_data.http import DeadlineJsonHttpClient, JsonHttpClient, MarketDataRequestError
 from .valuation_ensemble_aggregation import GRID_PRIMARY_VARIANT, aggregate_grid_variants
 from .valuation_ensemble_grid import _shares
 from .valuation_ensemble_grid_consensus import grid_consensus_at
@@ -93,6 +99,8 @@ EXTRA_TARGET_PAGES = 3  # target pages read for a listed-only name (100 rows eac
 TARGET_PAGE_LIMIT = 100  # PitFetchService.fetch_targets' rows per page
 TARGETS_BREAKER_CONSECUTIVE = 10  # consecutive failed target reads = the provider is down (403/429/outage): stop reading
 TARGETS_MAX_FAILED_SHARE = 0.10  # an exchange whose failed target reads exceed this share of the attempted ones is not published
+REQUEST_TIMEOUT_SECONDS = 30.0  # the WHOLE response of one provider request (headers and body), never past the deadline
+PUBLISH_GRACE = timedelta(minutes=5)  # reads stop at the deadline; finished sections may be written until deadline + grace
 IMPLEMENTATION_FILES: tuple[str, ...] = (  # every module whose bytes can move a published number or flag, hashed into the context
     "valuation_live_ensemble.py", "valuation_ensemble_grid.py", "valuation_ensemble_grid_inputs.py", "valuation_ensemble_grid_consensus.py",
     "valuation_ensemble_aggregation.py", "valuation_ensemble_models.py", "valuation_ensemble_inputs.py", "valuation_ensemble_adapters.py",
@@ -132,16 +140,35 @@ def implementation_files() -> dict[str, str]:
 
 
 class _DeadlineHttp(JsonHttpClient):
-    """The provider client behind a deadline: every request checks it first, so a slow provider overruns the deadline by
-    at most ONE request (its own timeout × retries), never by a whole 20-page target history or the rest of a sweep."""
+    """The provider client behind the night's deadline. The process's real ``JsonHttpClient`` bounds each socket
+    operation only, so a slow-drip body could run past the stop: each attempt is made instead through
+    ``DeadlineJsonHttpClient``, whose bound covers the WHOLE response, set to the time left before the deadline (at most
+    ``REQUEST_TIMEOUT_SECONDS``), and every attempt (the client's retries) checks the deadline first. Any other client
+    (a test double) is called as is, after the check."""
 
     def __init__(self, inner: JsonHttpClient, *, deadline: datetime | None, clock: Callable[[], datetime]) -> None:
         super().__init__(timeout=float(getattr(inner, "timeout", 0.0)), max_retries=int(getattr(inner, "max_retries", 0)))
         self.inner, self.deadline, self.clock = inner, deadline, clock
+        self.bounded = type(inner) is JsonHttpClient
+
+    def _bound(self) -> float:
+        if self.deadline is None:
+            return REQUEST_TIMEOUT_SECONDS
+        left = (utc(self.deadline) - utc(self.clock())).total_seconds()
+        return min(REQUEST_TIMEOUT_SECONDS, max(left, 0.001))
 
     def get_json(self, url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> Any:
-        _check_deadline(self.deadline, self.clock)
-        return self.inner.get_json(url, params=params, headers=headers)
+        if not self.bounded:
+            _check_deadline(self.deadline, self.clock)
+            return self.inner.get_json(url, params=params, headers=headers)
+        failure: Exception = MarketDataRequestError("request_failed")
+        for _attempt in range(self.max_retries + 1):
+            _check_deadline(self.deadline, self.clock)
+            try:
+                return DeadlineJsonHttpClient(timeout=self._bound()).get_json(url, params=params, headers=headers)
+            except MarketDataRequestError as error:
+                failure = error
+        raise failure
 
 
 class LiveSourceFetch(pit.PitFetchService):
@@ -200,23 +227,31 @@ def decide_volume_basis(database: Database, settings: Settings, prices: Mapping[
     return (str(decision) if decision in VOLUME_BASES else None), receipt
 
 
+def listing_symbol(value: Any) -> str:
+    """One spelling per share class: the provider's (``BRK-B``), whatever the listing wrote (``BRK.B``, ``BRK/B``)."""
+    return re.sub(r"[./ ]+", "-", str(value or "").strip().upper())
+
+
 def listed_population(database: Database, market: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Every common stock of the latest listed-universe publication of ``market``, as admitted catalogue rows WITHOUT
-    classification (the listing carries none); ``[]`` when none is published or its manifest does not verify."""
+    classification (the listing carries none), one row per share class; ``[]`` when none is published or it does not
+    verify (manifest, or a malformed ``listings``) — the exchange's served catalogue still runs."""
     snapshot = database.latest_analysis_snapshot(LISTED_ANALYSIS, market)
     if snapshot is None:
         return [], {"status": "absent"}
     outputs = _mapping(snapshot.get("outputs"))
-    try:
-        verified = (outputs.get("schema") == LISTED_SCHEMA and outputs.get("market") == market
-                    and outputs.get("manifest_sha256") == canonical_hash({k: v for k, v in outputs.items() if k != "manifest_sha256"}))
-    except (TypeError, ValueError):
-        verified = False
     reference: dict[str, Any] = {"snapshot_id": str(snapshot.get("id")), "manifest_sha256": outputs.get("manifest_sha256")}
-    if not verified:
-        return [], {**reference, "status": "refused_manifest"}
-    symbols = {str(item.get("symbol") or "").strip().upper() for item in outputs.get("listings") or []
-               if isinstance(item, Mapping) and item.get("market") == market and item.get("security_type") == "Stock"}
+    try:
+        if not (outputs.get("schema") == LISTED_SCHEMA and outputs.get("market") == market
+                and outputs.get("manifest_sha256") == canonical_hash({k: v for k, v in outputs.items() if k != "manifest_sha256"})):
+            return [], {**reference, "status": "refused_manifest"}
+        listings = outputs.get("listings")
+        if not isinstance(listings, list):
+            raise TypeError("listings_not_a_list")
+        symbols = {listing_symbol(item.get("symbol")) for item in listings
+                   if isinstance(item, Mapping) and item.get("market") == market and item.get("security_type") == "Stock"}
+    except (TypeError, ValueError, AttributeError):
+        return [], {**reference, "status": "refused_listings"}
     rows = [{"symbol": symbol, **{name: None for name in pit.CURRENT_FIELDS_ADMITTED}, "security_type": "Stock"}
             for symbol in sorted(symbols) if symbol]
     return rows, {**reference, "status": "read", "stocks": len(rows)}
@@ -302,7 +337,7 @@ def gather_live_inputs(database: Database, *, market: str, as_of: datetime, pric
     listed_reference: dict[str, Any] = {"status": "not_requested"}
     if listed:
         listed_rows, listed_reference = listed_population(database, market)
-        served = {str(row["symbol"]) for row in catalogue}
+        served = {listing_symbol(row["symbol"]) for row in catalogue}
         extra_rows = [row for row in listed_rows if row["symbol"] not in served]
     return LiveInputs(market, cut, prices, reader, catalogue, catalogue_reference, screen_inputs, not_admitted, references, dict(curve),
                       dict(curve_reference), targets, volume_basis, dict(volume_check) if volume_check is not None else None,
@@ -383,6 +418,8 @@ class _LiveSection:
         self.screen_refused: Counter[str] = Counter()
         self.pit_tested_rule = ""
         self.reads = Counter[str]()
+        self.failure: str | None = None  # the exchange's own preparation failed: it is not published, the other one is
+        self.chunks_failed = 0
 
     # ---- inputs (compute_grid_section's per-name loop, the same calls in the same order)
     def _prepare(self, name: _Name, screen_inputs: Mapping[str, Mapping[str, Any]], not_admitted: Mapping[str, str],
@@ -394,7 +431,7 @@ class _LiveSection:
             if row.get("security_type") != "Stock":
                 raise NotEvaluable("not_a_stock")
             if symbol not in screen_inputs:
-                raise NotEvaluable("not_admitted_at_T:" + not_admitted.get(symbol, "unknown"))
+                raise NotEvaluable(self._not_admitted(name, not_admitted))
             issuer = self.coverage.get(symbol)
             if not issuer:
                 raise NotEvaluable("statement_vintages_missing")
@@ -446,6 +483,15 @@ class _LiveSection:
         except (ValueError, TypeError, KeyError, ArithmeticError) as error:  # one malformed name never takes the exchange down
             name.refusal = "input_error:" + type(error).__name__
 
+    def _not_admitted(self, name: _Name, not_admitted: Mapping[str, str]) -> str:
+        """A served name keeps rev3's reason; a listed-only name says which coverage it lacks (the owner reads coverage)."""
+        if not name.served:
+            if not self.prices.bars(name.symbol):
+                return "no_price_history"
+            if name.symbol not in self.coverage:
+                return "no_asfiled_statements"
+        return "not_admitted_at_T:" + not_admitted.get(name.symbol, "unknown")
+
     def _evaluate(self, names: Iterable[_Name]) -> None:
         for name in names:
             name.models = (evaluate_models(name.company, name.premises, peers=self.peers) if name.company is not None else
@@ -487,17 +533,30 @@ class _LiveSection:
                 for name in extras[start:]:
                     name.pending = "pending_preparation"
                 return False
-            resolver = _PopulationResolver(self.inputs.database, rows=[name.row for name in chunk], market=self.market, as_of=self.cut,
-                                           prices=self.prices, statements=STATEMENTS, vintages=self.reader)
-            resolver.resolve()
-            screen_inputs, not_admitted, references = _admitted(resolver)
-            self.prices.build_proxy(self.catalogue_symbols)  # resolve() rebuilt it over the chunk: back to the grid's proxy
-            raw_by_issuer: dict[str, list[dict[str, Any]]] = {}
-            for name in chunk:
-                self._prepare(name, screen_inputs, not_admitted, references, raw_by_issuer)
-            self._evaluate(chunk)
-            _evict(self.prices, [name.symbol for name in chunk])
+            try:
+                resolver = _PopulationResolver(self.inputs.database, rows=[name.row for name in chunk], market=self.market, as_of=self.cut,
+                                               prices=self.prices, statements=STATEMENTS, vintages=self.reader)
+                resolver.resolve()
+                screen_inputs, not_admitted, references = _admitted(resolver)
+                self.prices.build_proxy(self.catalogue_symbols)  # resolve() rebuilt it over the chunk: back to the grid's proxy
+                raw_by_issuer: dict[str, list[dict[str, Any]]] = {}
+                for name in chunk:
+                    self._prepare(name, screen_inputs, not_admitted, references, raw_by_issuer)
+                self._evaluate(chunk)
+            except Exception as error:  # one chunk's failure refuses that chunk only: never a tested name, never the exchange
+                self.chunks_failed += 1
+                for name in chunk:
+                    name.company, name.models, name.refusal = None, (), "listed_chunk_failed:" + _failure_code(error)
+            finally:
+                self.prices.build_proxy(self.catalogue_symbols)
+                _evict(self.prices, [name.symbol for name in chunk])
         return True
+
+    def skip_extras(self, reason: str) -> None:
+        for row in self.inputs.extra_rows:
+            name = self.names[str(row["symbol"])]
+            if name.company is None and name.refusal is None:
+                name.refusal = reason
 
     # ---- targets
     def awaiting(self, *, pit_tested: bool) -> list[_Name]:
@@ -580,6 +639,13 @@ class _LiveSection:
                                                "targets_rows_sha256": targets_sha256}),
         }
 
+    def _listed_coverage(self) -> dict[str, int]:
+        extras = [self.names[str(row["symbol"])] for row in self.inputs.extra_rows]
+        return {"names": len(extras), "no_price_history": sum(name.refusal == "no_price_history" for name in extras),
+                "no_asfiled_statements": sum(name.refusal == "no_asfiled_statements" for name in extras),
+                "admitted": sum(name.screen is not None for name in extras), "evaluable": sum(name.company is not None for name in extras),
+                "chunks_failed": self.chunks_failed}
+
     def result(self, reads: _TargetReads) -> dict[str, Any]:
         inputs = self.inputs
         context = {"schema": SCHEMA, "source": SOURCE, "market": self.market, "as_of": self.cut.isoformat(), "primary": PRIMARY,
@@ -614,6 +680,7 @@ class _LiveSection:
                   "origins": dict(sorted(origins.items())), "consensus": dict(sorted(consensus_counts.items())),
                   "model_results": {model: dict(sorted(counter.items())) for model, counter in totals.items()},
                   "screen_refused": dict(sorted(self.screen_refused.items())),
+                  "listed_only_coverage": self._listed_coverage(),
                   "targets": {"attempted": int(self.reads["attempted"]), "failed": int(self.reads["failed"]), "circuit_open": reads.open}}
         return {"schema": SCHEMA, "source": SOURCE, "market": self.market, "as_of": self.cut.isoformat(), "session_date": self.prices.session_date,
                 "primary": PRIMARY, "volume_basis": inputs.volume_basis, "volume_check": inputs.volume_check, "complete": not pending,
@@ -634,19 +701,34 @@ def _read_all(sections: Sequence[_LiveSection], reads: _TargetReads, *, pit_test
     return True
 
 
+def _failure_code(error: Exception) -> str:
+    return str(error) if isinstance(error, LiveEnsembleError) else type(error).__name__
+
+
 def _run_sections(sections: Sequence[_LiveSection], *, deadline: datetime | None, clock: Callable[[], datetime]) -> tuple[_TargetReads, bool]:
-    """Tested names of every exchange first, then the listed-only names' inputs, then every other name by liquidity."""
+    """Tested names of every exchange first, then the listed-only names' inputs, then every other name by liquidity. An
+    exchange whose own preparation fails is set aside (``failure``) and the other goes on; an open breaker after the
+    tested reads skips the listed-only names (nothing more would be read tonight)."""
     reads = _TargetReads()
     for section in sections:
         _check_deadline(deadline, clock)
-        section.prepare_served()
-    complete = _read_all(sections, reads, pit_tested=True, deadline=deadline, clock=clock)
-    if complete:
-        complete = all([section.prepare_extras(deadline=deadline, clock=clock) for section in sections])
-    if complete:
-        complete = _read_all(sections, reads, pit_tested=False, deadline=deadline, clock=clock)
-    else:
-        for section in sections:
+        try:
+            section.prepare_served()
+        except LiveEnsembleDeadline:
+            raise
+        except Exception as error:  # one exchange's failure never costs the other its night
+            section.failure = _failure_code(error)
+    healthy = [section for section in sections if section.failure is None]
+    complete = _read_all(healthy, reads, pit_tested=True, deadline=deadline, clock=clock)
+    if complete and reads.open:
+        for section in healthy:
+            section.skip_extras("skipped:targets_circuit_open")
+    elif complete:
+        complete = all([section.prepare_extras(deadline=deadline, clock=clock) for section in healthy])
+        if complete:
+            complete = _read_all(healthy, reads, pit_tested=False, deadline=deadline, clock=clock)
+    if not complete:
+        for section in healthy:
             for name in section.names.values():
                 if name.company is None and name.refusal is None and name.pending is None and not name.served:
                     name.pending = "pending_preparation"
@@ -659,6 +741,8 @@ def compute_live_section(inputs: LiveInputs, *, deadline: datetime | None = None
     tick: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
     section = _LiveSection(inputs)
     reads, _ = _run_sections([section], deadline=deadline, clock=tick)
+    if section.failure is not None:
+        raise LiveEnsembleError(section.failure)
     return section.result(reads)
 
 
@@ -809,6 +893,14 @@ def _run_markets(database: Database, settings: Settings, fetch: LiveSourceFetch,
     if not complete:
         failures["deadline_reached"] += 1
     for section in sections:
+        if section.failure is not None:
+            failures["section:" + section.failure] += 1
+            continue
+        try:
+            _check_deadline(deadline + PUBLISH_GRACE if deadline is not None else None, tick)
+        except LiveEnsembleDeadline:
+            failures["deadline_reached_before_publish"] += 1
+            continue
         try:
             result = section.result(reads)
             refusal = unpublishable(result)

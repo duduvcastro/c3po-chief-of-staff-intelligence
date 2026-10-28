@@ -59,7 +59,8 @@ PHASE_INCIDENT_KEY_PREFIX = "notification:job_failure:valuation-phase-failure:"
 # becomes critical on the Nth consecutive failing night, or at once on a data fault.
 PHASE_FAILURE_CRITICAL_NIGHTS = 2
 # The live ensemble producer's night (valuation_live_ensemble): no attempt STARTS at or after 05:00 BRT and every attempt
-# STOPS by 05:30 BRT (checked before each step and each provider request), so the maintenance lease and the phase's
+# STOPS reading by 05:30 BRT (checked before each step and each provider request, each request bounded as a whole by the
+# time left; finished sections may still be written until 05:35), so the maintenance lease and the phase's
 # ingestion run are free 30 min before cash_yield's 06:00 window and 2 h 45 before the 08:15 grid window, whose blocking
 # check refuses a chunk while a valuation_worker run is `running`; the decisor (window to 08:00) keeps 2 h 30 after it.
 # Two failed attempts a night at most (the calendar's retry-cap pattern), then the next night.

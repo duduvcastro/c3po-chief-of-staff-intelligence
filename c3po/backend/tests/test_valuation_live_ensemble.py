@@ -297,8 +297,9 @@ def _listed(database: Database, symbols: tuple[str, ...], *, market: str = "NASD
 
 
 def _wide_world() -> Database:
-    """The grid fixture's six served names plus GGG: priced and filed like them, listed, but not in the served catalogue."""
-    wide = (*SYMBOLS, "GGG")
+    """The grid fixture's six served names plus GGG (priced and filed like them, listed, not served) and PPP (priced, never
+    filed); ZZZ, when listed, has neither."""
+    wide = (*SYMBOLS, "GGG", "PPP")
     sessions = _sessions("2023-06-01", "2026-09-10")
     database = _database()
     _publish_prices(database, bars={f"{s}.US": _bars_for(s, sessions, base=100.0 + 10 * i) for i, s in enumerate(wide)})
@@ -309,36 +310,40 @@ def _wide_world() -> Database:
 
 def test_the_population_is_every_listed_common_stock_and_adding_it_moves_no_tested_number(monkeypatch: pytest.MonkeyPatch) -> None:
     database = _wide_world()
-    monkeypatch.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))  # canonical facts for GGG too (it is filed like the others)
-    _canonical_facts(database)
-    monkeypatch.undo()
+    with monkeypatch.context() as scoped:  # canonical facts for GGG too (it is filed like the others)
+        scoped.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))
+        _canonical_facts(database)
     _, served_only = _live(database, listed=False)
-    _listed(database, (*SYMBOLS, "GGG", "ZZZ"))
+    _listed(database, (*SYMBOLS, "GGG", "PPP", "ZZZ"))
     calls: list[tuple[str, int | None]] = []
     inputs, wide = _live(database, targets=_pinned_targets(database, calls))
-    assert [row["symbol"] for row in inputs.extra_rows] == ["GGG", "ZZZ"] and inputs.listed_reference["status"] == "read"
+    assert [row["symbol"] for row in inputs.extra_rows] == ["GGG", "PPP", "ZZZ"] and inputs.listed_reference["status"] == "read"
     rows = {row["symbol"]: row for row in wide["records"]}
-    assert set(rows) == {*SYMBOLS, "GGG", "ZZZ"} and "ETFX" not in rows  # every common stock, no ETF from the listing
+    assert set(rows) == {*SYMBOLS, "GGG", "PPP", "ZZZ"} and "ETFX" not in rows  # every common stock, no ETF from the listing
     for row in served_only["records"]:  # the served names keep the grid's proxy and peers: identical numbers
         assert {k: v for k, v in rows[row["symbol"]].items() if k != "inputs_sha256"} == {k: v for k, v in row.items() if k != "inputs_sha256"}
     ggg = rows["GGG"]
     assert ggg["in_served_catalogue"] is False and ggg["pit_tested"] is False and ggg["primary_tp"] is not None and ggg["origin"] == "ensemble"
     assert ggg["model_values"]["pe"] is None  # no classification in a listing: the peer models refuse, the intrinsic ones value it
-    assert rows["ZZZ"]["origin"] == "not_evaluable:not_admitted_at_T:statement_vintages_missing" and rows["ZZZ"]["pit_tested"] is False
+    # a listed-only name says which coverage it lacks, and each section counts them
+    assert rows["ZZZ"]["origin"] == "not_evaluable:no_price_history" and rows["ZZZ"]["pit_tested"] is False
+    assert rows["PPP"]["origin"] == "not_evaluable:no_asfiled_statements"
+    assert wide["counts"]["listed_only_coverage"] == {"names": 3, "no_price_history": 1, "no_asfiled_statements": 1, "admitted": 1,
+                                                      "evaluable": 1, "chunks_failed": 0}
     assert ("GGG", live.EXTRA_TARGET_PAGES) in calls and all(pages is None for symbol, pages in calls if symbol != "GGG")
-    assert wide["counts"]["population_rows"] == len(SYMBOLS) + 2 and wide["counts"]["listed_only_stocks"] == 2
+    assert wide["counts"]["population_rows"] == len(SYMBOLS) + 3 and wide["counts"]["listed_only_stocks"] == 3
     assert "GGG" not in inputs.prices._bars and set(SYMBOLS) <= set(inputs.prices._bars)  # the chunk's series were dropped
     # a listing whose manifest does not verify adds nothing
-    _listed(database, (*SYMBOLS, "GGG", "ZZZ", "YYY"), tamper=True, at=VINTAGE_AT + timedelta(minutes=1))
+    _listed(database, (*SYMBOLS, "GGG", "PPP", "ZZZ", "YYY"), tamper=True, at=VINTAGE_AT + timedelta(minutes=1))
     tampered = _inputs(database)
     assert tampered.extra_rows == [] and tampered.listed_reference["status"] == "refused_manifest"
 
 
 def test_a_target_history_that_fills_the_page_cap_is_refused_for_a_listed_only_name(monkeypatch: pytest.MonkeyPatch) -> None:
     database = _wide_world()
-    monkeypatch.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))
-    _canonical_facts(database)
-    monkeypatch.undo()
+    with monkeypatch.context() as scoped:
+        scoped.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))
+        _canonical_facts(database)
     _listed(database, (*SYMBOLS, "GGG"))
     base = _pinned_targets(database)
 
@@ -385,6 +390,148 @@ def test_under_a_deadline_the_tested_names_are_read_first_and_the_rest_stays_pen
     early = live.compute_live_section(_inputs(database, targets=_pinned_targets(database, calls, advance=advance)),
                                       deadline=start + timedelta(seconds=30), clock=lambda: start + timedelta(minutes=advance[0]))
     assert early["counts"]["pit_tested_pending"] == 1 and live.unpublishable(early) == "tested_names_pending"
+
+
+def _with_listed_world(monkeypatch: pytest.MonkeyPatch) -> Database:
+    database = _wide_world()
+    with monkeypatch.context() as scoped:
+        scoped.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))
+        _canonical_facts(database)
+    return database
+
+
+def test_a_failing_listed_chunk_refuses_that_chunk_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    database = _with_listed_world(monkeypatch)
+    _, served_only = _live(database, listed=False)
+    _listed(database, (*SYMBOLS, "GGG", "PPP", "ZZZ"))
+
+    def broken(self: Any) -> None:
+        raise RuntimeError("database connection lost")
+
+    monkeypatch.setattr(live._PopulationResolver, "resolve", broken)
+    _, section = _live(database)
+    rows = {row["symbol"]: row for row in section["records"]}
+    assert all(rows[s]["origin"] == "not_evaluable:listed_chunk_failed:RuntimeError" for s in ("GGG", "PPP", "ZZZ"))
+    for row in served_only["records"]:  # the served names (and their tested ones) are untouched
+        assert rows[row["symbol"]]["primary_tp"] == row["primary_tp"] and rows[row["symbol"]]["model_values"] == row["model_values"]
+    assert section["counts"]["listed_only_coverage"]["chunks_failed"] == 1 and live.unpublishable(section) is None
+
+
+@pytest.mark.usefixtures("_two_tested")
+def test_an_open_breaker_after_the_tested_reads_skips_the_listed_only_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    database = _with_listed_world(monkeypatch)
+    _listed(database, (*SYMBOLS, "GGG", "PPP", "ZZZ"))
+    monkeypatch.setattr(live, "TARGETS_BREAKER_CONSECUTIVE", 2)
+    resolved: list[str] = []
+    original = live._PopulationResolver.resolve
+
+    def spy(self: Any) -> Any:
+        resolved.append("chunk")
+        return original(self)
+
+    monkeypatch.setattr(live._PopulationResolver, "resolve", spy)
+    calls: list[tuple[str, int | None]] = []
+    _, section = _live(database, targets=_pinned_targets(database, calls, failing=set(SYMBOLS) | {"GGG"}))
+    rows = {row["symbol"]: row for row in section["records"]}
+    assert sorted(symbol for symbol, _ in calls) == ["EEE", "FFF"] and resolved == []  # no chunk walked, no further read
+    assert all(rows[s]["origin"] == "not_evaluable:skipped:targets_circuit_open" for s in ("GGG", "PPP", "ZZZ"))
+    assert section["counts"]["targets"]["circuit_open"] is True and live.unpublishable(section) == "targets_circuit_open"
+
+
+def test_a_malformed_or_differently_spelled_listing_never_breaks_the_served_section() -> None:
+    fixture = _fixture()
+    database = fixture[0]
+    outputs: dict[str, Any] = {"schema": live.LISTED_SCHEMA, "market": "NASDAQ", "listings": {"not": "a list"}}
+    outputs["manifest_sha256"] = canonical_hash(outputs)
+    database.save_analysis_snapshot(live.LISTED_ANALYSIS, "NASDAQ", "mv-listed", {}, outputs, VINTAGE_AT)
+    rows, reference = live.listed_population(database, "NASDAQ")
+    assert rows == [] and reference["status"] == "refused_listings"
+    _, section = _live(database)
+    assert section["counts"]["with_primary_tp"] == len(SYMBOLS) and section["context"]["listed"]["status"] == "refused_listings"
+    # one row per share class whatever the spelling, and a served name is never listed twice
+    _listed(database, ("BRK.B", "BRK-B", "brk/b", " aaa "), at=VINTAGE_AT + timedelta(minutes=1))
+    rows, reference = live.listed_population(database, "NASDAQ")
+    assert [row["symbol"] for row in rows] == ["AAA", "BRK-B"] and reference["stocks"] == 2
+    assert [row["symbol"] for row in _inputs(database).extra_rows] == ["BRK-B"]
+
+
+def _nyse(database: Database) -> None:
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    nyse = ScriptedHttp({"/api/eod/NYA.US": _bars_for("NYA", sessions, base=50.0)})
+    series.PriceHistoryService(_settings(), database, nyse, eodhd=EodhdClient("https://eodhd.com", "secret", nyse)).persist_run(  # type: ignore[arg-type]
+        "NYSE", start=date(2023, 6, 1), end=date(2026, 9, 10), symbols=["NYA"], now=VINTAGE_AT)
+    database.save_analysis_snapshot("valuation_universe", "NYSE_UNIVERSE", "mv-cat", {"methodology_version": 7},
+                                    {"rows": [{"symbol": "NYA", "sector": SECTOR, "industry": "Machinery", "valuation_profile": "general",
+                                               "security_type": "Stock"}]}, VINTAGE_AT - timedelta(hours=1))
+
+
+def test_one_exchange_failing_its_preparation_never_costs_the_other_its_night(monkeypatch: pytest.MonkeyPatch,
+                                                                              caplog: pytest.LogCaptureFixture) -> None:
+    _on(monkeypatch)
+    database, http = _live_world()
+    _nyse(database)
+    original = live._LiveSection.prepare_served
+
+    def prepare(self: Any) -> None:
+        if self.market == "NYSE":
+            raise RuntimeError("statement store unreachable")
+        original(self)
+
+    monkeypatch.setattr(live._LiveSection, "prepare_served", prepare)
+    with caplog.at_level(logging.INFO), pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK)
+    nasdaq = database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE")
+    assert nasdaq is not None and nasdaq["outputs"]["counts"]["with_primary_tp"] == len(SYMBOLS)
+    assert database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NYSE_UNIVERSE") is None
+    text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "failures={'section:RuntimeError': 1}" in text and "unreachable" not in text  # a count and a class, never the text
+
+
+def test_provider_requests_are_bounded_as_a_whole_by_the_time_left(monkeypatch: pytest.MonkeyPatch) -> None:
+    bounds: list[float] = []
+    outcomes: list[Any] = []
+
+    class Bounded:
+        def __init__(self, *, timeout: float) -> None:
+            bounds.append(timeout)
+
+        def get_json(self, url: str, *, params: Any = None, headers: Any = None) -> Any:
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+    monkeypatch.setattr(live, "DeadlineJsonHttpClient", Bounded)
+    start = datetime(2026, 9, 11, 8, 29, 50, tzinfo=timezone.utc)
+    now = [start]
+    near = live._DeadlineHttp(JsonHttpClient(timeout=15.0, max_retries=1), deadline=start + timedelta(seconds=10), clock=lambda: now[0])
+    outcomes[:] = [MarketDataRequestError("TimeoutError"), {"ok": True}]
+    assert near.get_json("https://provider.example/x") == {"ok": True} and bounds == [10.0, 10.0]  # the whole response, never past it
+    far = live._DeadlineHttp(JsonHttpClient(timeout=15.0, max_retries=0), deadline=start + timedelta(hours=1), clock=lambda: now[0])
+    bounds.clear()
+    outcomes[:] = [[1, 2]]
+    assert far.get_json("https://provider.example/x") == [1, 2] and bounds == [live.REQUEST_TIMEOUT_SECONDS]
+
+    class Drip(Bounded):
+        def get_json(self, url: str, *, params: Any = None, headers: Any = None) -> Any:
+            now[0] += timedelta(seconds=20)  # the attempt used up the time left: the retry must not start
+            raise MarketDataRequestError("TimeoutError")
+
+    monkeypatch.setattr(live, "DeadlineJsonHttpClient", Drip)
+    with pytest.raises(live.LiveEnsembleDeadline):
+        near.get_json("https://provider.example/x")
+
+
+def test_past_the_publish_grace_a_finished_section_is_not_written(monkeypatch: pytest.MonkeyPatch) -> None:
+    _on(monkeypatch)
+    monkeypatch.setattr(backtest, "SCREEN_MIN_MARKET_CAP", 0.0)
+    monkeypatch.setattr(backtest, "SCREEN_MIN_DOLLAR_VOLUME", 0.0)
+    monkeypatch.setattr(backtest, "SCREEN_TOP_PER_EXCHANGE", 1)
+    database, http = _live_world()
+    with pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK + timedelta(minutes=10 * _target_calls(http)),
+                         deadline=CLOCK + timedelta(minutes=2, seconds=30), markets=("NASDAQ",))
+    assert _target_calls(http) == 1 and database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
 
 
 # ------------------------------------------------------------------ the nightly run: live fetches in memory, one snapshot per market
