@@ -632,3 +632,103 @@ def test_feed_the_lag_and_the_reasons_a_signal_did_not_buy_are_counted() -> None
     run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
     pattern = run.split('grep -oE "', 1)[1].split('" | tail', 1)[0]
     assert re.search(pattern, "r2d2-live-1  | 2026-10-28 10:00:00 INFO app.r2d2_live_engine " + line)
+
+
+def test_feed_every_message_counts_in_exactly_one_interval_under_a_concurrent_heartbeat() -> None:
+    """Codex 6473172399: the feed thread and the heartbeat race; no message may vanish from both intervals."""
+    import random
+    import threading
+
+    stream = LiveEngineStream("x", max_symbols=550)
+    stream.start_session(DAY)
+    engine = _engine()
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    lags = {"trade": [], "quote": []}
+    rng = random.Random(7)
+    payloads = []
+    for i in range(6000):
+        kind, lag = ("trade" if i % 2 else "quote"), rng.randint(1_000, 90_000)
+        lags[kind].append(lag)
+        if kind == "trade":
+            payloads.append((kind, json.dumps({"s": "AAA", "p": 98.0, "v": 10, "t": now_ms - lag, "ms": "open"})))
+        else:
+            payloads.append((kind, json.dumps({"s": "AAA", "bp": 98.0, "ap": 98.01, "t": now_ms - lag})))
+    done = threading.Event()
+
+    def feed() -> None:
+        for kind, payload in payloads:
+            (stream._record if kind == "trade" else stream._record_quote)(payload)
+        done.set()
+
+    lines = []
+    worker = threading.Thread(target=feed)
+    worker.start()
+    while not done.is_set():
+        lines.append(engine_module.feed_line(stream, engine))
+    worker.join()
+    lines.append(engine_module.feed_line(stream, engine))
+    for kind in ("trade", "quote"):
+        counts = [int(line.split(kind + "_messages=")[1].split()[0]) for line in lines]
+        worst = [int(line.split(kind + "_lag_max_ms=")[1].split()[0]) for line in lines]
+        assert sum(counts) == len(lags[kind])  # every message in exactly one interval
+        assert max(worst) >= max(lags[kind]) - 50 and all(w == 0 for c, w in zip(counts, worst) if c == 0)
+
+
+@pytest.mark.parametrize("kind", ["trade", "quote"])
+def test_feed_a_message_arriving_while_the_heartbeat_takes_the_interval_counts_once_with_its_lag(kind: str) -> None:
+    """Codex 6473172399, the directed interleaving: the heartbeat is INSIDE the take (holding the gauges' lock) when the
+    feed applies a 7 s late message. The feed must wait for the take, and the message must count in exactly one interval
+    — the next — with its lag as THAT interval's worst; the tape or the NBBO gets it either way."""
+    import threading
+    import time as wall
+
+    stream = LiveEngineStream("x", max_symbols=550)
+    stream.start_session(DAY)
+    engine = _engine()
+    heartbeat = threading.current_thread()
+    inside, moments = threading.Event(), {}
+
+    class HeldLock:
+        def __init__(self) -> None:
+            self.inner = threading.Lock()
+
+        def __enter__(self):
+            self.inner.acquire()
+            if threading.current_thread() is heartbeat and not inside.is_set():
+                inside.set()
+                wall.sleep(0.3)  # the feed thread reaches the gauges now
+                moments["released"] = wall.monotonic()
+            return self
+
+        def __exit__(self, *exc):
+            self.inner.release()
+            return False
+
+    stream._gauge_lock = HeldLock()  # type: ignore[assignment]
+    stamp = int(_at(10, 0).timestamp() * 1000)
+    payload = (json.dumps({"s": "AAA", "p": 98.0, "v": 10, "t": stamp, "ms": "open"}) if kind == "trade"
+               else json.dumps({"s": "AAA", "bp": 98.0, "ap": 98.01, "t": stamp}))
+    lag_at_send = {}
+
+    def feed() -> None:
+        inside.wait(5)
+        lag_at_send["ms"] = int(wall.time() * 1000) - stamp
+        (stream._record if kind == "trade" else stream._record_quote)(payload)
+        moments["fed"] = wall.monotonic()
+
+    worker = threading.Thread(target=feed)
+    worker.start()
+    first = engine_module.feed_line(stream, engine)
+    worker.join(5)
+    second = engine_module.feed_line(stream, engine)
+    assert inside.is_set(), "the heartbeat must take the gauges under the lock the feed updates them with"
+    assert moments["fed"] >= moments["released"]  # the feed waited for the take: it never wrote into a half-taken interval
+    lines = [first, second]
+    counts = [int(line.split(kind + "_messages=")[1].split()[0]) for line in lines]
+    worst = [int(line.split(kind + "_lag_max_ms=")[1].split()[0]) for line in lines]
+    assert counts == [0, 1]  # exactly one interval: the next
+    assert worst[0] == 0 and lag_at_send["ms"] <= worst[1] < lag_at_send["ms"] + 5_000  # its lag in that same interval
+    if kind == "trade":
+        assert stream.view("AAA").price == 98.0
+    else:
+        assert stream.nbbo["AAA"][:2] == (98.0, 98.01)

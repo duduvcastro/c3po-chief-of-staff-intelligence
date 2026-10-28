@@ -126,6 +126,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.lag_ms = {"trade": 0, "quote": 0}
         self.lag_max_ms = {"trade": 0, "quote": 0}
         self.messages = {"trade": 0, "quote": 0}
+        self._gauge_lock = Lock()  # the feed thread updates, the heartbeat takes and resets: every message in ONE interval
 
     def set_group(self, name: str, symbols: list[str], *, priority: int = 50) -> None:
         super().set_group(name, symbols, priority=priority)
@@ -183,10 +184,19 @@ class LiveEngineStream(EodhdRealtimeStream):
 
     def _lag(self, feed: str, stamp: int) -> None:
         lag = int(clock_time.time() * 1000) - stamp
-        self.lag_ms[feed] = lag
-        self.messages[feed] += 1
-        if lag > self.lag_max_ms[feed]:
-            self.lag_max_ms[feed] = lag
+        with self._gauge_lock:
+            self.lag_ms[feed] = lag
+            self.messages[feed] += 1
+            if lag > self.lag_max_ms[feed]:
+                self.lag_max_ms[feed] = lag
+
+    def take_gauges(self) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+        """(last lag, worst lag, messages) of the interval that ends now, read and reset in one step under the lock the
+        feed updates them with (Codex 6473172399): a message counts in exactly one interval, its lag in that one's worst."""
+        with self._gauge_lock:
+            taken = dict(self.lag_ms), self.lag_max_ms, self.messages
+            self.lag_max_ms, self.messages = {"trade": 0, "quote": 0}, {"trade": 0, "quote": 0}
+        return taken
 
     def start_session(self, day: date, *, restoring: bool = False) -> None:
         """A new session's tapes. ``restoring``: the trades the feed delivers until ``restore`` are HELD, then applied on top
@@ -715,10 +725,8 @@ def heartbeat(stream: Any, engine: "Engine", moment: datetime) -> str:
 def feed_line(stream: Any, engine: "Engine") -> str:
     """How late the feed is and why signals did not buy: numbers only (published by the status workflow). Resets the
     worst lag of the interval."""
-    lag, worst = dict(getattr(stream, "lag_ms", {})), dict(getattr(stream, "lag_max_ms", {}))
-    count = dict(getattr(stream, "messages", {}))
-    if hasattr(stream, "lag_max_ms"):
-        stream.lag_max_ms, stream.messages = {"trade": 0, "quote": 0}, {"trade": 0, "quote": 0}
+    take = getattr(stream, "take_gauges", None)
+    lag, worst, count = take() if take is not None else ({}, {}, {})
     skips = engine.skips
     return ("R2D2 live feed: trade_messages=%d quote_messages=%d trade_lag_ms=%d quote_lag_ms=%d trade_lag_max_ms=%d "
             "quote_lag_max_ms=%d skips held=%d slots=%d noquote=%d stale=%d spread=%d"
