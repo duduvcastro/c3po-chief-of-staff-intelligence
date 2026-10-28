@@ -14,6 +14,7 @@ last 20 sessions; the open of each is its first regular-session trade on the str
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -25,6 +26,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
+
+import websockets
 
 from . import r2d2_lab_live
 from .market_data.eodhd_stream import EodhdRealtimeStream
@@ -116,6 +119,74 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.nbbo: dict[str, tuple[float, float, datetime]] = {}
         self._pending: list[tuple[str, float, float, int, float]] | None = None
         self.restored_minute: int | None = None  # the minute of a restore: earlier minutes may miss the trades of the gap
+        self._groups_version = 0  # bumped by every ``set_group``: the feed loop recomputes its subscription only then
+        # how late the feed is: receipt time minus the message's own time (ms), the last message and the worst since the
+        # last heartbeat, and the messages since the last heartbeat (0 = a silent feed, not a punctual one), per feed;
+        # numbers only, published by the status workflow
+        self.lag_ms = {"trade": 0, "quote": 0}
+        self.lag_max_ms = {"trade": 0, "quote": 0}
+        self.messages = {"trade": 0, "quote": 0}
+
+    def set_group(self, name: str, symbols: list[str], *, priority: int = 50) -> None:
+        super().set_group(name, symbols, priority=priority)
+        with self._lock:
+            self._groups_version += 1
+
+    async def _run_feed(self, feed: str, endpoint: str, recorder: Any) -> None:
+        """The frozen module's feed loop, connection and errors unchanged, without its per-message bookkeeping: the module
+        recomputes the whole subscription and the V2 lease evidence before EVERY message (~40 us each), which a 500-name
+        quote feed cannot afford — the reader fell behind and every quote reached the engine stale (28/10: 164 signals,
+        no buy). Here the subscription is recomputed only when a group changed; this process holds no V2 lease."""
+        url = f"wss://ws.eodhistoricaldata.com/ws/{endpoint}?api_token={self.api_token}"
+        while not self._stop.is_set():
+            self._set_feed_state(feed, "connecting")
+            try:
+                async with websockets.connect(
+                    url,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    close_timeout=2,
+                    max_size=1_000_000,
+                ) as socket:
+                    authorization = json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
+                    status_code = authorization.get("status_code", authorization.get("status"))
+                    if status_code != 200:
+                        raise RuntimeError(str(authorization.get("message") or "authorization failed"))
+                    self._set_feed_state(feed, "connected")
+                    subscribed: set[str] = set()
+                    version = -1  # a new connection subscribes from scratch
+                    while not self._stop.is_set():
+                        if version != self._groups_version:
+                            with self._lock:
+                                version = self._groups_version
+                                desired = set(self._desired_symbols())
+                            removed = sorted(subscribed - desired)
+                            added = sorted(desired - subscribed)
+                            if removed:
+                                await asyncio.wait_for(socket.send(json.dumps({"action": "unsubscribe", "symbols": ",".join(removed)})), timeout=2)
+                            if added:
+                                await asyncio.wait_for(socket.send(json.dumps({"action": "subscribe", "symbols": ",".join(added)})), timeout=2)
+                            subscribed = desired
+                        try:
+                            payload = await asyncio.wait_for(socket.recv(), timeout=1)
+                        except TimeoutError:
+                            continue
+                        recorder(payload)
+            except Exception as exc:
+                if self._stop.is_set():
+                    break
+                safe_error = str(exc).replace(self.api_token, "[redacted]")[:180]
+                logger.warning("EODHD realtime %s reconnect: %s", feed, safe_error)
+                self._set_feed_state(feed, "error", safe_error)
+                await asyncio.sleep(3)
+        self._set_feed_state(feed, "stopped")
+
+    def _lag(self, feed: str, stamp: int) -> None:
+        lag = int(clock_time.time() * 1000) - stamp
+        self.lag_ms[feed] = lag
+        self.messages[feed] += 1
+        if lag > self.lag_max_ms[feed]:
+            self.lag_max_ms[feed] = lag
 
     def start_session(self, day: date, *, restoring: bool = False) -> None:
         """A new session's tapes. ``restoring``: the trades the feed delivers until ``restore`` are HELD, then applied on top
@@ -173,6 +244,7 @@ class LiveEngineStream(EodhdRealtimeStream):
             return
         if not symbol or price <= 0 or stamp <= 0 or item.get("dp") is True or str(item.get("ms") or "open") != "open":
             return
+        self._lag("trade", stamp)
         self.record_trade(symbol, price, size, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc))
 
     def record_trade(self, symbol: str, price: float, size: float, at: datetime) -> None:
@@ -197,6 +269,7 @@ class LiveEngineStream(EodhdRealtimeStream):
             return
         if not symbol or bid <= 0 or ask <= 0 or ask < bid or stamp <= 0:
             return
+        self._lag("quote", stamp)
         self.record_quote(symbol, bid, ask, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc))
 
     def record_quote(self, symbol: str, bid: float, ask: float, at: datetime) -> None:
@@ -367,6 +440,8 @@ class Engine:
         for symbol, position in state.positions.items():  # a carried name stays tradeable for its exit
             self.members.setdefault(symbol, Member(symbol, position.market, 0.0, 0.0))
         self.resumed = state.session == day.isoformat()
+        # why a signal did not buy, since this process started (``signals`` is the session's, restored on a restart)
+        self.skips = {"held": 0, "slots": 0, "noquote": 0, "stale": 0, "spread": 0}
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -455,13 +530,20 @@ class Engine:
                     continue
                 self.below[symbol] = False
                 self.signals += 1
-                if symbol in self.state.positions or len(self.state.positions) >= RULE["slots"] or not market.quote_fresh(now):
-                    continue
-                assert market.bid is not None and market.ask is not None
-                spread_bps = (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4
-                if spread_bps > RULE["spread_max_bps"]:
-                    continue
-                new.append(self._buy(symbol, market.ask, gap, spread_bps, now))
+                if symbol in self.state.positions:
+                    self.skips["held"] += 1
+                elif len(self.state.positions) >= RULE["slots"]:
+                    self.skips["slots"] += 1
+                elif market.bid is None or market.ask is None or market.quote_at is None:
+                    self.skips["noquote"] += 1
+                elif not market.quote_fresh(now):
+                    self.skips["stale"] += 1
+                else:
+                    spread_bps = (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4
+                    if spread_bps > RULE["spread_max_bps"]:
+                        self.skips["spread"] += 1
+                    else:
+                        new.append(self._buy(symbol, market.ask, gap, spread_bps, now))
         return new
 
     def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime) -> dict[str, Any]:
@@ -630,6 +712,21 @@ def heartbeat(stream: Any, engine: "Engine", moment: datetime) -> str:
                len(engine.state.positions), len(engine.fills), engine.book(moment)["nav_usd"]))
 
 
+def feed_line(stream: Any, engine: "Engine") -> str:
+    """How late the feed is and why signals did not buy: numbers only (published by the status workflow). Resets the
+    worst lag of the interval."""
+    lag, worst = dict(getattr(stream, "lag_ms", {})), dict(getattr(stream, "lag_max_ms", {}))
+    count = dict(getattr(stream, "messages", {}))
+    if hasattr(stream, "lag_max_ms"):
+        stream.lag_max_ms, stream.messages = {"trade": 0, "quote": 0}, {"trade": 0, "quote": 0}
+    skips = engine.skips
+    return ("R2D2 live feed: trade_messages=%d quote_messages=%d trade_lag_ms=%d quote_lag_ms=%d trade_lag_max_ms=%d "
+            "quote_lag_max_ms=%d skips held=%d slots=%d noquote=%d stale=%d spread=%d"
+            % (int(count.get("trade", 0)), int(count.get("quote", 0)), int(lag.get("trade", 0)), int(lag.get("quote", 0)),
+               int(worst.get("trade", 0)), int(worst.get("quote", 0)),
+               skips["held"], skips["slots"], skips["noquote"], skips["stale"], skips["spread"]))
+
+
 def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[..., Any], base_url: str, token: str,
                 day: date, cache_dir: Path, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                 sleep: Callable[[float], None] = clock_time.sleep, job: Callable[[], Any] | None = None) -> EngineState:
@@ -688,6 +785,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             guarded(lambda: commit(moment))
             if not fills:
                 logger.info("%s", heartbeat(stream, engine, moment))
+                logger.info("%s", feed_line(stream, engine))
             last_marks = clock_time.monotonic()
         sleep(1.0)
     engine.close_session()

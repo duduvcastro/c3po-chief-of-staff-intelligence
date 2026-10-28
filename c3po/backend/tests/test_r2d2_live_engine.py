@@ -513,3 +513,122 @@ def test_r2b_a_retry_after_the_first_checkpoint_failed_keeps_the_opening_and_the
     assert stream.opening == {"AAA": 98.0}
     assert abs((stream.view("AAA").vwap or 0) - (98.0 * 1000 + 100.5 * 100) / 1100) < 1e-9
     assert state.candidates == {"AAA": pytest.approx(-2.0)}
+
+
+# ---- 28/10: 164 signals and no buy — the feed reader fell behind (every quote stale) or the spread refused them
+def test_feed_the_reader_subscribes_once_and_again_only_when_a_group_changes(monkeypatch) -> None:
+    import asyncio
+
+    stream = LiveEngineStream("tok", max_symbols=550)
+    stream.set_group(engine_module.STREAM_GROUP, ["AAA", "BBB"], priority=200)
+    stream.start_session(DAY)
+    sent: list[dict] = []
+    stamp = int(_at(10, 0).timestamp() * 1000)
+    trades = [json.dumps({"s": "AAA", "p": 98.0 + i / 100, "v": 100, "t": stamp + i, "ms": "open"}) for i in range(50)]
+
+    class Socket:
+        def __init__(self) -> None:
+            self.messages = [json.dumps({"status_code": 200})] + trades
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send(self, text: str) -> None:
+            sent.append(json.loads(text))
+
+        async def recv(self) -> str:
+            if len(self.messages) == 25:  # mid-stream, the held names change once
+                stream.set_group(engine_module.STREAM_GROUP, ["AAA", "CCC"], priority=200)
+            if not self.messages:
+                stream._stop.set()
+                raise TimeoutError
+            return self.messages.pop(0)
+
+    monkeypatch.setattr(engine_module.websockets, "connect", lambda url, **kwargs: Socket())
+    asyncio.run(stream._run_feed("trade", "us", stream._record))
+    assert sent == [{"action": "subscribe", "symbols": "AAA,BBB"},
+                    {"action": "unsubscribe", "symbols": "BBB"}, {"action": "subscribe", "symbols": "CCC"}]
+    assert stream.view("AAA").price == pytest.approx(98.49)  # every message reached the tape, in order
+    assert stream.status == "stopped"
+
+
+def test_feed_a_reconnect_subscribes_from_scratch_and_never_prints_the_token(monkeypatch, caplog) -> None:
+    import asyncio
+
+    stream = LiveEngineStream("tok-secret", max_symbols=550)
+    stream.set_group(engine_module.STREAM_GROUP, ["AAA"], priority=200)
+    sent: list[dict] = []
+    connections = {"n": 0}
+
+    class Socket:
+        def __init__(self) -> None:
+            connections["n"] += 1
+            self.first = connections["n"] == 1
+            self.messages = [json.dumps({"status_code": 200})]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send(self, text: str) -> None:
+            sent.append(json.loads(text))
+
+        async def recv(self) -> str:
+            if self.messages:
+                return self.messages.pop(0)
+            if self.first:
+                raise RuntimeError("dropped tok-secret")
+            stream._stop.set()
+            raise TimeoutError
+
+    async def no_sleep(seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(engine_module.websockets, "connect", lambda url, **kwargs: Socket())
+    monkeypatch.setattr(engine_module.asyncio, "sleep", no_sleep)
+    asyncio.run(stream._run_feed("quote", "us-quote", stream._record_quote))
+    assert sent == [{"action": "subscribe", "symbols": "AAA"}, {"action": "subscribe", "symbols": "AAA"}]
+    assert "tok-secret" not in caplog.text and "[redacted]" in caplog.text
+
+
+def test_feed_the_lag_and_the_reasons_a_signal_did_not_buy_are_counted() -> None:
+    import re
+    import yaml
+
+    stream = LiveEngineStream("x", max_symbols=550)
+    stream.start_session(DAY)
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    stream._record_quote(json.dumps({"s": "AAA", "bp": 98.0, "ap": 98.01, "t": now_ms - 7000}))
+    stream._record_quote(json.dumps({"s": "AAA", "bp": 98.0, "ap": 98.01, "t": now_ms - 2000}))
+    stream._record_quote(json.dumps({"s": "AAA", "bp": 98.0, "ap": 98.01, "t": 0}))  # malformed: never a gauge reading
+    assert 1500 < stream.lag_ms["quote"] < 3000 and 6500 < stream.lag_max_ms["quote"] < 8000
+    assert stream.messages == {"trade": 0, "quote": 2}
+
+    engine = _engine()
+    t = _at(9, 40)
+    views = {"AAA": _view(97.9, 98.0, 97.89, 97.91, t), "CCC": _view(28.9, 29.0, 28.80, 29.00, t)}
+    engine.step(t, lambda s: views.get(s, MarketView()))
+    t = _at(9, 41)
+    stale = MarketView(price=98.1, trade_at=t, vwap=98.0, bid=98.095, ask=98.105, quote_at=t - timedelta(seconds=6))
+    views = {"AAA": stale, "CCC": _view(29.1, 29.0, 29.0, 29.2, t)}  # AAA quote 6 s old, CCC spread 69 bps
+    assert engine.step(t, lambda s: views.get(s, MarketView())) == []
+    assert engine.skips == {"held": 0, "slots": 0, "noquote": 0, "stale": 1, "spread": 1} and engine.signals == 2
+    views = {"AAA": _view(97.9, 98.0, 97.89, 97.91, t), "CCC": MarketView(price=28.9, trade_at=t, vwap=29.0)}
+    engine.step(_at(9, 42), lambda s: views.get(s, MarketView()))
+    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, _at(9, 43)), "CCC": MarketView(price=29.1, trade_at=t, vwap=29.0)}
+    fills = engine.step(_at(9, 43), lambda s: views.get(s, MarketView()))  # AAA buys; CCC never had a quote
+    assert [f["symbol"] for f in fills] == ["AAA"] and engine.skips["noquote"] == 1 and engine.signals == 4
+
+    line = engine_module.feed_line(stream, engine)
+    assert line.startswith("R2D2 live feed: trade_messages=0 quote_messages=2 trade_lag_ms=0 quote_lag_ms=")
+    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1")
+    assert stream.lag_max_ms == {"trade": 0, "quote": 0} and stream.messages == {"trade": 0, "quote": 0}  # per interval
+    root = Path(__file__).resolve().parents[3]
+    run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
+    pattern = run.split('grep -oE "', 1)[1].split('" | tail', 1)[0]
+    assert re.search(pattern, "r2d2-live-1  | 2026-10-28 10:00:00 INFO app.r2d2_live_engine " + line)
