@@ -1,0 +1,122 @@
+name: Valuation as-filed receipt (read-only)
+
+# The as-filed SEC poll (Investor Relations worker, source ``sec_asfiled``) as the host runs it: the switch and the
+# backfill as the RUNNING worker's environment holds them, read by the app's own parsers (valuation_env), when that
+# worker started, and its latest runs with their coverage and error COUNTS (``na``: a run without that field). Read-only: one SSH session, a read-only database session, nothing written. This repository is PUBLIC: only
+# lines of exact shapes (dates, numbers and closed sets) are printed — never a CIK, a symbol or an error text.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "latest as-filed runs to list (1-24)"
+        default: "8"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valuation-asfiled-receipt
+  cancel-in-progress: false
+
+jobs:
+  receipt:
+    runs-on: ubuntu-latest
+    environment: production  # the current host's address and known hosts
+    timeout-minutes: 10
+    steps:
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh || exit 1
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy || exit 1
+          chmod 600 ~/.ssh/c3po_deploy || exit 1
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts || exit 1
+          chmod 600 ~/.ssh/known_hosts || exit 1
+
+      - name: Read the as-filed switch and runs
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUNS: ${{ inputs.runs }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$RUNS" =~ ^[0-9]{1,2}$ ]] && [ "$RUNS" -ge 1 ] && [ "$RUNS" -le 24 ] || { echo "runs must be 1-24"; exit 1; }
+          rc=0
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "RUNS=$RUNS bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2>&1 || rc=$?
+          set -uo pipefail
+          cd /opt/chief-of-staff-digital || exit 10
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          ir=$("${compose[@]}" ps -q investor-relations-worker) || exit 11
+          [ -n "$ir" ] || { echo "WORKER absent"; exit 12; }
+          worker=$(docker inspect -f '{{.State.Status}} {{.State.StartedAt}}' "$ir") || exit 13
+          env=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$ir") || exit 13
+          echo "WORKER state=${worker%% *} started=$(printf '%s' "${worker#* }" | cut -c1-19)Z"
+          # the raw values go to the app's own parsers (never printed): the receipt says what the worker does with them
+          enabled=$(printf '%s\n' "$env" | awk -F= '$1 == "C3PO_VALUATION_ASFILED_ENABLED" {print substr($0, index($0, "=") + 1); found=1} END {if (!found) print "\001unset"}')
+          backfill=$(printf '%s\n' "$env" | awk -F= '$1 == "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL" {print substr($0, index($0, "=") + 1); found=1} END {if (!found) print "\001unset"}')
+          "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' -e "RUNS=$RUNS" \
+            -e "RAW_ENABLED=$enabled" -e "RAW_BACKFILL=$backfill" api python - <<'PY' || exit 14
+          import json, os
+          from datetime import timezone
+          from app import valuation_env
+          from app.config import get_settings
+          from app.database import Database
+
+          def switch_value(raw, name):
+              if raw == "\x01unset":
+                  os.environ.pop(name, None)
+              else:
+                  os.environ[name] = raw
+              return "\x01unset" if raw == "\x01unset" else raw
+
+          raw_enabled = switch_value(os.environ["RAW_ENABLED"], valuation_env.ASFILED_ENABLED_ENV)
+          enabled = "on" if valuation_env.asfiled_enabled() else "off"
+          switch_value(os.environ["RAW_BACKFILL"], valuation_env.ASFILED_BACKFILL_ENV)
+          setting = "unset" if raw_enabled == "\x01unset" else raw_enabled if raw_enabled in {"true", "false"} else "other"
+          print("SWITCH enabled=%s setting=%s backfill_per_poll=%d" % (enabled, setting, valuation_env.asfiled_backfill_issuers_per_poll()))
+
+          def iso(value):
+              return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if value else "none"
+
+          def count(meta, key):
+              if key not in meta:  # older runs (before 20-22/10), running ones and early failures lack it: never a 0
+                  return "na"
+              value = meta.get(key)
+              return str(len(value)) if isinstance(value, list) else str(int(value or 0))
+
+          database = Database(get_settings())
+          with database.connection() as connection:
+              rows = connection.execute(
+                  "SELECT run.status, run.started_at, run.completed_at, COALESCE(run.records_read, 0), COALESCE(run.records_written, 0), "
+                  "run.metadata, run.error_summary IS NOT NULL FROM ingestion_runs run JOIN data_sources source ON source.id = run.source_id "
+                  "WHERE source.code = 'sec_asfiled' ORDER BY run.started_at DESC LIMIT %s", (int(os.environ["RUNS"]),)).fetchall()
+          print("RUNS listed=%d" % len(rows))
+          for status, started, completed, read, written, meta, has_error in rows:
+              meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
+              status = status if status in {"running", "succeeded", "partial", "failed"} else "other"
+              print("RUN status=%s started=%s completed=%s read=%d written=%d issuers=%s observed=%s failed=%s unattributed=%s "
+                    "header_failures=%s error_summary=%s" % (
+                        status, iso(started), iso(completed), int(read), int(written), count(meta, "issuers"),
+                        count(meta, "observed_issuers"), count(meta, "failed_issuers"), count(meta, "unattributed_failures"),
+                        count(meta, "header_failures"), "yes" if has_error else "no"))
+          PY
+          exit 0
+          REMOTE
+          # only lines of EXACT shapes are published (a public repository); anything else is counted, never shown
+          n='([0-9]+|na)'
+          shapes="^(WORKER (absent|state=[a-z]+ started=[0-9T:-]+Z)|SWITCH enabled=(on|off) setting=(true|false|unset|other) backfill_per_poll=[0-9]{1,3}|RUNS listed=[0-9]+|RUN status=(running|succeeded|partial|failed|other) started=([0-9T:-]+Z|none) completed=([0-9T:-]+Z|none) read=[0-9]+ written=[0-9]+ issuers=$n observed=$n failed=$n unattributed=$n header_failures=$n error_summary=(yes|no))\$"
+          { grep -E "$shapes" "$RUNNER_TEMP/out.txt" || true; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "other lines (counted, not printed): $(grep -cvE "$shapes" "$RUNNER_TEMP/out.txt" || true)"
+          echo "remote exit status: $rc"
+          [ "$rc" = 0 ] || exit "$rc"
+          # a receipt without its worker, switch and run count is no receipt
+          for shape in '^WORKER state=' '^SWITCH enabled=' '^RUNS listed='; do
+            grep -qE "$shape" "$RUNNER_TEMP/out.txt" || { echo "receipt incomplete"; exit 15; }
+          done
+          listed=$(grep -oE '^RUNS listed=[0-9]+' "$RUNNER_TEMP/out.txt" | cut -d= -f2)
+          [ "$(grep -E "$shapes" "$RUNNER_TEMP/out.txt" | grep -c '^RUN status=' || true)" = "$listed" ] || { echo "receipt incomplete"; exit 15; }
