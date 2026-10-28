@@ -1,4 +1,4 @@
-"""Valuation ensemble — the nightly LIVE producer of the signed grid's PRIMARY target price (US tested population).
+"""Valuation ensemble — the nightly LIVE producer of the signed grid's PRIMARY target price, for EVERY US common stock.
 
 Once the pinned point-in-time grid (``valuation_ensemble_grid.compute_grid_section``, instrument pin ``b77f2400…``)
 reports PASS, the served target price may switch to the ensemble's primary variant
@@ -7,52 +7,57 @@ inputs at the run's clock ``T`` instead of the grid's stored snapshots — throu
 and called unchanged: the rev3 admission and screen inputs (``valuation_pit_rerun.PitSourceResolver`` /
 ``PitComputation.screen_inputs``), the as-filed reader and payload, the pinned price publication (close of D, ≥ 90 valid
 sessions, capital events, OLS beta on the equal-weight proxy), ``curve_package_at``, ``reduce_company_facts``,
-``valuation_ensemble_grid._shares``, ``GridCompanyInputs``, ``derive_premises``, ``evaluate_models`` (peers = every
-evaluable name of the exchange: a batch, never on demand), ``grid_consensus_at`` (latest eligible target per house in
-``(T − 90 d, T]``, ≥ 3 houses, house mean) and ``aggregate_grid_variants``. Only the per-name loop of
-``compute_grid_section`` (inline there, not a function) is restated in ``compute_live_section``; the parity test pins it to
-the grid's floats on the grid's own fixture.
+``valuation_ensemble_grid._shares``, ``GridCompanyInputs``, ``derive_premises``, ``evaluate_models``,
+``grid_consensus_at`` (latest eligible target per house in ``(T − 90 d, T]``, ≥ 3 houses, house mean) and
+``aggregate_grid_variants``. Only the per-name loop of ``compute_grid_section`` (inline there, not a function) is restated
+here (``_LiveSection._prepare`` / ``_finalize``); the parity tests pin it to the grid's floats on the grid's own fixture.
 
-Live inputs per name (``gather_live_inputs`` / ``run_nightly``):
+Population (owner, 28/10/2026: "o valuation tem que cobrir todos os papeis USA"), no cap of its own:
 
-* catalogue row (symbol, security type, sector, valuation profile): the latest ``valuation_universe/<M>_UNIVERSE``
-  (≤ 300 stocks + 25 ETFs, ``us_screener``), read once by id and checked against the resolver's classification hash;
-* close of D, valid sessions, capital events, beta: ``PinnedPrices`` on the latest ``valuation_price_history``
-  publication available at ``T`` (no network);
-* SEC as-filed facts accepted ≤ ``T``: ``AsFiledReader`` on ``statement_vintages`` (migration 051), ``--statements
-  vintages`` semantics (an uncovered name is not evaluable);
-* Treasury 3Y/10Y: ``PitFetchService.fetch_macro`` (EODHD GBOND, 15 years) kept IN MEMORY, then ``curve_package_at``;
-* analyst targets: ``PitFetchService.fetch_targets`` (FMP ``price-target-news``, the same pages) kept IN MEMORY, read only
-  for names whose company inputs are evaluable (any other name's primary is unevaluable whatever its consensus: one value
-  is below the three the aggregation needs);
-* screen: ``valuation_pit_backtest_report.screen`` on the volume basis ``valuation_pit_grid.volume_check`` decides over
-  the pinned publications (``None`` when undetermined: TPs unaffected, ``screened`` unknown).
+* the SERVED catalogue — ``valuation_universe/<M>_UNIVERSE`` (today ≤ 300 stocks + 25 ETFs, ``us_screener``) — is the
+  grid's catalogue: its names are computed EXACTLY as the grid computes them (beta proxy = its symbols, peers = its
+  evaluable names), and ``pit_tested`` marks the ones the grid's screen keeps (``valuation_pit_backtest_report.screen``
+  on its admitted names: stock, close ≥ 3, cap ≥ 750 M, 20-session median dollar volume ≥ 20 M, the 300 most liquid);
+* plus every other common stock (``security_type == "Stock"``) of the latest listed-universe publication
+  (``official_listing_catalogue/<M>``, the draft listed universe), when one is published and its manifest verifies. These
+  names carry no classification (the listing has no sector or profile), so the peer models refuse them; they are valued
+  with the same proxy and peers as the tested names (adding them changes no tested number), admitted in chunks of
+  ``EXTRA_CHUNK`` whose price series are dropped after use (bounded memory), and read at most ``EXTRA_TARGET_PAGES`` pages
+  of targets (a history that fills them is refused, not truncated). ``pit_tested`` is False for them: buy permission
+  stays with the tested names.
+
+Order under the deadline and the breaker: the tested names of BOTH exchanges are read first, then every other evaluable
+name by liquidity (the 20-session median dollar volume), so a deadline reaches the tested names before any other; each
+section records how many names were reached and how many are pending.
 
 Where live cannot equal the grid's PIT inputs: the catalogue is today's, not the grid's pinned one; the price publication
-is tonight's (its history can be re-adjusted by the provider since the grid's 120-month vintage); the Treasury history
-and the target history are fetched now (a target or close the provider revised, deleted or backfilled differs, and the
-grid's own snapshot was fetched once, before its run); the resolver's outstandingShares fallback (screen market cap only)
-reads the latest ``valuation_pit_source`` EODHD snapshot exactly as rev3 does, which is stale; ``T`` is the run's clock,
-not the grid's 01:00 America/Sao_Paulo convention. The fetches persist NOTHING to ``valuation_pit_source``: the signed
-grid's pinned sources stay untouched.
+is tonight's (its history can be re-adjusted by the provider since the grid's 120-month vintage); the Treasury and target
+histories are fetched now (a revised, deleted or backfilled row differs, and the grid's snapshot was fetched once, before
+its run); the resolver's outstandingShares fallback (screen market cap only) reads the latest ``valuation_pit_source``
+EODHD snapshot exactly as rev3 does, which is stale; ``T`` is the run's clock, not the grid's 01:00 America/Sao_Paulo
+convention; the screen's volume basis is voted tonight (``valuation_pit_grid.volume_check`` over BOTH exchanges'
+publications), not read from the grid's manifest — when undetermined, ``pit_tested`` requires the name under BOTH bases.
+The fetches persist NOTHING to ``valuation_pit_source``: the signed grid's pinned sources stay untouched.
 
-Fail closed: a market whose price pin, catalogue, statements table or Treasury curve cannot be read writes no snapshot;
-a name it cannot evaluate gets ``origin = not_evaluable:<reason>`` and no number — a target fetch that fails is a refusal,
-never a TP without the consensus it could not read. One ``valuation_ensemble_live/<M>_UNIVERSE`` snapshot per market and
-night. Nothing here is served or selected (``valuation_official.market_of_entity`` ignores this analysis type); off by
-default (``valuation_env.ensemble_live_enabled``). Logs carry counts and error classes only, never a symbol.
+Fail closed: an exchange whose price pin, catalogue, statements table or Treasury curve cannot be read writes no snapshot;
+a name it cannot evaluate gets ``origin = not_evaluable:<reason>`` and no number — a target read that fails is a refusal,
+never a TP without the consensus it could not read; a section whose provider failed, whose tested names were not all
+reached or which has no TP at all is not published (``unpublishable``). Nothing here is served or selected
+(``valuation_official.market_of_entity`` ignores this analysis type); off by default
+(``valuation_env.ensemble_live_enabled``). Logs carry counts and error classes only, never a symbol.
 """
 from __future__ import annotations
 
 import hashlib
 import logging
+import math
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from . import valuation_env, valuation_pit_rerun as pit
 from .config import Settings
@@ -72,7 +77,7 @@ from .valuation_price_history import PriceHistoryService
 logger = logging.getLogger(__name__)
 
 ANALYSIS_TYPE = "valuation_ensemble_live"
-SCHEMA = "VALUATION-ENSEMBLE-LIVE-v1"
+SCHEMA = "VALUATION-ENSEMBLE-LIVE-v2"
 SOURCE = "ensemble_live"
 METHODOLOGY_KEY = "valuation_ensemble_live"
 METHODOLOGY_VERSION = 1
@@ -81,22 +86,44 @@ PRIMARY = GRID_PRIMARY_VARIANT  # = valuation_ensemble_pin.PROTOCOL_CONSTANTS["p
 STATEMENTS = "vintages"  # the grid's statements mode: as-filed SEC facts only
 CLASSIFICATION = "current_pinned_catalogue_rev3_convention"  # the only label GridCompanyInputs.sector_at_T admits (peer sectors)
 SIGNED_INSTRUMENT_PIN = "b77f2400ef5bac57bd266f3e2edb26a9d63356b5c3fc65d47da490c8c8be6f86"
-IMPLEMENTATION_FILES: tuple[str, ...] = (  # every module whose bytes can move a published number, hashed into the context
+LISTED_ANALYSIS = "official_listing_catalogue"  # the listed universe (draft): entity = the exchange, outputs = the catalogue
+LISTED_SCHEMA = "OFFICIAL-LISTED-UNIVERSE-v1"
+EXTRA_CHUNK = 250  # listed-only names admitted per resolver pass; their series are dropped after it
+EXTRA_TARGET_PAGES = 3  # target pages read for a listed-only name (100 rows each); a full read is refused, never truncated
+TARGET_PAGE_LIMIT = 100  # PitFetchService.fetch_targets' rows per page
+TARGETS_BREAKER_CONSECUTIVE = 10  # consecutive failed target reads = the provider is down (403/429/outage): stop reading
+TARGETS_MAX_FAILED_SHARE = 0.10  # an exchange whose failed target reads exceed this share of the attempted ones is not published
+IMPLEMENTATION_FILES: tuple[str, ...] = (  # every module whose bytes can move a published number or flag, hashed into the context
     "valuation_live_ensemble.py", "valuation_ensemble_grid.py", "valuation_ensemble_grid_inputs.py", "valuation_ensemble_grid_consensus.py",
     "valuation_ensemble_aggregation.py", "valuation_ensemble_models.py", "valuation_ensemble_inputs.py", "valuation_ensemble_adapters.py",
     "valuation_pit_rerun.py", "valuation_pit_backtest_report.py", "valuation_price_history.py", "valuation_v2_engine.py",
     "valuation_v3_macro.py", "sec_xbrl.py", "statement_vintages.py", "valuation_asfiled.py",
+    "valuation_official.py",  # session_date_of (which close is "close of D") and canonical_sha256
+    "valuation_panel.py",  # _positive inside the screen
+    "valuation_pit_grid.py",  # volume_check: the screen's volume basis
+    "market_data/eodhd.py", "market_data/http.py",  # the GBOND bars' number parsing and the JSON every live read decodes
 )
 
-TargetReader = Callable[[str, str], Sequence[Mapping[str, Any]]]
+
+class TargetReader(Protocol):
+    def __call__(self, market: str, symbol: str, *, pages: int | None = None) -> Sequence[Mapping[str, Any]]: ...
 
 
 class LiveEnsembleError(RuntimeError):
     """A market-level refusal: no snapshot is written for that market. The text is a stable code, never a symbol."""
 
 
+class LiveEnsembleDeadline(LiveEnsembleError):
+    """The night's wall-clock deadline passed: nothing more is read."""
+
+
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _check_deadline(deadline: datetime | None, clock: Callable[[], datetime]) -> None:
+    if deadline is not None and utc(clock()) >= utc(deadline):
+        raise LiveEnsembleDeadline("deadline_reached")
 
 
 def implementation_files() -> dict[str, str]:
@@ -104,12 +131,26 @@ def implementation_files() -> dict[str, str]:
     return {name: hashlib.sha256((app / name).read_bytes()).hexdigest() for name in IMPLEMENTATION_FILES}
 
 
+class _DeadlineHttp(JsonHttpClient):
+    """The provider client behind a deadline: every request checks it first, so a slow provider overruns the deadline by
+    at most ONE request (its own timeout × retries), never by a whole 20-page target history or the rest of a sweep."""
+
+    def __init__(self, inner: JsonHttpClient, *, deadline: datetime | None, clock: Callable[[], datetime]) -> None:
+        super().__init__(timeout=float(getattr(inner, "timeout", 0.0)), max_retries=int(getattr(inner, "max_retries", 0)))
+        self.inner, self.deadline, self.clock = inner, deadline, clock
+
+    def get_json(self, url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> Any:
+        _check_deadline(self.deadline, self.clock)
+        return self.inner.get_json(url, params=params, headers=headers)
+
+
 class LiveSourceFetch(pit.PitFetchService):
     """The PIT fetcher's own provider reads (``fetch_targets``, ``fetch_macro``: endpoints, pagination, units) with the
     payload kept in memory: ``_persist`` never writes ``valuation_pit_source``, whose snapshots the signed grid pins."""
 
-    def __init__(self, settings: Settings, database: Database, http: JsonHttpClient) -> None:
-        super().__init__(settings, database, http)
+    def __init__(self, settings: Settings, database: Database, http: JsonHttpClient, *, deadline: datetime | None = None,
+                 clock: Callable[[], datetime] | None = None) -> None:
+        super().__init__(settings, database, _DeadlineHttp(http, deadline=deadline, clock=clock or (lambda: datetime.now(timezone.utc))))
         self.captured: dict[str, Any] = {}
         self.calls: Counter[str] = Counter()
 
@@ -119,9 +160,13 @@ class LiveSourceFetch(pit.PitFetchService):
         self.calls[provider] += 1
         return "live:" + canonical_sha256(payload)
 
-    def target_rows(self, market: str, symbol: str) -> list[dict[str, Any]]:
-        """The RAW per-house target history of one name, as the grid's snapshot holds it (a list, else a refusal)."""
-        self.fetch_targets(market, symbol)
+    def target_rows(self, market: str, symbol: str, *, pages: int | None = None) -> list[dict[str, Any]]:
+        """The RAW per-house target history of one name, as the grid's snapshot holds it (a list, else a refusal);
+        ``pages`` None = the grid's own fetch (20 pages)."""
+        if pages is None:
+            self.fetch_targets(market, symbol)
+        else:
+            self.fetch_targets(market, symbol, pages=pages)
         payload = self.captured.pop(pit.source_entity_key(market, pit.PROVIDER_FMP, symbol), None)
         if not isinstance(payload, list):
             raise LiveEnsembleError("targets_not_captured")
@@ -155,10 +200,33 @@ def decide_volume_basis(database: Database, settings: Settings, prices: Mapping[
     return (str(decision) if decision in VOLUME_BASES else None), receipt
 
 
+def listed_population(database: Database, market: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Every common stock of the latest listed-universe publication of ``market``, as admitted catalogue rows WITHOUT
+    classification (the listing carries none); ``[]`` when none is published or its manifest does not verify."""
+    snapshot = database.latest_analysis_snapshot(LISTED_ANALYSIS, market)
+    if snapshot is None:
+        return [], {"status": "absent"}
+    outputs = _mapping(snapshot.get("outputs"))
+    try:
+        verified = (outputs.get("schema") == LISTED_SCHEMA and outputs.get("market") == market
+                    and outputs.get("manifest_sha256") == canonical_hash({k: v for k, v in outputs.items() if k != "manifest_sha256"}))
+    except (TypeError, ValueError):
+        verified = False
+    reference: dict[str, Any] = {"snapshot_id": str(snapshot.get("id")), "manifest_sha256": outputs.get("manifest_sha256")}
+    if not verified:
+        return [], {**reference, "status": "refused_manifest"}
+    symbols = {str(item.get("symbol") or "").strip().upper() for item in outputs.get("listings") or []
+               if isinstance(item, Mapping) and item.get("market") == market and item.get("security_type") == "Stock"}
+    rows = [{"symbol": symbol, **{name: None for name in pit.CURRENT_FIELDS_ADMITTED}, "security_type": "Stock"}
+            for symbol in sorted(symbols) if symbol]
+    return rows, {**reference, "status": "read", "stocks": len(rows)}
+
+
 @dataclass(frozen=True)
 class LiveInputs:
-    """Everything one (exchange, T) section reads, resolved before any model runs. ``targets(market, symbol)`` returns the
-    RAW target rows or raises (a provider failure); the parity test passes the grid's pinned rows instead."""
+    """Everything one (exchange, T) section reads, resolved before any model runs. ``targets(market, symbol, pages=)``
+    returns the RAW target rows or raises (a provider failure); the parity test passes the grid's pinned rows instead.
+    ``catalogue`` and its admission are the served catalogue's (the grid's); ``extra_rows`` are the listed-only stocks."""
     market: str
     as_of: datetime
     prices: pit.PinnedPrices
@@ -173,14 +241,42 @@ class LiveInputs:
     targets: TargetReader
     volume_basis: str | None
     volume_check: dict[str, Any] | None = None
+    extra_rows: list[dict[str, Any]] = field(default_factory=list)
+    listed_reference: dict[str, Any] = field(default_factory=dict)
+    database: Any = None
+
+
+class _PopulationResolver(pit.PitSourceResolver):
+    """rev3's resolver over a given set of rows (one chunk of listed-only names) instead of the latest catalogue: every
+    other step of ``resolve`` — statements, sessions, close, shares, capital events, screen inputs — is the pinned one."""
+
+    def __init__(self, database: Database, *, rows: Sequence[Mapping[str, Any]], **kwargs: Any) -> None:
+        super().__init__(database, **kwargs)
+        self._rows = [dict(row) for row in rows]
+
+    def catalogue(self, market: str) -> list[dict[str, Any]]:
+        self.catalogue_rows = len(self._rows)
+        self.catalogue_stocks = sum(row.get("security_type") == "Stock" for row in self._rows)
+        self.catalogue_snapshot_id = "listed_population_chunk"
+        self.references.append({"role": "catalogue", "market": market, "classification_sha256": canonical_sha256(self._rows),
+                                "rows": len(self._rows), "fields_admitted": list(pit.CURRENT_FIELDS_ADMITTED)})
+        return [dict(row) for row in self._rows]
+
+
+def _admitted(resolver: pit.PitSourceResolver) -> tuple[dict[str, dict[str, Any]], dict[str, str], list[dict[str, Any]]]:
+    screen_inputs = pit.PitComputation.screen_inputs(cast(pit.PitComputation, SimpleNamespace(resolver=resolver)))
+    return (screen_inputs, dict(resolver.not_evaluable),
+            [dict(item) for item in resolver.references if item.get("role") == pit.BASIS_VINTAGES])
 
 
 def gather_live_inputs(database: Database, *, market: str, as_of: datetime, prices: pit.PinnedPrices, curve: Mapping[str, Any],
                        curve_reference: Mapping[str, Any], targets: TargetReader, volume_basis: str | None,
-                       volume_check: Mapping[str, Any] | None = None, reader: pit.AsFiledReader | None = None) -> LiveInputs:
-    """rev3's admission at ``T``, unchanged: ``PitSourceResolver`` (``vintages``, the latest catalogue) decides which names
-    have statements, ≥ 90 valid sessions, a close and shares at ``T``, and ``PitComputation.screen_inputs`` (which reads
-    only ``self.resolver``) gives the screen inputs the grid's sibling run stored. Market-level defects raise."""
+                       volume_check: Mapping[str, Any] | None = None, reader: pit.AsFiledReader | None = None,
+                       listed: bool = True) -> LiveInputs:
+    """rev3's admission at ``T``, unchanged, over the served catalogue: ``PitSourceResolver`` (``vintages``, the latest
+    catalogue) decides which names have statements, ≥ 90 valid sessions, a close and shares at ``T``, and
+    ``PitComputation.screen_inputs`` (which reads only ``self.resolver``) gives the screen inputs the grid's sibling run
+    stored. ``listed``: add the listed-only stocks (admitted later, in chunks). Market-level defects raise."""
     cut = utc(as_of)
     if market not in MARKETS:
         raise LiveEnsembleError("unsupported_market")
@@ -196,16 +292,21 @@ def gather_live_inputs(database: Database, *, market: str, as_of: datetime, pric
     if resolver.catalogue_snapshot_id is None:
         raise LiveEnsembleError("catalogue_missing")
     catalogue = pit.admitted_catalogue(database.analysis_snapshot_by_id(resolver.catalogue_snapshot_id))
-    references = [dict(item) for item in resolver.references]
-    roles = [item for item in references if item.get("role") == "catalogue"]
+    roles = [item for item in resolver.references if item.get("role") == "catalogue"]
     if not catalogue or len(roles) != 1 or roles[0].get("classification_sha256") != canonical_hash(catalogue):
         raise LiveEnsembleError("catalogue_changed_during_run")
-    screen_inputs = pit.PitComputation.screen_inputs(cast(pit.PitComputation, SimpleNamespace(resolver=resolver)))
+    screen_inputs, not_admitted, references = _admitted(resolver)
     catalogue_reference = {"snapshot_id": resolver.catalogue_snapshot_id, "classification_sha256": roles[0]["classification_sha256"],
                            "rows": len(catalogue), "stocks": sum(row.get("security_type") == "Stock" for row in catalogue)}
-    return LiveInputs(market, cut, prices, reader, catalogue, catalogue_reference, screen_inputs, dict(resolver.not_evaluable),
-                      [item for item in references if item.get("role") == pit.BASIS_VINTAGES], dict(curve), dict(curve_reference),
-                      targets, volume_basis, dict(volume_check) if volume_check is not None else None)
+    extra_rows: list[dict[str, Any]] = []
+    listed_reference: dict[str, Any] = {"status": "not_requested"}
+    if listed:
+        listed_rows, listed_reference = listed_population(database, market)
+        served = {str(row["symbol"]) for row in catalogue}
+        extra_rows = [row for row in listed_rows if row["symbol"] not in served]
+    return LiveInputs(market, cut, prices, reader, catalogue, catalogue_reference, screen_inputs, not_admitted, references, dict(curve),
+                      dict(curve_reference), targets, volume_basis, dict(volume_check) if volume_check is not None else None,
+                      extra_rows, listed_reference, database)
 
 
 def _statement_reference(references: Sequence[Mapping[str, Any]], symbol: str) -> Mapping[str, Any] | None:
@@ -214,52 +315,102 @@ def _statement_reference(references: Sequence[Mapping[str, Any]], symbol: str) -
     return found[0] if len(found) == 1 else None
 
 
-def compute_live_section(inputs: LiveInputs) -> dict[str, Any]:
-    """The grid's per-name computation for ONE exchange at ``T`` (``compute_grid_section``'s loop, the same calls in the
-    same order), on live inputs. Per name: the primary TP or ``not_evaluable:<reason>``; never a guessed number."""
-    market, cut, prices, reader = inputs.market, utc(inputs.as_of), inputs.prices, inputs.reader
-    catalogue, screen_inputs, curve = inputs.catalogue, inputs.screen_inputs, inputs.curve
-    symbols = [str(row["symbol"]) for row in catalogue]
-    if len(symbols) != len(set(symbols)):
-        raise LiveEnsembleError("duplicate_catalogue_symbol")
-    prices.build_proxy(symbols)
-    selected: set[str] | None = None
-    screen_refused: Counter[str] = Counter()
-    if inputs.volume_basis is not None:
-        selected, screen_refused = screen(screen_inputs, basis=inputs.volume_basis)
-    if not reader.present():
-        raise LiveEnsembleError("statement_vintages_unavailable")
-    coverage = reader.coverage(market)
-    economic = pit.economic_date_of(market, cut)
-    raw_by_issuer: dict[str, list[dict[str, Any]]] = {}
-    companies: dict[str, GridCompanyInputs] = {}
-    premises_by_symbol: dict[str, Any] = {}
-    refusals: dict[str, str] = {}
-    ledger: dict[str, dict[str, Any]] = {}
-    for row in catalogue:
-        symbol = str(row["symbol"])
-        item: dict[str, Any] = {"issuer": None, "facts_rows_sha256": None}
-        ledger[symbol] = item
+def _evict(prices: pit.PinnedPrices, symbols: Iterable[str]) -> None:
+    """Drop one chunk's series from the pin's per-symbol caches (the served catalogue's stay: they are the proxy). Holding
+    every series of a listed universe at once (~1 MB per 120-month series) would not fit the host."""
+    keys = {key for symbol in symbols for key in (symbol, symbol.strip().upper())}
+    for cache in ("_bars", "_returns", "_capital_events", "_splits"):
+        store = getattr(prices, cache, None)
+        if isinstance(store, dict):
+            for key in keys:
+                store.pop(key, None)
+
+
+@dataclass
+class _Name:
+    row: dict[str, Any]
+    served: bool  # in the served catalogue (the grid's)
+    pit_tested: bool = False
+    screened: bool | None = None
+    screen: dict[str, Any] | None = None
+    issuer: str | None = None
+    facts_rows_sha256: str | None = None
+    company: GridCompanyInputs | None = None
+    premises: Any = None
+    refusal: str | None = None
+    models: tuple[ModelValue, ...] = ()
+    targets: list[Mapping[str, Any]] | None = None
+    target_error: str | None = None
+    pending: str | None = None  # pending_preparation / pending_targets: the deadline came first
+
+    @property
+    def symbol(self) -> str:
+        return str(self.row["symbol"])
+
+    def liquidity(self, basis: str | None) -> float:
+        value = pit._positive(_mapping(self.screen).get(VOLUME_BASES.get(basis or "", "dollar_volume_median_20")))
+        return value if value is not None else -math.inf
+
+
+@dataclass
+class _TargetReads:
+    """The provider's state across both exchanges of one night (one provider, one breaker)."""
+    attempted: int = 0
+    failed: int = 0
+    consecutive: int = 0
+
+    @property
+    def open(self) -> bool:
+        return self.consecutive >= TARGETS_BREAKER_CONSECUTIVE
+
+
+class _LiveSection:
+    """One exchange at ``T``: the served catalogue first (the grid's computation), then the listed-only names."""
+
+    def __init__(self, inputs: LiveInputs) -> None:
+        self.inputs = inputs
+        self.market, self.cut, self.prices, self.reader = inputs.market, utc(inputs.as_of), inputs.prices, inputs.reader
+        symbols = [str(row["symbol"]) for row in inputs.catalogue]
+        extra = [str(row["symbol"]) for row in inputs.extra_rows]
+        if len(symbols) != len(set(symbols)) or len(extra) != len(set(extra)) or set(symbols) & set(extra):
+            raise LiveEnsembleError("duplicate_population_symbol")
+        self.catalogue_symbols = symbols
+        self.names: dict[str, _Name] = {str(row["symbol"]): _Name(dict(row), True) for row in inputs.catalogue}
+        self.names.update({str(row["symbol"]): _Name(dict(row), False) for row in inputs.extra_rows})
+        self.issuer_digests: dict[str, str] = {}
+        self.coverage: dict[str, str] = {}
+        self.peers: tuple[GridCompanyInputs, ...] = ()
+        self.screen_refused: Counter[str] = Counter()
+        self.pit_tested_rule = ""
+        self.reads = Counter[str]()
+
+    # ---- inputs (compute_grid_section's per-name loop, the same calls in the same order)
+    def _prepare(self, name: _Name, screen_inputs: Mapping[str, Mapping[str, Any]], not_admitted: Mapping[str, str],
+                 references: Sequence[Mapping[str, Any]], raw_by_issuer: dict[str, list[dict[str, Any]]]) -> None:
+        market, cut, prices, reader = self.market, self.cut, self.prices, self.reader
+        row, symbol = name.row, name.symbol
+        name.screen = dict(screen_inputs[symbol]) if symbol in screen_inputs else None
         try:
             if row.get("security_type") != "Stock":
                 raise NotEvaluable("not_a_stock")
             if symbol not in screen_inputs:
-                raise NotEvaluable("not_admitted_at_T:" + inputs.not_admitted.get(symbol, "unknown"))
-            issuer = coverage.get(symbol)
+                raise NotEvaluable("not_admitted_at_T:" + not_admitted.get(symbol, "unknown"))
+            issuer = self.coverage.get(symbol)
             if not issuer:
                 raise NotEvaluable("statement_vintages_missing")
             if issuer not in raw_by_issuer:
                 refused: Counter[str] = Counter()
                 raw_by_issuer[issuer] = reader.facts(issuer, as_of=cut, refused=refused)
+                self.issuer_digests[issuer] = canonical_sha256(sorted(str(r["row_hash"]) for r in raw_by_issuer[issuer]))
             raw = raw_by_issuer[issuer]
-            item["issuer"] = issuer
+            name.issuer = issuer
             payload, reference = pit.as_filed_payload(raw, market=market, front=reader.front)
-            expected = _statement_reference(inputs.statement_references, symbol)
+            expected = _statement_reference(references, symbol)
             if expected is None or any(expected.get(key) != reference.get(key) for key in reference):
                 raise NotEvaluable("statements_changed_during_run")  # a fact accepted by T landed between the two reads
             facts, facts_audit = reduce_company_facts(raw, issuer=issuer, as_of=cut, front=reader.front)
-            item["facts_rows_sha256"] = facts_audit.get("accepted_rows_sha256")
-            fundamentals = pit.pit_fundamentals(payload, market=market, economic_date=economic)
+            name.facts_rows_sha256 = facts_audit.get("accepted_rows_sha256")
+            fundamentals = pit.pit_fundamentals(payload, market=market, economic_date=pit.economic_date_of(market, cut))
             balance_end = _mapping(fundamentals.get("balance")).get("period_end")
             if balance_end is not None and facts:
                 share_fact = _shares(raw, front=reader.front, end=_date(balance_end))
@@ -288,90 +439,245 @@ def compute_live_section(inputs: LiveInputs) -> dict[str, Any]:
                 protocol={"basis_id": basis, "session_date": prices.session_date, "catalogue_classification": CLASSIFICATION})
             company.validate()
             beta, beta_audit = prices.beta(symbol)
-            premises, _ = derive_premises(company, curve=curve, beta=beta, beta_audit=beta_audit, facts_audit=facts_audit)
-            companies[symbol] = company
-            premises_by_symbol[symbol] = premises
+            name.premises, _ = derive_premises(company, curve=self.inputs.curve, beta=beta, beta_audit=beta_audit, facts_audit=facts_audit)
+            name.company = company
         except NotEvaluable as error:
-            refusals[symbol] = str(error)
+            name.refusal = str(error)
         except (ValueError, TypeError, KeyError, ArithmeticError) as error:  # one malformed name never takes the exchange down
-            refusals[symbol] = "input_error:" + type(error).__name__
-    peers = tuple(companies[key] for key in sorted(companies))
-    context = {"schema": SCHEMA, "source": SOURCE, "market": market, "as_of": cut.isoformat(), "primary": PRIMARY,
-               "price_vintage": prices.manifest(), "session_date": prices.session_date, "curve": dict(inputs.curve_reference),
-               "catalogue": dict(inputs.catalogue_reference), "statements": STATEMENTS, "volume_basis": inputs.volume_basis,
-               "canonical_fact_rows_sha256": canonical_sha256({issuer: sorted(str(r["row_hash"]) for r in rows)
-                                                              for issuer, rows in sorted(raw_by_issuer.items())}),
-               "evaluable_names_sha256": canonical_sha256(sorted(companies)), "implementation": implementation_files(),
-               "signed_instrument_pin": SIGNED_INSTRUMENT_PIN}
-    context_sha256 = canonical_sha256(context)
-    records: list[dict[str, Any]] = []
-    totals: dict[str, Counter[str]] = {model: Counter() for model in MODEL_IDS}
-    origins: Counter[str] = Counter()
-    consensus_counts: Counter[str] = Counter()
-    for row in catalogue:
-        symbol = str(row["symbol"])
-        company = companies.get(symbol)
-        models = (evaluate_models(company, premises_by_symbol[symbol], peers=peers) if company is not None else
-                  tuple(ModelValue(model, None, "not_evaluable", refusals.get(symbol, "company_inputs_unavailable")) for model in MODEL_IDS))
-        for model in models:
-            totals[model.model]["evaluated" if model.status == "evaluated" else "not_evaluable:" + str(model.reason)] += 1
-        reason: str | None = refusals.get(symbol, "company_inputs_unavailable") if company is None else None
+            name.refusal = "input_error:" + type(error).__name__
+
+    def _evaluate(self, names: Iterable[_Name]) -> None:
+        for name in names:
+            name.models = (evaluate_models(name.company, name.premises, peers=self.peers) if name.company is not None else
+                           tuple(ModelValue(model, None, "not_evaluable", name.refusal or "company_inputs_unavailable") for model in MODEL_IDS))
+
+    def prepare_served(self) -> None:
+        """The served catalogue, exactly as the grid: proxy over its symbols, peers = its evaluable names, its screen."""
+        self.prices.build_proxy(self.catalogue_symbols)
+        if not self.reader.present():
+            raise LiveEnsembleError("statement_vintages_unavailable")
+        self.coverage = self.reader.coverage(self.market)
+        raw_by_issuer: dict[str, list[dict[str, Any]]] = {}
+        served = [self.names[symbol] for symbol in self.catalogue_symbols]
+        for name in served:
+            self._prepare(name, self.inputs.screen_inputs, self.inputs.not_admitted, self.inputs.statement_references, raw_by_issuer)
+        self.peers = tuple(name.company for name in sorted(served, key=lambda item: item.symbol) if name.company is not None)
+        basis = self.inputs.volume_basis
+        if basis is not None:
+            selected, self.screen_refused = screen(self.inputs.screen_inputs, basis=basis)
+            self.pit_tested_rule = "screen:" + basis
+        else:  # undetermined tonight: tested only if the grid's screen keeps the name under EITHER basis it may have decided
+            as_traded, self.screen_refused = screen(self.inputs.screen_inputs, basis="as_traded")
+            selected = as_traded & screen(self.inputs.screen_inputs, basis="split_adjusted")[0]
+            self.pit_tested_rule = "screen:both_bases"
+        for name in served:
+            name.pit_tested = name.symbol in selected
+            name.screened = (name.symbol in selected) if basis is not None else None
+        self._evaluate(served)
+
+    def prepare_extras(self, *, deadline: datetime | None, clock: Callable[[], datetime]) -> bool:
+        """The listed-only names, in chunks, valued with the served catalogue's proxy and peers. Returns False when the
+        deadline stopped it (the names not reached are ``pending_preparation``)."""
+        extras = [self.names[str(row["symbol"])] for row in self.inputs.extra_rows]
+        for start in range(0, len(extras), EXTRA_CHUNK):
+            chunk = extras[start:start + EXTRA_CHUNK]
+            try:
+                _check_deadline(deadline, clock)
+            except LiveEnsembleDeadline:
+                for name in extras[start:]:
+                    name.pending = "pending_preparation"
+                return False
+            resolver = _PopulationResolver(self.inputs.database, rows=[name.row for name in chunk], market=self.market, as_of=self.cut,
+                                           prices=self.prices, statements=STATEMENTS, vintages=self.reader)
+            resolver.resolve()
+            screen_inputs, not_admitted, references = _admitted(resolver)
+            self.prices.build_proxy(self.catalogue_symbols)  # resolve() rebuilt it over the chunk: back to the grid's proxy
+            raw_by_issuer: dict[str, list[dict[str, Any]]] = {}
+            for name in chunk:
+                self._prepare(name, screen_inputs, not_admitted, references, raw_by_issuer)
+            self._evaluate(chunk)
+            _evict(self.prices, [name.symbol for name in chunk])
+        return True
+
+    # ---- targets
+    def awaiting(self, *, pit_tested: bool) -> list[_Name]:
+        return [name for name in self.names.values() if name.company is not None and name.pending is None
+                and name.targets is None and name.target_error is None and name.pit_tested is pit_tested]
+
+    def read(self, name: _Name, reads: _TargetReads, *, deadline: datetime | None, clock: Callable[[], datetime]) -> None:
+        """One name's targets; ``LiveEnsembleDeadline`` propagates (nothing more is read tonight)."""
+        if reads.open:
+            name.target_error = "targets_circuit_open"
+            return
+        _check_deadline(deadline, clock)
+        reads.attempted += 1
+        self.reads["attempted"] += 1
+        try:
+            rows = list(self.inputs.targets(self.market, name.symbol, pages=None if name.served else EXTRA_TARGET_PAGES))
+        except LiveEnsembleDeadline:
+            reads.attempted -= 1
+            self.reads["attempted"] -= 1
+            raise
+        except Exception as error:  # the provider's failure: refused, never a TP without the consensus it could not read
+            reads.failed += 1
+            reads.consecutive += 1
+            self.reads["failed"] += 1
+            name.target_error = "targets_fetch_failed:" + type(error).__name__
+            return
+        reads.consecutive = 0
+        if not name.served and len(rows) >= EXTRA_TARGET_PAGES * TARGET_PAGE_LIMIT:
+            name.target_error = "targets_history_beyond_page_cap"  # never a consensus from a truncated history
+            return
+        name.targets = rows
+
+    # ---- outcome
+    def _finalize(self, name: _Name, context_sha256: str) -> dict[str, Any]:
         primary_value: float | None = None
         sample_size = 0
-        consensus: dict[str, Any] = {"used": False, "value": None, "analyst_count": 0, "reason": "not_fetched:company_not_evaluable"}
         targets_sha256: str | None = None
-        if company is not None:
+        consensus: dict[str, Any] = {"used": False, "value": None, "analyst_count": 0, "reason": "not_fetched:company_not_evaluable"}
+        if name.company is None:
+            reason = name.pending or name.refusal or "company_inputs_unavailable"
+        elif name.pending is not None or (name.targets is None and name.target_error is None):
+            reason = name.pending or "pending_targets"
+            consensus["reason"] = "not_fetched:" + reason
+        elif name.target_error is not None:
+            reason = name.target_error
+            consensus["reason"] = reason
+        else:
+            rows = name.targets or []
+            targets_sha256 = canonical_sha256(rows)
+            reason = "consensus_not_read"
             try:
-                rows = list(inputs.targets(market, symbol))
-            except Exception as error:  # the provider's failure: refused, never a TP without the consensus it could not read
-                reason = "targets_fetch_failed:" + type(error).__name__
-                consensus = {**consensus, "reason": reason}
-            else:
-                targets_sha256 = canonical_sha256(rows)
-                try:
-                    value, receipt = grid_consensus_at(rows, as_of=cut, currency="USD", snapshot_id="live:" + targets_sha256, market=market)
-                    aggregate = aggregate_grid_variants(models, value, consensus_reason=receipt.get("reason"))
-                    variant = _mapping(_mapping(aggregate.get("variants")).get(PRIMARY))
-                    if aggregate.get("primary") != PRIMARY or not variant:
-                        raise NotEvaluable("primary_variant_mismatch")
-                    primary_value = variant.get("value")
-                    sample_size = int(variant.get("sample_size") or 0)
-                    consensus = {"used": bool(variant.get("consensus_included")), "value": value, "analyst_count": receipt.get("analyst_count"),
-                                 "reason": receipt.get("reason"), "public_consensus_tp": receipt.get("public_consensus_tp"),
-                                 "published_at": receipt.get("consensus_published_at")}
-                    if primary_value is None:
-                        reason = str(variant.get("reason") or "primary_not_evaluated")
-                except NotEvaluable as error:
-                    reason = "consensus_or_aggregation:" + str(error)
-                except (ValueError, TypeError, OverflowError) as error:
-                    reason = "consensus_or_aggregation:" + type(error).__name__
-        if primary_value is not None:
-            reason = None
-        origin = "ensemble" if primary_value is not None else "not_evaluable:" + str(reason or "unknown")
-        origins[origin] += 1
-        consensus_counts["used" if consensus.get("used") else "not_used:" + str(consensus.get("reason") or "unavailable")] += 1
-        audit = ledger[symbol]
-        records.append({
-            "symbol": symbol, "security_type": row.get("security_type"),
-            "screened": (symbol in selected) if selected is not None else None,
-            "primary_tp": primary_value, "origin": origin, "models_evaluated": sum(model.status == "evaluated" for model in models),
-            "sample_size": sample_size, "model_values": {model.model: model.value for model in models}, "consensus": consensus,
-            "price": pit._positive(_mapping(screen_inputs.get(symbol)).get("close")), "session_date": prices.session_date, "as_of": cut.isoformat(),
-            "inputs_sha256": canonical_sha256({"context_sha256": context_sha256, "symbol": symbol, "catalogue_row": dict(row),
-                                               "screen": screen_inputs.get(symbol), "issuer": audit["issuer"],
-                                               "facts_rows_sha256": audit["facts_rows_sha256"], "targets_rows_sha256": targets_sha256}),
-        })
-    with_tp = [record for record in records if record["primary_tp"] is not None]
-    counts = {"catalogue_rows": len(catalogue), "catalogue_stocks": sum(row.get("security_type") == "Stock" for row in catalogue),
-              "admitted_at_T": len(screen_inputs), "evaluable_inputs": len(companies), "with_primary_tp": len(with_tp),
-              "screened": len(selected) if selected is not None else None,
-              "screened_with_primary_tp": sum(1 for record in with_tp if record["screened"]) if selected is not None else None,
-              "origins": dict(sorted(origins.items())), "consensus": dict(sorted(consensus_counts.items())),
-              "model_results": {model: dict(sorted(counter.items())) for model, counter in totals.items()},
-              "screen_refused": dict(sorted(screen_refused.items()))}
-    return {"schema": SCHEMA, "source": SOURCE, "market": market, "as_of": cut.isoformat(), "session_date": prices.session_date,
-            "primary": PRIMARY, "volume_basis": inputs.volume_basis, "volume_check": inputs.volume_check,
-            "context": context, "context_sha256": context_sha256, "records": records, "counts": counts}
+                value, receipt = grid_consensus_at(rows, as_of=self.cut, currency="USD", snapshot_id="live:" + targets_sha256, market=self.market)
+                consensus = {"used": False, "value": value, "analyst_count": receipt.get("analyst_count"), "reason": receipt.get("reason"),
+                             "public_consensus_tp": receipt.get("public_consensus_tp"), "published_at": receipt.get("consensus_published_at")}
+                aggregate = aggregate_grid_variants(name.models, value, consensus_reason=receipt.get("reason"))
+                variant = _mapping(_mapping(aggregate.get("variants")).get(PRIMARY))
+                if aggregate.get("primary") != PRIMARY or not variant:
+                    raise NotEvaluable("primary_variant_mismatch")
+                primary_value = variant.get("value")
+                sample_size = int(variant.get("sample_size") or 0)
+                consensus["used"] = bool(variant.get("consensus_included"))
+                reason = str(variant.get("reason") or "primary_not_evaluated")
+            except NotEvaluable as error:
+                reason = "consensus_or_aggregation:" + str(error)
+            except (ValueError, TypeError, OverflowError) as error:
+                reason = "consensus_or_aggregation:" + type(error).__name__
+            if consensus.get("reason") == "not_fetched:company_not_evaluable":  # the consensus reader itself refused the rows
+                consensus["reason"] = reason
+            elif primary_value is None and consensus.get("reason") is None:  # the consensus was read; the aggregation refused
+                consensus["reason"] = "aggregation_refused"
+        origin = "ensemble" if primary_value is not None else "not_evaluable:" + reason
+        return {
+            "symbol": name.symbol, "security_type": name.row.get("security_type"), "in_served_catalogue": name.served,
+            "pit_tested": name.pit_tested, "screened": name.screened,
+            "primary_tp": primary_value, "origin": origin, "models_evaluated": sum(model.status == "evaluated" for model in name.models),
+            "sample_size": sample_size, "model_values": {model.model: model.value for model in name.models}, "consensus": consensus,
+            "price": pit._positive(_mapping(name.screen).get("close")), "session_date": self.prices.session_date, "as_of": self.cut.isoformat(),
+            "inputs_sha256": canonical_sha256({"context_sha256": context_sha256, "symbol": name.symbol, "catalogue_row": name.row,
+                                               "screen": name.screen, "issuer": name.issuer, "facts_rows_sha256": name.facts_rows_sha256,
+                                               "targets_rows_sha256": targets_sha256}),
+        }
+
+    def result(self, reads: _TargetReads) -> dict[str, Any]:
+        inputs = self.inputs
+        context = {"schema": SCHEMA, "source": SOURCE, "market": self.market, "as_of": self.cut.isoformat(), "primary": PRIMARY,
+                   "price_vintage": self.prices.manifest(), "session_date": self.prices.session_date, "curve": dict(inputs.curve_reference),
+                   "catalogue": dict(inputs.catalogue_reference), "listed": dict(inputs.listed_reference), "statements": STATEMENTS,
+                   "volume_basis": inputs.volume_basis, "pit_tested_rule": self.pit_tested_rule,
+                   "canonical_fact_rows_sha256": canonical_sha256(dict(sorted(self.issuer_digests.items()))),
+                   "peers_sha256": canonical_sha256(sorted(company.symbol for company in self.peers)),
+                   "implementation": implementation_files(), "signed_instrument_pin": SIGNED_INSTRUMENT_PIN}
+        context_sha256 = canonical_sha256(context)
+        records = [self._finalize(self.names[symbol], context_sha256) for symbol in sorted(self.names)]
+        totals: dict[str, Counter[str]] = {model: Counter() for model in MODEL_IDS}
+        for name in self.names.values():
+            for model in name.models:
+                totals[model.model]["evaluated" if model.status == "evaluated" else "not_evaluable:" + str(model.reason)] += 1
+        origins = Counter(record["origin"] for record in records)
+        consensus_counts = Counter("used" if record["consensus"].get("used") else "not_used:" + str(record["consensus"].get("reason") or "unavailable")
+                                   for record in records)
+        with_tp = [record for record in records if record["primary_tp"] is not None]
+        tested = [record for record in records if record["pit_tested"]]
+        pending = [name for name in self.names.values() if name.pending is not None
+                   or (name.company is not None and name.targets is None and name.target_error is None)]
+        counts = {"population_rows": len(records), "catalogue_rows": len(inputs.catalogue),
+                  "catalogue_stocks": sum(row.get("security_type") == "Stock" for row in inputs.catalogue),
+                  "listed_only_stocks": len(inputs.extra_rows), "admitted_at_T": sum(name.screen is not None for name in self.names.values()),
+                  "evaluable_inputs": sum(name.company is not None for name in self.names.values()), "with_primary_tp": len(with_tp),
+                  "pit_tested": len(tested), "pit_tested_with_primary_tp": sum(record["primary_tp"] is not None for record in tested),
+                  "pit_tested_pending": sum(1 for name in pending if name.pit_tested),
+                  "screened": (sum(1 for record in records if record["screened"]) if inputs.volume_basis is not None else None),
+                  "screened_with_primary_tp": (sum(1 for record in with_tp if record["screened"]) if inputs.volume_basis is not None else None),
+                  "reach": {"reached": len(records) - len(pending), "pending": len(pending)},
+                  "origins": dict(sorted(origins.items())), "consensus": dict(sorted(consensus_counts.items())),
+                  "model_results": {model: dict(sorted(counter.items())) for model, counter in totals.items()},
+                  "screen_refused": dict(sorted(self.screen_refused.items())),
+                  "targets": {"attempted": int(self.reads["attempted"]), "failed": int(self.reads["failed"]), "circuit_open": reads.open}}
+        return {"schema": SCHEMA, "source": SOURCE, "market": self.market, "as_of": self.cut.isoformat(), "session_date": self.prices.session_date,
+                "primary": PRIMARY, "volume_basis": inputs.volume_basis, "volume_check": inputs.volume_check, "complete": not pending,
+                "context": context, "context_sha256": context_sha256, "records": records, "counts": counts}
+
+
+def _read_all(sections: Sequence[_LiveSection], reads: _TargetReads, *, pit_tested: bool, deadline: datetime | None,
+              clock: Callable[[], datetime]) -> bool:
+    """The targets of every awaiting name of ``sections`` (one class: tested or not), most liquid first across the
+    exchanges. Returns False when the deadline stopped the reads (the rest stays pending)."""
+    queue = sorted(((section, name) for section in sections for name in section.awaiting(pit_tested=pit_tested)),
+                   key=lambda item: (-item[1].liquidity(item[0].inputs.volume_basis), item[0].market, item[1].symbol))
+    for section, name in queue:
+        try:
+            section.read(name, reads, deadline=deadline, clock=clock)
+        except LiveEnsembleDeadline:
+            return False
+    return True
+
+
+def _run_sections(sections: Sequence[_LiveSection], *, deadline: datetime | None, clock: Callable[[], datetime]) -> tuple[_TargetReads, bool]:
+    """Tested names of every exchange first, then the listed-only names' inputs, then every other name by liquidity."""
+    reads = _TargetReads()
+    for section in sections:
+        _check_deadline(deadline, clock)
+        section.prepare_served()
+    complete = _read_all(sections, reads, pit_tested=True, deadline=deadline, clock=clock)
+    if complete:
+        complete = all([section.prepare_extras(deadline=deadline, clock=clock) for section in sections])
+    if complete:
+        complete = _read_all(sections, reads, pit_tested=False, deadline=deadline, clock=clock)
+    else:
+        for section in sections:
+            for name in section.names.values():
+                if name.company is None and name.refusal is None and name.pending is None and not name.served:
+                    name.pending = "pending_preparation"
+    return reads, complete
+
+
+def compute_live_section(inputs: LiveInputs, *, deadline: datetime | None = None, clock: Callable[[], datetime] | None = None) -> dict[str, Any]:
+    """One exchange at ``T``: the served catalogue as the grid computes it, then the listed-only names; per name the
+    primary TP or ``not_evaluable:<reason>`` (``pending_*`` when the deadline came first), never a guessed number."""
+    tick: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
+    section = _LiveSection(inputs)
+    reads, _ = _run_sections([section], deadline=deadline, clock=tick)
+    return section.result(reads)
+
+
+def unpublishable(section: Mapping[str, Any]) -> str | None:
+    """Why a computed section must NOT be published as tonight's: the provider failed (breaker open, or more than
+    ``TARGETS_MAX_FAILED_SHARE`` of the target reads), a tested name was left pending, or not one name has a primary TP.
+    A refused section leaves the exchange unpublished, so the phase records a failure and the health card is never green."""
+    counts = _mapping(section.get("counts"))
+    targets = _mapping(counts.get("targets"))
+    attempted, failed = int(targets.get("attempted") or 0), int(targets.get("failed") or 0)
+    if targets.get("circuit_open"):
+        return "targets_circuit_open"
+    if attempted and failed > TARGETS_MAX_FAILED_SHARE * attempted:
+        return "targets_failed_share"
+    if counts.get("pit_tested_pending"):
+        return "tested_names_pending"
+    if not counts.get("with_primary_tp"):
+        return "no_primary_tp"
+    return None
 
 
 def publish(database: Database, section: Mapping[str, Any], *, published_at: datetime) -> str:
@@ -383,13 +689,13 @@ def publish(database: Database, section: Mapping[str, Any], *, published_at: dat
     methodology_id = database.ensure_methodology_version(
         METHODOLOGY_KEY, METHODOLOGY_VERSION,
         {"schema": SCHEMA, "primary": PRIMARY, "statements": STATEMENTS, "served": False, "signed_instrument_pin": SIGNED_INSTRUMENT_PIN},
-        "Nightly live producer of the valuation ensemble's primary target price: the signed grid's computation on live inputs; "
-        "not served until the grid passes and the owner switches.")
+        "Nightly live producer of the valuation ensemble's primary target price: the signed grid's computation on live inputs, every "
+        "US common stock; not served until the grid passes and the owner switches; buy permission only for pit_tested names.")
     inputs = {"schema": SCHEMA, "source": SOURCE, "market": market, "as_of": section["as_of"], "context": section["context"],
               "context_sha256": section["context_sha256"]}
     outputs = {**section, "published_at": at.isoformat(),
                "governance": {"served": False, "decision_consumer": False, "official_tp_replacement_authorized": False,
-                              "switch_requires": "signed grid PASS and an owner order"}}
+                              "switch_requires": "signed grid PASS and an owner order", "buy_permission_scope": "pit_tested only"}}
     return database.save_analysis_snapshot(ANALYSIS_TYPE, f"{market}_UNIVERSE", methodology_id, inputs, outputs, at)
 
 
@@ -412,63 +718,113 @@ def _published_since(database: Database, market: str, since: datetime | None) ->
 
 
 def run_nightly(database: Database, settings: Settings, http: JsonHttpClient, *, clock: Callable[[], datetime] | None = None,
-                since: datetime | None = None, markets: Sequence[str] = MARKETS) -> dict[str, Any]:
+                since: datetime | None = None, deadline: datetime | None = None, markets: Sequence[str] = MARKETS) -> dict[str, Any]:
     """The valuation worker's ``ensemble_live`` phase. Off (the default) → nothing is read, fetched or written.
 
-    ``T`` is read once; each exchange is isolated (its failure is counted by error class and the other still publishes);
-    an exchange already published since ``since`` (the night's due time) is skipped, so a retry inside the window only
-    completes what is missing. Raises ``LiveEnsembleError`` (a count) when an exchange is left unpublished, so the phase
-    is recorded failed and retried; the returned summary and every log line hold counts only."""
+    ``T`` is read once; an exchange already published since ``since`` (the night's due time) is skipped, so a retry only
+    completes what is missing. ``deadline`` (wall clock) is checked before every step and every provider request; past it
+    nothing more is read — the tested names were read first, so a section whose tested names are complete is still
+    published, with the rest ``pending``. A section ``unpublishable`` refuses is not published. Raises ``LiveEnsembleError``
+    (counts only) when an exchange is left unpublished or a published one is partial, so the phase is recorded failed —
+    never a plain success — and the worker's retry cap applies; the summary and every log line hold counts only."""
     if not valuation_env.ensemble_live_enabled():
         return {"enabled": False}
     tick: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
     as_of = utc(tick())
     pending = [market for market in MARKETS if market in markets and not _published_since(database, market, since)]
     failures: Counter[str] = Counter()
-    summary: dict[str, Any] = {"enabled": True, "as_of": as_of.isoformat(), "markets_pending": len(pending), "published": 0,
-                               "names": 0, "with_primary_tp": 0, "screened_with_primary_tp": 0}
+    summary: dict[str, Any] = {"enabled": True, "as_of": as_of.isoformat(), "markets_pending": len(pending), "published": 0, "partial": 0,
+                               "names": 0, "with_primary_tp": 0, "pit_tested_with_primary_tp": 0, "names_pending": 0}
     if pending:
-        fetch = LiveSourceFetch(settings, database, http)
-        curve: dict[str, Any] | None = None
-        curve_reference: dict[str, Any] = {}
+        fetch = LiveSourceFetch(settings, database, http, deadline=deadline, clock=tick)
         try:
-            curve, curve_reference = live_treasury_curve(fetch, as_of=as_of)
-        except Exception as error:
-            failures["treasury_curve:" + type(error).__name__] += 1
-        prices: dict[str, pit.PinnedPrices] = {}
-        if curve is not None:
-            series = PriceHistoryService(settings, database, _NoNetworkHttp())
-            for market in pending:
-                try:
-                    prices[market] = pit.PinnedPrices(series, market, as_of=as_of, pinned_at=as_of, pin_mode="run_start")
-                except Exception as error:
-                    failures["price_vintage:" + type(error).__name__] += 1
-        volume_basis: str | None = None
-        volume_check: dict[str, Any] | None = None
-        if prices:
-            try:
-                volume_basis, volume_check = decide_volume_basis(database, settings, prices)
-            except Exception as error:  # the screen flag only: TPs never depend on it
-                failures["volume_check:" + type(error).__name__] += 1
-        for market, pinned in prices.items():
-            try:
-                inputs = gather_live_inputs(database, market=market, as_of=as_of, prices=pinned, curve=cast(dict[str, Any], curve),
-                                            curve_reference=curve_reference, targets=fetch.target_rows, volume_basis=volume_basis,
-                                            volume_check=volume_check)
-                section = compute_live_section(inputs)
-                publish(database, section, published_at=tick())
-            except Exception as error:
-                failures["section:" + type(error).__name__] += 1
-                continue
-            counts = section["counts"]
-            summary["published"] += 1
-            summary["names"] += int(counts["catalogue_rows"])
-            summary["with_primary_tp"] += int(counts["with_primary_tp"])
-            summary["screened_with_primary_tp"] += int(counts["screened_with_primary_tp"] or 0)
-        summary["provider_reads"] = dict(sorted(fetch.calls.items()))
+            _check_deadline(deadline, tick)
+            _run_markets(database, settings, fetch, pending, as_of=as_of, tick=tick, deadline=deadline, failures=failures, summary=summary)
+        except LiveEnsembleDeadline:
+            failures["deadline_reached"] += 1
+        finally:
+            summary["provider_reads"] = dict(sorted(fetch.calls.items()))
     summary["failures"] = dict(sorted(failures.items()))
-    logger.info("Valuation ensemble live: pending=%d published=%d names=%d with_primary_tp=%d failures=%s", len(pending), summary["published"],
-                summary["names"], summary["with_primary_tp"], summary["failures"])
+    logger.info("Valuation ensemble live: pending=%d published=%d partial=%d names=%d with_primary_tp=%d names_pending=%d failures=%s",
+                len(pending), summary["published"], summary["partial"], summary["names"], summary["with_primary_tp"], summary["names_pending"],
+                summary["failures"])
     if summary["published"] != len(pending):
         raise LiveEnsembleError(f"markets_not_published:{len(pending) - summary['published']}")
+    if summary["partial"]:
+        raise LiveEnsembleError(f"markets_partial:{summary['partial']}:names_pending:{summary['names_pending']}")
     return summary
+
+
+def _run_markets(database: Database, settings: Settings, fetch: LiveSourceFetch, pending: Sequence[str], *, as_of: datetime,
+                 tick: Callable[[], datetime], deadline: datetime | None, failures: Counter[str], summary: dict[str, Any]) -> None:
+    """The pending exchanges of one night, counted into ``summary``; a ``LiveEnsembleDeadline`` before the sections exist
+    propagates (nothing to publish)."""
+    try:
+        curve, curve_reference = live_treasury_curve(fetch, as_of=as_of)
+    except LiveEnsembleDeadline:
+        raise
+    except Exception as error:  # no rate is guessed: no exchange tonight
+        failures["treasury_curve:" + type(error).__name__] += len(pending)
+        return
+    # the volume basis is voted over BOTH exchanges' publications, as the grid votes — also on a retry of one exchange
+    series = PriceHistoryService(settings, database, _NoNetworkHttp())
+    prices: dict[str, pit.PinnedPrices] = {}
+    for market in MARKETS:
+        try:
+            prices[market] = pit.PinnedPrices(series, market, as_of=as_of, pinned_at=as_of, pin_mode="run_start")
+        except Exception as error:
+            if market in pending:
+                failures["price_vintage:" + type(error).__name__] += 1
+    volume_basis: str | None = None
+    volume_check: dict[str, Any] = {"decision": "not_every_exchange_pinned"}
+    if set(prices) == set(MARKETS):
+        _check_deadline(deadline, tick)
+        try:
+            volume_basis, volume_check = decide_volume_basis(database, settings, prices)
+        except Exception as error:  # the screen flag only: TPs never depend on it
+            failures["volume_check:" + type(error).__name__] += 1
+            volume_check = {"decision": "volume_check_failed"}
+    sections: list[_LiveSection] = []
+    for market in pending:
+        pinned = prices.get(market)
+        if pinned is None:
+            continue
+        _check_deadline(deadline, tick)
+        try:
+            sections.append(_LiveSection(gather_live_inputs(database, market=market, as_of=as_of, prices=pinned, curve=curve,
+                                                            curve_reference=curve_reference, targets=fetch.target_rows,
+                                                            volume_basis=volume_basis, volume_check=volume_check)))
+        except LiveEnsembleDeadline:
+            raise
+        except LiveEnsembleError as error:
+            failures["section:" + str(error)] += 1
+        except Exception as error:
+            failures["section:" + type(error).__name__] += 1
+    if not sections:
+        return
+    try:
+        reads, complete = _run_sections(sections, deadline=deadline, clock=tick)
+    except LiveEnsembleDeadline:  # the deadline came while the served catalogues were being prepared: no section is ready
+        raise
+    if not complete:
+        failures["deadline_reached"] += 1
+    for section in sections:
+        try:
+            result = section.result(reads)
+            refusal = unpublishable(result)
+            if refusal is not None:
+                raise LiveEnsembleError(refusal)
+            publish(database, result, published_at=tick())
+        except LiveEnsembleError as error:
+            failures["section:" + str(error)] += 1
+            continue
+        except Exception as error:
+            failures["section:" + type(error).__name__] += 1
+            continue
+        counts = result["counts"]
+        summary["published"] += 1
+        summary["partial"] += int(not result["complete"])
+        summary["names"] += int(counts["population_rows"])
+        summary["with_primary_tp"] += int(counts["with_primary_tp"])
+        summary["pit_tested_with_primary_tp"] += int(counts["pit_tested_with_primary_tp"])
+        summary["names_pending"] += int(counts["reach"]["pending"])

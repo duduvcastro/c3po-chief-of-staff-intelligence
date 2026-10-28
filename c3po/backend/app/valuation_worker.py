@@ -1,7 +1,7 @@
 import logging
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, time as wall_time, timedelta
+from datetime import date, datetime, time as wall_time, timedelta, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -58,6 +58,14 @@ PHASE_INCIDENT_KEY_PREFIX = "notification:job_failure:valuation-phase-failure:"
 # Severity by persistence: a failing night that retries is attention; the incident
 # becomes critical on the Nth consecutive failing night, or at once on a data fault.
 PHASE_FAILURE_CRITICAL_NIGHTS = 2
+# The live ensemble producer's night (valuation_live_ensemble): no attempt STARTS at or after 05:00 BRT and every attempt
+# STOPS by 05:30 BRT (checked before each step and each provider request), so the maintenance lease and the phase's
+# ingestion run are free 30 min before cash_yield's 06:00 window and 2 h 45 before the 08:15 grid window, whose blocking
+# check refuses a chunk while a valuation_worker run is `running`; the decisor (window to 08:00) keeps 2 h 30 after it.
+# Two failed attempts a night at most (the calendar's retry-cap pattern), then the next night.
+ENSEMBLE_LIVE_LAST_START_HOUR = 5
+ENSEMBLE_LIVE_DEADLINE = timedelta(hours=5, minutes=30)
+ENSEMBLE_LIVE_MAX_FAILURES = 2
 
 
 @dataclass(frozen=True)
@@ -113,12 +121,41 @@ def ensemble_live_last_run_at(database: Database) -> datetime | None:
     return last_run_at(database)
 
 
-def run_ensemble_live(database: Database, settings: Settings, http: JsonHttpClient) -> dict[str, Any]:
+def run_ensemble_live(database: Database, settings: Settings, http: JsonHttpClient, *, now: datetime | None = None,
+                      clock: Callable[[], datetime] | None = None) -> dict[str, Any]:
     """The ``ensemble_live`` phase: tonight's due time (01:00 America/Sao_Paulo) is the ``since`` of a retry, so an exchange
-    already published tonight is skipped and only the missing one is computed again."""
+    already published tonight is skipped and only the missing one is computed again; ``ENSEMBLE_LIVE_DEADLINE`` stops it."""
     from .valuation_live_ensemble import run_nightly
 
-    return run_nightly(database, settings, http, since=start_of_today(datetime.now(SAO_PAULO)) + timedelta(hours=OFFHOURS_START_HOUR))
+    night = start_of_today((now or datetime.now(SAO_PAULO)).astimezone(SAO_PAULO))
+    return run_nightly(database, settings, http, clock=clock, since=night + timedelta(hours=OFFHOURS_START_HOUR),
+                       deadline=night + ENSEMBLE_LIVE_DEADLINE)
+
+
+def ensemble_live_not_before(database: Database, *, now: datetime, decisor_scheduled: bool,
+                             decisor_last_run_at: Callable[[], datetime | None],
+                             decisor_not_before: Callable[[], datetime | None]) -> datetime | None:
+    """The live producer never delays the decisor. The worker defers a phase and goes on with the next ones in the same
+    pass, so a decisor deferred for its calendar margin would otherwise wait for the whole live sweep. While the decisor
+    is scheduled, still due tonight, deferred (``decisor_not_before``) and not yet attempted since that instant (its
+    latest ingestion run), this phase waits until then; the worker wakes, runs the decisor first (it precedes this phase),
+    and this phase after it. Read from the decisor's own run record, not from a clock: an earlier phase that ran long in
+    the same pass cannot let this one jump ahead. A decisor that is done, not deferred or already attempted never holds it."""
+    if not decisor_scheduled:
+        return None
+    night = start_of_today(now.astimezone(SAO_PAULO))
+    if not _phase_is_due(decisor_last_run_at(), night + timedelta(hours=OFFHOURS_START_HOUR)):
+        return None
+    ready = decisor_not_before()
+    if ready is None:
+        return None
+    code = VALUATION_WORKER_PHASES["decisor_shadow"]["code"]
+    attempted = database.ingestion_run_health([code]).get(code, {}).get("started_at")
+    if isinstance(attempted, datetime):
+        attempted = attempted if attempted.tzinfo is not None else attempted.replace(tzinfo=timezone.utc)
+        if attempted >= ready:
+            return None
+    return max(ready, now + timedelta(seconds=1))
 
 
 def _result_item_count(result: Any) -> int:
@@ -583,10 +620,16 @@ def main() -> None:
                              not_before=lambda: decision_not_before(database)),)
               if valuation_env.decisor_shadow_enabled() else ()),
             # The valuation ensemble's LIVE producer (valuation_live_ensemble): after the price series and, last of all, after every
-            # existing phase — it never delays one. Advisory (never pages); dormant until the mesa enables it; a retry inside the
-            # window completes only the exchange still missing tonight
+            # existing phase — it never delays one: it waits for a deferred decisor (ensemble_live_not_before), starts by 05:00 and
+            # stops by 05:30 BRT, two attempts a night at most. Advisory (never pages); dormant until the mesa enables it; a retry
+            # completes only the exchange still missing tonight
             *((OffhoursPhase("ensemble_live", lambda: ensemble_live_last_run_at(database),
-                             lambda: run_ensemble_live(database, settings, market_data.http)),)
+                             lambda: run_ensemble_live(database, settings, market_data.http),
+                             end_hour=ENSEMBLE_LIVE_LAST_START_HOUR, max_failures=ENSEMBLE_LIVE_MAX_FAILURES,
+                             not_before=lambda: ensemble_live_not_before(
+                                 database, now=datetime.now(SAO_PAULO), decisor_scheduled=valuation_env.decisor_shadow_enabled(),
+                                 decisor_last_run_at=lambda: decision_last_run_at(database),
+                                 decisor_not_before=lambda: decision_not_before(database))),)
               if valuation_env.ensemble_live_enabled() else ()),
         )
 

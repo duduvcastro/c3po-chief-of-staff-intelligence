@@ -3,8 +3,10 @@
 The parity tests are the point: on the signed grid's own fixture (``tests/test_valuation_ensemble_grid._fixture``, the real
 canonical readers over synthetic memory), the live computation fed the SAME inputs the grid read — a fresh pin of the same
 price publication, a fresh as-filed reader, the pinned Treasury history and the pinned target rows — returns, name by name,
-EXACTLY the floats ``compute_grid_section`` returns (primary, every model value, sample size, consensus, screen flag).
-Everything else: fail closed per name, off by default, isolated in the worker, counts-only logs, no PIT source written.
+EXACTLY the floats ``compute_grid_section`` returns (primary, every model value, sample size, consensus, screen flag),
+also when listed-only names are added to the population. Then: fail closed per name, the provider breaker, the wall-clock
+deadline with tested names first, the uncapped population, off by default, isolated in the worker (never ahead of the
+decisor, a retry cap and a last start), counts-only logs, no PIT source written.
 """
 from __future__ import annotations
 
@@ -15,18 +17,21 @@ import math
 import os
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from app import valuation_env, valuation_live_ensemble as live, valuation_pit_rerun as pit, valuation_worker
+from app import valuation_env, valuation_live_ensemble as live, valuation_pit_backtest_report as backtest
+from app import valuation_pit_rerun as pit, valuation_price_history as series, valuation_worker
 from app.config import Settings
 from app.database import Database
-from app.market_data.http import JsonHttpClient
+from app.market_data.eodhd import EodhdClient
+from app.market_data.http import JsonHttpClient, MarketDataRequestError
 from app.valuation_ensemble_grid import compute_grid_section
+from app.valuation_ensemble_inputs import canonical_hash
 from app.valuation_ensemble_pin import PROTOCOL_CONSTANTS, instrument_file_hashes
 from app.valuation_panel import _NoNetworkHttp
 from app.valuation_price_history import PriceHistoryService
@@ -34,12 +39,13 @@ from app.valuation_worker import OffhoursPhase, run_worker_iteration
 from app.valuation_worker_contract import VALUATION_WORKER_ADVISORY_PHASES, VALUATION_WORKER_OFFHOURS_PHASES, VALUATION_WORKER_PHASES
 from tests import test_valuation_ensemble_grid as grid_tests
 from tests.test_valuation_ensemble_grid import IMPLEMENTATION, _canonical_facts, _fixture
-from tests.test_valuation_pit_rerun import (SECTOR, SYMBOLS, T, VINTAGE_AT, ScriptedHttp, _database, _publish_prices,
+from tests.test_valuation_pit_rerun import (SECTOR, SYMBOLS, T, VINTAGE_AT, ScriptedHttp, _bars_for, _database, _publish_prices,
                                            _publish_sources, _sessions, _settings, _target)
 
 BACKEND = Path(__file__).resolve().parents[1]
 REPOSITORY = BACKEND.parents[1]
 SIGNED_PIN = REPOSITORY / "c3po" / "ops" / "valuation-ensemble" / f"{live.SIGNED_INSTRUMENT_PIN}.json"
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 
 
 @pytest.fixture(autouse=True)
@@ -60,11 +66,14 @@ def _grid(fixture: tuple[Any, ...]) -> dict[str, Any]:
                                 implementation=IMPLEMENTATION, volume_basis="as_traded")
 
 
-def _pinned_targets(database: Database, calls: list[str] | None = None, *, failing: set[str] | None = None):
+def _pinned_targets(database: Database, calls: list[tuple[str, int | None]] | None = None, *, failing: set[str] | None = None,
+                    advance: list[int] | None = None):
     """The RAW rows the grid read (the FMP PIT source snapshots), served through the live reader's interface."""
-    def read(market: str, symbol: str) -> list[dict[str, Any]]:
+    def read(market: str, symbol: str, *, pages: int | None = None) -> list[dict[str, Any]]:
         if calls is not None:
-            calls.append(symbol)
+            calls.append((symbol, pages))
+        if advance is not None:
+            advance[0] += 1
         if symbol in (failing or set()):
             raise RuntimeError("provider unavailable")
         snapshot = database.latest_analysis_snapshot(pit.SOURCE_ANALYSIS_TYPE, pit.source_entity_key(market, pit.PROVIDER_FMP, symbol))
@@ -72,16 +81,21 @@ def _pinned_targets(database: Database, calls: list[str] | None = None, *, faili
     return read
 
 
-def _live(database: Database, *, targets=None, volume_basis: str | None = "as_traded") -> tuple[live.LiveInputs, dict[str, Any]]:
+def _inputs(database: Database, *, targets=None, volume_basis: str | None = "as_traded", listed: bool = True) -> live.LiveInputs:
     """The live path at the grid's T with the grid's inputs: a NEW pin of the same publication, a NEW as-filed reader, the
     curve derived by curve_package_at from the pinned Treasury history and the pinned target rows."""
     prices = pit.PinnedPrices(PriceHistoryService(_settings(), database, _NoNetworkHttp()), "NASDAQ", as_of=T,
                               pinned_at=VINTAGE_AT + timedelta(seconds=1), pin_mode="explicit")
-    history = database.latest_analysis_snapshot(pit.SOURCE_ANALYSIS_TYPE, pit.MACRO_TREASURY_KEY)["outputs"]["payload"]
-    curve = pit.curve_package_at(history, as_of=T, economic_date=pit.economic_date_of("NASDAQ", T))
+    snapshot = database.latest_analysis_snapshot(pit.SOURCE_ANALYSIS_TYPE, pit.MACRO_TREASURY_KEY)
+    assert snapshot is not None
+    curve = pit.curve_package_at(snapshot["outputs"]["payload"], as_of=T, economic_date=pit.economic_date_of("NASDAQ", T))
     assert curve is not None
-    inputs = live.gather_live_inputs(database, market="NASDAQ", as_of=T, prices=prices, curve=curve, curve_reference={"origin": "fixture"},
-                                     targets=targets or _pinned_targets(database), volume_basis=volume_basis)
+    return live.gather_live_inputs(database, market="NASDAQ", as_of=T, prices=prices, curve=curve, curve_reference={"origin": "fixture"},
+                                   targets=targets or _pinned_targets(database), volume_basis=volume_basis, listed=listed)
+
+
+def _live(database: Database, **kwargs: Any) -> tuple[live.LiveInputs, dict[str, Any]]:
+    inputs = _inputs(database, **kwargs)
     return inputs, live.compute_live_section(inputs)
 
 
@@ -91,7 +105,7 @@ def _grid_primary(record: dict[str, Any]) -> float | None:
 
 def _assert_parity(grid: dict[str, Any], section: dict[str, Any]) -> None:
     grid_rows = {row["symbol"]: row for row in grid["records"]}
-    live_rows = {row["symbol"]: row for row in section["records"]}
+    live_rows = {row["symbol"]: row for row in section["records"] if row["in_served_catalogue"]}
     assert list(live_rows) == list(grid_rows)
     for symbol, expected in grid_rows.items():
         got = live_rows[symbol]
@@ -104,7 +118,7 @@ def _assert_parity(grid: dict[str, Any], section: dict[str, Any]) -> None:
             assert got["sample_size"] == expected["variants"][live.PRIMARY]["sample_size"]
             assert got["consensus"]["value"] == expected["consensus"]["value"]
             assert got["consensus"]["used"] is expected["variants"][live.PRIMARY]["consensus_included"]
-        assert got["screened"] is expected["screened"]
+        assert got["screened"] is expected["screened"] and got["pit_tested"] is expected["screened"]
         assert got["price"] == expected["price"] and got["session_date"] == expected["session_date"]
 
 
@@ -123,11 +137,12 @@ def test_parity_with_the_signed_grid_section_is_exact_on_the_grid_fixture(ready:
     assert sum(value is not None for value in primaries) == len(SYMBOLS) and all(math.isfinite(v) for v in primaries if v is not None)
     assert all(row["consensus"]["used"] and row["consensus"]["value"] == pytest.approx(1300 / 3) for row in section["records"])
     assert section["counts"]["with_primary_tp"] == len(SYMBOLS) and section["counts"]["origins"] == {"ensemble": len(SYMBOLS)}
-    assert section["counts"]["model_results"] == grid["ledger"]["model_results"]
+    assert section["counts"]["model_results"] == grid["ledger"]["model_results"] and section["complete"] is True
     assert section["primary"] == live.PRIMARY == PROTOCOL_CONSTANTS["primary"] == json.loads(SIGNED_PIN.read_text())["constants"]["primary"]
     # the same inputs give the same hashes; the context names the clock, the publication and the producer's bytes
     assert [row["inputs_sha256"] for row in _live(ready[0])[1]["records"]] == [row["inputs_sha256"] for row in section["records"]]
     assert section["context"]["price_vintage"] == ready[1].manifest() and set(section["context"]["implementation"]) == set(live.IMPLEMENTATION_FILES)
+    assert {"valuation_official.py", "valuation_pit_grid.py", "market_data/eodhd.py", "valuation_panel.py"} <= set(live.IMPLEMENTATION_FILES)
 
 
 @pytest.mark.parametrize("variant", [
@@ -146,12 +161,12 @@ def test_parity_holds_when_inputs_are_missing(variant: dict[str, Any]) -> None:
         assert row["primary_tp"] is None and row["origin"] == "not_evaluable:not_a_stock" and row["models_evaluated"] == 0
 
 
-def _factor_bars() -> dict[str, list[dict[str, Any]]]:
+def _factor_bars(symbols: tuple[str, ...] = SYMBOLS) -> dict[str, list[dict[str, Any]]]:
     """One common factor with loadings 0.6…1.4 plus small idiosyncratic moves: recomputed betas inside (0.27, 2.09), so
     clamp(r5y + β·0.055, 0.06, 0.16) is NOT clamped and the curve and the beta reach every DCF/DDM/RI value."""
     sessions = _sessions("2023-06-01", "2026-09-10")
     bars: dict[str, list[dict[str, Any]]] = {}
-    for index, symbol in enumerate(SYMBOLS):
+    for index, symbol in enumerate(symbols):
         loading, level, rows = 0.6 + 0.16 * index, 0.0, []
         for i, session in enumerate(sessions):
             level += loading * (0.01 * math.sin(i * 0.7) + 0.004 * math.cos(i * 1.3)) + 0.002 * math.sin(i * (index + 2) * 0.37)
@@ -175,6 +190,32 @@ def test_parity_holds_on_the_capm_path_where_the_curve_and_the_beta_move_the_tp(
     assert all(row["primary_tp"] is not None for row in section["records"])
 
 
+def test_parity_holds_at_the_edges_of_the_consensus_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    # (T − 90 d, T]: T − 89 d and T itself count, T − 90 d, T − 91 d and anything after T never do; the latest row of a house
+    # wins; a target in another currency is refused; fewer than three houses leaves the TP on the models alone
+    day = timedelta(days=1)
+    rich = [_target("A", T - 89 * day, 120), _target("B", T - 91 * day, 900), _target("C", T + timedelta(hours=1), 5000),
+            _target("D", T - 60 * day, 999), _target("D", T - 30 * day, 150), _target("E", T - 90 * day, 777), _target("F", T, 180),
+            _target("G", T - 5 * day, 3000, currency="EUR")]
+    thin = [_target("A", T - 89 * day, 120), _target("B", T - 91 * day, 900), _target("C", T + day, 5000), _target("D", T - 2 * day, 140)]
+    window = {symbol: (rich if index < 3 else thin) for index, symbol in enumerate(SYMBOLS)}
+    original = grid_tests._publish_sources
+    monkeypatch.setattr(grid_tests, "_publish_sources",
+                        lambda database, *, targets=None, poison=False, **kw: original(database, targets=window, poison=poison, **kw))
+    fixture = _fixture()
+    grid = _grid(fixture)
+    _, section = _live(fixture[0])
+    _assert_parity(grid, section)
+    rows = {row["symbol"]: row for row in section["records"]}
+    grid_rows = {row["symbol"]: row for row in grid["records"]}
+    for symbol in SYMBOLS[:3]:
+        assert rows[symbol]["consensus"]["value"] == grid_rows[symbol]["consensus"]["value"] == 150.0  # mean of A 120, D 150, F 180
+        assert rows[symbol]["consensus"]["analyst_count"] == 3 and rows[symbol]["consensus"]["used"] is True
+    for symbol in SYMBOLS[3:]:
+        assert rows[symbol]["consensus"]["reason"] == grid_rows[symbol]["consensus"]["reason"] == "houses_below_minimum"
+        assert rows[symbol]["consensus"]["used"] is False and rows[symbol]["primary_tp"] is not None
+
+
 def test_a_name_without_inputs_or_targets_gets_a_reason_never_a_number() -> None:
     fixture = _fixture()
     database = fixture[0]
@@ -183,14 +224,14 @@ def test_a_name_without_inputs_or_targets_gets_a_reason_never_a_number() -> None
     database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7},
                                     {"rows": [{"symbol": s, "sector": SECTOR, "industry": "Machinery", "valuation_profile": "general",
                                                "security_type": "Stock"} for s in (*SYMBOLS, "ZZZ")]}, VINTAGE_AT)
-    calls: list[str] = []
+    calls: list[tuple[str, int | None]] = []
     _, section = _live(database, targets=_pinned_targets(database, calls, failing={"BBB"}))
     rows = {row["symbol"]: row for row in section["records"]}
     assert rows["ZZZ"]["primary_tp"] is None and rows["ZZZ"]["origin"] == "not_evaluable:not_admitted_at_T:statement_vintages_missing"
-    assert rows["ZZZ"]["consensus"]["reason"] == "not_fetched:company_not_evaluable" and "ZZZ" not in calls  # no read for a hopeless name
+    assert rows["ZZZ"]["consensus"]["reason"] == "not_fetched:company_not_evaluable" and "ZZZ" not in [s for s, _ in calls]
     # a provider failure refuses the name: never a TP computed without the consensus it could not read
     assert rows["BBB"]["primary_tp"] is None and rows["BBB"]["origin"] == "not_evaluable:targets_fetch_failed:RuntimeError"
-    assert rows["BBB"]["models_evaluated"] >= 3  # the models ran; the number is withheld
+    assert rows["BBB"]["consensus"]["reason"] == "targets_fetch_failed:RuntimeError" and rows["BBB"]["models_evaluated"] >= 3
     # every other name is the grid's number: the extra name is no peer and the failed read moves no one else
     for row in grid["records"]:
         if row["symbol"] != "BBB":
@@ -198,6 +239,20 @@ def test_a_name_without_inputs_or_targets_gets_a_reason_never_a_number() -> None
     counts = json.dumps(section["counts"])
     assert not any(f'"{symbol}"' in counts for symbol in (*SYMBOLS, "ZZZ"))  # aggregates hold reasons and counts, never a name
     assert section["counts"]["origins"]["not_evaluable:targets_fetch_failed:RuntimeError"] == 1
+    assert section["counts"]["targets"] == {"attempted": len(SYMBOLS), "failed": 1, "circuit_open": False}
+    # one failure in six is above the 10 % tolerance: the section would not be published tonight
+    assert live.unpublishable(section) == "targets_failed_share"
+
+
+def test_a_name_whose_aggregation_refuses_keeps_its_consensus_label(ready: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise live.NotEvaluable("model_value_not_positive")
+
+    monkeypatch.setattr(live, "aggregate_grid_variants", refuse)
+    _, section = _live(ready[0])
+    row = section["records"][0]
+    assert row["origin"] == "not_evaluable:consensus_or_aggregation:model_value_not_positive"
+    assert row["consensus"]["value"] == pytest.approx(1300 / 3) and row["consensus"]["reason"] == "aggregation_refused"
 
 
 def test_a_market_without_a_curve_or_with_a_foreign_pin_is_refused_before_any_name(ready: tuple[Any, ...]) -> None:
@@ -209,34 +264,142 @@ def test_a_market_without_a_curve_or_with_a_foreign_pin_is_refused_before_any_na
     with pytest.raises(live.LiveEnsembleError, match="price_pin_not_of_this_section"):
         live.gather_live_inputs(database, market="NASDAQ", as_of=T + timedelta(days=1), prices=prices, curve={"interpolated_5y_rate": 0.04},
                                 curve_reference={}, targets=_pinned_targets(database), volume_basis="as_traded")
+    empty = _database()
+    _publish_prices(empty)
+    pinned = pit.PinnedPrices(PriceHistoryService(_settings(), empty, _NoNetworkHttp()), "NASDAQ", as_of=T,
+                              pinned_at=VINTAGE_AT + timedelta(seconds=1), pin_mode="explicit")
+    _canonical_facts(empty)
     with pytest.raises(live.LiveEnsembleError, match="catalogue_missing"):
-        empty = _database()
-        _publish_prices(empty)
-        pinned = pit.PinnedPrices(PriceHistoryService(_settings(), empty, _NoNetworkHttp()), "NASDAQ", as_of=T,
-                                  pinned_at=VINTAGE_AT + timedelta(seconds=1), pin_mode="explicit")
-        _canonical_facts(empty)
         live.gather_live_inputs(empty, market="NASDAQ", as_of=T, prices=pinned, curve={"interpolated_5y_rate": 0.04}, curve_reference={},
                                 targets=_pinned_targets(empty), volume_basis=None)
 
 
-def test_an_undetermined_volume_basis_leaves_screened_unknown_and_every_tp_unchanged(ready: tuple[Any, ...]) -> None:
+def test_an_undetermined_volume_basis_keeps_every_tp_and_tests_only_names_kept_under_both_bases(ready: tuple[Any, ...]) -> None:
     _, decided = _live(ready[0])
     _, unknown = _live(ready[0], volume_basis=None)
     assert all(row["screened"] is None for row in unknown["records"]) and unknown["counts"]["screened"] is None
     assert [row["primary_tp"] for row in unknown["records"]] == [row["primary_tp"] for row in decided["records"]]
+    assert unknown["context"]["pit_tested_rule"] == "screen:both_bases" and decided["context"]["pit_tested_rule"] == "screen:as_traded"
+
+
+# ------------------------------------------------------------------ the population: every US common stock, tested names flagged
+def _listed(database: Database, symbols: tuple[str, ...], *, market: str = "NASDAQ", tamper: bool = False,
+            at: datetime = VINTAGE_AT) -> None:
+    listings = [{"market": market, "symbol": symbol, "name": symbol + " Inc", "security_type": "Stock", "listing_class": "equity",
+                 "isin": None, "attributes": {}} for symbol in symbols]
+    listings.append({"market": market, "symbol": "ETFX", "name": "An ETF", "security_type": "ETF", "listing_class": "fund", "isin": None,
+                     "attributes": {}})
+    outputs: dict[str, Any] = {"schema": live.LISTED_SCHEMA, "market": market, "source_url": "official", "listings": listings}
+    outputs["manifest_sha256"] = canonical_hash(outputs)
+    if tamper:
+        outputs["listings"] = outputs["listings"][:-2]
+    database.save_analysis_snapshot(live.LISTED_ANALYSIS, market, "mv-listed", {}, outputs, at)
+
+
+def _wide_world() -> Database:
+    """The grid fixture's six served names plus GGG: priced and filed like them, listed, but not in the served catalogue."""
+    wide = (*SYMBOLS, "GGG")
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    database = _database()
+    _publish_prices(database, bars={f"{s}.US": _bars_for(s, sessions, base=100.0 + 10 * i) for i, s in enumerate(wide)})
+    _publish_sources(database, poison=True, targets={s: [_target(h, T - timedelta(days=10), v) for h, v in (("A", 100), ("B", 200), ("C", 1000))]
+                                                    for s in SYMBOLS})
+    return database
+
+
+def test_the_population_is_every_listed_common_stock_and_adding_it_moves_no_tested_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    database = _wide_world()
+    monkeypatch.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))  # canonical facts for GGG too (it is filed like the others)
+    _canonical_facts(database)
+    monkeypatch.undo()
+    _, served_only = _live(database, listed=False)
+    _listed(database, (*SYMBOLS, "GGG", "ZZZ"))
+    calls: list[tuple[str, int | None]] = []
+    inputs, wide = _live(database, targets=_pinned_targets(database, calls))
+    assert [row["symbol"] for row in inputs.extra_rows] == ["GGG", "ZZZ"] and inputs.listed_reference["status"] == "read"
+    rows = {row["symbol"]: row for row in wide["records"]}
+    assert set(rows) == {*SYMBOLS, "GGG", "ZZZ"} and "ETFX" not in rows  # every common stock, no ETF from the listing
+    for row in served_only["records"]:  # the served names keep the grid's proxy and peers: identical numbers
+        assert {k: v for k, v in rows[row["symbol"]].items() if k != "inputs_sha256"} == {k: v for k, v in row.items() if k != "inputs_sha256"}
+    ggg = rows["GGG"]
+    assert ggg["in_served_catalogue"] is False and ggg["pit_tested"] is False and ggg["primary_tp"] is not None and ggg["origin"] == "ensemble"
+    assert ggg["model_values"]["pe"] is None  # no classification in a listing: the peer models refuse, the intrinsic ones value it
+    assert rows["ZZZ"]["origin"] == "not_evaluable:not_admitted_at_T:statement_vintages_missing" and rows["ZZZ"]["pit_tested"] is False
+    assert ("GGG", live.EXTRA_TARGET_PAGES) in calls and all(pages is None for symbol, pages in calls if symbol != "GGG")
+    assert wide["counts"]["population_rows"] == len(SYMBOLS) + 2 and wide["counts"]["listed_only_stocks"] == 2
+    assert "GGG" not in inputs.prices._bars and set(SYMBOLS) <= set(inputs.prices._bars)  # the chunk's series were dropped
+    # a listing whose manifest does not verify adds nothing
+    _listed(database, (*SYMBOLS, "GGG", "ZZZ", "YYY"), tamper=True, at=VINTAGE_AT + timedelta(minutes=1))
+    tampered = _inputs(database)
+    assert tampered.extra_rows == [] and tampered.listed_reference["status"] == "refused_manifest"
+
+
+def test_a_target_history_that_fills_the_page_cap_is_refused_for_a_listed_only_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    database = _wide_world()
+    monkeypatch.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))
+    _canonical_facts(database)
+    monkeypatch.undo()
+    _listed(database, (*SYMBOLS, "GGG"))
+    base = _pinned_targets(database)
+
+    def full(market: str, symbol: str, *, pages: int | None = None) -> list[dict[str, Any]]:
+        if symbol == "GGG":
+            return [_target(f"H{i}", T - timedelta(days=200), 10.0) for i in range(live.EXTRA_TARGET_PAGES * live.TARGET_PAGE_LIMIT)]
+        return base(market, symbol, pages=pages)
+
+    _, section = _live(database, targets=full)
+    ggg = next(row for row in section["records"] if row["symbol"] == "GGG")
+    assert ggg["primary_tp"] is None and ggg["origin"] == "not_evaluable:targets_history_beyond_page_cap"
+
+
+@pytest.fixture
+def _two_tested(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fixture's names are tiny (10 shares): open the screen's floors and keep the TWO most liquid as the tested ones."""
+    monkeypatch.setattr(backtest, "SCREEN_MIN_MARKET_CAP", 0.0)
+    monkeypatch.setattr(backtest, "SCREEN_MIN_DOLLAR_VOLUME", 0.0)
+    monkeypatch.setattr(backtest, "SCREEN_TOP_PER_EXCHANGE", 2)
+
+
+@pytest.mark.usefixtures("_two_tested")
+def test_under_a_deadline_the_tested_names_are_read_first_and_the_rest_stays_pending(ready: tuple[Any, ...]) -> None:
+    database = ready[0]
+    calls: list[tuple[str, int | None]] = []
+    advance = [0]
+    start = datetime(2026, 9, 11, 7, 0, tzinfo=timezone.utc)
+    inputs = _inputs(database, targets=_pinned_targets(database, calls, advance=advance))
+    section = live.compute_live_section(inputs, deadline=start + timedelta(minutes=2, seconds=30),
+                                        clock=lambda: start + timedelta(minutes=advance[0]))
+    rows = {row["symbol"]: row for row in section["records"]}
+    tested = {symbol for symbol, row in rows.items() if row["pit_tested"]}
+    assert tested == {"EEE", "FFF"}  # the two highest closes × the same volume
+    assert [symbol for symbol, _ in calls][:2] in (["FFF", "EEE"], ["EEE", "FFF"]) and len(calls) == 3  # tested first, then by liquidity
+    assert calls[2][0] == "DDD"  # the most liquid of the rest
+    assert all(rows[symbol]["primary_tp"] is not None for symbol in tested | {"DDD"})
+    pending = [symbol for symbol, row in rows.items() if row["origin"] == "not_evaluable:pending_targets"]
+    assert sorted(pending) == ["AAA", "BBB", "CCC"] and all(rows[s]["primary_tp"] is None for s in pending)
+    assert section["complete"] is False and section["counts"]["reach"] == {"reached": 3, "pending": 3}
+    assert section["counts"]["pit_tested_pending"] == 0 and live.unpublishable(section) is None  # the tested names are complete
+    # a deadline before the tested names are done: the section is never published
+    advance[0] = 0
+    calls.clear()
+    early = live.compute_live_section(_inputs(database, targets=_pinned_targets(database, calls, advance=advance)),
+                                      deadline=start + timedelta(seconds=30), clock=lambda: start + timedelta(minutes=advance[0]))
+    assert early["counts"]["pit_tested_pending"] == 1 and live.unpublishable(early) == "tested_names_pending"
 
 
 # ------------------------------------------------------------------ the nightly run: live fetches in memory, one snapshot per market
 CLOCK = VINTAGE_AT + timedelta(minutes=1)  # 03:01Z on 2026-09-11: the session of the clock is 2026-09-10, the publication's last
 
 
-def _live_world() -> tuple[Database, ScriptedHttp]:
+def _live_world(*, targets_fail: bool = False) -> tuple[Database, ScriptedHttp]:
     database = _database()
     _publish_prices(database)
     _publish_sources(database, poison=True)
     _canonical_facts(database)
 
     def targets(params: dict[str, Any]) -> list[dict[str, Any]]:
+        if targets_fail:
+            raise MarketDataRequestError("403 Forbidden")
         if params.get("page"):
             return []
         return [_target(house, CLOCK - timedelta(days=10), value) for house, value in (("A", 100), ("B", 200), ("C", 1000))]
@@ -248,6 +411,10 @@ def _live_world() -> tuple[Database, ScriptedHttp]:
 
     http = ScriptedHttp({"/stable/price-target-news": targets, "/api/eod/US3Y.GBOND": gbond(3.9), "/api/eod/US10Y.GBOND": gbond(4.3)})
     return database, http
+
+
+def _target_calls(http: ScriptedHttp) -> int:
+    return sum("price-target-news" in url for url in http.calls)
 
 
 def _on(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -262,14 +429,15 @@ def test_the_nightly_run_publishes_one_snapshot_per_market_from_live_reads_and_w
     with caplog.at_level(logging.INFO):
         summary = live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
     assert summary["published"] == 1 and summary["with_primary_tp"] == len(SYMBOLS) and summary["failures"] == {}
-    assert summary["provider_reads"] == {"eodhd": 1, "fmp": len(SYMBOLS)}
+    assert summary["provider_reads"] == {"eodhd": 1, "fmp": len(SYMBOLS)} and summary["names_pending"] == 0
     snapshot = database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE")
-    assert snapshot is not None and snapshot["outputs"]["as_of"] == CLOCK.isoformat()
+    assert snapshot is not None and snapshot["outputs"]["as_of"] == CLOCK.isoformat() and snapshot["outputs"]["complete"] is True
     records = snapshot["outputs"]["records"]
     assert [row["symbol"] for row in records] == sorted(SYMBOLS) and all(row["origin"] == "ensemble" for row in records)
     assert all(row["as_of"] == CLOCK.isoformat() and row["session_date"] == "2026-09-10" and len(row["inputs_sha256"]) == 64 for row in records)
     assert snapshot["outputs"]["context"]["curve"]["origin"] == "live_fetch:" + pit.MACRO_TREASURY_KEY
-    assert snapshot["outputs"]["volume_check"]["decision"] == "undetermined" and all(row["screened"] is None for row in records)
+    # NYSE has no publication: the volume basis is never voted on one exchange alone; TPs do not depend on it
+    assert snapshot["outputs"]["volume_check"] == {"decision": "not_every_exchange_pinned"} and all(row["screened"] is None for row in records)
     assert snapshot["outputs"]["governance"]["served"] is False
     # the fetches stayed in memory: the signed grid's pinned sources are untouched
     assert sum(s["analysis_type"] == pit.SOURCE_ANALYSIS_TYPE for s in database._analysis_snapshots) == sources_before
@@ -283,6 +451,24 @@ def test_the_nightly_run_publishes_one_snapshot_per_market_from_live_reads_and_w
     again = live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK + timedelta(minutes=30),
                              since=CLOCK, markets=("NASDAQ",))
     assert again["markets_pending"] == 0 and again["published"] == 0 and len(http.calls) == calls
+
+
+def test_the_volume_basis_is_voted_over_both_exchanges_even_when_one_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    _on(monkeypatch)
+    database, http = _live_world()
+    sessions = _sessions("2023-06-01", "2026-09-10")
+    nyse = ScriptedHttp({"/api/eod/NYA.US": _bars_for("NYA", sessions, base=50.0)})
+    series.PriceHistoryService(_settings(), database, nyse, eodhd=EodhdClient("https://eodhd.com", "secret", nyse)).persist_run(  # type: ignore[arg-type]
+        "NYSE", start=date(2023, 6, 1), end=date(2026, 9, 10), symbols=["NYA"], now=VINTAGE_AT)
+    voted: list[list[str]] = []
+
+    def spy(database: Database, settings: Settings, prices: dict[str, pit.PinnedPrices]) -> tuple[str | None, dict[str, Any]]:
+        voted.append(sorted(prices))
+        return None, {"decision": "undetermined"}
+
+    monkeypatch.setattr(live, "decide_volume_basis", spy)
+    live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
+    assert voted == [["NASDAQ", "NYSE"]]
 
 
 def test_one_market_failing_never_blocks_the_other_and_the_night_stays_due(monkeypatch: pytest.MonkeyPatch,
@@ -301,6 +487,121 @@ def test_one_market_failing_never_blocks_the_other_and_the_night_stays_due(monke
     with pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
         live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
     assert database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
+
+
+def test_the_breaker_stops_reading_a_failing_provider_and_nothing_is_published(monkeypatch: pytest.MonkeyPatch) -> None:
+    _on(monkeypatch)
+    monkeypatch.setattr(live, "TARGETS_BREAKER_CONSECUTIVE", 3)
+    database, http = _live_world(targets_fail=True)
+    with pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
+    assert _target_calls(http) == 3  # three failed reads, then no more requests tonight
+    assert database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
+
+
+def test_every_target_read_failing_is_a_failed_phase_and_the_health_card_is_not_green(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.test_system_health import _service
+
+    _on(monkeypatch)
+    database, http = _live_world(targets_fail=True)  # six names under the breaker's ten: the failed share refuses the section
+    local = datetime(2026, 9, 11, 1, 30, tzinfo=SAO_PAULO)
+    phase = OffhoursPhase("ensemble_live", lambda: live.last_run_at(database),
+                          lambda: live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",)))
+    result = run_worker_iteration(database, now=local, canonical_due=False, canonical_operation=lambda: None, offhours_phases=(phase,))
+    assert result.phase_statuses == {"ensemble_live": "failed"} and _target_calls(http) == len(SYMBOLS)
+    assert database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
+    code = VALUATION_WORKER_PHASES["ensemble_live"]["code"]
+    now = datetime.now(timezone.utc)
+    states = {definition["code"]: {"last_status": "succeeded", "started_at": now, "completed_at": now, "last_success_at": now,
+                                   "last_error": None, "metadata": {"phase": phase_key}}
+              for phase_key, definition in VALUATION_WORKER_PHASES.items()}
+    states[code] = {**database.ingestion_run_health([code])[code], "metadata": {"phase": "ensemble_live"}}
+    monkeypatch.setenv(valuation_env.DECISOR_SHADOW_ENV, "true")
+    monkeypatch.setenv(valuation_env.EARNINGS_CALENDAR_ENV, "true")
+    card = _service(valuation_phase_states=states)._valuation_worker_phase_health(now)
+    assert card.status == "attention" and "ensemble_live: LiveEnsembleError: markets_not_published:1" in (card.detail or "")
+
+
+@pytest.mark.usefixtures("_two_tested")
+def test_a_deadline_mid_sweep_publishes_the_tested_names_and_records_the_night_as_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    _on(monkeypatch)
+    database, http = _live_world()
+    deadline = CLOCK + timedelta(minutes=2, seconds=30)
+    with pytest.raises(live.LiveEnsembleError, match=r"^markets_partial:1:names_pending:3$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK + timedelta(minutes=_target_calls(http)),
+                         deadline=deadline, markets=("NASDAQ",))
+    assert _target_calls(http) == 3
+    snapshot = database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE")
+    assert snapshot is not None and snapshot["outputs"]["complete"] is False
+    rows = {row["symbol"]: row for row in snapshot["outputs"]["records"]}
+    assert all(row["primary_tp"] is not None for row in rows.values() if row["pit_tested"])
+    assert snapshot["outputs"]["counts"]["reach"] == {"reached": 3, "pending": 3}
+    # a deadline already past: nothing is read, nothing is written, the run says so
+    database, http = _live_world()
+    with pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, deadline=CLOCK, markets=("NASDAQ",))
+    assert http.calls == [] and database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
+
+
+def test_the_phase_closes_its_run_stops_after_two_failures_and_never_starts_at_or_after_five(monkeypatch: pytest.MonkeyPatch) -> None:
+    _on(monkeypatch)
+    database, http = _live_world()
+    night = datetime(2026, 9, 11, 0, 0, tzinfo=SAO_PAULO)
+    phase = OffhoursPhase("ensemble_live", lambda: live.last_run_at(database),
+                          lambda: valuation_worker.run_ensemble_live(database, _settings(), cast(JsonHttpClient, http), now=night,
+                                                                     clock=lambda: night + valuation_worker.ENSEMBLE_LIVE_DEADLINE),
+                          end_hour=valuation_worker.ENSEMBLE_LIVE_LAST_START_HOUR, max_failures=valuation_worker.ENSEMBLE_LIVE_MAX_FAILURES)
+    statuses = [run_worker_iteration(database, now=night + timedelta(hours=1, minutes=30 + 30 * step), canonical_due=False,
+                                     canonical_operation=lambda: None, offhours_phases=(phase,)).phase_statuses["ensemble_live"]
+                for step in range(3)]
+    statuses.append(run_worker_iteration(database, now=night + timedelta(hours=5), canonical_due=False, canonical_operation=lambda: None,
+                                         offhours_phases=(phase,)).phase_statuses["ensemble_live"])
+    assert statuses == ["failed", "failed", "retry_cap", "outside_window"] and http.calls == []
+    runs = [run for run in database._ingestion_runs.values() if run["source_code"] == VALUATION_WORKER_PHASES["ensemble_live"]["code"]]
+    assert len(runs) == 2 and all(run["status"] == "failed" and run["completed_at"] is not None for run in runs)  # closed, never `running`
+    assert all(run["error_summary"] == "LiveEnsembleError: markets_not_published:2" for run in runs)
+    assert valuation_worker.ENSEMBLE_LIVE_DEADLINE == timedelta(hours=5, minutes=30) and valuation_worker.ENSEMBLE_LIVE_LAST_START_HOUR == 5
+
+
+def test_the_live_phase_never_runs_ahead_of_a_deferred_decisor() -> None:
+    database = _database()
+    local = datetime(2026, 9, 11, 1, 30, tzinfo=SAO_PAULO)
+    ready = local + timedelta(minutes=1)
+    order: list[str] = []
+    decided: list[datetime] = []
+    now = [local]
+
+    def decisor() -> dict[str, int]:
+        order.append("decisor")
+        decided.append(now[0])
+        return {"verdicts": 1}
+
+    def waits() -> datetime | None:
+        return valuation_worker.ensemble_live_not_before(database, now=now[0], decisor_scheduled=True,
+                                                         decisor_last_run_at=lambda: decided[-1] if decided else None,
+                                                         decisor_not_before=lambda: ready)
+
+    phases = (OffhoursPhase("decisor_shadow", lambda: decided[-1] if decided else None, decisor, not_before=lambda: ready),
+              OffhoursPhase("ensemble_live", lambda: None, lambda: order.append("live") or {"names": 1}, end_hour=5, max_failures=2,
+                            not_before=waits))
+    first = run_worker_iteration(database, now=local, canonical_due=False, canonical_operation=lambda: None, offhours_phases=phases)
+    assert first.phase_statuses == {"decisor_shadow": "deferred", "ensemble_live": "deferred"} and order == []
+    assert first.next_wake_at == ready
+    now[0] = ready
+    second = run_worker_iteration(database, now=ready, canonical_due=False, canonical_operation=lambda: None, offhours_phases=phases)
+    assert second.phase_statuses == {"decisor_shadow": "succeeded", "ensemble_live": "succeeded"} and order == ["decisor", "live"]
+    # a decisor that is off, done tonight or not deferred never holds the live phase
+    assert valuation_worker.ensemble_live_not_before(database, now=local, decisor_scheduled=False, decisor_last_run_at=lambda: None,
+                                                     decisor_not_before=lambda: ready) is None
+    assert valuation_worker.ensemble_live_not_before(database, now=local, decisor_scheduled=True, decisor_last_run_at=lambda: None,
+                                                     decisor_not_before=lambda: None) is None
+    # the main loop wires it so
+    source = (BACKEND / "app" / "valuation_worker.py").read_text(encoding="utf-8")
+    phases_source = source[source.index("offhours_phases = ("):source.index("while True:")]
+    wiring = phases_source[phases_source.index('OffhoursPhase("ensemble_live"'):]
+    for fragment in ("end_hour=ENSEMBLE_LIVE_LAST_START_HOUR", "max_failures=ENSEMBLE_LIVE_MAX_FAILURES", "not_before=lambda: ensemble_live_not_before(",
+                     "decisor_last_run_at=lambda: decision_last_run_at(database)", "decisor_not_before=lambda: decision_not_before(database)"):
+        assert fragment in wiring, fragment
 
 
 def test_switch_off_nothing_is_read_fetched_or_written(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -358,7 +659,7 @@ def test_the_health_card_expects_the_phase_only_when_on_and_never_goes_offline_f
 def test_a_failing_live_phase_never_breaks_another_phase_nor_pages(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     _on(monkeypatch)
     database, http = _live_world()
-    local = datetime(2026, 9, 11, 1, 30, tzinfo=ZoneInfo("America/Sao_Paulo"))
+    local = datetime(2026, 9, 11, 1, 30, tzinfo=SAO_PAULO)
     ran: list[str] = []
     pushes: list[Any] = []
 
