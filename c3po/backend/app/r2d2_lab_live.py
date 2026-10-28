@@ -461,16 +461,22 @@ def _session_results(by_day: dict[str, dict[str, Any]], today: str) -> dict[str,
 
 
 def _closed_episodes(by_day: dict[str, dict[str, Any]], today: str) -> list[float]:
-    """The result of every position closed TODAY, one per episode (Codex #494 finding 2, #496 finding 1): the fills of
-    every stored session up to today, per symbol and in time order. An episode opens with a BUY into a flat position
-    and closes when its quantity returns to zero; partial sells, on any day, add up inside it. A SELL with no opening
-    in the documents (a position older than the live book) has no proven size: it closes nothing and is not counted."""
+    """The result of every position closed TODAY, one per episode (``closed_episode_details``)."""
+    return [item["net_realized_pnl_usd"] for item in closed_episode_details(by_day, today)]
+
+
+def closed_episode_details(by_day: dict[str, dict[str, Any]], today: str) -> list[dict[str, Any]]:
+    """Every position closed TODAY, one per episode (Codex #494 finding 2, #496 finding 1): the fills of every stored
+    session up to today, per symbol and in time order. An episode opens with a BUY into a flat position and closes when
+    its quantity returns to zero; partial sells, on any day, add up inside it. A SELL with no opening in the documents (a
+    position older than the live book) has no proven size: it closes nothing and is not counted. Each episode carries its
+    symbol, its result and the id of the fill that closed it (the push layer's idempotency key)."""
     fills = [item for day, outputs in by_day.items() if day <= today for item in outputs.get("trades") or []]
-    closed: list[float] = []
+    closed: list[dict[str, Any]] = []
     by_symbol: dict[str, list[dict[str, Any]]] = {}
     for item in fills:
         by_symbol.setdefault(item["symbol"], []).append(item)
-    for symbol_fills in by_symbol.values():
+    for symbol, symbol_fills in by_symbol.items():
         quantity, result = 0.0, 0.0
         for item in sorted(symbol_fills, key=lambda fill: (fill["executed_at"], fill["side"] != "BUY")):
             if item["side"] == "BUY":
@@ -482,9 +488,30 @@ def _closed_episodes(by_day: dict[str, dict[str, Any]], today: str) -> list[floa
             quantity -= item["quantity"]
             if quantity <= 1e-6 * max(item["quantity"], 1.0):
                 if datetime.fromisoformat(item["executed_at"]).astimezone(NEW_YORK).date().isoformat() == today:
-                    closed.append(result)
+                    # a fill id is unique within its day's document only: the episode's identity is the source, the New
+                    # York session and the closing fill (Codex #503: a reused daily id never silences another day's push)
+                    closed.append({"symbol": symbol, "net_realized_pnl_usd": result,
+                                   "episode_id": "lab:%s:%s" % (today, item.get("id") or "%s:%s" % (symbol, item["executed_at"]))})
                 quantity, result = 0.0, 0.0
     return closed
+
+
+def episode_summary(database: Any, *, now: datetime | None = None) -> dict[str, Any] | None:
+    """Today's episodes of the live book, as the panels count them (``apply_book``): the push alerts read the SAME walk.
+    None when the live book has no document for today's New York session (the paused V2 book then answers)."""
+    if database is None:
+        return None
+    today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date().isoformat()
+    by_day = dict(_lab_snapshots(database, now, 90))
+    if today not in by_day:
+        return None
+    details = closed_episode_details(by_day, today)
+    positive = sum(1 for item in details if item["net_realized_pnl_usd"] > 0)
+    negative = sum(1 for item in details if item["net_realized_pnl_usd"] < 0)
+    return {"session_date": today, "closed_episodes": len(details), "closed_episode_details": details,
+            "decided_episodes": positive + negative, "positive_episodes": positive, "negative_episodes": negative,
+            "flat_episodes": len(details) - positive - negative,
+            "win_rate_percent": round(positive / (positive + negative) * 100, 2) if positive + negative else 0.0}
 
 
 def _scoreboard(v2: R2D2SummaryStats, track: list[R2D2TrackPoint], by_day: dict[str, dict[str, Any]], today: str,
