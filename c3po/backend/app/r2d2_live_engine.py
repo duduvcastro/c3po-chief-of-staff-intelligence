@@ -77,6 +77,12 @@ NBBO_PAUSE_AFTER_FAILURE_SECONDS = 30.0  # Massive failed: the stream's quote fo
 # Massive requests in flight at once for one step's crosses. Asked one after the other (~0.7 s each from the host),
 # the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
 NBBO_PARALLEL = 32
+# owner 29/10/2026 ~17:4x BRT: "coloca o registro por faixa de spread e quanto cada faixa teria gerado de lucro/prejuízo" —
+# every signal refused by the spread limit, by band of its spread, and a shadow trade per refused name that follows the
+# same exits (no money, no slot): bought at the real ask it was refused at; marked on the last trade less half that spread
+# (no quote subscription for the shadows: the WebSocket slots go to the universe); closed at the session's close if open
+SHADOW_BANDS = (("5_8", 8.0), ("8_10", 10.0), ("gt10", math.inf))  # the refused spreads above the 5 bps limit, in bps
+SHADOW_TRADE_MAX_AGE_SECONDS = 10.0  # a shadow is marked only on a trade this recent
 NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the signal's own price is another
 # instrument's (a share-class or mapping error) or absurd: never bought on (pre-review of e8ce1f3)
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
@@ -445,6 +451,24 @@ def build_universe(get_json: Callable[..., Any], base_url: str, token: str, day:
 
 
 # ------------------------------------------------------------------ the engine (pure: decisions from views)
+def shadow_band(spread_bps: float) -> str:
+    """The band of a spread refused by the limit (in bps): 5_8, 8_10, gt10."""
+    return next(name for name, upper in SHADOW_BANDS if spread_bps <= upper)
+
+
+def shadow_line(engine: "Engine") -> str:
+    """Per spread band, numbers only (published by the status workflow): signals refused, shadows closed, open and
+    positive, and the net they made in USD at the real positions' size."""
+    parts = []
+    for name, _ in SHADOW_BANDS:
+        stats = engine.state.bands.get(name) or {}
+        parts.append("%s vetoed=%d closed=%d open=%d wins=%d net_usd=%.2f" % (
+            name, int(stats.get("vetoed", 0)), int(stats.get("closed", 0)),
+            sum(1 for row in engine.state.shadow.values() if row["band"] == name), int(stats.get("wins", 0)),
+            float(stats.get("net_usd", 0.0))))
+    return "R2D2 live shadow: limit_bps=%.1f %s" % (RULE["spread_max_bps"], " ".join(parts))
+
+
 def lock_floor(peak: float) -> float:
     """The armed lock's floor: the last step the peak reached (owner 29/10, "no degrau"): +0.10% net, then every 0.05 up
     to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
@@ -495,13 +519,16 @@ class EngineState:
     candidates_fixed: bool = False  # the selection at the open happened (even when it found none)
     stream_context: dict[str, dict[str, Any]] = field(default_factory=dict)  # the tapes, for a restart
     config: str = ""  # the rule the session in the state ran under (its documents keep it when the rule changes)
+    shadow: dict[str, dict[str, Any]] = field(default_factory=dict)  # the open shadow trades (never published by name)
+    bands: dict[str, dict[str, float]] = field(default_factory=dict)  # per spread band: refused, closed, wins, net USD
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
                 "positions": [asdict(position) for position in self.positions.values()], "session": self.session,
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
-                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config}
+                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config,
+                "shadow": self.shadow, "bands": self.bands}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -512,7 +539,8 @@ class EngineState:
                    signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []),
                    last_signal_minute=int(data.get("last_signal_minute", -1)),
                    candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}),
-                   config=str(data.get("config") or ""))
+                   config=str(data.get("config") or ""),
+                   shadow=dict(data.get("shadow") or {}), bands=dict(data.get("bands") or {}))
 
 
 class Engine:
@@ -533,6 +561,7 @@ class Engine:
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
             state.config = CONFIG
+            state.shadow, state.bands = {}, {}
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
 
@@ -602,6 +631,7 @@ class Engine:
                 reason = "t30_positive"
             if reason:
                 new.append(self._sell(position, market.bid, net, reason, moment))
+        self._shadow_exits(now, view)
         # The buy signal, checked EVERY SECOND like the exits (owner 29/10/2026: "esse cheque tem que ser por segundo e
         # não por minuto"): the last trade back above the VWAP after being below it, executed at once at the real ask.
         # Until 29/10 it was the close of each completed minute (the lab's candles): a cross the minute's close no longer
@@ -680,6 +710,7 @@ class Engine:
                 spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
                 if spread_bps > RULE["spread_max_bps"]:
                     self.skips["spread"] += 1
+                    self._shadow_open(symbol, ask, spread_bps, moment)
                     continue
                 if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
                         and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"]):
@@ -688,6 +719,41 @@ class Engine:
                     self.sources["stream_would_refuse"] += 1
                 new.append(self._buy(symbol, ask, gap, spread_bps, moment, source))
         return new
+
+    def _shadow_open(self, symbol: str, ask: float, spread_bps: float, moment: datetime) -> None:
+        """A signal refused by the spread limit: counted in its band, and followed as a shadow trade unless the name is
+        held or already followed."""
+        band = shadow_band(spread_bps)
+        stats = self.state.bands.setdefault(band, {"vetoed": 0, "closed": 0, "wins": 0, "net_usd": 0.0})
+        stats["vetoed"] += 1
+        if symbol in self.state.shadow or symbol in self.state.positions:
+            return
+        self.state.shadow[symbol] = {"band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"],
+                                     "peak": None, "armed": False, "last_net": None, "opened_at": moment.isoformat()}
+
+    def _shadow_close(self, symbol: str, net: float) -> None:
+        row = self.state.shadow.pop(symbol)
+        stats = self.state.bands.setdefault(row["band"], {"vetoed": 0, "closed": 0, "wins": 0, "net_usd": 0.0})
+        stats["closed"] += 1
+        stats["wins"] += 1 if net > 0 else 0
+        stats["net_usd"] += row["size_usd"] * net / 100
+
+    def _shadow_exits(self, now: datetime, view: Callable[[str], MarketView]) -> None:
+        """The same exits as a position (stop, step lock, positives sold in the last 30 s), on the last trade less half
+        the spread the shadow was refused at — an estimate of the bid (the shadows have no quote subscription)."""
+        late = now.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM
+        for symbol, row in list(self.state.shadow.items()):
+            market = view(symbol)
+            if market.price is None or market.trade_at is None or (now - market.trade_at).total_seconds() > SHADOW_TRADE_MAX_AGE_SECONDS:
+                continue
+            bid = market.price * (1 - row["spread_bps"] / 2 / 1e4)
+            net = (bid * (1 - FEE_SIDE) / (row["ask"] * (1 + FEE_SIDE)) - 1) * 100
+            row["last_net"] = net
+            row["peak"] = net if row["peak"] is None else max(row["peak"], net)
+            if net >= RULE["lock_min_percent"]:
+                row["armed"] = True
+            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"])) or (late and net > 0)):
+                self._shadow_close(symbol, net)
 
     def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream") -> dict[str, Any]:
         size = self.state.nav_realized / RULE["slots"]
@@ -718,6 +784,11 @@ class Engine:
         return fill
 
     def close_session(self) -> None:
+        for symbol, row in list(self.state.shadow.items()):  # the shadows never carry: closed at their last mark
+            if row.get("last_net") is None:
+                self.state.shadow.pop(symbol)
+            else:
+                self._shadow_close(symbol, row["last_net"])
         for position in self.state.positions.values():
             position.days_held += 1
         self.state.last_session = self.day.isoformat()
@@ -1038,6 +1109,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
             logger.info("%s", heartbeat(stream, engine, moment))
             logger.info("%s", feed_line(stream, engine))
+            logger.info("%s", shadow_line(engine))
             last_lines = clock_time.monotonic()
         # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
         sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
@@ -1067,7 +1139,9 @@ def status(database: Any, now: datetime) -> dict[str, Any]:
             "session_in_progress": state.get("session"), "nav_realized": state.get("nav_realized"),
             "positions": len(state.get("positions") or []), "today_config": document.get("config"),
             "today_fills": len(document.get("trades") or []), "today_cycle": document.get("cycle"),
-            "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of")}
+            "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of"),
+            "spread_bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
+                             for name, stats in (state.get("bands") or {}).items()}}
 
 
 def main() -> None:

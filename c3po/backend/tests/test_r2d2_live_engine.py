@@ -272,6 +272,58 @@ def test_the_stream_evidence_counts_only_a_fresh_stream_quote_wider_than_the_lim
     assert [f["symbol"] for f in fills] == ["AAA"] and engine.sources["stream_would_refuse"] == 1
 
 
+def test_a_spread_refusal_is_counted_in_its_band_and_followed_as_a_shadow_trade() -> None:
+    """Owner 29/10: the refused signals per spread band and what each band would have made, with the same exits."""
+    assert [engine_module.shadow_band(b) for b in (5.5, 8.0, 8.1, 10.0, 10.5)] == ["5_8", "5_8", "8_10", "8_10", "gt10"]
+    engine = _crossing_engine()
+    t = _at(9, 41)
+    wide = lambda s, now: (97.97, 98.03, now)  # noqa: E731 — Massive: ~6.1 bps, refused by the 5 bps limit
+    assert engine.step(t, lambda s: _view(98.1, 98.0, 97.97, 98.03, t) if s == "AAA" else MarketView(), nbbo=wide) == []
+    assert engine.skips["spread"] == 1 and engine.state.bands["5_8"]["vetoed"] == 1
+    row = engine.state.shadow["AAA"]
+    assert row["band"] == "5_8" and row["ask"] == 98.03 and abs(row["size_usd"] - 1_000_000.0 / 20) < 1e-6
+    # its exits: the last trade less half the refused spread is the estimated bid; up ~+0.12% → armed, floor +0.10%
+    half = row["spread_bps"] / 2 / 1e4
+    price_at = lambda net: row["ask"] * (1 + FEE_SIDE) * (1 + net / 100) / ((1 - FEE_SIDE) * (1 - half))  # noqa: E731
+    up, down = _at(9, 42), _at(9, 42, 1)
+    engine.step(up, lambda s: MarketView(price=price_at(0.12), trade_at=up, vwap=98.0) if s == "AAA" else MarketView())
+    assert engine.state.shadow["AAA"]["armed"]
+    engine.step(down, lambda s: MarketView(price=price_at(0.09), trade_at=down, vwap=98.0) if s == "AAA" else MarketView())
+    stats = engine.state.bands["5_8"]
+    assert "AAA" not in engine.state.shadow and stats["closed"] == 1 and stats["wins"] == 1
+    assert abs(stats["net_usd"] - 50_000.0 * 0.09 / 100) < 1e-6 and not engine.state.positions and not engine.fills  # no money
+
+
+def test_the_shadows_close_with_the_session_and_the_line_and_status_carry_numbers_only() -> None:
+    engine = _crossing_engine()
+    t = _at(9, 41)
+    views = {"AAA": _view(98.1, 98.0, 98.0, 98.12, t), "CCC": _view(29.1, 29.0, 29.0, 29.05, t)}  # ~12 bps and ~17 bps
+    engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: None)
+    assert set(engine.state.shadow) == {"AAA", "CCC"} and engine.state.bands["gt10"]["vetoed"] == 2
+    later = _at(10, 0)
+    engine.step(later, lambda s: MarketView(price=98.0, trade_at=later, vwap=98.0) if s == "AAA" else MarketView())  # marked
+    line = engine_module.shadow_line(engine)
+    assert line == ("R2D2 live shadow: limit_bps=5.0 5_8 vetoed=0 closed=0 open=0 wins=0 net_usd=0.00 8_10 vetoed=0 closed=0 "
+                    "open=0 wins=0 net_usd=0.00 gt10 vetoed=2 closed=0 open=2 wins=0 net_usd=0.00")
+    import re
+    import yaml
+
+    root = Path(__file__).resolve().parents[3]
+    run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
+    pattern = run.split('grep -oE "', 1)[1].split('" | tail', 1)[0]
+    assert re.search(pattern, "r2d2-live-1  | 2026-10-30 10:00:00 INFO app.r2d2_live_engine " + line)
+    engine.close_session()  # AAA closes at its last mark; CCC was never marked: dropped, not counted
+    stats = engine.state.bands["gt10"]
+    assert not engine.state.shadow and stats["closed"] == 1 and stats["net_usd"] < 0
+    restored = EngineState.from_json(json.loads(json.dumps(engine.state.to_json())))
+    assert restored.bands == engine.state.bands and restored.shadow == {}
+    database = Database(Settings(database_url=""))
+    engine_module.save_state(database, engine.state, later)
+    summary = engine_module.status(database, later)
+    assert set(summary["spread_bands"]) == {"gt10"} and summary["spread_bands"]["gt10"]["closed"] == 1
+    assert "AAA" not in json.dumps(summary) and "CCC" not in json.dumps(summary)  # numbers only
+
+
 def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, monkeypatch) -> None:
     database = Database(Settings(database_url=""))
     monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
