@@ -13,8 +13,9 @@ to +0.30%, every 0.10 above; owner 29/10, it was a +0.15% lock trailing the peak
 negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
-Universe: the 550 most liquid US common stocks (the stream's capacity), from EODHD's end-of-day bulk files of the
-last 20 sessions; the open of each is its first regular-session trade on the stream.
+Universe: the 900 most liquid US common stocks (owner 29/10; 500 until then), from EODHD's end-of-day bulk files of the
+last 20 sessions; the open of each is its first regular-session trade on the stream. The trade feed carries the universe
+until the candidates are fixed, then the candidates and the held names; the quote feed only the held names.
 """
 from __future__ import annotations
 
@@ -44,7 +45,7 @@ CONFIG = "TIT-2S5-RT"  # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT unt
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
-# The stream's capacity is per account (550 on this plan, EODHD's default is 50): the api's own stream keeps the rest
+# The stream's capacity is per account (~1,050 slots on this plan, one per name per feed; EODHD's default is 50)
 # owner 29/10/2026 ~17:3x BRT: "então aumenta o universo do R2D2 para mais papéis" — 900 (it was 500): the trade feed
 # carries the universe until the candidates are fixed, the quote feed only the held names (each name costs one WebSocket
 # slot per feed; the account has ~1,050), so the same slots follow ~900 names
@@ -138,6 +139,21 @@ class Tape:
             self.volume += size
 
 
+def refusal_code(payload: str | bytes) -> int | None:
+    """A feed's status frame other than 200 (EODHD answers an over-limit subscription with {"status_code": 422, "message":
+    "Symbols limit reached"} and no acknowledgement otherwise): its code, else None (a trade or a quote)."""
+    text = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else payload
+    if '"status_code"' not in text:
+        return None
+    try:
+        item = json.loads(text)
+        raw = item.get("status_code") if isinstance(item, dict) and "s" not in item else None
+        code = int(raw) if isinstance(raw, (int, str)) else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return code if code is not None and code != 200 else None
+
+
 class LiveEngineStream(EodhdRealtimeStream):
     """The EODHD stream (read-only use of the frozen module) keeping, per symbol, a ``Tape`` of the session being traded
     and the last quote with its bid and ask. Late messages never overwrite newer ones (Codex #500 P2-5): a trade older
@@ -170,8 +186,18 @@ class LiveEngineStream(EodhdRealtimeStream):
         """The names the quote feed subscribes (the held names: their exits read the bid; the entries read Massive's
         NBBO); None = every grouped name. The trade feed keeps every grouped name. A name counts one WebSocket slot per
         feed, so the universe can be almost twice as large on the same slots."""
+        names = None if symbols is None else frozenset(symbols)
         with self._lock:
-            self._quote_symbols = None if symbols is None else frozenset(symbols)
+            before = self._quote_symbols
+        if names is not None and before is not None:
+            # a name entering or leaving the quote feed drops its last quote BEFORE the feed resubscribes: a quote
+            # received before a gap in the subscription is never the mark of a later position (a re-buy) nor an
+            # entry's fallback (pre-review of 568737c: a phantom lock or stop on a name re-bought within ~4 s)
+            with self._view_lock:
+                for symbol in names ^ before:
+                    self.nbbo.pop(symbol, None)
+        with self._lock:
+            self._quote_symbols = names
             self._groups_version += 1
 
     def feed_symbols(self, feed: str) -> set[str]:
@@ -219,6 +245,10 @@ class LiveEngineStream(EodhdRealtimeStream):
                         try:
                             payload = await asyncio.wait_for(socket.recv(), timeout=1)
                         except TimeoutError:
+                            continue
+                        refused = refusal_code(payload)
+                        if refused is not None:  # e.g. 422 "Symbols limit reached": a name of this feed was not subscribed
+                            logger.error("EODHD realtime %s refused a subscription: status %d", feed, refused)
                             continue
                         recorder(payload)
             except Exception as exc:
@@ -406,7 +436,7 @@ def previous_sessions(day: date, count: int) -> list[date]:
 
 
 def build_universe(get_json: Callable[..., Any], base_url: str, token: str, day: date, cache_dir: Path) -> list[Member]:
-    """The 550 most liquid US common stocks at the open of ``day``: 20-session mean of close × volume ≥ US$ 15 M,
+    """The UNIVERSE_SIZE most liquid US common stocks at the open of ``day``: 20-session mean of close × volume ≥ US$ 15 M,
     last close ≥ US$ 5, from EODHD's end-of-day bulk files (cached per session) and its US symbol list."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     catalog_rows = get_json(f"{base_url}/api/exchange-symbol-list/US", params={"api_token": token, "fmt": "json"}) or []
@@ -856,7 +886,7 @@ def save_state(database: Any, state: EngineState, now: datetime) -> None:
     # version 3 from 30/10/2026 (owner, 29/10): the stop at -0.4% and the step lock from +0.10%; version 2 (29/10
     # afternoon) was the lock trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
+        "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE},
         "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
         "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
@@ -1055,10 +1085,10 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if not reconciled:
             sleep(5.0)
     engine = Engine(state, day, universe)
-    stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
     quotes_for = getattr(stream, "set_quote_symbols", None)
-    if quotes_for is not None:
+    if quotes_for is not None:  # BEFORE the group: the quote feed never sees the whole universe, even for an instant
         quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
+    stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
     if getattr(stream, "session", None) == day:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
         # complete; a restore a failed attempt left pending is finished first (its held trades applied, nothing cleared)

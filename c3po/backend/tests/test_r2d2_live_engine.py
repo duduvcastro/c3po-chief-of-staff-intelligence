@@ -227,6 +227,25 @@ def test_the_quote_feed_carries_only_the_held_names_and_the_trade_feed_the_unive
     assert stream.feed_symbols("quote") == {"AAA", "BBB", "CCC"}
 
 
+def test_a_quote_that_left_the_feed_never_marks_a_later_position() -> None:
+    """Pre-review of 568737c: a name sold (its quote unsubscribed) and re-bought within seconds must not be marked on the
+    quote received before the gap; a refusal frame of the account's limit is recognised and never recorded."""
+    stream = LiveEngineStream("", max_symbols=10)
+    stream.start_session(DAY)
+    stream.set_group("r2d2-live", ["AAA", "BBB"], priority=200)
+    stream.set_quote_symbols({"AAA"})
+    stream.record_quote("AAA", 98.18, 98.19, _at(10, 0, 3))
+    assert stream.view("AAA").bid == 98.18
+    stream.set_quote_symbols(set())  # sold: AAA leaves the quote feed and its last quote goes with it
+    assert stream.view("AAA").bid is None
+    stream.record_quote("AAA", 98.18, 98.19, _at(10, 0, 4))  # a late frame of the old subscription
+    stream.set_quote_symbols({"AAA"})  # re-bought: entering the feed, no quote until a new one arrives
+    assert stream.view("AAA").bid is None
+    assert engine_module.refusal_code('{"status_code":422,"message":"Symbols limit reached"}') == 422
+    assert engine_module.refusal_code(b'{"status_code":200,"message":"Authorized"}') is None
+    assert engine_module.refusal_code('{"s":"AAA","p":98.0,"v":1,"t":1}') is None
+
+
 class _QuoteFakeStream(_FakeStream):
     def __init__(self):
         super().__init__()
