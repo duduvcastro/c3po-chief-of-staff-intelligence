@@ -926,6 +926,38 @@ def test_nbbo_the_effective_instant_is_sampled_after_the_buys_quote_read(monkeyp
     assert [f["symbol"] for f in fills] == ["AAA"] and fills[0]["executed_at"] == start.isoformat()
 
 
+@pytest.mark.parametrize("case", ["stale_quote", "t30_positive"])
+def test_the_exits_instant_is_sampled_after_their_quote_read(monkeypatch, case: str) -> None:
+    """As the entries (Codex 6499564395): the exit's own quote read waits 2 s; freshness and the T30 rule are judged,
+    and the sell stamped, on the instant after that wait."""
+    clock = {"t": 0.0}
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: clock["t"])
+    t = _at(10, 5) if case == "stale_quote" else _at(15, 59, 29)
+
+    def attempt(wait: float) -> list[dict]:
+        clock["t"] = 0.0
+        engine = _engine()
+        engine.step(_at(9, 59), lambda s: _view(97.9, 98.0, 97.89, 97.91, _at(9, 59)) if s == "AAA" else MarketView())
+        bought = engine.step(_at(10, 0), lambda s: _view(98.1, 98.0, 98.095, 98.105, _at(10, 0)) if s == "AAA" else MarketView())
+        assert [f["symbol"] for f in bought] == ["AAA"]
+
+        def view(symbol):
+            if symbol != "AAA":
+                return MarketView()
+            clock["t"] += wait
+            if case == "stale_quote":  # 4 s old at t, below the stop
+                return _view(97.5, 98.0, 97.5, 97.51, t - timedelta(seconds=4))
+            return _view(98.2, 98.0, 98.2, 98.21, t)  # fresh, ~+0.09% net: positive, never armed
+        return engine.step(t, view)
+
+    waited, control = attempt(2.0), attempt(0.0)
+    if case == "stale_quote":  # 6 s old at the decision: neither marked nor sold; the control sells at t
+        assert waited == [] and [(f["side"], f["executed_at"]) for f in control] == [("SELL", t.isoformat())]
+    else:  # 15:59:31 at the decision is past 15:59:30: sold, stamped at the decision; the control at 15:59:29 is not
+        assert [(f["side"], f["executed_at"]) for f in waited] == [("SELL", (t + timedelta(seconds=2)).isoformat())]
+        assert control == []
+
+
 def test_nbbo_with_every_slot_taken_massive_is_not_asked() -> None:
     engine = _crossing_engine()
     engine.state.positions.update({"P%02d" % i: object() for i in range(engine_module.RULE["slots"])})  # type: ignore[misc]

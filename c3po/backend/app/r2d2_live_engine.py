@@ -525,7 +525,10 @@ class Engine:
         new: list[dict[str, Any]] = []
         for symbol, position in list(self.state.positions.items()):
             market = view(symbol)
-            if not market.quote_fresh(now):
+            # the effective instant, sampled after the read that may block (the view takes the stream's lock; as the
+            # entries, Codex 6499564395): the quote's freshness, the T30 rule and the sell's stamp read this one instant
+            moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            if not market.quote_fresh(moment):
                 continue
             assert market.bid is not None
             net = position.net_percent(market.bid)
@@ -538,10 +541,10 @@ class Engine:
                 reason = "hard_stop"
             elif position.armed and net <= max(RULE["lock_min_percent"], position.peak_percent - RULE["pullback_percent"]):
                 reason = "lock"
-            elif local >= SELL_POSITIVES_FROM and net > 0:
+            elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
                 reason = "t30_positive"
             if reason:
-                new.append(self._sell(position, market.bid, net, reason, now))
+                new.append(self._sell(position, market.bid, net, reason, moment))
         # The buy signal is the measured one: the cross back above the VWAP on a MINUTE CLOSE (the first check of each
         # new minute reads the previous minute's last trade), executed at once at the real ask; checking every
         # second would buy the noise around the VWAP. The exits above run every second.
