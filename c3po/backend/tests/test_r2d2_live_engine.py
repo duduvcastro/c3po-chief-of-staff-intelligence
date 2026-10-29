@@ -2,6 +2,7 @@ import json
 import math
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
 import pytest
 
@@ -92,51 +93,47 @@ def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     assert abs(state.nav_realized - 1_000_000 - sum(f["realized_pnl_usd"] for f in engine.fills if f["side"] == "SELL")) < 1e-6
 
 
-def test_the_armed_lock_trails_the_peak_by_five_hundredths() -> None:
-    """Owner 29/10: the floor follows the peak 0.05 below it (it was 0.10), never under +0.15%."""
-    engine = _engine()
+def _held(engine: Engine, symbol: str) -> tuple[Position, Callable[[float], float]]:
     cost = 500.0 * 100.0 * (1 + FEE_SIDE)
-    engine.state.positions["S2"] = Position("S2", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
-    engine.members["S2"] = Member("S2", "NYSE", 0.0, 0.0)
-    net = lambda bid: (500.0 * bid * (1 - FEE_SIDE) / cost - 1) * 100  # noqa: E731
+    engine.state.positions[symbol] = Position(symbol, "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
+    engine.members[symbol] = Member(symbol, "NYSE", 0.0, 0.0)
+    return engine.state.positions[symbol], lambda net: cost * (1 + net / 100) / (500.0 * (1 - FEE_SIDE))  # the bid at a net
 
-    def mark(t, bid):
-        return engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == "S2" else MarketView())
-    assert engine_module.RULE["pullback_percent"] == 0.05 and engine_module.RULE["lock_min_percent"] == 0.15
-    assert mark(_at(10, 0), 100.31) == [] and engine.state.positions["S2"].armed  # peak ~+0.30%
-    peak = engine.state.positions["S2"].peak_percent
-    assert abs(peak - net(100.31)) < 1e-9 and 0.29 < peak < 0.31
-    assert mark(_at(10, 0, 1), 100.27) == []  # ~+0.26%: above peak − 0.05 (~0.25%) — the old 0.10 also held it
-    fills = mark(_at(10, 0, 2), 100.25)  # ~+0.24%: below peak − 0.05; the old 0.10 (floor ~0.20%) would still hold it
+
+def _mark(engine: Engine, symbol: str, t: datetime, bid: float) -> list[dict]:
+    return engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == symbol else MarketView())
+
+
+def test_the_step_lock_floor_is_the_last_step_the_peak_reached() -> None:
+    """Owner 29/10: arms at +0.10%, a new floor every 0.05 up to +0.30%, every 0.10 above, the floor ON the step."""
+    floor = engine_module.lock_floor
+    assert [round(floor(p), 10) for p in (0.10, 0.1499, 0.15, 0.2, 0.2999, 0.30, 0.3999, 0.40, 0.47, 0.95)] == \
+           [0.10, 0.10, 0.15, 0.20, 0.25, 0.30, 0.30, 0.40, 0.40, 0.90]
+    assert floor(0.15 - 1e-12) == floor(0.15)  # a hair under a step (float error) still counts it
+    assert engine_module.RULE["stop_percent"] == 0.4 and engine_module.RULE["lock_min_percent"] == 0.10
+
+
+@pytest.mark.parametrize(("peak", "hold", "sell", "floor"), [
+    (0.12, 0.11, 0.09, 0.10), (0.17, 0.16, 0.14, 0.15), (0.33, 0.31, 0.29, 0.30), (0.47, 0.41, 0.39, 0.40)])
+def test_the_step_lock_sells_when_the_profit_falls_to_its_floor(peak: float, hold: float, sell: float, floor: float) -> None:
+    engine = _engine()
+    position, bid = _held(engine, "S2")
+    assert _mark(engine, "S2", _at(10, 0), bid(peak)) == [] and position.armed
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - floor) < 1e-9  # the screen's stop
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(hold)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(sell))
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
-    assert 0.23 < fills[0]["realized_return_percent"] < 0.25
-    # under +0.20% of peak the floor stays at +0.15%
-    engine.state.positions["S3"] = Position("S3", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
-    engine.members["S3"] = Member("S3", "NYSE", 0.0, 0.0)
-    step = lambda t, bid: engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == "S3" else MarketView())  # noqa: E731
-    assert step(_at(10, 1), 100.19) == [] and engine.state.positions["S3"].armed  # ~+0.18%
-    assert step(_at(10, 1, 1), 100.17) == []  # ~+0.16%: above the +0.15% floor
-    assert [f["symbol"] for f in step(_at(10, 1, 2), 100.15)] == ["S3"]  # ~+0.14%
+    assert abs(fills[0]["realized_return_percent"] - sell) < 1e-6
 
 
-def test_the_published_stop_is_the_level_the_rule_sells_at_now() -> None:
-    """Owner 29/10: "o stop não tá mexendo" — the screen's stop is the −0.5% stop until the lock arms, then the lock's
-    floor, rising with the peak (max(+0.15%, peak − 0.05))."""
+def test_the_stop_before_the_lock_arms_is_minus_four_tenths() -> None:
     engine = _engine()
-    cost = 500.0 * 100.0 * (1 + FEE_SIDE)
-    engine.state.positions["S2"] = Position("S2", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
-    engine.members["S2"] = Member("S2", "NYSE", 0.0, 0.0)
-    position = engine.state.positions["S2"]
-
-    def stop() -> float:
-        return engine.book(_at(10, 0))["positions"][0]["stop_price"]
-    assert abs(position.net_percent(stop()) - -0.5) < 1e-9  # not armed: the hard stop
-    engine.step(_at(10, 0), lambda s: _view(100.19, None, 100.19, 100.20, _at(10, 0)) if s == "S2" else MarketView())  # ~+0.18%
-    assert position.armed and abs(position.net_percent(stop()) - 0.15) < 1e-9  # armed under +0.20%: the +0.15% floor
-    engine.step(_at(10, 0, 1), lambda s: _view(100.31, None, 100.31, 100.32, _at(10, 0, 1)) if s == "S2" else MarketView())  # ~+0.30%
-    assert abs(position.net_percent(stop()) - (position.peak_percent - 0.05)) < 1e-9 and stop() > 100.25  # it moved up
-    engine.step(_at(10, 0, 2), lambda s: _view(100.28, None, 100.28, 100.29, _at(10, 0, 2)) if s == "S2" else MarketView())
-    assert engine.state.positions and abs(position.net_percent(stop()) - (position.peak_percent - 0.05)) < 1e-9  # held: the peak's floor stays
+    position, bid = _held(engine, "S2")
+    assert _mark(engine, "S2", _at(10, 0), bid(0.09)) == [] and not position.armed  # positive, under +0.10%: not armed
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.4) < 1e-9
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.39)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(-0.41))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
 
 
 def test_no_buy_after_the_last_entry_and_negatives_carry() -> None:

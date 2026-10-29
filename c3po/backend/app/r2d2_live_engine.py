@@ -8,7 +8,8 @@ real ask, with a quoted spread of at most 3 bps, up to
 15:29:59 ET — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
 not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid: hard stop at -0.5% net,
-profit lock armed at +0.15% net trailing the peak by 0.05 (owner 29/10; 0.10 until then), every positive position sold from 15:59:30 ET; the
+stop at -0.4% net until a step profit lock arms at +0.10% net, whose floor is the last step the peak reached (every 0.05 up
+to +0.30%, every 0.10 above; owner 29/10, it was a +0.15% lock trailing the peak), every positive position sold from 15:59:30 ET; the
 negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
@@ -50,9 +51,11 @@ MIN_ADV_DAYS = 15
 FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's cost model)
 RULE = {
     "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 3.0,
-    # owner 29/10/2026 ~13:0x BRT: "vamos fazer os picos subindo de 0,05 e não 0,10 por vez" — the armed lock trails
-    # the peak by 0.05 (it was 0.10): the floor rises above +0.15% once the peak passes +0.20%
-    "stop_percent": 0.5, "lock_min_percent": 0.15, "pullback_percent": 0.05,
+    # owner 29/10/2026 ~17:0x BRT: "a trava arma se ela chegar a 0,10%, aí a cada 0,05% ela gera uma nova trava. Se passar
+    # de 0,3% de lucro a trava sobe a cada 0,10pp" — the floor ON the step reached ("no degrau") — "e coloca o stop sem
+    # trava em -0,4%". Until then: stop -0.5%, a lock armed at +0.15% trailing the peak by 0.05 (0.10 before 13:51 BRT)
+    "stop_percent": 0.4, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.30,
+    "lock_wide_step_percent": 0.10,
 }
 SESSION_OPEN = time(9, 30)
 OPENING_WINDOW_END = time(9, 31)  # the candidates are fixed once every subscribed name had a chance to print
@@ -422,6 +425,16 @@ def build_universe(get_json: Callable[..., Any], base_url: str, token: str, day:
 
 
 # ------------------------------------------------------------------ the engine (pure: decisions from views)
+def lock_floor(peak: float) -> float:
+    """The armed lock's floor: the last step the peak reached (owner 29/10, "no degrau"): +0.10% net, then every 0.05 up
+    to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
+    low, step = RULE["lock_min_percent"], RULE["lock_step_percent"]
+    wide_from, wide_step = RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]
+    if peak + 1e-9 < wide_from:
+        return low + step * math.floor((peak - low) / step + 1e-9)
+    return wide_from + wide_step * math.floor((peak - wide_from) / wide_step + 1e-9)
+
+
 @dataclass
 class Position:
     symbol: str
@@ -439,10 +452,9 @@ class Position:
         return (self.shares * bid * (1 - FEE_SIDE) / self.cost_usd - 1) * 100
 
     def exit_price(self) -> float:
-        """The bid at which the rule sells now: the armed lock's floor, max(+0.15%, peak − pullback), else the −0.5%
-        stop — the level the screen shows as the position's stop (owner 29/10: "o stop não tá mexendo")."""
-        floor = (max(RULE["lock_min_percent"], (self.peak_percent or 0.0) - RULE["pullback_percent"]) if self.armed
-                 else -RULE["stop_percent"])
+        """The bid at which the rule sells now: the armed lock's floor (``lock_floor`` of the peak), else the stop —
+        the level the screen shows as the position's stop (owner 29/10: "o stop não tá mexendo")."""
+        floor = lock_floor(self.peak_percent or RULE["lock_min_percent"]) if self.armed else -RULE["stop_percent"]
         return self.cost_usd * (1 + floor / 100) / (self.shares * (1 - FEE_SIDE))
 
 
@@ -560,7 +572,7 @@ class Engine:
             reason = None
             if net <= -RULE["stop_percent"]:
                 reason = "hard_stop"
-            elif position.armed and net <= max(RULE["lock_min_percent"], position.peak_percent - RULE["pullback_percent"]):
+            elif position.armed and net <= lock_floor(position.peak_percent):
                 reason = "lock"
             elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
                 reason = "t30_positive"
@@ -740,12 +752,12 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 2 from 29/10/2026 (owner): entries checked every second (#513) and the lock trailing the peak by 0.05; the
-    # snapshots before the switch keep pointing at version 1 (minute-close entries, 0.10)
+    # version 3 from 30/10/2026 (owner, 29/10): the stop at -0.4% and the step lock from +0.10%; version 2 (29/10
+    # afternoon) was the lock trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 2, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
-        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second "
-        "and the profit lock trailing the peak by 0.05 (owner 29/10/2026)")
+        "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
+        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
+        "the stop at -0.4% and the step profit lock from +0.10% (owner 29/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": CONFIG}, state.to_json(), now)
 
 
