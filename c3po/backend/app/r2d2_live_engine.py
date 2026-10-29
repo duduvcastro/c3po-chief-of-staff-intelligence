@@ -7,7 +7,7 @@ crosses back above the session VWAP (owner 29/10; until then a minute close, the
 real ask, with a quoted spread of at most 3 bps, up to
 15:29:59 ET — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
-not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid: hard stop at -0.5% net,
+not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid:
 stop at -0.4% net until a step profit lock arms at +0.10% net, whose floor is the last step the peak reached (every 0.05 up
 to +0.30%, every 0.10 above; owner 29/10, it was a +0.15% lock trailing the peak), every positive position sold from 15:59:30 ET; the
 negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
@@ -430,9 +430,10 @@ def lock_floor(peak: float) -> float:
     to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
     low, step = RULE["lock_min_percent"], RULE["lock_step_percent"]
     wide_from, wide_step = RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]
-    if peak + 1e-9 < wide_from:
-        return low + step * math.floor((peak - low) / step + 1e-9)
-    return wide_from + wide_step * math.floor((peak - wide_from) / wide_step + 1e-9)
+    reached = peak + 1e-9  # one tolerance for the band and the step (pre-review: two made a gap just under +0.30%)
+    if reached < wide_from:
+        return low + step * math.floor((reached - low) / step)
+    return wide_from + wide_step * math.floor((reached - wide_from) / wide_step)
 
 
 @dataclass
@@ -567,7 +568,7 @@ class Engine:
             net = position.net_percent(market.bid)
             position.last_mark = market.bid
             position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
-            if position.peak_percent >= RULE["lock_min_percent"]:
+            if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
                 position.armed = True
             reason = None
             if net <= -RULE["stop_percent"]:
@@ -708,7 +709,7 @@ class Engine:
             positions.append({"symbol": position.symbol, "market": position.market, "quantity": position.shares,
                               "average_cost": position.entry_price, "last_price": mark, "cost_usd": position.cost_usd,
                               "unrealized_pnl_usd": result, "unrealized_return_percent": net,
-                              "stop_price": position.exit_price(),  # the lock's floor once armed, else the −0.5% stop
+                              "stop_price": position.exit_price(),  # the lock's floor once armed, else the stop
                               "opened_at": position.opened_at})
         cash = self.state.nav_realized - sum(position.cost_usd for position in self.state.positions.values())
         return {"nav_start_usd": self.nav_start, "nav_usd": self.state.nav_realized + unrealized,

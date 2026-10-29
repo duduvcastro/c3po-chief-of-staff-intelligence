@@ -82,7 +82,7 @@ def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S1", "venda: stop")]
     assert state.positions["S2"].armed  # ~+0.39% armed the lock
     t = _at(10, 1)
-    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to ~+0.26%: below peak − 0.05 → lock
+    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to ~+0.26%: below its step floor (+0.30%) → lock
     fills = engine.step(t, lambda s: _view(marks[s], None, marks[s], marks[s] + 0.01, t) if s in marks else MarketView())
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
     assert fills[0]["realized_pnl_usd"] > 0
@@ -124,6 +124,25 @@ def test_the_step_lock_sells_when_the_profit_falls_to_its_floor(peak: float, hol
     fills = _mark(engine, "S2", _at(10, 0, 2), bid(sell))
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
     assert abs(fills[0]["realized_return_percent"] - sell) < 1e-6
+
+
+def test_a_carried_position_is_armed_by_its_net_never_by_a_peak_of_the_earlier_rule() -> None:
+    """Pre-review: a negative position carried from the +0.15% rule with a peak of +0.12% was never armed; under the new
+    rule it must not be armed (and sold as a 'lock' at a loss) by that stored peak — only when its net reaches +0.10%."""
+    engine = _engine()
+    position, bid = _held(engine, "S2")
+    position.peak_percent, position.armed = 0.12, False
+    assert _mark(engine, "S2", _at(10, 0), bid(-0.20)) == [] and not position.armed  # held at -0.20%
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(0.11)) == [] and position.armed  # back above +0.10%: armed, floor +0.10%
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(0.09))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
+
+
+def test_the_floor_has_no_gap_under_the_wide_band() -> None:
+    floor = engine_module.lock_floor
+    for peak in (0.30 - 5e-10, 0.30 - 2e-10, 0.30, 0.30 + 1e-12):
+        assert round(floor(peak), 10) == 0.30
+    assert round(floor(0.30 - 2e-9), 10) == 0.25
 
 
 def test_the_stop_before_the_lock_arms_is_minus_four_tenths() -> None:
