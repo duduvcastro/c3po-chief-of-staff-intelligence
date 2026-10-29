@@ -4,7 +4,7 @@ name: Valuation as-filed receipt (read-only)
 # backfill as the RUNNING worker's environment holds them, read by the app's own parsers (valuation_env), when that
 # worker started, and its latest runs with their coverage and error COUNTS (``na``: a run without that field or with a
 # value of another type). Also the Decisor's latest runs, clocks only: the instant D each one decided at
-# (``prediction_instant``) and when it published — the D an as-filed pass must precede (Codex 6484687050). Read-only: one SSH session, two read-only database sessions (the as-filed runs, then the Decisor clocks under a 5 s statement and 2 s lock timeout), nothing written. This repository is PUBLIC: only
+# (``prediction_instant``) and when it published — the D an as-filed pass must precede (Codex 6484687050). Read-only: one SSH session, two read-only database sessions (the as-filed runs; then, after the primary receipt is printed, the Decisor clocks within a 15 s total budget: 5 s to connect, 5 s per statement, 2 s per lock), nothing written. This repository is PUBLIC: only
 # lines of exact shapes (dates, numbers and closed sets) are printed — never a CIK, a symbol or an error text.
 
 on:
@@ -57,7 +57,7 @@ jobs:
           [ -n "$ir" ] || { echo "WORKER absent"; exit 12; }
           worker=$(docker inspect -f '{{.State.Status}} {{.State.StartedAt}}' "$ir") || exit 13
           env=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$ir") || exit 13
-          echo "WORKER state=${worker%% *} started=$(printf '%s' "${worker#* }" | cut -c1-19)Z"
+          echo "WORKER state=${worker%% *} started=${worker#* }"  # docker's clock, full precision
           # the raw values go to the app's own parsers (never printed): the receipt says what the worker does with them
           enabled=$(printf '%s\n' "$env" | awk -F= '$1 == "C3PO_VALUATION_ASFILED_ENABLED" {print substr($0, index($0, "=") + 1); found=1} END {if (!found) print "\001unset"}')
           backfill=$(printf '%s\n' "$env" | awk -F= '$1 == "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL" {print substr($0, index($0, "=") + 1); found=1} END {if (!found) print "\001unset"}')
@@ -103,7 +103,7 @@ jobs:
                   "run.metadata, run.error_summary IS NOT NULL FROM ingestion_runs run JOIN data_sources source ON source.id = run.source_id "
                   "WHERE source.code = 'sec_asfiled' ORDER BY run.started_at DESC LIMIT %s", (int(os.environ["RUNS"]),)).fetchall()
           # the primary receipt first: everything the as-filed query returned is printed before any optional read
-          print("RUNS listed=%d" % len(rows))
+          print("RUNS listed=%d" % len(rows), flush=True)
           for status, started, completed, read, written, meta, has_error in rows:
               meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
               status = status if status in {"running", "succeeded", "partial", "failed"} else "other"
@@ -113,8 +113,9 @@ jobs:
                         count(meta, "observed_issuers"), count(meta, "failed_issuers"), count(meta, "unattributed_failures"),
                         count(meta, "header_failures"), "yes" if has_error else "no"), flush=True)
           # Then the Decisor's clocks, OPTIONAL context (Codex 6486289773 P2): read in a daemon thread under a 15 s total
-          # budget, the connection itself bounded (libpq PGCONNECT_TIMEOUT, as Database.connection opens lazily on entry),
-          # then 5 s per statement and 2 s per lock. A failure or a stall prints a fixed reason, never holds the receipt.
+          # budget, the connection itself bounded (PGCONNECT_TIMEOUT, which psycopg enforces at connect: Database.connection
+          # opens lazily on entry), then 5 s per statement and 2 s per lock. A failure or a stall prints a fixed reason and
+          # never holds the receipt (a query that finished but stalls while closing reads as a timeout: the safe side).
           import threading
           os.environ["PGCONNECT_TIMEOUT"] = "5"
           outcome = {"decisions": None, "reason": "timeout"}
@@ -144,9 +145,10 @@ jobs:
           reader = threading.Thread(target=read_clocks, daemon=True)
           reader.start()
           reader.join(15)
-          decisions = None if reader.is_alive() else outcome["decisions"]
+          stalled = reader.is_alive()
+          decisions = None if stalled else outcome["decisions"]
           if decisions is None:
-              print("DECISOR unavailable reason=%s" % ("timeout" if reader.is_alive() else outcome["reason"]))
+              print("DECISOR unavailable reason=%s" % ("timeout" if stalled else outcome["reason"]))
               print("DECISOR runs listed=0")
           else:
               print("DECISOR runs listed=%d" % len(decisions))
@@ -159,7 +161,7 @@ jobs:
           REMOTE
           # only lines of EXACT shapes are published (a public repository); anything else is counted, never shown
           n='([0-9]+|na)'
-          shapes="^(WORKER (absent|state=[a-z]+ started=[0-9T:-]+Z)|SWITCH enabled=(on|off) setting=(true|false|unset|other) backfill_per_poll=[0-9]{1,3}|RUNS listed=[0-9]+|RUN status=(running|succeeded|partial|failed|other) started=([0-9T:.-]+Z|none) completed=([0-9T:.-]+Z|none) read=[0-9]+ written=[0-9]+ issuers=$n observed=$n failed=$n unattributed=$n header_failures=$n error_summary=(yes|no)|DECISOR unavailable reason=(connect|timeout|query)|DECISOR runs listed=[0-4]|DECISOR run instant=([0-9T:.-]+Z|none) published=([0-9T:.-]+Z|none))\$"
+          shapes="^(WORKER (absent|state=[a-z]+ started=[0-9T:.-]+Z)|SWITCH enabled=(on|off) setting=(true|false|unset|other) backfill_per_poll=[0-9]{1,3}|RUNS listed=[0-9]+|RUN status=(running|succeeded|partial|failed|other) started=([0-9T:.-]+Z|none) completed=([0-9T:.-]+Z|none) read=[0-9]+ written=[0-9]+ issuers=$n observed=$n failed=$n unattributed=$n header_failures=$n error_summary=(yes|no)|DECISOR unavailable reason=(connect|timeout|query)|DECISOR runs listed=[0-4]|DECISOR run instant=([0-9T:.-]+Z|none) published=([0-9T:.-]+Z|none))\$"
           { grep -E "$shapes" "$RUNNER_TEMP/out.txt" || true; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "other lines (counted, not printed): $(grep -cvE "$shapes" "$RUNNER_TEMP/out.txt" || true)"
           echo "remote exit status: $rc"
