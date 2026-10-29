@@ -2,8 +2,9 @@
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
 The rule in force is the one the owner chose on 26/10 (TIT-2S3): stocks that open at least 1% below the previous close,
-20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when a MINUTE CLOSE crosses back above
-the session VWAP (the measured signal), executed at once at the real ask, with a quoted spread of at most 3 bps, up to
+20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
+crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
+real ask, with a quoted spread of at most 3 bps, up to
 15:29:59 ET — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
 not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid: hard stop at -0.5% net,
@@ -62,12 +63,12 @@ QUOTE_MAX_AGE_SECONDS = 5.0  # the exits: a position is marked only on a quote t
 # bound and the stream's own quote refused the signals the lab's Massive NBBO took)
 NBBO_MAX_AGE_SECONDS = 60.0
 NBBO_TIMEOUT_SECONDS = 1.5  # the WHOLE request (DeadlineJsonHttpClient), no retry
-NBBO_STEP_BUDGET_SECONDS = 3.0  # Massive time per minute's entries: the exits run on this loop; past it, the stream's quote
+NBBO_STEP_BUDGET_SECONDS = 3.0  # Massive time per step's entries: the exits run on this loop; past it, the stream's quote
 NBBO_PAUSE_AFTER_FAILURE_SECONDS = 30.0  # Massive failed: the stream's quote for this long, then Massive again
-# Massive requests in flight at once for one minute's crosses. Asked one after the other (~0.7 s each from the host),
+# Massive requests in flight at once for one step's crosses. Asked one after the other (~0.7 s each from the host),
 # the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
 NBBO_PARALLEL = 32
-NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the signal's own minute close is another
+NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the signal's own price is another
 # instrument's (a share-class or mapping error) or absurd: never bought on (pre-review of e8ce1f3)
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
 MARKS_EVERY_SECONDS = 60.0
@@ -77,7 +78,7 @@ MARKS_EVERY_SECONDS = 60.0
 @dataclass
 class Tape:
     """One symbol's regular session on the stream: the VWAP accumulators, the open, the last trade, and the close and
-    VWAP of the last COMPLETED minute (the buy signal reads only completed minutes, Codex #500 P2-1)."""
+    VWAP of the last COMPLETED minute (``signal_view``; the entries read the live last trade every second since 29/10)."""
     pv: float = 0.0
     volume: float = 0.0
     opening: float | None = None
@@ -565,6 +566,8 @@ class Engine:
             self.state.last_signal_minute = minute
             crosses: list[tuple[str, float, float]] = []  # (symbol, gap, signal price): this second's crosses, in order
             for symbol, gap in self.candidates.items():
+                if symbol not in self.members:  # a restored candidate the rebuilt universe no longer lists: never bought
+                    continue
                 market = view(symbol)
                 if signal is not None:
                     live = signal(symbol)
@@ -657,6 +660,9 @@ class Engine:
         pnl = position.cost_usd * net / 100
         self.state.nav_realized += pnl
         del self.state.positions[position.symbol]
+        # a new entry needs a new dip below the VWAP, seen in a check: the same step never sells at the stream's bid and
+        # buys back at once on a last trade still above the VWAP (pre-review of 81cf1ae P2-B)
+        self.below[position.symbol] = False
         held = " (posição de %d pregão(ões) atrás)" % position.days_held if position.days_held else ""
         fill = {"side": "SELL", "symbol": position.symbol, "market": position.market, "quantity": position.shares,
                 "price": bid, "executed_at": now.isoformat(), "fees_usd": position.shares * bid * FEE_SIDE,
@@ -809,7 +815,7 @@ def heartbeat(stream: Any, engine: "Engine", moment: datetime) -> str:
 
 def plausible(quote: tuple[float, float, datetime], close: float) -> bool:
     """A quote a buy may stand on: finite, ordered, within the screen's own bounds, and its mid within
-    ``NBBO_MAX_DEVIATION`` of the signal's own minute close (another instrument's or an absurd quote is never bought on)."""
+    ``NBBO_MAX_DEVIATION`` of the signal's own price (another instrument's or an absurd quote is never bought on)."""
     bid, ask, _ = quote
     if not (math.isfinite(bid) and math.isfinite(ask) and math.isfinite(close)) or not 0 < bid <= ask <= r2d2_lab_live.MAX_PRICE:
         return False
@@ -948,17 +954,22 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     engine.set_candidates(dict(stream.opening))
     logger.info("R2D2 live: %d candidates of %d with an opening print", len(engine.candidates), len(stream.opening))
     guarded(lambda: commit(now()))
-    last_marks = clock_time.monotonic()
+    last_marks = last_lines = clock_time.monotonic()
     while now() < at(SESSION_CLOSE):
         moment = now()
+        began = clock_time.monotonic()
         fills = engine.step(moment, stream.view, signal, nbbo)
         if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
             guarded(lambda: commit(moment))
-            if not fills:
-                logger.info("%s", heartbeat(stream, engine, moment))
-                logger.info("%s", feed_line(stream, engine))
             last_marks = clock_time.monotonic()
-        sleep(1.0)
+        # the heartbeat and the feed line on their own clock: with entries checked every second fills come often, and
+        # the skip and Massive counts must still come every minute
+        if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
+            logger.info("%s", heartbeat(stream, engine, moment))
+            logger.info("%s", feed_line(stream, engine))
+            last_lines = clock_time.monotonic()
+        # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
+        sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
     engine.close_session()
     guarded(lambda: commit(now()))
     stream.set_group(STREAM_GROUP, [])

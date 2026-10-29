@@ -213,6 +213,70 @@ def test_buys_and_exits_are_checked_every_second() -> None:
     assert engine.step(t, lambda s: above(t).get(s, MarketView())) == [] and engine.signals == 2
 
 
+def test_a_sale_never_buys_back_in_the_same_step() -> None:
+    """Pre-review of 81cf1ae P2-B: the stream's bid stops the position while the last trade is still above the VWAP;
+    the same step must not buy it back at Massive's ask. A new dip below the VWAP, then back above, is a new entry."""
+    engine = _engine()
+    engine.step(_at(10, 0), lambda s: _view(97.9, 98.0, 97.89, 97.91, _at(10, 0)) if s == "AAA" else MarketView())
+    t = _at(10, 0, 1)
+    assert [f["symbol"] for f in engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())] == ["AAA"]
+    t = _at(10, 0, 2)  # held, one print below the VWAP (no stop): armed for a cross
+    assert engine.step(t, lambda s: _view(97.95, 98.0, 97.94, 97.96, t) if s == "AAA" else MarketView()) == []
+    assert engine.below["AAA"] is True
+    t = _at(10, 0, 3)  # the stream's bid stops it while the last trade is back above the VWAP
+    nbbo = lambda s, now: (98.04, 98.06, now)  # noqa: E731
+    fills = engine.step(t, lambda s: _view(98.05, 98.0, 97.50, 97.51, t) if s == "AAA" else MarketView(), nbbo=nbbo)
+    assert [(f["side"], f["symbol"]) for f in fills] == [("SELL", "AAA")] and not engine.state.positions
+    t = _at(10, 0, 4)
+    assert engine.step(t, lambda s: _view(98.05, 98.0, 98.04, 98.06, t) if s == "AAA" else MarketView(), nbbo=nbbo) == []
+    t = _at(10, 0, 5)
+    engine.step(t, lambda s: _view(97.95, 98.0, 97.94, 97.96, t) if s == "AAA" else MarketView(), nbbo=nbbo)
+    t = _at(10, 0, 6)
+    assert [f["side"] for f in engine.step(t, lambda s: _view(98.05, 98.0, 98.04, 98.06, t) if s == "AAA" else MarketView(), nbbo=nbbo)] == ["BUY"]
+
+
+def test_a_restored_candidate_the_universe_no_longer_lists_is_never_bought() -> None:
+    engine = _engine()
+    engine.candidates["ZZZ"] = -3.0  # restored from the state; the rebuilt universe has no member for it
+    t = _at(10, 0)
+    engine.step(t, lambda s: _view(9.9, 10.0, 9.99, 10.0, t))
+    t = _at(10, 0, 1)
+    assert [f["symbol"] for f in engine.step(t, lambda s: _view(10.1, 10.0, 10.0995, 10.1005, t) if s == "ZZZ" else MarketView())] == []
+
+
+def test_the_session_loop_runs_once_a_second_and_logs_its_lines_every_minute_whatever_the_fills(tmp_path: Path, monkeypatch, caplog) -> None:
+    import logging
+
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6))
+    wall, clock, slept, steps = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def step(self, now, view, signal=None, nbbo=None):  # each step waits 0.6 s on Massive and fills
+        steps.append(now)
+        wall["t"] += 0.6
+        clock["t"] += timedelta(seconds=0.6)
+        return [{"side": "BUY"}]
+    monkeypatch.setattr(Engine, "step", step)
+
+    def sleep(seconds):
+        slept.append(seconds)
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+        if len(steps) >= 150:
+            raise KeyboardInterrupt
+    caplog.set_level(logging.INFO, logger=engine_module.logger.name)
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None)
+    after_steps = slept[-100:]
+    assert all(abs(s - 0.4) < 1e-6 for s in after_steps)  # one pass a second: 0.6 s of step, 0.4 s of sleep
+    assert 148 <= (steps[-1] - steps[0]).total_seconds() + 1 <= 151
+    feed = [r for r in caplog.records if "R2D2 live feed:" in r.getMessage()]
+    assert len(feed) == 2  # every 60 s although every step filled
+
+
 # ------------------------------------------------------------------ Codex #500 P2 regressions
 def _stream_with_session() -> LiveEngineStream:
     stream = LiveEngineStream("")
