@@ -809,28 +809,94 @@ def test_nbbo_the_massive_reader_asks_for_the_quote_prevailing_at_the_instant_an
 
 
 def test_nbbo_massive_time_per_minute_is_bounded_and_the_stream_stands_in_past_it(monkeypatch) -> None:
+    import threading
+    import time as wall
+
+    monkeypatch.setattr(engine_module, "NBBO_STEP_BUDGET_SECONDS", 0.5)
     engine = _engine()
     engine.candidates.update({"DDD": -2.0, "EEE": -2.0})
     engine.members.update({s: Member(s, "NYSE", 50.0, 20e6) for s in ("DDD", "EEE")})
     t = _at(9, 40)
     below = {s: _view(97.9, 98.0, 97.89, 97.91, t) for s in ("AAA", "CCC", "DDD", "EEE")}
     engine.step(t, lambda s: below.get(s, MarketView()))
-    clock = {"t": 0.0}
-    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: clock["t"])
     t = _at(9, 41)
     above = {s: _view(98.1, 98.0, 98.095, 98.105, t) for s in ("AAA", "CCC", "DDD", "EEE")}
-    asked = []
+    release = threading.Event()
 
-    def slow(symbol, now):  # each answer takes 1.49 s (under the 1.5 s deadline): a second call could end past 3 s
-        asked.append(symbol)
-        clock["t"] += 1.49
+    def nbbo(symbol, now):  # DDD's answer never comes within the minute's budget; the others answer at once
+        if symbol == "DDD":
+            release.wait(10)
         return (98.095, 98.105, now)
-    fills = engine.step(t, lambda s: above.get(s, MarketView()), nbbo=slow)
-    # a call is made only if its whole 1.5 s deadline fits (Codex 6478311166 P2-1): 0 + 1.5 and 1.49 + 1.5 fit,
-    # 2.98 + 1.5 does not — the waits end at 2.98 s, never past the 3 s budget (the old check let a third run to 4.47 s)
-    assert len(asked) == 2 and clock["t"] <= engine_module.NBBO_STEP_BUDGET_SECONDS and len(fills) == 4
-    assert engine.sources == {"massive": 2, "stream": 2, "unanswered": 2, "mismatch": 0, "stream_would_refuse": 0}
-    assert fills[2]["executed_at"] == (t + timedelta(seconds=2.98)).isoformat()  # the effective instant, not the step's
+    began = wall.monotonic()
+    fills = engine.step(t, lambda s: above.get(s, MarketView()), nbbo=nbbo)
+    waited = wall.monotonic() - began
+    release.set()
+    # the step waits for Massive at most the budget (Codex 6478311166 P2-1): the straggler is never waited for and the
+    # stream's quote stands in for it; the others were asked at the same time and answered
+    assert 0.5 <= waited < 1.5 and len(fills) == 4
+    assert engine.sources == {"massive": 3, "stream": 1, "unanswered": 1, "mismatch": 0, "stream_would_refuse": 0}
+    assert all(0.5 <= (datetime.fromisoformat(f["executed_at"]) - t).total_seconds() < 1.5 for f in fills)  # the effective instant
+
+
+def test_nbbo_every_cross_of_the_minute_is_asked_at_once() -> None:
+    """29/10 open: asked one after the other (~0.7 s each), a 3 s budget answered ~3 of ~13 crosses a minute (36 of 156
+    by 10:43 BRT) and the rest fell back to the stream's late quote. Asked at once, all of them answer inside the budget."""
+    import threading
+    import time as wall
+
+    symbols = ["S%02d" % i for i in range(13)]
+    engine = Engine(EngineState(nav_realized=1_000_000.0), DAY, [Member(s, "NYSE", 100.0, 50e6) for s in symbols])
+    engine.set_candidates({s: 98.0 for s in symbols})
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(97.9, 98.0, 97.89, 97.91, t))
+    t = _at(9, 41)
+    lock, active, peak, asked = threading.Lock(), [0], [0], []
+
+    def nbbo(symbol, now):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+            asked.append((symbol, now))
+        wall.sleep(0.7)
+        with lock:
+            active[0] -= 1
+        return (98.095, 98.105, now - timedelta(seconds=1))
+    began = wall.monotonic()
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, 98.0, 98.2, t), nbbo=nbbo)  # the stream's own quote: 20 bps
+    waited = wall.monotonic() - began
+    assert sorted(s for s, _ in asked) == symbols and peak[0] == 13 and waited < 2.0  # one after the other: 9.1 s
+    assert len(fills) == 13 and all("NBBO Massive" in f["reason"] for f in fills)
+    assert engine.sources == {"massive": 13, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 13}
+    assert all(0 <= (at - t).total_seconds() < 1 for _, at in asked)  # each asked at the effective instant of the asking
+
+
+def test_nbbo_a_reader_that_raises_is_no_answer_and_the_budget_counts_from_the_first_asking(monkeypatch) -> None:
+    import time as wall
+
+    monkeypatch.setattr(engine_module, "NBBO_STEP_BUDGET_SECONDS", 0.4)
+    starts: list[float] = []
+
+    def nbbo(symbol, now):
+        starts.append(wall.monotonic())
+        if symbol == "B":
+            raise RuntimeError("no answer")
+        if symbol == "C":
+            wall.sleep(2.0)  # never waited for
+        return (10.0, 10.01, now)
+    began = wall.monotonic()
+    answers = engine_module.ask_nbbo(nbbo, ["A", "B", "C"], _at(9, 41))
+    waited = wall.monotonic() - began
+    assert set(answers) == {"A"} and waited < 0.4 + 0.15  # the budget runs from the first asking, not after every start
+
+
+def test_nbbo_with_every_slot_taken_massive_is_not_asked() -> None:
+    engine = _crossing_engine()
+    engine.state.positions.update({"P%02d" % i: object() for i in range(engine_module.RULE["slots"])})  # type: ignore[misc]
+    t = _at(9, 41)
+    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.005, t)}
+    asked = []
+    assert engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: asked.append(s)) == []
+    assert asked == [] and engine.skips["slots"] == 2
 
 
 def test_nbbo_the_session_hands_the_reader_to_every_step_and_the_request_lines_stay_out_of_the_logs(tmp_path: Path, monkeypatch) -> None:
@@ -874,18 +940,19 @@ def test_nbbo_an_answer_after_the_last_entry_buys_nothing_and_the_execution_time
     engine.step(t, lambda s: below.get(s, MarketView()))
     t = _at(15, 29, 59)
     above = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.005, t)}
+    quotes = {"AAA": (98.095, 98.105), "CCC": (29.0, 29.005)}
 
-    def slow(symbol, now):
-        clock["t"] += 1.49
-        return (98.095, 98.105, now)
+    def slow(symbol, now):  # asked at once, both answered 1.49 s after the asking
+        clock["t"] = max(clock["t"], 1.49)
+        return (*quotes[symbol], now)
     assert engine.step(t, lambda s: above.get(s, MarketView()), nbbo=slow) == []
     assert not engine.state.positions and engine.skips["late"] == 1 and engine.fills == []
     clock["t"] = 0.0  # the control: asked at 15:29:57, answered inside the window, executed at the effective instant
     engine = _engine()
     engine.step(_at(15, 28, 57), lambda s: below.get(s, MarketView()))
     fills = engine.step(_at(15, 29, 57), lambda s: above.get(s, MarketView()), nbbo=slow)
-    assert [f["symbol"] for f in fills] == ["AAA"] and fills[0]["executed_at"] == (_at(15, 29, 57) + timedelta(seconds=1.49)).isoformat()
-    assert engine.skips["late"] == 1  # CCC, asked next, answered at 15:30:00.98: past the window
+    assert [f["symbol"] for f in fills] == ["AAA", "CCC"] and engine.skips["late"] == 0
+    assert all(f["executed_at"] == (_at(15, 29, 57) + timedelta(seconds=1.49)).isoformat() for f in fills)
 
 
 @pytest.mark.parametrize("row", [
