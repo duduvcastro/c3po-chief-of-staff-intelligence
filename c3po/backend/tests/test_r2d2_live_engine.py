@@ -898,6 +898,34 @@ def test_nbbo_a_buy_takes_the_massive_nbbo_where_the_streams_quote_was_wider() -
     assert engine.sources == {"massive": 1, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 1}
 
 
+def test_a_day_whose_publish_failed_is_republished_under_its_own_rule_after_a_rule_change(monkeypatch) -> None:
+    """Codex 6508087909: 29/10 checkpointed under TIT-2S3-RT (a state of the earlier code: no config field, the rule in
+    its checkpoint's inputs), its public write failed; the 30/10 process (TIT-2S5-RT) republishes it under TIT-2S3-RT."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S3-RT")
+    engine = _engine()
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    t = _at(9, 41)
+    engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    engine.close_session()
+    saved = engine.state.to_json()
+    saved.pop("config")  # written by the earlier code: the rule is only in the checkpoint's inputs
+    methodology = database.ensure_methodology_version("r2d2_live_engine", 2, {}, "earlier")
+    database.save_analysis_snapshot(engine_module.STATE_TYPE, engine_module.STATE_KEY, methodology, {"config": "TIT-2S3-RT"},
+                                    saved, t)
+    assert database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat()) is None  # the publish failed
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S5-RT")  # the rule changes overnight; the process restarts
+    state = engine_module.load_state(database, lambda: None)
+    assert state.config == "TIT-2S3-RT"
+    next_day = DAY + timedelta(days=1)
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    assert engine_module.reconcile_previous(database, state, next_day, close_at + timedelta(hours=17)) is True
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert stored["config"] == "TIT-2S3-RT" and all(trade["id"].startswith("TIT-2S3-RT:") for trade in stored["trades"])
+    assert Engine(state, next_day, []).state.config == "TIT-2S5-RT"  # the new session runs under the rule in force
+
+
 def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> None:
     """Pre-review of b84a436: 29/10 ran under TIT-2S3-RT; the next session (TIT-2S5-RT) reconciles it and must keep its
     config and trade ids — nothing is republished when the stored document already holds the day's fills."""

@@ -475,13 +475,14 @@ class EngineState:
     last_signal_minute: int = -1  # minutes after midnight ET of the last minute the entries were checked in (every second)
     candidates_fixed: bool = False  # the selection at the open happened (even when it found none)
     stream_context: dict[str, dict[str, Any]] = field(default_factory=dict)  # the tapes, for a restart
+    config: str = ""  # the rule the session in the state ran under (its documents keep it when the rule changes)
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
                 "positions": [asdict(position) for position in self.positions.values()], "session": self.session,
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
-                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context}
+                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -491,7 +492,8 @@ class EngineState:
                    candidates=dict(data.get("candidates") or {}), below=dict(data.get("below") or {}),
                    signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []),
                    last_signal_minute=int(data.get("last_signal_minute", -1)),
-                   candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}))
+                   candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}),
+                   config=str(data.get("config") or ""))
 
 
 class Engine:
@@ -511,6 +513,7 @@ class Engine:
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
+            state.config = CONFIG
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
 
@@ -717,8 +720,8 @@ class Engine:
                 "realized_nav_usd": self.state.nav_realized, "cash_usd": cash, "as_of": now.isoformat(), "positions": positions}
 
     def document(self, now: datetime, *, config: str | None = None) -> dict[str, Any]:
-        """``config``: the rule the day ran under (a day already published keeps its own; default: the one in force)."""
-        config = config or CONFIG
+        """``config``: the rule the day ran under; default: the session's own (``state.config``), else the one in force."""
+        config = config or self.state.config or CONFIG
         trades = []
         for index, fill in enumerate(self.fills):
             stamp = int(datetime.fromisoformat(fill["executed_at"]).timestamp())
@@ -748,7 +751,10 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
     snapshot = database.latest_analysis_snapshot(STATE_TYPE, STATE_KEY)
     outputs = (snapshot or {}).get("outputs")
     if isinstance(outputs, dict) and "nav_realized" in outputs:
-        return EngineState.from_json(outputs)
+        state = EngineState.from_json(outputs)
+        if not state.config:  # a checkpoint written before the field: its own rule, recorded in its inputs (Codex 6508087909)
+            state.config = str(((snapshot or {}).get("inputs") or {}).get("config") or "")
+        return state
     seeded = opening_nav()
     if seeded is None:
         raise RuntimeError("no engine state and no lab book to start from")
@@ -762,7 +768,7 @@ def save_state(database: Any, state: EngineState, now: datetime) -> None:
         "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
         "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
         "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026)")
-    database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": CONFIG}, state.to_json(), now)
+    database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
 def seed_from_lab_book(database: Any, now: datetime) -> EngineState | None:
@@ -807,9 +813,12 @@ def reconcile_previous(database: Any, state: EngineState, day: date, now: dateti
     close_at = datetime.combine(prior_day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
     stored_doc = (database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}
     stored = stored_doc.get("trades")
-    # the day keeps the rule it ran under: a rule changed since then (a new CONFIG) never rewrites it (pre-review b84a436)
-    config = str(stored_doc.get("config") or CONFIG)
-    pending = bool(state.fills) and stored != engine.document(close_at, config=config)["trades"]
+    # the day keeps the rule it ran under: a rule changed since then (a new CONFIG) never rewrites it (pre-review b84a436),
+    # even when its public document is missing (a publish that failed after the checkpoint: Codex 6508087909)
+    config = str(stored_doc.get("config") or state.config or "")
+    if state.fills and not config:  # never written under a rule it did not run under; the close and its save still happen
+        logger.error("R2D2 live: previous session %s has no recorded rule; not republished", prior)
+    pending = bool(state.fills) and bool(config) and stored != engine.document(close_at, config=config)["trades"]
     if not unclosed and not pending:
         return False
     if unclosed:
