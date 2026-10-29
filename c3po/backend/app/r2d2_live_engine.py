@@ -1,7 +1,7 @@
 """The live R2D2 inside the C3PO server, on the EODHD real-time stream (owner, 27/10/2026: "claro que tem que mudar
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
-The rule in force is the one the owner chose on 26/10 (TIT-2S3): stocks that open at least 1% below the previous close,
+The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10): stocks that open at least 1% below the previous close,
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
 real ask, with a quoted spread of at most 5 bps (owner 29/10; 3 bps until then), up to
@@ -716,14 +716,16 @@ class Engine:
         return {"nav_start_usd": self.nav_start, "nav_usd": self.state.nav_realized + unrealized,
                 "realized_nav_usd": self.state.nav_realized, "cash_usd": cash, "as_of": now.isoformat(), "positions": positions}
 
-    def document(self, now: datetime) -> dict[str, Any]:
+    def document(self, now: datetime, *, config: str | None = None) -> dict[str, Any]:
+        """``config``: the rule the day ran under (a day already published keeps its own; default: the one in force)."""
+        config = config or CONFIG
         trades = []
         for index, fill in enumerate(self.fills):
             stamp = int(datetime.fromisoformat(fill["executed_at"]).timestamp())
-            trades.append({"id": "%s:%s:%s:%s:%d:%d" % (CONFIG, self.day.isoformat(), fill["symbol"], fill["side"].lower(), stamp, index),
+            trades.append({"id": "%s:%s:%s:%s:%d:%d" % (config, self.day.isoformat(), fill["symbol"], fill["side"].lower(), stamp, index),
                            **{key: _rounded(key, value) for key, value in fill.items()}})
         sells = sum(1 for fill in self.fills if fill["side"] == "SELL")
-        return {"schema": r2d2_lab_live.SCHEMA, "day": self.day.isoformat(), "config": CONFIG, "trades": trades,
+        return {"schema": r2d2_lab_live.SCHEMA, "day": self.day.isoformat(), "config": config, "trades": trades,
                 "book": {key: _rounded(key, value) for key, value in self.book(now).items()},
                 "cycle": {"candidates": len(self.candidates), "signals": self.signals,
                           "entries": sum(1 for fill in self.fills if fill["side"] == "BUY"), "closed": sells}}
@@ -779,8 +781,9 @@ def seed_from_lab_book(database: Any, now: datetime) -> EngineState | None:
 ENGINE_MAX_TRADES = 20_000  # a whole session at any cadence (Codex #500 P2-6); the public route keeps its own cap
 
 
-def publish(database: Any, engine: Engine, now: datetime, *, as_of: datetime | None = None) -> dict[str, Any]:
-    return r2d2_lab_live.store(database, engine.document(as_of or now), now=now, max_trades=ENGINE_MAX_TRADES)
+def publish(database: Any, engine: Engine, now: datetime, *, as_of: datetime | None = None,
+            config: str | None = None) -> dict[str, Any]:
+    return r2d2_lab_live.store(database, engine.document(as_of or now, config=config), now=now, max_trades=ENGINE_MAX_TRADES)
 
 
 def reconcile_previous(database: Any, state: EngineState, day: date, now: datetime) -> bool:
@@ -802,15 +805,18 @@ def reconcile_previous(database: Any, state: EngineState, day: date, now: dateti
     else:
         state.session = keep
     close_at = datetime.combine(prior_day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
-    stored = ((database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}).get("trades")
-    pending = bool(state.fills) and stored != engine.document(close_at)["trades"]
+    stored_doc = (database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}
+    stored = stored_doc.get("trades")
+    # the day keeps the rule it ran under: a rule changed since then (a new CONFIG) never rewrites it (pre-review b84a436)
+    config = str(stored_doc.get("config") or CONFIG)
+    pending = bool(state.fills) and stored != engine.document(close_at, config=config)["trades"]
     if not unclosed and not pending:
         return False
     if unclosed:
         save_state(database, state, now)
     if pending:
         try:
-            publish(database, engine, now, as_of=close_at)
+            publish(database, engine, now, as_of=close_at, config=config)
         except r2d2_lab_live.LabLiveRefused:  # a document too old for the screen (a long holiday): the state is consistent
             logger.info("R2D2 live: previous session %s not republished (refused by the screen)", prior)
     return True

@@ -898,6 +898,26 @@ def test_nbbo_a_buy_takes_the_massive_nbbo_where_the_streams_quote_was_wider() -
     assert engine.sources == {"massive": 1, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 1}
 
 
+def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> None:
+    """Pre-review of b84a436: 29/10 ran under TIT-2S3-RT; the next session (TIT-2S5-RT) reconciles it and must keep its
+    config and trade ids — nothing is republished when the stored document already holds the day's fills."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S3-RT")
+    engine = _engine()
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    t = _at(9, 41)
+    engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    engine_module.publish(database, engine, close_at, as_of=close_at)
+    engine.close_session()
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S5-RT")  # the rule changes overnight
+    next_day = DAY + timedelta(days=1)
+    assert engine_module.reconcile_previous(database, engine.state, next_day, close_at + timedelta(hours=17)) is False
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert stored["config"] == "TIT-2S3-RT" and all(trade["id"].startswith("TIT-2S3-RT:") for trade in stored["trades"])
+
+
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 5.0 bps buy, 5.5 bps is refused (it was 3 bps)."""
