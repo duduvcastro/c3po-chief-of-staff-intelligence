@@ -885,7 +885,16 @@ def run_nightly(database: Database, settings: Settings, http: JsonHttpClient, *,
         return {"enabled": False}
     tick: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
     as_of = utc(tick())
-    pending = [market for market in MARKETS if market in markets and not _published_since(database, market, since)]
+    requested = [market for market in MARKETS if market in markets]
+    pending: list[str] = []
+    for index, market in enumerate(requested):
+        try:
+            _check_deadline(deadline, tick)  # past the stop nothing is read, not even whether tonight already published it
+        except LiveEnsembleDeadline:
+            pending.extend(requested[index:])  # unknown, so unpublished: the run is recorded failed, never a plain success
+            break
+        if not _published_since(database, market, since):
+            pending.append(market)
     failures: Counter[str] = Counter()
     summary: dict[str, Any] = {"enabled": True, "as_of": as_of.isoformat(), "markets_pending": len(pending), "published": 0, "partial": 0,
                                "names": 0, "with_primary_tp": 0, "pit_tested_with_primary_tp": 0, "names_pending": 0}

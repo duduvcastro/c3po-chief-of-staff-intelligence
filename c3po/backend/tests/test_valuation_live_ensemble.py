@@ -686,11 +686,16 @@ def test_a_deadline_mid_sweep_publishes_the_tested_names_and_records_the_night_a
     rows = {row["symbol"]: row for row in snapshot["outputs"]["records"]}
     assert all(row["primary_tp"] is not None for row in rows.values() if row["pit_tested"])
     assert snapshot["outputs"]["counts"]["reach"] == {"reached": 3, "pending": 3}
-    # a deadline already past: nothing is read, nothing is written, the run says so
+    # a deadline already past: nothing is read (not even whether tonight already published an exchange), nothing is
+    # written, the run says so
     database, http = _live_world()
-    with pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
-        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, deadline=CLOCK, markets=("NASDAQ",))
-    assert http.calls == [] and database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
+    asked: list[str] = []
+    published_at = database.latest_analysis_snapshot_published_at
+    monkeypatch.setattr(database, "latest_analysis_snapshot_published_at",
+                        lambda analysis, entity: asked.append(entity) or published_at(analysis, entity))
+    with pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:2$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, deadline=CLOCK, since=CLOCK - timedelta(hours=1))
+    assert asked == [] and http.calls == [] and database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
 
 
 def test_the_phase_closes_its_run_stops_after_two_failures_and_never_starts_at_or_after_five(monkeypatch: pytest.MonkeyPatch) -> None:
