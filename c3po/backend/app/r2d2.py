@@ -33,7 +33,7 @@ from .r2d2_shadow_candidate_log import (
     build_observation as build_shadow_candidate_observation,
     entry_rejection_reason_id,
 )
-from .valuation_official import UNRESOLVED, current_generation, official_rows
+from .valuation_official import UNRESOLVED, current_generation, ensemble_untested, official_rows
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -4040,6 +4040,10 @@ class R2D2PaperService:
             # through to the same-day backfill / technical-only tiers below
             # instead of being trusted directly.
             if canonical_row and canonical_row.get("signal_quality") != "validated":
+                canonical_row = None
+            # Ensemble switch (valuation_official rev 10, owner 28/10/2026): an ensemble TP outside the PIT-tested population is
+            # served and labelled on the screens but is never a buy basis — it falls through exactly as a provisional row does.
+            if canonical_row and ensemble_untested(canonical_row):
                 canonical_row = None
             if canonical_row:
                 c3po_tp = _float(canonical_row.get("our_tp"))

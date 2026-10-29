@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import math
 import statistics
+from collections import Counter
+from collections.abc import Mapping
 from datetime import datetime, time, timedelta, timezone
 from threading import Lock, RLock
 from typing import Any, Literal, TYPE_CHECKING
@@ -14,7 +16,8 @@ from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
 from ..valuation_official import current_generation, item_stamp, official_row, official_rows, official_stamp, provenance_sha256
 from ..valuation_asfiled import record_us_reconciliation
-from ..valuation_official_engine import official_buy_in_v1, official_entry_discount_v1
+from ..valuation_official_engine import (ENSEMBLE_FALLBACK_PREFIX, ENSEMBLE_ORIGIN, ENSEMBLE_POLICY, ensemble_consensus_weight_v1, ensemble_fallback_view,
+                                        official_buy_in_v1, official_ensemble_buy_in_v1, official_entry_discount_v1)
 from ..valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
 from .eodhd import EodhdClient
@@ -61,6 +64,12 @@ US_TP_HURDLE_BASIS = "US 10Y Treasury"
 NEW_YORK = ZoneInfo("America/New_York")
 US_REGULAR_OPEN_ET = time(9, 30)
 US_REGULAR_CLOSE_ET = time(16, 0)
+# The ensemble switch (valuation_official rev 10, official_ensemble_v1): per row, the live record of the ensemble's primary TP
+# read from the latest valuation_ensemble_live/<M>_UNIVERSE snapshot — (record, snapshot reference, fallback reason): a record
+# when the name takes the ensemble TP (ENSEMBLE_POLICY), else None and the reason its row carries the internal TP instead.
+EnsembleInput = tuple[dict[str, Any] | None, dict[str, Any], str | None]
+LiveEnsemble = tuple[dict[str, dict[str, Any]], dict[str, Any], str | None]  # (records by symbol, snapshot reference, market-level refusal)
+ENSEMBLE_BUY_IN_MODEL = "Entry hurdle on the ensemble TP"  # the one model behind the ensemble buy-in (official_ensemble_buy_in_v1)
 
 
 def number(value: Any) -> float | None:
@@ -295,6 +304,7 @@ class USScreeningService:
         consensus_fetched_at = {"fmp": fmp_fetched_at, "eodhd": eodhd_fetched_at}  # PROMO-2 (c): the consensus instant is a receipt, never the cycle clock
         fmp_institutional_data = self.one_pagers._fmp_institutional_batch(symbols)
         fmp_grades_data = self.one_pagers._fmp_recent_grades_batch(symbols)
+        live_ensemble = self._live_ensemble(market, now)  # read ONCE per build: every stock row takes its ensemble TP or its fallback from it
         rows: list[dict[str, Any]] = []
         for cash_volume, quote, metadata in selected:
             symbol = quote.symbol
@@ -329,6 +339,7 @@ class USScreeningService:
                         consensus_fetched_at=consensus_fetched_at,
                         institutional_positions=fmp_institutional_data.get(symbol),
                         recent_grades=fmp_grades_data.get(symbol),
+                        ensemble=self._ensemble_input(symbol, live_ensemble),
                     )
                 )
             except Exception:
@@ -347,6 +358,12 @@ class USScreeningService:
             )
 
         self._assign_statuses(rows, risk_free_rate)
+        origins: Counter[str] = Counter()  # rev 10: where each row's ensemble TP comes from — counts by class, never a symbol
+        for row in rows:
+            origin = str(row.get("ensemble_origin") or "none")
+            origins[origin.removeprefix(ENSEMBLE_FALLBACK_PREFIX).split(":")[0] if origin.startswith(ENSEMBLE_FALLBACK_PREFIX) else origin] += 1
+        logger.info("US ensemble fields for %s: rows=%d origins=%s untested=%d", market, len(rows), dict(sorted(origins.items())),
+                    sum(row.get("ensemble_origin") == ENSEMBLE_ORIGIN and row.get("ensemble_pit_tested") is not True for row in rows))  # counts only
 
         self._rows[market] = rows
         self._basis_at[market] = now
@@ -385,6 +402,7 @@ class USScreeningService:
         institutional_positions: dict[str, Any] | None = None,
         recent_grades: list[dict[str, Any]] | None = None,
         consensus_fetched_at: dict[str, datetime] | None = None,  # per provider ("fmp"/"eodhd"): the instant its answer was received in THIS build — a fact; None = no instant, never invented (PROMO-2 c)
+        ensemble: EnsembleInput | None = None,  # rev 10: the name's live ensemble record (or why it falls back); None → the internal fallback
     ) -> dict[str, Any]:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
@@ -476,6 +494,7 @@ class USScreeningService:
             validated=validated,
             thesis=str((analysis.get("thesis") or [""])[0]),
             risk_text=str((analysis.get("risks") or [""])[0]),
+            ensemble=ensemble if ensemble is not None else (None, {}, "live_snapshot_not_read"),
         )
 
     def _analyze_etf(
@@ -558,6 +577,7 @@ class USScreeningService:
             thesis=f"{category}: diversified return model combines trend, drawdown, volatility, assets and holdings quality.",
             risk_text=f"ETF risk reflects {volatility * 100:.1f}% annualized volatility and {abs(max_drawdown) * 100:.1f}% maximum drawdown.",
             quality_score=round(clamp(72 - volatility * 45 + min(math.log10(max(assets, 1)) - 8, 4) * 4, 30, 92)),
+            ensemble=(None, {}, "not_a_stock"),  # (a)/(c): an ETF carries its internal TP (the live producer evaluates stocks only)
         )
 
     def _common_row(
@@ -590,6 +610,7 @@ class USScreeningService:
         consensus_source: str | None = None,
         consensus_observed_at: datetime | None = None,
         consensus_weight_percent: float = 0.0,  # the blend weight the producer applied (defect d); an ETF never blends
+        ensemble: EnsembleInput = (None, {}, "live_snapshot_not_read"),  # rev 10: the live ensemble record of the name, or why it falls back
     ) -> dict[str, Any]:
         price = float(quote["price"])
         upside = (our_tp / price - 1) * 100
@@ -610,7 +631,7 @@ class USScreeningService:
         ) if security_type == "Stock" else quality_score
         score = self._power_score(upside, risk, operating_quality, confidence, entry_distance)
         internal_score = self._power_score(internal_upside, risk, operating_quality, confidence, internal_entry_distance)
-        return {
+        row: dict[str, Any] = {
             "market": market,
             "symbol": str(quote["symbol"]),
             "name": str(fundamentals.get("companyName") or quote.get("name") or quote["symbol"]),
@@ -679,6 +700,125 @@ class USScreeningService:
             "beta": positive(fundamentals.get("beta")),
             "volatility_90d": self._volatility(history),
             "as_of": quote.get("as_of") or datetime.now(timezone.utc),
+        }
+        row.update(self._ensemble_fields(row, ensemble, dividend_yield=dividend_yield))
+        return row
+
+    def _live_ensemble(self, market: USMarket, now: datetime) -> LiveEnsemble:
+        """The latest ``valuation_ensemble_live/<M>_UNIVERSE`` snapshot of the market (``ENSEMBLE_POLICY``), read once per build:
+        its records by symbol and its reference (id, session, ``T``, context hash), or a market-level refusal — every name of
+        the build then falls back to its internal TP, never a guessed number: no snapshot (the producer is off or has not run),
+        a snapshot older than ``max_snapshot_age`` at the build's clock, one of another schema/market/primary, a duplicate symbol,
+        or a read that failed (the build goes on: the cycle stays selectable with the internal fallback)."""
+        policy = ENSEMBLE_POLICY
+        if market not in policy.markets:
+            return {}, {}, "market_outside_ensemble"
+        try:
+            snapshot = self.database.latest_analysis_snapshot(policy.live_analysis_type, f"{market}_UNIVERSE")
+        except Exception as error:
+            logger.warning("US ensemble live snapshot for %s unreadable (%s): every name falls back to its internal TP", market, type(error).__name__)
+            return {}, {}, "live_snapshot_unreadable:" + type(error).__name__
+        if not snapshot:
+            return {}, {}, "live_snapshot_missing"
+        outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), Mapping) else {}
+        reference = {"ensemble_snapshot_id": str(snapshot.get("id") or "") or None, "ensemble_session_date": outputs.get("session_date"),
+                     "ensemble_as_of": outputs.get("as_of"), "ensemble_context_sha256": outputs.get("context_sha256")}
+        if (outputs.get("schema"), outputs.get("market"), outputs.get("primary")) != (policy.live_schema, market, policy.primary_variant):
+            return {}, reference, "live_snapshot_invalid:identity"
+        published = snapshot.get("published_at")
+        if isinstance(published, str):
+            try:
+                published = datetime.fromisoformat(published.replace("Z", "+00:00"))
+            except ValueError:
+                published = None
+        if not isinstance(published, datetime):
+            return {}, reference, "live_snapshot_invalid:published_at"
+        published = published if published.tzinfo else published.replace(tzinfo=timezone.utc)
+        if now - published > policy.max_snapshot_age:
+            return {}, reference, "live_snapshot_stale"
+        records: dict[str, dict[str, Any]] = {}
+        for item in outputs.get("records") if isinstance(outputs.get("records"), list) else []:
+            symbol = str(item.get("symbol") or "").strip().upper() if isinstance(item, Mapping) else ""
+            if not symbol:
+                continue
+            if symbol in records:
+                return {}, reference, "live_snapshot_invalid:duplicate_symbol"
+            records[symbol] = dict(item)
+        return records, reference, None
+
+    @staticmethod
+    def _ensemble_input(symbol: str, live: LiveEnsemble) -> EnsembleInput:
+        """(c) Whether ``symbol`` takes the ensemble TP: a record of the snapshot with ``origin = "ensemble"`` for a stock (and,
+        only when ``ENSEMBLE_POLICY.require_pit_tested``, ``pit_tested``) — else the reason its row falls back: the snapshot's
+        refusal, ``not_in_live_snapshot``, the producer's ``not_evaluable:<reason>``, ``not_a_stock``, ``outside_tested_population``."""
+        records, reference, refusal = live
+        if refusal is not None:
+            return None, reference, refusal
+        record = records.get(str(symbol).strip().upper())
+        if record is None:
+            return None, reference, "not_in_live_snapshot"
+        origin = str(record.get("origin") or "")
+        if origin != ENSEMBLE_ORIGIN:
+            return None, reference, origin or "origin_unknown"
+        if record.get("security_type") not in ENSEMBLE_POLICY.security_types:
+            return None, reference, "not_a_stock"
+        if ENSEMBLE_POLICY.require_pit_tested and record.get("pit_tested") is not True:
+            return None, reference, "outside_tested_population"
+        return record, reference, None
+
+    @classmethod
+    def _ensemble_fields(cls, row: dict[str, Any], ensemble: EnsembleInput, *, dividend_yield: float) -> dict[str, Any]:
+        """Rev 10 (``official_ensemble_v1``): the ``ensemble_*`` fields of a row, derived EXACTLY as its ``internal_*`` ones
+        (``_common_row`` and ``_assign_statuses``) on the ensemble's primary TP: (b) the buy-in by the internal buy-in's rule
+        (``official_ensemble_buy_in_v1`` with the row's own entry hurdle, ``official_entry_discount_v1('US', risk, confidence)``),
+        upside, entry distance, expected return (+ the same dividend yield), Power Score (status in the build's status pass); the
+        consensus's weight inside the primary (``ensemble_consensus_weight_v1`` over the record's evaluated model values and the
+        consensus it used), ``ensemble_origin = "ensemble"``, the producer's ``pit_tested`` (``ensemble_pit_tested``) and the
+        snapshot's identity. A name without a usable record — or whose record is inconsistent (``sample_size`` not the count of
+        the values it averaged, a consensus used without a value) — carries its internal TP and view (``ensemble_fallback_view``).
+        Never raises: every row stays usable, so the cycle stays selectable."""
+        record, reference, reason = ensemble
+        if record is not None:
+            try:
+                return {**cls._ensemble_view(row, record, dividend_yield=dividend_yield), **reference,
+                        "ensemble_inputs_sha256": record.get("inputs_sha256")}
+            except (ValueError, TypeError, KeyError, ArithmeticError) as error:
+                reason = "live_record_invalid:" + type(error).__name__
+        return {**ensemble_fallback_view(row, reason or "unknown"), **reference, "ensemble_inputs_sha256": record.get("inputs_sha256") if record else None}
+
+    @classmethod
+    def _ensemble_view(cls, row: Mapping[str, Any], record: Mapping[str, Any], *, dividend_yield: float) -> dict[str, Any]:
+        tp = positive(record.get("primary_tp"))
+        if tp is None:
+            raise ValueError("primary_tp_not_positive")
+        consensus = record.get("consensus") if isinstance(record.get("consensus"), Mapping) else {}
+        used = consensus.get("used") is True
+        consensus_value = positive(consensus.get("value")) if used else None
+        if used and consensus_value is None:
+            raise ValueError("consensus_used_without_value")
+        model_values = record.get("model_values")
+        if not isinstance(model_values, Mapping):
+            raise TypeError("model_values")
+        evaluated = [float(value) for value in model_values.values() if value is not None]
+        if int(record.get("sample_size") or 0) != len(evaluated) + (1 if used else 0):
+            raise ValueError("sample_size_mismatch")
+        price, risk, confidence = float(row["price"]), float(row["risk_score"]), float(row["valuation_confidence"])
+        entry_discount = official_entry_discount_v1("US", risk, confidence)  # the hurdle the internal buy-in of this row was derived with
+        buy_in = official_ensemble_buy_in_v1(tp, entry_discount)
+        upside = (tp / price - 1) * 100
+        distance = (price / buy_in - 1) * 100
+        pit_tested = record.get("pit_tested")
+        return {
+            "ensemble_tp": tp,
+            "ensemble_buy_in": buy_in,
+            "ensemble_buy_in_models": {ENSEMBLE_BUY_IN_MODEL: tp / (1 + entry_discount)},
+            "ensemble_upside_percent": upside,
+            "ensemble_price_vs_buy_in_percent": distance,
+            "ensemble_expected_total_return_percent": upside + dividend_yield,
+            "ensemble_score": cls._power_score(upside, risk, float(row["operating_quality"]), confidence, distance),
+            "ensemble_consensus_weight_percent": ensemble_consensus_weight_v1(evaluated, consensus_value) * 100,
+            "ensemble_origin": ENSEMBLE_ORIGIN,
+            "ensemble_pit_tested": pit_tested if isinstance(pit_tested, bool) else None,  # (c) labelled on the screens; never a buy permission unless True
         }
 
     def _served_rows(self, market: USMarket, generation: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -773,6 +913,7 @@ class USScreeningService:
                 x_percent=round(self._axis(row["risk_score"], risk_cutoff, risk_low, risk_high), 2),
                 y_percent=round(self._axis(row["upside_percent"], tp_cutoff, return_low, return_high), 2),
                 as_of=row["as_of"],
+                ensemble_origin=row.get("ensemble_origin"), ensemble_pit_tested=row.get("ensemble_pit_tested"),  # rev 10: the label (only under the ensemble)
             ))
         validated = sum(item.signal_quality == "validated" for item in items)
         return MatrixPowerResponse(
@@ -817,6 +958,7 @@ class USScreeningService:
             consensus_gap_percent=round(row["consensus_gap_percent"], 1) if row.get("consensus_gap_percent") is not None else None,
             valuation_method_count=row["valuation_method_count"], internal_method_count=row["internal_method_count"], quality_score=row["quality_score"],
             status=row["status"], thesis=row["thesis"], risk=row["risk"], as_of=row["as_of"],
+            ensemble_origin=row.get("ensemble_origin"), ensemble_pit_tested=row.get("ensemble_pit_tested"),  # rev 10: the label (only under the ensemble)
         )
 
     def _persist(self, market: USMarket) -> None:
@@ -1077,7 +1219,8 @@ class USScreeningService:
         the TP hurdle is the build's US risk-free rate + the premium, defect b, stamped on every row as
         ``tp_hurdle_percent``/``tp_hurdle_risk_free_rate``). Passo 1 rev 9 (official_internal_v1): the same rule and the
         same cutoffs — the same hurdle — on the internal TP and its buy-in give ``internal_status``, the status an internal
-        record is served with, never the blend's."""
+        record is served with, never the blend's; rev 10: and ``ensemble_status`` on the ensemble TP (the internal status, bit for
+        bit, on a fallback row)."""
         risk_cutoff = cls._risk_cutoff(rows)
         tp_cutoff = cls._tp_cutoff(risk_free_rate)
         for row in rows:
@@ -1087,6 +1230,9 @@ class USScreeningService:
                                                tp_cutoff, risk_cutoff)
             row["internal_status"] = cls._screen_status(row["signal_quality"], row["internal_upside_percent"], row["risk_score"],
                                                         row["internal_price_vs_buy_in_percent"], tp_cutoff, risk_cutoff)
+            if "ensemble_upside_percent" in row and "ensemble_price_vs_buy_in_percent" in row:  # rev 10: the same rule on the ensemble TP
+                row["ensemble_status"] = cls._screen_status(row["signal_quality"], row["ensemble_upside_percent"], row["risk_score"],
+                                                            row["ensemble_price_vs_buy_in_percent"], tp_cutoff, risk_cutoff)
 
     @staticmethod
     def _screen_status(signal_quality: str, upside: float, risk: float, entry_distance: float, tp_cutoff: float, risk_cutoff: float) -> str:

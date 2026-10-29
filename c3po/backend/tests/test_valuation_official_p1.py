@@ -106,7 +106,7 @@ def _switch(database: Database, monkeypatch: pytest.MonkeyPatch, *, cycles: dict
 
 def test_the_constants_the_lock_and_the_pinned_one_pager() -> None:
     assert official.SOURCE_OFFICIAL == SOURCE_BLEND == "official_blend_v1" and official.SOURCE_INTERNAL == SOURCE_INTERNAL == "official_internal_v1"
-    assert OFFICIAL_SOURCES == (SOURCE_BLEND, SOURCE_INTERNAL)
+    assert OFFICIAL_SOURCES[:2] == (SOURCE_BLEND, SOURCE_INTERNAL)  # rev 10 appends official_ensemble_v1 (test_valuation_official_ensemble)
     # the lock is a literal in the module, flipped by THE LOCK COMMIT together with the receipt it names (rev 9): this tree has it
     # TRUE, and the receipt is either the placeholder (the owner has not accepted yet: nothing switches) or the accepted hex-64 hash
     source = (APP / "valuation_official.py").read_text(encoding="utf-8")
