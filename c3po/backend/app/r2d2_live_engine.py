@@ -45,7 +45,10 @@ STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
 # The stream's capacity is per account (550 on this plan, EODHD's default is 50): the api's own stream keeps the rest
-UNIVERSE_SIZE = int(os.environ.get("C3PO_R2D2_LIVE_UNIVERSE_SIZE", "500"))
+# owner 29/10/2026 ~17:3x BRT: "então aumenta o universo do R2D2 para mais papéis" — 900 (it was 500): the trade feed
+# carries the universe until the candidates are fixed, the quote feed only the held names (each name costs one WebSocket
+# slot per feed; the account has ~1,050), so the same slots follow ~900 names
+UNIVERSE_SIZE = int(os.environ.get("C3PO_R2D2_LIVE_UNIVERSE_SIZE", "900"))
 ADV_DAYS = 20
 MIN_ADV_DAYS = 15
 FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's cost model)
@@ -143,6 +146,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self._pending: list[tuple[str, float, float, int, float]] | None = None
         self.restored_minute: int | None = None  # the minute of a restore: earlier minutes may miss the trades of the gap
         self._groups_version = 0  # bumped by every ``set_group``: the feed loop recomputes its subscription only then
+        self._quote_symbols: frozenset[str] | None = None  # the quote feed's names (None: every grouped name, as trades)
         # how late the feed is: receipt time minus the message's own time (ms), the last message and the worst since the
         # last heartbeat, and the messages since the last heartbeat (0 = a silent feed, not a punctual one), per feed;
         # numbers only, published by the status workflow
@@ -155,6 +159,21 @@ class LiveEngineStream(EodhdRealtimeStream):
         super().set_group(name, symbols, priority=priority)
         with self._lock:
             self._groups_version += 1
+
+    def set_quote_symbols(self, symbols: Any) -> None:
+        """The names the quote feed subscribes (the held names: their exits read the bid; the entries read Massive's
+        NBBO); None = every grouped name. The trade feed keeps every grouped name. A name counts one WebSocket slot per
+        feed, so the universe can be almost twice as large on the same slots."""
+        with self._lock:
+            self._quote_symbols = None if symbols is None else frozenset(symbols)
+            self._groups_version += 1
+
+    def feed_symbols(self, feed: str) -> set[str]:
+        """The names one feed subscribes: every grouped name for trades; for quotes, only the quote names among them."""
+        with self._lock:
+            desired = set(self._desired_symbols())
+            quotes = self._quote_symbols
+        return desired & quotes if feed == "quote" and quotes is not None else desired
 
     async def _run_feed(self, feed: str, endpoint: str, recorder: Any) -> None:
         """The frozen module's feed loop, connection and errors unchanged, without its per-message bookkeeping: the module
@@ -183,7 +202,7 @@ class LiveEngineStream(EodhdRealtimeStream):
                         if version != self._groups_version:
                             with self._lock:
                                 version = self._groups_version
-                                desired = set(self._desired_symbols())
+                                desired = self.feed_symbols(feed)
                             removed = sorted(subscribed - desired)
                             added = sorted(desired - subscribed)
                             if removed:
@@ -662,10 +681,11 @@ class Engine:
                 if spread_bps > RULE["spread_max_bps"]:
                     self.skips["spread"] += 1
                     continue
-                if source == "massive" and not (market.quote_fresh(moment) and market.bid is not None and market.ask is not None
-                                                and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4
-                                                <= RULE["spread_max_bps"]):
-                    self.sources["stream_would_refuse"] += 1  # the evidence: a buy the stream's quote alone refused
+                if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
+                        and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"]):
+                    # the evidence: a buy the stream's fresh quote alone refused (a candidate without a stream quote, the
+                    # usual case since the quote feed carries only the held names, is not counted)
+                    self.sources["stream_would_refuse"] += 1
                 new.append(self._buy(symbol, ask, gap, spread_bps, moment, source))
         return new
 
@@ -965,6 +985,9 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             sleep(5.0)
     engine = Engine(state, day, universe)
     stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
+    quotes_for = getattr(stream, "set_quote_symbols", None)
+    if quotes_for is not None:
+        quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
     if getattr(stream, "session", None) == day:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
         # complete; a restore a failed attempt left pending is finished first (its held trades applied, nothing cleared)
@@ -994,12 +1017,19 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         sleep(min(1.0, max(0.05, (at(OPENING_WINDOW_END) - now()).total_seconds())))
     engine.set_candidates(dict(stream.opening))
     logger.info("R2D2 live: %d candidates of %d with an opening print", len(engine.candidates), len(stream.opening))
+    # once the candidates are fixed the trade feed needs only them and the held names (fewer messages, less lag)
+    stream.set_group(STREAM_GROUP, subscription([member for member in universe if member.symbol in engine.candidates],
+                                                engine.state.positions), priority=200)
+    held = set(engine.state.positions)
     guarded(lambda: commit(now()))
     last_marks = last_lines = clock_time.monotonic()
     while now() < at(SESSION_CLOSE):
         moment = now()
         began = clock_time.monotonic()
         fills = engine.step(moment, stream.view, signal, nbbo)
+        if quotes_for is not None and set(engine.state.positions) != held:  # a buy or a sale: the quote feed follows
+            held = set(engine.state.positions)
+            quotes_for(held)
         if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
             guarded(lambda: commit(moment))
             last_marks = clock_time.monotonic()
@@ -1064,7 +1094,7 @@ def main() -> None:
     # the entries' NBBO (Massive, as the lab measured it): a short timeout and no retry — the exits wait on this loop
     nbbo = (massive_nbbo(DeadlineJsonHttpClient(timeout=NBBO_TIMEOUT_SECONDS).get_json, settings.massive_base_url,
                          settings.massive_api_token) if settings.massive_api_token else None)
-    stream = LiveEngineStream(settings.eodhd_api_token)
+    stream = LiveEngineStream(settings.eodhd_api_token, max_symbols=UNIVERSE_SIZE + 50)
     stream.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))
     base_url = settings.eodhd_base_url.rstrip("/")

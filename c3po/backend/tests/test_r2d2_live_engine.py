@@ -210,6 +210,68 @@ class _FakeStream:
         return self.views.get(symbol, MarketView()) if hasattr(self, "views") else MarketView()
 
 
+def test_the_quote_feed_carries_only_the_held_names_and_the_trade_feed_the_universe() -> None:
+    """Owner 29/10: a larger universe on the same WebSocket slots — trades for every grouped name, quotes only for the
+    names given (the held ones); None keeps the old behaviour (both feeds the same names)."""
+    assert engine_module.UNIVERSE_SIZE == 900
+    stream = LiveEngineStream("", max_symbols=10)
+    stream.set_group("r2d2-live", ["AAA", "BBB", "CCC"], priority=200)
+    assert stream.feed_symbols("trade") == stream.feed_symbols("quote") == {"AAA", "BBB", "CCC"}
+    version = stream._groups_version
+    stream.set_quote_symbols({"BBB", "ZZZ"})  # a quote name outside the groups is never subscribed
+    assert stream._groups_version == version + 1  # the feed loops resubscribe
+    assert stream.feed_symbols("trade") == {"AAA", "BBB", "CCC"} and stream.feed_symbols("quote") == {"BBB"}
+    stream.set_quote_symbols(set())
+    assert stream.feed_symbols("quote") == set()
+    stream.set_quote_symbols(None)
+    assert stream.feed_symbols("quote") == {"AAA", "BBB", "CCC"}
+
+
+class _QuoteFakeStream(_FakeStream):
+    def __init__(self):
+        super().__init__()
+        self.quote_history: list[set[str] | None] = []
+
+    def set_quote_symbols(self, symbols):
+        self.quote_history.append(None if symbols is None else set(symbols))
+
+    def start_session(self, day):
+        self.opening = {"AAA": 98.0, "BBB": 50.5}  # AAA opens -2% (a candidate), BBB +1% (not one)
+
+
+def test_the_session_narrows_the_trades_to_the_candidates_and_the_quotes_follow_the_held_names(tmp_path: Path, monkeypatch) -> None:
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe",
+                        lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6), Member("BBB", "NYSE", 50.0, 20e6)])
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6))
+    clock = {"t": _at(9, 30, 30)}
+    stream = _QuoteFakeStream()
+
+    def sleep(seconds):
+        clock["t"] += timedelta(seconds=max(seconds, 1.0))
+        t = clock["t"]
+        stream.views = {"AAA": _view(97.9, 98.0, 97.89, 97.91, t) if t < _at(9, 40) else _view(98.1, 98.0, 98.095, 98.105, t)}
+        if t >= _at(9, 45):
+            raise KeyboardInterrupt
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
+                    now=lambda: clock["t"], sleep=sleep)
+    assert stream.subscribed_history[0] == ["AAA", "BBB"]  # the universe until the candidates are fixed
+    assert stream.subscribed_history[-1] == ["AAA"]  # then the candidates and the held names only
+    assert stream.quote_history[0] == set() and stream.quote_history[-1] == {"AAA"}  # quotes: none held, then the buy
+
+
+def test_the_stream_evidence_counts_only_a_fresh_stream_quote_wider_than_the_limit() -> None:
+    t = _at(9, 41)
+    nbbo = lambda s, now: (98.095, 98.105, now)  # noqa: E731 — Massive: 1 bp
+    engine = _crossing_engine()  # no stream quote for AAA (the quote feed carries only the held names)
+    fills = engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(), nbbo=nbbo)
+    assert [f["symbol"] for f in fills] == ["AAA"] and engine.sources["stream_would_refuse"] == 0
+    engine = _crossing_engine()  # a fresh stream quote of 10 bps that alone would have refused the buy
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, 98.05, 98.15, t) if s == "AAA" else MarketView(), nbbo=nbbo)
+    assert [f["symbol"] for f in fills] == ["AAA"] and engine.sources["stream_would_refuse"] == 1
+
+
 def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, monkeypatch) -> None:
     database = Database(Settings(database_url=""))
     monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
