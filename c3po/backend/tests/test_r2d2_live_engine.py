@@ -334,12 +334,15 @@ def test_the_shadows_close_with_the_session_and_the_line_and_status_carry_number
     engine.close_session()  # AAA closes at its last mark; CCC was never marked: dropped, not counted
     stats = engine.state.bands["gt10"]
     assert not engine.state.shadow and stats["closed"] == 1 and stats["net_usd"] < 0
+    assert engine.state.bands_closed == {"session": DAY.isoformat(), "bands": engine.state.bands}  # kept past the next reset
     restored = EngineState.from_json(json.loads(json.dumps(engine.state.to_json())))
     assert restored.bands == engine.state.bands and restored.shadow == {}
     database = Database(Settings(database_url=""))
     engine_module.save_state(database, engine.state, later)
     summary = engine_module.status(database, later)
     assert set(summary["spread_bands"]) == {"gt10"} and summary["spread_bands"]["gt10"]["closed"] == 1
+    assert summary["spread_bands_last_session"]["session"] == DAY.isoformat()
+    assert summary["spread_bands_last_session"]["bands"]["gt10"]["closed"] == 1
     assert "AAA" not in json.dumps(summary) and "CCC" not in json.dumps(summary)  # numbers only
 
 

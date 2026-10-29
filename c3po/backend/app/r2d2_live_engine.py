@@ -551,6 +551,7 @@ class EngineState:
     config: str = ""  # the rule the session in the state ran under (its documents keep it when the rule changes)
     shadow: dict[str, dict[str, Any]] = field(default_factory=dict)  # the open shadow trades (never published by name)
     bands: dict[str, dict[str, float]] = field(default_factory=dict)  # per spread band: refused, closed, wins, net USD
+    bands_closed: dict[str, Any] = field(default_factory=dict)  # the last CLOSED session's bands: {"session", "bands"}
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
@@ -558,7 +559,7 @@ class EngineState:
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
                 "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config,
-                "shadow": self.shadow, "bands": self.bands}
+                "shadow": self.shadow, "bands": self.bands, "bands_closed": self.bands_closed}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -570,7 +571,8 @@ class EngineState:
                    last_signal_minute=int(data.get("last_signal_minute", -1)),
                    candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}),
                    config=str(data.get("config") or ""),
-                   shadow=dict(data.get("shadow") or {}), bands=dict(data.get("bands") or {}))
+                   shadow=dict(data.get("shadow") or {}), bands=dict(data.get("bands") or {}),
+                   bands_closed=dict(data.get("bands_closed") or {}))
 
 
 class Engine:
@@ -661,7 +663,11 @@ class Engine:
                 reason = "t30_positive"
             if reason:
                 new.append(self._sell(position, market.bid, net, reason, moment))
-        self._shadow_exits(now, view)
+        try:
+            self._shadow_exits(now, view)
+        except Exception:  # the measurement never breaks the step (the real exits ran above, the entries run below)
+            logger.error("R2D2 live: the shadows could not be marked; the open ones are dropped")
+            self.state.shadow.clear()  # once, not an error every second (pre-review of cb42462)
         # The buy signal, checked EVERY SECOND like the exits (owner 29/10/2026: "esse cheque tem que ser por segundo e
         # não por minuto"): the last trade back above the VWAP after being below it, executed at once at the real ask.
         # Until 29/10 it was the close of each completed minute (the lab's candles): a cross the minute's close no longer
@@ -740,7 +746,10 @@ class Engine:
                 spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
                 if spread_bps > RULE["spread_max_bps"]:
                     self.skips["spread"] += 1
-                    self._shadow_open(symbol, ask, spread_bps, moment)
+                    try:
+                        self._shadow_open(symbol, ask, spread_bps, moment)
+                    except Exception:  # the measurement never breaks the step
+                        logger.error("R2D2 live: a shadow could not be opened")
                     continue
                 if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
                         and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"]):
@@ -819,6 +828,8 @@ class Engine:
                 self.state.shadow.pop(symbol)
             else:
                 self._shadow_close(symbol, row["last_net"])
+        # the day's final per band, kept past the next session's reset (pre-review of 65ceb97 D1)
+        self.state.bands_closed = {"session": self.day.isoformat(), "bands": json.loads(json.dumps(self.state.bands))}
         for position in self.state.positions.values():
             position.days_held += 1
         self.state.last_session = self.day.isoformat()
@@ -1145,6 +1156,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
     engine.close_session()
     guarded(lambda: commit(now()))
+    logger.info("%s", shadow_line(engine))  # the day's final per band: the T30 and the close's shadows included
     stream.set_group(STREAM_GROUP, [])
     logger.info("R2D2 live: session %s closed, NAV %.2f, %d fills, %d carried", day, engine.state.nav_realized,
                 len(engine.fills), len(engine.state.positions))
@@ -1171,7 +1183,10 @@ def status(database: Any, now: datetime) -> dict[str, Any]:
             "today_fills": len(document.get("trades") or []), "today_cycle": document.get("cycle"),
             "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of"),
             "spread_bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
-                             for name, stats in (state.get("bands") or {}).items()}}
+                             for name, stats in (state.get("bands") or {}).items()},
+            "spread_bands_last_session": {"session": (state.get("bands_closed") or {}).get("session"),
+                                          "bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
+                                                    for name, stats in ((state.get("bands_closed") or {}).get("bands") or {}).items()}}}
 
 
 def main() -> None:
