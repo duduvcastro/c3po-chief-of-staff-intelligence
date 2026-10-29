@@ -2,7 +2,9 @@ name: Valuation as-filed receipt (read-only)
 
 # The as-filed SEC poll (Investor Relations worker, source ``sec_asfiled``) as the host runs it: the switch and the
 # backfill as the RUNNING worker's environment holds them, read by the app's own parsers (valuation_env), when that
-# worker started, and its latest runs with their coverage and error COUNTS (``na``: a run without that field). Read-only: one SSH session, a read-only database session, nothing written. This repository is PUBLIC: only
+# worker started, and its latest runs with their coverage and error COUNTS (``na``: a run without that field or with a
+# value of another type). Also the Decisor's latest runs, clocks only: the instant D each one decided at
+# (``prediction_instant``) and when it published — the D an as-filed pass must precede (Codex 6484687050). Read-only: one SSH session, two read-only database sessions (the as-filed runs, then the Decisor clocks under a 5 s statement and 2 s lock timeout), nothing written. This repository is PUBLIC: only
 # lines of exact shapes (dates, numbers and closed sets) are printed — never a CIK, a symbol or an error text.
 
 on:
@@ -83,11 +85,16 @@ jobs:
           def iso(value):
               return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if value else "none"
 
+          LISTS, NUMBERS = {"observed_issuers", "failed_issuers"}, {"issuers", "unattributed_failures", "header_failures"}
+
           def count(meta, key):
-              if key not in meta:  # older runs (before 20-22/10), running ones and early failures lack it: never a 0
-                  return "na"
+              # absent (older runs, running ones, early failures), null, a bool or a value of another type: "na", never a 0
               value = meta.get(key)
-              return str(len(value)) if isinstance(value, list) else str(int(value or 0))
+              if key in LISTS and isinstance(value, list):
+                  return str(len(value))
+              if key in NUMBERS and isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                  return str(value)
+              return "na"
 
           database = Database(get_settings())
           with database.connection() as connection:
@@ -95,6 +102,24 @@ jobs:
                   "SELECT run.status, run.started_at, run.completed_at, COALESCE(run.records_read, 0), COALESCE(run.records_written, 0), "
                   "run.metadata, run.error_summary IS NOT NULL FROM ingestion_runs run JOIN data_sources source ON source.id = run.source_id "
                   "WHERE source.code = 'sec_asfiled' ORDER BY run.started_at DESC LIMIT %s", (int(os.environ["RUNS"]),)).fetchall()
+          # the Decisor's clocks are context: an error, a lock or a stall never blocks the as-filed receipt — it prints a
+          # fixed reason instead (each run stamps one clock pair on all its rows: DISTINCT pairs on the published index)
+          decisions, unavailable = None, ""
+          try:
+              decider = database.connection()
+          except Exception:
+              unavailable = "connect"
+          else:
+              try:
+                  with decider as connection:
+                      connection.execute("SET statement_timeout = 5000")
+                      connection.execute("SET lock_timeout = 2000")
+                      decisions = connection.execute(
+                          "SELECT DISTINCT published_at, prediction_instant FROM valuation_decisions "
+                          "ORDER BY published_at DESC, prediction_instant DESC LIMIT 4").fetchall()
+              except Exception as error:
+                  name = type(error).__name__
+                  unavailable = "timeout" if ("Cancel" in name or "LockNotAvailable" in name) else "query"
           print("RUNS listed=%d" % len(rows))
           for status, started, completed, read, written, meta, has_error in rows:
               meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
@@ -104,19 +129,30 @@ jobs:
                         status, iso(started), iso(completed), int(read), int(written), count(meta, "issuers"),
                         count(meta, "observed_issuers"), count(meta, "failed_issuers"), count(meta, "unattributed_failures"),
                         count(meta, "header_failures"), "yes" if has_error else "no"))
+          if decisions is None:
+              print("DECISOR unavailable reason=%s" % (unavailable or "query"))
+              print("DECISOR runs listed=0")
+          else:
+              print("DECISOR runs listed=%d" % len(decisions))
+              for published, instant in decisions:
+                  print("DECISOR run instant=%s published=%s" % (iso(instant), iso(published)))
           PY
           exit 0
           REMOTE
           # only lines of EXACT shapes are published (a public repository); anything else is counted, never shown
           n='([0-9]+|na)'
-          shapes="^(WORKER (absent|state=[a-z]+ started=[0-9T:-]+Z)|SWITCH enabled=(on|off) setting=(true|false|unset|other) backfill_per_poll=[0-9]{1,3}|RUNS listed=[0-9]+|RUN status=(running|succeeded|partial|failed|other) started=([0-9T:-]+Z|none) completed=([0-9T:-]+Z|none) read=[0-9]+ written=[0-9]+ issuers=$n observed=$n failed=$n unattributed=$n header_failures=$n error_summary=(yes|no))\$"
+          shapes="^(WORKER (absent|state=[a-z]+ started=[0-9T:-]+Z)|SWITCH enabled=(on|off) setting=(true|false|unset|other) backfill_per_poll=[0-9]{1,3}|RUNS listed=[0-9]+|RUN status=(running|succeeded|partial|failed|other) started=([0-9T:-]+Z|none) completed=([0-9T:-]+Z|none) read=[0-9]+ written=[0-9]+ issuers=$n observed=$n failed=$n unattributed=$n header_failures=$n error_summary=(yes|no)|DECISOR unavailable reason=(connect|timeout|query)|DECISOR runs listed=[0-4]|DECISOR run instant=([0-9T:-]+Z|none) published=([0-9T:-]+Z|none))\$"
           { grep -E "$shapes" "$RUNNER_TEMP/out.txt" || true; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "other lines (counted, not printed): $(grep -cvE "$shapes" "$RUNNER_TEMP/out.txt" || true)"
           echo "remote exit status: $rc"
           [ "$rc" = 0 ] || exit "$rc"
-          # a receipt without its worker, switch and run count is no receipt
-          for shape in '^WORKER state=' '^SWITCH enabled=' '^RUNS listed='; do
-            grep -qE "$shape" "$RUNNER_TEMP/out.txt" || { echo "receipt incomplete"; exit 15; }
+          # a receipt is EXACTLY one accepted WORKER, SWITCH, RUNS and DECISOR count line, and as many accepted RUN and DECISOR
+          # run lines as those counts say (Codex 6473684710 P3-1: a malformed mandatory line is no receipt even with rc 0)
+          accepted=$(grep -E "$shapes" "$RUNNER_TEMP/out.txt" || true)
+          for shape in '^WORKER state=' '^SWITCH enabled=' '^RUNS listed=' '^DECISOR runs listed='; do
+            [ "$(printf '%s\n' "$accepted" | grep -cE "$shape" || true)" = 1 ] || { echo "receipt incomplete"; exit 15; }
           done
-          listed=$(grep -oE '^RUNS listed=[0-9]+' "$RUNNER_TEMP/out.txt" | cut -d= -f2)
-          [ "$(grep -E "$shapes" "$RUNNER_TEMP/out.txt" | grep -c '^RUN status=' || true)" = "$listed" ] || { echo "receipt incomplete"; exit 15; }
+          listed=$(printf '%s\n' "$accepted" | grep -oE '^RUNS listed=[0-9]+' | cut -d= -f2)
+          [ "$(printf '%s\n' "$accepted" | grep -c '^RUN status=' || true)" = "$listed" ] || { echo "receipt incomplete"; exit 15; }
+          decided=$(printf '%s\n' "$accepted" | grep -oE '^DECISOR runs listed=[0-9]+' | cut -d= -f2)
+          [ "$(printf '%s\n' "$accepted" | grep -c '^DECISOR run instant=' || true)" = "$decided" ] || { echo "receipt incomplete"; exit 15; }
