@@ -868,6 +868,60 @@ def test_an_earlier_phase_crossing_the_last_start_admits_no_new_live_run() -> No
     assert naive.phase_statuses["ensemble_live"] == "succeeded" and ran == ["v3_shadow", "live"]
 
 
+@pytest.mark.parametrize("slow_read", ["last_completed_at", "failure_count", "not_before"])
+def test_a_readiness_read_crossing_the_last_start_admits_no_new_live_run(monkeypatch: pytest.MonkeyPatch, slow_read: str) -> None:
+    # the phase's turn opens at 04:59:59 on its own clock and one of its readiness reads costs 2 s: the admission is decided on
+    # a reading taken after them, so nothing runs or is recorded at 05:00:01; the same read ending at 04:59:57 still runs
+    def turn(opening: datetime) -> tuple[str, list[str], list[dict[str, Any]]]:
+        database = _database()
+        clock = [opening]
+        ran: list[str] = []
+
+        def slow(value: Any) -> Any:
+            clock[0] += timedelta(seconds=2)
+            return value
+
+        if slow_read == "failure_count":
+            count = database.count_ingestion_runs
+            monkeypatch.setattr(database, "count_ingestion_runs", lambda *args, **kwargs: slow(count(*args, **kwargs)))
+        phase = OffhoursPhase("ensemble_live", (lambda: slow(None)) if slow_read == "last_completed_at" else (lambda: None),
+                              lambda: ran.append("live") or {"names": 1},
+                              end_hour=valuation_worker.ENSEMBLE_LIVE_LAST_START_HOUR, max_failures=valuation_worker.ENSEMBLE_LIVE_MAX_FAILURES,
+                              not_before=(lambda: slow(None)) if slow_read == "not_before" else None, clock=lambda: clock[0])
+        result = run_worker_iteration(database, now=opening, canonical_due=False, canonical_operation=lambda: None, offhours_phases=(phase,))
+        runs = [run for run in database._ingestion_runs.values() if run["source_code"] == VALUATION_WORKER_PHASES["ensemble_live"]["code"]]
+        return result.phase_statuses["ensemble_live"], ran, runs
+
+    status, ran, runs = turn(datetime(2026, 9, 11, 4, 59, 59, tzinfo=SAO_PAULO))
+    assert status == "outside_window" and ran == [] and runs == []
+    status, ran, runs = turn(datetime(2026, 9, 11, 4, 59, 55, tzinfo=SAO_PAULO))
+    assert status == "succeeded" and ran == ["live"] and len(runs) == 1 and runs[0]["status"] == "succeeded"
+
+
+def test_the_recorded_start_is_the_admission_instant_whatever_the_source_upsert_costs(monkeypatch: pytest.MonkeyPatch) -> None:
+    # admitted at 04:59:59 on its own clock; the data source's upsert inside begin_ingestion_run then costs 2 s: the run's
+    # recorded start is the admission (04:59:59), never the 05:00:01 at which that bookkeeping round trip ends
+    database = _database()
+    clock = [datetime(2026, 9, 11, 4, 59, 59, tzinfo=SAO_PAULO)]
+    upsert = database.ensure_data_source
+
+    def slow_upsert(*args: Any, **kwargs: Any) -> str:
+        clock[0] += timedelta(seconds=2)
+        return upsert(*args, **kwargs)
+
+    monkeypatch.setattr(database, "ensure_data_source", slow_upsert)
+    phase = OffhoursPhase("ensemble_live", lambda: None, lambda: {"names": 1},
+                          end_hour=valuation_worker.ENSEMBLE_LIVE_LAST_START_HOUR, max_failures=valuation_worker.ENSEMBLE_LIVE_MAX_FAILURES,
+                          clock=lambda: clock[0])
+    result = run_worker_iteration(database, now=clock[0], canonical_due=False, canonical_operation=lambda: None, offhours_phases=(phase,))
+    runs = [run for run in database._ingestion_runs.values() if run["source_code"] == VALUATION_WORKER_PHASES["ensemble_live"]["code"]]
+    assert result.phase_statuses["ensemble_live"] == "succeeded" and len(runs) == 1 and clock[0].second == 1
+    assert runs[0]["started_at"] == datetime(2026, 9, 11, 4, 59, 59, tzinfo=SAO_PAULO)
+    with pytest.raises(ValueError):  # a naive admission instant is refused before anything is written
+        database.begin_ingestion_run("probe", "probe", "test", {}, started_at=datetime(2026, 9, 11, 4, 59, 59))
+    assert len(database._ingestion_runs) == 1
+
+
 @pytest.mark.parametrize(("start", "reads_before_the_cut"), [
     (datetime(2026, 9, 11, 8, 29, 59, tzinfo=timezone.utc), 1),  # the cut falls inside the resolver's issuer reads
     (datetime(2026, 9, 11, 8, 29, 46, tzinfo=timezone.utc), 7),  # the resolver finishes; the cut falls inside the preparation

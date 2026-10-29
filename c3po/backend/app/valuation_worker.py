@@ -317,6 +317,7 @@ def _run_recorded_phase(
     *,
     scheduled_for: datetime,
     canonical_status: str,
+    started_at: datetime | None = None,  # a clocked phase's admission instant: the run's recorded start IS that decision
 ) -> Any:
     definition = VALUATION_WORKER_PHASES[phase_key]
     metadata = {
@@ -335,6 +336,7 @@ def _run_recorded_phase(
         definition["name"],
         VALUATION_WORKER_SOURCE_TYPE,
         metadata,
+        **({"started_at": started_at} if started_at is not None else {}),
     )
     try:
         result = operation()
@@ -433,6 +435,15 @@ def run_worker_iteration(
                 phase_statuses[phase.key] = "deferred"
                 wake_targets.append(ready_at)
                 continue
+            if phase.clock is not None:  # the reads above (last completion, failures, ready_at) may cross the window's end: a
+                current = phase.clock()  # clocked phase is admitted on a reading taken after them, window and ready_at checked again
+                if current >= phase_window_end:
+                    phase_statuses[phase.key] = "outside_window"
+                    continue
+                if ready_at is not None and current < ready_at:
+                    phase_statuses[phase.key] = "deferred"
+                    wake_targets.append(ready_at)
+                    continue
             if not phase.advisory:
                 start_worker_healthcheck()
             if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
@@ -444,6 +455,7 @@ def run_worker_iteration(
                     phase.operation,
                     scheduled_for=phase_due_at,
                     canonical_status=canonical_status,
+                    started_at=current if phase.clock is not None else None,
                 )
                 phase_statuses[phase.key] = "succeeded"
                 logger.info(

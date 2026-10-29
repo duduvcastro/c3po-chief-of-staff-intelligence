@@ -2078,11 +2078,16 @@ class Database:
             connection.commit()
         return str(row[0])
 
-    def begin_ingestion_run(self, code: str, name: str, source_type: str, metadata: dict[str, Any]) -> str:
+    def begin_ingestion_run(self, code: str, name: str, source_type: str, metadata: dict[str, Any], *,
+                            started_at: datetime | None = None) -> str:
+        """``started_at`` (aware): the caller's admission instant, when it admitted the run on its own clock; the source
+        upsert's round trip below then cannot move the recorded start past that decision. Unset: stamped here."""
+        if started_at is not None and started_at.tzinfo is None:
+            raise ValueError("started_at must be timezone-aware")
         metadata = ingestion_process.stamp(metadata)  # the process marker the startup reaper reads
         source_id = self.ensure_data_source(code, name, source_type)
         run_id = str(uuid4())
-        started_at = datetime.now().astimezone()
+        started_at = started_at.astimezone() if started_at is not None else datetime.now().astimezone()
         payload = {
             "id": run_id,
             "source_id": source_id,
