@@ -193,20 +193,88 @@ def test_the_status_summary_has_no_symbols(tmp_path: Path, monkeypatch) -> None:
     assert "AAA" not in json.dumps(summary)
 
 
-def test_buys_are_checked_once_per_minute_close_and_exits_every_second() -> None:
-    """The measured signal: a VWAP cross on a minute close, not every second (owner 27/10, the noise around the VWAP)."""
+def test_buys_and_exits_are_checked_every_second() -> None:
+    """Owner 29/10/2026: "esse cheque tem que ser por segundo e não por minuto" — a cross back above the VWAP buys at the
+    second it is seen (until 29/10 it waited for the minute's close); an exit is checked at any second, as before."""
     engine = _engine()
     below = lambda t: {"AAA": _view(97.9, 98.0, 97.89, 97.91, t)}  # noqa: E731
     above = lambda t: {"AAA": _view(98.1, 98.0, 98.095, 98.105, t)}  # noqa: E731
     t = _at(9, 40, 0)
     engine.step(t, lambda s: below(t).get(s, MarketView()))
-    t = _at(9, 40, 30)  # the same minute: the cross waits for the next minute close
-    assert engine.step(t, lambda s: above(t).get(s, MarketView())) == []
-    t = _at(9, 41, 0)
-    assert [f["symbol"] for f in engine.step(t, lambda s: above(t).get(s, MarketView()))] == ["AAA"]
-    t = _at(9, 41, 5)  # an exit is checked at any second
+    t = _at(9, 40, 30)  # the same minute: bought at once
+    fills = engine.step(t, lambda s: above(t).get(s, MarketView()))
+    assert [f["symbol"] for f in fills] == ["AAA"] and 0 <= (datetime.fromisoformat(fills[0]["executed_at"]) - t).total_seconds() < 1
+    t = _at(9, 40, 35)
     fills = engine.step(t, lambda s: _view(97.5, 98.0, 97.5, 97.51, t) if s == "AAA" else MarketView())
     assert [(f["side"], f["reason"].split(",")[0]) for f in fills] == [("SELL", "venda: stop")]
+    t = _at(9, 40, 36)  # the stop's second was below the VWAP: back above, it is a new cross
+    assert [f["symbol"] for f in engine.step(t, lambda s: above(t).get(s, MarketView()))] == ["AAA"]
+    t = _at(9, 40, 37)  # still above, held: no new signal without a new dip
+    assert engine.step(t, lambda s: above(t).get(s, MarketView())) == [] and engine.signals == 2
+
+
+def test_a_sale_never_buys_back_in_the_same_step() -> None:
+    """Pre-review of 81cf1ae P2-B: the stream's bid stops the position while the last trade is still above the VWAP;
+    the same step must not buy it back at Massive's ask. A new dip below the VWAP, then back above, is a new entry."""
+    engine = _engine()
+    engine.step(_at(10, 0), lambda s: _view(97.9, 98.0, 97.89, 97.91, _at(10, 0)) if s == "AAA" else MarketView())
+    t = _at(10, 0, 1)
+    assert [f["symbol"] for f in engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())] == ["AAA"]
+    t = _at(10, 0, 2)  # held, one print below the VWAP (no stop): armed for a cross
+    assert engine.step(t, lambda s: _view(97.95, 98.0, 97.94, 97.96, t) if s == "AAA" else MarketView()) == []
+    assert engine.below["AAA"] is True
+    t = _at(10, 0, 3)  # the stream's bid stops it while the last trade is back above the VWAP
+    nbbo = lambda s, now: (98.04, 98.06, now)  # noqa: E731
+    fills = engine.step(t, lambda s: _view(98.05, 98.0, 97.50, 97.51, t) if s == "AAA" else MarketView(), nbbo=nbbo)
+    assert [(f["side"], f["symbol"]) for f in fills] == [("SELL", "AAA")] and not engine.state.positions
+    t = _at(10, 0, 4)
+    assert engine.step(t, lambda s: _view(98.05, 98.0, 98.04, 98.06, t) if s == "AAA" else MarketView(), nbbo=nbbo) == []
+    t = _at(10, 0, 5)
+    engine.step(t, lambda s: _view(97.95, 98.0, 97.94, 97.96, t) if s == "AAA" else MarketView(), nbbo=nbbo)
+    t = _at(10, 0, 6)
+    assert [f["side"] for f in engine.step(t, lambda s: _view(98.05, 98.0, 98.04, 98.06, t) if s == "AAA" else MarketView(), nbbo=nbbo)] == ["BUY"]
+
+
+def test_a_restored_candidate_the_universe_no_longer_lists_is_never_bought() -> None:
+    engine = _engine()
+    engine.candidates["ZZZ"] = -3.0  # restored from the state; the rebuilt universe has no member for it
+    t = _at(10, 0)
+    engine.step(t, lambda s: _view(9.9, 10.0, 9.99, 10.0, t))
+    t = _at(10, 0, 1)
+    assert [f["symbol"] for f in engine.step(t, lambda s: _view(10.1, 10.0, 10.0995, 10.1005, t) if s == "ZZZ" else MarketView())] == []
+
+
+def test_the_session_loop_runs_once_a_second_and_logs_its_lines_every_minute_whatever_the_fills(tmp_path: Path, monkeypatch, caplog) -> None:
+    import logging
+
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6))
+    wall, clock, slept, steps = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def step(self, now, view, signal=None, nbbo=None):  # each step waits 0.6 s on Massive and fills
+        steps.append(now)
+        wall["t"] += 0.6
+        clock["t"] += timedelta(seconds=0.6)
+        return [{"side": "BUY"}]
+    monkeypatch.setattr(Engine, "step", step)
+
+    def sleep(seconds):
+        slept.append(seconds)
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+        if len(steps) >= 150:
+            raise KeyboardInterrupt
+    caplog.set_level(logging.INFO, logger=engine_module.logger.name)
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None)
+    after_steps = slept[-100:]
+    assert all(abs(s - 0.4) < 1e-6 for s in after_steps)  # one pass a second: 0.6 s of step, 0.4 s of sleep
+    assert 148 <= (steps[-1] - steps[0]).total_seconds() + 1 <= 151
+    feed = [r for r in caplog.records if "R2D2 live feed:" in r.getMessage()]
+    assert len(feed) == 2  # every 60 s although every step filled
 
 
 # ------------------------------------------------------------------ Codex #500 P2 regressions
@@ -216,24 +284,21 @@ def _stream_with_session() -> LiveEngineStream:
     return stream
 
 
-def test_p2_1_the_signal_reads_the_completed_minute_not_the_open_one() -> None:
-    """Codex probe: 09:40 closes at 99 below a VWAP of ~99.82; a tick at 09:41:00.100 of 101 must not make the 09:41
-    decision buy: the 09:40 close is still below."""
+def test_p2_1_the_signal_is_the_live_trade_against_the_live_vwap() -> None:
+    """Every second since 29/10 (owner): 09:40 closed at 99 below a VWAP of ~99.82; a tick of 101 at 09:41:00.100 is
+    back above it and buys at the 09:41:00.500 check, at the real ask (until 29/10 it waited for the 09:41 close)."""
     stream = _stream_with_session()
     stream.record_trade("AAA", 100.0, 1000, _at(9, 35))
     stream.record_trade("AAA", 99.0, 100, _at(9, 40, 30))
-    stream.record_quote("AAA", 100.99, 101.01, _at(9, 41))
-    stream.record_trade("AAA", 101.0, 10, _at(9, 41) + timedelta(milliseconds=100))
     engine = _engine()
     engine.state.candidates = {"AAA": -2.0}
-    engine.state.below = {"AAA": True}
-    decision = _at(9, 41) + timedelta(milliseconds=500)
-    assert stream.signal_view("AAA", 9 * 60 + 41) == (99.0, (100.0 * 1000 + 99.0 * 100) / 1100)
-    assert engine.step(decision, stream.view, stream.signal_view) == []
-    stream.record_trade("AAA", 101.5, 10, _at(9, 42) + timedelta(milliseconds=50))  # 09:41 closed at 101 above the VWAP
-    stream.record_quote("AAA", 101.49, 101.51, _at(9, 42))
-    fills = engine.step(_at(9, 42) + timedelta(milliseconds=500), stream.view, stream.signal_view)
-    assert [(f["symbol"], f["price"]) for f in fills] == [("AAA", 101.51)]
+    decision = _at(9, 40, 31)
+    assert stream.live_signal("AAA") == (99.0, (100.0 * 1000 + 99.0 * 100) / 1100)
+    assert engine.step(decision, stream.view, stream.live_signal) == [] and engine.below["AAA"] is True
+    stream.record_quote("AAA", 100.99, 101.01, _at(9, 41))
+    stream.record_trade("AAA", 101.0, 10, _at(9, 41) + timedelta(milliseconds=100))
+    fills = engine.step(_at(9, 41) + timedelta(milliseconds=500), stream.view, stream.live_signal)
+    assert [(f["symbol"], f["price"]) for f in fills] == [("AAA", 101.01)]
 
 
 def test_p2_5_late_messages_never_overwrite_newer_ones() -> None:
@@ -380,6 +445,15 @@ def test_r2_p2_2_a_restart_holds_the_feed_until_the_saved_prefix_is_installed() 
         stream.record_trade("AAA", 99.2, 100, _at(12, 1, 30))
         stream.record_trade("AAA", 99.3, 100, _at(12, 2, 1))
     assert restarted.signal_view("AAA", 12 * 60 + 2) == continuous.signal_view("AAA", 12 * 60 + 2) is not None
+    # the every-second signal keeps the same guard: nothing from the restore's minute, then the live trade and VWAP
+    gapped = LiveEngineStream("")
+    gapped.start_session(DAY, restoring=True)
+    gapped.restore(context, _at(12, 0, 2))
+    gapped.record_trade("AAA", 98.0, 100, _at(12, 0, 30))
+    assert gapped.live_signal("AAA") is None
+    gapped.record_trade("AAA", 99.3, 100, _at(12, 1, 1))
+    live = gapped.live_signal("AAA")
+    assert live is not None and live[0] == 99.3 and live[1] == gapped.view("AAA").vwap
 
 
 def test_r2_an_in_process_retry_keeps_the_live_tapes_and_the_opening_is_the_earliest_print(tmp_path: Path, monkeypatch) -> None:
@@ -434,8 +508,9 @@ def test_r2_p2_4_a_late_trade_of_the_completed_minute_moves_its_close_and_vwap()
     for engine in engines:
         engine.state.candidates, engine.state.below = {"AAA": -2.0}, {"AAA": True}
     decision = _at(9, 41) + timedelta(milliseconds=500)
-    assert [f["symbol"] for f in engines[0].step(decision, in_order.view, in_order.signal_view)] == \
-           [f["symbol"] for f in engines[1].step(decision, late.view, late.signal_view)] == ["AAA"]
+    assert late.live_signal("AAA") == in_order.live_signal("AAA") == (101.0, (100.0 * 1000 + 99.0 * 100 + 101.5 * 1200 + 101.0 * 10) / 2310)
+    assert [f["symbol"] for f in engines[0].step(decision, in_order.view, in_order.live_signal)] == \
+           [f["symbol"] for f in engines[1].step(decision, late.view, late.live_signal)] == ["AAA"]
 
 
 def test_r2_p2_3_the_previous_sessions_pending_sell_is_published_before_its_fills_are_cleared() -> None:
