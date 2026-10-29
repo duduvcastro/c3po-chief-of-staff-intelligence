@@ -4,7 +4,7 @@ para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada seg
 The rule in force is the one the owner chose on 26/10 (TIT-2S3): stocks that open at least 1% below the previous close,
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
-real ask, with a quoted spread of at most 3 bps, up to
+real ask, with a quoted spread of at most 5 bps (owner 29/10; 3 bps until then), up to
 15:29:59 ET — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
 not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid:
@@ -40,9 +40,9 @@ from .market_data.eodhd_stream import EodhdRealtimeStream
 logger = logging.getLogger(__name__)
 
 NEW_YORK = ZoneInfo("America/New_York")
-CONFIG = "TIT-2S3-RT"
+CONFIG = "TIT-2S5-RT"  # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then)
 STATE_TYPE = "r2d2_live_engine_state"
-STATE_KEY = "TIT-2S3"
+STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
 # The stream's capacity is per account (550 on this plan, EODHD's default is 50): the api's own stream keeps the rest
 UNIVERSE_SIZE = int(os.environ.get("C3PO_R2D2_LIVE_UNIVERSE_SIZE", "500"))
@@ -50,7 +50,8 @@ ADV_DAYS = 20
 MIN_ADV_DAYS = 15
 FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's cost model)
 RULE = {
-    "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 3.0,
+    # owner 29/10/2026 ~17:2x BRT: "vamos mudar para até 5 bps para amanhã também" (it was 3 bps)
+    "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 5.0,
     # owner 29/10/2026 ~17:0x BRT: "a trava arma se ela chegar a 0,10%, aí a cada 0,05% ela gera uma nova trava. Se passar
     # de 0,3% de lucro a trava sobe a cada 0,10pp" — the floor ON the step reached ("no degrau") — "e coloca o stop sem
     # trava em -0,4%". Until then: stop -0.5%, a lock armed at +0.15% trailing the peak by 0.05 (0.10 before 13:51 BRT)
@@ -758,7 +759,7 @@ def save_state(database: Any, state: EngineState, now: datetime) -> None:
     methodology = database.ensure_methodology_version(
         "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
         "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
-        "the stop at -0.4% and the step profit lock from +0.10% (owner 29/10/2026)")
+        "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": CONFIG}, state.to_json(), now)
 
 

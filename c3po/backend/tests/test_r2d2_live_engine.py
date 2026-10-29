@@ -175,7 +175,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == "TIT-2S3-RT" and len(validated["trades"]) == 1
+    assert validated["config"] == "TIT-2S5-RT" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -237,7 +237,7 @@ def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, mo
         run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                     now=lambda: clock["t"], sleep=stop_at_noon)
     stored = r2d2_lab_live.latest_book(database, now=_at(12, 0))
-    assert stored is not None and stored[1] == "TIT-2S3-RT" and len(stored[2]["positions"]) == 1
+    assert stored is not None and stored[1] == "TIT-2S5-RT" and len(stored[2]["positions"]) == 1
     # the service restarts at noon: the session resumes with its fill, its candidates and its opening NAV
     state = run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                         now=lambda: clock["t"], sleep=sleep)
@@ -898,13 +898,24 @@ def test_nbbo_a_buy_takes_the_massive_nbbo_where_the_streams_quote_was_wider() -
     assert engine.sources == {"massive": 1, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 1}
 
 
+@pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
+def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
+    """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 5.0 bps buy, 5.5 bps is refused (it was 3 bps)."""
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-RT"
+    engine = _crossing_engine()
+    t = _at(9, 41)
+    views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
+    fills = engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: (29.0, ask, now))
+    assert ([f["symbol"] for f in fills] == ["CCC"]) is bought and engine.skips["spread"] == (0 if bought else 1)
+
+
 def test_nbbo_massive_silent_falls_back_to_the_stream_and_an_old_or_wide_nbbo_is_refused() -> None:
     engine = _crossing_engine()
     t = _at(9, 41)
-    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.01, t)}
+    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.02, t)}
     fills = engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: None)
     assert [f["symbol"] for f in fills] == ["AAA"] and "cotação do stream" in fills[0]["reason"]
-    assert engine.sources["unanswered"] == 2 and engine.sources["stream"] == 2 and engine.skips["spread"] == 1  # CCC 3.4 bps
+    assert engine.sources["unanswered"] == 2 and engine.sources["stream"] == 2 and engine.skips["spread"] == 1  # CCC 6.9 bps
 
     engine = _crossing_engine()
     old = lambda s, now: (98.095, 98.105, now - timedelta(seconds=61)) if s == "AAA" else (29.0, 29.2, now)
