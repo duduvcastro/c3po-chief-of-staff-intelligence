@@ -8,7 +8,7 @@ real ask, with a quoted spread of at most 3 bps, up to
 15:29:59 ET — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
 not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid: hard stop at -0.5% net,
-profit lock armed at +0.15% net trailing the peak by 0.10, every positive position sold from 15:59:30 ET; the
+profit lock armed at +0.15% net trailing the peak by 0.05 (owner 29/10; 0.10 until then), every positive position sold from 15:59:30 ET; the
 negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
@@ -50,7 +50,9 @@ MIN_ADV_DAYS = 15
 FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's cost model)
 RULE = {
     "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 3.0,
-    "stop_percent": 0.5, "lock_min_percent": 0.15, "pullback_percent": 0.10,
+    # owner 29/10/2026 ~13:0x BRT: "vamos fazer os picos subindo de 0,05 e não 0,10 por vez" — the armed lock trails
+    # the peak by 0.05 (it was 0.10): the floor rises above +0.15% once the peak passes +0.20%
+    "stop_percent": 0.5, "lock_min_percent": 0.15, "pullback_percent": 0.05,
 }
 SESSION_OPEN = time(9, 30)
 OPENING_WINDOW_END = time(9, 31)  # the candidates are fixed once every subscribed name had a chance to print
@@ -731,9 +733,12 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
+    # version 2 from 29/10/2026 (owner): entries checked every second (#513) and the lock trailing the peak by 0.05; the
+    # snapshots before the switch keep pointing at version 1 (minute-close entries, 0.10)
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 1, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
-        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026)")
+        "r2d2_live_engine", 2, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
+        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second "
+        "and the profit lock trailing the peak by 0.05 (owner 29/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": CONFIG}, state.to_json(), now)
 
 

@@ -79,9 +79,9 @@ def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     marks = {"S1": 99.4, "S2": 100.40, "S3": 100.05}
     fills = engine.step(t, lambda s: _view(marks[s], None, marks[s], marks[s] + 0.01, t) if s in marks else MarketView())
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S1", "venda: stop")]
-    assert state.positions["S2"].armed  # +0.29% armed the lock
+    assert state.positions["S2"].armed  # ~+0.39% armed the lock
     t = _at(10, 1)
-    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to +0.16%: below peak − 0.10 → lock
+    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to ~+0.26%: below peak − 0.05 → lock
     fills = engine.step(t, lambda s: _view(marks[s], None, marks[s], marks[s] + 0.01, t) if s in marks else MarketView())
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
     assert fills[0]["realized_pnl_usd"] > 0
@@ -90,6 +90,33 @@ def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S3", "venda: positiva nos últimos 30 s")]
     assert not state.positions
     assert abs(state.nav_realized - 1_000_000 - sum(f["realized_pnl_usd"] for f in engine.fills if f["side"] == "SELL")) < 1e-6
+
+
+def test_the_armed_lock_trails_the_peak_by_five_hundredths() -> None:
+    """Owner 29/10: the floor follows the peak 0.05 below it (it was 0.10), never under +0.15%."""
+    engine = _engine()
+    cost = 500.0 * 100.0 * (1 + FEE_SIDE)
+    engine.state.positions["S2"] = Position("S2", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
+    engine.members["S2"] = Member("S2", "NYSE", 0.0, 0.0)
+    net = lambda bid: (500.0 * bid * (1 - FEE_SIDE) / cost - 1) * 100  # noqa: E731
+
+    def mark(t, bid):
+        return engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == "S2" else MarketView())
+    assert engine_module.RULE["pullback_percent"] == 0.05 and engine_module.RULE["lock_min_percent"] == 0.15
+    assert mark(_at(10, 0), 100.31) == [] and engine.state.positions["S2"].armed  # peak ~+0.30%
+    peak = engine.state.positions["S2"].peak_percent
+    assert abs(peak - net(100.31)) < 1e-9 and 0.29 < peak < 0.31
+    assert mark(_at(10, 0, 1), 100.27) == []  # ~+0.26%: above peak − 0.05 (~0.25%) — the old 0.10 also held it
+    fills = mark(_at(10, 0, 2), 100.25)  # ~+0.24%: below peak − 0.05; the old 0.10 (floor ~0.20%) would still hold it
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
+    assert 0.23 < fills[0]["realized_return_percent"] < 0.25
+    # under +0.20% of peak the floor stays at +0.15%
+    engine.state.positions["S3"] = Position("S3", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
+    engine.members["S3"] = Member("S3", "NYSE", 0.0, 0.0)
+    step = lambda t, bid: engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == "S3" else MarketView())  # noqa: E731
+    assert step(_at(10, 1), 100.19) == [] and engine.state.positions["S3"].armed  # ~+0.18%
+    assert step(_at(10, 1, 1), 100.17) == []  # ~+0.16%: above the +0.15% floor
+    assert [f["symbol"] for f in step(_at(10, 1, 2), 100.15)] == ["S3"]  # ~+0.14%
 
 
 def test_no_buy_after_the_last_entry_and_negatives_carry() -> None:
