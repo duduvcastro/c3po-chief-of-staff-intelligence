@@ -25,6 +25,7 @@ import time as clock_time
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
 from threading import Lock
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
@@ -63,6 +64,9 @@ NBBO_MAX_AGE_SECONDS = 60.0
 NBBO_TIMEOUT_SECONDS = 1.5  # the WHOLE request (DeadlineJsonHttpClient), no retry
 NBBO_STEP_BUDGET_SECONDS = 3.0  # Massive time per minute's entries: the exits run on this loop; past it, the stream's quote
 NBBO_PAUSE_AFTER_FAILURE_SECONDS = 30.0  # Massive failed: the stream's quote for this long, then Massive again
+# Massive requests in flight at once for one minute's crosses. Asked one after the other (~0.7 s each from the host),
+# the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
+NBBO_PARALLEL = 32
 NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the signal's own minute close is another
 # instrument's (a share-class or mapping error) or absurd: never bought on (pre-review of e8ce1f3)
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
@@ -521,7 +525,10 @@ class Engine:
         new: list[dict[str, Any]] = []
         for symbol, position in list(self.state.positions.items()):
             market = view(symbol)
-            if not market.quote_fresh(now):
+            # the effective instant, sampled after the read that may block (the view takes the stream's lock; as the
+            # entries, Codex 6499564395): the quote's freshness, the T30 rule and the sell's stamp read this one instant
+            moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            if not market.quote_fresh(moment):
                 continue
             assert market.bid is not None
             net = position.net_percent(market.bid)
@@ -534,22 +541,18 @@ class Engine:
                 reason = "hard_stop"
             elif position.armed and net <= max(RULE["lock_min_percent"], position.peak_percent - RULE["pullback_percent"]):
                 reason = "lock"
-            elif local >= SELL_POSITIVES_FROM and net > 0:
+            elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
                 reason = "t30_positive"
             if reason:
-                new.append(self._sell(position, market.bid, net, reason, now))
+                new.append(self._sell(position, market.bid, net, reason, moment))
         # The buy signal is the measured one: the cross back above the VWAP on a MINUTE CLOSE (the first check of each
         # new minute reads the previous minute's last trade), executed at once at the real ask; checking every
         # second would buy the noise around the VWAP. The exits above run every second.
         minute = local.hour * 60 + local.minute
         if local <= LAST_ENTRY and minute != self.state.last_signal_minute:
             self.state.last_signal_minute = minute
-            spent = 0.0  # seconds spent asking Massive in this minute's entries
+            crosses: list[tuple[str, float, float]] = []  # (symbol, gap, signal close): this minute's crosses, in order
             for symbol, gap in self.candidates.items():
-                # the effective clock: the instant ``now`` plus the time this step has waited on Massive (Codex P2-2)
-                moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
-                if moment.astimezone(NEW_YORK).time() > LAST_ENTRY:
-                    break
                 market = view(symbol)
                 if signal is not None:
                     closed = signal(symbol, minute)
@@ -567,53 +570,62 @@ class Engine:
                 self.signals += 1
                 if symbol in self.state.positions:
                     self.skips["held"] += 1
-                elif len(self.state.positions) >= RULE["slots"]:
-                    self.skips["slots"] += 1
                 else:
-                    quote, source = None, "stream"
-                    if nbbo is not None:
-                        # a call is made only when its whole deadline fits in what is left of this minute's budget (Codex
-                        # P2-1): the entries never hold the exits' loop longer than NBBO_STEP_BUDGET_SECONDS
-                        if spent + NBBO_TIMEOUT_SECONDS <= NBBO_STEP_BUDGET_SECONDS:
-                            started = clock_time.monotonic()
-                            quote = nbbo(symbol, moment)
-                            spent += clock_time.monotonic() - started
-                            moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
-                        if quote is not None and not plausible(quote, close):
-                            self.sources["mismatch"] += 1  # far from the signal's own close: never bought on, the stream stands in
-                            quote = None
-                        elif quote is None:
-                            self.sources["unanswered"] += 1
-                        else:
-                            source = "massive"
-                    if quote is None and market.bid is not None and market.ask is not None and market.quote_at is not None:
-                        quote = (market.bid, market.ask, market.quote_at)
-                    if quote is None:
-                        self.skips["noquote"] += 1
-                        continue
-                    if not plausible(quote, close):
-                        self.skips["implausible"] += 1
-                        continue
-                    if moment.astimezone(NEW_YORK).time() > LAST_ENTRY:  # the answer came after the last entry: no buy
-                        self.skips["late"] += 1
-                        break
-                    self.sources[source] += 1
-                    bid, ask, quoted_at = quote
-                    # the lab's 60 s on the NBBO; the stream's own quote keeps its 5 s (a fallback never loosens the old rule)
-                    max_age = NBBO_MAX_AGE_SECONDS if source == "massive" else QUOTE_MAX_AGE_SECONDS
-                    if (not (math.isfinite(bid) and math.isfinite(ask)) or not 0 < bid <= ask
-                            or (moment - quoted_at).total_seconds() > max_age):
-                        self.skips["stale"] += 1
-                        continue
-                    spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
-                    if spread_bps > RULE["spread_max_bps"]:
-                        self.skips["spread"] += 1
-                        continue
-                    if source == "massive" and not (market.quote_fresh(moment) and market.bid is not None and market.ask is not None
-                                                    and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4
-                                                    <= RULE["spread_max_bps"]):
-                        self.sources["stream_would_refuse"] += 1  # the evidence: a buy the stream's quote alone refused
-                    new.append(self._buy(symbol, ask, gap, spread_bps, moment, source))
+                    crosses.append((symbol, gap, close))
+            # Massive is asked for every cross of the minute AT ONCE, at the effective instant (Codex P2-2); each request
+            # is bounded by NBBO_TIMEOUT_SECONDS and the whole set by NBBO_STEP_BUDGET_SECONDS (Codex P2-1): the entries
+            # never hold the exits' loop longer than that, and what has not answered by then is unanswered
+            answers: dict[str, tuple[float, float, datetime]] = {}
+            if nbbo is not None and crosses and len(self.state.positions) < RULE["slots"]:
+                answers = ask_nbbo(nbbo, [symbol for symbol, _, _ in crosses],
+                                   now + timedelta(seconds=clock_time.monotonic() - started_step))
+            for symbol, gap, close in crosses:
+                if len(self.state.positions) >= RULE["slots"]:
+                    self.skips["slots"] += 1
+                    continue
+                market = view(symbol)
+                # the effective clock: the instant ``now`` plus the time this step has waited (Codex P2-2), sampled AFTER
+                # the reads that may block (the view takes the stream's lock; Codex 6499564395): the last entry, the
+                # quote's age and the fill all read this one instant
+                moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+                quote, source = None, "stream"
+                if nbbo is not None:
+                    quote = answers.get(symbol)
+                    if quote is not None and not plausible(quote, close):
+                        self.sources["mismatch"] += 1  # far from the signal's own close: never bought on, the stream stands in
+                        quote = None
+                    elif quote is None:
+                        self.sources["unanswered"] += 1
+                    else:
+                        source = "massive"
+                if quote is None and market.bid is not None and market.ask is not None and market.quote_at is not None:
+                    quote = (market.bid, market.ask, market.quote_at)
+                if quote is None:
+                    self.skips["noquote"] += 1
+                    continue
+                if not plausible(quote, close):
+                    self.skips["implausible"] += 1
+                    continue
+                if moment.astimezone(NEW_YORK).time() > LAST_ENTRY:  # the answer came after the last entry: no buy
+                    self.skips["late"] += 1
+                    break
+                self.sources[source] += 1
+                bid, ask, quoted_at = quote
+                # the lab's 60 s on the NBBO; the stream's own quote keeps its 5 s (a fallback never loosens the old rule)
+                max_age = NBBO_MAX_AGE_SECONDS if source == "massive" else QUOTE_MAX_AGE_SECONDS
+                if (not (math.isfinite(bid) and math.isfinite(ask)) or not 0 < bid <= ask
+                        or (moment - quoted_at).total_seconds() > max_age):
+                    self.skips["stale"] += 1
+                    continue
+                spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
+                if spread_bps > RULE["spread_max_bps"]:
+                    self.skips["spread"] += 1
+                    continue
+                if source == "massive" and not (market.quote_fresh(moment) and market.bid is not None and market.ask is not None
+                                                and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4
+                                                <= RULE["spread_max_bps"]):
+                    self.sources["stream_would_refuse"] += 1  # the evidence: a buy the stream's quote alone refused
+                new.append(self._buy(symbol, ask, gap, spread_bps, moment, source))
         return new
 
     def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream") -> dict[str, Any]:
@@ -832,6 +844,30 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
             return None
         return bid, ask, quoted_at
     return nbbo
+
+
+def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None], symbols: list[str],
+             at: datetime) -> dict[str, tuple[float, float, datetime]]:
+    """Every cross of one minute asked of Massive at once (up to ``NBBO_PARALLEL`` in flight), each at ``at``: the
+    answers that came within ``NBBO_STEP_BUDGET_SECONDS`` of the first asking (starting the threads counts). One that
+    has not answered by then is never waited for (its thread ends on its own request's deadline) and one that raised
+    is no answer: the stream's quote stands in."""
+    deadline = clock_time.monotonic() + NBBO_STEP_BUDGET_SECONDS
+    pool = ThreadPoolExecutor(max_workers=max(1, min(NBBO_PARALLEL, len(symbols))), thread_name_prefix="r2d2-nbbo")
+    try:
+        asked = {pool.submit(nbbo, symbol, at): symbol for symbol in symbols}
+        done, _ = wait_futures(asked, timeout=max(0.0, deadline - clock_time.monotonic()))
+        answers: dict[str, tuple[float, float, datetime]] = {}
+        for future in done:
+            try:
+                quote = future.result()
+            except Exception:
+                continue
+            if quote is not None:
+                answers[asked[future]] = quote
+        return answers
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def feed_line(stream: Any, engine: "Engine") -> str:
