@@ -577,12 +577,14 @@ class Engine:
                 answers = ask_nbbo(nbbo, [symbol for symbol, _, _ in crosses],
                                    now + timedelta(seconds=clock_time.monotonic() - started_step))
             for symbol, gap, close in crosses:
-                # the effective clock: the instant ``now`` plus the time this step has waited on Massive (Codex P2-2)
-                moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
                 if len(self.state.positions) >= RULE["slots"]:
                     self.skips["slots"] += 1
                     continue
                 market = view(symbol)
+                # the effective clock: the instant ``now`` plus the time this step has waited (Codex P2-2), sampled AFTER
+                # the reads that may block (the view takes the stream's lock; Codex 6499564395): the last entry, the
+                # quote's age and the fill all read this one instant
+                moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
                 quote, source = None, "stream"
                 if nbbo is not None:
                     quote = answers.get(symbol)

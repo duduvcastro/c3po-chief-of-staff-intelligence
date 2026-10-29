@@ -889,6 +889,43 @@ def test_nbbo_a_reader_that_raises_is_no_answer_and_the_budget_counts_from_the_f
     assert set(answers) == {"A"} and waited < 0.4 + 0.15  # the budget runs from the first asking, not after every start
 
 
+@pytest.mark.parametrize("case", ["last_entry", "massive_age", "stream_age"])
+def test_nbbo_the_effective_instant_is_sampled_after_the_buys_quote_read(monkeypatch, case: str) -> None:
+    """Codex 6499564395 P2: the buy's own quote read (the stream's lock) waits 2 s; the last entry and the quote's age
+    are judged, and the fill stamped, on the instant AFTER that wait. Each control without the wait buys."""
+    clock = {"t": 0.0}
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: clock["t"])
+    start = {"last_entry": _at(15, 29, 58), "massive_age": _at(10, 0, 0), "stream_age": _at(10, 0, 0)}[case]
+
+    def attempt(wait: float) -> tuple[list[dict], Engine]:
+        clock["t"] = 0.0
+        engine = _engine()
+        below_at = start - timedelta(seconds=60)
+        engine.step(below_at, lambda s: _view(97.9, 98.0, 97.89, 97.91, below_at) if s == "AAA" else MarketView())
+        stream_at = start - timedelta(seconds=4) if case == "stream_age" else start
+        reads = {"AAA": 0}
+
+        def view(symbol):
+            if symbol != "AAA":
+                return MarketView()
+            reads["AAA"] += 1
+            if reads["AAA"] == 2:  # the buy's own read of the quote
+                clock["t"] += wait
+            return _view(98.1, 98.0, 98.095, 98.105, stream_at)
+        if case == "stream_age":
+            nbbo = lambda s, now: None  # noqa: E731 — Massive silent: the stream's quote (5 s bound) stands in
+        else:
+            age = 59 if case == "massive_age" else 0
+            nbbo = lambda s, now: (98.095, 98.105, start - timedelta(seconds=age))  # noqa: E731
+        return engine.step(start, view, nbbo=nbbo), engine
+
+    fills, engine = attempt(2.0)
+    assert fills == [] and not engine.state.positions
+    assert (engine.skips["late"], engine.skips["stale"]) == ((1, 0) if case == "last_entry" else (0, 1))
+    fills, engine = attempt(0.0)
+    assert [f["symbol"] for f in fills] == ["AAA"] and fills[0]["executed_at"] == start.isoformat()
+
+
 def test_nbbo_with_every_slot_taken_massive_is_not_asked() -> None:
     engine = _crossing_engine()
     engine.state.positions.update({"P%02d" % i: object() for i in range(engine_module.RULE["slots"])})  # type: ignore[misc]
