@@ -438,6 +438,13 @@ class Position:
     def net_percent(self, bid: float) -> float:
         return (self.shares * bid * (1 - FEE_SIDE) / self.cost_usd - 1) * 100
 
+    def exit_price(self) -> float:
+        """The bid at which the rule sells now: the armed lock's floor, max(+0.15%, peak − pullback), else the −0.5%
+        stop — the level the screen shows as the position's stop (owner 29/10: "o stop não tá mexendo")."""
+        floor = (max(RULE["lock_min_percent"], (self.peak_percent or 0.0) - RULE["pullback_percent"]) if self.armed
+                 else -RULE["stop_percent"])
+        return self.cost_usd * (1 + floor / 100) / (self.shares * (1 - FEE_SIDE))
+
 
 @dataclass
 class EngineState:
@@ -689,7 +696,7 @@ class Engine:
             positions.append({"symbol": position.symbol, "market": position.market, "quantity": position.shares,
                               "average_cost": position.entry_price, "last_price": mark, "cost_usd": position.cost_usd,
                               "unrealized_pnl_usd": result, "unrealized_return_percent": net,
-                              "stop_price": position.cost_usd * (1 - RULE["stop_percent"] / 100) / (position.shares * (1 - FEE_SIDE)),
+                              "stop_price": position.exit_price(),  # the lock's floor once armed, else the −0.5% stop
                               "opened_at": position.opened_at})
         cash = self.state.nav_realized - sum(position.cost_usd for position in self.state.positions.values())
         return {"nav_start_usd": self.nav_start, "nav_usd": self.state.nav_realized + unrealized,

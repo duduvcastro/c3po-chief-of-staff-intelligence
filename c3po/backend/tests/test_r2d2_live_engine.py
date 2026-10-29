@@ -119,6 +119,26 @@ def test_the_armed_lock_trails_the_peak_by_five_hundredths() -> None:
     assert [f["symbol"] for f in step(_at(10, 1, 2), 100.15)] == ["S3"]  # ~+0.14%
 
 
+def test_the_published_stop_is_the_level_the_rule_sells_at_now() -> None:
+    """Owner 29/10: "o stop não tá mexendo" — the screen's stop is the −0.5% stop until the lock arms, then the lock's
+    floor, rising with the peak (max(+0.15%, peak − 0.05))."""
+    engine = _engine()
+    cost = 500.0 * 100.0 * (1 + FEE_SIDE)
+    engine.state.positions["S2"] = Position("S2", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
+    engine.members["S2"] = Member("S2", "NYSE", 0.0, 0.0)
+    position = engine.state.positions["S2"]
+
+    def stop() -> float:
+        return engine.book(_at(10, 0))["positions"][0]["stop_price"]
+    assert abs(position.net_percent(stop()) - -0.5) < 1e-9  # not armed: the hard stop
+    engine.step(_at(10, 0), lambda s: _view(100.19, None, 100.19, 100.20, _at(10, 0)) if s == "S2" else MarketView())  # ~+0.18%
+    assert position.armed and abs(position.net_percent(stop()) - 0.15) < 1e-9  # armed under +0.20%: the +0.15% floor
+    engine.step(_at(10, 0, 1), lambda s: _view(100.31, None, 100.31, 100.32, _at(10, 0, 1)) if s == "S2" else MarketView())  # ~+0.30%
+    assert abs(position.net_percent(stop()) - (position.peak_percent - 0.05)) < 1e-9 and stop() > 100.25  # it moved up
+    engine.step(_at(10, 0, 2), lambda s: _view(100.28, None, 100.28, 100.29, _at(10, 0, 2)) if s == "S2" else MarketView())
+    assert engine.state.positions and abs(position.net_percent(stop()) - (position.peak_percent - 0.05)) < 1e-9  # held: the peak's floor stays
+
+
 def test_no_buy_after_the_last_entry_and_negatives_carry() -> None:
     engine = _engine()
     t = _at(15, 30, 0)
