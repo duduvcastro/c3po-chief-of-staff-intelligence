@@ -315,6 +315,17 @@ class LiveEngineStream(EodhdRealtimeStream):
         return MarketView(price=price, trade_at=trade_at, vwap=vwap,
                           bid=quote[0] if quote else None, ask=quote[1] if quote else None, quote_at=quote[2] if quote else None)
 
+    def live_signal(self, symbol: str) -> tuple[float, float] | None:
+        """(last trade, VWAP) now — the entries' signal, read every second — or None. After a restore, a trade of the
+        restore's minute or earlier may sit among the gap's missing ones: no signal until a later minute is observed live."""
+        with self._view_lock:
+            tape = self.tapes.get(symbol)
+            if tape is None or tape.last_price is None or tape.vwap is None:
+                return None
+            if self.restored_minute is not None and tape.minute <= self.restored_minute:
+                return None
+            return tape.last_price, tape.vwap
+
     def signal_view(self, symbol: str, minute: int) -> tuple[float, float] | None:
         """(close, VWAP) of the last minute COMPLETED before ``minute`` (minutes after midnight ET), or None."""
         with self._view_lock:
@@ -437,7 +448,7 @@ class EngineState:
     below: dict[str, bool] = field(default_factory=dict)
     signals: int = 0
     fills: list[dict[str, Any]] = field(default_factory=list)
-    last_signal_minute: int = -1  # minutes after midnight ET of the last minute close the entries were checked on
+    last_signal_minute: int = -1  # minutes after midnight ET of the last minute the entries were checked in (every second)
     candidates_fixed: bool = False  # the selection at the open happened (even when it found none)
     stream_context: dict[str, dict[str, Any]] = field(default_factory=dict)  # the tapes, for a restart
 
@@ -515,11 +526,11 @@ class Engine:
                     self.candidates[symbol] = gap
 
     def step(self, now: datetime, view: Callable[[str], MarketView],
-             signal: Callable[[str, int], tuple[float, float] | None] | None = None,
+             signal: Callable[[str], tuple[float, float] | None] | None = None,
              nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None) -> list[dict[str, Any]]:
-        """``view``: the live price and quote (exits; the entries' fallback). ``signal``: (close, VWAP) of the last
-        COMPLETED minute before the given one (the buy signal); without it, the view's last price and VWAP stand in
-        (tests). ``nbbo``: (bid, ask, time) of the NBBO prevailing at the instant (Massive), or None when it does not answer."""
+        """``view``: the live price and quote (exits; the entries' fallback). ``signal``: (last trade, VWAP) now (the buy
+        signal, ``LiveEngineStream.live_signal``); without it, the view's last price and VWAP stand in (tests). ``nbbo``:
+        (bid, ask, time) of the NBBO prevailing at the instant (Massive), or None when it does not answer."""
         local = now.astimezone(NEW_YORK).time()
         started_step = clock_time.monotonic()
         new: list[dict[str, Any]] = []
@@ -545,18 +556,19 @@ class Engine:
                 reason = "t30_positive"
             if reason:
                 new.append(self._sell(position, market.bid, net, reason, moment))
-        # The buy signal is the measured one: the cross back above the VWAP on a MINUTE CLOSE (the first check of each
-        # new minute reads the previous minute's last trade), executed at once at the real ask; checking every
-        # second would buy the noise around the VWAP. The exits above run every second.
+        # The buy signal, checked EVERY SECOND like the exits (owner 29/10/2026: "esse cheque tem que ser por segundo e
+        # não por minuto"): the last trade back above the VWAP after being below it, executed at once at the real ask.
+        # Until 29/10 it was the close of each completed minute (the lab's candles): a cross the minute's close no longer
+        # showed was never seen.
         minute = local.hour * 60 + local.minute
-        if local <= LAST_ENTRY and minute != self.state.last_signal_minute:
+        if local <= LAST_ENTRY:
             self.state.last_signal_minute = minute
-            crosses: list[tuple[str, float, float]] = []  # (symbol, gap, signal close): this minute's crosses, in order
+            crosses: list[tuple[str, float, float]] = []  # (symbol, gap, signal price): this second's crosses, in order
             for symbol, gap in self.candidates.items():
                 market = view(symbol)
                 if signal is not None:
-                    closed = signal(symbol, minute)
-                    close, vwap = closed if closed else (None, None)
+                    live = signal(symbol)
+                    close, vwap = live if live else (None, None)
                 else:
                     close, vwap = market.price, market.vwap
                 if close is None or vwap is None:
@@ -572,7 +584,7 @@ class Engine:
                     self.skips["held"] += 1
                 else:
                     crosses.append((symbol, gap, close))
-            # Massive is asked for every cross of the minute AT ONCE, at the effective instant (Codex P2-2); each request
+            # Massive is asked for every cross of the second AT ONCE, at the effective instant (Codex P2-2); each request
             # is bounded by NBBO_TIMEOUT_SECONDS and the whole set by NBBO_STEP_BUDGET_SECONDS (Codex P2-1): the entries
             # never hold the exits' loop longer than that, and what has not answered by then is unanswered
             answers: dict[str, tuple[float, float, datetime]] = {}
@@ -848,7 +860,7 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
 
 def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None], symbols: list[str],
              at: datetime) -> dict[str, tuple[float, float, datetime]]:
-    """Every cross of one minute asked of Massive at once (up to ``NBBO_PARALLEL`` in flight), each at ``at``: the
+    """Every cross of one step asked of Massive at once (up to ``NBBO_PARALLEL`` in flight), each at ``at``: the
     answers that came within ``NBBO_STEP_BUDGET_SECONDS`` of the first asking (starting the threads counts). One that
     has not answered by then is never waited for (its thread ends on its own request's deadline) and one that raised
     is no answer: the stream's quote stands in."""
@@ -918,7 +930,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         stream.start_session(day)
     logger.info("R2D2 live: session %s%s, universe %d, carried %d, NAV %.2f", day, " (resumed)" if engine.resumed else "",
                 len(universe), len(state.positions), state.nav_realized)
-    signal = getattr(stream, "signal_view", None)
+    signal = getattr(stream, "live_signal", None)
 
     def commit(moment: datetime) -> None:
         """The checkpoint first, then the screen: the published book never runs ahead of a state a restart can load
