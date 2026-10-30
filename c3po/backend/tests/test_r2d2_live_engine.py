@@ -459,7 +459,7 @@ def test_exits_mark_on_massive_and_a_feed_bid_off_the_market_never_stops() -> No
     feed, real = _bid_at(position, -0.75), _bid_at(position, -0.25)
     fills = engine.step(t, lambda s: _view(98.0, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: (real, real + 0.01, now))
-    assert fills == [] and position.last_mark == real and engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
+    assert fills == [] and position.last_mark == real and engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
     t = _at(10, 0, 3)  # the NBBO crosses the stop: sold at ITS bid
     stop = _bid_at(position, -0.42)
     fills = engine.step(t, lambda s: _view(98.0, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
@@ -484,7 +484,7 @@ def test_exits_a_held_name_without_a_feed_quote_is_marked_armed_and_locked_on_ma
     bid = _bid_at(position, 0.14)
     fills = engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now))
     assert [(f["side"], f["price"]) for f in fills] == [("SELL", bid)] and "trava" in fills[0]["reason"]
-    assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
+    assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
 
 
 def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_never_a_mark(monkeypatch) -> None:
@@ -499,7 +499,7 @@ def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_ne
     # above the stop level (the minute's low over the NBBO bid), so no sale
     fills = engine.step(t, lambda s: _view(98.0, 98.0, stop, stop + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: None)
-    assert fills == [] and engine.exit_sources == {"massive": 0, "stream": 1, "none": 0, "unconfirmed": 1, "pushed": 0}
+    assert fills == [] and engine.exit_sources == {"massive": 0, "stream": 1, "none": 0, "unconfirmed": 1, "pushed": 0, "fast": 0}
     t = _at(10, 0, 3)  # the fresh last trade at the stop level confirms it: sold at the feed's quoted bid
     fills = engine.step(t, lambda s: _view(stop, 98.0, stop, stop + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: None)
@@ -526,7 +526,7 @@ def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_ne
     old = t - timedelta(seconds=engine_module.NBBO_EXIT_MAX_AGE_SECONDS + 1)  # a lagging Massive never hides a stop
     assert engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
                        nbbo=lambda s, now: (98.0, 98.01, old)) == []
-    assert engine.exit_sources == {"massive": 0, "stream": 0, "none": 1, "unconfirmed": 0, "pushed": 0}
+    assert engine.exit_sources == {"massive": 0, "stream": 0, "none": 1, "unconfirmed": 0, "pushed": 0, "fast": 0}
     assert engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
                        nbbo=lambda s, now: (98.2, 98.1, now)) == []  # crossed: no NBBO
     assert engine.exit_sources["none"] == 2 and position.last_mark == 98.105
@@ -680,7 +680,7 @@ def test_exits_read_the_pushed_nbbo_first_and_ask_massive_only_for_the_rest() ->
                         nbbo=nbbo, pushed=lambda s: (stop, stop + 0.01, t) if s == "AAA" else None)
     assert asked == ["CCC"]  # AAA's pushed NBBO stood; only CCC was asked
     assert [(f["symbol"], f["price"]) for f in fills] == [("AAA", stop)]
-    assert engine.exit_sources == {"massive": 2, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 1}
+    assert engine.exit_sources == {"massive": 2, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 1, "fast": 0}
     t = _at(10, 0, 3)  # a pushed quote that is no usable mark (older than the exits' 10 s) is asked again, never used
     asked.clear()
     stale = t - timedelta(seconds=engine_module.NBBO_EXIT_MAX_AGE_SECONDS + 1)
@@ -713,7 +713,7 @@ def test_exits_a_pushed_quote_is_read_and_used_at_one_instant_and_one_that_aged_
         return (stop, stop + 0.01, now)
     fills = engine.step(t, slow_view, nbbo=nbbo, pushed=lambda s: pushed_quote)
     assert asked == ["AAA"] and [(f["side"], f["price"]) for f in fills] == [("SELL", stop)]
-    assert engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
+    assert engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
 
 
 def test_exits_a_pushed_decision_is_taken_before_any_other_name_waits_on_massive() -> None:
@@ -739,11 +739,175 @@ def test_exits_a_pushed_decision_is_taken_before_any_other_name_waits_on_massive
         return (29.0, 29.01, now)
     engine.step(t, lambda s: MarketView(price=98.0 if s == "AAA" else 29.0, trade_at=t, vwap=98.0), nbbo=nbbo, pushed=pushed)
     assert order == [("pushed", "AAA"), ("pushed", "CCC"), ("asked", "CCC", True)]
-    assert engine.exit_sources == {"massive": 2, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 1}
+    assert engine.exit_sources == {"massive": 2, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 1, "fast": 0}
     order.clear()
     t = _at(10, 0, 3)  # the next second: the stream is silent, so AAA is asked of Massive too
     engine.step(t, lambda s: MarketView(price=98.0 if s == "AAA" else 29.0, trade_at=t, vwap=98.0), nbbo=nbbo, pushed=pushed)
     assert {entry[:2] for entry in order if entry[0] == "asked"} == {("asked", "AAA"), ("asked", "CCC")}
+
+
+def test_fast_exits_judge_the_held_names_on_the_pushed_nbbo_between_the_full_checks() -> None:
+    """Owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s". Only the pushed NBBO, read and used at one
+    instant; a name without a usable one waits for the full check; never an entry."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    engine.state.positions["CCC"] = Position("CCC", "NYSE", 1000.0, 29.0, 29_001.45, t.isoformat(), last_mark=29.0)
+    t = _at(10, 0, 1, ) + timedelta(milliseconds=300)
+    stop = _bid_at(position, -0.41)
+    fills = engine.fast_exits(t, lambda s: MarketView(price=98.0, trade_at=t, vwap=98.0),
+                              lambda s: (stop, stop + 0.01, t) if s == "AAA" else None)
+    assert [(f["side"], f["symbol"], f["price"]) for f in fills] == [("SELL", "AAA", stop)] and "stop" in fills[0]["reason"]
+    assert "CCC" in engine.state.positions and engine.state.positions["CCC"].last_mark == 29.0  # no pushed quote: untouched
+    assert engine.exit_sources["fast"] == 1 and engine.exit_sources["massive"] == 0 and engine.signals == 1  # no entry
+    stale = t - timedelta(seconds=engine_module.NBBO_EXIT_MAX_AGE_SECONDS + 1)
+    assert engine.fast_exits(t, lambda s: MarketView(price=29.0, trade_at=t), lambda s: (27.0, 27.01, stale)) == []
+
+
+def test_the_session_checks_the_held_names_every_tenth_of_a_second_between_the_full_checks(tmp_path: Path, monkeypatch) -> None:
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
+    wall, clock, steps, fast = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def step(self, now, view, signal=None, nbbo=None, pushed=None):  # a full check takes 0.05 s
+        steps.append(now)
+        wall["t"] += 0.05
+        clock["t"] += timedelta(seconds=0.05)
+        return []
+
+    def fast_exits(self, now, view, pushed):
+        fast.append(now)
+        if len(fast) == 20:  # the 20th tenth-of-a-second check stops AAA
+            self.state.positions.pop("AAA")
+            return [{"side": "SELL", "symbol": "AAA"}]
+        return []
+    monkeypatch.setattr(Engine, "step", step)
+    monkeypatch.setattr(Engine, "fast_exits", fast_exits)
+
+    def sleep(seconds):
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+        if len(steps) >= 5:
+            raise KeyboardInterrupt
+
+    class Massive:
+        status, reconnects = "connected", 0
+
+        def __init__(self) -> None:
+            self.calls: list[set[str]] = []
+
+        def set_symbols(self, symbols) -> None:
+            self.calls.append(set(symbols))
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, 0)
+    massive = Massive()
+    commits = []
+    monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append(moment))
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=massive)  # type: ignore[arg-type]
+    first_second = [moment for moment in fast if steps[0] <= moment < steps[1]]
+    assert len(first_second) == 9  # nine tenth-of-a-second checks between two full checks
+    assert all(abs((b - a).total_seconds() - engine_module.FAST_EXIT_SECONDS) < 1e-6 for a, b in zip(first_second, first_second[1:]))
+    assert massive.calls[0] == {"AAA"} and massive.calls[-1] == set()  # the sale between checks: the stream follows at once
+    assert len(fast) == 20  # held nothing after the sale: no more tenth-of-a-second checks
+    assert any(steps[2] <= moment <= steps[3] for moment in commits)  # the sale committed between the full checks
+
+
+def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monkeypatch) -> None:
+    """Codex 6527492839: the pass began at 15:59:59.900, the view's read took 0.2 s and the pushed quote, stamped
+    16:00:00.100, sold. The close is checked again at the effective instant, after the reads."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    engine.state.positions["CCC"] = Position("CCC", "NYSE", 1000.0, 29.0, 29_001.45, t.isoformat(), last_mark=29.0)
+    wall = {"t": 500.0}
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+    start = _at(15, 59, 59) + timedelta(milliseconds=900)
+    stop = _bid_at(position, -0.45)
+
+    def slow_view(symbol):
+        wall["t"] += 0.2  # every read takes 0.2 s: the first one already crosses 16:00
+        return MarketView(price=98.0, trade_at=start, vwap=98.0)
+    fills = engine.fast_exits(start, slow_view, lambda s: (stop, stop + 0.01, start + timedelta(milliseconds=200)) if s == "AAA" else None)
+    assert fills == [] and "AAA" in engine.state.positions and engine.exit_sources["fast"] == 0
+    wall["t"] = 500.0
+    early = _at(15, 59, 58)  # the same pass a second earlier sells
+    fills = engine.fast_exits(early, slow_view, lambda s: (stop, stop + 0.01, early) if s == "AAA" else None)
+    assert [f["symbol"] for f in fills] == ["AAA"]
+
+
+def test_a_full_check_whose_reads_cross_the_close_never_sells(monkeypatch) -> None:
+    """The same witness on the full check (pre-review of ab570efb): its pushed phase and its Massive/feed phase never
+    mark nor sell at or past 16:00, wherever a read or Massive's wait crosses it."""
+    for pushed_quote in (True, False):
+        engine = _engine()
+        position = _bought_aaa(engine, _at(10, 0, 1))
+        wall = {"t": 900.0}
+        monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+        start = _at(15, 59, 59) + timedelta(milliseconds=900)
+        stop = _bid_at(position, -0.45)
+
+        calls = {"n": 0}
+
+        def slow_view(symbol):  # the pushed phase's read crosses 16:00; without a pushed quote, the Massive phase's read does
+            calls["n"] += 1
+            wall["t"] += 0.2 if (pushed_quote or calls["n"] == 2) else 0.05
+            return MarketView(price=98.0, trade_at=start, vwap=98.0)
+        pushed = (lambda s: (stop, stop + 0.01, start)) if pushed_quote else (lambda s: None)
+        fills = engine.step(start, slow_view, nbbo=lambda s, now: (stop, stop + 0.01, now), pushed=pushed)
+        assert [f for f in fills if f["side"] == "SELL"] == [] and "AAA" in engine.state.positions, pushed_quote
+        assert engine.exit_sources["massive"] == 0 and position.last_mark == 98.105
+
+
+def test_the_tenth_of_a_second_checks_never_run_past_the_close(tmp_path: Path, monkeypatch) -> None:
+    """Pre-review of e1149ca5 P1: the last full check at 15:59:59.45 left half its tenth-of-a-second checks after 16:00,
+    where a post-close quote could sell. Every check stops at the close."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
+    wall, clock, checks = {"t": 0.0}, {"t": _at(15, 59, 58) + timedelta(milliseconds=450)}, []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def step(self, now, view, signal=None, nbbo=None, pushed=None):
+        wall["t"] += 0.05
+        clock["t"] += timedelta(seconds=0.05)
+        return []
+
+    def fast_exits(self, now, view, pushed):
+        checks.append(now)
+        return []
+    monkeypatch.setattr(Engine, "step", step)
+    monkeypatch.setattr(Engine, "fast_exits", fast_exits)
+
+    def sleep(seconds):
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+
+    class Massive:
+        status, reconnects = "connected", 0
+
+        def set_symbols(self, symbols) -> None:
+            pass
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, 0)
+    run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=Massive())  # type: ignore[arg-type]
+    close = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK)
+    assert checks and max(checks) < close  # some checks ran in the last second, none at or after the close
+    assert any(moment >= close - timedelta(seconds=1) for moment in checks)
 
 
 def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whole() -> None:
@@ -755,7 +919,7 @@ def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whol
     engine = _engine()
     stream = engine_module.MassiveQuoteStream("key")
     line = engine_module.massive_line(stream, engine)
-    assert line == "R2D2 live massive: state=idle symbols=0 quotes=0 lag_ms=0 lag_max_ms=0 pushed=0 reconnects=0"
+    assert line == "R2D2 live massive: state=idle symbols=0 quotes=0 lag_ms=0 lag_max_ms=0 pushed=0 fast=0 reconnects=0"
     feed = engine_module.feed_line(object(), engine)
     old = feed[:feed.index(" exits ")]
     for text in (line, feed, old):
