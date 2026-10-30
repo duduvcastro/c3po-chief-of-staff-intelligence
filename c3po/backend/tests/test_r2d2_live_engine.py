@@ -157,14 +157,28 @@ def test_the_stop_before_the_lock_arms_is_minus_four_tenths() -> None:
 
 def test_no_buy_after_the_last_entry_and_negatives_carry() -> None:
     engine = _engine()
-    t = _at(15, 30, 0)
+    t = _at(15, 59, 59)
     views = {"AAA": _view(97.0, 98.0, 96.99, 97.01, t)}
     engine.step(t, lambda s: views.get(s, MarketView()))
-    views = {"AAA": _view(98.5, 98.0, 98.49, 98.51, _at(15, 30, 1))}
-    assert engine.step(_at(15, 30, 1), lambda s: views.get(s, MarketView())) == []
+    views = {"AAA": _view(98.5, 98.0, 98.49, 98.51, _at(16, 0, 0))}
+    assert engine.step(_at(16, 0, 0), lambda s: views.get(s, MarketView())) == []
     engine.state.positions["NEG"] = Position("NEG", "NYSE", 10.0, 100.0, 1000.05, _at(10, 0).isoformat(), last_mark=99.8)
     engine.close_session()
     assert engine.state.positions["NEG"].days_held == 1 and engine.state.last_session == DAY.isoformat()
+
+
+@pytest.mark.parametrize("hour, minute, second", [(15, 30, 0), (15, 45, 0), (15, 59, 30), (15, 59, 59)])
+def test_entries_run_until_the_close(hour: int, minute: int, second: int) -> None:
+    """Owner 30/10/2026: "eu quero que seja até a hora da bolsa fechar!" — a cross after 15:29:59 ET buys, at any instant
+    before 16:00, the T30 window included; the fill is stamped at the step's effective instant."""
+    assert engine_module.LAST_ENTRY == time(15, 59, 59, 999999) < engine_module.SESSION_CLOSE
+    engine = _engine()
+    t = _at(hour, minute, second)
+    below_at = t - timedelta(seconds=1)
+    engine.step(below_at, lambda s: _view(97.9, 98.0, 97.89, 97.91, below_at) if s == "AAA" else MarketView())
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    assert [(f["side"], f["symbol"]) for f in fills] == [("BUY", "AAA")]
+    assert t <= datetime.fromisoformat(fills[0]["executed_at"]) < t + timedelta(seconds=1)
 
 
 def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
@@ -175,7 +189,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == "TIT-2S5-RT" and len(validated["trades"]) == 1
+    assert validated["config"] == "TIT-2S5-RTC" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -373,7 +387,7 @@ def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, mo
         run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                     now=lambda: clock["t"], sleep=stop_at_noon)
     stored = r2d2_lab_live.latest_book(database, now=_at(12, 0))
-    assert stored is not None and stored[1] == "TIT-2S5-RT" and len(stored[2]["positions"]) == 1
+    assert stored is not None and stored[1] == "TIT-2S5-RTC" and len(stored[2]["positions"]) == 1
     # the service restarts at noon: the session resumes with its fill, its candidates and its opening NAV
     state = run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                         now=lambda: clock["t"], sleep=sleep)
@@ -1801,7 +1815,7 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 5.0 bps buy, 5.5 bps is refused (it was 3 bps)."""
-    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-RT"
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-RTC"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
@@ -1958,7 +1972,7 @@ def test_nbbo_the_effective_instant_is_sampled_after_the_buys_quote_read(monkeyp
     are judged, and the fill stamped, on the instant AFTER that wait. Each control without the wait buys."""
     clock = {"t": 0.0}
     monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: clock["t"])
-    start = {"last_entry": _at(15, 29, 58), "massive_age": _at(10, 0, 0), "stream_age": _at(10, 0, 0)}[case]
+    start = {"last_entry": _at(15, 59, 58), "massive_age": _at(10, 0, 0), "stream_age": _at(10, 0, 0)}[case]
 
     def attempt(wait: float) -> tuple[list[dict], Engine]:
         clock["t"] = 0.0
@@ -2064,14 +2078,14 @@ def test_nbbo_the_session_hands_the_reader_to_every_step_and_the_request_lines_s
 
 
 def test_nbbo_an_answer_after_the_last_entry_buys_nothing_and_the_execution_time_is_the_effective_one(monkeypatch) -> None:
-    """Codex 6478311166 P2-2: asked at 15:29:59, answered 1.49 s later (15:30:00.49): past the last entry, no buy."""
+    """Codex 6478311166 P2-2: asked at 15:59:59, answered 1.49 s later (16:00:00.49): past the last entry, no buy."""
     clock = {"t": 0.0}
     monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: clock["t"])
     engine = _engine()
-    t = _at(15, 28, 59)
+    t = _at(15, 58, 59)
     below = {"AAA": _view(97.9, 98.0, 97.89, 97.91, t), "CCC": _view(28.9, 29.0, 28.80, 29.00, t)}
     engine.step(t, lambda s: below.get(s, MarketView()))
-    t = _at(15, 29, 59)
+    t = _at(15, 59, 59)
     above = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.005, t)}
     quotes = {"AAA": (98.095, 98.105), "CCC": (29.0, 29.005)}
 
@@ -2080,12 +2094,12 @@ def test_nbbo_an_answer_after_the_last_entry_buys_nothing_and_the_execution_time
         return (*quotes[symbol], now)
     assert engine.step(t, lambda s: above.get(s, MarketView()), nbbo=slow) == []
     assert not engine.state.positions and engine.skips["late"] == 1 and engine.fills == []
-    clock["t"] = 0.0  # the control: asked at 15:29:57, answered inside the window, executed at the effective instant
+    clock["t"] = 0.0  # the control: asked at 15:59:57, answered inside the window, executed at the effective instant
     engine = _engine()
-    engine.step(_at(15, 28, 57), lambda s: below.get(s, MarketView()))
-    fills = engine.step(_at(15, 29, 57), lambda s: above.get(s, MarketView()), nbbo=slow)
+    engine.step(_at(15, 58, 57), lambda s: below.get(s, MarketView()))
+    fills = engine.step(_at(15, 59, 57), lambda s: above.get(s, MarketView()), nbbo=slow)
     assert [f["symbol"] for f in fills] == ["AAA", "CCC"] and engine.skips["late"] == 0
-    assert all(f["executed_at"] == (_at(15, 29, 57) + timedelta(seconds=1.49)).isoformat() for f in fills)
+    assert all(f["executed_at"] == (_at(15, 59, 57) + timedelta(seconds=1.49)).isoformat() for f in fills)
 
 
 @pytest.mark.parametrize("row", [

@@ -5,7 +5,7 @@ The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-R
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
 real ask, with a quoted spread of at most 5 bps (owner 29/10; 3 bps until then), up to
-15:29:59 ET — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
+the close, 16:00 ET (owner 30/10; 15:29:59 until then) — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
 not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid:
 stop at -0.4% net until a step profit lock arms at +0.10% net, whose floor is the last step the peak reached (every 0.05 up
@@ -41,7 +41,9 @@ from .market_data.eodhd_stream import EodhdRealtimeStream
 logger = logging.getLogger(__name__)
 
 NEW_YORK = ZoneInfo("America/New_York")
-CONFIG = "TIT-2S5-RT"  # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then)
+# owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then); owner 30/10: entries until the close from 02/11
+# (TIT-2S5-RT until then: until 15:29:59 ET)
+CONFIG = "TIT-2S5-RTC"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -64,7 +66,10 @@ RULE = {
 }
 SESSION_OPEN = time(9, 30)
 OPENING_WINDOW_END = time(9, 31)  # the candidates are fixed once every subscribed name had a chance to print
-LAST_ENTRY = time(15, 29, 59)
+# owner 30/10/2026 ~16:1x BRT: "a única coisa que temos que alterar é essa regra de parar de comprar até as 16:30. Tem que
+# ser até fechar o pregão" — "eu quero que seja até a hora da bolsa fechar!": a buy at any instant before 16:00 ET, the T30
+# window included (15:29:59 until 30/10). A buy still negative at the close carries, as every other negative position
+LAST_ENTRY = time(15, 59, 59, 999999)
 SELL_POSITIVES_FROM = time(15, 59, 30)
 SESSION_CLOSE = time(16, 0)
 QUOTE_MAX_AGE_SECONDS = 5.0  # the exits: a position is marked only on a quote this recent
