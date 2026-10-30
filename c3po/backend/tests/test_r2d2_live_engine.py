@@ -821,6 +821,49 @@ def test_the_session_checks_the_held_names_every_tenth_of_a_second_between_the_f
     assert any(steps[2] <= moment <= steps[3] for moment in commits)  # the sale committed between the full checks
 
 
+def test_the_tenth_of_a_second_checks_never_run_past_the_close(tmp_path: Path, monkeypatch) -> None:
+    """Pre-review of e1149ca5 P1: the last full check at 15:59:59.45 left half its tenth-of-a-second checks after 16:00,
+    where a post-close quote could sell. Every check stops at the close."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
+    wall, clock, checks = {"t": 0.0}, {"t": _at(15, 59, 58) + timedelta(milliseconds=450)}, []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def step(self, now, view, signal=None, nbbo=None, pushed=None):
+        wall["t"] += 0.05
+        clock["t"] += timedelta(seconds=0.05)
+        return []
+
+    def fast_exits(self, now, view, pushed):
+        checks.append(now)
+        return []
+    monkeypatch.setattr(Engine, "step", step)
+    monkeypatch.setattr(Engine, "fast_exits", fast_exits)
+
+    def sleep(seconds):
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+
+    class Massive:
+        status, reconnects = "connected", 0
+
+        def set_symbols(self, symbols) -> None:
+            pass
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, 0)
+    run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=Massive())  # type: ignore[arg-type]
+    close = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK)
+    assert checks and max(checks) < close  # some checks ran in the last second, none at or after the close
+    assert any(moment >= close - timedelta(seconds=1) for moment in checks)
+
+
 def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whole() -> None:
     import re
 

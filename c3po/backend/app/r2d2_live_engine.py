@@ -1448,7 +1448,10 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         # between the full checks, the held names on Massive's pushed NBBO every FAST_EXIT_SECONDS (owner 30/10)
         while massive is not None and engine.state.positions and clock_time.monotonic() - began + FAST_EXIT_SECONDS < 1.0:
             sleep(FAST_EXIT_SECONDS)
-            fast = engine.fast_exits(now(), stream.view, massive.quote)
+            instant = now()
+            if instant >= at(SESSION_CLOSE):  # never a check past the close (pre-review of e1149ca5 P1)
+                break
+            fast = engine.fast_exits(instant, stream.view, massive.quote)
             if fast:
                 if set(engine.state.positions) != held:  # a sale: the quote feeds follow
                     held = set(engine.state.positions)
