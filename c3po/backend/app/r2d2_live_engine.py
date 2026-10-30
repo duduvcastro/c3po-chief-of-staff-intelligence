@@ -689,11 +689,19 @@ class Engine:
                 reason = "lock"
             elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
                 reason = "t30_positive"
-            if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
-                # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at
-                # the same level, else Massive decides at the next check
-                self.exit_sources["unconfirmed"] += 1
-                reason = None
+            if reason and source == "stream":
+                if not trade_confirms(position, market, moment, reason):
+                    # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be
+                    # at the same level, else Massive decides at the next check
+                    self.exit_sources["unconfirmed"] += 1
+                    reason = None
+                else:
+                    # priced no lower than the confirming trade's own bid estimate (half the entries' spread limit under it,
+                    # as the shadows): a feed bid under the market is never the booked price (pre-review of 33a0996 P2-2)
+                    assert market.price is not None
+                    bid = max(bid, market.price * (1 - RULE["spread_max_bps"] / 2 / 1e4))
+                    net = position.net_percent(bid)
+                    position.last_mark = bid
             if reason:
                 new.append(self._sell(position, bid, net, reason, moment))
         try:
@@ -1036,7 +1044,10 @@ def exit_bid(quote: tuple[float, float, datetime] | None, market: "MarketView", 
     if quote is None:
         return None
     bid, _, quoted_at = quote
-    reference = next((price for price in (market.price, position.last_mark, position.entry_price) if price is not None and price > 0), 0.0)
+    # the last trade while it is fresh (a quiet trade feed never refuses a correct NBBO after a move), else the last mark
+    trade = market.price if (market.price is not None and market.trade_at is not None
+                             and (moment - market.trade_at).total_seconds() <= NBBO_EXIT_MAX_AGE_SECONDS) else None
+    reference = next((price for price in (trade, position.last_mark, position.entry_price) if price is not None and price > 0), 0.0)
     age = (moment - quoted_at).total_seconds()
     # the bid itself within the bound too, not only the mid: a wide NBBO (a halt's or a LULD resumption's) never stops
     # a position at a bid far under the market (pre-review of 61100b2 P2-4)
@@ -1049,7 +1060,8 @@ def exit_bid(quote: tuple[float, float, datetime] | None, market: "MarketView", 
 def trade_confirms(position: Position, market: "MarketView", moment: datetime, reason: str) -> bool:
     """A sale the feed's bid triggers stands only when the name's fresh last trade (at most ``QUOTE_MAX_AGE_SECONDS``
     old) is at the same level: at or under the stop, at or under the lock's floor, or positive for the T30 rule."""
-    if market.price is None or market.trade_at is None or not 0 <= (moment - market.trade_at).total_seconds() <= QUOTE_MAX_AGE_SECONDS:
+    if (market.price is None or market.trade_at is None
+            or not -FUTURE_TOLERANCE_SECONDS <= (moment - market.trade_at).total_seconds() <= QUOTE_MAX_AGE_SECONDS):
         return False
     net = position.net_percent(market.price)
     if reason == "hard_stop":

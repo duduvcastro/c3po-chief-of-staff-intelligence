@@ -503,7 +503,18 @@ def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_ne
     t = _at(10, 0, 3)  # the fresh last trade at the stop level confirms it: sold at the feed's bid
     fills = engine.step(t, lambda s: _view(stop, 98.0, stop, stop + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: None)
-    assert [(f["side"], f["price"]) for f in fills] == [("SELL", stop)] and engine.exit_sources["stream"] == 2
+    estimate = stop * (1 - engine_module.RULE["spread_max_bps"] / 2 / 1e4)  # the trade's bid estimate is under the feed's
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", stop)] and engine.exit_sources["stream"] == 2 and estimate < stop
+    # pre-review of 33a0996 P2-2: a confirmed feed sale is never booked under the confirming trade's bid estimate
+    engine = _engine()
+    position = _bought_aaa(engine, _at(10, 0, 1))
+    t = _at(10, 0, 2)
+    trade, feed = _bid_at(position, -0.45), _bid_at(position, -0.75)
+    fills = engine.step(t, lambda s: _view(trade, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: None)
+    booked = trade * (1 - engine_module.RULE["spread_max_bps"] / 2 / 1e4)
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", pytest.approx(booked))]
+    assert fills[0]["realized_return_percent"] == pytest.approx(position.net_percent(booked)) and fills[0]["realized_return_percent"] > -0.5
     engine = _engine()
     position = _bought_aaa(engine, _at(10, 0, 1))
     t = _at(10, 0, 2)
@@ -520,15 +531,24 @@ def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_ne
     assert engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
                        nbbo=lambda s, now: wide) == []
     assert engine.exit_sources["none"] == 3 and "AAA" in engine.state.positions
+    # pre-review of 33a0996 P2-1: a quiet trade feed (its last print 20 s old) never refuses a correct NBBO after a move:
+    # the last mark is the reference then
+    quiet = MarketView(price=98.1, trade_at=t - timedelta(seconds=20), vwap=98.0)
+    position.last_mark = 95.5
+    moved = (95.3, 95.31, t)  # 2.9% under the stale print, 0.2% under the last mark: a real -2.9% stop
+    fills = engine.step(t, lambda s: quiet if s == "AAA" else MarketView(), nbbo=lambda s, now: moved)
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", 95.3)]
     monkeypatch.setattr(engine_module, "NBBO_EXIT_BUDGET_SECONDS", 0.3)
 
     def slow(symbol, now):
         wall.sleep(2.0)
         return (98.0, 98.01, now)
+    engine = _engine()  # AAA was stopped above: a new one held
+    _bought_aaa(engine, _at(10, 0, 1))
     began = wall.monotonic()
     engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(), nbbo=slow)
     assert wall.monotonic() - began < 0.3 + 0.5  # the exits never wait past their budget
-    assert engine.exit_sources["none"] == 4
+    assert engine.exit_sources["none"] == 1 and "AAA" in engine.state.positions
 
 
 def test_a_restored_candidate_the_universe_no_longer_lists_is_never_bought() -> None:
