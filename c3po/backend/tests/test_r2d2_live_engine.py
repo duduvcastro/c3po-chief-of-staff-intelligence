@@ -808,17 +808,77 @@ def test_the_session_checks_the_held_names_every_tenth_of_a_second_between_the_f
         def take_gauges(self):
             return (0, 0, 0, 0)
     massive = Massive()
-    commits = []
+    commits, written, stopped = [], [], []
     monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append(moment))
+
+    class Writer:  # the marks writer's hand-overs, synchronously
+        def __init__(self, write) -> None:
+            pass
+
+        def submit(self, session, as_of, marks) -> None:
+            written.append(as_of)
+
+        def stop(self) -> None:
+            stopped.append(True)
+    monkeypatch.setattr(engine_module, "MarksWriter", Writer)
     with pytest.raises(KeyboardInterrupt):
         run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
                     cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=massive)  # type: ignore[arg-type]
     first_second = [moment for moment in fast if steps[0] <= moment < steps[1]]
     assert len(first_second) == 9  # nine tenth-of-a-second checks between two full checks
+    assert len([moment for moment in written if steps[0] <= moment < steps[1]]) == 10  # the screen's marks: every tenth
+    assert stopped == [True]  # whatever ends the loop (here an interrupt), the writer stops
     assert all(abs((b - a).total_seconds() - engine_module.FAST_EXIT_SECONDS) < 1e-6 for a, b in zip(first_second, first_second[1:]))
     assert massive.calls[0] == {"AAA"} and massive.calls[-1] == set()  # the sale between checks: the stream follows at once
     assert len(fast) == 20  # held nothing after the sale: no more tenth-of-a-second checks
     assert any(steps[2] <= moment <= steps[3] for moment in commits)  # the sale committed between the full checks
+
+
+def test_the_marks_writer_never_blocks_keeps_only_the_latest_and_logs_a_failure_once(monkeypatch, caplog) -> None:
+    """Pre-review of 62bdbd3b P1-2: the exits' loop waited on a database commit up to ten times a second. It now only
+    hands its latest marks over; one thread writes the newest it holds, never a queue, and waits after a failure."""
+    import logging
+    import threading
+    import time as wall
+
+    caplog.set_level(logging.INFO, logger=engine_module.logger.name)
+    monkeypatch.setattr(engine_module, "MARKS_RETRY_SECONDS", 0.05)
+    release, written = threading.Event(), []
+
+    def slow(session, as_of, marks):
+        release.wait(5)
+        written.append(as_of)
+    writer = engine_module.MarksWriter(slow)
+    began = wall.monotonic()
+    for second in range(5):
+        writer.submit("2026-10-28", _at(10, 0, second), [])
+    assert wall.monotonic() - began < 0.05  # a hand-over never waits on the database
+    release.set()
+    deadline = wall.monotonic() + 2
+    while _at(10, 0, 4) not in written and wall.monotonic() < deadline:
+        wall.sleep(0.01)
+    assert written[-1] == _at(10, 0, 4) and len(written) <= 2  # the first one taken, then only the newest
+    writer.stop()
+
+    calls = []
+
+    def failing(session, as_of, marks):
+        calls.append(as_of)
+        if len(calls) < 4:
+            raise RuntimeError("database down")
+    writer = engine_module.MarksWriter(failing)
+    for second in range(4):
+        writer.submit("2026-10-28", _at(10, 1, second), [])
+        deadline = wall.monotonic() + 1
+        while len(calls) <= second and wall.monotonic() < deadline:
+            wall.sleep(0.01)
+    deadline = wall.monotonic() + 1  # the recovery is logged after the successful write returns
+    while not any("written again" in record.getMessage() for record in caplog.records) and wall.monotonic() < deadline:
+        wall.sleep(0.01)
+    writer.stop()
+    messages = [record.getMessage() for record in caplog.records]
+    assert sum("could not be written" in message for message in messages) == 1  # the failure once
+    assert sum("written again" in message for message in messages) == 1 and writer.failures == 3  # and its recovery once
 
 
 def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monkeypatch) -> None:
@@ -842,6 +902,44 @@ def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monk
     early = _at(15, 59, 58)  # the same pass a second earlier sells
     fills = engine.fast_exits(early, slow_view, lambda s: (stop, stop + 0.01, early) if s == "AAA" else None)
     assert [f["symbol"] for f in fills] == ["AAA"]
+
+
+def test_the_marks_carry_the_level_the_rule_sells_at() -> None:
+    engine = _engine()
+    position = _bought_aaa(engine, _at(10, 0, 1))
+    row = engine.marks()[0]
+    assert row["symbol"] == "AAA" and row["armed"] is False and row["stop_percent"] == -engine_module.RULE["stop_percent"]
+    assert row["stop_price"] == position.exit_price() and row["bid"] == position.last_mark
+    assert (row["opened_at"], row["quantity"], row["cost_usd"]) == (position.opened_at, round(position.shares, 6),
+                                                                     round(position.cost_usd, 2))
+
+
+def test_the_engines_marks_dress_the_book_it_publishes_through_the_real_store(tmp_path: Path) -> None:
+    """Pre-review of eb72ce47: the book rounds cost to cents and shares to 6 decimals; marks with the raw floats matched no
+    position, so the screen fell back to the feed for every name. Through document, store and latest_book with an uneven
+    NAV, the engine's marks are laid on its own book."""
+    from app import r2d2_lab_live
+
+    database = Database(Settings(database_url=""))
+    engine = _engine(nav=931214.4417)
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    assert round(position.cost_usd, 2) != position.cost_usd  # an uneven cost, as in production
+    r2d2_lab_live.store(database, engine.document(t), now=t, max_trades=engine_module.ENGINE_MAX_TRADES)
+    found = r2d2_lab_live.latest_book(database, now=t)
+    assert found is not None
+    mark_at = t + timedelta(seconds=1)
+    engine.marked_moment["AAA"] = mark_at
+    row = {"session": DAY.isoformat(), "as_of": mark_at, "marks": engine.marks()}
+    dressed = r2d2_lab_live.overlay_marks(found[2], row, DAY.isoformat(), mark_at + timedelta(milliseconds=100))
+    assert dressed["positions"][0]["mark_as_of"] == mark_at.isoformat() and dressed["positions"][0]["stop_percent"] == -0.4
+    t = _at(10, 0, 2)
+    up = _bid_at(position, 0.17)
+    engine.step(t, lambda s: MarketView(price=98.3, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
+                nbbo=lambda s, now: (up, up + 0.01, now))
+    row = engine.marks()[0]
+    assert row["armed"] is True and row["stop_percent"] == pytest.approx(0.15) and row["net_percent"] == pytest.approx(0.17)
+    assert row["marked_at"] == t.isoformat() or row["marked_at"] > t.isoformat()
 
 
 def test_a_full_check_whose_reads_cross_the_close_never_sells(monkeypatch) -> None:

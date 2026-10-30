@@ -603,6 +603,7 @@ class Engine:
         self.sources = {"massive": 0, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 0}
         # what each exit check of a held name marked on: Massive's NBBO, the feed's fresh quote, or nothing (this process)
         self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
+        self.marked_moment: dict[str, datetime] = {}  # when the exits last marked each held name (the screen's marks only)
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -855,6 +856,27 @@ class Engine:
         every path samples its effective instant after its reads and asks this first (Codex 6527492839)."""
         return moment >= datetime.combine(self.day, SESSION_CLOSE, tzinfo=NEW_YORK)
 
+    def marks(self) -> list[dict[str, Any]]:
+        """The held names as the exits last marked them, for the screen (migration 055; display only, never read back): the
+        bid, the net at that bid, the lock armed or not, the level the rule sells at and the instant of the mark."""
+        rows = []
+        for symbol, position in sorted(self.state.positions.items()):
+            if position.last_mark is None:
+                continue
+            marked = self.marked_moment.get(symbol)
+            # the level the rule sells at, as the net of a sale there: the lock's floor once armed, else the stop
+            level = lock_floor(position.peak_percent or RULE["lock_min_percent"]) if position.armed else -RULE["stop_percent"]
+            # the position's own identity (its opening, shares and cost): the screen lays a mark only on the very position
+            # it was taken of — never on a re-buy of the same ticker, nor a re-buy's mark on the sold one (Codex 6528658844)
+            rows.append({"symbol": symbol, "bid": position.last_mark, "net_percent": position.net_percent(position.last_mark),
+                         "armed": position.armed, "stop_price": position.exit_price(), "stop_percent": level,
+                         "marked_at": marked.isoformat() if marked is not None else None,
+                         # rounded exactly as the published book rounds them (Engine.document): the same position, the same
+                         # numbers (pre-review of eb72ce47)
+                         "opened_at": position.opened_at, "quantity": _rounded("quantity", position.shares),
+                         "cost_usd": _rounded("cost_usd", position.cost_usd)})
+        return rows
+
     def fast_exits(self, now: datetime, view: Callable[[str], MarketView],
                    pushed: Callable[[str], tuple[float, float, datetime] | None]) -> list[dict[str, Any]]:
         """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"): every
@@ -887,6 +909,7 @@ class Engine:
         self.exit_sources[source] += 1
         net = position.net_percent(bid)
         position.last_mark = bid
+        self.marked_moment[position.symbol] = moment
         position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
         if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
             position.armed = True
@@ -909,6 +932,7 @@ class Engine:
         pnl = position.cost_usd * net / 100
         self.state.nav_realized += pnl
         del self.state.positions[position.symbol]
+        self.marked_moment.pop(position.symbol, None)  # a re-buy is shown from its own marks
         # a new entry needs a new dip below the VWAP, seen in a check: the same step never sells at the stream's bid and
         # buys back at once on a last trade still above the VWAP (pre-review of 81cf1ae P2-B)
         self.below[position.symbol] = False
@@ -1358,6 +1382,55 @@ def massive_line(massive: MassiveQuoteStream, engine: "Engine") -> str:
                engine.exit_sources["pushed"], engine.exit_sources["fast"], massive.reconnects))
 
 
+MARKS_RETRY_SECONDS = 5.0  # after a failed write of the screen's marks, the writer waits this long before the next one
+
+
+class MarksWriter:
+    """The screen's marks written OFF the exits' loop (pre-review of 62bdbd3b P1-2: the loop waited on a database commit
+    up to ten times a second): the loop only hands over its latest marks; one thread writes the newest it holds — never a
+    queue — and after a failure waits MARKS_RETRY_SECONDS. A failure is logged once, and its recovery once."""
+
+    def __init__(self, write: Callable[[str, datetime, list[dict[str, Any]]], Any]) -> None:
+        self._write = write
+        self._lock = Lock()
+        self._latest: tuple[str, datetime, list[dict[str, Any]]] | None = None
+        self._ready, self._stop = Event(), Event()
+        self.failures = 0
+        self._thread = Thread(target=self._run, name="r2d2-live-marks", daemon=True)
+        self._thread.start()
+
+    def submit(self, session: str, as_of: datetime, marks: list[dict[str, Any]]) -> None:
+        with self._lock:
+            self._latest = (session, as_of, marks)
+        self._ready.set()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._ready.set()
+
+    def _run(self) -> None:
+        failing = False
+        while not self._stop.is_set():
+            self._ready.wait()
+            self._ready.clear()
+            with self._lock:
+                latest, self._latest = self._latest, None
+            if latest is None or self._stop.is_set():
+                continue
+            try:
+                self._write(*latest)
+            except Exception:  # noqa: BLE001 - display only: the exits never depend on it
+                self.failures += 1
+                if not failing:
+                    logger.error("R2D2 live: the screen's marks could not be written")
+                failing = True
+                self._stop.wait(MARKS_RETRY_SECONDS)
+                continue
+            if failing:
+                logger.info("R2D2 live: the screen's marks are written again")
+            failing = False
+
+
 def feed_line(stream: Any, engine: "Engine") -> str:
     """How late the feed is and why signals did not buy: numbers only (published by the status workflow). Resets the
     worst lag of the interval."""
@@ -1437,46 +1510,61 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     held = set(engine.state.positions)
     guarded(lambda: commit(now()))
     last_marks = last_lines = clock_time.monotonic()
-    while now() < at(SESSION_CLOSE):
-        moment = now()
-        began = clock_time.monotonic()
-        fills = engine.step(moment, stream.view, signal, nbbo, pushed=massive.quote if massive is not None else None)
-        if set(engine.state.positions) != held:  # a buy or a sale: the quote feeds follow
-            held = set(engine.state.positions)
-            if quotes_for is not None:
-                quotes_for(held)
-            if massive is not None:
-                massive.set_symbols(held)
-        if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
-            guarded(lambda: commit(moment))
-            last_marks = clock_time.monotonic()
-        # the heartbeat and the feed line on their own clock: with entries checked every second fills come often, and
-        # the skip and Massive counts must still come every minute
-        if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
-            logger.info("%s", heartbeat(stream, engine, moment))
-            logger.info("%s", feed_line(stream, engine))
-            logger.info("%s", shadow_line(engine))
-            if massive is not None:
-                logger.info("%s", massive_line(massive, engine))
-            last_lines = clock_time.monotonic()
-        # between the full checks, the held names on Massive's pushed NBBO every FAST_EXIT_SECONDS (owner 30/10)
-        while massive is not None and engine.state.positions and clock_time.monotonic() - began + FAST_EXIT_SECONDS < 1.0:
-            sleep(FAST_EXIT_SECONDS)
-            instant = now()
-            if instant >= at(SESSION_CLOSE):  # never a check past the close (pre-review of e1149ca5 P1)
-                break
-            fast = engine.fast_exits(instant, stream.view, massive.quote)
-            if fast:
-                if set(engine.state.positions) != held:  # a sale: the quote feeds follow
-                    held = set(engine.state.positions)
-                    if quotes_for is not None:
-                        quotes_for(held)
+    marks_writer = MarksWriter(lambda session, as_of, marks: guarded(lambda: database.save_r2d2_live_marks(session, as_of, marks)))
+
+    def write_marks() -> None:
+        """The engine's marks for the screen (owner 30/10: the screen shows what the robot decides on, every 0.1 s),
+        handed to the writer stamped with the instant of the hand-over. Display only: the loop never waits on it, and a
+        hand-over that fails never ends the session."""
+        try:
+            marks_writer.submit(day.isoformat(), now(), engine.marks())
+        except Exception:  # noqa: BLE001 - display only
+            logger.exception("R2D2 live: the screen's marks could not be handed over")
+    try:
+        while now() < at(SESSION_CLOSE):
+            moment = now()
+            began = clock_time.monotonic()
+            fills = engine.step(moment, stream.view, signal, nbbo, pushed=massive.quote if massive is not None else None)
+            if set(engine.state.positions) != held:  # a buy or a sale: the quote feeds follow
+                held = set(engine.state.positions)
+                if quotes_for is not None:
+                    quotes_for(held)
+                if massive is not None:
                     massive.set_symbols(held)
-                stamp = now()
-                guarded(lambda: commit(stamp))
+            if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
+                guarded(lambda: commit(moment))
                 last_marks = clock_time.monotonic()
-        # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
-        sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
+            write_marks()
+            # the heartbeat and the feed line on their own clock: with entries checked every second fills come often, and
+            # the skip and Massive counts must still come every minute
+            if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
+                logger.info("%s", heartbeat(stream, engine, moment))
+                logger.info("%s", feed_line(stream, engine))
+                logger.info("%s", shadow_line(engine))
+                if massive is not None:
+                    logger.info("%s", massive_line(massive, engine))
+                last_lines = clock_time.monotonic()
+            # between the full checks, the held names on Massive's pushed NBBO every FAST_EXIT_SECONDS (owner 30/10)
+            while massive is not None and engine.state.positions and clock_time.monotonic() - began + FAST_EXIT_SECONDS < 1.0:
+                sleep(FAST_EXIT_SECONDS)
+                instant = now()
+                if instant >= at(SESSION_CLOSE):  # never a check past the close (pre-review of e1149ca5 P1)
+                    break
+                fast = engine.fast_exits(instant, stream.view, massive.quote)
+                write_marks()  # the screen follows every tenth of a second too (owner 30/10: "atualizada em 0,1 s")
+                if fast:
+                    if set(engine.state.positions) != held:  # a sale: the quote feeds follow
+                        held = set(engine.state.positions)
+                        if quotes_for is not None:
+                            quotes_for(held)
+                        massive.set_symbols(held)
+                    stamp = now()
+                    guarded(lambda: commit(stamp))
+                    last_marks = clock_time.monotonic()
+            # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
+            sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
+    finally:
+        marks_writer.stop()
     engine.close_session()
     if massive is not None:
         massive.set_symbols(())  # nothing held is followed past the close
