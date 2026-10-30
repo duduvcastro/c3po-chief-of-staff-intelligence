@@ -341,6 +341,17 @@ LIVE_REFRESH_SECONDS = 0.1  # the screen asks for the positions this often durin
 SELL_FEE = 0.00005  # r2d2_live_engine.FEE_SIDE: a sale's fee, for the stop level of a book the engine's marks do not cover
 
 
+def _same_position(item: dict[str, Any], mark: dict[str, Any]) -> bool:
+    """The mark was taken of this very position: the same opening instant, shares and cost (a sale and a re-buy of the
+    ticker inside the freshness window are two positions; Codex 6528658844)."""
+    try:
+        opened = datetime.fromisoformat(str(mark["opened_at"])) == datetime.fromisoformat(str(item["opened_at"]))
+        return (opened and math.isclose(float(mark["quantity"]), float(item["quantity"]), rel_tol=1e-9)
+                and math.isclose(float(mark["cost_usd"]), float(item["cost_usd"]), rel_tol=1e-9))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def overlay_marks(book: dict[str, Any], row: dict[str, Any] | None, day: str, now: datetime) -> dict[str, Any]:
     """The engine's own marks over the book (owner 30/10/2026: ASST and FTI showed +0.10% on the screen, re-marked on the
     feed's last trade, while the engine — on the bid of Massive's NBBO net of the sale's fee — never armed the lock;
@@ -352,7 +363,7 @@ def overlay_marks(book: dict[str, Any], row: dict[str, Any] | None, day: str, no
     as_of = row.get("as_of")
     if not isinstance(as_of, datetime) or not 0 <= (now - as_of).total_seconds() <= MARKS_FRESH_SECONDS:
         return book
-    marks: dict[str, tuple[float, float, float, bool, str, float | None]] = {}
+    marks: dict[str, tuple[float, float, float, bool, str, float | None, dict[str, Any]]] = {}
     for item in row.get("marks") or []:
         try:
             symbol, bid, net, stop = str(item["symbol"]), float(item["bid"]), float(item["net_percent"]), float(item["stop_price"])
@@ -370,14 +381,15 @@ def overlay_marks(book: dict[str, Any], row: dict[str, Any] | None, day: str, no
             continue
         level = item.get("stop_percent")
         marks[symbol] = (bid, net, stop, item.get("armed") is True, marked_at.isoformat(),
-                         float(level) if isinstance(level, (int, float)) and math.isfinite(level) and abs(level) < 100 else None)
+                         float(level) if isinstance(level, (int, float)) and math.isfinite(level) and abs(level) < 100 else None,
+                         item)
     positions, move = [], 0.0
     for item in book["positions"]:
         mark = marks.get(item["symbol"])
-        if mark is None:
+        if mark is None or not _same_position(item, mark[6]):  # no mark of THIS position: the live tick stays
             positions.append(item)
             continue
-        bid, net, stop, armed, marked, level = mark
+        bid, net, stop, armed, marked, level, _ = mark
         result = item["cost_usd"] * net / 100
         move += result - item["unrealized_pnl_usd"]
         positions.append({**item, "last_price": bid, "unrealized_pnl_usd": result, "unrealized_return_percent": net,

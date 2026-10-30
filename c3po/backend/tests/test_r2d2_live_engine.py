@@ -910,6 +910,7 @@ def test_the_marks_carry_the_level_the_rule_sells_at() -> None:
     row = engine.marks()[0]
     assert row["symbol"] == "AAA" and row["armed"] is False and row["stop_percent"] == -engine_module.RULE["stop_percent"]
     assert row["stop_price"] == position.exit_price() and row["bid"] == position.last_mark
+    assert (row["opened_at"], row["quantity"], row["cost_usd"]) == (position.opened_at, position.shares, position.cost_usd)
     t = _at(10, 0, 2)
     up = _bid_at(position, 0.17)
     engine.step(t, lambda s: MarketView(price=98.3, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),

@@ -866,9 +866,12 @@ class Engine:
             marked = self.marked_moment.get(symbol)
             # the level the rule sells at, as the net of a sale there: the lock's floor once armed, else the stop
             level = lock_floor(position.peak_percent or RULE["lock_min_percent"]) if position.armed else -RULE["stop_percent"]
+            # the position's own identity (its opening, shares and cost): the screen lays a mark only on the very position
+            # it was taken of — never on a re-buy of the same ticker, nor a re-buy's mark on the sold one (Codex 6528658844)
             rows.append({"symbol": symbol, "bid": position.last_mark, "net_percent": position.net_percent(position.last_mark),
                          "armed": position.armed, "stop_price": position.exit_price(), "stop_percent": level,
-                         "marked_at": marked.isoformat() if marked is not None else None})
+                         "marked_at": marked.isoformat() if marked is not None else None,
+                         "opened_at": position.opened_at, "quantity": position.shares, "cost_usd": position.cost_usd})
         return rows
 
     def fast_exits(self, now: datetime, view: Callable[[str], MarketView],

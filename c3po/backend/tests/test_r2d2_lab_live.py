@@ -452,9 +452,9 @@ def test_the_screen_shows_the_engines_own_marks_sorted_by_ticker_with_the_stop_l
 
     def quotes(references):
         return {"ZZZ": (50.07, tick_at), "AAA": (50.06, tick_at)}  # the feed's last trades
-    database.save_r2d2_live_marks("2026-10-27", tick_at, [
-        {"symbol": "ZZZ", "bid": 50.06, "net_percent": 0.112, "armed": True, "stop_price": 50.0525, "stop_percent": 0.10,
-         "marked_at": tick_at.isoformat()}])
+    mark = {"symbol": "ZZZ", "bid": 50.06, "net_percent": 0.112, "armed": True, "stop_price": 50.0525, "stop_percent": 0.10,
+            "marked_at": tick_at.isoformat(), "opened_at": "2026-10-27T10:00:00-04:00", "quantity": 1000.0, "cost_usd": 50002.5}
+    database.save_r2d2_live_marks("2026-10-27", tick_at, [mark])
     live = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
     assert [position.symbol for position in live.positions] == ["AAA", "ZZZ"]  # by ticker
     assert live.refresh_seconds == r2d2_lab_live.LIVE_REFRESH_SECONDS == 0.1
@@ -473,10 +473,20 @@ def test_the_screen_shows_the_engines_own_marks_sorted_by_ticker_with_the_stop_l
     other = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
     assert {position.symbol: position.last_price_local for position in other.positions} == {"AAA": 50.06, "ZZZ": 50.07}
     # a name the engine has not marked yet (restored after a restart: no instant) keeps the live tick, never shown as fresh
-    database.save_r2d2_live_marks("2026-10-27", tick_at, [{"symbol": "ZZZ", "bid": 50.06, "net_percent": 0.112, "armed": True,
-                                                            "stop_price": 50.0525, "stop_percent": 0.10, "marked_at": None}])
+    database.save_r2d2_live_marks("2026-10-27", tick_at, [dict(mark, marked_at=None)])
     unmarked = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
     assert {position.symbol: position.last_price_local for position in unmarked.positions} == {"AAA": 50.06, "ZZZ": 50.07}
+    # Codex 6528658844: a mark of ANOTHER position of the same ticker (a sale and a re-buy inside the window, in either
+    # direction) is never laid on this one: another opening, other shares or another cost keep the live tick
+    for other in (dict(mark, opened_at="2026-10-27T10:30:00-04:00"), dict(mark, quantity=900.0), dict(mark, cost_usd=45000.0),
+                  {key: value for key, value in mark.items() if key != "opened_at"}):
+        database.save_r2d2_live_marks("2026-10-27", tick_at, [other])
+        shown = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
+        zzz_shown = next(position for position in shown.positions if position.symbol == "ZZZ")
+        assert zzz_shown.last_price_local == 50.07 and zzz_shown.decision_state == "hold", other
+    database.save_r2d2_live_marks("2026-10-27", tick_at, [dict(mark, opened_at="2026-10-27T14:00:00+00:00")])  # same instant
+    same = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
+    assert next(position for position in same.positions if position.symbol == "ZZZ").last_price_local == 50.06
     after_close = datetime(2026, 10, 27, 20, 30, tzinfo=timezone.utc)
     assert r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=after_close, quotes=quotes).refresh_seconds == 1
 
