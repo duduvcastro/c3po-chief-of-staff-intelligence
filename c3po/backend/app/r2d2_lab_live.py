@@ -362,8 +362,14 @@ def overlay_marks(book: dict[str, Any], row: dict[str, Any] | None, day: str, no
                 and abs(net) < 100):
             continue
         marked = item.get("marked_at")
+        try:  # a name the engine has not marked yet (restored after a restart) keeps the live tick
+            marked_at = datetime.fromisoformat(marked) if isinstance(marked, str) else None
+        except ValueError:
+            marked_at = None
+        if marked_at is None or marked_at.tzinfo is None:
+            continue
         level = item.get("stop_percent")
-        marks[symbol] = (bid, net, stop, item.get("armed") is True, marked if isinstance(marked, str) else as_of.isoformat(),
+        marks[symbol] = (bid, net, stop, item.get("armed") is True, marked_at.isoformat(),
                          float(level) if isinstance(level, (int, float)) and math.isfinite(level) and abs(level) < 100 else None)
     positions, move = [], 0.0
     for item in book["positions"]:

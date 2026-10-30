@@ -1329,13 +1329,6 @@ type PanelPollingOptions = {
   marketOpen: boolean | null;
 };
 
-/**
- * Panel polling policy (C3PO_CPU_RELIEF_V1, PR B):
- * - market open + tab visible: `openMs`;
- * - tab hidden: polling suspended (timer cleared, no requests);
- * - market closed + tab visible: at least MARKET_CLOSED_POLL_MS;
- * - tab visible again: one immediate refresh, then a single fresh timer (never two).
- */
 // The STOP column's colour (owner 30/10/2026): red while the level is the stop (negative), green from the lock's first
 // step (+0.10%), blue once the lock has climbed past it.
 function stopLockClass(level: number): string {
@@ -1343,6 +1336,13 @@ function stopLockClass(level: number): string {
   return level > 0.10 + 1e-9 ? "stop-lock-above" : "positive";
 }
 
+/**
+ * Panel polling policy (C3PO_CPU_RELIEF_V1, PR B):
+ * - market open + tab visible: `openMs`;
+ * - tab hidden: polling suspended (timer cleared, no requests);
+ * - market closed + tab visible: at least MARKET_CLOSED_POLL_MS;
+ * - tab visible again: one immediate refresh, then a single fresh timer (never two).
+ */
 function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = MARKET_CLOSED_POLL_MS, marketOpen }: PanelPollingOptions) {
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -1396,7 +1396,7 @@ function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = 
   }, [openMs, closedMs, marketOpen]);
 }
 
-function useR2D2LivePositions() {
+function useR2D2LivePositions({ fast = false }: { fast?: boolean } = {}) {
   const [telemetry, setTelemetry] = useState<R2D2LivePositionsData | null>(null);
   const requestInFlight = useRef(false);
   const mountedRef = useRef(true);
@@ -1431,7 +1431,9 @@ function useR2D2LivePositions() {
   }, []);
 
   usePanelPolling(load, {
-    openMs: Math.max(100, (telemetry?.refresh_seconds ?? 1) * 1_000),  // 0.1 s during the live R2D2 session
+    // 0.1 s on the R2D2 page during the live session (owner 30/10/2026); every other view keeps 1 s (each request
+    // pays the login check's database work: C3PO_CPU_RELIEF_V1)
+    openMs: fast ? Math.max(100, (telemetry?.refresh_seconds ?? 1) * 1_000) : Math.max(1_000, (telemetry?.refresh_seconds ?? 1) * 1_000),
     marketOpen: telemetry?.market_session_open ?? null
   });
 
@@ -3889,7 +3891,7 @@ function LeahCloudView({ session }: { session: AuthSession }) {
 
 function R2D2RisingView() {
   const [data, setData] = useState<R2D2DashboardData | null>(null);
-  const liveTelemetry = useR2D2LivePositions();
+  const liveTelemetry = useR2D2LivePositions({ fast: true });
   const [error, setError] = useState("");
   const requestInFlight = useRef(false);
   const [hoveredAllocation, setHoveredAllocation] = useState<{
@@ -4239,7 +4241,7 @@ function R2D2RisingView() {
         <PanelHeader title="Virtual Positions" icon={WalletCards} />
         <div className="r2d2-ledger-updated">API UPDATED {new Date(positionFeedUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
         <div className="r2d2-ledger-head">
-          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span title="The level the rule sells at, as the net of a sale there: red the stop, green the lock's first step, blue a higher step">Stop</span>
+          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span title="The rule's level in force, as the net of a sale there: red the stop (−0.40%), green the lock's first step (+0.10%), blue a higher step">Stop</span>
         </div>
         {positions.length ? positions.map((position) => (
           <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>
@@ -4250,7 +4252,7 @@ function R2D2RisingView() {
             <span className="r2d2-last-price" data-label="Price">{formatCurrency(position.last_price_local, position.currency)}</span>
             <span data-label="Allocation">{position.allocation_percent.toFixed(1)}%</span>
             <div className="r2d2-position-value-cell" data-label="Position value">
-              <strong className="r2d2-position-value">{moneyExact(position.market_value_usd)}</strong>
+              <span className="r2d2-position-value">{moneyExact(position.market_value_usd)}</span>
               <small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small>
             </div>
             <div className="r2d2-live-pnl" data-label="Price mark">
@@ -4288,7 +4290,6 @@ function R2D2RisingView() {
                   {`${position.stop_lock_percent >= 0 ? "+" : ""}${position.stop_lock_percent.toFixed(2)}%`}
                 </strong>
               ) : <strong>—</strong>}
-              <small>{formatCurrency(position.stop_price_local, position.currency)}</small>
             </div>
           </div>
         )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No open positions</strong><span>{data.book_source === "lab_live" ? "R2D2 live holds no stock right now; every buy appears here and in the Daily Buy / Sell Log." : "The R2D2 V2 book is paused. Today\u2019s live lab fills appear in the Daily Buy / Sell Log."}</span></div></div>}

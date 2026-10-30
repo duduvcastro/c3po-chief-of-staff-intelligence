@@ -5171,9 +5171,13 @@ class Database:
             for attempt in (1, 2):
                 try:
                     if self._marks_connection is None or self._marks_connection.closed:
-                        self._marks_connection = psycopg.connect(self.database_url, autocommit=True)
+                        # bounded: a stalled server never holds a caller (the engine's writer thread, an api request) for
+                        # long; display-only rows need no synchronous commit
+                        self._marks_connection = psycopg.connect(
+                            self.database_url, autocommit=True, connect_timeout=2,
+                            options="-c statement_timeout=500 -c synchronous_commit=off")
                     return use(self._marks_connection)
-                except psycopg.Error:
+                except (psycopg.OperationalError, psycopg.InterfaceError):
                     connection, self._marks_connection = self._marks_connection, None
                     if connection is not None:
                         try:

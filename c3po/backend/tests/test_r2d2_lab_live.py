@@ -472,6 +472,11 @@ def test_the_screen_shows_the_engines_own_marks_sorted_by_ticker_with_the_stop_l
                                                             "stop_price": 1.0, "stop_percent": 0.1, "marked_at": None}])
     other = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
     assert {position.symbol: position.last_price_local for position in other.positions} == {"AAA": 50.06, "ZZZ": 50.07}
+    # a name the engine has not marked yet (restored after a restart: no instant) keeps the live tick, never shown as fresh
+    database.save_r2d2_live_marks("2026-10-27", tick_at, [{"symbol": "ZZZ", "bid": 50.06, "net_percent": 0.112, "armed": True,
+                                                            "stop_price": 50.0525, "stop_percent": 0.10, "marked_at": None}])
+    unmarked = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
+    assert {position.symbol: position.last_price_local for position in unmarked.positions} == {"AAA": 50.06, "ZZZ": 50.07}
     after_close = datetime(2026, 10, 27, 20, 30, tzinfo=timezone.utc)
     assert r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=after_close, quotes=quotes).refresh_seconds == 1
 
