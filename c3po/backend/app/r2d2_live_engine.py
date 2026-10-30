@@ -79,8 +79,15 @@ NBBO_STEP_BUDGET_SECONDS = 3.0  # Massive time per step's entries: the exits run
 # carries only the held names since #516) and the exits, which mark on Massive since 30/10, would fall back to the feed
 NBBO_FAILURES_BEFORE_PAUSE = 3
 NBBO_PAUSE_AFTER_FAILURE_SECONDS = 5.0
-# the held names' marks (the exits), asked of Massive every second before the entries' own budget
-NBBO_EXIT_BUDGET_SECONDS = 1.5
+# ...and only when Massive is SILENT, not slow: one step's requests run in parallel, and a few abandoned past the exits'
+# budget fail together right after the others answered — counted alone, they paused every exit onto the feed
+# (pre-review of 61100b2 P1)
+NBBO_SILENCE_BEFORE_PAUSE_SECONDS = 3.0
+# the held names' marks (the exits), asked of Massive every second before the entries' own budget: 0.2 s above a
+# request's own timeout, so an answer inside it is never left for the feed
+NBBO_EXIT_BUDGET_SECONDS = 1.7
+# an exit's NBBO at most this old (the entries keep the lab's 60 s): a lagging Massive never hides a stop the market printed
+NBBO_EXIT_MAX_AGE_SECONDS = 10.0
 # Massive requests in flight at once for one step's crosses. Asked one after the other (~0.7 s each from the host),
 # the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
 NBBO_PARALLEL = 32
@@ -596,7 +603,7 @@ class Engine:
         # stream's own quote under the old 5 s rule would have refused (this process only)
         self.sources = {"massive": 0, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 0}
         # what each exit check of a held name marked on: Massive's NBBO, the feed's fresh quote, or nothing (this process)
-        self.exit_sources = {"massive": 0, "stream": 0, "none": 0}
+        self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0}
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -652,7 +659,7 @@ class Engine:
         # The exits mark on Massive's NBBO, as the entries buy on it (30/10/2026): the quote feed (EODHD) gave ASX a bid
         # 0.5% under the NBBO seconds after its buy — a stop at -0.75% the market never printed (the minute's low was above
         # the NBBO bid) — and left AMD unarmed at +0.175% net. Every held name is asked at once, at the effective instant;
-        # the feed's fresh quote stands in only when Massive does not answer within NBBO_EXIT_BUDGET_SECONDS.
+        # the feed's fresh quote stands in only when Massive gives nothing usable, and its bid never sells alone.
         marks: dict[str, tuple[float, float, datetime]] = {}
         if nbbo is not None and self.state.positions:
             marks = ask_nbbo(nbbo, list(self.state.positions), now + timedelta(seconds=clock_time.monotonic() - started_step),
@@ -662,16 +669,14 @@ class Engine:
             # the effective instant, sampled after the read that may block (the view takes the stream's lock; as the
             # entries, Codex 6499564395): the quote's freshness, the T30 rule and the sell's stamp read this one instant
             moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
-            bid = exit_bid(marks.get(symbol), market, position, moment)
-            if bid is not None:
-                self.exit_sources["massive"] += 1
-            elif market.quote_fresh(moment):
+            bid, source = exit_bid(marks.get(symbol), market, position, moment), "massive"
+            if bid is None:
+                if not market.quote_fresh(moment):
+                    self.exit_sources["none"] += 1
+                    continue
                 assert market.bid is not None
-                bid = market.bid
-                self.exit_sources["stream"] += 1
-            else:
-                self.exit_sources["none"] += 1
-                continue
+                bid, source = market.bid, "stream"
+            self.exit_sources[source] += 1
             net = position.net_percent(bid)
             position.last_mark = bid
             position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
@@ -684,6 +689,11 @@ class Engine:
                 reason = "lock"
             elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
                 reason = "t30_positive"
+            if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
+                # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at
+                # the same level, else Massive decides at the next check
+                self.exit_sources["unconfirmed"] += 1
+                reason = None
             if reason:
                 new.append(self._sell(position, bid, net, reason, moment))
         try:
@@ -1026,11 +1036,27 @@ def exit_bid(quote: tuple[float, float, datetime] | None, market: "MarketView", 
     if quote is None:
         return None
     bid, _, quoted_at = quote
-    reference = market.price if market.price is not None and market.price > 0 else position.entry_price
+    reference = next((price for price in (market.price, position.last_mark, position.entry_price) if price is not None and price > 0), 0.0)
     age = (moment - quoted_at).total_seconds()
-    if not plausible(quote, reference) or not -FUTURE_TOLERANCE_SECONDS <= age <= NBBO_MAX_AGE_SECONDS:
+    # the bid itself within the bound too, not only the mid: a wide NBBO (a halt's or a LULD resumption's) never stops
+    # a position at a bid far under the market (pre-review of 61100b2 P2-4)
+    if (not plausible(quote, reference) or abs(bid / reference - 1) > NBBO_MAX_DEVIATION
+            or not -FUTURE_TOLERANCE_SECONDS <= age <= NBBO_EXIT_MAX_AGE_SECONDS):
         return None
     return bid
+
+
+def trade_confirms(position: Position, market: "MarketView", moment: datetime, reason: str) -> bool:
+    """A sale the feed's bid triggers stands only when the name's fresh last trade (at most ``QUOTE_MAX_AGE_SECONDS``
+    old) is at the same level: at or under the stop, at or under the lock's floor, or positive for the T30 rule."""
+    if market.price is None or market.trade_at is None or not 0 <= (moment - market.trade_at).total_seconds() <= QUOTE_MAX_AGE_SECONDS:
+        return False
+    net = position.net_percent(market.price)
+    if reason == "hard_stop":
+        return net <= -RULE["stop_percent"]
+    if reason == "lock":
+        return net <= lock_floor(position.peak_percent if position.peak_percent is not None else RULE["lock_min_percent"])
+    return net > 0
 
 
 def quiet_request_logs() -> None:
@@ -1045,11 +1071,11 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
     """The NBBO prevailing at an instant, as the lab reads it (``lab/massive.py`` quote_at: the last quote at or before
     the instant): (bid, ask, SIP time), or None — never an exception and never an error text (the token travels in the
     query: ``main`` keeps httpx's request lines out of the logs). Share classes in Massive's spelling (EODHD BRK-B →
-    BRK.B). After ``NBBO_FAILURES_BEFORE_PAUSE`` failures in a row Massive is not asked for
-    ``NBBO_PAUSE_AFTER_FAILURE_SECONDS``: the stream stands in."""
+    BRK.B). After ``NBBO_FAILURES_BEFORE_PAUSE`` failures in a row with no answer for
+    ``NBBO_SILENCE_BEFORE_PAUSE_SECONDS``, Massive is not asked for ``NBBO_PAUSE_AFTER_FAILURE_SECONDS``: the stream stands in."""
     from threading import Lock
     from urllib.parse import quote as quoted
-    paused_until, failures, lock = [0.0], [0], Lock()  # the requests of one step run in parallel threads
+    paused_until, failures, answered, lock = [0.0], [0], [monotonic()], Lock()  # one step's requests run in parallel
 
     def nbbo(symbol: str, now: datetime) -> tuple[float, float, datetime] | None:
         if monotonic() < paused_until[0]:
@@ -1062,11 +1088,12 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
         except Exception:
             with lock:
                 failures[0] += 1
-                if failures[0] >= NBBO_FAILURES_BEFORE_PAUSE:
+                if (failures[0] >= NBBO_FAILURES_BEFORE_PAUSE
+                        and monotonic() - answered[0] >= NBBO_SILENCE_BEFORE_PAUSE_SECONDS):
                     paused_until[0], failures[0] = monotonic() + NBBO_PAUSE_AFTER_FAILURE_SECONDS, 0
             return None
         with lock:
-            failures[0] = 0  # Massive answered: whatever it said, it is up
+            failures[0], answered[0] = 0, monotonic()  # Massive answered: whatever it said, it is up
         if not isinstance(row, dict):
             return None
         try:  # an answer that is no usable NBBO is refused here, whole: the stream stands in (Codex 6478311166 P2-3)
@@ -1114,12 +1141,13 @@ def feed_line(stream: Any, engine: "Engine") -> str:
     skips, sources = engine.skips, engine.sources
     return ("R2D2 live feed: trade_messages=%d quote_messages=%d trade_lag_ms=%d quote_lag_ms=%d trade_lag_max_ms=%d "
             "quote_lag_max_ms=%d skips held=%d slots=%d noquote=%d stale=%d spread=%d late=%d implausible=%d "
-            "nbbo massive=%d stream=%d unanswered=%d mismatch=%d stream_would_refuse=%d exits massive=%d stream=%d none=%d"
+            "nbbo massive=%d stream=%d unanswered=%d mismatch=%d stream_would_refuse=%d exits massive=%d stream=%d none=%d unconfirmed=%d"
             % (int(count.get("trade", 0)), int(count.get("quote", 0)), int(lag.get("trade", 0)), int(lag.get("quote", 0)),
                int(worst.get("trade", 0)), int(worst.get("quote", 0)),
                skips["held"], skips["slots"], skips["noquote"], skips["stale"], skips["spread"], skips["late"], skips["implausible"],
                sources["massive"], sources["stream"], sources["unanswered"], sources["mismatch"], sources["stream_would_refuse"],
-               engine.exit_sources["massive"], engine.exit_sources["stream"], engine.exit_sources["none"]))
+               engine.exit_sources["massive"], engine.exit_sources["stream"], engine.exit_sources["none"],
+               engine.exit_sources["unconfirmed"]))
 
 
 def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[..., Any], base_url: str, token: str,
