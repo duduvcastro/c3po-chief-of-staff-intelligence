@@ -13,8 +13,9 @@ to +0.30%, every 0.10 above; owner 29/10, it was a +0.15% lock trailing the peak
 negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
-Universe: the 550 most liquid US common stocks (the stream's capacity), from EODHD's end-of-day bulk files of the
-last 20 sessions; the open of each is its first regular-session trade on the stream.
+Universe: the 900 most liquid US common stocks (owner 29/10; 500 until then), from EODHD's end-of-day bulk files of the
+last 20 sessions; the open of each is its first regular-session trade on the stream. The trade feed carries the universe
+until the candidates are fixed, then the candidates and the held names; the quote feed only the held names.
 """
 from __future__ import annotations
 
@@ -44,8 +45,11 @@ CONFIG = "TIT-2S5-RT"  # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT unt
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
-# The stream's capacity is per account (550 on this plan, EODHD's default is 50): the api's own stream keeps the rest
-UNIVERSE_SIZE = int(os.environ.get("C3PO_R2D2_LIVE_UNIVERSE_SIZE", "500"))
+# The stream's capacity is per account (~1,050 slots on this plan, one per name per feed; EODHD's default is 50)
+# owner 29/10/2026 ~17:3x BRT: "então aumenta o universo do R2D2 para mais papéis" — 900 (it was 500): the trade feed
+# carries the universe until the candidates are fixed, the quote feed only the held names (each name costs one WebSocket
+# slot per feed; the account has ~1,050), so the same slots follow ~900 names
+UNIVERSE_SIZE = int(os.environ.get("C3PO_R2D2_LIVE_UNIVERSE_SIZE", "900"))
 ADV_DAYS = 20
 MIN_ADV_DAYS = 15
 FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's cost model)
@@ -74,6 +78,12 @@ NBBO_PAUSE_AFTER_FAILURE_SECONDS = 30.0  # Massive failed: the stream's quote fo
 # Massive requests in flight at once for one step's crosses. Asked one after the other (~0.7 s each from the host),
 # the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
 NBBO_PARALLEL = 32
+# owner 29/10/2026 ~17:4x BRT: "coloca o registro por faixa de spread e quanto cada faixa teria gerado de lucro/prejuízo" —
+# every signal refused by the spread limit, by band of its spread, and a shadow trade per refused name that follows the
+# same exits (no money, no slot): bought at the real ask it was refused at; marked on the last trade less half that spread
+# (no quote subscription for the shadows: the WebSocket slots go to the universe); closed at the session's close if open
+SHADOW_BANDS = (("5_8", 8.0), ("8_10", 10.0), ("gt10", math.inf))  # the refused spreads above the 5 bps limit, in bps
+SHADOW_TRADE_MAX_AGE_SECONDS = 10.0  # a shadow is marked only on a trade this recent
 NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the signal's own price is another
 # instrument's (a share-class or mapping error) or absurd: never bought on (pre-review of e8ce1f3)
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
@@ -129,12 +139,27 @@ class Tape:
             self.volume += size
 
 
+def refusal_code(payload: str | bytes) -> int | None:
+    """A feed's status frame other than 200 (EODHD answers an over-limit subscription with {"status_code": 422, "message":
+    "Symbols limit reached"} and no acknowledgement otherwise): its code, else None (a trade or a quote)."""
+    text = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else payload
+    if '"status_code"' not in text:
+        return None
+    try:
+        item = json.loads(text)
+        raw = item.get("status_code") if isinstance(item, dict) and "s" not in item else None
+        code = int(raw) if isinstance(raw, (int, str)) else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return code if code is not None and code != 200 else None
+
+
 class LiveEngineStream(EodhdRealtimeStream):
     """The EODHD stream (read-only use of the frozen module) keeping, per symbol, a ``Tape`` of the session being traded
     and the last quote with its bid and ask. Late messages never overwrite newer ones (Codex #500 P2-5): a trade older
     than the last one still counts in the VWAP but does not move the last price; an older quote is dropped."""
 
-    def __init__(self, api_token: str, *, max_symbols: int = 550) -> None:
+    def __init__(self, api_token: str, *, max_symbols: int = UNIVERSE_SIZE + 50) -> None:  # the universe and the held names
         super().__init__(api_token, max_symbols=max_symbols)
         self._view_lock = Lock()
         self.session: date | None = None
@@ -143,6 +168,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self._pending: list[tuple[str, float, float, int, float]] | None = None
         self.restored_minute: int | None = None  # the minute of a restore: earlier minutes may miss the trades of the gap
         self._groups_version = 0  # bumped by every ``set_group``: the feed loop recomputes its subscription only then
+        self._quote_symbols: frozenset[str] | None = None  # the quote feed's names (None: every grouped name, as trades)
         # how late the feed is: receipt time minus the message's own time (ms), the last message and the worst since the
         # last heartbeat, and the messages since the last heartbeat (0 = a silent feed, not a punctual one), per feed;
         # numbers only, published by the status workflow
@@ -155,6 +181,31 @@ class LiveEngineStream(EodhdRealtimeStream):
         super().set_group(name, symbols, priority=priority)
         with self._lock:
             self._groups_version += 1
+
+    def set_quote_symbols(self, symbols: Any) -> None:
+        """The names the quote feed subscribes (the held names: their exits read the bid; the entries read Massive's
+        NBBO); None = every grouped name. The trade feed keeps every grouped name. A name counts one WebSocket slot per
+        feed, so the universe can be almost twice as large on the same slots."""
+        names = None if symbols is None else frozenset(symbols)
+        with self._lock:
+            before = self._quote_symbols
+        if names is not None and before is not None:
+            # a name entering or leaving the quote feed drops its last quote BEFORE the feed resubscribes: a quote
+            # received before a gap in the subscription is never the mark of a later position (a re-buy) nor an
+            # entry's fallback (pre-review of 568737c: a phantom lock or stop on a name re-bought within ~4 s)
+            with self._view_lock:
+                for symbol in names ^ before:
+                    self.nbbo.pop(symbol, None)
+        with self._lock:
+            self._quote_symbols = names
+            self._groups_version += 1
+
+    def feed_symbols(self, feed: str) -> set[str]:
+        """The names one feed subscribes: every grouped name for trades; for quotes, only the quote names among them."""
+        with self._lock:
+            desired = set(self._desired_symbols())
+            quotes = self._quote_symbols
+        return desired & quotes if feed == "quote" and quotes is not None else desired
 
     async def _run_feed(self, feed: str, endpoint: str, recorder: Any) -> None:
         """The frozen module's feed loop, connection and errors unchanged, without its per-message bookkeeping: the module
@@ -183,7 +234,7 @@ class LiveEngineStream(EodhdRealtimeStream):
                         if version != self._groups_version:
                             with self._lock:
                                 version = self._groups_version
-                                desired = set(self._desired_symbols())
+                                desired = self.feed_symbols(feed)
                             removed = sorted(subscribed - desired)
                             added = sorted(desired - subscribed)
                             if removed:
@@ -194,6 +245,10 @@ class LiveEngineStream(EodhdRealtimeStream):
                         try:
                             payload = await asyncio.wait_for(socket.recv(), timeout=1)
                         except TimeoutError:
+                            continue
+                        refused = refusal_code(payload)
+                        if refused is not None:  # e.g. 422 "Symbols limit reached": a name of this feed was not subscribed
+                            logger.error("EODHD realtime %s refused a subscription: status %d", feed, refused)
                             continue
                         recorder(payload)
             except Exception as exc:
@@ -381,7 +436,7 @@ def previous_sessions(day: date, count: int) -> list[date]:
 
 
 def build_universe(get_json: Callable[..., Any], base_url: str, token: str, day: date, cache_dir: Path) -> list[Member]:
-    """The 550 most liquid US common stocks at the open of ``day``: 20-session mean of close × volume ≥ US$ 15 M,
+    """The UNIVERSE_SIZE most liquid US common stocks at the open of ``day``: 20-session mean of close × volume ≥ US$ 15 M,
     last close ≥ US$ 5, from EODHD's end-of-day bulk files (cached per session) and its US symbol list."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     catalog_rows = get_json(f"{base_url}/api/exchange-symbol-list/US", params={"api_token": token, "fmt": "json"}) or []
@@ -426,6 +481,24 @@ def build_universe(get_json: Callable[..., Any], base_url: str, token: str, day:
 
 
 # ------------------------------------------------------------------ the engine (pure: decisions from views)
+def shadow_band(spread_bps: float) -> str:
+    """The band of a spread refused by the limit (in bps): 5_8, 8_10, gt10."""
+    return next(name for name, upper in SHADOW_BANDS if spread_bps <= upper)
+
+
+def shadow_line(engine: "Engine") -> str:
+    """Per spread band, numbers only (published by the status workflow): signals refused, shadows closed, open and
+    positive, and the net they made in USD at the real positions' size."""
+    parts = []
+    for name, _ in SHADOW_BANDS:
+        stats = engine.state.bands.get(name) or {}
+        parts.append("%s vetoed=%d closed=%d open=%d wins=%d net_usd=%.2f" % (
+            name, int(stats.get("vetoed", 0)), int(stats.get("closed", 0)),
+            sum(1 for row in engine.state.shadow.values() if row["band"] == name), int(stats.get("wins", 0)),
+            float(stats.get("net_usd", 0.0))))
+    return "R2D2 live shadow: limit_bps=%.1f %s" % (RULE["spread_max_bps"], " ".join(parts))
+
+
 def lock_floor(peak: float) -> float:
     """The armed lock's floor: the last step the peak reached (owner 29/10, "no degrau"): +0.10% net, then every 0.05 up
     to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
@@ -476,13 +549,17 @@ class EngineState:
     candidates_fixed: bool = False  # the selection at the open happened (even when it found none)
     stream_context: dict[str, dict[str, Any]] = field(default_factory=dict)  # the tapes, for a restart
     config: str = ""  # the rule the session in the state ran under (its documents keep it when the rule changes)
+    shadow: dict[str, dict[str, Any]] = field(default_factory=dict)  # the open shadow trades (never published by name)
+    bands: dict[str, dict[str, float]] = field(default_factory=dict)  # per spread band: refused, closed, wins, net USD
+    bands_closed: dict[str, Any] = field(default_factory=dict)  # the last CLOSED session's bands: {"session", "bands"}
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
                 "positions": [asdict(position) for position in self.positions.values()], "session": self.session,
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
-                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config}
+                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config,
+                "shadow": self.shadow, "bands": self.bands, "bands_closed": self.bands_closed}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -493,7 +570,9 @@ class EngineState:
                    signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []),
                    last_signal_minute=int(data.get("last_signal_minute", -1)),
                    candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}),
-                   config=str(data.get("config") or ""))
+                   config=str(data.get("config") or ""),
+                   shadow=dict(data.get("shadow") or {}), bands=dict(data.get("bands") or {}),
+                   bands_closed=dict(data.get("bands_closed") or {}))
 
 
 class Engine:
@@ -514,6 +593,7 @@ class Engine:
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
             state.config = CONFIG
+            state.shadow, state.bands = {}, {}
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
 
@@ -583,6 +663,11 @@ class Engine:
                 reason = "t30_positive"
             if reason:
                 new.append(self._sell(position, market.bid, net, reason, moment))
+        try:
+            self._shadow_exits(now, view)
+        except Exception:  # the measurement never breaks the step (the real exits ran above, the entries run below)
+            logger.error("R2D2 live: the shadows could not be marked; the open ones are dropped")
+            self.state.shadow.clear()  # once, not an error every second (pre-review of cb42462)
         # The buy signal, checked EVERY SECOND like the exits (owner 29/10/2026: "esse cheque tem que ser por segundo e
         # não por minuto"): the last trade back above the VWAP after being below it, executed at once at the real ask.
         # Until 29/10 it was the close of each completed minute (the lab's candles): a cross the minute's close no longer
@@ -661,13 +746,53 @@ class Engine:
                 spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
                 if spread_bps > RULE["spread_max_bps"]:
                     self.skips["spread"] += 1
+                    try:
+                        self._shadow_open(symbol, ask, spread_bps, moment)
+                    except Exception:  # the measurement never breaks the step
+                        logger.error("R2D2 live: a shadow could not be opened")
                     continue
-                if source == "massive" and not (market.quote_fresh(moment) and market.bid is not None and market.ask is not None
-                                                and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4
-                                                <= RULE["spread_max_bps"]):
-                    self.sources["stream_would_refuse"] += 1  # the evidence: a buy the stream's quote alone refused
+                if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
+                        and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"]):
+                    # the evidence: a buy the stream's fresh quote alone refused (a candidate without a stream quote, the
+                    # usual case since the quote feed carries only the held names, is not counted)
+                    self.sources["stream_would_refuse"] += 1
                 new.append(self._buy(symbol, ask, gap, spread_bps, moment, source))
         return new
+
+    def _shadow_open(self, symbol: str, ask: float, spread_bps: float, moment: datetime) -> None:
+        """A signal refused by the spread limit: counted in its band, and followed as a shadow trade unless the name is
+        held or already followed."""
+        band = shadow_band(spread_bps)
+        stats = self.state.bands.setdefault(band, {"vetoed": 0, "closed": 0, "wins": 0, "net_usd": 0.0})
+        stats["vetoed"] += 1
+        if symbol in self.state.shadow or symbol in self.state.positions:
+            return
+        self.state.shadow[symbol] = {"band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"],
+                                     "peak": None, "armed": False, "last_net": None, "opened_at": moment.isoformat()}
+
+    def _shadow_close(self, symbol: str, net: float) -> None:
+        row = self.state.shadow.pop(symbol)
+        stats = self.state.bands.setdefault(row["band"], {"vetoed": 0, "closed": 0, "wins": 0, "net_usd": 0.0})
+        stats["closed"] += 1
+        stats["wins"] += 1 if net > 0 else 0
+        stats["net_usd"] += row["size_usd"] * net / 100
+
+    def _shadow_exits(self, now: datetime, view: Callable[[str], MarketView]) -> None:
+        """The same exits as a position (stop, step lock, positives sold in the last 30 s), on the last trade less half
+        the spread the shadow was refused at — an estimate of the bid (the shadows have no quote subscription)."""
+        late = now.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM
+        for symbol, row in list(self.state.shadow.items()):
+            market = view(symbol)
+            if market.price is None or market.trade_at is None or (now - market.trade_at).total_seconds() > SHADOW_TRADE_MAX_AGE_SECONDS:
+                continue
+            bid = market.price * (1 - row["spread_bps"] / 2 / 1e4)
+            net = (bid * (1 - FEE_SIDE) / (row["ask"] * (1 + FEE_SIDE)) - 1) * 100
+            row["last_net"] = net
+            row["peak"] = net if row["peak"] is None else max(row["peak"], net)
+            if net >= RULE["lock_min_percent"]:
+                row["armed"] = True
+            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"])) or (late and net > 0)):
+                self._shadow_close(symbol, net)
 
     def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream") -> dict[str, Any]:
         size = self.state.nav_realized / RULE["slots"]
@@ -698,6 +823,13 @@ class Engine:
         return fill
 
     def close_session(self) -> None:
+        for symbol, row in list(self.state.shadow.items()):  # the shadows never carry: closed at their last mark
+            if row.get("last_net") is None:
+                self.state.shadow.pop(symbol)
+            else:
+                self._shadow_close(symbol, row["last_net"])
+        # the day's final per band, kept past the next session's reset (pre-review of 65ceb97 D1)
+        self.state.bands_closed = {"session": self.day.isoformat(), "bands": json.loads(json.dumps(self.state.bands))}
         for position in self.state.positions.values():
             position.days_held += 1
         self.state.last_session = self.day.isoformat()
@@ -765,7 +897,7 @@ def save_state(database: Any, state: EngineState, now: datetime) -> None:
     # version 3 from 30/10/2026 (owner, 29/10): the stop at -0.4% and the step lock from +0.10%; version 2 (29/10
     # afternoon) was the lock trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
+        "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE},
         "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
         "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
@@ -964,6 +1096,9 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if not reconciled:
             sleep(5.0)
     engine = Engine(state, day, universe)
+    quotes_for = getattr(stream, "set_quote_symbols", None)
+    if quotes_for is not None:  # BEFORE the group: the quote feed never sees the whole universe, even for an instant
+        quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
     stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
     if getattr(stream, "session", None) == day:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
@@ -994,12 +1129,19 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         sleep(min(1.0, max(0.05, (at(OPENING_WINDOW_END) - now()).total_seconds())))
     engine.set_candidates(dict(stream.opening))
     logger.info("R2D2 live: %d candidates of %d with an opening print", len(engine.candidates), len(stream.opening))
+    # once the candidates are fixed the trade feed needs only them and the held names (fewer messages, less lag)
+    stream.set_group(STREAM_GROUP, subscription([member for member in universe if member.symbol in engine.candidates],
+                                                engine.state.positions), priority=200)
+    held = set(engine.state.positions)
     guarded(lambda: commit(now()))
     last_marks = last_lines = clock_time.monotonic()
     while now() < at(SESSION_CLOSE):
         moment = now()
         began = clock_time.monotonic()
         fills = engine.step(moment, stream.view, signal, nbbo)
+        if quotes_for is not None and set(engine.state.positions) != held:  # a buy or a sale: the quote feed follows
+            held = set(engine.state.positions)
+            quotes_for(held)
         if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
             guarded(lambda: commit(moment))
             last_marks = clock_time.monotonic()
@@ -1008,11 +1150,13 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
             logger.info("%s", heartbeat(stream, engine, moment))
             logger.info("%s", feed_line(stream, engine))
+            logger.info("%s", shadow_line(engine))
             last_lines = clock_time.monotonic()
         # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
         sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
     engine.close_session()
     guarded(lambda: commit(now()))
+    logger.info("%s", shadow_line(engine))  # the day's final per band: the T30 and the close's shadows included
     stream.set_group(STREAM_GROUP, [])
     logger.info("R2D2 live: session %s closed, NAV %.2f, %d fills, %d carried", day, engine.state.nav_realized,
                 len(engine.fills), len(engine.state.positions))
@@ -1037,7 +1181,12 @@ def status(database: Any, now: datetime) -> dict[str, Any]:
             "session_in_progress": state.get("session"), "nav_realized": state.get("nav_realized"),
             "positions": len(state.get("positions") or []), "today_config": document.get("config"),
             "today_fills": len(document.get("trades") or []), "today_cycle": document.get("cycle"),
-            "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of")}
+            "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of"),
+            "spread_bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
+                             for name, stats in (state.get("bands") or {}).items()},
+            "spread_bands_last_session": {"session": (state.get("bands_closed") or {}).get("session"),
+                                          "bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
+                                                    for name, stats in ((state.get("bands_closed") or {}).get("bands") or {}).items()}}}
 
 
 def main() -> None:
