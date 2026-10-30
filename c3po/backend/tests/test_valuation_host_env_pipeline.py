@@ -34,6 +34,7 @@ def test_the_step_reads_the_contact_from_a_secret_and_the_switches_from_variable
     assert env["CVM_OVERLAY_ENABLED"] == "${{ vars.C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_ENABLED }}"
     assert env["DECISOR_SHADOW"] == "${{ vars.C3PO_VALUATION_DECISOR_SHADOW }}"
     assert env["EARNINGS_CALENDAR_ENABLED"] == "${{ vars.C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED }}"
+    assert env["ENSEMBLE_LIVE_ENABLED"] == "${{ vars.C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED }}"
     assert env["LAB_TOKEN"] == "${{ secrets.C3PO_R2D2_LAB_TOKEN }}"
 
 
@@ -146,6 +147,14 @@ def test_the_staged_names_are_the_names_the_code_reads() -> None:
         {"EARNINGS_CALENDAR_ENABLED": "false\nC3PO_INJECTED=1"},
         {"EARNINGS_CALENDAR_ENABLED": "x\nC3PO_INJECTED=false"},
         {"EARNINGS_CALENDAR_ENABLED": "true\r"},
+        {"ENSEMBLE_LIVE_ENABLED": "1"},
+        {"ENSEMBLE_LIVE_ENABLED": "on"},
+        {"ENSEMBLE_LIVE_ENABLED": "True"},
+        {"ENSEMBLE_LIVE_ENABLED": "true "},
+        {"ENSEMBLE_LIVE_ENABLED": "true\r"},
+        {"ENSEMBLE_LIVE_ENABLED": "true\nC3PO_INJECTED=1"},
+        {"ENSEMBLE_LIVE_ENABLED": "x\nC3PO_INJECTED=true"},
+        {"ENSEMBLE_LIVE_ENABLED": "false\u2028C3PO_INJECTED=1"},
         {"LAB_TOKEN": "short"},
         {"LAB_TOKEN": "f" * 64 + "\nC3PO_INJECTED=1"},
         {"LAB_TOKEN": "f" * 64 + " "},
@@ -156,3 +165,16 @@ def test_the_staged_names_are_the_names_the_code_reads() -> None:
 def test_an_invalid_value_fails_the_deploy_before_anything_is_staged(tmp_path: Path, values: dict[str, str]) -> None:
     code, staged, stderr = _run(tmp_path, **values)
     assert code != 0 and staged == "" and "C3PO_INJECTED" not in stderr and "@" not in stderr
+
+
+@bash_missing
+@pytest.mark.parametrize("value", ["true", "false"])
+def test_the_live_ensemble_switch_is_staged_as_given_and_empty_writes_nothing(tmp_path: Path, value: str) -> None:
+    """The valuation ensemble's live producer (app/valuation_live_ensemble.py): exactly true|false, else the deploy stops."""
+    from app import valuation_env
+
+    code, staged, _ = _run(tmp_path, ENSEMBLE_LIVE_ENABLED=value, EARNINGS_CALENDAR_ENABLED="true")
+    assert code == 0 and staged.splitlines()[-2:] == ["C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED=true", f"{valuation_env.ENSEMBLE_LIVE_ENV}={value}"]
+    code, staged, _ = _run(tmp_path, ENSEMBLE_LIVE_ENABLED="")
+    assert code == 0 and valuation_env.ENSEMBLE_LIVE_ENV not in staged
+    assert f"printf '{valuation_env.ENSEMBLE_LIVE_ENV}=%s\\n'" in str(_step()["run"])
