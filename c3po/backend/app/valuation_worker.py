@@ -1,7 +1,7 @@
 import logging
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, time as wall_time, timedelta
+from datetime import date, datetime, time as wall_time, timedelta, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -58,6 +58,15 @@ PHASE_INCIDENT_KEY_PREFIX = "notification:job_failure:valuation-phase-failure:"
 # Severity by persistence: a failing night that retries is attention; the incident
 # becomes critical on the Nth consecutive failing night, or at once on a data fault.
 PHASE_FAILURE_CRITICAL_NIGHTS = 2
+# The live ensemble producer's night (valuation_live_ensemble): no attempt STARTS at or after 05:00 BRT and every attempt
+# STOPS reading by 05:30 BRT (checked before each step and each provider request, each request bounded as a whole by the
+# time left; finished sections may still be written until 05:35), so the maintenance lease and the phase's
+# ingestion run are free 30 min before cash_yield's 06:00 window and 2 h 45 before the 08:15 grid window, whose blocking
+# check refuses a chunk while a valuation_worker run is `running`; the decisor (window to 08:00) keeps 2 h 30 after it.
+# Two failed attempts a night at most (the calendar's retry-cap pattern), then the next night.
+ENSEMBLE_LIVE_LAST_START_HOUR = 5
+ENSEMBLE_LIVE_DEADLINE = timedelta(hours=5, minutes=30)
+ENSEMBLE_LIVE_MAX_FAILURES = 2
 
 
 @dataclass(frozen=True)
@@ -69,6 +78,9 @@ class OffhoursPhase:
     end_hour: int = OFFHOURS_END_HOUR
     max_failures: int | None = None  # failed attempts per scheduled night after which the phase waits for the next one
     not_before: Callable[[], datetime | None] | None = None  # an instant before which the phase must not run yet ("not yet": nothing recorded)
+    # the phase's EFFECTIVE clock, read afresh at its admission: an earlier phase of the same pass may have run long, so the
+    # pass's opening instant would admit it after its window (unset: the pass's instant, as every other phase)
+    clock: Callable[[], datetime] | None = None
 
     @property
     def advisory(self) -> bool:
@@ -104,6 +116,50 @@ def _phase_is_due(last_completed_at: datetime | None, due_at: datetime) -> bool:
     if last_completed_at.tzinfo is None:
         last_completed_at = last_completed_at.replace(tzinfo=SAO_PAULO)
     return last_completed_at.astimezone(SAO_PAULO) < due_at
+
+
+def ensemble_live_last_run_at(database: Database) -> datetime | None:
+    """The live ensemble producer is imported only when its switch schedules the phase: with it off the worker never loads it."""
+    from .valuation_live_ensemble import last_run_at
+
+    return last_run_at(database)
+
+
+def run_ensemble_live(database: Database, settings: Settings, http: JsonHttpClient, *, now: datetime | None = None,
+                      clock: Callable[[], datetime] | None = None) -> dict[str, Any]:
+    """The ``ensemble_live`` phase: tonight's due time (01:00 America/Sao_Paulo) is the ``since`` of a retry, so an exchange
+    already published tonight is skipped and only the missing one is computed again; ``ENSEMBLE_LIVE_DEADLINE`` stops it."""
+    from .valuation_live_ensemble import run_nightly
+
+    night = start_of_today((now or datetime.now(SAO_PAULO)).astimezone(SAO_PAULO))
+    return run_nightly(database, settings, http, clock=clock, since=night + timedelta(hours=OFFHOURS_START_HOUR),
+                       deadline=night + ENSEMBLE_LIVE_DEADLINE)
+
+
+def ensemble_live_not_before(database: Database, *, now: datetime, decisor_scheduled: bool,
+                             decisor_last_run_at: Callable[[], datetime | None],
+                             decisor_not_before: Callable[[], datetime | None]) -> datetime | None:
+    """The live producer never delays the decisor. The worker defers a phase and goes on with the next ones in the same
+    pass, so a decisor deferred for its calendar margin would otherwise wait for the whole live sweep. While the decisor
+    is scheduled, still due tonight, deferred (``decisor_not_before``) and not yet attempted since that instant (its
+    latest ingestion run), this phase waits until then; the worker wakes, runs the decisor first (it precedes this phase),
+    and this phase after it. Read from the decisor's own run record, not from a clock: an earlier phase that ran long in
+    the same pass cannot let this one jump ahead. A decisor that is done, not deferred or already attempted never holds it."""
+    if not decisor_scheduled:
+        return None
+    night = start_of_today(now.astimezone(SAO_PAULO))
+    if not _phase_is_due(decisor_last_run_at(), night + timedelta(hours=OFFHOURS_START_HOUR)):
+        return None
+    ready = decisor_not_before()
+    if ready is None:
+        return None
+    code = VALUATION_WORKER_PHASES["decisor_shadow"]["code"]
+    attempted = database.ingestion_run_health([code]).get(code, {}).get("started_at")
+    if isinstance(attempted, datetime):
+        attempted = attempted if attempted.tzinfo is not None else attempted.replace(tzinfo=timezone.utc)
+        if attempted >= ready:
+            return None
+    return max(ready, now + timedelta(seconds=1))
 
 
 def _result_item_count(result: Any) -> int:
@@ -261,6 +317,7 @@ def _run_recorded_phase(
     *,
     scheduled_for: datetime,
     canonical_status: str,
+    started_at: datetime | None = None,  # a clocked phase's admission instant: the run's recorded start IS that decision
 ) -> Any:
     definition = VALUATION_WORKER_PHASES[phase_key]
     metadata = {
@@ -279,6 +336,7 @@ def _run_recorded_phase(
         definition["name"],
         VALUATION_WORKER_SOURCE_TYPE,
         metadata,
+        **({"started_at": started_at} if started_at is not None else {}),
     )
     try:
         result = operation()
@@ -360,22 +418,32 @@ def run_worker_iteration(
     for phase in offhours_phases:
         phase_due_at = start_of_today(now) + timedelta(hours=phase.start_hour)
         phase_window_end = start_of_today(now) + timedelta(hours=phase.end_hour)
+        current = phase.clock() if phase.clock is not None else now
         if not _phase_is_due(phase.last_completed_at(), phase_due_at):
             continue
-        if now < phase_due_at:
+        if current < phase_due_at:
             wake_targets.append(phase_due_at)
             phase_statuses[phase.key] = "pending"
             continue
-        if now < phase_window_end:
+        if current < phase_window_end:
             if phase.max_failures is not None and database.count_ingestion_runs(
                     VALUATION_WORKER_PHASES[phase.key]["code"], "failed", scheduled_for=phase_due_at.isoformat()) >= phase.max_failures:
                 phase_statuses[phase.key] = "retry_cap"  # this night's attempts are spent: the next night tries again
                 continue
             ready_at = phase.not_before() if phase.not_before is not None else None
-            if ready_at is not None and now < ready_at:  # not yet: nothing run, nothing recorded, the worker wakes at ready_at
+            if ready_at is not None and current < ready_at:  # not yet: nothing run, nothing recorded, the worker wakes at ready_at
                 phase_statuses[phase.key] = "deferred"
                 wake_targets.append(ready_at)
                 continue
+            if phase.clock is not None:  # the reads above (last completion, failures, ready_at) may cross the window's end: a
+                current = phase.clock()  # clocked phase is admitted on a reading taken after them, window and ready_at checked again
+                if current >= phase_window_end:
+                    phase_statuses[phase.key] = "outside_window"
+                    continue
+                if ready_at is not None and current < ready_at:
+                    phase_statuses[phase.key] = "deferred"
+                    wake_targets.append(ready_at)
+                    continue
             if not phase.advisory:
                 start_worker_healthcheck()
             if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
@@ -387,6 +455,7 @@ def run_worker_iteration(
                     phase.operation,
                     scheduled_for=phase_due_at,
                     canonical_status=canonical_status,
+                    started_at=current if phase.clock is not None else None,
                 )
                 phase_statuses[phase.key] = "succeeded"
                 logger.info(
@@ -396,12 +465,12 @@ def run_worker_iteration(
                 )
                 if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                     cash_yield_healthcheck.ping("success")
-                _resolve_phase_incident(database, phase_key=phase.key, observed_at=now)
+                _resolve_phase_incident(database, phase_key=phase.key, observed_at=current)
             except Exception as exc:
                 phase_statuses[phase.key] = "failed"
                 if phase.advisory:  # recorded (its ingestion run), retried inside the window up to its cap, never paged
                     logger.warning("%s failed (advisory, not paged): %s", VALUATION_WORKER_PHASES[phase.key]["name"], type(exc).__name__)
-                    retry_at = now + OFFHOURS_RETRY_DELAY
+                    retry_at = current + OFFHOURS_RETRY_DELAY
                     if retry_at < phase_window_end:
                         wake_targets.append(retry_at)
                     continue
@@ -418,9 +487,9 @@ def run_worker_iteration(
                     phase_key=phase.key,
                     night=phase_due_at.date(),
                     error=exc,
-                    at=now,
+                    at=current,
                 )
-                retry_at = now + OFFHOURS_RETRY_DELAY
+                retry_at = current + OFFHOURS_RETRY_DELAY
                 if retry_at < phase_window_end:
                     wake_targets.append(retry_at)
             continue
@@ -567,6 +636,19 @@ def main() -> None:
             *((OffhoursPhase("decisor_shadow", lambda: decision_last_run_at(database), lambda: run_decisor_shadow(database, write=True),
                              not_before=lambda: decision_not_before(database)),)
               if valuation_env.decisor_shadow_enabled() else ()),
+            # The valuation ensemble's LIVE producer (valuation_live_ensemble): after the price series and, last of all, after every
+            # existing phase — it never delays one: it waits for a deferred decisor (ensemble_live_not_before), starts by 05:00 and
+            # stops by 05:30 BRT, two attempts a night at most. Advisory (never pages); dormant until the mesa enables it; a retry
+            # completes only the exchange still missing tonight
+            *((OffhoursPhase("ensemble_live", lambda: ensemble_live_last_run_at(database),
+                             lambda: run_ensemble_live(database, settings, market_data.http),
+                             end_hour=ENSEMBLE_LIVE_LAST_START_HOUR, max_failures=ENSEMBLE_LIVE_MAX_FAILURES,
+                             clock=lambda: datetime.now(SAO_PAULO),  # admitted on the clock of its own turn, never the pass's start
+                             not_before=lambda: ensemble_live_not_before(
+                                 database, now=datetime.now(SAO_PAULO), decisor_scheduled=valuation_env.decisor_shadow_enabled(),
+                                 decisor_last_run_at=lambda: decision_last_run_at(database),
+                                 decisor_not_before=lambda: decision_not_before(database))),)
+              if valuation_env.ensemble_live_enabled() else ()),
         )
 
     while True:

@@ -16,6 +16,7 @@ host's values in the process environment; every process reads the same names it 
 | ``C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL`` | 10 (0 to 200) | the as-filed poll's backfill |
 | ``C3PO_VALUATION_DECISOR_SHADOW`` | off | the decisor's nightly phase, its writes and the phase health |
 | ``C3PO_VALUATION_EARNINGS_CALENDAR_ENABLED`` | off | the nightly earnings-calendar phase (one EODHD call) and its health |
+| ``C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED`` | off | the nightly live ensemble producer phase (``valuation_live_ensemble``) and its health |
 
 A value that does not parse falls back to the default (a switch: off); a number outside its range is clamped into it.
 The contact is never logged or put in a ``repr``.
@@ -50,6 +51,10 @@ _TRUE = frozenset({"1", "true", "t", "yes", "y", "on"})  # the spellings pydanti
 # the B3 CVM overlay shadow: its own lines, apart from the US as-filed switches (merge-friendly)
 CVM_OVERLAY_SHADOW_ENV = "C3PO_VALUATION_CVM_FIELDWISE_OVERLAY_SHADOW"
 ENVIRONMENT_NAMES = (*ENVIRONMENT_NAMES, CVM_OVERLAY_SHADOW_ENV)
+
+# the live ensemble producer: its own lines too (merge-friendly)
+ENSEMBLE_LIVE_ENV = "C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED"
+ENVIRONMENT_NAMES = (*ENVIRONMENT_NAMES, ENSEMBLE_LIVE_ENV)
 
 
 def _switch(name: str) -> bool:
@@ -101,6 +106,14 @@ def decisor_shadow_enabled() -> bool:
     """Valuation Decisor V1 (migration 052): off by default; the nightly shadow phase records verdicts only when the mesa
     enables it."""
     return _switch(DECISOR_SHADOW_ENV)
+
+
+def ensemble_live_enabled() -> bool:
+    """The valuation ensemble's nightly LIVE producer (``valuation_live_ensemble``): off by default. On, the valuation
+    worker's ``ensemble_live`` phase computes the signed grid's primary target price for NASDAQ and NYSE from live inputs
+    and records one ``valuation_ensemble_live`` snapshot per exchange; nothing served changes and a failure never breaks
+    another phase. Off: the phase is not scheduled, nothing is fetched or written and the health card does not expect it."""
+    return _switch(ENSEMBLE_LIVE_ENV)
 
 
 def earnings_calendar_enabled() -> bool:
