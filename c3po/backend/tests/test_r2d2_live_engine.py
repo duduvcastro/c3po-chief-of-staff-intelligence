@@ -1072,18 +1072,24 @@ def test_the_session_reacts_to_each_new_quote_at_most_every_ten_milliseconds(tmp
         def take_gauges(self):
             return (0, 0, 0, 0)
 
+        calls = 0
+
         def wait_update(self, timeout):
+            Massive.calls += 1
+            assert Massive.calls < 5_000, "the loop spins: no floor between passes"  # fail, never hang
             if quotes_streaming:
                 return True  # a new quote is already there
             advance(timeout)
             return False
+
+    handed: list[datetime] = []
 
     class Writer:
         def __init__(self, write) -> None:
             pass
 
         def submit(self, session, as_of, marks) -> None:
-            pass
+            handed.append(as_of)
 
         def stop(self) -> None:
             pass
@@ -1094,6 +1100,8 @@ def test_the_session_reacts_to_each_new_quote_at_most_every_ten_milliseconds(tmp
                     cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=Massive())  # type: ignore[arg-type]
     first_second = [moment for moment in fast if steps[0] <= moment < steps[1]]
     gaps = [(b - a).total_seconds() for a, b in zip(first_second, first_second[1:])]
+    assert all(abs((b - a).total_seconds() - 1.0) < 1e-6 for a, b in zip(steps, steps[1:]))  # the full check: once a second
+    assert len([moment for moment in handed if steps[0] <= moment < steps[1]]) <= 11  # the screen's marks: ~every 0.1 s
     if quotes_streaming:
         assert len(first_second) >= 90 and all(gap >= engine_module.FAST_EXIT_MIN_SECONDS - 1e-6 for gap in gaps)
     else:  # a pass every FAST_EXIT_SECONDS; the second's last wait is cut short so the full check stays once a second

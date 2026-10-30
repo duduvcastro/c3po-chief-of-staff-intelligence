@@ -98,7 +98,7 @@ NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the sig
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
 MARKS_EVERY_SECONDS = 60.0
 # owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s" — between the full checks of a second, the held names
-# are judged this often on the NBBO Massive pushes (the stop, the lock, T30); the full check stays once a second
+# are judged at least this often on the NBBO Massive pushes (the stop, the lock, T30); the full check stays once a second
 FAST_EXIT_SECONDS = 0.1
 # owner 30/10/2026 ~14:00: "reagirmos o mais rápido possível ao valor real e atual da cotação do ticker" — a pass runs as
 # soon as Massive pushes a new quote of a held name, at most one every FAST_EXIT_MIN_SECONDS (a burst of quotes never
@@ -1564,7 +1564,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             # them arrives, at most one every FAST_EXIT_MIN_SECONDS, at least one every FAST_EXIT_SECONDS (owner 30/10)
             wait_update = getattr(massive, "wait_update", None)
             floor = FAST_EXIT_MIN_SECONDS if wait_update is not None else FAST_EXIT_SECONDS
-            last_pass = clock_time.monotonic()
+            last_pass = last_handover = clock_time.monotonic()
             while massive is not None and engine.state.positions and clock_time.monotonic() - began + floor < 1.0:
                 if wait_update is not None:
                     wait_update(max(0.0, min(FAST_EXIT_SECONDS, 1.0 - floor - (clock_time.monotonic() - began))))
@@ -1578,7 +1578,11 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
                 if instant >= at(SESSION_CLOSE):  # never a check past the close (pre-review of e1149ca5 P1)
                     break
                 fast = engine.fast_exits(instant, stream.view, massive.quote)
-                write_marks()  # the screen follows every pass (owner 30/10: "atualizada em 0,1 s"; the writer keeps the newest)
+                # the screen reads every 0.1 s: the marks are handed over on a sale or every FAST_EXIT_SECONDS, never on every
+                # pass of a burst (pre-review of 6af9107c P2: ~86 writes a second, nine in ten never read)
+                if fast or clock_time.monotonic() - last_handover >= FAST_EXIT_SECONDS:
+                    write_marks()
+                    last_handover = clock_time.monotonic()
                 if fast:
                     if set(engine.state.positions) != held:  # a sale: the quote feeds follow
                         held = set(engine.state.positions)
