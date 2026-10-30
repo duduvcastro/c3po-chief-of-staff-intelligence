@@ -413,8 +413,9 @@ def test_buys_and_exits_are_checked_every_second() -> None:
 
 
 def test_a_sale_never_buys_back_in_the_same_step() -> None:
-    """Pre-review of 81cf1ae P2-B: the stream's bid stops the position while the last trade is still above the VWAP;
-    the same step must not buy it back at Massive's ask. A new dip below the VWAP, then back above, is a new entry."""
+    """Pre-review of 81cf1ae P2-B: the bid stops the position while the last trade is still above the VWAP; the same
+    step must not buy it back at Massive's ask. A new dip below the VWAP, then back above, is a new entry. Since 30/10 the
+    stop's bid is Massive's NBBO (the exits mark on it)."""
     engine = _engine()
     engine.step(_at(10, 0), lambda s: _view(97.9, 98.0, 97.89, 97.91, _at(10, 0)) if s == "AAA" else MarketView())
     t = _at(10, 0, 1)
@@ -422,16 +423,122 @@ def test_a_sale_never_buys_back_in_the_same_step() -> None:
     t = _at(10, 0, 2)  # held, one print below the VWAP (no stop): armed for a cross
     assert engine.step(t, lambda s: _view(97.95, 98.0, 97.94, 97.96, t) if s == "AAA" else MarketView()) == []
     assert engine.below["AAA"] is True
-    t = _at(10, 0, 3)  # the stream's bid stops it while the last trade is back above the VWAP
+    t = _at(10, 0, 3)  # Massive's bid stops it while the last trade is back above the VWAP
+    stop = lambda s, now: (97.50, 97.51, now)  # noqa: E731
+    fills = engine.step(t, lambda s: _view(98.05, 98.0, 97.50, 97.51, t) if s == "AAA" else MarketView(), nbbo=stop)
+    assert [(f["side"], f["symbol"], f["price"]) for f in fills] == [("SELL", "AAA", 97.50)] and not engine.state.positions
     nbbo = lambda s, now: (98.04, 98.06, now)  # noqa: E731
-    fills = engine.step(t, lambda s: _view(98.05, 98.0, 97.50, 97.51, t) if s == "AAA" else MarketView(), nbbo=nbbo)
-    assert [(f["side"], f["symbol"]) for f in fills] == [("SELL", "AAA")] and not engine.state.positions
     t = _at(10, 0, 4)
     assert engine.step(t, lambda s: _view(98.05, 98.0, 98.04, 98.06, t) if s == "AAA" else MarketView(), nbbo=nbbo) == []
     t = _at(10, 0, 5)
     engine.step(t, lambda s: _view(97.95, 98.0, 97.94, 97.96, t) if s == "AAA" else MarketView(), nbbo=nbbo)
     t = _at(10, 0, 6)
     assert [f["side"] for f in engine.step(t, lambda s: _view(98.05, 98.0, 98.04, 98.06, t) if s == "AAA" else MarketView(), nbbo=nbbo)] == ["BUY"]
+
+
+def _bought_aaa(engine: Engine, t: datetime) -> Position:
+    """AAA bought at Massive's 98.105 ask at ``t`` (one dip, one cross)."""
+    engine.step(t - timedelta(seconds=1), lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: (98.095, 98.105, now))
+    assert [(f["side"], f["symbol"], f["price"]) for f in fills] == [("BUY", "AAA", 98.105)]
+    return engine.state.positions["AAA"]
+
+
+def _bid_at(position: Position, net: float) -> float:
+    return position.cost_usd * (1 + net / 100) / (position.shares * (1 - engine_module.FEE_SIDE))
+
+
+def test_exits_mark_on_massive_and_a_feed_bid_off_the_market_never_stops() -> None:
+    """30/10 10:36 BRT: the quote feed's bid sold ASX at -0.751% while the NBBO bid was ~0.5% higher (the minute's low
+    was above it). The NBBO prevailing at the instant decides; the feed's bid is never the price."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    t = _at(10, 0, 2)
+    feed, real = _bid_at(position, -0.75), _bid_at(position, -0.25)
+    fills = engine.step(t, lambda s: _view(98.0, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: (real, real + 0.01, now))
+    assert fills == [] and position.last_mark == real and engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0}
+    t = _at(10, 0, 3)  # the NBBO crosses the stop: sold at ITS bid
+    stop = _bid_at(position, -0.42)
+    fills = engine.step(t, lambda s: _view(98.0, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: (stop, stop + 0.01, now))
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", stop)] and "stop" in fills[0]["reason"]
+    assert fills[0]["realized_return_percent"] == pytest.approx(-0.42)
+
+
+def test_exits_a_held_name_without_a_feed_quote_is_marked_armed_and_locked_on_massive() -> None:
+    """30/10 10:43 BRT: AMD at +0.175% net on the screen, the engine's stop still -0.4% (no fresh feed quote, never
+    armed). Massive marks it every second: the lock arms at +0.10% and sells at the step's floor."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    no_quote = MarketView(price=98.2, trade_at=t, vwap=98.0)  # trades only: the quote feed has not delivered it
+    for second, net in ((2, 0.12), (3, 0.17)):
+        t = _at(10, 0, second)
+        bid = _bid_at(position, net)
+        assert engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now)) == []
+    assert position.armed and position.peak_percent == pytest.approx(0.17) and position.exit_price() == pytest.approx(_bid_at(position, 0.15))
+    t = _at(10, 0, 4)
+    bid = _bid_at(position, 0.14)
+    fills = engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now))
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", bid)] and "trava" in fills[0]["reason"]
+    assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0}
+
+
+def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_never_a_mark(monkeypatch) -> None:
+    import time as wall
+
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    t = _at(10, 0, 2)
+    stop = _bid_at(position, -0.45)
+    # Massive silent: the feed's fresh quote stands in, but its bid alone never sells — ASX 10:36: the last trade was
+    # above the stop level (the minute's low over the NBBO bid), so no sale
+    fills = engine.step(t, lambda s: _view(98.0, 98.0, stop, stop + 0.01, t) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: None)
+    assert fills == [] and engine.exit_sources == {"massive": 0, "stream": 1, "none": 0, "unconfirmed": 1}
+    t = _at(10, 0, 3)  # the fresh last trade at the stop level confirms it: sold at the feed's quoted bid
+    fills = engine.step(t, lambda s: _view(stop, 98.0, stop, stop + 0.01, t) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: None)
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", stop)] and engine.exit_sources["stream"] == 2
+    # Codex 6525240030 P2-1: a confirmed feed sale is booked at the feed's QUOTED bid, never at an estimate
+    engine = _engine()
+    position = _bought_aaa(engine, _at(10, 0, 1))
+    t = _at(10, 0, 2)
+    trade, feed = _bid_at(position, -0.45), _bid_at(position, -0.75)
+    fills = engine.step(t, lambda s: _view(trade, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: None)
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", feed)]
+    # Codex 6525240030 P2-2: Massive's NBBO of the name is the market, whatever its distance to an earlier price: a real
+    # -6% move with a 20 s old last print and a stale mark sells at its bid (a percentage filter kept the stop off)
+    engine = _engine()
+    position = _bought_aaa(engine, _at(10, 0, 1))
+    t = _at(10, 0, 2)
+    far = _bid_at(position, -6.0)
+    fills = engine.step(t, lambda s: MarketView(price=98.1, trade_at=t - timedelta(seconds=20), vwap=98.0) if s == "AAA" else MarketView(),
+                        nbbo=lambda s, now: (far, far + 0.01, now))
+    assert [(f["side"], f["price"]) for f in fills] == [("SELL", far)] and engine.exit_sources["massive"] == 1
+    engine = _engine()
+    position = _bought_aaa(engine, _at(10, 0, 1))
+    old = t - timedelta(seconds=engine_module.NBBO_EXIT_MAX_AGE_SECONDS + 1)  # a lagging Massive never hides a stop
+    assert engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
+                       nbbo=lambda s, now: (98.0, 98.01, old)) == []
+    assert engine.exit_sources == {"massive": 0, "stream": 0, "none": 1, "unconfirmed": 0}
+    assert engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
+                       nbbo=lambda s, now: (98.2, 98.1, now)) == []  # crossed: no NBBO
+    assert engine.exit_sources["none"] == 2 and position.last_mark == 98.105
+    monkeypatch.setattr(engine_module, "NBBO_EXIT_BUDGET_SECONDS", 0.3)
+
+    def slow(symbol, now):
+        wall.sleep(2.0)
+        return (98.0, 98.01, now)
+    began = wall.monotonic()
+    engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(), nbbo=slow)
+    assert wall.monotonic() - began < 0.3 + 0.5  # the exits never wait past their budget
+    assert engine.exit_sources["none"] == 3 and "AAA" in engine.state.positions
 
 
 def test_a_restored_candidate_the_universe_no_longer_lists_is_never_bought() -> None:
@@ -901,7 +1008,7 @@ def test_feed_the_lag_and_the_reasons_a_signal_did_not_buy_are_counted() -> None
 
     line = engine_module.feed_line(stream, engine)
     assert line.startswith("R2D2 live feed: trade_messages=0 quote_messages=2 trade_lag_ms=0 quote_lag_ms=")
-    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 late=0 implausible=0 nbbo massive=0 stream=3 unanswered=0 mismatch=0 stream_would_refuse=0")
+    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 late=0 implausible=0 nbbo massive=0 stream=3 unanswered=0 mismatch=0 stream_would_refuse=0 exits massive=0 stream=0 none=0 unconfirmed=0")
     assert stream.lag_max_ms == {"trade": 0, "quote": 0} and stream.messages == {"trade": 0, "quote": 0}  # per interval
     root = Path(__file__).resolve().parents[3]
     run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
@@ -1131,11 +1238,25 @@ def test_nbbo_the_massive_reader_asks_for_the_quote_prevailing_at_the_instant_an
         tries.append(clock["t"])
         raise RuntimeError("timeout for apiKey=tok")
     failing = engine_module.massive_nbbo(broken, "https://api.massive.com", "tok", monotonic=lambda: clock["t"])
-    assert failing("AAA", now) is None and tries == [100.0]
-    clock["t"] = 129.0
-    assert failing("AAA", now) is None and tries == [100.0]  # paused 30 s after a failure: the stream stands in
-    clock["t"] = 130.5
-    assert failing("AAA", now) is None and tries == [100.0, 130.5]
+    # the owner's instruction (30/10, Codex 6524471382): 3 failures in a row pause Massive for 5 s (until 30/10 one failure
+    # paused it 30 s)
+    assert failing("AAA", now) is None and failing("AAA", now) is None and tries == [100.0, 100.0]
+    assert failing("AAA", now) is None and tries == [100.0] * 3
+    clock["t"] = 104.9
+    assert failing("AAA", now) is None and tries == [100.0] * 3  # paused: the stream stands in
+    clock["t"] = 105.1
+    assert failing("AAA", now) is None and tries == [100.0] * 3 + [105.1]
+    script, seen = [RuntimeError("a"), RuntimeError("b"), {"results": []}, RuntimeError("c"), RuntimeError("d")], []
+
+    def flaky(url, params=None):
+        item = script[len(seen)]
+        seen.append(clock["t"])
+        if isinstance(item, Exception):
+            raise item
+        return item
+    reader = engine_module.massive_nbbo(flaky, "https://x", "t", monotonic=lambda: clock["t"])
+    clock["t"] = 200.0
+    assert all(reader("AAA", now) is None for _ in range(5)) and len(seen) == 5  # an answer resets the count: never paused
     for payload in ({}, {"results": []}, {"results": [{"bid_price": 0, "ask_price": 1, "sip_timestamp": 1}]},
                     {"results": [{"bid_price": 2, "ask_price": 1, "sip_timestamp": 1}]}, ["not", "a", "dict"]):
         assert engine_module.massive_nbbo(lambda url, params=None, p=payload: p, "https://x", "t")("AAA", now) is None
@@ -1298,7 +1419,8 @@ def test_nbbo_with_every_slot_taken_massive_is_not_asked() -> None:
     views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.005, t)}
     asked = []
     assert engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: asked.append(s)) == []
-    assert asked == [] and engine.skips["slots"] == 2
+    # the held names are marked on Massive (the exits); no candidate is asked with every slot taken
+    assert sorted(asked) == sorted(engine.state.positions) and engine.skips["slots"] == 2
 
 
 def test_nbbo_the_session_hands_the_reader_to_every_step_and_the_request_lines_stay_out_of_the_logs(tmp_path: Path, monkeypatch) -> None:
