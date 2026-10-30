@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 
@@ -74,7 +74,16 @@ QUOTE_MAX_AGE_SECONDS = 5.0  # the exits: a position is marked only on a quote t
 NBBO_MAX_AGE_SECONDS = 60.0
 NBBO_TIMEOUT_SECONDS = 1.5  # the WHOLE request (DeadlineJsonHttpClient), no retry
 NBBO_STEP_BUDGET_SECONDS = 3.0  # Massive time per step's entries: the exits run on this loop; past it, the stream's quote
-NBBO_PAUSE_AFTER_FAILURE_SECONDS = 30.0  # Massive failed: the stream's quote for this long, then Massive again
+# Massive failed this many times IN A ROW: not asked for NBBO_PAUSE_AFTER_FAILURE_SECONDS (the stream's quote stands in).
+# Until 30/10 one failure paused it 30 s; at that open a burst failure left 58 crosses without a quote (the quote feed
+# carries only the held names since #516) and the exits, which mark on Massive since 30/10, would fall back to the feed
+NBBO_FAILURES_BEFORE_PAUSE = 3  # the owner's instruction, 30/10 (Codex 6524471382): 3 failures in a row, a 5 s pause
+NBBO_PAUSE_AFTER_FAILURE_SECONDS = 5.0
+# the held names' marks (the exits), asked of Massive every second before the entries' own budget: 0.2 s above a
+# request's own timeout, so an answer inside it is never left for the feed
+NBBO_EXIT_BUDGET_SECONDS = 1.7
+# an exit's NBBO at most this old (the entries keep the lab's 60 s): a lagging Massive never hides a stop the market printed
+NBBO_EXIT_MAX_AGE_SECONDS = 10.0
 # Massive requests in flight at once for one step's crosses. Asked one after the other (~0.7 s each from the host),
 # the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
 NBBO_PARALLEL = 32
@@ -88,6 +97,13 @@ NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the sig
 # instrument's (a share-class or mapping error) or absurd: never bought on (pre-review of e8ce1f3)
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
 MARKS_EVERY_SECONDS = 60.0
+# owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s" — between the full checks of a second, the held names
+# are judged at least this often on the NBBO Massive pushes (the stop, the lock, T30); the full check stays once a second
+FAST_EXIT_SECONDS = 0.1
+# owner 30/10/2026 ~14:00: "reagirmos o mais rápido possível ao valor real e atual da cotação do ticker" — a pass runs as
+# soon as Massive pushes a new quote of a held name, at most one every FAST_EXIT_MIN_SECONDS (a burst of quotes never
+# spins the loop), and at least one every FAST_EXIT_SECONDS without any
+FAST_EXIT_MIN_SECONDS = 0.01
 
 
 # ------------------------------------------------------------------ the stream: last trade, last NBBO, session VWAP
@@ -589,6 +605,9 @@ class Engine:
         # where the entries' NBBO came from (Massive, the stream's fallback, Massive not answering) and how many buys the
         # stream's own quote under the old 5 s rule would have refused (this process only)
         self.sources = {"massive": 0, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 0}
+        # what each exit check of a held name marked on: Massive's NBBO, the feed's fresh quote, or nothing (this process)
+        self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
+        self.marked_moment: dict[str, datetime] = {}  # when the exits last marked each held name (the screen's marks only)
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -634,35 +653,64 @@ class Engine:
 
     def step(self, now: datetime, view: Callable[[str], MarketView],
              signal: Callable[[str], tuple[float, float] | None] | None = None,
-             nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None) -> list[dict[str, Any]]:
+             nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None,
+             pushed: Callable[[str], tuple[float, float, datetime] | None] | None = None) -> list[dict[str, Any]]:
         """``view``: the live price and quote (exits; the entries' fallback). ``signal``: (last trade, VWAP) now (the buy
         signal, ``LiveEngineStream.live_signal``); without it, the view's last price and VWAP stand in (tests). ``nbbo``:
-        (bid, ask, time) of the NBBO prevailing at the instant (Massive), or None when it does not answer."""
+        (bid, ask, time) of the NBBO prevailing at the instant (Massive), or None when it does not answer. ``pushed``: a
+        held name's last NBBO pushed by Massive's stream (``MassiveQuoteStream.quote``), or None."""
         local = now.astimezone(NEW_YORK).time()
         started_step = clock_time.monotonic()
         new: list[dict[str, Any]] = []
-        for symbol, position in list(self.state.positions.items()):
-            market = view(symbol)
-            # the effective instant, sampled after the read that may block (the view takes the stream's lock; as the
-            # entries, Codex 6499564395): the quote's freshness, the T30 rule and the sell's stamp read this one instant
-            moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
-            if not market.quote_fresh(moment):
+        # The exits mark on Massive's NBBO, as the entries buy on it (30/10/2026): the quote feed (EODHD) gave ASX a bid
+        # 0.5% under the NBBO seconds after its buy — a stop at -0.75% the market never printed (the minute's low was above
+        # the NBBO bid) — and left AMD unarmed at +0.175% net. Since the afternoon of 30/10 (owner: "já faz a troca pro
+        # stream da Massive hoje") a held name's NBBO pushed by Massive's stream is read and used at ONE instant, nothing
+        # in between: a quote that is no usable mark at that instant (too old, or the stream silent or reconnecting) sends
+        # the name down the whole chain, never a copy taken earlier (Codex 6526033042). The chain: Massive asked at once
+        # for every such name, then the feed's fresh quote, whose bid never sells alone.
+        pending: list[str] = []
+        for symbol in list(self.state.positions):
+            position = self.state.positions[symbol]
+            if pushed is None:
+                pending.append(symbol)
                 continue
-            assert market.bid is not None
-            net = position.net_percent(market.bid)
-            position.last_mark = market.bid
-            position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
-            if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
-                position.armed = True
-            reason = None
-            if net <= -RULE["stop_percent"]:
-                reason = "hard_stop"
-            elif position.armed and net <= lock_floor(position.peak_percent):
-                reason = "lock"
-            elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
-                reason = "t30_positive"
-            if reason:
-                new.append(self._sell(position, market.bid, net, reason, moment))
+            market = view(symbol)
+            quote = pushed(symbol)
+            # the effective instant, sampled after the reads that may block (the view takes the stream's lock; as the
+            # entries, Codex 6499564395): the quote's age, the T30 rule and the sell's stamp read this one instant
+            moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            if self._after_close(moment):  # a read that crossed 16:00 never marks nor sells (as the fast pass)
+                pending.clear()
+                break
+            bid = exit_bid(quote, market, position, moment)
+            if bid is None:
+                pending.append(symbol)
+                continue
+            self.exit_sources["pushed"] += 1  # Massive's NBBO, pushed: counted among "massive" too
+            fill = self._exit(position, market, moment, bid, "massive")
+            if fill is not None:
+                new.append(fill)
+        answers: dict[str, tuple[float, float, datetime]] = {}
+        if nbbo is not None and pending:
+            answers = ask_nbbo(nbbo, pending, now + timedelta(seconds=clock_time.monotonic() - started_step),
+                               budget=NBBO_EXIT_BUDGET_SECONDS)
+        for symbol in pending:
+            position = self.state.positions[symbol]
+            market = view(symbol)
+            moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            if self._after_close(moment):  # Massive's wait or a read that crossed 16:00: no mark, no sale
+                break
+            bid, source = exit_bid(answers.get(symbol), market, position, moment), "massive"
+            if bid is None:
+                if not market.quote_fresh(moment):
+                    self.exit_sources["none"] += 1
+                    continue
+                assert market.bid is not None
+                bid, source = market.bid, "stream"
+            fill = self._exit(position, market, moment, bid, source)
+            if fill is not None:
+                new.append(fill)
         try:
             self._shadow_exits(now, view)
         except Exception:  # the measurement never breaks the step (the real exits ran above, the entries run below)
@@ -807,10 +855,88 @@ class Engine:
         self.fills.append(fill)
         return fill
 
+    def _after_close(self, moment: datetime) -> bool:
+        """At or past this session's close (16:00 New York on its own date): an exit check never marks nor sells then —
+        every path samples its effective instant after its reads and asks this first (Codex 6527492839)."""
+        return moment >= datetime.combine(self.day, SESSION_CLOSE, tzinfo=NEW_YORK)
+
+    def marks(self) -> list[dict[str, Any]]:
+        """The held names as the exits last marked them, for the screen (migration 055; display only, never read back): the
+        bid, the net at that bid, the lock armed or not, the level the rule sells at and the instant of the mark."""
+        rows = []
+        for symbol, position in sorted(self.state.positions.items()):
+            if position.last_mark is None:
+                continue
+            marked = self.marked_moment.get(symbol)
+            # the level the rule sells at, as the net of a sale there: the lock's floor once armed, else the stop
+            level = lock_floor(position.peak_percent or RULE["lock_min_percent"]) if position.armed else -RULE["stop_percent"]
+            # the position's own identity (its opening, shares and cost): the screen lays a mark only on the very position
+            # it was taken of — never on a re-buy of the same ticker, nor a re-buy's mark on the sold one (Codex 6528658844)
+            rows.append({"symbol": symbol, "bid": position.last_mark, "net_percent": position.net_percent(position.last_mark),
+                         "armed": position.armed, "stop_price": position.exit_price(), "stop_percent": level,
+                         "marked_at": marked.isoformat() if marked is not None else None,
+                         # rounded exactly as the published book rounds them (Engine.document): the same position, the same
+                         # numbers (pre-review of eb72ce47)
+                         "opened_at": position.opened_at, "quantity": _rounded("quantity", position.shares),
+                         "cost_usd": _rounded("cost_usd", position.cost_usd)})
+        return rows
+
+    def fast_exits(self, now: datetime, view: Callable[[str], MarketView],
+                   pushed: Callable[[str], tuple[float, float, datetime] | None]) -> list[dict[str, Any]]:
+        """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"): every
+        held name with a usable NBBO pushed by Massive is judged on it, read and used at one instant as in ``step``; a name
+        without one waits for the next full check (Massive asked, then the feed). Never the entries, never the shadows."""
+        started = clock_time.monotonic()
+        fills: list[dict[str, Any]] = []
+        for symbol in list(self.state.positions):
+            position = self.state.positions[symbol]
+            market = view(symbol)
+            quote = pushed(symbol)
+            moment = now + timedelta(seconds=clock_time.monotonic() - started)
+            # the close checked again at the effective instant, after the reads that may block: a read that crossed
+            # 16:00 never marks nor sells (Codex 6527492839)
+            if self._after_close(moment):
+                break
+            bid = exit_bid(quote, market, position, moment)
+            if bid is None:
+                continue
+            fill = self._exit(position, market, moment, bid, "fast")
+            if fill is not None:
+                fills.append(fill)
+        return fills
+
+    def _exit(self, position: Position, market: MarketView, moment: datetime, bid: float, source: str) -> dict[str, Any] | None:
+        """One exit check of a held name on ``bid`` (``source``: "massive" for Massive's NBBO, pushed or asked; "fast" for
+        the pushed NBBO between the full checks; "stream" for the feed's quote): the mark, the peak and the arming, then a
+        sale on the stop, the lock or the T30 rule. A sale
+        on the feed's bid stands only when the name's fresh last trade confirms it (the owner, 30/10, Codex 6525745563)."""
+        self.exit_sources[source] += 1
+        net = position.net_percent(bid)
+        position.last_mark = bid
+        self.marked_moment[position.symbol] = moment
+        position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
+        if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
+            position.armed = True
+        reason = None
+        if net <= -RULE["stop_percent"]:
+            reason = "hard_stop"
+        elif position.armed and net <= lock_floor(position.peak_percent):
+            reason = "lock"
+        elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
+            reason = "t30_positive"
+        if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
+            # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at the
+            # same level, else Massive decides at the next check. A confirmed sale is booked at the feed's quoted bid,
+            # never at an estimate (Codex 6525240030 P2-1)
+            self.exit_sources["unconfirmed"] += 1
+            return None
+        return self._sell(position, bid, net, reason, moment) if reason else None
+
     def _sell(self, position: Position, bid: float, net: float, reason: str, now: datetime) -> dict[str, Any]:
         pnl = position.cost_usd * net / 100
         self.state.nav_realized += pnl
         del self.state.positions[position.symbol]
+        self.marked_moment.pop(position.symbol, None)  # a re-buy is shown from its own marks
         # a new entry needs a new dip below the VWAP, seen in a check: the same step never sells at the stream's bid and
         # buys back at once on a last trade still above the VWAP (pre-review of 81cf1ae P2-B)
         self.below[position.symbol] = False
@@ -995,6 +1121,36 @@ def plausible(quote: tuple[float, float, datetime], close: float) -> bool:
     return close > 0 and abs((bid + ask) / 2 / close - 1) <= NBBO_MAX_DEVIATION
 
 
+def exit_bid(quote: tuple[float, float, datetime] | None, market: "MarketView", position: Position,
+             moment: datetime) -> float | None:
+    """Massive's bid a held name is marked on, or None (the feed's quote stands in): a usable NBBO of that very name —
+    finite, ordered, within the screen's price bound — at most ``NBBO_EXIT_MAX_AGE_SECONDS`` old. No distance to an
+    earlier price: a percentage filter refused a real move of the name against its own stale mark and kept the stop off
+    (Codex 6525240030 P2-2); the NBBO prevailing at the instant is the market a sale meets."""
+    if quote is None:
+        return None
+    bid, ask, quoted_at = quote
+    age = (moment - quoted_at).total_seconds()
+    if (not (math.isfinite(bid) and math.isfinite(ask)) or not 0 < bid <= ask <= r2d2_lab_live.MAX_PRICE
+            or not -FUTURE_TOLERANCE_SECONDS <= age <= NBBO_EXIT_MAX_AGE_SECONDS):
+        return None
+    return bid
+
+
+def trade_confirms(position: Position, market: "MarketView", moment: datetime, reason: str) -> bool:
+    """A sale the feed's bid triggers stands only when the name's fresh last trade (at most ``QUOTE_MAX_AGE_SECONDS``
+    old) is at the same level: at or under the stop, at or under the lock's floor, or positive for the T30 rule."""
+    if (market.price is None or market.trade_at is None
+            or not -FUTURE_TOLERANCE_SECONDS <= (moment - market.trade_at).total_seconds() <= QUOTE_MAX_AGE_SECONDS):
+        return False
+    net = position.net_percent(market.price)
+    if reason == "hard_stop":
+        return net <= -RULE["stop_percent"]
+    if reason == "lock":
+        return net <= lock_floor(position.peak_percent if position.peak_percent is not None else RULE["lock_min_percent"])
+    return net > 0
+
+
 def quiet_request_logs() -> None:
     """httpx logs every request at INFO with its full URL — the Massive token is in the query: never in the logs, never a
     Sentry breadcrumb (as app/r2d2_worker.py and app/valuation_worker.py do)."""
@@ -1007,9 +1163,11 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
     """The NBBO prevailing at an instant, as the lab reads it (``lab/massive.py`` quote_at: the last quote at or before
     the instant): (bid, ask, SIP time), or None — never an exception and never an error text (the token travels in the
     query: ``main`` keeps httpx's request lines out of the logs). Share classes in Massive's spelling (EODHD BRK-B →
-    BRK.B). After a failure Massive is not asked for ``NBBO_PAUSE_AFTER_FAILURE_SECONDS``: the stream stands in."""
+    BRK.B). After ``NBBO_FAILURES_BEFORE_PAUSE`` failures in a row Massive is not asked for
+    ``NBBO_PAUSE_AFTER_FAILURE_SECONDS``: the stream stands in."""
+    from threading import Lock
     from urllib.parse import quote as quoted
-    paused_until = [0.0]
+    paused_until, failures, lock = [0.0], [0], Lock()  # one step's requests run in parallel threads
 
     def nbbo(symbol: str, now: datetime) -> tuple[float, float, datetime] | None:
         if monotonic() < paused_until[0]:
@@ -1019,10 +1177,15 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
                                params={"timestamp.lte": int(now.timestamp() * 1e9), "order": "desc", "sort": "timestamp",
                                        "limit": 1, "apiKey": token})
             row = (payload.get("results") or [None])[0] if isinstance(payload, dict) else None
-            if not isinstance(row, dict):
-                return None
         except Exception:
-            paused_until[0] = monotonic() + NBBO_PAUSE_AFTER_FAILURE_SECONDS
+            with lock:
+                failures[0] += 1
+                if failures[0] >= NBBO_FAILURES_BEFORE_PAUSE:
+                    paused_until[0], failures[0] = monotonic() + NBBO_PAUSE_AFTER_FAILURE_SECONDS, 0
+            return None
+        with lock:
+            failures[0] = 0  # Massive answered: whatever it said, it is up
+        if not isinstance(row, dict):
             return None
         try:  # an answer that is no usable NBBO is refused here, whole: the stream stands in (Codex 6478311166 P2-3)
             bid, ask, sip = float(row.get("bid_price") or 0.0), float(row.get("ask_price") or 0.0), int(row.get("sip_timestamp") or 0)
@@ -1038,12 +1201,12 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
 
 
 def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None], symbols: list[str],
-             at: datetime) -> dict[str, tuple[float, float, datetime]]:
+             at: datetime, *, budget: float | None = None) -> dict[str, tuple[float, float, datetime]]:
     """Every cross of one step asked of Massive at once (up to ``NBBO_PARALLEL`` in flight), each at ``at``: the
-    answers that came within ``NBBO_STEP_BUDGET_SECONDS`` of the first asking (starting the threads counts). One that
+    answers that came within ``budget`` (default ``NBBO_STEP_BUDGET_SECONDS``) of the first asking (starting the threads counts). One that
     has not answered by then is never waited for (its thread ends on its own request's deadline) and one that raised
     is no answer: the stream's quote stands in."""
-    deadline = clock_time.monotonic() + NBBO_STEP_BUDGET_SECONDS
+    deadline = clock_time.monotonic() + (NBBO_STEP_BUDGET_SECONDS if budget is None else budget)
     pool = ThreadPoolExecutor(max_workers=max(1, min(NBBO_PARALLEL, len(symbols))), thread_name_prefix="r2d2-nbbo")
     try:
         asked = {pool.submit(nbbo, symbol, at): symbol for symbol in symbols}
@@ -1061,6 +1224,229 @@ def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | Non
         pool.shutdown(wait=False, cancel_futures=True)
 
 
+MASSIVE_STREAM_URL = "wss://socket.massive.com/stocks"
+MASSIVE_STREAM_ALIVE_SECONDS = 2.0  # the pushed NBBO is read only while the socket delivered something this recently
+MASSIVE_STREAM_STATES = ("idle", "connecting", "connected", "error", "stopped")
+MASSIVE_STREAM_BACKOFF_SECONDS = (3.0, 60.0)  # a reconnect waits 3 s, doubling up to 60 s while it keeps failing
+# the websockets library's own logger for this socket: disabled, never a frame (the auth frame carries the key), as the
+# V2 transport does (r2d2_v2_massive_transport); main() runs at INFO today, this holds whatever the level becomes
+_MASSIVE_SOCKET_LOGGER = logging.Logger("r2d2.live.massive-quotes")
+_MASSIVE_SOCKET_LOGGER.disabled = True
+
+
+class MassiveQuoteStream:
+    """The NBBO of the held names, pushed by Massive (owner 30/10/2026: "já faz a troca pro stream da Massive hoje e
+    para o nosso servidor"). One WebSocket (the quotes channel ``Q.``) follows the names the engine holds and keeps each
+    one's last NBBO (bid, ask, SIP time) in memory; the exits read it at once instead of asking Massive every second
+    (~0.1 s late against ~0.3-0.7 s per request: the lab's ws_probe, 30/10 run 41070059948). The account allows one such
+    connection and this process holds it. The key travels only in the auth frame: never in the URL, a log or an error."""
+
+    def __init__(self, api_key: str, url: str = MASSIVE_STREAM_URL) -> None:
+        self.api_key, self.url = api_key, url
+        self._lock = Lock()
+        self._symbols: frozenset[str] = frozenset()
+        self._spelled: dict[str, str] = {}  # Massive's spelling (BRK.B) -> the engine's (EODHD's BRK-B)
+        self._version = 0
+        self._quotes: dict[str, tuple[float, float, datetime]] = {}
+        self._last_message = 0.0  # monotonic instant of the socket's last message
+        self.status = "idle"
+        self.messages = 0
+        self.lag_ms = 0
+        self.lag_max_ms = 0
+        self.reconnects = 0
+        self._stop = Event()
+        self._updated = Event()  # set by every new quote of a followed name: the exits wake on it
+        self._thread: Thread | None = None
+
+    def wait_update(self, timeout: float) -> bool:
+        """Block until a new quote of a followed name arrives (True) or ``timeout`` passes (False). A quote recorded
+        between two waits is never lost: it is stored before the signal, and the pass that follows reads it."""
+        updated = self._updated.wait(timeout)
+        self._updated.clear()
+        return updated
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = Thread(target=lambda: asyncio.run(self._run()), name="massive-quotes", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def set_symbols(self, symbols: Any) -> None:
+        """The names to follow (the held ones). A name entering or leaving drops its last NBBO first: a quote from before
+        a gap in the subscription is never the mark of a later position (as the quote feed, pre-review of 568737c)."""
+        names = frozenset(symbols)
+        with self._lock:
+            for symbol in names ^ self._symbols:
+                self._quotes.pop(symbol, None)
+            self._symbols = names
+            self._spelled = {symbol.replace("-", "."): symbol for symbol in names}
+            self._version += 1
+
+    def quote(self, symbol: str) -> tuple[float, float, datetime] | None:
+        """The name's last pushed NBBO, or None while the socket is not connected or has been silent for
+        ``MASSIVE_STREAM_ALIVE_SECONDS`` (Massive is then asked, as before)."""
+        with self._lock:
+            if self.status != "connected" or clock_time.monotonic() - self._last_message > MASSIVE_STREAM_ALIVE_SECONDS:
+                return None
+            return self._quotes.get(symbol)
+
+    def take_gauges(self) -> tuple[int, int, int, int]:
+        """(quotes recorded, last lag ms, worst lag ms, names followed) since the last call; both counts reset."""
+        with self._lock:
+            taken = self.messages, self.lag_ms, self.lag_max_ms, len(self._symbols)
+            self.messages, self.lag_max_ms = 0, 0
+        return taken
+
+    def _record(self, raw: Any) -> None:
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+        received = clock_time.time() * 1000
+        stored = False
+        with self._lock:
+            self._last_message = clock_time.monotonic()
+            for item in payload if isinstance(payload, list) else [payload]:
+                spelled = item.get("sym") if isinstance(item, dict) and item.get("ev") == "Q" else None
+                symbol = self._spelled.get(spelled) if isinstance(spelled, str) else None
+                if symbol is None:
+                    continue
+                try:
+                    bid, ask, stamp = float(item.get("bp") or 0.0), float(item.get("ap") or 0.0), float(item.get("t") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if not (math.isfinite(bid) and math.isfinite(ask) and 0 < stamp <= received + FUTURE_TOLERANCE_SECONDS * 1000):
+                    continue
+                quoted_at = datetime.fromtimestamp(stamp / 1000, tz=timezone.utc)
+                held = self._quotes.get(symbol)
+                if held is not None and held[2] > quoted_at:  # an update older than the one held never replaces it
+                    continue
+                # kept as received, even crossed or one-sided: exit_bid refuses it and the name is asked of Massive — a
+                # last good quote never outlives the market that replaced it (pre-review of 20002f04 P2-3)
+                self._quotes[symbol] = (bid, ask, quoted_at)
+                stored = True
+                self.messages += 1
+                self.lag_ms = int(received - stamp)
+                self.lag_max_ms = max(self.lag_max_ms, self.lag_ms)
+        if stored:
+            self._updated.set()
+
+    def _forget(self) -> None:
+        """Every connection starts blind: no quote and no message from before it is ever served as live (pre-review of
+        20002f04 P1-2: a reconnect inside the 5 s window re-served the pre-drop quotes)."""
+        with self._lock:
+            self._quotes.clear()
+            self._last_message = 0.0
+
+    async def _run(self) -> None:
+        backoff = MASSIVE_STREAM_BACKOFF_SECONDS[0]
+        while not self._stop.is_set():
+            self.status = "connecting"
+            self._forget()
+            try:
+                async with websockets.connect(self.url, ping_interval=20, ping_timeout=20, close_timeout=2,
+                                              max_size=4_000_000, logger=_MASSIVE_SOCKET_LOGGER) as socket:
+                    await asyncio.wait_for(socket.recv(), timeout=10)  # the server's "connected" status
+                    await asyncio.wait_for(socket.send(json.dumps({"action": "auth", "params": self.api_key})), timeout=2)
+                    answer = json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
+                    if not any(isinstance(item, dict) and item.get("status") == "auth_success"
+                               for item in (answer if isinstance(answer, list) else [answer])):
+                        raise PermissionError("not authorized")
+                    self.status = "connected"
+                    backoff = MASSIVE_STREAM_BACKOFF_SECONDS[0]
+                    subscribed: set[str] = set()
+                    version = -1  # a new connection subscribes from scratch
+                    while not self._stop.is_set():
+                        if version != self._version:
+                            with self._lock:
+                                version, desired = self._version, {symbol.replace("-", ".") for symbol in self._symbols}
+                            removed, added = sorted(subscribed - desired), sorted(desired - subscribed)
+                            if removed:
+                                await asyncio.wait_for(socket.send(json.dumps(
+                                    {"action": "unsubscribe", "params": ",".join("Q." + name for name in removed)})), timeout=2)
+                            if added:
+                                await asyncio.wait_for(socket.send(json.dumps(
+                                    {"action": "subscribe", "params": ",".join("Q." + name for name in added)})), timeout=2)
+                            subscribed = desired
+                        try:
+                            raw = await asyncio.wait_for(socket.recv(), timeout=1)
+                        except TimeoutError:
+                            continue
+                        self._record(raw)
+            except Exception as exc:  # the type only: a server's or a library's text never reaches the logs
+                if self._stop.is_set():
+                    break
+                self._forget()
+                self.status = "error"
+                self.reconnects += 1
+                logger.warning("Massive stream reconnect: %s", type(exc).__name__)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, MASSIVE_STREAM_BACKOFF_SECONDS[1])
+        self._forget()
+        self.status = "stopped"
+
+
+def massive_line(massive: MassiveQuoteStream, engine: "Engine") -> str:
+    """The pushed NBBO's health, numbers and a closed set of states only (published by the status workflow)."""
+    quotes, lag, worst, names = massive.take_gauges()
+    return ("R2D2 live massive: state=%s symbols=%d quotes=%d lag_ms=%d lag_max_ms=%d pushed=%d fast=%d reconnects=%d"
+            % (massive.status if massive.status in MASSIVE_STREAM_STATES else "other", names, quotes, lag, worst,
+               engine.exit_sources["pushed"], engine.exit_sources["fast"], massive.reconnects))
+
+
+MARKS_RETRY_SECONDS = 5.0  # after a failed write of the screen's marks, the writer waits this long before the next one
+
+
+class MarksWriter:
+    """The screen's marks written OFF the exits' loop (pre-review of 62bdbd3b P1-2: the loop waited on a database commit
+    up to ten times a second): the loop only hands over its latest marks; one thread writes the newest it holds — never a
+    queue — and after a failure waits MARKS_RETRY_SECONDS. A failure is logged once, and its recovery once."""
+
+    def __init__(self, write: Callable[[str, datetime, list[dict[str, Any]]], Any]) -> None:
+        self._write = write
+        self._lock = Lock()
+        self._latest: tuple[str, datetime, list[dict[str, Any]]] | None = None
+        self._ready, self._stop = Event(), Event()
+        self.failures = 0
+        self._thread = Thread(target=self._run, name="r2d2-live-marks", daemon=True)
+        self._thread.start()
+
+    def submit(self, session: str, as_of: datetime, marks: list[dict[str, Any]]) -> None:
+        with self._lock:
+            self._latest = (session, as_of, marks)
+        self._ready.set()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._ready.set()
+
+    def _run(self) -> None:
+        failing = False
+        while not self._stop.is_set():
+            self._ready.wait()
+            self._ready.clear()
+            with self._lock:
+                latest, self._latest = self._latest, None
+            if latest is None or self._stop.is_set():
+                continue
+            try:
+                self._write(*latest)
+            except Exception:  # noqa: BLE001 - display only: the exits never depend on it
+                self.failures += 1
+                if not failing:
+                    logger.error("R2D2 live: the screen's marks could not be written")
+                failing = True
+                self._stop.wait(MARKS_RETRY_SECONDS)
+                continue
+            if failing:
+                logger.info("R2D2 live: the screen's marks are written again")
+            failing = False
+
+
 def feed_line(stream: Any, engine: "Engine") -> str:
     """How late the feed is and why signals did not buy: numbers only (published by the status workflow). Resets the
     worst lag of the interval."""
@@ -1069,17 +1455,20 @@ def feed_line(stream: Any, engine: "Engine") -> str:
     skips, sources = engine.skips, engine.sources
     return ("R2D2 live feed: trade_messages=%d quote_messages=%d trade_lag_ms=%d quote_lag_ms=%d trade_lag_max_ms=%d "
             "quote_lag_max_ms=%d skips held=%d slots=%d noquote=%d stale=%d spread=%d late=%d implausible=%d "
-            "nbbo massive=%d stream=%d unanswered=%d mismatch=%d stream_would_refuse=%d"
+            "nbbo massive=%d stream=%d unanswered=%d mismatch=%d stream_would_refuse=%d exits massive=%d stream=%d none=%d unconfirmed=%d"
             % (int(count.get("trade", 0)), int(count.get("quote", 0)), int(lag.get("trade", 0)), int(lag.get("quote", 0)),
                int(worst.get("trade", 0)), int(worst.get("quote", 0)),
                skips["held"], skips["slots"], skips["noquote"], skips["stale"], skips["spread"], skips["late"], skips["implausible"],
-               sources["massive"], sources["stream"], sources["unanswered"], sources["mismatch"], sources["stream_would_refuse"]))
+               sources["massive"], sources["stream"], sources["unanswered"], sources["mismatch"], sources["stream_would_refuse"],
+               engine.exit_sources["massive"], engine.exit_sources["stream"], engine.exit_sources["none"],
+               engine.exit_sources["unconfirmed"]))
 
 
 def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[..., Any], base_url: str, token: str,
                 day: date, cache_dir: Path, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                 sleep: Callable[[float], None] = clock_time.sleep, job: Callable[[], Any] | None = None,
-                nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None) -> EngineState:
+                nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None,
+                massive: MassiveQuoteStream | None = None) -> EngineState:
     """One session, from the universe before the open to the close. Every database write goes through ``job`` (the
     host's maintenance gate) when given."""
     def guarded(action: Callable[[], Any]) -> Any:
@@ -1099,6 +1488,8 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     quotes_for = getattr(stream, "set_quote_symbols", None)
     if quotes_for is not None:  # BEFORE the group: the quote feed never sees the whole universe, even for an instant
         quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
+    if massive is not None:
+        massive.set_symbols(set(state.positions))  # Massive's pushed NBBO: the held names (the exits)
     stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
     if getattr(stream, "session", None) == day:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
@@ -1135,26 +1526,79 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     held = set(engine.state.positions)
     guarded(lambda: commit(now()))
     last_marks = last_lines = clock_time.monotonic()
-    while now() < at(SESSION_CLOSE):
-        moment = now()
-        began = clock_time.monotonic()
-        fills = engine.step(moment, stream.view, signal, nbbo)
-        if quotes_for is not None and set(engine.state.positions) != held:  # a buy or a sale: the quote feed follows
-            held = set(engine.state.positions)
-            quotes_for(held)
-        if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
-            guarded(lambda: commit(moment))
-            last_marks = clock_time.monotonic()
-        # the heartbeat and the feed line on their own clock: with entries checked every second fills come often, and
-        # the skip and Massive counts must still come every minute
-        if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
-            logger.info("%s", heartbeat(stream, engine, moment))
-            logger.info("%s", feed_line(stream, engine))
-            logger.info("%s", shadow_line(engine))
-            last_lines = clock_time.monotonic()
-        # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
-        sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
+    marks_writer = MarksWriter(lambda session, as_of, marks: guarded(lambda: database.save_r2d2_live_marks(session, as_of, marks)))
+
+    def write_marks() -> None:
+        """The engine's marks for the screen (owner 30/10: the screen shows what the robot decides on, every 0.1 s),
+        handed to the writer stamped with the instant of the hand-over. Display only: the loop never waits on it, and a
+        hand-over that fails never ends the session."""
+        try:
+            marks_writer.submit(day.isoformat(), now(), engine.marks())
+        except Exception:  # noqa: BLE001 - display only
+            logger.exception("R2D2 live: the screen's marks could not be handed over")
+    try:
+        while now() < at(SESSION_CLOSE):
+            moment = now()
+            began = clock_time.monotonic()
+            fills = engine.step(moment, stream.view, signal, nbbo, pushed=massive.quote if massive is not None else None)
+            if set(engine.state.positions) != held:  # a buy or a sale: the quote feeds follow
+                held = set(engine.state.positions)
+                if quotes_for is not None:
+                    quotes_for(held)
+                if massive is not None:
+                    massive.set_symbols(held)
+            if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
+                guarded(lambda: commit(moment))
+                last_marks = clock_time.monotonic()
+            write_marks()
+            # the heartbeat and the feed line on their own clock: with entries checked every second fills come often, and
+            # the skip and Massive counts must still come every minute
+            if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
+                logger.info("%s", heartbeat(stream, engine, moment))
+                logger.info("%s", feed_line(stream, engine))
+                logger.info("%s", shadow_line(engine))
+                if massive is not None:
+                    logger.info("%s", massive_line(massive, engine))
+                last_lines = clock_time.monotonic()
+            # between the full checks, the held names on Massive's pushed NBBO: a pass as soon as a new quote of one of
+            # them arrives, at most one every FAST_EXIT_MIN_SECONDS, at least one every FAST_EXIT_SECONDS (owner 30/10)
+            wait_update = getattr(massive, "wait_update", None)
+            floor = FAST_EXIT_MIN_SECONDS if wait_update is not None else FAST_EXIT_SECONDS
+            last_pass = last_handover = clock_time.monotonic()
+            while massive is not None and engine.state.positions and clock_time.monotonic() - began + floor < 1.0:
+                if wait_update is not None:
+                    wait_update(max(0.0, min(FAST_EXIT_SECONDS, 1.0 - floor - (clock_time.monotonic() - began))))
+                    gap = FAST_EXIT_MIN_SECONDS - (clock_time.monotonic() - last_pass)
+                    if gap > 0:  # a burst of quotes: one pass every FAST_EXIT_MIN_SECONDS at most
+                        sleep(gap)
+                else:
+                    sleep(FAST_EXIT_SECONDS)
+                last_pass = clock_time.monotonic()
+                instant = now()
+                if instant >= at(SESSION_CLOSE):  # never a check past the close (pre-review of e1149ca5 P1)
+                    break
+                fast = engine.fast_exits(instant, stream.view, massive.quote)
+                # the screen reads every 0.1 s: the marks are handed over on a sale or every FAST_EXIT_SECONDS, never on every
+                # pass of a burst (pre-review of 6af9107c P2: ~86 writes a second, nine in ten never read)
+                if fast or clock_time.monotonic() - last_handover >= FAST_EXIT_SECONDS:
+                    write_marks()
+                    last_handover = clock_time.monotonic()
+                if fast:
+                    if set(engine.state.positions) != held:  # a sale: the quote feeds follow
+                        held = set(engine.state.positions)
+                        if quotes_for is not None:
+                            quotes_for(held)
+                        massive.set_symbols(held)
+                    stamp = now()
+                    guarded(lambda: commit(stamp))
+                    last_marks = clock_time.monotonic()
+            # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
+            sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
+    finally:
+        marks_writer.stop()
     engine.close_session()
+    if massive is not None:
+        massive.set_symbols(())  # nothing held is followed past the close
     guarded(lambda: commit(now()))
     logger.info("%s", shadow_line(engine))  # the day's final per band: the T30 and the close's shadows included
     stream.set_group(STREAM_GROUP, [])
@@ -1215,6 +1659,9 @@ def main() -> None:
                          settings.massive_api_token) if settings.massive_api_token else None)
     stream = LiveEngineStream(settings.eodhd_api_token)
     stream.start()
+    massive = MassiveQuoteStream(settings.massive_api_token) if settings.massive_api_token else None
+    if massive is not None:
+        massive.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))
     base_url = settings.eodhd_base_url.rstrip("/")
     while True:
@@ -1232,7 +1679,7 @@ def main() -> None:
             continue
         try:
             run_session(stream=stream, database=database, get_json=http.get_json, base_url=base_url,
-                        token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo)
+                        token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo, massive=massive)
         except Exception:
             logger.exception("R2D2 live: the session failed")
             clock_time.sleep(60)

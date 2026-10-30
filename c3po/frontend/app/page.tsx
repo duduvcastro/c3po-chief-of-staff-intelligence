@@ -343,6 +343,7 @@ interface R2D2DashboardData {
     estimated_exit_return_percent: number;
     allocation_percent: number;
     stop_price_local: number;
+    stop_lock_percent?: number | null;
     technical_score: number;
     trend_state: string;
     volume_state: string;
@@ -1328,6 +1329,13 @@ type PanelPollingOptions = {
   marketOpen: boolean | null;
 };
 
+// The STOP column's colour (owner 30/10/2026): red while the level is the stop (negative), green from the lock's first
+// step (+0.10%), blue once the lock has climbed past it.
+function stopLockClass(level: number): string {
+  if (level < 0) return "negative";
+  return level > 0.10 + 1e-9 ? "stop-lock-above" : "positive";
+}
+
 /**
  * Panel polling policy (C3PO_CPU_RELIEF_V1, PR B):
  * - market open + tab visible: `openMs`;
@@ -1341,7 +1349,7 @@ function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = 
   const hasLoadedRef = useRef(false);
 
   useEffect(() => {
-    const intervalMs = marketOpen === false ? Math.max(closedMs, MARKET_CLOSED_POLL_MS) : Math.max(250, openMs);
+    const intervalMs = marketOpen === false ? Math.max(closedMs, MARKET_CLOSED_POLL_MS) : Math.max(100, openMs);
     // `active` is the lifecycle guard: once the effect is cleaned up (unmount or option
     // change) nothing in this closure may schedule again — not even a fetch that was in
     // flight when the cleanup ran (audited on #373: ghost polling).
@@ -1388,7 +1396,7 @@ function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = 
   }, [openMs, closedMs, marketOpen]);
 }
 
-function useR2D2LivePositions() {
+function useR2D2LivePositions({ fast = false }: { fast?: boolean } = {}) {
   const [telemetry, setTelemetry] = useState<R2D2LivePositionsData | null>(null);
   const requestInFlight = useRef(false);
   const mountedRef = useRef(true);
@@ -1423,7 +1431,9 @@ function useR2D2LivePositions() {
   }, []);
 
   usePanelPolling(load, {
-    openMs: Math.max(1_000, (telemetry?.refresh_seconds ?? 1) * 1_000),
+    // 0.1 s on the R2D2 page during the live session (owner 30/10/2026); every other view keeps 1 s (each request
+    // pays the login check's database work: C3PO_CPU_RELIEF_V1)
+    openMs: fast ? Math.max(100, (telemetry?.refresh_seconds ?? 1) * 1_000) : Math.max(1_000, (telemetry?.refresh_seconds ?? 1) * 1_000),
     marketOpen: telemetry?.market_session_open ?? null
   });
 
@@ -3881,7 +3891,7 @@ function LeahCloudView({ session }: { session: AuthSession }) {
 
 function R2D2RisingView() {
   const [data, setData] = useState<R2D2DashboardData | null>(null);
-  const liveTelemetry = useR2D2LivePositions();
+  const liveTelemetry = useR2D2LivePositions({ fast: true });
   const [error, setError] = useState("");
   const requestInFlight = useRef(false);
   const [hoveredAllocation, setHoveredAllocation] = useState<{
@@ -3935,15 +3945,6 @@ function R2D2RisingView() {
   const signedMoney = (value: number) => `${value >= 0 ? "+" : "-"}${money(Math.abs(value))}`;
   const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
   const signedPositionPercent = (returnPercent: number, pnlUsd: number) => `${pnlUsd >= 0 ? "+" : "-"}${formatPositionPercentMagnitude(returnPercent)}%`;
-  const defenseState = (position: R2D2DashboardData["positions"][number]) => {
-    const labels = position.technical_defense_reviews > 0
-      ? [`DEFENSE ARMED`, `STREAK ${position.technical_defense_reviews}`]
-      : [`DEFENSE ${position.technical_defense_severity.toUpperCase()}`];
-    if (position.technical_defense_reductions > 0) {
-      labels.push(`${position.technical_defense_reductions} CUT${position.technical_defense_reductions === 1 ? "" : "S"}`);
-    }
-    return labels.join(" · ");
-  };
   const positions = liveTelemetry?.positions ?? data.positions;
   const positionFeedUpdatedAt = liveTelemetry?.generated_at ?? data.generated_at;
   // Owner, 26/10/2026: posted cash interest is money, available for trading. Until the ledger credits it into the
@@ -4240,7 +4241,7 @@ function R2D2RisingView() {
         <PanelHeader title="Virtual Positions" icon={WalletCards} />
         <div className="r2d2-ledger-updated">API UPDATED {new Date(positionFeedUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
         <div className="r2d2-ledger-head">
-          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
+          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span title="The rule's level in force, as the net of a sale there: red the stop (−0.40%), green the lock's first step (+0.10%), blue a higher step">Stop</span>
         </div>
         {positions.length ? positions.map((position) => (
           <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>
@@ -4250,7 +4251,10 @@ function R2D2RisingView() {
             </div>
             <span className="r2d2-last-price" data-label="Price">{formatCurrency(position.last_price_local, position.currency)}</span>
             <span data-label="Allocation">{position.allocation_percent.toFixed(1)}%</span>
-            <strong className="r2d2-position-value" data-label="Position value">{moneyExact(position.market_value_usd)}</strong>
+            <div className="r2d2-position-value-cell" data-label="Position value">
+              <span className="r2d2-position-value">{moneyExact(position.market_value_usd)}</span>
+              <small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small>
+            </div>
             <div className="r2d2-live-pnl" data-label="Price mark">
               <strong className={position.mark_pnl_usd >= 0 ? "positive" : "negative"}>{signedPositionPercent(position.mark_return_percent, position.mark_pnl_usd)}</strong>
               <span className={position.mark_pnl_usd >= 0 ? "positive" : "negative"}>
@@ -4280,18 +4284,12 @@ function R2D2RisingView() {
               <div data-label="Technical"><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
               <div data-label="Trend / flow"><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
             </>}
-            <span data-label="Stop">{formatCurrency(position.stop_price_local, position.currency)}</span>
-            <div data-label="Decision">
-              <strong>{position.decision_state}</strong>
-              <small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small>
-              {(position.technical_defense_reviews > 0 || position.technical_defense_reductions > 0 || position.technical_defense_severity !== "healthy") && (
-                <small
-                  className="r2d2-defense-status"
-                  title={position.technical_defense_drivers.join("; ") || "Technical defense active"}
-                >
-                  {defenseState(position)}
-                </small>
-              )}
+            <div className="r2d2-stop-cell" data-label="Stop">
+              {typeof position.stop_lock_percent === "number" ? (
+                <strong className={stopLockClass(position.stop_lock_percent)}>
+                  {`${position.stop_lock_percent >= 0 ? "+" : ""}${position.stop_lock_percent.toFixed(2)}%`}
+                </strong>
+              ) : <strong>—</strong>}
             </div>
           </div>
         )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No open positions</strong><span>{data.book_source === "lab_live" ? "R2D2 live holds no stock right now; every buy appears here and in the Daily Buy / Sell Log." : "The R2D2 V2 book is paused. Today\u2019s live lab fills appear in the Daily Buy / Sell Log."}</span></div></div>}

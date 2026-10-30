@@ -824,6 +824,7 @@ class R2D2Position(BaseModel):
     estimated_exit_return_percent: float
     allocation_percent: float
     stop_price_local: float
+    stop_lock_percent: float | None = None  # the net of a sale at the level the rule sells at (the lab-live book)
     technical_score: float = Field(default=0, ge=0, le=100)
     trend_state: str = "pending"
     volume_state: str = "pending"
@@ -846,7 +847,7 @@ class R2D2Position(BaseModel):
 
 class R2D2LivePositionsResponse(BaseModel):
     generated_at: datetime
-    refresh_seconds: int = Field(default=1, ge=1)
+    refresh_seconds: float = Field(default=1, gt=0)  # 0.1 during the live R2D2 session (owner 30/10/2026)
     market_session_open: bool = True
     nav_usd: float
     cash_usd: float
