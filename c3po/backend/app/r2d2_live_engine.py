@@ -159,7 +159,7 @@ class LiveEngineStream(EodhdRealtimeStream):
     and the last quote with its bid and ask. Late messages never overwrite newer ones (Codex #500 P2-5): a trade older
     than the last one still counts in the VWAP but does not move the last price; an older quote is dropped."""
 
-    def __init__(self, api_token: str, *, max_symbols: int = 550) -> None:
+    def __init__(self, api_token: str, *, max_symbols: int = UNIVERSE_SIZE + 50) -> None:  # the universe and the held names
         super().__init__(api_token, max_symbols=max_symbols)
         self._view_lock = Lock()
         self.session: date | None = None
@@ -1213,7 +1213,7 @@ def main() -> None:
     # the entries' NBBO (Massive, as the lab measured it): a short timeout and no retry — the exits wait on this loop
     nbbo = (massive_nbbo(DeadlineJsonHttpClient(timeout=NBBO_TIMEOUT_SECONDS).get_json, settings.massive_base_url,
                          settings.massive_api_token) if settings.massive_api_token else None)
-    stream = LiveEngineStream(settings.eodhd_api_token, max_symbols=UNIVERSE_SIZE + 50)
+    stream = LiveEngineStream(settings.eodhd_api_token)
     stream.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))
     base_url = settings.eodhd_base_url.rstrip("/")
