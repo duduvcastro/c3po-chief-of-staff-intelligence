@@ -385,7 +385,7 @@ jobs:
                     + "; único bloqueio (linhas que só esse código segura): "
                     + (", ".join(f"{name} {n}" for name, n in sorted(decisor["sole_blocker"].items(), key=lambda item: (-item[1], item[0])))
                        or "nenhum")]
-          words = {"failed": "falhou", "running": "em execução", "pending": "nunca rodou", "stale": "não rodou neste ciclo"}
+          words = {"failed": "falhou", "running": "em execução", "pending": "sem sucesso registrado", "stale": "sem sucesso neste ciclo"}
           phases = report["diagnostics"]["valuation_phases"]
           behind = [f"{item['phase']} {words[item['state']]}" + (" (consultiva)" if item["advisory"] else "")
                     for item in phases["phases"] if item["state"] != "ok"]

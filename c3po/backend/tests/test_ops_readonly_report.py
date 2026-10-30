@@ -208,7 +208,7 @@ def test_the_valuation_phases_name_each_enabled_phase_in_closed_words(tmp_path: 
     verified = _verify(tmp_path, json.dumps(report))
     assert verified.returncode == 0, verified.stderr
     summary = (tmp_path / "verify" / "ops-readonly-report" / "summary.md").read_text(encoding="utf-8")
-    assert ("- Fases do worker do Valuation: chewie nunca rodou; ensemble_live falhou (consultiva); shadow não rodou neste ciclo; "
+    assert ("- Fases do worker do Valuation: chewie sem sucesso registrado; ensemble_live falhou (consultiva); shadow sem sucesso neste ciclo; "
             "v3_shadow em execução; em dia 3") in summary
     assert SYMBOL not in summary and "boom" not in summary
 
@@ -333,12 +333,12 @@ def test_the_workflow_verifier_accepts_the_cli_output_posts_once_per_run_and_tur
     assert comment[0] == "<!-- c3po-ops-readonly-report:2026-10-20:0830 -->"
     red_cards = [card for card in json.loads(out)["health"]["cards"] if card["status"] == "offline"]
     assert comment[1].startswith(f"**Relatório read-only 20/10/2026 08:00 BRT** — cartões de saúde vermelhos {len(red_cards)}, âmbar ")
-    phases = "; ".join(f"{item['phase']} nunca rodou" + (" (consultiva)" if item["advisory"] else "")
+    phases = "; ".join(f"{item['phase']} sem sucesso registrado" + (" (consultiva)" if item["advisory"] else "")
                        for item in json.loads(out)["diagnostics"]["valuation_phases"]["phases"])  # an empty test host: no phase ran
     assert [line for line in comment if line.startswith("- [vermelho]")] == [
         f"- [vermelho] cartão `{card['group']}/{card['card']}`" + (f" — {phases}" if card["card"] == "valuation_worker_phases" else "")
         for card in red_cards]
-    assert "- [vermelho] cartão `controls/valuation_worker_phases` — canonical nunca rodou; chewie nunca rodou;" in "\n".join(comment)
+    assert "- [vermelho] cartão `controls/valuation_worker_phases` — canonical sem sucesso registrado; chewie sem sucesso registrado;" in "\n".join(comment)
     assert "incidentes ativos 4 (1 críticos, 2 há mais de 24 h); ingestões presas há mais de 30 min: 1" in comment[1]
     assert "- [vermelho] cartão `governance/operational_incidents`" in comment
     assert "- [crítico] 1 incidente(s) crítico(s) aberto(s)" in comment
