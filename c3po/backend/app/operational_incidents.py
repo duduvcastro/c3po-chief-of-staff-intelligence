@@ -168,7 +168,7 @@ class OperationalIncidentService:
 # AGGREGATES ONLY. Every string it prints comes from a closed vocabulary below: no incident key, title,
 # detail, evidence, actor, card name or card detail ever leaves the process (they may name a symbol or a
 # person). The runner re-verifies the exact schema before anything is uploaded or posted.
-REPORT_SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v3"  # v2: + stale_running_ingestion; v3: + diagnostics
+REPORT_SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v4"  # v2: + stale_running_ingestion; v3: + diagnostics; v4: + diagnostics.valuation_phases
 READ_ONLY_PGOPTION = "-c default_transaction_read_only=on"
 GOVERNANCE_INCIDENT_KIND = "governance-vulnerability"  # governance_vulnerability.GOVERNANCE_INCIDENT_KEY (no import: cycle)
 NOTIFICATION_KINDS = ("job_failure", "disk_threshold")
@@ -217,6 +217,11 @@ GRACE_REASONS = (
     "active", "status_not_attention", "layer_not_healthy", "routine_not_waiting", "npm_findings", "blockers_not_post_deploy",
     "pending_mismatch", "revision_mismatch", "anchor_invalid", "deployed_at_invalid", "expired", "missing", "other",
 )
+# The Valuation worker phases (valuation_worker_contract.VALUATION_WORKER_PHASES, fixed identifiers) and the state the health
+# card reads for each one (SystemHealthService._valuation_phase_state): which phase turned the card amber or red.
+VALUATION_PHASES = ("canonical", "chewie", "v2_data", "shadow", "peer_quality", "v3_shadow", "cash_yield", "price_history",
+                    "earnings_calendar", "decisor_shadow", "ensemble_live", "other")
+VALUATION_PHASE_STATES = ("ok", "failed", "running", "pending", "stale")
 
 
 def job_failure_family(incident_key: str) -> str:
@@ -335,6 +340,23 @@ def diagnostics(database: Database, now: datetime | None = None) -> dict[str, An
     return {"job_failure_families": {family: count for family, count in families.items() if count},
             "governance": governance_diagnostics(database),
             "decisor": decisor_diagnostics(database, now or datetime.now(timezone.utc))}
+
+
+def valuation_phase_diagnostics(settings: Settings, database: Database, now: datetime) -> dict[str, Any]:
+    """Each enabled Valuation worker phase's state as the health card classifies it, in closed words only: the phase
+    identifier, the state and whether it is advisory (never the error text, which may name a symbol)."""
+    from .system_health import SystemHealthService  # lazy: system_health → governance_vulnerability → this module
+
+    service = SystemHealthService(settings, database, None, None, None, None, external_get=_refuse_network)
+    try:
+        states = service.valuation_worker_phase_states(now)
+    except Exception:  # noqa: BLE001 - a diagnostic never breaks the report; the status says it failed
+        return {"status": "error", "phases": []}
+    phases = [{"phase": _closed(item.get("phase"), VALUATION_PHASES), "state": _closed(item.get("state"), VALUATION_PHASE_STATES),
+               "advisory": item.get("advisory") is True} for item in states]
+    if any(item["state"] == "other" for item in phases):  # the classification has five words; a sixth is a defect, not a state
+        return {"status": "error", "phases": []}
+    return {"status": "ok", "phases": phases}
 
 
 def force_read_only_session(environ: MutableMapping[str, str] | None = None) -> str:
@@ -469,7 +491,8 @@ def incidents_report(settings: Settings, database: Database, now: datetime | Non
         "incidents": incidents_aggregate(database, moment),
         "health": health_cards(settings, database, moment),
         "stale_running_ingestion": stale_running_ingestion(database, moment),
-        "diagnostics": diagnostics(database, moment),
+        "diagnostics": {**diagnostics(database, moment),
+                        "valuation_phases": valuation_phase_diagnostics(settings, database, moment)},
     }
     report["report_sha256"] = report_sha256(report)
     return report

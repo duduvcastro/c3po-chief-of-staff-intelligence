@@ -1408,7 +1408,8 @@ class SystemHealthService:
             },
         )
 
-    def _valuation_worker_phase_health(self, now: datetime) -> IntegrationHealth:
+    def _valuation_worker_phase_plan(self, now: datetime) -> tuple[dict[str, dict[str, str]], dict[str, datetime], datetime]:
+        """The ENABLED phases, the instant each one's last success must reach for the current cycle, and the fallback instant."""
         definitions = {
             phase: definition
             for phase, definition in VALUATION_WORKER_PHASES.items()
@@ -1418,6 +1419,56 @@ class SystemHealthService:
             and (phase != "earnings_calendar" or valuation_env.earnings_calendar_enabled())
             and (phase != "ensemble_live" or valuation_env.ensemble_live_enabled())
         }
+        local_now = now.astimezone(SAO_PAULO)
+        midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        offhours_due = midnight.replace(hour=1)
+        phase_due_at = {
+            phase: midnight.replace(hour=6) if phase == "cash_yield" else offhours_due
+            for phase in definitions  # every ENABLED off-hours phase (price_history included once the mesa enables it)
+            if phase != VALUATION_WORKER_CANONICAL_PHASE
+        }
+        expected_at = {
+            VALUATION_WORKER_CANONICAL_PHASE: midnight,
+            **{
+                phase: due_at if local_now >= due_at else due_at - timedelta(days=1)
+                for phase, due_at in phase_due_at.items()
+            },
+        }
+        return definitions, expected_at, offhours_due
+
+    @staticmethod
+    def _valuation_phase_state(state: dict[str, Any], expected_at: datetime) -> str:
+        """failed | running | pending (no success yet) | stale (no success for this cycle) | ok: the card and the ops
+        report read the same classification."""
+        status = state.get("last_status")
+        if status == "failed":
+            return "failed"
+        if status == "running":
+            return "running"
+        last_success = state.get("last_success_at")
+        if not isinstance(last_success, datetime):
+            return "pending"
+        success_local = (
+            last_success if last_success.tzinfo else last_success.replace(tzinfo=timezone.utc)
+        ).astimezone(SAO_PAULO)
+        return "stale" if success_local < expected_at else "ok"
+
+    def valuation_worker_phase_states(self, now: datetime) -> list[dict[str, Any]]:
+        """Each ENABLED phase's state (``_valuation_phase_state``) and whether it is advisory, sorted by phase: names and
+        closed words only, never the error text. Raises when the phase evidence cannot be read."""
+        definitions, expected_at, offhours_due = self._valuation_worker_phase_plan(now)
+        states = self.database.ingestion_run_health([definition["code"] for definition in definitions.values()])
+        return [
+            {
+                "phase": phase,
+                "state": self._valuation_phase_state(states.get(definition["code"], {}), expected_at.get(phase, offhours_due)),
+                "advisory": phase in VALUATION_WORKER_ADVISORY_PHASES,
+            }
+            for phase, definition in sorted(definitions.items())
+        ]
+
+    def _valuation_worker_phase_health(self, now: datetime) -> IntegrationHealth:
+        definitions, expected_at, offhours_due = self._valuation_worker_phase_plan(now)
         codes = [definition["code"] for definition in definitions.values()]
         try:
             states = self.database.ingestion_run_health(codes)
@@ -1431,20 +1482,7 @@ class SystemHealthService:
 
         local_now = now.astimezone(SAO_PAULO)
         midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        offhours_due = midnight.replace(hour=1)
         window_end = midnight.replace(hour=8)
-        phase_due_at = {
-            phase: midnight.replace(hour=6) if phase == "cash_yield" else offhours_due
-            for phase in definitions  # every ENABLED off-hours phase (price_history included once the mesa enables it)
-            if phase != VALUATION_WORKER_CANONICAL_PHASE
-        }
-        expected_at = {
-            VALUATION_WORKER_CANONICAL_PHASE: midnight,
-            **{
-                phase: due_at if local_now >= due_at else due_at - timedelta(days=1)
-                for phase, due_at in phase_due_at.items()
-            },
-        }
 
         failed: list[str] = []
         pending: list[str] = []
@@ -1453,27 +1491,21 @@ class SystemHealthService:
         updates: list[datetime] = []
         for phase, definition in definitions.items():
             state = states.get(definition["code"], {})
-            status = state.get("last_status")
-            last_success = state.get("last_success_at")
             for field in ("completed_at", "started_at", "last_success_at"):
                 value = state.get(field)
                 if isinstance(value, datetime):
                     updates.append(value if value.tzinfo else value.replace(tzinfo=timezone.utc))
             is_advisory = phase in VALUATION_WORKER_ADVISORY_PHASES
-            if status == "failed":
+            # a phase without a due entry falls back to the off-hours instant
+            kind = self._valuation_phase_state(state, expected_at.get(phase, offhours_due))
+            if kind == "failed":
                 error = str(state.get("last_error") or "unknown error").replace("\n", " ")[:120]
                 (advisory if is_advisory else failed).append(f"{phase}: {error}")
-                continue
-            if status == "running":  # an advisory phase stuck running (killed mid-download) is attention too, never offline
+            elif kind == "running":  # an advisory phase stuck running (killed mid-download) is attention too, never offline
                 (advisory if is_advisory else running).append(f"{phase}: running" if is_advisory else phase)
-                continue
-            if not isinstance(last_success, datetime):
+            elif kind == "pending":
                 (advisory if is_advisory else pending).append(f"{phase}: not run yet" if is_advisory else phase)
-                continue
-            success_local = (
-                last_success if last_success.tzinfo else last_success.replace(tzinfo=timezone.utc)
-            ).astimezone(SAO_PAULO)
-            if success_local < expected_at.get(phase, offhours_due):  # a phase without a due entry can never break the card
+            elif kind == "stale":
                 (advisory if is_advisory else pending).append(f"{phase}: not run yet for this cycle" if is_advisory else phase)
 
         if failed:
