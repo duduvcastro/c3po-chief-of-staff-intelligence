@@ -97,6 +97,9 @@ NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the sig
 # instrument's (a share-class or mapping error) or absurd: never bought on (pre-review of e8ce1f3)
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
 MARKS_EVERY_SECONDS = 60.0
+# owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s" — between the full checks of a second, the held names
+# are judged this often on the NBBO Massive pushes (the stop, the lock, T30); the full check stays once a second
+FAST_EXIT_SECONDS = 0.1
 
 
 # ------------------------------------------------------------------ the stream: last trade, last NBBO, session VWAP
@@ -599,7 +602,7 @@ class Engine:
         # stream's own quote under the old 5 s rule would have refused (this process only)
         self.sources = {"massive": 0, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 0}
         # what each exit check of a held name marked on: Massive's NBBO, the feed's fresh quote, or nothing (this process)
-        self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
+        self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -842,9 +845,30 @@ class Engine:
         self.fills.append(fill)
         return fill
 
+    def fast_exits(self, now: datetime, view: Callable[[str], MarketView],
+                   pushed: Callable[[str], tuple[float, float, datetime] | None]) -> list[dict[str, Any]]:
+        """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"): every
+        held name with a usable NBBO pushed by Massive is judged on it, read and used at one instant as in ``step``; a name
+        without one waits for the next full check (Massive asked, then the feed). Never the entries, never the shadows."""
+        started = clock_time.monotonic()
+        fills: list[dict[str, Any]] = []
+        for symbol in list(self.state.positions):
+            position = self.state.positions[symbol]
+            market = view(symbol)
+            quote = pushed(symbol)
+            moment = now + timedelta(seconds=clock_time.monotonic() - started)
+            bid = exit_bid(quote, market, position, moment)
+            if bid is None:
+                continue
+            fill = self._exit(position, market, moment, bid, "fast")
+            if fill is not None:
+                fills.append(fill)
+        return fills
+
     def _exit(self, position: Position, market: MarketView, moment: datetime, bid: float, source: str) -> dict[str, Any] | None:
-        """One exit check of a held name on ``bid`` (``source``: "massive" for Massive's NBBO, pushed or asked; "stream"
-        for the feed's quote): the mark, the peak and the arming, then a sale on the stop, the lock or the T30 rule. A sale
+        """One exit check of a held name on ``bid`` (``source``: "massive" for Massive's NBBO, pushed or asked; "fast" for
+        the pushed NBBO between the full checks; "stream" for the feed's quote): the mark, the peak and the arming, then a
+        sale on the stop, the lock or the T30 rule. A sale
         on the feed's bid stands only when the name's fresh last trade confirms it (the owner, 30/10, Codex 6525745563)."""
         self.exit_sources[source] += 1
         net = position.net_percent(bid)
@@ -1315,9 +1339,9 @@ class MassiveQuoteStream:
 def massive_line(massive: MassiveQuoteStream, engine: "Engine") -> str:
     """The pushed NBBO's health, numbers and a closed set of states only (published by the status workflow)."""
     quotes, lag, worst, names = massive.take_gauges()
-    return ("R2D2 live massive: state=%s symbols=%d quotes=%d lag_ms=%d lag_max_ms=%d pushed=%d reconnects=%d"
+    return ("R2D2 live massive: state=%s symbols=%d quotes=%d lag_ms=%d lag_max_ms=%d pushed=%d fast=%d reconnects=%d"
             % (massive.status if massive.status in MASSIVE_STREAM_STATES else "other", names, quotes, lag, worst,
-               engine.exit_sources["pushed"], massive.reconnects))
+               engine.exit_sources["pushed"], engine.exit_sources["fast"], massive.reconnects))
 
 
 def feed_line(stream: Any, engine: "Engine") -> str:
@@ -1421,6 +1445,19 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             if massive is not None:
                 logger.info("%s", massive_line(massive, engine))
             last_lines = clock_time.monotonic()
+        # between the full checks, the held names on Massive's pushed NBBO every FAST_EXIT_SECONDS (owner 30/10)
+        while massive is not None and engine.state.positions and clock_time.monotonic() - began + FAST_EXIT_SECONDS < 1.0:
+            sleep(FAST_EXIT_SECONDS)
+            fast = engine.fast_exits(now(), stream.view, massive.quote)
+            if fast:
+                if set(engine.state.positions) != held:  # a sale: the quote feeds follow
+                    held = set(engine.state.positions)
+                    if quotes_for is not None:
+                        quotes_for(held)
+                    massive.set_symbols(held)
+                stamp = now()
+                guarded(lambda: commit(stamp))
+                last_marks = clock_time.monotonic()
         # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
         sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
     engine.close_session()
