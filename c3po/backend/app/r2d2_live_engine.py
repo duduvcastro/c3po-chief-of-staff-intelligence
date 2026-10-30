@@ -662,7 +662,9 @@ class Engine:
         # hoje"); only the names it has no usable quote for are asked
         marks: dict[str, tuple[float, float, datetime]] = {}
         if pushed is not None:
-            instant = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            # judged at the latest instant this step can still read it (the exits' budget later), so a pushed quote
+            # accepted here is never refused below for its age once Massive was not asked for the name (pre-review P3-5)
+            instant = now + timedelta(seconds=clock_time.monotonic() - started_step + NBBO_EXIT_BUDGET_SECONDS)
             for symbol, position in self.state.positions.items():
                 quote = pushed(symbol)
                 if quote is not None and exit_bid(quote, view(symbol), position, instant) is not None:
@@ -1143,8 +1145,13 @@ def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | Non
 
 
 MASSIVE_STREAM_URL = "wss://socket.massive.com/stocks"
-MASSIVE_STREAM_ALIVE_SECONDS = 5.0  # the pushed NBBO is read only while the socket delivered something this recently
+MASSIVE_STREAM_ALIVE_SECONDS = 2.0  # the pushed NBBO is read only while the socket delivered something this recently
 MASSIVE_STREAM_STATES = ("idle", "connecting", "connected", "error", "stopped")
+MASSIVE_STREAM_BACKOFF_SECONDS = (3.0, 60.0)  # a reconnect waits 3 s, doubling up to 60 s while it keeps failing
+# the websockets library's own logger for this socket: disabled, never a frame (the auth frame carries the key), as the
+# V2 transport does (r2d2_v2_massive_transport); main() runs at INFO today, this holds whatever the level becomes
+_MASSIVE_SOCKET_LOGGER = logging.Logger("r2d2.live.massive-quotes")
+_MASSIVE_SOCKET_LOGGER.disabled = True
 
 
 class MassiveQuoteStream:
@@ -1166,6 +1173,7 @@ class MassiveQuoteStream:
         self.messages = 0
         self.lag_ms = 0
         self.lag_max_ms = 0
+        self.reconnects = 0
         self._stop = Event()
         self._thread: Thread | None = None
 
@@ -1222,20 +1230,34 @@ class MassiveQuoteStream:
                     bid, ask, stamp = float(item.get("bp") or 0.0), float(item.get("ap") or 0.0), float(item.get("t") or 0)
                 except (TypeError, ValueError):
                     continue
-                if not (math.isfinite(bid) and math.isfinite(ask) and 0 < bid <= ask
-                        and 0 < stamp <= received + FUTURE_TOLERANCE_SECONDS * 1000):
+                if not (math.isfinite(bid) and math.isfinite(ask) and 0 < stamp <= received + FUTURE_TOLERANCE_SECONDS * 1000):
                     continue
-                self._quotes[symbol] = (bid, ask, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc))
+                quoted_at = datetime.fromtimestamp(stamp / 1000, tz=timezone.utc)
+                held = self._quotes.get(symbol)
+                if held is not None and held[2] > quoted_at:  # an update older than the one held never replaces it
+                    continue
+                # kept as received, even crossed or one-sided: exit_bid refuses it and the name is asked of Massive — a
+                # last good quote never outlives the market that replaced it (pre-review of 20002f04 P2-3)
+                self._quotes[symbol] = (bid, ask, quoted_at)
                 self.messages += 1
                 self.lag_ms = int(received - stamp)
                 self.lag_max_ms = max(self.lag_max_ms, self.lag_ms)
 
+    def _forget(self) -> None:
+        """Every connection starts blind: no quote and no message from before it is ever served as live (pre-review of
+        20002f04 P1-2: a reconnect inside the 5 s window re-served the pre-drop quotes)."""
+        with self._lock:
+            self._quotes.clear()
+            self._last_message = 0.0
+
     async def _run(self) -> None:
+        backoff = MASSIVE_STREAM_BACKOFF_SECONDS[0]
         while not self._stop.is_set():
             self.status = "connecting"
+            self._forget()
             try:
                 async with websockets.connect(self.url, ping_interval=20, ping_timeout=20, close_timeout=2,
-                                              max_size=4_000_000) as socket:
+                                              max_size=4_000_000, logger=_MASSIVE_SOCKET_LOGGER) as socket:
                     await asyncio.wait_for(socket.recv(), timeout=10)  # the server's "connected" status
                     await asyncio.wait_for(socket.send(json.dumps({"action": "auth", "params": self.api_key})), timeout=2)
                     answer = json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
@@ -1243,6 +1265,7 @@ class MassiveQuoteStream:
                                for item in (answer if isinstance(answer, list) else [answer])):
                         raise PermissionError("not authorized")
                     self.status = "connected"
+                    backoff = MASSIVE_STREAM_BACKOFF_SECONDS[0]
                     subscribed: set[str] = set()
                     version = -1  # a new connection subscribes from scratch
                     while not self._stop.is_set():
@@ -1265,18 +1288,22 @@ class MassiveQuoteStream:
             except Exception as exc:  # the type only: a server's or a library's text never reaches the logs
                 if self._stop.is_set():
                     break
-                logger.warning("Massive stream reconnect: %s", type(exc).__name__)
+                self._forget()
                 self.status = "error"
-                await asyncio.sleep(3)
+                self.reconnects += 1
+                logger.warning("Massive stream reconnect: %s", type(exc).__name__)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, MASSIVE_STREAM_BACKOFF_SECONDS[1])
+        self._forget()
         self.status = "stopped"
 
 
 def massive_line(massive: MassiveQuoteStream, engine: "Engine") -> str:
     """The pushed NBBO's health, numbers and a closed set of states only (published by the status workflow)."""
     quotes, lag, worst, names = massive.take_gauges()
-    return ("R2D2 live massive: state=%s symbols=%d quotes=%d lag_ms=%d lag_max_ms=%d pushed=%d"
+    return ("R2D2 live massive: state=%s symbols=%d quotes=%d lag_ms=%d lag_max_ms=%d pushed=%d reconnects=%d"
             % (massive.status if massive.status in MASSIVE_STREAM_STATES else "other", names, quotes, lag, worst,
-               engine.exit_sources["pushed"]))
+               engine.exit_sources["pushed"], massive.reconnects))
 
 
 def feed_line(stream: Any, engine: "Engine") -> str:

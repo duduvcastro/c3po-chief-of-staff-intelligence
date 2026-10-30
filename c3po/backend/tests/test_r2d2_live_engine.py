@@ -552,7 +552,6 @@ def test_massive_stream_keeps_the_held_names_nbbo_in_their_own_spelling_and_drop
         {"ev": "Q", "sym": "AAA", "bp": 98.0, "ap": 98.02, "t": now_ms - 100},
         {"ev": "Q", "sym": "BRK.B", "bp": 500.0, "ap": 500.1, "t": now_ms - 80},  # Massive's spelling of EODHD's BRK-B
         {"ev": "Q", "sym": "ZZZ", "bp": 1.0, "ap": 1.01, "t": now_ms},  # not followed
-        {"ev": "Q", "sym": "AAA", "bp": 99.0, "ap": 98.0, "t": now_ms},  # crossed: refused, the last good one stands
         {"ev": "Q", "sym": "AAA", "bp": 97.0, "ap": 97.1, "t": now_ms + 60_000},  # a minute in the future: refused
         {"ev": "status", "status": "success", "message": "subscribed to: Q.AAA"},
     ]))
@@ -561,6 +560,15 @@ def test_massive_stream_keeps_the_held_names_nbbo_in_their_own_spelling_and_drop
     assert stream.quote("ZZZ") is None
     quotes, lag, worst, names = stream.take_gauges()
     assert quotes == 2 and 0 <= worst < 5_000 and names == 2 and stream.take_gauges()[0] == 0
+    # pre-review of 20002f04 P2-3: an update older than the held one never replaces it; a crossed one is kept as received
+    # (the last good quote never outlives the market that replaced it) and exit_bid refuses it, so Massive is asked
+    stream._record(json.dumps([{"ev": "Q", "sym": "AAA", "bp": 49.0, "ap": 49.1, "t": now_ms - 5_000}]))
+    assert stream.quote("AAA")[:2] == (98.0, 98.02)
+    stream._record(json.dumps([{"ev": "Q", "sym": "AAA", "bp": 99.0, "ap": 98.0, "t": now_ms}]))
+    crossed = stream.quote("AAA")
+    assert crossed is not None and crossed[:2] == (99.0, 98.0)
+    position = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, "", last_mark=98.0)
+    assert engine_module.exit_bid(crossed, MarketView(), position, datetime.now(timezone.utc)) is None
     stream.set_symbols({"AAA"})  # BRK-B sold: its NBBO is dropped; a re-buy waits for a new one
     stream.set_symbols({"AAA", "BRK-B"})
     assert stream.quote("BRK-B") is None and stream.quote("AAA") is not None
@@ -626,7 +634,8 @@ def test_massive_stream_authenticates_in_the_frame_subscribes_quotes_and_never_l
     assert sent[1] == {"action": "subscribe", "params": "Q.AAA,Q.BRK.B"}
     assert {"action": "unsubscribe", "params": "Q.BRK.B"} in sent and {"action": "subscribe", "params": "Q.CCC"} in sent
     assert sent[-2:] == [{"action": "auth", "params": "key-secret"}, {"action": "subscribe", "params": "Q.AAA,Q.CCC"}]  # from scratch
-    assert stream.status == "stopped"
+    assert stream.status == "stopped" and stream.reconnects == 1
+    assert stream._quotes == {} and stream.quote("AAA") is None  # pre-review of 20002f04 P1-2: no pre-drop quote survives
     assert "key-secret" not in caplog.text and "Massive stream reconnect: ConnectionError" in caplog.text
 
     refused = MassiveQuoteStream("key-secret")
@@ -688,7 +697,7 @@ def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whol
     engine = _engine()
     stream = engine_module.MassiveQuoteStream("key")
     line = engine_module.massive_line(stream, engine)
-    assert line == "R2D2 live massive: state=idle symbols=0 quotes=0 lag_ms=0 lag_max_ms=0 pushed=0"
+    assert line == "R2D2 live massive: state=idle symbols=0 quotes=0 lag_ms=0 lag_max_ms=0 pushed=0 reconnects=0"
     feed = engine_module.feed_line(object(), engine)
     old = feed[:feed.index(" exits ")]
     for text in (line, feed, old):
@@ -714,8 +723,27 @@ def test_the_session_loop_runs_once_a_second_and_logs_its_lines_every_minute_wha
     wall, clock, slept, steps = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
     monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
 
+    pusheds = []
+
+    class Massive:  # the pushed NBBO's stand-in: what the session hands it and logs of it
+        status, reconnects = "connected", 0
+
+        def __init__(self) -> None:
+            self.calls: list[set[str]] = []
+
+        def set_symbols(self, symbols) -> None:
+            self.calls.append(set(symbols))
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, len(self.calls[-1]) if self.calls else 0)
+    massive = Massive()
+
     def step(self, now, view, signal=None, nbbo=None, pushed=None):  # each step waits 0.6 s on Massive and fills
         steps.append(now)
+        pusheds.append(pushed)
         wall["t"] += 0.6
         clock["t"] += timedelta(seconds=0.6)
         return [{"side": "BUY"}]
@@ -730,12 +758,17 @@ def test_the_session_loop_runs_once_a_second_and_logs_its_lines_every_minute_wha
     caplog.set_level(logging.INFO, logger=engine_module.logger.name)
     with pytest.raises(KeyboardInterrupt):
         run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
-                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None)
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=massive)  # type: ignore[arg-type]
     after_steps = slept[-100:]
     assert all(abs(s - 0.4) < 1e-6 for s in after_steps)  # one pass a second: 0.6 s of step, 0.4 s of sleep
     assert 148 <= (steps[-1] - steps[0]).total_seconds() + 1 <= 151
     feed = [r for r in caplog.records if "R2D2 live feed:" in r.getMessage()]
     assert len(feed) == 2  # every 60 s although every step filled
+    # the pushed NBBO: the held names followed from the start (none carried here), its reader handed to every step, and
+    # its line every minute
+    assert massive.calls[0] == set() and pusheds and all(pushed == massive.quote for pushed in pusheds)
+    lines = [r.getMessage() for r in caplog.records if "R2D2 live massive:" in r.getMessage()]
+    assert len(lines) == 2 and lines[0].startswith("R2D2 live massive: state=connected symbols=0 ")
 
 
 # ------------------------------------------------------------------ Codex #500 P2 regressions
