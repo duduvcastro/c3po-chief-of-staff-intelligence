@@ -656,59 +656,48 @@ class Engine:
         new: list[dict[str, Any]] = []
         # The exits mark on Massive's NBBO, as the entries buy on it (30/10/2026): the quote feed (EODHD) gave ASX a bid
         # 0.5% under the NBBO seconds after its buy — a stop at -0.75% the market never printed (the minute's low was above
-        # the NBBO bid) — and left AMD unarmed at +0.175% net. Every held name is asked at once, at the effective instant;
-        # the feed's fresh quote stands in only when Massive gives nothing usable, and its bid never sells alone.
-        # Since the afternoon of 30/10 the stream's pushed NBBO comes first (owner: "já faz a troca pro stream da Massive
-        # hoje"); only the names it has no usable quote for are asked
-        marks: dict[str, tuple[float, float, datetime]] = {}
-        if pushed is not None:
-            # judged at the latest instant this step can still read it (the exits' budget later), so a pushed quote
-            # accepted here is never refused below for its age once Massive was not asked for the name (pre-review P3-5)
-            instant = now + timedelta(seconds=clock_time.monotonic() - started_step + NBBO_EXIT_BUDGET_SECONDS)
-            for symbol, position in self.state.positions.items():
-                quote = pushed(symbol)
-                if quote is not None and exit_bid(quote, view(symbol), position, instant) is not None:
-                    marks[symbol] = quote
-        from_stream = set(marks)
-        missing = [symbol for symbol in self.state.positions if symbol not in marks]
-        if nbbo is not None and missing:
-            marks.update(ask_nbbo(nbbo, missing, now + timedelta(seconds=clock_time.monotonic() - started_step),
-                                  budget=NBBO_EXIT_BUDGET_SECONDS))
-        for symbol, position in list(self.state.positions.items()):
+        # the NBBO bid) — and left AMD unarmed at +0.175% net. Since the afternoon of 30/10 (owner: "já faz a troca pro
+        # stream da Massive hoje") a held name's NBBO pushed by Massive's stream is read and used at ONE instant, nothing
+        # in between: a quote that is no usable mark at that instant (too old, or the stream silent or reconnecting) sends
+        # the name down the whole chain, never a copy taken earlier (Codex 6526033042). The chain: Massive asked at once
+        # for every such name, then the feed's fresh quote, whose bid never sells alone.
+        pending: list[str] = []
+        for symbol in list(self.state.positions):
+            position = self.state.positions[symbol]
+            if pushed is None:
+                pending.append(symbol)
+                continue
             market = view(symbol)
-            # the effective instant, sampled after the read that may block (the view takes the stream's lock; as the
-            # entries, Codex 6499564395): the quote's freshness, the T30 rule and the sell's stamp read this one instant
+            quote = pushed(symbol)
+            # the effective instant, sampled after the reads that may block (the view takes the stream's lock; as the
+            # entries, Codex 6499564395): the quote's age, the T30 rule and the sell's stamp read this one instant
             moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
-            bid, source = exit_bid(marks.get(symbol), market, position, moment), "massive"
+            bid = exit_bid(quote, market, position, moment)
+            if bid is None:
+                pending.append(symbol)
+                continue
+            self.exit_sources["pushed"] += 1  # Massive's NBBO, pushed: counted among "massive" too
+            fill = self._exit(position, market, moment, bid, "massive")
+            if fill is not None:
+                new.append(fill)
+        answers: dict[str, tuple[float, float, datetime]] = {}
+        if nbbo is not None and pending:
+            answers = ask_nbbo(nbbo, pending, now + timedelta(seconds=clock_time.monotonic() - started_step),
+                               budget=NBBO_EXIT_BUDGET_SECONDS)
+        for symbol in pending:
+            position = self.state.positions[symbol]
+            market = view(symbol)
+            moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            bid, source = exit_bid(answers.get(symbol), market, position, moment), "massive"
             if bid is None:
                 if not market.quote_fresh(moment):
                     self.exit_sources["none"] += 1
                     continue
                 assert market.bid is not None
                 bid, source = market.bid, "stream"
-            elif symbol in from_stream:
-                self.exit_sources["pushed"] += 1  # Massive's NBBO, pushed: counted among "massive" too
-            self.exit_sources[source] += 1
-            net = position.net_percent(bid)
-            position.last_mark = bid
-            position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
-            if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
-                position.armed = True
-            reason = None
-            if net <= -RULE["stop_percent"]:
-                reason = "hard_stop"
-            elif position.armed and net <= lock_floor(position.peak_percent):
-                reason = "lock"
-            elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
-                reason = "t30_positive"
-            if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
-                # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at
-                # the same level, else Massive decides at the next check. A confirmed sale is booked at the feed's quoted
-                # bid, never at an estimate (Codex 6525240030 P2-1)
-                self.exit_sources["unconfirmed"] += 1
-                reason = None
-            if reason:
-                new.append(self._sell(position, bid, net, reason, moment))
+            fill = self._exit(position, market, moment, bid, source)
+            if fill is not None:
+                new.append(fill)
         try:
             self._shadow_exits(now, view)
         except Exception:  # the measurement never breaks the step (the real exits ran above, the entries run below)
@@ -852,6 +841,31 @@ class Engine:
                           % (gap, spread_bps, "NBBO Massive" if source == "massive" else "cotação do stream")}
         self.fills.append(fill)
         return fill
+
+    def _exit(self, position: Position, market: MarketView, moment: datetime, bid: float, source: str) -> dict[str, Any] | None:
+        """One exit check of a held name on ``bid`` (``source``: "massive" for Massive's NBBO, pushed or asked; "stream"
+        for the feed's quote): the mark, the peak and the arming, then a sale on the stop, the lock or the T30 rule. A sale
+        on the feed's bid stands only when the name's fresh last trade confirms it (the owner, 30/10, Codex 6525745563)."""
+        self.exit_sources[source] += 1
+        net = position.net_percent(bid)
+        position.last_mark = bid
+        position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
+        if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
+            position.armed = True
+        reason = None
+        if net <= -RULE["stop_percent"]:
+            reason = "hard_stop"
+        elif position.armed and net <= lock_floor(position.peak_percent):
+            reason = "lock"
+        elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
+            reason = "t30_positive"
+        if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
+            # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at the
+            # same level, else Massive decides at the next check. A confirmed sale is booked at the feed's quoted bid,
+            # never at an estimate (Codex 6525240030 P2-1)
+            self.exit_sources["unconfirmed"] += 1
+            return None
+        return self._sell(position, bid, net, reason, moment) if reason else None
 
     def _sell(self, position: Position, bid: float, net: float, reason: str, now: datetime) -> dict[str, Any]:
         pnl = position.cost_usd * net / 100

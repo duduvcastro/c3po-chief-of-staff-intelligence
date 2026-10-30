@@ -688,6 +688,64 @@ def test_exits_read_the_pushed_nbbo_first_and_ask_massive_only_for_the_rest() ->
     assert asked == ["CCC"] and engine.exit_sources["pushed"] == 1
 
 
+def test_exits_a_pushed_quote_is_read_and_used_at_one_instant_and_one_that_aged_meanwhile_goes_to_massive(monkeypatch) -> None:
+    """Codex 6526033042: a pushed quote accepted early aged past 10 s while a read blocked (3 s), was refused at its use,
+    and Massive was never asked — no sale that second. Read and used at one instant, it goes down the chain instead."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    t = _at(10, 0, 2)
+    wall = {"t": 1000.0}
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def slow_view(symbol):  # the view's lock held 3 s, once
+        if symbol == "AAA" and not slow_view.done:
+            slow_view.done = True
+            wall["t"] += 3.0
+        return MarketView(price=98.0, trade_at=t, vwap=98.0)
+    slow_view.done = False
+    stop = _bid_at(position, -0.42)
+    pushed_quote = (98.05, 98.06, t - timedelta(seconds=8))  # 8 s old when read, 11 s at its use
+    asked = []
+
+    def nbbo(symbol, now):
+        asked.append(symbol)
+        return (stop, stop + 0.01, now)
+    fills = engine.step(t, slow_view, nbbo=nbbo, pushed=lambda s: pushed_quote)
+    assert asked == ["AAA"] and [(f["side"], f["price"]) for f in fills] == [("SELL", stop)]
+    assert engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
+
+
+def test_exits_a_pushed_decision_is_taken_before_any_other_name_waits_on_massive() -> None:
+    """Codex 6526033042: A's pushed quote was copied, B's request to Massive made the stream forget it, and A was still
+    sold on the copy. Now A is judged at the instant its quote is read, before B's request: a stream that drops during B's
+    wait changes nothing already decided, and the next second reads the stream (or asks Massive) afresh."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    engine.state.positions["CCC"] = Position("CCC", "NYSE", 1000.0, 29.0, 29_001.45, t.isoformat(), last_mark=29.0)
+    t = _at(10, 0, 2)
+    mark = _bid_at(position, 0.05)
+    live = {"on": True}
+    order = []
+
+    def pushed(symbol):
+        order.append(("pushed", symbol))
+        return (mark, mark + 0.01, t) if symbol == "AAA" and live["on"] else None
+
+    def nbbo(symbol, now):  # runs in Massive's worker thread: what it sees is recorded, asserted below
+        order.append(("asked", symbol, position.last_mark == mark))  # AAA already marked on its pushed quote?
+        live["on"] = False  # the stream forgets during CCC's request
+        return (29.0, 29.01, now)
+    engine.step(t, lambda s: MarketView(price=98.0 if s == "AAA" else 29.0, trade_at=t, vwap=98.0), nbbo=nbbo, pushed=pushed)
+    assert order == [("pushed", "AAA"), ("pushed", "CCC"), ("asked", "CCC", True)]
+    assert engine.exit_sources == {"massive": 2, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 1}
+    order.clear()
+    t = _at(10, 0, 3)  # the next second: the stream is silent, so AAA is asked of Massive too
+    engine.step(t, lambda s: MarketView(price=98.0 if s == "AAA" else 29.0, trade_at=t, vwap=98.0), nbbo=nbbo, pushed=pushed)
+    assert {entry[:2] for entry in order if entry[0] == "asked"} == {("asked", "AAA"), ("asked", "CCC")}
+
+
 def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whole() -> None:
     import re
 
