@@ -98,8 +98,12 @@ NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the sig
 FUTURE_TOLERANCE_SECONDS = 5.0  # a stream message stamped further ahead than this is refused (it would pin the book)
 MARKS_EVERY_SECONDS = 60.0
 # owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s" — between the full checks of a second, the held names
-# are judged this often on the NBBO Massive pushes (the stop, the lock, T30); the full check stays once a second
+# are judged at least this often on the NBBO Massive pushes (the stop, the lock, T30); the full check stays once a second
 FAST_EXIT_SECONDS = 0.1
+# owner 30/10/2026 ~14:00: "reagirmos o mais rápido possível ao valor real e atual da cotação do ticker" — a pass runs as
+# soon as Massive pushes a new quote of a held name, at most one every FAST_EXIT_MIN_SECONDS (a burst of quotes never
+# spins the loop), and at least one every FAST_EXIT_SECONDS without any
+FAST_EXIT_MIN_SECONDS = 0.01
 
 
 # ------------------------------------------------------------------ the stream: last trade, last NBBO, session VWAP
@@ -1251,7 +1255,15 @@ class MassiveQuoteStream:
         self.lag_max_ms = 0
         self.reconnects = 0
         self._stop = Event()
+        self._updated = Event()  # set by every new quote of a followed name: the exits wake on it
         self._thread: Thread | None = None
+
+    def wait_update(self, timeout: float) -> bool:
+        """Block until a new quote of a followed name arrives (True) or ``timeout`` passes (False). A quote recorded
+        between two waits is never lost: it is stored before the signal, and the pass that follows reads it."""
+        updated = self._updated.wait(timeout)
+        self._updated.clear()
+        return updated
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -1295,6 +1307,7 @@ class MassiveQuoteStream:
         except (TypeError, ValueError):
             return
         received = clock_time.time() * 1000
+        stored = False
         with self._lock:
             self._last_message = clock_time.monotonic()
             for item in payload if isinstance(payload, list) else [payload]:
@@ -1315,9 +1328,12 @@ class MassiveQuoteStream:
                 # kept as received, even crossed or one-sided: exit_bid refuses it and the name is asked of Massive — a
                 # last good quote never outlives the market that replaced it (pre-review of 20002f04 P2-3)
                 self._quotes[symbol] = (bid, ask, quoted_at)
+                stored = True
                 self.messages += 1
                 self.lag_ms = int(received - stamp)
                 self.lag_max_ms = max(self.lag_max_ms, self.lag_ms)
+        if stored:
+            self._updated.set()
 
     def _forget(self) -> None:
         """Every connection starts blind: no quote and no message from before it is ever served as live (pre-review of
@@ -1544,14 +1560,29 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
                 if massive is not None:
                     logger.info("%s", massive_line(massive, engine))
                 last_lines = clock_time.monotonic()
-            # between the full checks, the held names on Massive's pushed NBBO every FAST_EXIT_SECONDS (owner 30/10)
-            while massive is not None and engine.state.positions and clock_time.monotonic() - began + FAST_EXIT_SECONDS < 1.0:
-                sleep(FAST_EXIT_SECONDS)
+            # between the full checks, the held names on Massive's pushed NBBO: a pass as soon as a new quote of one of
+            # them arrives, at most one every FAST_EXIT_MIN_SECONDS, at least one every FAST_EXIT_SECONDS (owner 30/10)
+            wait_update = getattr(massive, "wait_update", None)
+            floor = FAST_EXIT_MIN_SECONDS if wait_update is not None else FAST_EXIT_SECONDS
+            last_pass = last_handover = clock_time.monotonic()
+            while massive is not None and engine.state.positions and clock_time.monotonic() - began + floor < 1.0:
+                if wait_update is not None:
+                    wait_update(max(0.0, min(FAST_EXIT_SECONDS, 1.0 - floor - (clock_time.monotonic() - began))))
+                    gap = FAST_EXIT_MIN_SECONDS - (clock_time.monotonic() - last_pass)
+                    if gap > 0:  # a burst of quotes: one pass every FAST_EXIT_MIN_SECONDS at most
+                        sleep(gap)
+                else:
+                    sleep(FAST_EXIT_SECONDS)
+                last_pass = clock_time.monotonic()
                 instant = now()
                 if instant >= at(SESSION_CLOSE):  # never a check past the close (pre-review of e1149ca5 P1)
                     break
                 fast = engine.fast_exits(instant, stream.view, massive.quote)
-                write_marks()  # the screen follows every tenth of a second too (owner 30/10: "atualizada em 0,1 s")
+                # the screen reads every 0.1 s: the marks are handed over on a sale or every FAST_EXIT_SECONDS, never on every
+                # pass of a burst (pre-review of 6af9107c P2: ~86 writes a second, nine in ten never read)
+                if fast or clock_time.monotonic() - last_handover >= FAST_EXIT_SECONDS:
+                    write_marks()
+                    last_handover = clock_time.monotonic()
                 if fast:
                     if set(engine.state.positions) != held:  # a sale: the quote feeds follow
                         held = set(engine.state.positions)

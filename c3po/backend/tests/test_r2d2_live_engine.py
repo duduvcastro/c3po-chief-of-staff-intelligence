@@ -1008,6 +1008,107 @@ def test_the_tenth_of_a_second_checks_never_run_past_the_close(tmp_path: Path, m
     assert any(moment >= close - timedelta(seconds=1) for moment in checks)
 
 
+def test_the_stream_wakes_the_exits_on_every_new_quote_of_a_followed_name() -> None:
+    import threading
+    import time as wall
+
+    from app.r2d2_live_engine import MassiveQuoteStream
+
+    stream = MassiveQuoteStream("key")
+    stream.set_symbols({"AAA"})
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    began = wall.monotonic()
+    assert stream.wait_update(0.05) is False and wall.monotonic() - began >= 0.04  # nothing new: the timeout
+    stream._record(json.dumps([{"ev": "Q", "sym": "ZZZ", "bp": 1.0, "ap": 1.01, "t": now_ms}]))  # not followed
+    assert stream.wait_update(0.02) is False
+    threading.Timer(0.02, lambda: stream._record(json.dumps([{"ev": "Q", "sym": "AAA", "bp": 98.0, "ap": 98.02, "t": now_ms}]))).start()
+    began = wall.monotonic()
+    assert stream.wait_update(2.0) is True and wall.monotonic() - began < 1.0  # woken by the quote, not the timeout
+    stream._record(json.dumps([{"ev": "Q", "sym": "AAA", "bp": 98.01, "ap": 98.02, "t": now_ms + 1}]))
+    assert stream.wait_update(0.0) is True and stream.wait_update(0.0) is False  # one signal, consumed once
+
+
+@pytest.mark.parametrize("quotes_streaming", [True, False])
+def test_the_session_reacts_to_each_new_quote_at_most_every_ten_milliseconds(tmp_path: Path, monkeypatch, quotes_streaming) -> None:
+    """Owner 30/10/2026 ~14:00: "reagirmos o mais rápido possível ao valor real e atual da cotação do ticker". With quotes
+    pouring in, a pass every FAST_EXIT_MIN_SECONDS; with none, a pass every FAST_EXIT_SECONDS."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
+    wall, clock, steps, fast = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def step(self, now, view, signal=None, nbbo=None, pushed=None):
+        steps.append(now)
+        wall["t"] += 0.05
+        clock["t"] += timedelta(seconds=0.05)
+        return []
+
+    def fast_exits(self, now, view, pushed):
+        fast.append(now)
+        return []
+    monkeypatch.setattr(Engine, "step", step)
+    monkeypatch.setattr(Engine, "fast_exits", fast_exits)
+
+    def advance(seconds):
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+
+    def sleep(seconds):
+        advance(seconds)
+        if len(steps) >= 3:
+            raise KeyboardInterrupt
+
+    class Massive:
+        status, reconnects = "connected", 0
+
+        def set_symbols(self, symbols) -> None:
+            pass
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, 0)
+
+        calls = 0
+
+        def wait_update(self, timeout):
+            Massive.calls += 1
+            assert Massive.calls < 5_000, "the loop spins: no floor between passes"  # fail, never hang
+            if quotes_streaming:
+                return True  # a new quote is already there
+            advance(timeout)
+            return False
+
+    handed: list[datetime] = []
+
+    class Writer:
+        def __init__(self, write) -> None:
+            pass
+
+        def submit(self, session, as_of, marks) -> None:
+            handed.append(as_of)
+
+        def stop(self) -> None:
+            pass
+    monkeypatch.setattr(engine_module, "MarksWriter", Writer)
+    monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: None)
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=Massive())  # type: ignore[arg-type]
+    first_second = [moment for moment in fast if steps[0] <= moment < steps[1]]
+    gaps = [(b - a).total_seconds() for a, b in zip(first_second, first_second[1:])]
+    assert all(abs((b - a).total_seconds() - 1.0) < 1e-6 for a, b in zip(steps, steps[1:]))  # the full check: once a second
+    assert len([moment for moment in handed if steps[0] <= moment < steps[1]]) <= 11  # the screen's marks: ~every 0.1 s
+    if quotes_streaming:
+        assert len(first_second) >= 90 and all(gap >= engine_module.FAST_EXIT_MIN_SECONDS - 1e-6 for gap in gaps)
+    else:  # a pass every FAST_EXIT_SECONDS; the second's last wait is cut short so the full check stays once a second
+        assert 9 <= len(first_second) <= 10 and all(abs(gap - engine_module.FAST_EXIT_SECONDS) < 1e-6 for gap in gaps[:-1])
+        assert 0 < gaps[-1] <= engine_module.FAST_EXIT_SECONDS + 1e-6
+
+
 def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whole() -> None:
     import re
 
