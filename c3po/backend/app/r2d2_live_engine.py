@@ -1508,8 +1508,12 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
 
     def write_marks() -> None:
         """The engine's marks for the screen (owner 30/10: the screen shows what the robot decides on, every 0.1 s),
-        handed to the writer stamped with the instant of the hand-over. Display only: the loop never waits on it."""
-        marks_writer.submit(day.isoformat(), now(), engine.marks())
+        handed to the writer stamped with the instant of the hand-over. Display only: the loop never waits on it, and a
+        hand-over that fails never ends the session."""
+        try:
+            marks_writer.submit(day.isoformat(), now(), engine.marks())
+        except Exception:  # noqa: BLE001 - display only
+            logger.exception("R2D2 live: the screen's marks could not be handed over")
     try:
         while now() < at(SESSION_CLOSE):
             moment = now()

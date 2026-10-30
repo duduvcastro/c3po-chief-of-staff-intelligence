@@ -872,6 +872,9 @@ def test_the_marks_writer_never_blocks_keeps_only_the_latest_and_logs_a_failure_
         deadline = wall.monotonic() + 1
         while len(calls) <= second and wall.monotonic() < deadline:
             wall.sleep(0.01)
+    deadline = wall.monotonic() + 1  # the recovery is logged after the successful write returns
+    while not any("written again" in record.getMessage() for record in caplog.records) and wall.monotonic() < deadline:
+        wall.sleep(0.01)
     writer.stop()
     messages = [record.getMessage() for record in caplog.records]
     assert sum("could not be written" in message for message in messages) == 1  # the failure once
