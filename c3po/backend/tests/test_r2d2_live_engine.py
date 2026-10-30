@@ -459,7 +459,7 @@ def test_exits_mark_on_massive_and_a_feed_bid_off_the_market_never_stops() -> No
     feed, real = _bid_at(position, -0.75), _bid_at(position, -0.25)
     fills = engine.step(t, lambda s: _view(98.0, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: (real, real + 0.01, now))
-    assert fills == [] and position.last_mark == real and engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0}
+    assert fills == [] and position.last_mark == real and engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
     t = _at(10, 0, 3)  # the NBBO crosses the stop: sold at ITS bid
     stop = _bid_at(position, -0.42)
     fills = engine.step(t, lambda s: _view(98.0, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
@@ -484,7 +484,7 @@ def test_exits_a_held_name_without_a_feed_quote_is_marked_armed_and_locked_on_ma
     bid = _bid_at(position, 0.14)
     fills = engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now))
     assert [(f["side"], f["price"]) for f in fills] == [("SELL", bid)] and "trava" in fills[0]["reason"]
-    assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0}
+    assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
 
 
 def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_never_a_mark(monkeypatch) -> None:
@@ -499,7 +499,7 @@ def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_ne
     # above the stop level (the minute's low over the NBBO bid), so no sale
     fills = engine.step(t, lambda s: _view(98.0, 98.0, stop, stop + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: None)
-    assert fills == [] and engine.exit_sources == {"massive": 0, "stream": 1, "none": 0, "unconfirmed": 1}
+    assert fills == [] and engine.exit_sources == {"massive": 0, "stream": 1, "none": 0, "unconfirmed": 1, "pushed": 0}
     t = _at(10, 0, 3)  # the fresh last trade at the stop level confirms it: sold at the feed's quoted bid
     fills = engine.step(t, lambda s: _view(stop, 98.0, stop, stop + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: None)
@@ -526,7 +526,7 @@ def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_ne
     old = t - timedelta(seconds=engine_module.NBBO_EXIT_MAX_AGE_SECONDS + 1)  # a lagging Massive never hides a stop
     assert engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
                        nbbo=lambda s, now: (98.0, 98.01, old)) == []
-    assert engine.exit_sources == {"massive": 0, "stream": 0, "none": 1, "unconfirmed": 0}
+    assert engine.exit_sources == {"massive": 0, "stream": 0, "none": 1, "unconfirmed": 0, "pushed": 0}
     assert engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
                        nbbo=lambda s, now: (98.2, 98.1, now)) == []  # crossed: no NBBO
     assert engine.exit_sources["none"] == 2 and position.last_mark == 98.105
@@ -539,6 +539,161 @@ def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_ne
     engine.step(t, lambda s: MarketView(price=98.1, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(), nbbo=slow)
     assert wall.monotonic() - began < 0.3 + 0.5  # the exits never wait past their budget
     assert engine.exit_sources["none"] == 3 and "AAA" in engine.state.positions
+
+
+def test_massive_stream_keeps_the_held_names_nbbo_in_their_own_spelling_and_drops_it_on_a_change() -> None:
+    from app.r2d2_live_engine import MassiveQuoteStream
+
+    stream = MassiveQuoteStream("key-secret")
+    stream.set_symbols({"AAA", "BRK-B"})
+    stream.status = "connected"
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    stream._record(json.dumps([
+        {"ev": "Q", "sym": "AAA", "bp": 98.0, "ap": 98.02, "t": now_ms - 100},
+        {"ev": "Q", "sym": "BRK.B", "bp": 500.0, "ap": 500.1, "t": now_ms - 80},  # Massive's spelling of EODHD's BRK-B
+        {"ev": "Q", "sym": "ZZZ", "bp": 1.0, "ap": 1.01, "t": now_ms},  # not followed
+        {"ev": "Q", "sym": "AAA", "bp": 99.0, "ap": 98.0, "t": now_ms},  # crossed: refused, the last good one stands
+        {"ev": "Q", "sym": "AAA", "bp": 97.0, "ap": 97.1, "t": now_ms + 60_000},  # a minute in the future: refused
+        {"ev": "status", "status": "success", "message": "subscribed to: Q.AAA"},
+    ]))
+    stream._record("not json")
+    assert stream.quote("AAA")[:2] == (98.0, 98.02) and stream.quote("BRK-B")[:2] == (500.0, 500.1)
+    assert stream.quote("ZZZ") is None
+    quotes, lag, worst, names = stream.take_gauges()
+    assert quotes == 2 and 0 <= worst < 5_000 and names == 2 and stream.take_gauges()[0] == 0
+    stream.set_symbols({"AAA"})  # BRK-B sold: its NBBO is dropped; a re-buy waits for a new one
+    stream.set_symbols({"AAA", "BRK-B"})
+    assert stream.quote("BRK-B") is None and stream.quote("AAA") is not None
+    stream._last_message -= engine_module.MASSIVE_STREAM_ALIVE_SECONDS + 1  # a silent socket is never read
+    assert stream.quote("AAA") is None
+    stream._last_message += engine_module.MASSIVE_STREAM_ALIVE_SECONDS + 1
+    stream.status = "error"
+    assert stream.quote("AAA") is None
+
+
+def test_massive_stream_authenticates_in_the_frame_subscribes_quotes_and_never_logs_the_key(monkeypatch, caplog) -> None:
+    import asyncio
+
+    from app.r2d2_live_engine import MassiveQuoteStream
+
+    stream = MassiveQuoteStream("key-secret")
+    stream.set_symbols({"AAA", "BRK-B"})
+    sent: list[dict] = []
+    urls: list[str] = []
+    connections = {"n": 0}
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    class Socket:
+        def __init__(self) -> None:
+            connections["n"] += 1
+            self.first = connections["n"] == 1
+            self.messages = [json.dumps([{"ev": "status", "status": "connected"}]),
+                             json.dumps([{"ev": "status", "status": "auth_success"}])]
+            if self.first:
+                self.messages += [json.dumps([{"ev": "Q", "sym": "AAA", "bp": 98.0, "ap": 98.02, "t": now_ms}])] * 3
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send(self, text: str) -> None:
+            sent.append(json.loads(text))
+
+        async def recv(self) -> str:
+            if self.first and len(self.messages) == 2 and sent[-1]["action"] == "subscribe" and connections["n"] == 1:
+                stream.set_symbols({"AAA", "CCC"})  # mid-stream, a sale and a buy
+            if self.messages:
+                return self.messages.pop(0)
+            if self.first:
+                raise ConnectionError("dropped key-secret")
+            stream._stop.set()
+            raise TimeoutError
+
+    async def no_sleep(seconds: float) -> None:
+        return None
+
+    def connect(url, **kwargs):
+        urls.append(url)
+        return Socket()
+
+    monkeypatch.setattr(engine_module.websockets, "connect", connect)
+    monkeypatch.setattr(engine_module.asyncio, "sleep", no_sleep)
+    asyncio.run(stream._run())
+    assert urls == [engine_module.MASSIVE_STREAM_URL] * 2 and all("key" not in url for url in urls)  # never in the URL
+    assert sent[0] == {"action": "auth", "params": "key-secret"}
+    assert sent[1] == {"action": "subscribe", "params": "Q.AAA,Q.BRK.B"}
+    assert {"action": "unsubscribe", "params": "Q.BRK.B"} in sent and {"action": "subscribe", "params": "Q.CCC"} in sent
+    assert sent[-2:] == [{"action": "auth", "params": "key-secret"}, {"action": "subscribe", "params": "Q.AAA,Q.CCC"}]  # from scratch
+    assert stream.status == "stopped"
+    assert "key-secret" not in caplog.text and "Massive stream reconnect: ConnectionError" in caplog.text
+
+    refused = MassiveQuoteStream("key-secret")
+
+    class Unauthorized(Socket):
+        def __init__(self) -> None:
+            self.first = False
+            self.messages = [json.dumps([{"ev": "status", "status": "connected"}]),
+                             json.dumps([{"ev": "status", "status": "auth_failed", "message": "bad key-secret"}])]
+
+        async def recv(self) -> str:
+            if not self.messages:
+                refused._stop.set()
+                raise TimeoutError
+            return self.messages.pop(0)
+
+    monkeypatch.setattr(engine_module.websockets, "connect", lambda url, **kwargs: Unauthorized())
+    caplog.clear()
+    refused._stop.clear()
+
+    async def stop_after_one(seconds: float) -> None:
+        refused._stop.set()
+
+    monkeypatch.setattr(engine_module.asyncio, "sleep", stop_after_one)
+    asyncio.run(refused._run())
+    assert refused.status == "stopped" and "PermissionError" in caplog.text and "key-secret" not in caplog.text
+
+
+def test_exits_read_the_pushed_nbbo_first_and_ask_massive_only_for_the_rest() -> None:
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    engine.state.positions["CCC"] = Position("CCC", "NYSE", 1000.0, 29.0, 29_001.45, t.isoformat(), last_mark=29.0)
+    asked: list[str] = []
+    t = _at(10, 0, 2)
+    stop = _bid_at(position, -0.42)
+
+    def nbbo(symbol, now):
+        asked.append(symbol)
+        return (29.01, 29.02, now)
+    fills = engine.step(t, lambda s: MarketView(price=98.0, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(price=29.0, trade_at=t),
+                        nbbo=nbbo, pushed=lambda s: (stop, stop + 0.01, t) if s == "AAA" else None)
+    assert asked == ["CCC"]  # AAA's pushed NBBO stood; only CCC was asked
+    assert [(f["symbol"], f["price"]) for f in fills] == [("AAA", stop)]
+    assert engine.exit_sources == {"massive": 2, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 1}
+    t = _at(10, 0, 3)  # a pushed quote that is no usable mark (older than the exits' 10 s) is asked again, never used
+    asked.clear()
+    stale = t - timedelta(seconds=engine_module.NBBO_EXIT_MAX_AGE_SECONDS + 1)
+    engine.step(t, lambda s: MarketView(price=29.0, trade_at=t), nbbo=nbbo, pushed=lambda s: (29.0, 29.01, stale))
+    assert asked == ["CCC"] and engine.exit_sources["pushed"] == 1
+
+
+def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whole() -> None:
+    import re
+
+    workflow = (Path(__file__).resolve().parents[3] / ".github" / "workflows" / "r2d2-live-status.yml").read_text(encoding="utf-8")
+    pattern = re.search(r'grep -oE "(R2D2 live heartbeat:.*?)"', workflow).group(1).replace(r"\$", "$")
+    accepted = re.compile(pattern)
+    engine = _engine()
+    stream = engine_module.MassiveQuoteStream("key")
+    line = engine_module.massive_line(stream, engine)
+    assert line == "R2D2 live massive: state=idle symbols=0 quotes=0 lag_ms=0 lag_max_ms=0 pushed=0"
+    feed = engine_module.feed_line(object(), engine)
+    old = feed[:feed.index(" exits ")]
+    for text in (line, feed, old):
+        assert accepted.search(text) and accepted.search(text).group(0) == text
+    assert not accepted.fullmatch(line + " key=x") and not accepted.fullmatch(feed + " extra")
 
 
 def test_a_restored_candidate_the_universe_no_longer_lists_is_never_bought() -> None:
@@ -559,7 +714,7 @@ def test_the_session_loop_runs_once_a_second_and_logs_its_lines_every_minute_wha
     wall, clock, slept, steps = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
     monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
 
-    def step(self, now, view, signal=None, nbbo=None):  # each step waits 0.6 s on Massive and fills
+    def step(self, now, view, signal=None, nbbo=None, pushed=None):  # each step waits 0.6 s on Massive and fills
         steps.append(now)
         wall["t"] += 0.6
         clock["t"] += timedelta(seconds=0.6)
@@ -1437,7 +1592,7 @@ def test_nbbo_the_session_hands_the_reader_to_every_step_and_the_request_lines_s
     received = []
     original = Engine.step
 
-    def spy(self, now, view, signal=None, nbbo=None):
+    def spy(self, now, view, signal=None, nbbo=None, pushed=None):
         received.append(nbbo)
         return original(self, now, view, signal, nbbo)
     monkeypatch.setattr(Engine, "step", spy)

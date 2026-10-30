@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 
@@ -599,7 +599,7 @@ class Engine:
         # stream's own quote under the old 5 s rule would have refused (this process only)
         self.sources = {"massive": 0, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 0}
         # what each exit check of a held name marked on: Massive's NBBO, the feed's fresh quote, or nothing (this process)
-        self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0}
+        self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0}
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -645,10 +645,12 @@ class Engine:
 
     def step(self, now: datetime, view: Callable[[str], MarketView],
              signal: Callable[[str], tuple[float, float] | None] | None = None,
-             nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None) -> list[dict[str, Any]]:
+             nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None,
+             pushed: Callable[[str], tuple[float, float, datetime] | None] | None = None) -> list[dict[str, Any]]:
         """``view``: the live price and quote (exits; the entries' fallback). ``signal``: (last trade, VWAP) now (the buy
         signal, ``LiveEngineStream.live_signal``); without it, the view's last price and VWAP stand in (tests). ``nbbo``:
-        (bid, ask, time) of the NBBO prevailing at the instant (Massive), or None when it does not answer."""
+        (bid, ask, time) of the NBBO prevailing at the instant (Massive), or None when it does not answer. ``pushed``: a
+        held name's last NBBO pushed by Massive's stream (``MassiveQuoteStream.quote``), or None."""
         local = now.astimezone(NEW_YORK).time()
         started_step = clock_time.monotonic()
         new: list[dict[str, Any]] = []
@@ -656,10 +658,20 @@ class Engine:
         # 0.5% under the NBBO seconds after its buy — a stop at -0.75% the market never printed (the minute's low was above
         # the NBBO bid) — and left AMD unarmed at +0.175% net. Every held name is asked at once, at the effective instant;
         # the feed's fresh quote stands in only when Massive gives nothing usable, and its bid never sells alone.
+        # Since the afternoon of 30/10 the stream's pushed NBBO comes first (owner: "já faz a troca pro stream da Massive
+        # hoje"); only the names it has no usable quote for are asked
         marks: dict[str, tuple[float, float, datetime]] = {}
-        if nbbo is not None and self.state.positions:
-            marks = ask_nbbo(nbbo, list(self.state.positions), now + timedelta(seconds=clock_time.monotonic() - started_step),
-                             budget=NBBO_EXIT_BUDGET_SECONDS)
+        if pushed is not None:
+            instant = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            for symbol, position in self.state.positions.items():
+                quote = pushed(symbol)
+                if quote is not None and exit_bid(quote, view(symbol), position, instant) is not None:
+                    marks[symbol] = quote
+        from_stream = set(marks)
+        missing = [symbol for symbol in self.state.positions if symbol not in marks]
+        if nbbo is not None and missing:
+            marks.update(ask_nbbo(nbbo, missing, now + timedelta(seconds=clock_time.monotonic() - started_step),
+                                  budget=NBBO_EXIT_BUDGET_SECONDS))
         for symbol, position in list(self.state.positions.items()):
             market = view(symbol)
             # the effective instant, sampled after the read that may block (the view takes the stream's lock; as the
@@ -672,6 +684,8 @@ class Engine:
                     continue
                 assert market.bid is not None
                 bid, source = market.bid, "stream"
+            elif symbol in from_stream:
+                self.exit_sources["pushed"] += 1  # Massive's NBBO, pushed: counted among "massive" too
             self.exit_sources[source] += 1
             net = position.net_percent(bid)
             position.last_mark = bid
@@ -1128,6 +1142,143 @@ def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | Non
         pool.shutdown(wait=False, cancel_futures=True)
 
 
+MASSIVE_STREAM_URL = "wss://socket.massive.com/stocks"
+MASSIVE_STREAM_ALIVE_SECONDS = 5.0  # the pushed NBBO is read only while the socket delivered something this recently
+MASSIVE_STREAM_STATES = ("idle", "connecting", "connected", "error", "stopped")
+
+
+class MassiveQuoteStream:
+    """The NBBO of the held names, pushed by Massive (owner 30/10/2026: "já faz a troca pro stream da Massive hoje e
+    para o nosso servidor"). One WebSocket (the quotes channel ``Q.``) follows the names the engine holds and keeps each
+    one's last NBBO (bid, ask, SIP time) in memory; the exits read it at once instead of asking Massive every second
+    (~0.1 s late against ~0.3-0.7 s per request: the lab's ws_probe, 30/10 run 41070059948). The account allows one such
+    connection and this process holds it. The key travels only in the auth frame: never in the URL, a log or an error."""
+
+    def __init__(self, api_key: str, url: str = MASSIVE_STREAM_URL) -> None:
+        self.api_key, self.url = api_key, url
+        self._lock = Lock()
+        self._symbols: frozenset[str] = frozenset()
+        self._spelled: dict[str, str] = {}  # Massive's spelling (BRK.B) -> the engine's (EODHD's BRK-B)
+        self._version = 0
+        self._quotes: dict[str, tuple[float, float, datetime]] = {}
+        self._last_message = 0.0  # monotonic instant of the socket's last message
+        self.status = "idle"
+        self.messages = 0
+        self.lag_ms = 0
+        self.lag_max_ms = 0
+        self._stop = Event()
+        self._thread: Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = Thread(target=lambda: asyncio.run(self._run()), name="massive-quotes", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def set_symbols(self, symbols: Any) -> None:
+        """The names to follow (the held ones). A name entering or leaving drops its last NBBO first: a quote from before
+        a gap in the subscription is never the mark of a later position (as the quote feed, pre-review of 568737c)."""
+        names = frozenset(symbols)
+        with self._lock:
+            for symbol in names ^ self._symbols:
+                self._quotes.pop(symbol, None)
+            self._symbols = names
+            self._spelled = {symbol.replace("-", "."): symbol for symbol in names}
+            self._version += 1
+
+    def quote(self, symbol: str) -> tuple[float, float, datetime] | None:
+        """The name's last pushed NBBO, or None while the socket is not connected or has been silent for
+        ``MASSIVE_STREAM_ALIVE_SECONDS`` (Massive is then asked, as before)."""
+        with self._lock:
+            if self.status != "connected" or clock_time.monotonic() - self._last_message > MASSIVE_STREAM_ALIVE_SECONDS:
+                return None
+            return self._quotes.get(symbol)
+
+    def take_gauges(self) -> tuple[int, int, int, int]:
+        """(quotes recorded, last lag ms, worst lag ms, names followed) since the last call; both counts reset."""
+        with self._lock:
+            taken = self.messages, self.lag_ms, self.lag_max_ms, len(self._symbols)
+            self.messages, self.lag_max_ms = 0, 0
+        return taken
+
+    def _record(self, raw: Any) -> None:
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+        received = clock_time.time() * 1000
+        with self._lock:
+            self._last_message = clock_time.monotonic()
+            for item in payload if isinstance(payload, list) else [payload]:
+                spelled = item.get("sym") if isinstance(item, dict) and item.get("ev") == "Q" else None
+                symbol = self._spelled.get(spelled) if isinstance(spelled, str) else None
+                if symbol is None:
+                    continue
+                try:
+                    bid, ask, stamp = float(item.get("bp") or 0.0), float(item.get("ap") or 0.0), float(item.get("t") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if not (math.isfinite(bid) and math.isfinite(ask) and 0 < bid <= ask
+                        and 0 < stamp <= received + FUTURE_TOLERANCE_SECONDS * 1000):
+                    continue
+                self._quotes[symbol] = (bid, ask, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc))
+                self.messages += 1
+                self.lag_ms = int(received - stamp)
+                self.lag_max_ms = max(self.lag_max_ms, self.lag_ms)
+
+    async def _run(self) -> None:
+        while not self._stop.is_set():
+            self.status = "connecting"
+            try:
+                async with websockets.connect(self.url, ping_interval=20, ping_timeout=20, close_timeout=2,
+                                              max_size=4_000_000) as socket:
+                    await asyncio.wait_for(socket.recv(), timeout=10)  # the server's "connected" status
+                    await asyncio.wait_for(socket.send(json.dumps({"action": "auth", "params": self.api_key})), timeout=2)
+                    answer = json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
+                    if not any(isinstance(item, dict) and item.get("status") == "auth_success"
+                               for item in (answer if isinstance(answer, list) else [answer])):
+                        raise PermissionError("not authorized")
+                    self.status = "connected"
+                    subscribed: set[str] = set()
+                    version = -1  # a new connection subscribes from scratch
+                    while not self._stop.is_set():
+                        if version != self._version:
+                            with self._lock:
+                                version, desired = self._version, {symbol.replace("-", ".") for symbol in self._symbols}
+                            removed, added = sorted(subscribed - desired), sorted(desired - subscribed)
+                            if removed:
+                                await asyncio.wait_for(socket.send(json.dumps(
+                                    {"action": "unsubscribe", "params": ",".join("Q." + name for name in removed)})), timeout=2)
+                            if added:
+                                await asyncio.wait_for(socket.send(json.dumps(
+                                    {"action": "subscribe", "params": ",".join("Q." + name for name in added)})), timeout=2)
+                            subscribed = desired
+                        try:
+                            raw = await asyncio.wait_for(socket.recv(), timeout=1)
+                        except TimeoutError:
+                            continue
+                        self._record(raw)
+            except Exception as exc:  # the type only: a server's or a library's text never reaches the logs
+                if self._stop.is_set():
+                    break
+                logger.warning("Massive stream reconnect: %s", type(exc).__name__)
+                self.status = "error"
+                await asyncio.sleep(3)
+        self.status = "stopped"
+
+
+def massive_line(massive: MassiveQuoteStream, engine: "Engine") -> str:
+    """The pushed NBBO's health, numbers and a closed set of states only (published by the status workflow)."""
+    quotes, lag, worst, names = massive.take_gauges()
+    return ("R2D2 live massive: state=%s symbols=%d quotes=%d lag_ms=%d lag_max_ms=%d pushed=%d"
+            % (massive.status if massive.status in MASSIVE_STREAM_STATES else "other", names, quotes, lag, worst,
+               engine.exit_sources["pushed"]))
+
+
 def feed_line(stream: Any, engine: "Engine") -> str:
     """How late the feed is and why signals did not buy: numbers only (published by the status workflow). Resets the
     worst lag of the interval."""
@@ -1148,7 +1299,8 @@ def feed_line(stream: Any, engine: "Engine") -> str:
 def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[..., Any], base_url: str, token: str,
                 day: date, cache_dir: Path, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                 sleep: Callable[[float], None] = clock_time.sleep, job: Callable[[], Any] | None = None,
-                nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None) -> EngineState:
+                nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None,
+                massive: MassiveQuoteStream | None = None) -> EngineState:
     """One session, from the universe before the open to the close. Every database write goes through ``job`` (the
     host's maintenance gate) when given."""
     def guarded(action: Callable[[], Any]) -> Any:
@@ -1168,6 +1320,8 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     quotes_for = getattr(stream, "set_quote_symbols", None)
     if quotes_for is not None:  # BEFORE the group: the quote feed never sees the whole universe, even for an instant
         quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
+    if massive is not None:
+        massive.set_symbols(set(state.positions))  # Massive's pushed NBBO: the held names (the exits)
     stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
     if getattr(stream, "session", None) == day:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
@@ -1207,10 +1361,13 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     while now() < at(SESSION_CLOSE):
         moment = now()
         began = clock_time.monotonic()
-        fills = engine.step(moment, stream.view, signal, nbbo)
-        if quotes_for is not None and set(engine.state.positions) != held:  # a buy or a sale: the quote feed follows
+        fills = engine.step(moment, stream.view, signal, nbbo, pushed=massive.quote if massive is not None else None)
+        if set(engine.state.positions) != held:  # a buy or a sale: the quote feeds follow
             held = set(engine.state.positions)
-            quotes_for(held)
+            if quotes_for is not None:
+                quotes_for(held)
+            if massive is not None:
+                massive.set_symbols(held)
         if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
             guarded(lambda: commit(moment))
             last_marks = clock_time.monotonic()
@@ -1220,10 +1377,14 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             logger.info("%s", heartbeat(stream, engine, moment))
             logger.info("%s", feed_line(stream, engine))
             logger.info("%s", shadow_line(engine))
+            if massive is not None:
+                logger.info("%s", massive_line(massive, engine))
             last_lines = clock_time.monotonic()
         # one pass a second: a step that waited on Massive does not add a whole second more before the exits run again
         sleep(max(0.0, 1.0 - (clock_time.monotonic() - began)))
     engine.close_session()
+    if massive is not None:
+        massive.set_symbols(())  # nothing held is followed past the close
     guarded(lambda: commit(now()))
     logger.info("%s", shadow_line(engine))  # the day's final per band: the T30 and the close's shadows included
     stream.set_group(STREAM_GROUP, [])
@@ -1284,6 +1445,9 @@ def main() -> None:
                          settings.massive_api_token) if settings.massive_api_token else None)
     stream = LiveEngineStream(settings.eodhd_api_token)
     stream.start()
+    massive = MassiveQuoteStream(settings.massive_api_token) if settings.massive_api_token else None
+    if massive is not None:
+        massive.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))
     base_url = settings.eodhd_base_url.rstrip("/")
     while True:
@@ -1301,7 +1465,7 @@ def main() -> None:
             continue
         try:
             run_session(stream=stream, database=database, get_json=http.get_json, base_url=base_url,
-                        token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo)
+                        token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo, massive=massive)
         except Exception:
             logger.exception("R2D2 live: the session failed")
             clock_time.sleep(60)
