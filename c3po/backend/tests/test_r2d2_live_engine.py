@@ -910,7 +910,29 @@ def test_the_marks_carry_the_level_the_rule_sells_at() -> None:
     row = engine.marks()[0]
     assert row["symbol"] == "AAA" and row["armed"] is False and row["stop_percent"] == -engine_module.RULE["stop_percent"]
     assert row["stop_price"] == position.exit_price() and row["bid"] == position.last_mark
-    assert (row["opened_at"], row["quantity"], row["cost_usd"]) == (position.opened_at, position.shares, position.cost_usd)
+    assert (row["opened_at"], row["quantity"], row["cost_usd"]) == (position.opened_at, round(position.shares, 6),
+                                                                     round(position.cost_usd, 2))
+
+
+def test_the_engines_marks_dress_the_book_it_publishes_through_the_real_store(tmp_path: Path) -> None:
+    """Pre-review of eb72ce47: the book rounds cost to cents and shares to 6 decimals; marks with the raw floats matched no
+    position, so the screen fell back to the feed for every name. Through document, store and latest_book with an uneven
+    NAV, the engine's marks are laid on its own book."""
+    from app import r2d2_lab_live
+
+    database = Database(Settings(database_url=""))
+    engine = _engine(nav=931214.4417)
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    assert round(position.cost_usd, 2) != position.cost_usd  # an uneven cost, as in production
+    r2d2_lab_live.store(database, engine.document(t), now=t, max_trades=engine_module.ENGINE_MAX_TRADES)
+    found = r2d2_lab_live.latest_book(database, now=t)
+    assert found is not None
+    mark_at = t + timedelta(seconds=1)
+    engine.marked_moment["AAA"] = mark_at
+    row = {"session": DAY.isoformat(), "as_of": mark_at, "marks": engine.marks()}
+    dressed = r2d2_lab_live.overlay_marks(found[2], row, DAY.isoformat(), mark_at + timedelta(milliseconds=100))
+    assert dressed["positions"][0]["mark_as_of"] == mark_at.isoformat() and dressed["positions"][0]["stop_percent"] == -0.4
     t = _at(10, 0, 2)
     up = _bid_at(position, 0.17)
     engine.step(t, lambda s: MarketView(price=98.3, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),

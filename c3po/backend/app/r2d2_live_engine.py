@@ -871,7 +871,10 @@ class Engine:
             rows.append({"symbol": symbol, "bid": position.last_mark, "net_percent": position.net_percent(position.last_mark),
                          "armed": position.armed, "stop_price": position.exit_price(), "stop_percent": level,
                          "marked_at": marked.isoformat() if marked is not None else None,
-                         "opened_at": position.opened_at, "quantity": position.shares, "cost_usd": position.cost_usd})
+                         # rounded exactly as the published book rounds them (Engine.document): the same position, the same
+                         # numbers (pre-review of eb72ce47)
+                         "opened_at": position.opened_at, "quantity": _rounded("quantity", position.shares),
+                         "cost_usd": _rounded("cost_usd", position.cost_usd)})
         return rows
 
     def fast_exits(self, now: datetime, view: Callable[[str], MarketView],
