@@ -844,6 +844,29 @@ def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monk
     assert [f["symbol"] for f in fills] == ["AAA"]
 
 
+def test_a_full_check_whose_reads_cross_the_close_never_sells(monkeypatch) -> None:
+    """The same witness on the full check (pre-review of ab570efb): its pushed phase and its Massive/feed phase never
+    mark nor sell at or past 16:00, wherever a read or Massive's wait crosses it."""
+    for pushed_quote in (True, False):
+        engine = _engine()
+        position = _bought_aaa(engine, _at(10, 0, 1))
+        wall = {"t": 900.0}
+        monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+        start = _at(15, 59, 59) + timedelta(milliseconds=900)
+        stop = _bid_at(position, -0.45)
+
+        calls = {"n": 0}
+
+        def slow_view(symbol):  # the pushed phase's read crosses 16:00; without a pushed quote, the Massive phase's read does
+            calls["n"] += 1
+            wall["t"] += 0.2 if (pushed_quote or calls["n"] == 2) else 0.05
+            return MarketView(price=98.0, trade_at=start, vwap=98.0)
+        pushed = (lambda s: (stop, stop + 0.01, start)) if pushed_quote else (lambda s: None)
+        fills = engine.step(start, slow_view, nbbo=lambda s, now: (stop, stop + 0.01, now), pushed=pushed)
+        assert [f for f in fills if f["side"] == "SELL"] == [] and "AAA" in engine.state.positions, pushed_quote
+        assert engine.exit_sources["massive"] == 0 and position.last_mark == 98.105
+
+
 def test_the_tenth_of_a_second_checks_never_run_past_the_close(tmp_path: Path, monkeypatch) -> None:
     """Pre-review of e1149ca5 P1: the last full check at 15:59:59.45 left half its tenth-of-a-second checks after 16:00,
     where a post-close quote could sell. Every check stops at the close."""

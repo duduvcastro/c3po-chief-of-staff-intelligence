@@ -675,6 +675,9 @@ class Engine:
             # the effective instant, sampled after the reads that may block (the view takes the stream's lock; as the
             # entries, Codex 6499564395): the quote's age, the T30 rule and the sell's stamp read this one instant
             moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            if self._after_close(moment):  # a read that crossed 16:00 never marks nor sells (as the fast pass)
+                pending.clear()
+                break
             bid = exit_bid(quote, market, position, moment)
             if bid is None:
                 pending.append(symbol)
@@ -691,6 +694,8 @@ class Engine:
             position = self.state.positions[symbol]
             market = view(symbol)
             moment = now + timedelta(seconds=clock_time.monotonic() - started_step)
+            if self._after_close(moment):  # Massive's wait or a read that crossed 16:00: no mark, no sale
+                break
             bid, source = exit_bid(answers.get(symbol), market, position, moment), "massive"
             if bid is None:
                 if not market.quote_fresh(moment):
@@ -845,6 +850,11 @@ class Engine:
         self.fills.append(fill)
         return fill
 
+    def _after_close(self, moment: datetime) -> bool:
+        """At or past this session's close (16:00 New York on its own date): an exit check never marks nor sells then —
+        every path samples its effective instant after its reads and asks this first (Codex 6527492839)."""
+        return moment >= datetime.combine(self.day, SESSION_CLOSE, tzinfo=NEW_YORK)
+
     def fast_exits(self, now: datetime, view: Callable[[str], MarketView],
                    pushed: Callable[[str], tuple[float, float, datetime] | None]) -> list[dict[str, Any]]:
         """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"): every
@@ -859,7 +869,7 @@ class Engine:
             moment = now + timedelta(seconds=clock_time.monotonic() - started)
             # the close checked again at the effective instant, after the reads that may block: a read that crossed
             # 16:00 never marks nor sells (Codex 6527492839)
-            if moment.astimezone(NEW_YORK).time() >= SESSION_CLOSE:
+            if self._after_close(moment):
                 break
             bid = exit_bid(quote, market, position, moment)
             if bid is None:
