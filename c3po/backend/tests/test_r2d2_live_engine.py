@@ -2,6 +2,7 @@ import json
 import math
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
 import pytest
 
@@ -81,7 +82,7 @@ def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S1", "venda: stop")]
     assert state.positions["S2"].armed  # ~+0.39% armed the lock
     t = _at(10, 1)
-    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to ~+0.26%: below peak − 0.05 → lock
+    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to ~+0.26%: below its step floor (+0.30%) → lock
     fills = engine.step(t, lambda s: _view(marks[s], None, marks[s], marks[s] + 0.01, t) if s in marks else MarketView())
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
     assert fills[0]["realized_pnl_usd"] > 0
@@ -92,31 +93,66 @@ def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     assert abs(state.nav_realized - 1_000_000 - sum(f["realized_pnl_usd"] for f in engine.fills if f["side"] == "SELL")) < 1e-6
 
 
-def test_the_armed_lock_trails_the_peak_by_five_hundredths() -> None:
-    """Owner 29/10: the floor follows the peak 0.05 below it (it was 0.10), never under +0.15%."""
-    engine = _engine()
+def _held(engine: Engine, symbol: str) -> tuple[Position, Callable[[float], float]]:
     cost = 500.0 * 100.0 * (1 + FEE_SIDE)
-    engine.state.positions["S2"] = Position("S2", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
-    engine.members["S2"] = Member("S2", "NYSE", 0.0, 0.0)
-    net = lambda bid: (500.0 * bid * (1 - FEE_SIDE) / cost - 1) * 100  # noqa: E731
+    engine.state.positions[symbol] = Position(symbol, "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
+    engine.members[symbol] = Member(symbol, "NYSE", 0.0, 0.0)
+    return engine.state.positions[symbol], lambda net: cost * (1 + net / 100) / (500.0 * (1 - FEE_SIDE))  # the bid at a net
 
-    def mark(t, bid):
-        return engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == "S2" else MarketView())
-    assert engine_module.RULE["pullback_percent"] == 0.05 and engine_module.RULE["lock_min_percent"] == 0.15
-    assert mark(_at(10, 0), 100.31) == [] and engine.state.positions["S2"].armed  # peak ~+0.30%
-    peak = engine.state.positions["S2"].peak_percent
-    assert abs(peak - net(100.31)) < 1e-9 and 0.29 < peak < 0.31
-    assert mark(_at(10, 0, 1), 100.27) == []  # ~+0.26%: above peak − 0.05 (~0.25%) — the old 0.10 also held it
-    fills = mark(_at(10, 0, 2), 100.25)  # ~+0.24%: below peak − 0.05; the old 0.10 (floor ~0.20%) would still hold it
+
+def _mark(engine: Engine, symbol: str, t: datetime, bid: float) -> list[dict]:
+    return engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == symbol else MarketView())
+
+
+def test_the_step_lock_floor_is_the_last_step_the_peak_reached() -> None:
+    """Owner 29/10: arms at +0.10%, a new floor every 0.05 up to +0.30%, every 0.10 above, the floor ON the step."""
+    floor = engine_module.lock_floor
+    assert [round(floor(p), 10) for p in (0.10, 0.1499, 0.15, 0.2, 0.2999, 0.30, 0.3999, 0.40, 0.47, 0.95)] == \
+           [0.10, 0.10, 0.15, 0.20, 0.25, 0.30, 0.30, 0.40, 0.40, 0.90]
+    assert floor(0.15 - 1e-12) == floor(0.15)  # a hair under a step (float error) still counts it
+    assert engine_module.RULE["stop_percent"] == 0.4 and engine_module.RULE["lock_min_percent"] == 0.10
+
+
+@pytest.mark.parametrize(("peak", "hold", "sell", "floor"), [
+    (0.12, 0.11, 0.09, 0.10), (0.17, 0.16, 0.14, 0.15), (0.33, 0.31, 0.29, 0.30), (0.47, 0.41, 0.39, 0.40)])
+def test_the_step_lock_sells_when_the_profit_falls_to_its_floor(peak: float, hold: float, sell: float, floor: float) -> None:
+    engine = _engine()
+    position, bid = _held(engine, "S2")
+    assert _mark(engine, "S2", _at(10, 0), bid(peak)) == [] and position.armed
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - floor) < 1e-9  # the screen's stop
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(hold)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(sell))
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
-    assert 0.23 < fills[0]["realized_return_percent"] < 0.25
-    # under +0.20% of peak the floor stays at +0.15%
-    engine.state.positions["S3"] = Position("S3", "NYSE", 500.0, 100.0, cost, _at(9, 35).isoformat())
-    engine.members["S3"] = Member("S3", "NYSE", 0.0, 0.0)
-    step = lambda t, bid: engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == "S3" else MarketView())  # noqa: E731
-    assert step(_at(10, 1), 100.19) == [] and engine.state.positions["S3"].armed  # ~+0.18%
-    assert step(_at(10, 1, 1), 100.17) == []  # ~+0.16%: above the +0.15% floor
-    assert [f["symbol"] for f in step(_at(10, 1, 2), 100.15)] == ["S3"]  # ~+0.14%
+    assert abs(fills[0]["realized_return_percent"] - sell) < 1e-6
+
+
+def test_a_carried_position_is_armed_by_its_net_never_by_a_peak_of_the_earlier_rule() -> None:
+    """Pre-review: a negative position carried from the +0.15% rule with a peak of +0.12% was never armed; under the new
+    rule it must not be armed (and sold as a 'lock' at a loss) by that stored peak — only when its net reaches +0.10%."""
+    engine = _engine()
+    position, bid = _held(engine, "S2")
+    position.peak_percent, position.armed = 0.12, False
+    assert _mark(engine, "S2", _at(10, 0), bid(-0.20)) == [] and not position.armed  # held at -0.20%
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(0.11)) == [] and position.armed  # back above +0.10%: armed, floor +0.10%
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(0.09))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
+
+
+def test_the_floor_has_no_gap_under_the_wide_band() -> None:
+    floor = engine_module.lock_floor
+    for peak in (0.30 - 5e-10, 0.30 - 2e-10, 0.30, 0.30 + 1e-12):
+        assert round(floor(peak), 10) == 0.30
+    assert round(floor(0.30 - 2e-9), 10) == 0.25
+
+
+def test_the_stop_before_the_lock_arms_is_minus_four_tenths() -> None:
+    engine = _engine()
+    position, bid = _held(engine, "S2")
+    assert _mark(engine, "S2", _at(10, 0), bid(0.09)) == [] and not position.armed  # positive, under +0.10%: not armed
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.4) < 1e-9
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.39)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(-0.41))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
 
 
 def test_no_buy_after_the_last_entry_and_negatives_carry() -> None:
@@ -139,7 +175,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == "TIT-2S3-RT" and len(validated["trades"]) == 1
+    assert validated["config"] == "TIT-2S5-RT" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -201,7 +237,7 @@ def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, mo
         run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                     now=lambda: clock["t"], sleep=stop_at_noon)
     stored = r2d2_lab_live.latest_book(database, now=_at(12, 0))
-    assert stored is not None and stored[1] == "TIT-2S3-RT" and len(stored[2]["positions"]) == 1
+    assert stored is not None and stored[1] == "TIT-2S5-RT" and len(stored[2]["positions"]) == 1
     # the service restarts at noon: the session resumes with its fill, its candidates and its opening NAV
     state = run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                         now=lambda: clock["t"], sleep=sleep)
@@ -862,13 +898,72 @@ def test_nbbo_a_buy_takes_the_massive_nbbo_where_the_streams_quote_was_wider() -
     assert engine.sources == {"massive": 1, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 1}
 
 
+def test_a_day_whose_publish_failed_is_republished_under_its_own_rule_after_a_rule_change(monkeypatch) -> None:
+    """Codex 6508087909: 29/10 checkpointed under TIT-2S3-RT (a state of the earlier code: no config field, the rule in
+    its checkpoint's inputs), its public write failed; the 30/10 process (TIT-2S5-RT) republishes it under TIT-2S3-RT."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S3-RT")
+    engine = _engine()
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    t = _at(9, 41)
+    engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    engine.close_session()
+    saved = engine.state.to_json()
+    saved.pop("config")  # written by the earlier code: the rule is only in the checkpoint's inputs
+    methodology = database.ensure_methodology_version("r2d2_live_engine", 2, {}, "earlier")
+    database.save_analysis_snapshot(engine_module.STATE_TYPE, engine_module.STATE_KEY, methodology, {"config": "TIT-2S3-RT"},
+                                    saved, t)
+    assert database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat()) is None  # the publish failed
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S5-RT")  # the rule changes overnight; the process restarts
+    state = engine_module.load_state(database, lambda: None)
+    assert state.config == "TIT-2S3-RT"
+    next_day = DAY + timedelta(days=1)
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    assert engine_module.reconcile_previous(database, state, next_day, close_at + timedelta(hours=17)) is True
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert stored["config"] == "TIT-2S3-RT" and all(trade["id"].startswith("TIT-2S3-RT:") for trade in stored["trades"])
+    assert Engine(state, next_day, []).state.config == "TIT-2S5-RT"  # the new session runs under the rule in force
+
+
+def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> None:
+    """Pre-review of b84a436: 29/10 ran under TIT-2S3-RT; the next session (TIT-2S5-RT) reconciles it and must keep its
+    config and trade ids — nothing is republished when the stored document already holds the day's fills."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S3-RT")
+    engine = _engine()
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    t = _at(9, 41)
+    engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    engine_module.publish(database, engine, close_at, as_of=close_at)
+    engine.close_session()
+    monkeypatch.setattr(engine_module, "CONFIG", "TIT-2S5-RT")  # the rule changes overnight
+    next_day = DAY + timedelta(days=1)
+    assert engine_module.reconcile_previous(database, engine.state, next_day, close_at + timedelta(hours=17)) is False
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert stored["config"] == "TIT-2S3-RT" and all(trade["id"].startswith("TIT-2S3-RT:") for trade in stored["trades"])
+
+
+@pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
+def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
+    """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 5.0 bps buy, 5.5 bps is refused (it was 3 bps)."""
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-RT"
+    engine = _crossing_engine()
+    t = _at(9, 41)
+    views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
+    fills = engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: (29.0, ask, now))
+    assert ([f["symbol"] for f in fills] == ["CCC"]) is bought and engine.skips["spread"] == (0 if bought else 1)
+
+
 def test_nbbo_massive_silent_falls_back_to_the_stream_and_an_old_or_wide_nbbo_is_refused() -> None:
     engine = _crossing_engine()
     t = _at(9, 41)
-    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.01, t)}
+    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.0, 29.02, t)}
     fills = engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: None)
     assert [f["symbol"] for f in fills] == ["AAA"] and "cotação do stream" in fills[0]["reason"]
-    assert engine.sources["unanswered"] == 2 and engine.sources["stream"] == 2 and engine.skips["spread"] == 1  # CCC 3.4 bps
+    assert engine.sources["unanswered"] == 2 and engine.sources["stream"] == 2 and engine.skips["spread"] == 1  # CCC 6.9 bps
 
     engine = _crossing_engine()
     old = lambda s, now: (98.095, 98.105, now - timedelta(seconds=61)) if s == "AAA" else (29.0, 29.2, now)

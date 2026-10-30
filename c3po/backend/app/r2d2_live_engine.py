@@ -1,14 +1,15 @@
 """The live R2D2 inside the C3PO server, on the EODHD real-time stream (owner, 27/10/2026: "claro que tem que mudar
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
-The rule in force is the one the owner chose on 26/10 (TIT-2S3): stocks that open at least 1% below the previous close,
+The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10): stocks that open at least 1% below the previous close,
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
-real ask, with a quoted spread of at most 3 bps, up to
+real ask, with a quoted spread of at most 5 bps (owner 29/10; 3 bps until then), up to
 15:29:59 ET — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
-not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid: hard stop at -0.5% net,
-profit lock armed at +0.15% net trailing the peak by 0.05 (owner 29/10; 0.10 until then), every positive position sold from 15:59:30 ET; the
+not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid:
+stop at -0.4% net until a step profit lock arms at +0.10% net, whose floor is the last step the peak reached (every 0.05 up
+to +0.30%, every 0.10 above; owner 29/10, it was a +0.15% lock trailing the peak), every positive position sold from 15:59:30 ET; the
 negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
@@ -39,9 +40,9 @@ from .market_data.eodhd_stream import EodhdRealtimeStream
 logger = logging.getLogger(__name__)
 
 NEW_YORK = ZoneInfo("America/New_York")
-CONFIG = "TIT-2S3-RT"
+CONFIG = "TIT-2S5-RT"  # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then)
 STATE_TYPE = "r2d2_live_engine_state"
-STATE_KEY = "TIT-2S3"
+STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
 # The stream's capacity is per account (550 on this plan, EODHD's default is 50): the api's own stream keeps the rest
 UNIVERSE_SIZE = int(os.environ.get("C3PO_R2D2_LIVE_UNIVERSE_SIZE", "500"))
@@ -49,10 +50,13 @@ ADV_DAYS = 20
 MIN_ADV_DAYS = 15
 FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's cost model)
 RULE = {
-    "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 3.0,
-    # owner 29/10/2026 ~13:0x BRT: "vamos fazer os picos subindo de 0,05 e não 0,10 por vez" — the armed lock trails
-    # the peak by 0.05 (it was 0.10): the floor rises above +0.15% once the peak passes +0.20%
-    "stop_percent": 0.5, "lock_min_percent": 0.15, "pullback_percent": 0.05,
+    # owner 29/10/2026 ~17:2x BRT: "vamos mudar para até 5 bps para amanhã também" (it was 3 bps)
+    "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 5.0,
+    # owner 29/10/2026 ~17:0x BRT: "a trava arma se ela chegar a 0,10%, aí a cada 0,05% ela gera uma nova trava. Se passar
+    # de 0,3% de lucro a trava sobe a cada 0,10pp" — the floor ON the step reached ("no degrau") — "e coloca o stop sem
+    # trava em -0,4%". Until then: stop -0.5%, a lock armed at +0.15% trailing the peak by 0.05 (0.10 before 13:51 BRT)
+    "stop_percent": 0.4, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.30,
+    "lock_wide_step_percent": 0.10,
 }
 SESSION_OPEN = time(9, 30)
 OPENING_WINDOW_END = time(9, 31)  # the candidates are fixed once every subscribed name had a chance to print
@@ -422,6 +426,17 @@ def build_universe(get_json: Callable[..., Any], base_url: str, token: str, day:
 
 
 # ------------------------------------------------------------------ the engine (pure: decisions from views)
+def lock_floor(peak: float) -> float:
+    """The armed lock's floor: the last step the peak reached (owner 29/10, "no degrau"): +0.10% net, then every 0.05 up
+    to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
+    low, step = RULE["lock_min_percent"], RULE["lock_step_percent"]
+    wide_from, wide_step = RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]
+    reached = peak + 1e-9  # one tolerance for the band and the step (pre-review: two made a gap just under +0.30%)
+    if reached < wide_from:
+        return low + step * math.floor((reached - low) / step)
+    return wide_from + wide_step * math.floor((reached - wide_from) / wide_step)
+
+
 @dataclass
 class Position:
     symbol: str
@@ -437,6 +452,12 @@ class Position:
 
     def net_percent(self, bid: float) -> float:
         return (self.shares * bid * (1 - FEE_SIDE) / self.cost_usd - 1) * 100
+
+    def exit_price(self) -> float:
+        """The bid at which the rule sells now: the armed lock's floor (``lock_floor`` of the peak), else the stop —
+        the level the screen shows as the position's stop (owner 29/10: "o stop não tá mexendo")."""
+        floor = lock_floor(self.peak_percent or RULE["lock_min_percent"]) if self.armed else -RULE["stop_percent"]
+        return self.cost_usd * (1 + floor / 100) / (self.shares * (1 - FEE_SIDE))
 
 
 @dataclass
@@ -454,13 +475,14 @@ class EngineState:
     last_signal_minute: int = -1  # minutes after midnight ET of the last minute the entries were checked in (every second)
     candidates_fixed: bool = False  # the selection at the open happened (even when it found none)
     stream_context: dict[str, dict[str, Any]] = field(default_factory=dict)  # the tapes, for a restart
+    config: str = ""  # the rule the session in the state ran under (its documents keep it when the rule changes)
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
                 "positions": [asdict(position) for position in self.positions.values()], "session": self.session,
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
-                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context}
+                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -470,7 +492,8 @@ class EngineState:
                    candidates=dict(data.get("candidates") or {}), below=dict(data.get("below") or {}),
                    signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []),
                    last_signal_minute=int(data.get("last_signal_minute", -1)),
-                   candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}))
+                   candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}),
+                   config=str(data.get("config") or ""))
 
 
 class Engine:
@@ -490,6 +513,7 @@ class Engine:
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
+            state.config = CONFIG
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
 
@@ -548,12 +572,12 @@ class Engine:
             net = position.net_percent(market.bid)
             position.last_mark = market.bid
             position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
-            if position.peak_percent >= RULE["lock_min_percent"]:
+            if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
                 position.armed = True
             reason = None
             if net <= -RULE["stop_percent"]:
                 reason = "hard_stop"
-            elif position.armed and net <= max(RULE["lock_min_percent"], position.peak_percent - RULE["pullback_percent"]):
+            elif position.armed and net <= lock_floor(position.peak_percent):
                 reason = "lock"
             elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
                 reason = "t30_positive"
@@ -689,20 +713,22 @@ class Engine:
             positions.append({"symbol": position.symbol, "market": position.market, "quantity": position.shares,
                               "average_cost": position.entry_price, "last_price": mark, "cost_usd": position.cost_usd,
                               "unrealized_pnl_usd": result, "unrealized_return_percent": net,
-                              "stop_price": position.cost_usd * (1 - RULE["stop_percent"] / 100) / (position.shares * (1 - FEE_SIDE)),
+                              "stop_price": position.exit_price(),  # the lock's floor once armed, else the stop
                               "opened_at": position.opened_at})
         cash = self.state.nav_realized - sum(position.cost_usd for position in self.state.positions.values())
         return {"nav_start_usd": self.nav_start, "nav_usd": self.state.nav_realized + unrealized,
                 "realized_nav_usd": self.state.nav_realized, "cash_usd": cash, "as_of": now.isoformat(), "positions": positions}
 
-    def document(self, now: datetime) -> dict[str, Any]:
+    def document(self, now: datetime, *, config: str | None = None) -> dict[str, Any]:
+        """``config``: the rule the day ran under; default: the session's own (``state.config``), else the one in force."""
+        config = config or self.state.config or CONFIG
         trades = []
         for index, fill in enumerate(self.fills):
             stamp = int(datetime.fromisoformat(fill["executed_at"]).timestamp())
-            trades.append({"id": "%s:%s:%s:%s:%d:%d" % (CONFIG, self.day.isoformat(), fill["symbol"], fill["side"].lower(), stamp, index),
+            trades.append({"id": "%s:%s:%s:%s:%d:%d" % (config, self.day.isoformat(), fill["symbol"], fill["side"].lower(), stamp, index),
                            **{key: _rounded(key, value) for key, value in fill.items()}})
         sells = sum(1 for fill in self.fills if fill["side"] == "SELL")
-        return {"schema": r2d2_lab_live.SCHEMA, "day": self.day.isoformat(), "config": CONFIG, "trades": trades,
+        return {"schema": r2d2_lab_live.SCHEMA, "day": self.day.isoformat(), "config": config, "trades": trades,
                 "book": {key: _rounded(key, value) for key, value in self.book(now).items()},
                 "cycle": {"candidates": len(self.candidates), "signals": self.signals,
                           "entries": sum(1 for fill in self.fills if fill["side"] == "BUY"), "closed": sells}}
@@ -725,7 +751,10 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
     snapshot = database.latest_analysis_snapshot(STATE_TYPE, STATE_KEY)
     outputs = (snapshot or {}).get("outputs")
     if isinstance(outputs, dict) and "nav_realized" in outputs:
-        return EngineState.from_json(outputs)
+        state = EngineState.from_json(outputs)
+        if not state.config:  # a checkpoint written before the field: its own rule, recorded in its inputs (Codex 6508087909)
+            state.config = str(((snapshot or {}).get("inputs") or {}).get("config") or "")
+        return state
     seeded = opening_nav()
     if seeded is None:
         raise RuntimeError("no engine state and no lab book to start from")
@@ -733,13 +762,13 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 2 from 29/10/2026 (owner): entries checked every second (#513) and the lock trailing the peak by 0.05; the
-    # snapshots before the switch keep pointing at version 1 (minute-close entries, 0.10)
+    # version 3 from 30/10/2026 (owner, 29/10): the stop at -0.4% and the step lock from +0.10%; version 2 (29/10
+    # afternoon) was the lock trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 2, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
-        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second "
-        "and the profit lock trailing the peak by 0.05 (owner 29/10/2026)")
-    database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": CONFIG}, state.to_json(), now)
+        "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE},
+        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
+        "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026)")
+    database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
 def seed_from_lab_book(database: Any, now: datetime) -> EngineState | None:
@@ -758,8 +787,9 @@ def seed_from_lab_book(database: Any, now: datetime) -> EngineState | None:
 ENGINE_MAX_TRADES = 20_000  # a whole session at any cadence (Codex #500 P2-6); the public route keeps its own cap
 
 
-def publish(database: Any, engine: Engine, now: datetime, *, as_of: datetime | None = None) -> dict[str, Any]:
-    return r2d2_lab_live.store(database, engine.document(as_of or now), now=now, max_trades=ENGINE_MAX_TRADES)
+def publish(database: Any, engine: Engine, now: datetime, *, as_of: datetime | None = None,
+            config: str | None = None) -> dict[str, Any]:
+    return r2d2_lab_live.store(database, engine.document(as_of or now, config=config), now=now, max_trades=ENGINE_MAX_TRADES)
 
 
 def reconcile_previous(database: Any, state: EngineState, day: date, now: datetime) -> bool:
@@ -781,15 +811,21 @@ def reconcile_previous(database: Any, state: EngineState, day: date, now: dateti
     else:
         state.session = keep
     close_at = datetime.combine(prior_day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
-    stored = ((database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}).get("trades")
-    pending = bool(state.fills) and stored != engine.document(close_at)["trades"]
+    stored_doc = (database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}
+    stored = stored_doc.get("trades")
+    # the day keeps the rule it ran under: a rule changed since then (a new CONFIG) never rewrites it (pre-review b84a436),
+    # even when its public document is missing (a publish that failed after the checkpoint: Codex 6508087909)
+    config = str(stored_doc.get("config") or state.config or "")
+    if state.fills and not config:  # never written under a rule it did not run under; the close and its save still happen
+        logger.error("R2D2 live: previous session %s has no recorded rule; not republished", prior)
+    pending = bool(state.fills) and bool(config) and stored != engine.document(close_at, config=config)["trades"]
     if not unclosed and not pending:
         return False
     if unclosed:
         save_state(database, state, now)
     if pending:
         try:
-            publish(database, engine, now, as_of=close_at)
+            publish(database, engine, now, as_of=close_at, config=config)
         except r2d2_lab_live.LabLiveRefused:  # a document too old for the screen (a long holiday): the state is consistent
             logger.info("R2D2 live: previous session %s not republished (refused by the screen)", prior)
     return True
