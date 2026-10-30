@@ -1,7 +1,8 @@
 """The live R2D2 inside the C3PO server, on the EODHD real-time stream (owner, 27/10/2026: "claro que tem que mudar
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
-The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10): stocks that open at least 1% below the previous close,
+The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10; TIT-2S5-RTC, entries until
+the close, from 02/11): stocks that open at least 1% below the previous close,
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
 real ask, with a quoted spread of at most 5 bps (owner 29/10; 3 bps until then), up to
@@ -68,8 +69,11 @@ SESSION_OPEN = time(9, 30)
 OPENING_WINDOW_END = time(9, 31)  # the candidates are fixed once every subscribed name had a chance to print
 # owner 30/10/2026 ~16:1x BRT: "a única coisa que temos que alterar é essa regra de parar de comprar até as 16:30. Tem que
 # ser até fechar o pregão" — "eu quero que seja até a hora da bolsa fechar!": a buy at any instant before 16:00 ET, the T30
-# window included (15:29:59 until 30/10). A buy still negative at the close carries, as every other negative position
+# window included. A buy in the last 30 s is sold at the first check that finds it positive; one no check finds positive
+# before 16:00 carries to the next session, as every other open position
 LAST_ENTRY = time(15, 59, 59, 999999)
+# a session keeps the last entry of the label it started under (a deploy during the session never moves its window)
+LAST_ENTRY_BY_CONFIG = {"TIT-2S3-RT": time(15, 29, 59), "TIT-2S5-RT": time(15, 29, 59)}
 SELL_POSITIVES_FROM = time(15, 59, 30)
 SESSION_CLOSE = time(16, 0)
 QUOTE_MAX_AGE_SECONDS = 5.0  # the exits: a position is marked only on a quote this recent
@@ -620,6 +624,7 @@ class Engine:
             state.shadow, state.bands = {}, {}
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
+        self.last_entry = LAST_ENTRY_BY_CONFIG.get(state.config, LAST_ENTRY)
 
     @property
     def nav_start(self) -> float:
@@ -726,7 +731,7 @@ class Engine:
         # Until 29/10 it was the close of each completed minute (the lab's candles): a cross the minute's close no longer
         # showed was never seen.
         minute = local.hour * 60 + local.minute
-        if local <= LAST_ENTRY:
+        if local <= self.last_entry:
             self.state.last_signal_minute = minute
             crosses: list[tuple[str, float, float]] = []  # (symbol, gap, signal price): this second's crosses, in order
             for symbol, gap in self.candidates.items():
@@ -785,7 +790,7 @@ class Engine:
                 if not plausible(quote, close):
                     self.skips["implausible"] += 1
                     continue
-                if moment.astimezone(NEW_YORK).time() > LAST_ENTRY:  # the answer came after the last entry: no buy
+                if moment.astimezone(NEW_YORK).time() > self.last_entry:  # the answer came after the last entry: no buy
                     self.skips["late"] += 1
                     break
                 self.sources[source] += 1
@@ -809,7 +814,7 @@ class Engine:
                     # the evidence: a buy the stream's fresh quote alone refused (a candidate without a stream quote, the
                     # usual case since the quote feed carries only the held names, is not counted)
                     self.sources["stream_would_refuse"] += 1
-                new.append(self._buy(symbol, ask, gap, spread_bps, moment, source))
+                new.append(self._buy(symbol, ask, gap, spread_bps, moment, source, bid=bid))
         return new
 
     def _shadow_open(self, symbol: str, ask: float, spread_bps: float, moment: datetime) -> None:
@@ -847,11 +852,15 @@ class Engine:
             if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"])) or (late and net > 0)):
                 self._shadow_close(symbol, net)
 
-    def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream") -> dict[str, Any]:
+    def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream",
+             bid: float | None = None) -> dict[str, Any]:
         size = self.state.nav_realized / RULE["slots"]
         shares = size / (ask * (1 + FEE_SIDE))
         member = self.members[symbol]
-        self.state.positions[symbol] = Position(symbol, member.market, shares, ask, size, now.isoformat(), last_mark=ask)
+        # marked at the bid of its own quote until the first exit check: a buy no check reaches before the close (the last
+        # seconds) closes the day at what a sale would meet, not at the price paid (pre-review of c49b5bcb P2-3)
+        self.state.positions[symbol] = Position(symbol, member.market, shares, ask, size, now.isoformat(),
+                                                last_mark=bid if bid is not None else ask)
         fill = {"side": "BUY", "symbol": symbol, "market": member.market, "quantity": shares, "price": ask,
                 "executed_at": now.isoformat(), "fees_usd": shares * ask * FEE_SIDE, "realized_pnl_usd": None,
                 "realized_return_percent": None,
@@ -1025,12 +1034,14 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 3 from 30/10/2026 (owner, 29/10): the stop at -0.4% and the step lock from +0.10%; version 2 (29/10
-    # afternoon) was the lock trailing the peak by 0.05, version 1 before it
+    # version 4 from 02/11/2026 (owner, 30/10): entries until the close; version 3 (30/10) the stop at -0.4% and the step
+    # lock from +0.10%; version 2 (29/10 afternoon) the lock trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 3, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE},
+        "r2d2_live_engine", 4, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+                                "last_entry": LAST_ENTRY.isoformat()},
         "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
-        "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026)")
+        "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026); entries "
+        "until the close (owner 30/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
