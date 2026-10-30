@@ -215,6 +215,21 @@ def test_the_valuation_phases_name_each_enabled_phase_in_closed_words(tmp_path: 
     def unreadable(_codes: list[str]) -> dict[str, Any]:
         raise RuntimeError(f"{SYMBOL} connection refused")
 
+    for phase in ("chewie", "v3_shadow", "shadow", "ensemble_live"):  # every phase in day: the summary says so in one line
+        run_id = database.begin_ingestion_run(VALUATION_WORKER_PHASES[phase]["code"], SYMBOL, "test", {})
+        database._ingestion_runs[run_id].update(started_at=done + timedelta(minutes=1), status="succeeded",
+                                                completed_at=done + timedelta(minutes=1))
+    assert {item["state"] for item in module.valuation_phase_diagnostics(settings, database, NOW)["phases"]} == {"ok"}
+    verified = _verify(tmp_path, json.dumps(module.incidents_report(settings, database, NOW)))
+    assert verified.returncode == 0, verified.stderr
+    summary = (tmp_path / "verify" / "ops-readonly-report" / "summary.md").read_text(encoding="utf-8")
+    assert "- Fases do worker do Valuation: todas em dia (7)" in summary
+
+    # a sixth state word is a defect of the classification, never printed: the block says the reading failed
+    with monkeypatch.context() as patch:
+        patch.setattr("app.system_health.SystemHealthService._valuation_phase_state", staticmethod(lambda *_args: SYMBOL))
+        assert module.valuation_phase_diagnostics(settings, database, NOW) == {"status": "error", "phases": []}
+
     database.ingestion_run_health = unreadable  # type: ignore[method-assign]
     assert module.valuation_phase_diagnostics(settings, database, NOW) == {"status": "error", "phases": []}
     report = module.incidents_report(settings, database, NOW)
@@ -406,7 +421,11 @@ def test_the_verifier_rejects_any_key_or_string_outside_the_whitelist(tmp_path: 
         "valuation phase state is not in its closed vocabulary": mutated(
             lambda r: r["diagnostics"]["valuation_phases"]["phases"][0].update(state=SYMBOL)),
         "valuation phase advisory is not a boolean": mutated(
-            lambda r: r["diagnostics"]["valuation_phases"]["phases"][0].update(advisory=SYMBOL)),
+            lambda r: r["diagnostics"]["valuation_phases"]["phases"][0].update(advisory=1)),
+        "valuation phases is not a short list": mutated(
+            lambda r: r["diagnostics"]["valuation_phases"].update(phases=[{"phase": "other", "state": "ok", "advisory": False}] * 13)),
+        "does not list the canonical phase": mutated(lambda r: r["diagnostics"]["valuation_phases"].update(
+            phases=[{"phase": "chewie", "state": "ok", "advisory": False}])),
         "a valuation phase is listed twice": mutated(
             lambda r: r["diagnostics"]["valuation_phases"]["phases"].append(dict(r["diagnostics"]["valuation_phases"]["phases"][0]))),
         "report_sha256 does not recompute": json.dumps({**base, "generated_at": "2026-10-20T11:00:01+00:00"}),

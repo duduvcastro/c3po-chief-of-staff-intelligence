@@ -174,7 +174,7 @@ jobs:
               "status": {"attention", "offline"},
           }
           DIAGNOSTICS = {"job_failure_families", "governance", "decisor", "valuation_phases"}
-          VALUATION_PHASES = {"status", "phases"}
+          PHASES_BLOCK = {"status", "phases"}
           PHASE = {"phase", "state", "advisory"}
           PHASE_NAMES = {"canonical", "chewie", "v2_data", "shadow", "peer_quality", "v3_shadow", "cash_yield", "price_history",
                          "earnings_calendar", "decisor_shadow", "ensemble_live", "other"}
@@ -319,7 +319,7 @@ jobs:
                   count(decisor[name][key], f"decisor {name} count")
           if sum(decisor["by_verdict"].values()) != decisor["rows"]:
               refuse("the decisor verdicts do not add up to its rows")
-          phases = exact(diag["valuation_phases"], VALUATION_PHASES, "valuation_phases diagnostics")
+          phases = exact(diag["valuation_phases"], PHASES_BLOCK, "valuation_phases diagnostics")
           word(phases["status"], {"ok", "error"}, "valuation_phases status")
           if not isinstance(phases["phases"], list) or len(phases["phases"]) > len(PHASE_NAMES):
               refuse("valuation phases is not a short list")
@@ -329,11 +329,13 @@ jobs:
               exact(item, PHASE, "valuation phase")
               word(item["phase"], PHASE_NAMES, "valuation phase name")
               word(item["state"], PHASE_STATES, "valuation phase state")
-              if item["advisory"] not in (True, False):
+              if type(item["advisory"]) is not bool:
                   refuse("valuation phase advisory is not a boolean")
           named = [item["phase"] for item in phases["phases"] if item["phase"] != "other"]
           if len(named) != len(set(named)):
               refuse("a valuation phase is listed twice")
+          if phases["status"] == "ok" and "canonical" not in named:  # always enabled: a readable evidence always lists it
+              refuse("a readable phase evidence does not list the canonical phase")
           body = {key: value for key, value in report.items() if key != "report_sha256"}
           digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
           if report["report_sha256"] != digest:
