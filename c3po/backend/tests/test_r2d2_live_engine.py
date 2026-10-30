@@ -821,6 +821,29 @@ def test_the_session_checks_the_held_names_every_tenth_of_a_second_between_the_f
     assert any(steps[2] <= moment <= steps[3] for moment in commits)  # the sale committed between the full checks
 
 
+def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monkeypatch) -> None:
+    """Codex 6527492839: the pass began at 15:59:59.900, the view's read took 0.2 s and the pushed quote, stamped
+    16:00:00.100, sold. The close is checked again at the effective instant, after the reads."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    engine.state.positions["CCC"] = Position("CCC", "NYSE", 1000.0, 29.0, 29_001.45, t.isoformat(), last_mark=29.0)
+    wall = {"t": 500.0}
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+    start = _at(15, 59, 59) + timedelta(milliseconds=900)
+    stop = _bid_at(position, -0.45)
+
+    def slow_view(symbol):
+        wall["t"] += 0.2  # every read takes 0.2 s: the first one already crosses 16:00
+        return MarketView(price=98.0, trade_at=start, vwap=98.0)
+    fills = engine.fast_exits(start, slow_view, lambda s: (stop, stop + 0.01, start + timedelta(milliseconds=200)) if s == "AAA" else None)
+    assert fills == [] and "AAA" in engine.state.positions and engine.exit_sources["fast"] == 0
+    wall["t"] = 500.0
+    early = _at(15, 59, 58)  # the same pass a second earlier sells
+    fills = engine.fast_exits(early, slow_view, lambda s: (stop, stop + 0.01, early) if s == "AAA" else None)
+    assert [f["symbol"] for f in fills] == ["AAA"]
+
+
 def test_the_tenth_of_a_second_checks_never_run_past_the_close(tmp_path: Path, monkeypatch) -> None:
     """Pre-review of e1149ca5 P1: the last full check at 15:59:59.45 left half its tenth-of-a-second checks after 16:00,
     where a post-close quote could sell. Every check stops at the close."""

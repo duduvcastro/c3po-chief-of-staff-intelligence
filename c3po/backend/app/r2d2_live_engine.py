@@ -857,6 +857,10 @@ class Engine:
             market = view(symbol)
             quote = pushed(symbol)
             moment = now + timedelta(seconds=clock_time.monotonic() - started)
+            # the close checked again at the effective instant, after the reads that may block: a read that crossed
+            # 16:00 never marks nor sells (Codex 6527492839)
+            if moment.astimezone(NEW_YORK).time() >= SESSION_CLOSE:
+                break
             bid = exit_bid(quote, market, position, moment)
             if bid is None:
                 continue
