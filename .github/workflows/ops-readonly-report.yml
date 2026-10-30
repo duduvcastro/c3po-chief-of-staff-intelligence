@@ -152,7 +152,7 @@ jobs:
           from pathlib import Path
 
           source, out, comments_path, channel_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])
-          SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v3"
+          SCHEMA = "C3PO-OPS-INCIDENTS-REPORT-v4"
           TOP = {"schema", "generated_at", "build_sha", "incidents", "health", "stale_running_ingestion", "diagnostics", "report_sha256"}
           STALE = {"threshold_minutes", "count", "oldest_age_minutes"}
           SLOTS = {"30 6 * * *": "0330", "30 11 * * *": "0830"}
@@ -173,7 +173,12 @@ jobs:
                        "v3_pre_ab_gate", "day_d_disk_reserve", "b2_zero_cap_evidence", "probe_failed", "unmapped"},
               "status": {"attention", "offline"},
           }
-          DIAGNOSTICS = {"job_failure_families", "governance", "decisor"}
+          DIAGNOSTICS = {"job_failure_families", "governance", "decisor", "valuation_phases"}
+          PHASES_BLOCK = {"status", "phases"}
+          PHASE = {"phase", "state", "advisory"}
+          PHASE_NAMES = {"canonical", "chewie", "v2_data", "shadow", "peer_quality", "v3_shadow", "cash_yield", "price_history",
+                         "earnings_calendar", "decisor_shadow", "ensemble_live", "other"}
+          PHASE_STATES = {"ok", "failed", "running", "pending", "stale"}
           DECISOR = {"night", "status", "rows", "by_verdict", "reasons", "sole_blocker"}
           DECISOR_STATUSES = {"ok", "CALENDAR_UNAVAILABLE", "DECISIONS_ONLY_AFTER_NEXT_OPEN", "GENERATION_NOT_DECIDED", "NIGHT_INVALID",
                               "NIGHT_NOT_CLOSED", "NOT_A_SESSION", "NO_DECISIONS", "RUN_INCONSISTENT", "UNVERIFIED_DECISIONS", "error", "other"}
@@ -314,6 +319,23 @@ jobs:
                   count(decisor[name][key], f"decisor {name} count")
           if sum(decisor["by_verdict"].values()) != decisor["rows"]:
               refuse("the decisor verdicts do not add up to its rows")
+          phases = exact(diag["valuation_phases"], PHASES_BLOCK, "valuation_phases diagnostics")
+          word(phases["status"], {"ok", "error"}, "valuation_phases status")
+          if not isinstance(phases["phases"], list) or len(phases["phases"]) > len(PHASE_NAMES):
+              refuse("valuation phases is not a short list")
+          if phases["status"] == "error" and phases["phases"]:
+              refuse("an unreadable phase evidence lists no phase")
+          for item in phases["phases"]:
+              exact(item, PHASE, "valuation phase")
+              word(item["phase"], PHASE_NAMES, "valuation phase name")
+              word(item["state"], PHASE_STATES, "valuation phase state")
+              if type(item["advisory"]) is not bool:
+                  refuse("valuation phase advisory is not a boolean")
+          named = [item["phase"] for item in phases["phases"] if item["phase"] != "other"]
+          if len(named) != len(set(named)):
+              refuse("a valuation phase is listed twice")
+          if phases["status"] == "ok" and "canonical" not in named:  # always enabled: a readable evidence always lists it
+              refuse("a readable phase evidence does not list the canonical phase")
           body = {key: value for key, value in report.items() if key != "report_sha256"}
           digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
           if report["report_sha256"] != digest:
@@ -362,7 +384,14 @@ jobs:
                        or "nenhum")
                     + "; único bloqueio (linhas que só esse código segura): "
                     + (", ".join(f"{name} {n}" for name, n in sorted(decisor["sole_blocker"].items(), key=lambda item: (-item[1], item[0])))
-                       or "nenhum"), ""]
+                       or "nenhum")]
+          words = {"failed": "falhou", "running": "em execução", "pending": "sem sucesso registrado", "stale": "sem sucesso neste ciclo"}
+          phases = report["diagnostics"]["valuation_phases"]
+          behind = [f"{item['phase']} {words[item['state']]}" + (" (consultiva)" if item["advisory"] else "")
+                    for item in phases["phases"] if item["state"] != "ok"]
+          lines += ["- Fases do worker do Valuation: " + ("leitura indisponível" if phases["status"] == "error"
+                    else "; ".join(behind) + f"; em dia {len(phases['phases']) - len(behind)}" if behind
+                    else f"todas em dia ({len(phases['phases'])})"), ""]
           lines.append(f"Somente agregados (sem chaves, títulos, detalhes ou símbolos). report_sha256 `{report['report_sha256']}`; "
                        f"revisão implantada `{report['build_sha']}`.")
           summary = "\n".join(lines) + "\n"
@@ -394,7 +423,9 @@ jobs:
                           f"**Relatório read-only {brt:%d/%m/%Y %H:%M} BRT** — cartões de saúde vermelhos {red}, âmbar {amber}; "
                           f"incidentes ativos {totals['active']} ({totals['critical']} críticos, {totals['over_24h']} há mais de 24 h); "
                           f"ingestões presas há mais de 30 min: {stale['count']} — [relatório read-only]({os.environ['RUN_URL']})", ""]
-                  body += [f"- [vermelho] cartão `{card['group']}/{card['card']}`" for card in red_cards]
+                  body += [f"- [vermelho] cartão `{card['group']}/{card['card']}`"
+                           + (f" — {'; '.join(behind)}" if card["card"] == "valuation_worker_phases" and behind else "")
+                           for card in red_cards]
                   if totals["critical"]:
                       body.append(f"- [crítico] {totals['critical']} incidente(s) crítico(s) aberto(s)")
                   if totals["over_24h"]:

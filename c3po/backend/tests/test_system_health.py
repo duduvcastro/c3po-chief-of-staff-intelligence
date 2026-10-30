@@ -706,6 +706,33 @@ def test_valuation_worker_phase_health_expects_the_earnings_calendar_only_when_e
     assert item.status == "attention" and "earnings_calendar: not run yet for this cycle" in (item.detail or "")
 
 
+def test_valuation_worker_phase_states_classify_like_the_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the ops report reads the card's own classification: names and closed words, never the error text
+    monkeypatch.setenv(valuation_env.ENSEMBLE_LIVE_ENV, "true")
+    for name in (valuation_env.DECISOR_SHADOW_ENV, valuation_env.EARNINGS_CALENDAR_ENV):
+        monkeypatch.delenv(name, raising=False)
+    noon = datetime(2026, 10, 30, 15, 0, tzinfo=timezone.utc)  # 12:00 BRT: after every window
+    fresh = {
+        definition["code"]: {"last_status": "succeeded", "started_at": noon, "completed_at": noon, "last_success_at": noon,
+                             "last_error": None, "metadata": {"phase": phase}}
+        for phase, definition in VALUATION_WORKER_PHASES.items()
+    }
+    live = VALUATION_WORKER_PHASES["ensemble_live"]["code"]
+    service = _service(valuation_phase_states={**fresh, live: {**fresh[live], "last_status": "failed", "last_error": "ZZZZ3 boom"}})
+    states = service.valuation_worker_phase_states(noon)
+    assert [item["phase"] for item in states] == sorted(["canonical", "chewie", "v2_data", "shadow", "peer_quality", "v3_shadow",
+                                                         "ensemble_live"])
+    assert {item["phase"]: (item["state"], item["advisory"]) for item in states if item["state"] != "ok"} == {"ensemble_live": ("failed", True)}
+    assert "ZZZZ3" not in repr(states)
+    card = service._valuation_worker_phase_health(noon)
+    assert card.status == "attention" and "Advisory · ensemble_live: ZZZZ3 boom" in (card.detail or "")
+    v2 = VALUATION_WORKER_PHASES["v2_data"]["code"]
+    old = noon - timedelta(days=2)
+    behind = _service(valuation_phase_states={**fresh, v2: {**fresh[v2], "started_at": old, "completed_at": old, "last_success_at": old}})
+    assert {item["phase"]: item["state"] for item in behind.valuation_worker_phase_states(noon)}["v2_data"] == "stale"
+    assert behind._valuation_worker_phase_health(noon).status == "offline"  # a real phase behind after the window
+
+
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
     now = datetime.now(timezone.utc)
     states = {
