@@ -603,6 +603,7 @@ class Engine:
         self.sources = {"massive": 0, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 0}
         # what each exit check of a held name marked on: Massive's NBBO, the feed's fresh quote, or nothing (this process)
         self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
+        self.marked_moment: dict[str, datetime] = {}  # when the exits last marked each held name (the screen's marks only)
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -855,6 +856,21 @@ class Engine:
         every path samples its effective instant after its reads and asks this first (Codex 6527492839)."""
         return moment >= datetime.combine(self.day, SESSION_CLOSE, tzinfo=NEW_YORK)
 
+    def marks(self) -> list[dict[str, Any]]:
+        """The held names as the exits last marked them, for the screen (migration 055; display only, never read back): the
+        bid, the net at that bid, the lock armed or not, the level the rule sells at and the instant of the mark."""
+        rows = []
+        for symbol, position in sorted(self.state.positions.items()):
+            if position.last_mark is None:
+                continue
+            marked = self.marked_moment.get(symbol)
+            # the level the rule sells at, as the net of a sale there: the lock's floor once armed, else the stop
+            level = lock_floor(position.peak_percent or RULE["lock_min_percent"]) if position.armed else -RULE["stop_percent"]
+            rows.append({"symbol": symbol, "bid": position.last_mark, "net_percent": position.net_percent(position.last_mark),
+                         "armed": position.armed, "stop_price": position.exit_price(), "stop_percent": level,
+                         "marked_at": marked.isoformat() if marked is not None else None})
+        return rows
+
     def fast_exits(self, now: datetime, view: Callable[[str], MarketView],
                    pushed: Callable[[str], tuple[float, float, datetime] | None]) -> list[dict[str, Any]]:
         """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"): every
@@ -887,6 +903,7 @@ class Engine:
         self.exit_sources[source] += 1
         net = position.net_percent(bid)
         position.last_mark = bid
+        self.marked_moment[position.symbol] = moment
         position.peak_percent = net if position.peak_percent is None else max(position.peak_percent, net)
         if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
             position.armed = True
@@ -1437,6 +1454,18 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     held = set(engine.state.positions)
     guarded(lambda: commit(now()))
     last_marks = last_lines = clock_time.monotonic()
+    marks_failed = [False]
+
+    def write_marks(moment: datetime) -> None:
+        """The engine's marks for the screen, every second (owner 30/10: the screen shows what the robot decides on).
+        Display only: a failure is logged once and never stops the loop."""
+        try:
+            guarded(lambda: database.save_r2d2_live_marks(day.isoformat(), moment, engine.marks()))
+            marks_failed[0] = False
+        except Exception:  # noqa: BLE001 - the screen's marks never stop the exits
+            if not marks_failed[0]:
+                logger.error("R2D2 live: the screen's marks could not be written")
+            marks_failed[0] = True
     while now() < at(SESSION_CLOSE):
         moment = now()
         began = clock_time.monotonic()
@@ -1450,6 +1479,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
             guarded(lambda: commit(moment))
             last_marks = clock_time.monotonic()
+        write_marks(moment)
         # the heartbeat and the feed line on their own clock: with entries checked every second fills come often, and
         # the skip and Massive counts must still come every minute
         if clock_time.monotonic() - last_lines >= MARKS_EVERY_SECONDS:
@@ -1466,6 +1496,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             if instant >= at(SESSION_CLOSE):  # never a check past the close (pre-review of e1149ca5 P1)
                 break
             fast = engine.fast_exits(instant, stream.view, massive.quote)
+            write_marks(instant)  # the screen follows every tenth of a second too (owner 30/10: "atualizada em 0,1 s")
             if fast:
                 if set(engine.state.positions) != held:  # a sale: the quote feeds follow
                     held = set(engine.state.positions)

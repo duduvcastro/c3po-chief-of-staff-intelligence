@@ -313,6 +313,12 @@ def _positions(book: dict[str, Any], now: datetime | None = None, nav: float | N
         age = max(0.0, (clock - as_of).total_seconds())
         freshness = "fresh" if age <= 120 else "aging" if age <= 420 else "stale"
         value = item["quantity"] * item["last_price"]
+        # the STOP column's level (owner 30/10/2026): the engine's own when its marks cover the name, else the net of a
+        # sale at the book's stop price
+        level = item.get("stop_percent")
+        if not isinstance(level, (int, float)):
+            level = ((item["quantity"] * item["stop_price"] * (1 - SELL_FEE) / item["cost_usd"] - 1) * 100
+                     if item["cost_usd"] > 0 else None)
         rows.append(R2D2Position(
             market=item["market"], symbol=item["symbol"], name=item["symbol"], currency="USD", quantity=item["quantity"],
             average_cost_local=item["average_cost"], last_price_local=item["last_price"], market_value_usd=round(value, 2),
@@ -320,14 +326,57 @@ def _positions(book: dict[str, Any], now: datetime | None = None, nav: float | N
             mark_pnl_usd=item["unrealized_pnl_usd"], mark_return_percent=item["unrealized_return_percent"],
             estimated_exit_pnl_usd=item["unrealized_pnl_usd"], estimated_exit_return_percent=item["unrealized_return_percent"],
             allocation_percent=round(value / effective * 100, 4) if effective > 0 else 0.0, stop_price_local=item["stop_price"],
-            data_status="live", decision_state="hold", quote_status="live" if item.get("mark_as_of") else "lab",
+            stop_lock_percent=round(level, 4) if level is not None else None,
+            data_status="live", decision_state="trava armada" if item.get("armed") is True else "hold",
+            quote_status="live" if item.get("mark_as_of") else "lab",
             quote_as_of=as_of, quote_age_seconds=round(age, 1),
             quote_freshness=freshness, trend_state="vwap rule", volume_state="adv rule",
             opened_at=datetime.fromisoformat(item["opened_at"]), updated_at=as_of))
-    return sorted(rows, key=lambda row: row.market_value_usd, reverse=True)
+    return sorted(rows, key=lambda row: row.symbol)  # by ticker (owner 30/10/2026: "ordem alfabética dos tickers")
 
 
 LiveQuotes = Callable[[dict[str, float]], dict[str, tuple[float, datetime]]]
+MARKS_FRESH_SECONDS = 5.0  # the engine writes its marks every tenth of a second: older than this, the screen keeps the tick
+LIVE_REFRESH_SECONDS = 0.1  # the screen asks for the positions this often during the session (owner 30/10/2026)
+SELL_FEE = 0.00005  # r2d2_live_engine.FEE_SIDE: a sale's fee, for the stop level of a book the engine's marks do not cover
+
+
+def overlay_marks(book: dict[str, Any], row: dict[str, Any] | None, day: str, now: datetime) -> dict[str, Any]:
+    """The engine's own marks over the book (owner 30/10/2026: ASST and FTI showed +0.10% on the screen, re-marked on the
+    feed's last trade, while the engine — on the bid of Massive's NBBO net of the sale's fee — never armed the lock;
+    "temos q acertar isso"). Each held name in the engine's last write (migration 055) shows that bid, the net at it, the
+    level the rule sells at and whether the lock is armed; the NAV moves with them. A write of another session or older
+    than MARKS_FRESH_SECONDS, or a name it does not carry, keeps the live tick."""
+    if not row or row.get("session") != day or not book["positions"]:
+        return book
+    as_of = row.get("as_of")
+    if not isinstance(as_of, datetime) or not 0 <= (now - as_of).total_seconds() <= MARKS_FRESH_SECONDS:
+        return book
+    marks: dict[str, tuple[float, float, float, bool, str, float | None]] = {}
+    for item in row.get("marks") or []:
+        try:
+            symbol, bid, net, stop = str(item["symbol"]), float(item["bid"]), float(item["net_percent"]), float(item["stop_price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (all(math.isfinite(value) for value in (bid, net, stop)) and 0 < bid <= MAX_PRICE and 0 < stop <= MAX_PRICE
+                and abs(net) < 100):
+            continue
+        marked = item.get("marked_at")
+        level = item.get("stop_percent")
+        marks[symbol] = (bid, net, stop, item.get("armed") is True, marked if isinstance(marked, str) else as_of.isoformat(),
+                         float(level) if isinstance(level, (int, float)) and math.isfinite(level) and abs(level) < 100 else None)
+    positions, move = [], 0.0
+    for item in book["positions"]:
+        mark = marks.get(item["symbol"])
+        if mark is None:
+            positions.append(item)
+            continue
+        bid, net, stop, armed, marked, level = mark
+        result = item["cost_usd"] * net / 100
+        move += result - item["unrealized_pnl_usd"]
+        positions.append({**item, "last_price": bid, "unrealized_pnl_usd": result, "unrealized_return_percent": net,
+                          "stop_price": stop, "armed": armed, "mark_as_of": marked, "stop_percent": level})
+    return {**book, "positions": positions, "nav_usd": book["nav_usd"] + move}
 
 
 def remark(book: dict[str, Any], quotes: LiveQuotes | None) -> tuple[dict[str, Any], float]:
@@ -550,12 +599,18 @@ def apply_book_live(response: R2D2LivePositionsResponse, database: Any, *, now: 
         return response
     day, book = found[0], found[2]
     clock = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
-    if day == clock.date().isoformat() and (clock.hour, clock.minute) < SESSION_CLOSE_ET:
+    live = day == clock.date().isoformat() and (clock.hour, clock.minute) < SESSION_CLOSE_ET
+    if live:
         book = remark(book, quotes)[0]
+        try:
+            marks = database.r2d2_live_marks()
+        except Exception:  # noqa: BLE001 - the screen keeps the live tick when the engine's marks cannot be read
+            marks = None
+        book = overlay_marks(book, marks, day, now or datetime.now(timezone.utc))
     accrued = _interest(interest, clock.date().isoformat())[0]
     positions = _positions(book, now, nav=book["nav_usd"] + accrued)
     return response.model_copy(update={
-        "generated_at": now or datetime.now(timezone.utc), "refresh_seconds": 1,
+        "generated_at": now or datetime.now(timezone.utc), "refresh_seconds": LIVE_REFRESH_SECONDS if live else 1,
         "nav_usd": round(book["nav_usd"] + accrued, 2), "cash_usd": round(book["cash_usd"] + accrued, 2),
         "gross_exposure_usd": round(sum(position.market_value_usd for position in positions), 2),
         "open_positions": len(positions), "positions": positions})

@@ -165,6 +165,10 @@ class Database:
         self._observations: dict[tuple[str, str, str], dict[str, Any]] = {}
         self._methodologies: dict[tuple[str, int], dict[str, Any]] = {}
         self._analysis_snapshots: list[dict[str, Any]] = []
+        self._r2d2_live_marks: dict[str, Any] | None = None
+        # the R2D2 live marks go through ONE kept connection per process: written and read up to ten times a second
+        self._marks_connection: Any = None
+        self._marks_lock = threading.Lock()
         # official target price (V3.2 rev 7 §7-bis, Passo 0): in-memory stores mirror the append-only tables
         self._valuation_predictions: list[dict[str, Any]] = []
         self._valuation_official_selections: list[dict[str, Any]] = []
@@ -5157,6 +5161,51 @@ class Database:
         if not row:
             return None
         return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id", "analysis_type", "entity_key"), row))
+
+    def _on_marks_connection(self, use: Callable[[Any], Any]) -> Any:
+        """``use`` run on the kept marks connection (opened at the first use, autocommit), under its lock; a failure drops
+        the connection and tries once more on a new one, then raises."""
+        import psycopg
+
+        with self._marks_lock:
+            for attempt in (1, 2):
+                try:
+                    if self._marks_connection is None or self._marks_connection.closed:
+                        self._marks_connection = psycopg.connect(self.database_url, autocommit=True)
+                    return use(self._marks_connection)
+                except psycopg.Error:
+                    connection, self._marks_connection = self._marks_connection, None
+                    if connection is not None:
+                        try:
+                            connection.close()
+                        except Exception:  # noqa: BLE001 - a broken connection closes as it can
+                            pass
+                    if attempt == 2:
+                        raise
+        return None
+
+    def save_r2d2_live_marks(self, session: str, as_of: datetime, marks: list[dict[str, Any]]) -> None:
+        """The R2D2 live engine's marks of its held names (migration 055): one row, overwritten up to ten times a second."""
+        if not self.database_url:
+            self._r2d2_live_marks = {"session": session, "as_of": as_of, "marks": [dict(item) for item in marks]}
+            return
+        self._on_marks_connection(lambda connection: connection.execute(
+            """
+            INSERT INTO r2d2_live_marks (id, session, as_of, marks) VALUES (1, %s, %s, %s::jsonb)
+            ON CONFLICT (id) DO UPDATE SET session = EXCLUDED.session, as_of = EXCLUDED.as_of, marks = EXCLUDED.marks
+            """,
+            (session, as_of, json.dumps(marks)),
+        ))
+
+    def r2d2_live_marks(self) -> dict[str, Any] | None:
+        """The engine's last marks row ({session ISO date, as_of, marks}), or None."""
+        if not self.database_url:
+            return dict(self._r2d2_live_marks) if self._r2d2_live_marks is not None else None
+        row = self._on_marks_connection(
+            lambda connection: connection.execute("SELECT session, as_of, marks FROM r2d2_live_marks WHERE id = 1").fetchone())
+        if row is None:
+            return None
+        return {"session": row[0].isoformat(), "as_of": row[1], "marks": row[2] if isinstance(row[2], list) else []}
 
     def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict[str, Any] | None:
         if not self.database_url:  # a deep copy, as a PostgreSQL read is a fresh object: the store is never aliased (F393-5)

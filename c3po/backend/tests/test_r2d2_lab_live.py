@@ -434,6 +434,54 @@ def test_allocation_uses_the_effective_nav_with_interest() -> None:
     assert shown.positions[0].allocation_percent == live.positions[0].allocation_percent == expected
 
 
+def test_the_screen_shows_the_engines_own_marks_sorted_by_ticker_with_the_stop_level() -> None:
+    """Owner 30/10/2026: ASST and FTI showed +0.10% on the screen, re-marked on the feed's last trade, while the engine
+    (the bid of Massive's NBBO net of the sale's fee) never armed the lock — "temos q acertar isso". The engine's own marks
+    (migration 055) are what the screen shows, the table runs by ticker, the STOP column carries the level the rule sells
+    at, and the screen asks every tenth of a second during the session."""
+    database = Database(Settings(database_url=""))
+    session = datetime(2026, 10, 27, 14, 43, tzinfo=timezone.utc)  # 10:43 ET
+    zzz = dict(_book()["positions"][0], symbol="ZZZ", market="NYSE", quantity=1000.0, average_cost=50.0, last_price=50.05,
+               cost_usd=50002.5, unrealized_pnl_usd=47.5, unrealized_return_percent=0.095, stop_price=49.80,
+               opened_at="2026-10-27T10:00:00-04:00")
+    aaa = dict(zzz, symbol="AAA", unrealized_pnl_usd=-10.0, unrealized_return_percent=-0.02)
+    book = _book(nav_start_usd=931176.94, nav_usd=931214.44, realized_nav_usd=931176.94, cash_usd=831171.94,
+                 as_of="2026-10-27T10:43:00-04:00", positions=[zzz, aaa])
+    r2d2_lab_live.store(database, dict(_payload(day="2026-10-27"), book=book), now=session)
+    tick_at = session + timedelta(seconds=40)
+
+    def quotes(references):
+        return {"ZZZ": (50.07, tick_at), "AAA": (50.06, tick_at)}  # the feed's last trades
+    database.save_r2d2_live_marks("2026-10-27", tick_at, [
+        {"symbol": "ZZZ", "bid": 50.06, "net_percent": 0.112, "armed": True, "stop_price": 50.0525, "stop_percent": 0.10,
+         "marked_at": tick_at.isoformat()}])
+    live = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
+    assert [position.symbol for position in live.positions] == ["AAA", "ZZZ"]  # by ticker
+    assert live.refresh_seconds == r2d2_lab_live.LIVE_REFRESH_SECONDS == 0.1
+    marked, ticked = live.positions[1], live.positions[0]
+    assert marked.last_price_local == 50.06 and marked.unrealized_return_percent == 0.112  # the engine's bid and net
+    assert marked.stop_price_local == 50.0525 and marked.stop_lock_percent == 0.10 and marked.decision_state == "trava armada"
+    assert abs(marked.unrealized_pnl_usd - 50002.5 * 0.112 / 100) < 1e-6
+    assert ticked.last_price_local == 50.06 and ticked.decision_state == "hold"  # no engine mark: the feed's tick stays
+    expected = (1000.0 * 49.80 * (1 - r2d2_lab_live.SELL_FEE) / 50002.5 - 1) * 100  # the level of the book's stop price
+    assert ticked.stop_lock_percent == round(expected, 4) and ticked.stop_lock_percent < 0
+    stale = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database,
+                                          now=tick_at + timedelta(seconds=r2d2_lab_live.MARKS_FRESH_SECONDS + 1), quotes=quotes)
+    assert {position.symbol: position.last_price_local for position in stale.positions} == {"AAA": 50.06, "ZZZ": 50.07}
+    database.save_r2d2_live_marks("2026-10-26", tick_at, [{"symbol": "ZZZ", "bid": 1.0, "net_percent": 5.0, "armed": True,
+                                                            "stop_price": 1.0, "stop_percent": 0.1, "marked_at": None}])
+    other = r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=tick_at + timedelta(seconds=1), quotes=quotes)
+    assert {position.symbol: position.last_price_local for position in other.positions} == {"AAA": 50.06, "ZZZ": 50.07}
+    after_close = datetime(2026, 10, 27, 20, 30, tzinfo=timezone.utc)
+    assert r2d2_lab_live.apply_book_live(app_main.r2d2.live_positions(), database, now=after_close, quotes=quotes).refresh_seconds == 1
+
+
+def test_the_screen_and_the_engine_charge_the_same_sale_fee() -> None:
+    from app import r2d2_live_engine
+
+    assert r2d2_lab_live.SELL_FEE == r2d2_live_engine.FEE_SIDE
+
+
 def test_open_positions_move_with_the_live_tick_during_the_session() -> None:
     """Owner 27/10/2026: the price on the screen in real time. A live tick re-marks value, result and NAV on both
     routes; cash never moves; after the close (or without a tick) the lab's own mark stays."""

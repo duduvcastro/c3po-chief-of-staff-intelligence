@@ -808,17 +808,80 @@ def test_the_session_checks_the_held_names_every_tenth_of_a_second_between_the_f
         def take_gauges(self):
             return (0, 0, 0, 0)
     massive = Massive()
-    commits = []
+    commits, written = [], []
     monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append(moment))
+    monkeypatch.setattr(database, "save_r2d2_live_marks", lambda session, as_of, marks: written.append(as_of))
     with pytest.raises(KeyboardInterrupt):
         run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
                     cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=massive)  # type: ignore[arg-type]
     first_second = [moment for moment in fast if steps[0] <= moment < steps[1]]
     assert len(first_second) == 9  # nine tenth-of-a-second checks between two full checks
+    assert len([moment for moment in written if steps[0] <= moment < steps[1]]) == 10  # the screen's marks: every tenth
     assert all(abs((b - a).total_seconds() - engine_module.FAST_EXIT_SECONDS) < 1e-6 for a, b in zip(first_second, first_second[1:]))
     assert massive.calls[0] == {"AAA"} and massive.calls[-1] == set()  # the sale between checks: the stream follows at once
     assert len(fast) == 20  # held nothing after the sale: no more tenth-of-a-second checks
     assert any(steps[2] <= moment <= steps[3] for moment in commits)  # the sale committed between the full checks
+
+
+def test_a_failing_marks_write_never_stops_the_session(tmp_path: Path, monkeypatch, caplog) -> None:
+    """The screen's marks are display only: a database that refuses them is logged once and the exits go on."""
+    import logging
+
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
+    wall, clock, steps, fast = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def step(self, now, view, signal=None, nbbo=None, pushed=None):  # a full check takes 0.05 s
+        steps.append(now)
+        wall["t"] += 0.05
+        clock["t"] += timedelta(seconds=0.05)
+        return []
+
+    def fast_exits(self, now, view, pushed):
+        fast.append(now)
+        if len(fast) == 20:  # the 20th tenth-of-a-second check stops AAA
+            self.state.positions.pop("AAA")
+            return [{"side": "SELL", "symbol": "AAA"}]
+        return []
+    monkeypatch.setattr(Engine, "step", step)
+    monkeypatch.setattr(Engine, "fast_exits", fast_exits)
+
+    def sleep(seconds):
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+        if len(steps) >= 5:
+            raise KeyboardInterrupt
+
+    class Massive:
+        status, reconnects = "connected", 0
+
+        def __init__(self) -> None:
+            self.calls: list[set[str]] = []
+
+        def set_symbols(self, symbols) -> None:
+            self.calls.append(set(symbols))
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, 0)
+    massive = Massive()
+    commits, written = [], []
+    monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append(moment))
+    def refuse(session, as_of, marks):
+        written.append(as_of)
+        raise RuntimeError("database down")
+    monkeypatch.setattr(database, "save_r2d2_live_marks", refuse)
+    caplog.set_level(logging.ERROR, logger=engine_module.logger.name)
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=massive)  # type: ignore[arg-type]
+    assert len(fast) == 20 and len(written) > 20  # the fast checks and the sale went on despite every refused write
+    assert sum("the screen's marks could not be written" in record.getMessage() for record in caplog.records) == 1
 
 
 def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monkeypatch) -> None:
@@ -842,6 +905,21 @@ def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monk
     early = _at(15, 59, 58)  # the same pass a second earlier sells
     fills = engine.fast_exits(early, slow_view, lambda s: (stop, stop + 0.01, early) if s == "AAA" else None)
     assert [f["symbol"] for f in fills] == ["AAA"]
+
+
+def test_the_marks_carry_the_level_the_rule_sells_at() -> None:
+    engine = _engine()
+    position = _bought_aaa(engine, _at(10, 0, 1))
+    row = engine.marks()[0]
+    assert row["symbol"] == "AAA" and row["armed"] is False and row["stop_percent"] == -engine_module.RULE["stop_percent"]
+    assert row["stop_price"] == position.exit_price() and row["bid"] == position.last_mark
+    t = _at(10, 0, 2)
+    up = _bid_at(position, 0.17)
+    engine.step(t, lambda s: MarketView(price=98.3, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
+                nbbo=lambda s, now: (up, up + 0.01, now))
+    row = engine.marks()[0]
+    assert row["armed"] is True and row["stop_percent"] == pytest.approx(0.15) and row["net_percent"] == pytest.approx(0.17)
+    assert row["marked_at"] == t.isoformat() or row["marked_at"] > t.isoformat()
 
 
 def test_a_full_check_whose_reads_cross_the_close_never_sells(monkeypatch) -> None:
