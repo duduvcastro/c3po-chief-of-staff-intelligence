@@ -10,7 +10,9 @@ own query, every acceptance); a section's read at T is sliced from them as the s
 in its order). Nothing beyond the statements is computed: no prices, no models, no labels; nothing is written. The pin is
 signed only with every section stable, and cites ``instrument_files_sha256``: the digest of the instrument files of the
 deployed checkout (``valuation_ensemble_pin.instrument_file_hashes``, this module among them), which the running modules
-must equal (``valuation_ensemble_driver.running_files``) before anything is read.
+must equal (``valuation_ensemble_driver.running_files``) before anything is read. What decides the check, the window and
+the deadline is in those files (the window and deadline helpers are the preflight's, kept here so that they are pinned);
+the database connection (``config``, ``database``) is outside them, as for the executor.
 
 Counts only (the repository is public): no symbol, issuer, value or error text; sections by their market and session.
 
@@ -22,12 +24,16 @@ from __future__ import annotations
 import argparse
 import bisect
 import json
+import os
+import re
 import sys
+import threading
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, time as wall_time, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
+from zoneinfo import ZoneInfo
 
 from . import valuation_ensemble_executor as exe
 from . import valuation_pit_rerun as pit
@@ -35,7 +41,39 @@ from .valuation_ensemble_driver import LEGACY_ROOT, read_rev3, running_files
 from .valuation_ensemble_frozen import AdmittedName, FrozenAsFiledReader, FrozenIndex, admitted_names, compare_reference, written_by
 from .valuation_ensemble_inputs import canonical_hash, utc
 from .valuation_ensemble_pin import instrument_file_hashes
-from .valuation_grid_preflight import _CODE, DEADLINE_FLOOR_SECONDS, _end_at_the_deadline, arm_deadline, inside_a_window
+
+_CODE = re.compile(r"[a-z0-9_]{1,80}")
+NEW_YORK, SAO_PAULO = ZoneInfo("America/New_York"), ZoneInfo("America/Sao_Paulo")
+DEADLINE_FLOOR_SECONDS = 600  # under this left of the deadline the readiness does not start
+
+
+# ------------------------------------------------------------------ the window and the deadline (the preflight's, pinned here)
+def inside_a_window(instant: datetime) -> bool:
+    """The grid's forbidden windows (.github/workflows/valuation-ensemble-grid.yml): a weekday 09:00-16:30 New York (a
+    holiday counts as a session: conservative) and 23:30-08:15 Sao Paulo (the nightly cycle)."""
+    new_york, sao_paulo = instant.astimezone(NEW_YORK), instant.astimezone(SAO_PAULO)
+    session = new_york.weekday() < 5 and wall_time(9, 0) <= new_york.time() < wall_time(16, 30)
+    night = sao_paulo.time() >= wall_time(23, 30) or sao_paulo.time() < wall_time(8, 15)
+    return session or night
+
+
+def arm_deadline(seconds: float, on_expiry: Callable[[], None]) -> threading.Timer:
+    """A daemon timer that calls ``on_expiry`` when ``seconds`` have passed (the process's own end at the deadline)."""
+    timer = threading.Timer(max(0.0, seconds), on_expiry)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def _end_at_the_deadline() -> None:
+    """The process's end at the original deadline, never waiting on its own line: a second timer exits a second later
+    whatever the write does (a full pipe blocks it), and a failed write (a closed one) is ignored."""
+    arm_deadline(1.0, lambda: os._exit(124))
+    try:
+        os.write(1, (json.dumps({"kind": "refused", "reason": "deadline_reached"}, sort_keys=True) + "\n").encode())
+    except OSError:
+        pass
+    os._exit(124)  # from the timer's thread: the process ends now, whatever the main thread waits on
 
 
 class OneIssuerStore:

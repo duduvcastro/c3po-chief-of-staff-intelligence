@@ -172,8 +172,10 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
     ``database`` is an already-open, read-only handle. ``prices_for`` must resolve
     the reference publication, never the latest; compute_grid_section verifies it.
     ``operational_guard`` must execute the operator's actual host/deploy/window/
-    timer/backfill/autopilot guards. It is mandatory and is invoked before and
-    after each section, with expiration checked again after every source read.
+    timer/blocking-ingestion/autopilot guards (no as-filed backfill or poll guard
+    since PREREG rev 2: each section reads the store cut at its V3 published_at).
+    It is mandatory and is invoked before and after each section, with expiration
+    checked again after every source read.
     This library cannot authenticate external operational state from JSON fields.
     """
     now = clock or (lambda: datetime.now(timezone.utc))

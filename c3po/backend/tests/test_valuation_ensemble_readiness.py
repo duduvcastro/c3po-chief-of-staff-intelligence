@@ -214,3 +214,54 @@ def test_the_readiness_refuses_to_read_when_the_running_modules_are_not_the_chec
     frozen.write_text(frozen.read_text() + "\n# another revision\n")
     with pytest.raises(ValueError, match="ensemble_driver_running_code_differs_from_checkout"):
         readiness.run(fixture[0], {}, legacy_root=tmp_path)
+
+
+def test_the_readiness_windows_are_the_grids() -> None:
+    def at(y, mo, d, h, mi, zone):
+        return datetime(y, mo, d, h, mi, tzinfo=zone)
+    ny, sp = readiness.NEW_YORK, readiness.SAO_PAULO
+    assert readiness.inside_a_window(at(2026, 11, 2, 9, 0, ny)) and not readiness.inside_a_window(at(2026, 11, 2, 8, 59, ny))
+    assert readiness.inside_a_window(at(2026, 11, 2, 16, 29, ny)) and not readiness.inside_a_window(at(2026, 11, 2, 16, 30, ny))
+    assert not readiness.inside_a_window(at(2026, 10, 31, 10, 0, ny))  # a Saturday morning in New York
+    assert readiness.inside_a_window(at(2026, 10, 31, 23, 30, sp)) and readiness.inside_a_window(at(2026, 11, 1, 8, 14, sp))
+    assert not readiness.inside_a_window(at(2026, 11, 1, 8, 15, sp)) and not readiness.inside_a_window(at(2026, 10, 31, 23, 29, sp))
+
+
+@pytest.mark.parametrize("stdout", ["closed", "full"])
+def test_the_readiness_ends_at_its_deadline_whatever_its_stdout_does(stdout) -> None:
+    """A closed stdout (the line's write fails) or a full one (it blocks): the process ends with 124 either way."""
+    import fcntl
+    import os
+    import time
+
+    read_end, write_end = os.pipe()
+    if stdout == "closed":
+        os.close(read_end)
+    else:
+        flags = fcntl.fcntl(write_end, fcntl.F_GETFL)
+        fcntl.fcntl(write_end, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        try:
+            while True:
+                os.write(write_end, b"x" * 4096)
+        except BlockingIOError:
+            pass
+        fcntl.fcntl(write_end, fcntl.F_SETFL, flags)
+    backend = Path(__file__).resolve().parents[1]
+    code = "import time; from app import valuation_ensemble_readiness as r; r.arm_deadline(0.05, r._end_at_the_deadline); time.sleep(30)"
+    started = time.monotonic()
+    child = subprocess.Popen([sys.executable, "-c", code], cwd=backend, stdout=write_end, stderr=subprocess.DEVNULL)
+    os.close(write_end)
+    try:
+        assert child.wait(timeout=20) == 124 and time.monotonic() - started < 20
+    finally:
+        if child.poll() is None:
+            child.kill()
+        if stdout == "full":
+            os.close(read_end)
+
+
+def test_the_readiness_runs_nothing_of_the_unpinned_preflight() -> None:
+    """Everything that decides the check, the window and the deadline is in the pinned files (the digest it prints)."""
+    source = (REPOSITORY / "c3po/backend/app/valuation_ensemble_readiness.py").read_text()
+    assert "valuation_grid_preflight" not in source
+    assert "c3po/backend/app/valuation_ensemble_readiness.py" in instrument_file_hashes(REPOSITORY)
