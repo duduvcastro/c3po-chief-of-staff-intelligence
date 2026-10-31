@@ -155,7 +155,8 @@ jobs:
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           # only the module's own JSON line, its shape checked (counts, closed outcome words, section labels), never the
           # host's stderr: a public log
-          python3 -I - "$raw/stdout.txt" <<'PY' || exit 1
+          filtered=0
+          python3 -I - "$raw/stdout.txt" <<'PY' || filtered=$?
           import json
           import re
           import sys
@@ -218,7 +219,8 @@ jobs:
           sys.exit(1 if withheld or not printed else 0)
           PY
           echo "remote exit status: $rc; stderr lines (count only): $(wc -l < "$raw/stderr.log")"
-          exit "$rc"
+          [ "$rc" = 0 ] || exit "$rc"
+          exit "$filtered"
 
       - name: Stop this run's host process and remove the manifest
         if: always() && steps.sshkey.outcome == 'success'
@@ -233,10 +235,11 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
             "rm -f /tmp/valuation-grid-preflight-$RUN_ID.json" > /dev/null 2>&1 || true
           if [ -f "$RUNNER_TEMP/raw/stdout.txt" ] && grep -qxF "LAUNCHED $RUN_TOKEN" "$RUNNER_TEMP/raw/stdout.txt"; then
+            rc=0  # the step runs under bash -e: the status is caught, never left to abort the step
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
               "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T api pkill -TERM -f 'valuation_pit_run_token=$RUN_TOKEN -m app[.]valuation_grid_preflight'" \
-              > /dev/null 2>&1
-            case $? in
+              > /dev/null 2>&1 || rc=$?
+            case "$rc" in
               0) echo 'a process of this run was still running: SIGTERM sent' ;;
               1) echo 'no process of this run left in the api container' ;;
               *) echo 'the stop request failed: check the api container by hand' >&2 ;;

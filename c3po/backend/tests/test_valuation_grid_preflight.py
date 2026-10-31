@@ -255,6 +255,42 @@ def test_a_refusal_no_cut_can_fix_stays_a_refusal(front, monkeypatch) -> None:
     assert result["at_rev3"]["refused"] == ["NASDAQ 2026-06-29"] and result["at_rev3"]["uncertain"] == []
 
 
+READ = WRITTEN - timedelta(minutes=8)  # rev3's read, inside [lo = hi - WINDOW, hi]
+OLD = READ - timedelta(days=3)
+
+
+def _verdict(monkeypatch, db, symbol, rev3):
+    section = {"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [(symbol, rev3)]}
+    return _run(monkeypatch, db, [section])["at_rev3"]["names"]
+
+
+def test_the_scan_holds_a_fact_only_write_inside_the_window(front, monkeypatch) -> None:
+    """Pre-review of 66ab4c1a: the facts' own write instants are cuts (no filing of the symbol at that instant)."""
+    db = _db()
+    _add(front, db, issuer="1", doc="A-0", symbols=["AAA"], accepted=T - timedelta(days=200), written=OLD, concepts=CONCEPTS[:2])
+    _add(front, db, issuer="1", doc="A-1", symbols=[], accepted=T - timedelta(days=100), written=READ - timedelta(minutes=3), concepts=CONCEPTS[:2])
+    _add(front, db, issuer="1", doc="A-2", symbols=[], accepted=T - timedelta(days=50), written=READ + timedelta(minutes=3), concepts=CONCEPTS[:2])
+    assert _verdict(monkeypatch, db, "AAA", _reference(db, "AAA", READ)) == {"window": 1}
+
+
+def test_the_scan_holds_a_filing_only_remap_inside_the_window(front, monkeypatch) -> None:
+    db = _db()
+    _add(front, db, issuer="1", doc="B-0", symbols=["BBB"], accepted=T - timedelta(days=200), written=OLD, concepts=CONCEPTS[:2])
+    _add(front, db, issuer="2", doc="B-9", symbols=[], accepted=T - timedelta(days=150), written=OLD, concepts=CONCEPTS[:1])
+    _add(front, db, issuer="2", doc="B-1", symbols=["BBB"], accepted=T - timedelta(days=20), written=READ - timedelta(minutes=3), concepts=[])
+    _add(front, db, issuer="1", doc="B-2", symbols=["BBB"], accepted=T - timedelta(days=10), written=READ + timedelta(minutes=3), concepts=[])
+    assert _verdict(monkeypatch, db, "BBB", _reference(db, "BBB", READ)) == {"window": 1}
+
+
+def test_the_scan_holds_a_fact_of_the_issuer_mapped_before_a_remap(front, monkeypatch) -> None:
+    db = _db()
+    _add(front, db, issuer="1", doc="C-0", symbols=["CCC"], accepted=T - timedelta(days=200), written=OLD, concepts=CONCEPTS[:2])
+    _add(front, db, issuer="2", doc="C-9", symbols=[], accepted=T - timedelta(days=150), written=OLD, concepts=CONCEPTS[:1])
+    _add(front, db, issuer="1", doc="C-1", symbols=[], accepted=T - timedelta(days=100), written=READ - timedelta(minutes=3), concepts=CONCEPTS[:2])
+    _add(front, db, issuer="2", doc="C-2", symbols=["CCC"], accepted=T - timedelta(days=10), written=READ + timedelta(minutes=3), concepts=[])
+    assert _verdict(monkeypatch, db, "CCC", _reference(db, "CCC", READ)) == {"window": 1}
+
+
 def test_an_ambiguous_map_is_counted_and_makes_the_section_uncertain(front, monkeypatch) -> None:
     db = _db()
     accepted = T - timedelta(days=60)
@@ -332,7 +368,7 @@ def _workflow_filter() -> str:
 
     workflow = yaml.safe_load((Path(__file__).resolve().parents[3] / ".github/workflows/valuation-grid-preflight.yml").read_text())
     script = next(step["run"] for step in workflow["jobs"]["preflight"]["steps"] if step.get("name") == "Run the preflight on the host (read-only)")
-    body = script.split("<<'PY' || exit 1\n", 1)[1]
+    body = script.split("<<'PY' || filtered=$?\n", 1)[1]
     return body.split("\nPY\n", 1)[0]
 
 
