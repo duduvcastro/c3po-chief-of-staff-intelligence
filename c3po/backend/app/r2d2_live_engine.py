@@ -918,8 +918,8 @@ class Engine:
                    pushed: Callable[[str], tuple[float, float, datetime] | None]) -> list[dict[str, Any]]:
         """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"), and
         inside one while it waits on Massive (``run_session``'s ``during_wait``): every held name with a usable NBBO pushed
-        by Massive is judged on it, read and used at one instant as in ``step``; a name without one waits for the next full
-        check (Massive asked, then the feed). Never the entries, never the shadows."""
+        by Massive is judged on it, read and used at one instant as in ``step``; a name without one is left to the full
+        check (Massive asked, then the feed: the step it waits in, or the next one). Never the entries, never the shadows."""
         started = clock_time.monotonic()
         fills: list[dict[str, Any]] = []
         for symbol in list(self.state.positions):
@@ -1337,7 +1337,7 @@ class MassiveQuoteStream:
     def wait_update(self, timeout: float) -> bool:
         """Block until a new quote of a followed name arrives (True) or ``timeout`` passes (False). A quote recorded
         between two waits is never lost: it is stored before the signal, and the signal is cleared only when this wait
-        saw it (a pass that runs only on True — a step's ``during_wait`` — never loses one recorded just after a False)."""
+        saw it (``during_wait`` runs a pass at once only on True: a quote recorded just after a False wakes its next call)."""
         updated = self._updated.wait(timeout)
         if updated:
             self._updated.clear()
@@ -1734,13 +1734,14 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         except Exception:  # noqa: BLE001 - display only
             logger.exception("R2D2 live: the screen's marks could not be handed over")
     waited: list[dict[str, Any]] = []  # the sales of the passes run while a step waited on Massive
-    wait_clock = {"pass": 0.0, "marks": 0.0, "failed": 0.0}
+    wait_fault: list[Exception] = []  # a pass that raised in the wait: raised again once the step is committed
+    wait_clock = {"pass": 0.0, "marks": 0.0}
 
     def during_wait() -> None:
         """While a step waits on Massive's answers (the quiet held names' marks, the crosses' NBBO), the held names on
         the pushed NBBO as between the steps: a pass on a new quote, at least one every FAST_EXIT_SECONDS (``ask_nbbo``
         calls this every FAST_EXIT_MIN_SECONDS at most), and the screen's marks on a sale or every FAST_EXIT_SECONDS."""
-        if massive is None or not engine.state.positions or wait_clock["failed"]:
+        if massive is None or not engine.state.positions or wait_fault:
             return
         wake = getattr(massive, "wait_update", None)
         if not (wake is not None and wake(0)) and clock_time.monotonic() - wait_clock["pass"] < FAST_EXIT_SECONDS:
@@ -1749,11 +1750,12 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         instant = now()
         if instant >= at(SESSION_CLOSE):  # never a check past the close
             return
+        done = len(engine.fills)
         try:
             fast = engine.fast_exits(instant, stream.view, massive.quote)
-        except Exception:  # noqa: BLE001 - the step's own sales are kept; the pass after the step surfaces a lasting fault
-            wait_clock["failed"] = 1.0  # no more passes in this step's waits, one log line
-            logger.exception("R2D2 live: a pass during a step's wait failed")
+        except Exception as error:  # noqa: BLE001 - raised again after the step's commit (the step's fills are kept)
+            waited.extend(engine.fills[done:])  # a sale this pass made before it raised
+            wait_fault.append(error)  # no more passes in this step's waits
             return
         waited.extend(fast)
         if fast or clock_time.monotonic() - wait_clock["marks"] >= FAST_EXIT_SECONDS:
@@ -1763,7 +1765,6 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         while now() < at(SESSION_CLOSE):
             moment = now()
             began = wait_clock["pass"] = clock_time.monotonic()  # the step's own check is this second's first pass
-            wait_clock["failed"] = 0.0
             fills = engine.step(moment, stream.view, signal, nbbo, pushed=massive.quote if massive is not None else None,
                                 between=during_wait if massive is not None else None)
             if waited:  # a sale of a pass run during the step's wait is one of its fills (the feeds follow, a commit)
@@ -1778,6 +1779,8 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
             if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
                 guarded(lambda: commit(moment))
                 last_marks = clock_time.monotonic()
+            if wait_fault:  # a pass failed in the step's wait: the session ends here, as a failed pass after a step did
+                raise wait_fault[0]
             write_marks()
             # the heartbeat and the feed line on their own clock: with entries checked every second fills come often, and
             # the skip and Massive counts must still come every minute

@@ -1128,10 +1128,11 @@ def test_the_session_runs_its_passes_while_a_step_waits_on_massive(tmp_path: Pat
 
 
 def _waiting_session(tmp_path: Path, monkeypatch, start: datetime, ticks: int, fast_exits, steps: list, commits: list,
-                     sleep_ends: bool = False) -> None:
+                     sleep_ends: bool = False, buy: bool = True) -> None:
     """``run_session`` with AAA held and Massive followed (no ``wait_update``: a pass at least every tenth), each step
-    waiting ``ticks`` x 0.01 s on Massive, calling ``between`` after each tick, and filling one buy. The steps' instants
-    and the commits go to ``steps`` and ``commits``; with ``sleep_ends`` the first sleep ends the session."""
+    waiting ``ticks`` x 0.01 s on Massive, calling ``between`` after each tick, and filling one buy (none without
+    ``buy``). The steps' instants and the commits (instant, held names) go to ``steps`` and ``commits``; with
+    ``sleep_ends`` the first sleep ends the session."""
     monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
     carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
     monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
@@ -1160,10 +1161,10 @@ def _waiting_session(tmp_path: Path, monkeypatch, start: datetime, ticks: int, f
             advance(0.01)
             if between is not None:
                 between()
-        return [{"side": "BUY", "symbol": "BBB"}]
+        return [{"side": "BUY", "symbol": "BBB"}] if buy else []
 
     def sleep(seconds):
-        if sleep_ends:
+        if sleep_ends or len(steps) >= 3:  # never a whole session: three steps at most
             raise KeyboardInterrupt
         advance(seconds)
 
@@ -1178,31 +1179,37 @@ def _waiting_session(tmp_path: Path, monkeypatch, start: datetime, ticks: int, f
             pass
     monkeypatch.setattr(Engine, "step", step)
     monkeypatch.setattr(Engine, "fast_exits", fast_exits)
-    monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append(moment))
+    monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append((moment, sorted(state.positions))))
     monkeypatch.setattr(engine_module, "MarksWriter", Writer)
     run_session(stream=_FakeStream(), database=Database(Settings(database_url="")), get_json=None, base_url="", token="",  # type: ignore[arg-type]
                 day=DAY, cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None,
                 massive=Massive())  # type: ignore[arg-type]
 
 
-def test_a_pass_that_fails_in_a_wait_is_logged_once_and_the_steps_own_fills_are_committed(tmp_path: Path, monkeypatch, caplog) -> None:
-    """Pre-review of c0b7c4a4 (P3): an error in a pass run during a step's wait would leave the step before its fills
-    were committed. It is logged once, the step's waits run no more passes, its fills are committed, and the pass after
-    the step surfaces a lasting fault as before."""
-    import logging
+def test_a_pass_that_fails_in_a_wait_ends_the_session_once_the_steps_fills_are_committed(tmp_path: Path, monkeypatch) -> None:
+    """Pre-reviews of c0b7c4a4 and a76ed3eb: an error in a pass run during a step's wait left the step before its fills
+    were committed. The step's waits run no more passes, the step's fills are committed — a sale the failing pass made
+    before it raised included — and the error is raised then, ending the session as a failed pass after a step did."""
     calls = []
 
     def fast_exits(self, now, view, pushed):
         calls.append(now)
         raise RuntimeError("the pass failed")
-    caplog.set_level(logging.ERROR, logger=engine_module.logger.name)
     steps: list = []
     commits: list = []
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="the pass failed"):
         _waiting_session(tmp_path, monkeypatch, _at(9, 30, 59), 60, fast_exits, steps, commits)
-    failures = [r for r in caplog.records if "a pass during a step's wait failed" in r.getMessage()]
-    assert len(calls) == 2 and len(failures) == 1  # one pass in the wait, then none; the pass after the step raises
-    assert commits == [steps[0], steps[0]]  # the opening checkpoint, then the step's buy before the fault surfaced
+    assert len(calls) == 1 and len(steps) == 1  # one pass in the wait, then none, and the session ends after the step
+    assert commits == [(steps[0], ["AAA"]), (steps[0], ["AAA"])]  # the opening checkpoint, then the step's buy
+
+    def selling_then_failing(self, now, view, pushed):  # stops AAA, then fails on another name
+        assert self._exit(self.state.positions["AAA"], MarketView(price=90.0, trade_at=now), now, 90.0, "fast") is not None
+        raise RuntimeError("the pass failed after a sale")
+    steps.clear()
+    commits.clear()
+    with pytest.raises(RuntimeError, match="after a sale"):
+        _waiting_session(tmp_path, monkeypatch, _at(9, 30, 59), 60, selling_then_failing, steps, commits, buy=False)
+    assert commits == [(steps[0], ["AAA"]), (steps[0], [])]  # no fill of the step's own: the sale alone is committed
 
 
 def test_a_wait_that_crosses_the_close_runs_no_pass_at_or_past_it(tmp_path: Path, monkeypatch) -> None:
