@@ -148,11 +148,15 @@ def test_the_process_checks_its_start_against_the_windows_and_the_original_deadl
     assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "deadline_too_close"}
     armed = []
     monkeypatch.setattr(readiness, "arm_deadline", lambda seconds, on_expiry: armed.append(seconds))
-    monkeypatch.setattr(readiness, "run", lambda database, rev3: {"sections": 0})
+    monkeypatch.setattr(readiness, "run", lambda database, rev3: {"sections": 2, "stable_sections": 2})
     monkeypatch.setattr(readiness.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
     monkeypatch.setattr("app.valuation_accuracy_report.force_read_only_session", lambda: None)
     assert _main(SATURDAY + 1200, database=object()) == 0 and armed == [1200]
-    assert json.loads(capsys.readouterr().out) == {"kind": "readiness", "sections": 0}
+    assert json.loads(capsys.readouterr().out) == {"kind": "readiness", "sections": 2, "stable_sections": 2}
+    monkeypatch.setattr(readiness, "run", lambda database, rev3: {"sections": 2, "stable_sections": 1})  # the gate fails visibly
+    monkeypatch.setattr(readiness.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
+    assert _main(SATURDAY + 1200, database=object()) == 3
+    assert json.loads(capsys.readouterr().out) == {"kind": "readiness", "sections": 2, "stable_sections": 1}
 
     def leaky(database, rev3):
         raise ValueError("issuer 0000320193 has no AAPL facts")  # a message that is no code: only the type is printed
@@ -198,6 +202,7 @@ def test_the_workflow_is_the_preflights_plumbing_with_the_readiness_module_and_n
                      "sha256sum -c --strict --quiet SHA256SUMS", "73a81bcef1cd93425dfab785ae57c52118ba09493a4b7169e31a0e0b6665f805"):
         assert fragment in text, fragment
     assert "BACKFILL_ISSUERS_PER_POLL" not in text and "investor-relations-worker" not in text and "valuation_grid_preflight" not in text
+    assert '[ "$REF" = refs/heads/main ]' in text and '[ ! -L "$file" ]' in text and '[ "$rc" = 0 ] || exit "$rc"' in text
 
 
 def test_the_readiness_refuses_to_read_when_the_running_modules_are_not_the_checkouts(monkeypatch, tmp_path) -> None:

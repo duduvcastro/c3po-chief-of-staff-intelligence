@@ -12,7 +12,13 @@ signed only with every section stable, and cites ``instrument_files_sha256``: th
 deployed checkout (``valuation_ensemble_pin.instrument_file_hashes``, this module among them), which the running modules
 must equal (``valuation_ensemble_driver.running_files``) before anything is read. What decides the check, the window and
 the deadline is in those files (the window and deadline helpers are the preflight's, kept here so that they are pinned);
-the database connection (``config``, ``database``) is outside them, as for the executor.
+the database connection (``config``, ``database``) is outside them, as for the executor. A refused section, or an
+unreadable one, exits 3 after the line is printed: the gate fails visibly.
+
+Known limits, the same verdict either way: the first refusal of a section is the first in issuer order here and in
+catalogue order in a chunk, so a refused section's reason may differ; and rows of one concept in one document with
+different periods share their sort key (``accepted_at, doc_id, concept``), so their order is the database's in both
+queries, as in the preflight, which matched every section.
 
 Counts only (the repository is public): no symbol, issuer, value or error text; sections by their market and session.
 
@@ -201,7 +207,7 @@ def main(argv: list[str] | None = None, *, database: Any = None, clock: Callable
         print(json.dumps({"kind": "refused", "reason": _code(error)}, sort_keys=True))
         return 2
     print(json.dumps({"kind": "readiness", **result}, sort_keys=True))
-    return 0
+    return 0 if result["stable_sections"] == result["sections"] else 3
 
 
 if __name__ == "__main__":

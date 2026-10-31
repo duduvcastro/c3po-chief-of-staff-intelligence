@@ -20,6 +20,7 @@ from app import valuation_ensemble_calendar as calendar
 from app import valuation_ensemble_executor as executor
 from app import valuation_ensemble_grid as grid
 from app import valuation_ensemble_pin as instrument
+from app import valuation_ensemble_frozen as frozen
 from app.valuation_ensemble_frozen import FrozenAsFiledReader
 from app.valuation_ensemble_inputs import canonical_hash
 from app.valuation_ensemble_persistence import FileReceiptStore
@@ -118,7 +119,7 @@ def fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         assert isinstance(reader, FrozenAsFiledReader) and reader.written_until == executor._written_at(kw["v3_snapshot"])
         context["statement_cuts"].append(reader.written_until)
         return {"compared": 0, "not_evaluable": 0}
-    monkeypatch.setattr(executor, "check_section_statements", check)
+    monkeypatch.setattr(frozen, "check_section_statements", check)
     def prices(entry: Any) -> Any:
         events.append("prices")
         return object()
@@ -439,3 +440,16 @@ def test_company_write_error_cannot_publish_a_completed_section_header(monkeypat
         run(context, max_runs=1)
     assert calls == ["VALUATION-ENSEMBLE-GRADE-COMPANY-ARTIFACT-v1"]
     assert not list(context["store"].directory.iterdir()) and context["database"].writes == 0
+
+
+def test_the_inventory_runs_on_the_standard_library_alone() -> None:
+    """The grid workflow's inventory job runs on a bare Python (no pip install): importing the executor must not pull a
+    dependency (the frozen reader, the grid and the reader are imported inside the chunk)."""
+    import subprocess
+    import sys
+
+    repository = Path(__file__).resolve().parents[3]
+    run = subprocess.run([sys.executable, "-S", "-m", "app.valuation_ensemble_executor", "--inventory", "--repository-root", str(repository)],
+                         cwd=repository / "c3po/backend", capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr[-500:]
+    assert "c3po/backend/app/valuation_ensemble_frozen.py" in json.loads(run.stdout)["files"]

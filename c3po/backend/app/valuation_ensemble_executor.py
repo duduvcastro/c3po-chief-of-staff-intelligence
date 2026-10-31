@@ -15,7 +15,6 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from .valuation_ensemble_frozen import FrozenAsFiledReader, FrozenIndex, check_section_statements
 from .valuation_ensemble_inputs import canonical_hash, utc
 from .valuation_ensemble_persistence import FileReceiptStore
 from .valuation_ensemble_pin import (InstrumentBinding, MANIFEST_SCHEMA, PREREG_COMMIT,
@@ -190,6 +189,7 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
     from .valuation_ensemble_calendar import report_calendar_for
     if dict(report_calendar) != report_calendar_for(rev3_manifest):
         raise ValueError("ensemble_calendar_differs_from_reference_publication")
+    from .valuation_ensemble_frozen import FrozenAsFiledReader, FrozenIndex, check_section_statements
     from .valuation_ensemble_grid import compute_grid_section
 
     def active() -> None:

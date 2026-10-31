@@ -29,10 +29,13 @@ jobs:
     environment: production
     timeout-minutes: 200
     steps:
-      - name: Check the input
+      - name: Check the input and the ref
         env:
           REV3_RUN: ${{ inputs.rev3_manifest_run_id }}
-        run: '[[ "$REV3_RUN" =~ ^[0-9]{1,20}$ ]] || { echo "the rev3 run id is not a number" >&2; exit 1; }'
+          REF: ${{ github.ref }}
+        run: |
+          [[ "$REV3_RUN" =~ ^[0-9]{1,20}$ ]] || { echo "the rev3 run id is not a number" >&2; exit 1; }
+          [ "$REF" = refs/heads/main ] || { echo "the readiness runs from main only (the pin's revision)" >&2; exit 1; }
 
       - name: Check the operating window
         id: window
@@ -142,7 +145,7 @@ jobs:
           cd /opt/chief-of-staff-digital || exit 10
           file="/tmp/valuation-ensemble-readiness-$RUN_ID.json"
           trap 'rm -f "$file"' EXIT
-          [ -s "$file" ] || exit 11
+          [ -f "$file" ] && [ ! -L "$file" ] && [ -s "$file" ] || exit 11
           compose=(docker compose --env-file .env -f c3po/compose.yml)
           api=$("${compose[@]}" ps -q api) || exit 12
           [ -n "$api" ] || exit 12

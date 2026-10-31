@@ -96,7 +96,9 @@ class FrozenAsFiledReader(pit.AsFiledReader):
     """``valuation_pit_rerun.AsFiledReader`` on the store cut at ``written_until`` (rev 2 §2), for ONE section. ``index``
     is the chunk's FrozenIndex, or a callable that loads it the first time a section reads the store (shared by the
     chunk's sections). An issuer's facts at T are read once for the reader's life: the statements check and the grid's
-    own read share the same rows (neither changes them), the reader's refusal counts given to each caller."""
+    own read share the same rows (neither changes them), the reader's refusal counts given to each caller. The parent's
+    counts (an acceptance after T or without a zone, which migration 051's ``TIMESTAMPTZ NOT NULL`` rules out) are
+    taken before the write cut."""
 
     def __init__(self, database: Any, *, written_until: datetime, index: "FrozenIndex | Callable[[], FrozenIndex]") -> None:
         super().__init__(database)
