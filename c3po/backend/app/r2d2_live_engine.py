@@ -548,7 +548,7 @@ def shadow_line(engine: "Engine") -> str:
 
 def size_weight(spread_bps: float, rule: str | None = None) -> float:
     """The share of NAV/slots a buy at ``spread_bps`` takes under the size rule (``RULE["size_rule"]`` by default): the
-    wider the spread paid, the smaller the position (owner 30/10). An unknown rule is the equal size."""
+    wider the spread paid, the smaller the position (owner 30/10). An unknown rule raises ``ValueError``."""
     rule = RULE["size_rule"] if rule is None else rule
     if rule not in SIZE_RULES:
         raise ValueError("unknown size rule")
