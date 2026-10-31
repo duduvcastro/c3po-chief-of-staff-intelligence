@@ -1,5 +1,6 @@
 import json
 import math
+import threading
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Callable
@@ -814,6 +815,141 @@ def test_exits_a_pushed_decision_is_taken_before_any_other_name_waits_on_massive
     assert {entry[:2] for entry in order if entry[0] == "asked"} == {("asked", "AAA"), ("asked", "CCC")}
 
 
+def test_ask_nbbo_calls_between_while_an_answer_is_due_within_the_budget() -> None:
+    """Load test of 31/10: while a step waited on Massive's REST, the session's passes on the pushed NBBO stood still.
+    ``between`` runs during the wait, the answers are still collected, and the budget still ends the wait."""
+    t = _at(10, 0, 2)
+    release, calls = threading.Event(), []
+
+    def nbbo(symbol, now):  # answers once the wait has called ``between`` three times
+        assert release.wait(2.0)
+        return (29.01, 29.02, now)
+
+    def between():
+        calls.append(1)
+        if len(calls) == 3:
+            release.set()
+    answers = engine_module.ask_nbbo(nbbo, ["AAA", "CCC"], t, budget=2.0, between=between)
+    assert set(answers) == {"AAA", "CCC"} and len(calls) >= 3
+    late, started = threading.Event(), engine_module.clock_time.monotonic()
+    calls.clear()
+    try:  # a request that never answers: the budget ends the wait, ``between`` ran meanwhile, no answer
+        assert engine_module.ask_nbbo(lambda s, now: (late.wait(2.0), None)[1], ["AAA"], t, budget=0.2,
+                                      between=lambda: calls.append(1)) == {}
+        assert engine_module.clock_time.monotonic() - started < 1.0 and len(calls) >= 3
+    finally:
+        late.set()
+
+
+def test_exits_a_stop_pushed_while_the_step_waits_on_massive_is_sold_in_the_wait() -> None:
+    """Load test of 31/10: CCC is quiet (no pushed quote), so the step asks Massive's REST for it; AAA's stop reaches the
+    stream meanwhile. The session's pass (``between``) sells AAA during the wait; CCC is still marked on its answer."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    engine.state.positions["CCC"] = Position("CCC", "NYSE", 1000.0, 29.0, 29_001.45, t.isoformat(), last_mark=29.0)
+    t = _at(10, 0, 2)
+    mark, stop = _bid_at(position, 0.05), _bid_at(position, -0.42)
+    quotes = {"AAA": (mark, mark + 0.01, t)}
+    answered, sold = threading.Event(), []
+
+    def view(symbol):
+        return MarketView(price=98.0 if symbol == "AAA" else 29.0, trade_at=t, vwap=98.0)
+
+    def nbbo(symbol, now):  # CCC's answer comes only after the pass in the wait
+        assert answered.wait(2.0)
+        return (29.01, 29.02, now)
+
+    def between():
+        if not answered.is_set():
+            quotes["AAA"] = (stop, stop + 0.01, t + timedelta(milliseconds=50))
+            sold.extend(engine.fast_exits(t + timedelta(milliseconds=60), view, quotes.get))
+            answered.set()
+    fills = engine.step(t, view, nbbo=nbbo, pushed=quotes.get, between=between)
+    assert [(f["side"], f["symbol"], f["price"]) for f in sold] == [("SELL", "AAA", stop)] and fills == []
+    assert "AAA" not in engine.state.positions and engine.state.positions["CCC"].last_mark == 29.01
+    assert sum(1 for f in engine.fills if f["side"] == "SELL") == 1
+
+
+def test_entries_a_stop_pushed_while_the_crosses_wait_on_massive_is_sold_in_the_wait() -> None:
+    """The crosses' wait on Massive (up to NBBO_STEP_BUDGET_SECONDS) runs the session's passes too: AAA's stop pushed
+    meanwhile is sold in the wait, and CCC's cross is then bought at the NAV that sale left (pre-review of c0b7c4a4)."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    mark, stop = _bid_at(position, 0.05), _bid_at(position, -0.42)
+
+    def view_at(moment, ccc):
+        def view(symbol):
+            if symbol == "AAA":
+                return MarketView(price=98.0, trade_at=moment, vwap=98.0)
+            return MarketView(price=ccc, trade_at=moment, vwap=29.0) if symbol == "CCC" else MarketView()
+        return view
+    t = _at(10, 0, 2)
+    quotes = {"AAA": (mark, mark + 0.01, t)}
+    assert engine.step(t, view_at(t, 28.9), pushed=quotes.get) == []  # CCC under its VWAP: armed for a cross
+    t = _at(10, 0, 3)
+    quotes["AAA"] = (mark, mark + 0.01, t)
+    view, answered, sold = view_at(t, 29.1), threading.Event(), []
+
+    def nbbo(symbol, now):  # CCC's NBBO answers only after the pass in the wait
+        assert answered.wait(2.0)
+        return (29.095, 29.105, now)
+
+    def between():
+        if not answered.is_set():
+            quotes["AAA"] = (stop, stop + 0.01, t + timedelta(milliseconds=50))
+            sold.extend(engine.fast_exits(t + timedelta(milliseconds=60), view, quotes.get))
+            answered.set()
+    nav = engine.state.nav_realized
+    fills = engine.step(t, view, nbbo=nbbo, pushed=quotes.get, between=between)
+    assert [(f["side"], f["symbol"], f["price"]) for f in sold] == [("SELL", "AAA", stop)]
+    assert [(f["side"], f["symbol"], f["price"]) for f in fills] == [("BUY", "CCC", 29.105)]
+    assert engine.state.nav_realized < nav and set(engine.state.positions) == {"CCC"}
+    assert engine.state.positions["CCC"].cost_usd == pytest.approx(engine.state.nav_realized / 20)
+
+
+def test_exits_a_quiet_name_judged_in_the_wait_is_never_marked_again_on_the_older_answer() -> None:
+    """AAA is quiet at the step's start, so Massive's REST is asked for it; its quote reaches the stream during the wait
+    and the pass arms the lock at +0.12%. The answer, asked before that quote, would mark -0.20% under the lock's floor
+    and sell on a price older than the one already judged: it never marks AAA. A name the pass sold is skipped too."""
+    engine = _engine()
+    t = _at(10, 0, 1)
+    position = _bought_aaa(engine, t)
+    t = _at(10, 0, 2)
+    quotes: dict = {}
+    fresh, old = _bid_at(position, 0.12), _bid_at(position, -0.20)
+    answered = threading.Event()
+
+    def view(symbol):
+        return MarketView(price=98.0, trade_at=t, vwap=98.0) if symbol == "AAA" else MarketView()
+
+    def nbbo(symbol, now):
+        assert answered.wait(2.0)
+        return (old, old + 0.01, now)
+
+    def between():
+        if not answered.is_set():
+            quotes["AAA"] = (fresh, fresh + 0.01, t + timedelta(milliseconds=40))
+            engine.fast_exits(t + timedelta(milliseconds=50), view, quotes.get)
+            answered.set()
+    assert engine.step(t, view, nbbo=nbbo, pushed=quotes.get, between=between) == []
+    assert position.last_mark == fresh and position.armed and "AAA" in engine.state.positions
+    t = _at(10, 0, 3)  # quiet again; this time the pass in the wait sells it: the answer after it changes nothing
+    stop = _bid_at(position, -0.45)
+    quotes.clear()
+    answered.clear()
+
+    def selling():
+        if not answered.is_set():
+            quotes["AAA"] = (stop, stop + 0.01, t + timedelta(milliseconds=40))
+            engine.fast_exits(t + timedelta(milliseconds=50), view, quotes.get)
+            answered.set()
+    assert engine.step(t, view, nbbo=nbbo, pushed=quotes.get, between=selling) == []
+    assert "AAA" not in engine.state.positions
+    assert [(f["side"], f["price"]) for f in engine.fills if f["symbol"] == "AAA"][-1] == ("SELL", stop)
+
+
 def test_fast_exits_judge_the_held_names_on_the_pushed_nbbo_between_the_full_checks() -> None:
     """Owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s". Only the pushed NBBO, read and used at one
     instant; a name without a usable one waits for the full check; never an entry."""
@@ -840,7 +976,7 @@ def test_the_session_checks_the_held_names_every_tenth_of_a_second_between_the_f
     wall, clock, steps, fast = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
     monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
 
-    def step(self, now, view, signal=None, nbbo=None, pushed=None):  # a full check takes 0.05 s
+    def step(self, now, view, signal=None, nbbo=None, pushed=None, between=None):  # a full check takes 0.05 s
         steps.append(now)
         wall["t"] += 0.05
         clock["t"] += timedelta(seconds=0.05)
@@ -900,6 +1036,200 @@ def test_the_session_checks_the_held_names_every_tenth_of_a_second_between_the_f
     assert massive.calls[0] == {"AAA"} and massive.calls[-1] == set()  # the sale between checks: the stream follows at once
     assert len(fast) == 20  # held nothing after the sale: no more tenth-of-a-second checks
     assert any(steps[2] <= moment <= steps[3] for moment in commits)  # the sale committed between the full checks
+
+
+def test_the_session_runs_its_passes_while_a_step_waits_on_massive(tmp_path: Path, monkeypatch) -> None:
+    """Load test of 31/10: while a step waits on Massive (0.6 s here, ``between`` called every 0.01 s as ``ask_nbbo``
+    does), the held names keep their passes on the pushed NBBO: at least one every tenth of a second, one at once on a
+    new quote. The sale of a pass is one of the step's fills (the stream follows, a commit), and the screen gets marks."""
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
+    wall, clock, steps, fast, hooks, pushed_at = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], [], [], []
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def advance(seconds):
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+
+    class Massive:
+        status, reconnects = "connected", 0
+
+        def __init__(self) -> None:
+            self.calls: list[set[str]] = []
+            self.updated = False
+
+        def set_symbols(self, symbols) -> None:
+            self.calls.append(set(symbols))
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, 0)
+
+        def wait_update(self, timeout):  # a quote pushed during the wait is seen at once; none between the steps
+            updated, self.updated = self.updated, False
+            if not updated:
+                advance(timeout)
+            return updated
+    massive = Massive()
+
+    def step(self, now, view, signal=None, nbbo=None, pushed=None, between=None):  # 0.6 s waiting on Massive
+        steps.append(now)
+        hooks.append(between)
+        for tick in range(60):
+            advance(0.01)
+            if len(steps) == 1 and tick == 24:  # a new quote 0.25 s into the first wait
+                massive.updated = True
+                pushed_at.append(clock["t"])
+            if between is not None:
+                between()
+        return []
+
+    def fast_exits(self, now, view, pushed):
+        fast.append(now)
+        if pushed_at and now == pushed_at[0]:  # the new quote stops AAA
+            self.state.positions.pop("AAA")
+            return [{"side": "SELL", "symbol": "AAA"}]
+        return []
+    monkeypatch.setattr(Engine, "step", step)
+    monkeypatch.setattr(Engine, "fast_exits", fast_exits)
+
+    def sleep(seconds):
+        advance(seconds)
+        if len(steps) >= 3:
+            raise KeyboardInterrupt
+    commits, written = [], []
+    monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append((moment, sorted(state.positions))))
+
+    class Writer:  # the marks writer's hand-overs, synchronously
+        def __init__(self, write) -> None:
+            pass
+
+        def submit(self, session, as_of, marks) -> None:
+            written.append(as_of)
+
+        def stop(self) -> None:
+            pass
+    monkeypatch.setattr(engine_module, "MarksWriter", Writer)
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=_FakeStream(), database=database, get_json=None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
+                    cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None, massive=massive)  # type: ignore[arg-type]
+    wait = steps[0] + timedelta(seconds=0.6)
+    assert hooks[0] is not None and len(steps) == 3
+    assert len(fast) == 3 and fast[-1] == pushed_at[0]  # two passes a tenth apart, then one at once on the new quote
+    gaps = [(b - a).total_seconds() for a, b in zip([steps[0]] + fast, fast)]
+    assert max(gaps) <= engine_module.FAST_EXIT_SECONDS + 0.011
+    # the opening checkpoint holds AAA; the sale in the wait is committed once, after its step, and never again
+    assert commits == [(steps[0], ["AAA"]), (steps[0], [])] and massive.calls[-1] == set()
+    assert len([m for m in written if steps[0] < m < wait]) == 3  # the screen's marks on each pass of the wait
+
+
+def _waiting_session(tmp_path: Path, monkeypatch, start: datetime, ticks: int, fast_exits, steps: list, commits: list,
+                     sleep_ends: bool = False, buy: bool = True) -> None:
+    """``run_session`` with AAA held and Massive followed (no ``wait_update``: a pass at least every tenth), each step
+    waiting ``ticks`` x 0.01 s on Massive, calling ``between`` after each tick, and filling one buy (none without
+    ``buy``). The steps' instants and the commits (instant, held names) go to ``steps`` and ``commits``; with
+    ``sleep_ends`` the first sleep ends the session."""
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
+    carried = Position("AAA", "NASDAQ", 100.0, 98.0, 9800.49, _at(9, 31).isoformat(), last_mark=98.0)
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6, positions={"AAA": carried}))
+    wall, clock = {"t": 0.0}, {"t": start}
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
+
+    def advance(seconds):
+        wall["t"] += seconds
+        clock["t"] += timedelta(seconds=seconds)
+
+    class Massive:
+        status, reconnects = "connected", 0
+
+        def set_symbols(self, symbols) -> None:
+            pass
+
+        def quote(self, symbol):
+            return None
+
+        def take_gauges(self):
+            return (0, 0, 0, 0)
+
+    def step(self, now, view, signal=None, nbbo=None, pushed=None, between=None):
+        steps.append(now)
+        for _ in range(ticks):
+            advance(0.01)
+            if between is not None:
+                between()
+        return [{"side": "BUY", "symbol": "BBB"}] if buy else []
+
+    def sleep(seconds):
+        if sleep_ends:
+            raise KeyboardInterrupt
+        assert len(steps) < 3, "the session ran past the steps this test expects"  # never a whole session
+        advance(seconds)
+
+    class Writer:
+        def __init__(self, write) -> None:
+            pass
+
+        def submit(self, session, as_of, marks) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+    monkeypatch.setattr(Engine, "step", step)
+    monkeypatch.setattr(Engine, "fast_exits", fast_exits)
+    monkeypatch.setattr(engine_module, "save_state", lambda db, state, moment: commits.append((moment, sorted(state.positions))))
+    monkeypatch.setattr(engine_module, "MarksWriter", Writer)
+    run_session(stream=_FakeStream(), database=Database(Settings(database_url="")), get_json=None, base_url="", token="",  # type: ignore[arg-type]
+                day=DAY, cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, nbbo=lambda s, now: None,
+                massive=Massive())  # type: ignore[arg-type]
+
+
+def test_a_pass_that_fails_in_a_wait_ends_the_session_once_the_steps_fills_are_committed(tmp_path: Path, monkeypatch) -> None:
+    """Pre-reviews of c0b7c4a4 and a76ed3eb: an error in a pass run during a step's wait left the step before its fills
+    were committed. The step's waits run no more passes, the step's fills are committed — a sale the failing pass made
+    before it raised included — and the error is raised then, ending the session as a failed pass after a step did."""
+    calls = []
+
+    def fast_exits(self, now, view, pushed):
+        calls.append(now)
+        raise RuntimeError("the pass failed")
+    steps: list = []
+    commits: list = []
+    with pytest.raises(RuntimeError, match="the pass failed"):
+        _waiting_session(tmp_path, monkeypatch, _at(9, 30, 59), 60, fast_exits, steps, commits)
+    assert len(calls) == 1 and len(steps) == 1  # one pass in the wait, then none, and the session ends after the step
+    assert commits == [(steps[0], ["AAA"]), (steps[0], ["AAA"])]  # the opening checkpoint, then the step's buy
+    steps.clear()
+    commits.clear()
+    with pytest.raises(RuntimeError, match="the pass failed"):  # no fill at all: the checkpoint still comes first
+        _waiting_session(tmp_path, monkeypatch, _at(9, 30, 59), 60, fast_exits, steps, commits, buy=False)
+    assert commits == [(steps[0], ["AAA"]), (steps[0], ["AAA"])]
+
+    def selling_then_failing(self, now, view, pushed):  # stops AAA, then fails on another name
+        assert self._exit(self.state.positions["AAA"], MarketView(price=90.0, trade_at=now), now, 90.0, "fast") is not None
+        raise RuntimeError("the pass failed after a sale")
+    steps.clear()
+    commits.clear()
+    with pytest.raises(RuntimeError, match="after a sale"):
+        _waiting_session(tmp_path, monkeypatch, _at(9, 30, 59), 60, selling_then_failing, steps, commits, buy=False)
+    assert commits == [(steps[0], ["AAA"]), (steps[0], [])]  # no fill of the step's own: the sale alone is committed
+
+
+def test_a_wait_that_crosses_the_close_runs_no_pass_at_or_past_it(tmp_path: Path, monkeypatch) -> None:
+    """A step that starts just before 16:00 and waits on Massive across it: the passes in its wait stop at the close."""
+    calls = []
+
+    def fast_exits(self, now, view, pushed):
+        calls.append(now)
+        return []
+    with pytest.raises(KeyboardInterrupt):
+        _waiting_session(tmp_path, monkeypatch, _at(15, 59, 59) + timedelta(milliseconds=420), 100, fast_exits, [], [],
+                         sleep_ends=True)
+    close = _at(16, 0)
+    assert len(calls) >= 4 and all(moment < close for moment in calls)  # a pass a tenth until 16:00, none in the last 0.42 s
 
 
 def test_the_marks_writer_never_blocks_keeps_only_the_latest_and_logs_a_failure_once(monkeypatch, caplog) -> None:
@@ -1043,7 +1373,7 @@ def test_the_tenth_of_a_second_checks_never_run_past_the_close(tmp_path: Path, m
     wall, clock, checks = {"t": 0.0}, {"t": _at(15, 59, 58) + timedelta(milliseconds=450)}, []
     monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
 
-    def step(self, now, view, signal=None, nbbo=None, pushed=None):
+    def step(self, now, view, signal=None, nbbo=None, pushed=None, between=None):
         wall["t"] += 0.05
         clock["t"] += timedelta(seconds=0.05)
         return []
@@ -1095,6 +1425,15 @@ def test_the_stream_wakes_the_exits_on_every_new_quote_of_a_followed_name() -> N
     stream._record(json.dumps([{"ev": "Q", "sym": "AAA", "bp": 98.01, "ap": 98.02, "t": now_ms + 1}]))
     assert stream.wait_update(0.0) is True and stream.wait_update(0.0) is False  # one signal, consumed once
 
+    class Racing(threading.Event):  # the reader's signal lands right after a wait returned False
+        def wait(self, timeout=None):
+            seen = super().wait(timeout)
+            if not seen:
+                self.set()
+            return seen
+    stream._updated = Racing()
+    assert stream.wait_update(0.0) is False and stream.wait_update(0.0) is True  # never cleared unseen (pre-review P2)
+
 
 @pytest.mark.parametrize("quotes_streaming", [True, False])
 def test_the_session_reacts_to_each_new_quote_at_most_every_ten_milliseconds(tmp_path: Path, monkeypatch, quotes_streaming) -> None:
@@ -1107,7 +1446,7 @@ def test_the_session_reacts_to_each_new_quote_at_most_every_ten_milliseconds(tmp
     wall, clock, steps, fast = {"t": 0.0}, {"t": _at(9, 30, 59)}, [], []
     monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: wall["t"])
 
-    def step(self, now, view, signal=None, nbbo=None, pushed=None):
+    def step(self, now, view, signal=None, nbbo=None, pushed=None, between=None):
         steps.append(now)
         wall["t"] += 0.05
         clock["t"] += timedelta(seconds=0.05)
@@ -1235,7 +1574,7 @@ def test_the_session_loop_runs_once_a_second_and_logs_its_lines_every_minute_wha
             return (0, 0, 0, len(self.calls[-1]) if self.calls else 0)
     massive = Massive()
 
-    def step(self, now, view, signal=None, nbbo=None, pushed=None):  # each step waits 0.6 s on Massive and fills
+    def step(self, now, view, signal=None, nbbo=None, pushed=None, between=None):  # each step waits 0.6 s on Massive and fills
         steps.append(now)
         pusheds.append(pushed)
         wall["t"] += 0.6
@@ -2119,7 +2458,7 @@ def test_nbbo_the_session_hands_the_reader_to_every_step_and_the_request_lines_s
     received = []
     original = Engine.step
 
-    def spy(self, now, view, signal=None, nbbo=None, pushed=None):
+    def spy(self, now, view, signal=None, nbbo=None, pushed=None, between=None):
         received.append(nbbo)
         return original(self, now, view, signal, nbbo)
     monkeypatch.setattr(Engine, "step", spy)
