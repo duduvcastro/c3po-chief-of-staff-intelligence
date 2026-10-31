@@ -1,0 +1,279 @@
+name: Valuation grid preflight (read-only statements check)
+
+# owner 31/10/2026, the new epoch of the ensemble grid: for every section of the signed rev3 manifest, does the as-filed
+# reference recompute to rev3's with the store as it is, and under counterfactual first_seen_at cuts a new epoch could
+# adopt (app/valuation_grid_preflight.py; what rev3 actually read is unknown: first_seen_at is a transaction's start)?
+# Read-only session; counts and section labels (market, session) only: this repository is public. The grid's own window
+# (never in a US session nor the nightly window, one end fixed on the host and checked again right before the module
+# starts), its concurrency group (never alongside a chunk) and its as-filed backfill guard (a stable "now" read).
+
+on:
+  workflow_dispatch:
+    inputs:
+      rev3_manifest_run_id:
+        description: "the rev3 grid run whose artifact holds the signed manifest"
+        default: '40206452777'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: valuation-pit-backtest  # the grid's and rev3's: ONE valuation backtest process on the host at a time
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 200
+    steps:
+      - name: Check the input
+        env:
+          REV3_RUN: ${{ inputs.rev3_manifest_run_id }}
+        run: '[[ "$REV3_RUN" =~ ^[0-9]{1,20}$ ]] || { echo "the rev3 run id is not a number" >&2; exit 1; }'
+
+      - name: Check the operating window
+        id: window
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT" || exit 1
+          import datetime as dt
+          import sys
+          from zoneinfo import ZoneInfo
+
+          now = dt.datetime.now(dt.timezone.utc)
+          new_york, sao_paulo = ZoneInfo("America/New_York"), ZoneInfo("America/Sao_Paulo")
+          windows = []
+          for offset in range(-2, 6):  # the grid's windows (.github/workflows/valuation-ensemble-grid.yml)
+              day = now.astimezone(new_york).date() + dt.timedelta(days=offset)
+              if day.weekday() < 5:
+                  windows.append((dt.datetime.combine(day, dt.time(9, 0), new_york), dt.datetime.combine(day, dt.time(16, 30), new_york)))
+              local = now.astimezone(sao_paulo).date() + dt.timedelta(days=offset)
+              windows.append((dt.datetime.combine(local - dt.timedelta(days=1), dt.time(23, 30), sao_paulo), dt.datetime.combine(local, dt.time(8, 15), sao_paulo)))
+          if any(start <= now < end for start, end in windows):
+              sys.exit("refused: now is inside the US session or the nightly window")
+          upcoming = min(start for start, _end in windows if start > now)
+          deadline = min(upcoming - dt.timedelta(minutes=10), now + dt.timedelta(minutes=180))
+          if deadline <= now + dt.timedelta(minutes=45):
+              sys.exit("refused: less than 55 min before the next window")
+          print(f"deadline_epoch={int(deadline.timestamp())}")
+          PY
+
+      - name: Download the rev3 grid manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: valuation-pit-backtest-grid-${{ inputs.rev3_manifest_run_id }}
+          path: ${{ runner.temp }}/rev3
+          run-id: ${{ inputs.rev3_manifest_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the rev3 grid manifest
+        shell: bash
+        run: |
+          set -uo pipefail
+          (cd "$RUNNER_TEMP/rev3" && sha256sum -c --strict --quiet SHA256SUMS) || { echo 'the artifact does not match its SHA256SUMS' >&2; exit 2; }
+          python3 -I - "$RUNNER_TEMP/rev3/manifest.json" <<'PY' || exit 1
+          import hashlib
+          import json
+          import sys
+
+          manifest = json.loads(open(sys.argv[1], "rb").read().decode("utf-8"))
+          body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+          digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+          signed = "73a81bcef1cd93425dfab785ae57c52118ba09493a4b7169e31a0e0b6665f805"  # REV3_MANIFEST_SHA256 of valuation_ensemble_pin
+          if digest != signed or manifest.get("manifest_sha256") != signed or manifest.get("complete") is not True:
+              sys.exit("the artifact is not the signed complete rev3 manifest")
+          print(f"rev3 manifest {digest}: {len(manifest.get('grid') or [])} V3 and {len(manifest.get('served_grid') or [])} served sections")
+          PY
+
+      - name: Configure deployment SSH key
+        id: sshkey
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh || exit 1
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy || exit 1
+          chmod 600 ~/.ssh/c3po_deploy || exit 1
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts || exit 1
+          chmod 600 ~/.ssh/known_hosts || exit 1
+
+      - name: Send the rev3 manifest to the host
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "umask 077 && cat > /tmp/valuation-grid-preflight-$RUN_ID.json" < "$RUNNER_TEMP/rev3/manifest.json" 2> /dev/null \
+            || { echo 'the rev3 manifest could not be sent to the host (ssh stderr kept private)' >&2; exit 1; }
+
+      - name: Run the preflight on the host (read-only)
+        id: host
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
+          DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 1
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          [ $(( DEADLINE_AT - $(date +%s) )) -gt 600 ] || { echo 'the deadline is too close' >&2; exit 1; }
+          rc=0
+          # the host receives the ABSOLUTE deadline (epoch seconds): no time spent before or during its guards is ever
+          # granted again (Codex 6544583420 and 6544952899, P2-2)
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" "RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' DEADLINE_AT='$DEADLINE_AT' bash -s" \
+            > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          #   10 arguments / app dir   11 manifest file   12 api container   25 under 10 min left of the deadline
+          #   26 host clock            27 inside a US session or the nightly window   36 as-filed backfill not paused
+          [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ && "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 10
+          cd /opt/chief-of-staff-digital || exit 10
+          file="/tmp/valuation-grid-preflight-$RUN_ID.json"
+          trap 'rm -f "$file"' EXIT
+          [ -s "$file" ] || exit 11
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          api=$("${compose[@]}" ps -q api) || exit 12
+          [ -n "$api" ] || exit 12
+          # the as-filed backfill PAUSED in the running Investor Relations worker, as the grid requires: "now" is a stable read
+          ir=$("${compose[@]}" ps -q investor-relations-worker) || exit 36
+          [ -n "$ir" ] || exit 36
+          backfill=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$ir" | awk -F= '$1 == "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL" {print $2}') || exit 36
+          [ "$backfill" = 0 ] || exit 36
+          # right before the module starts, on the host's own clock: the windows again (the grid's: a weekday 09:00-16:30
+          # New York, 23:30-08:15 Sao Paulo) and what is left of the absolute deadline, the module's whole time
+          now=$(date +%s) || exit 26
+          [[ "$now" =~ ^[0-9]+$ ]] || exit 26
+          ny_day=$(TZ=America/New_York date -d "@$now" +%u) || exit 26
+          ny_time=$(TZ=America/New_York date -d "@$now" +%H%M) || exit 26
+          sp_time=$(TZ=America/Sao_Paulo date -d "@$now" +%H%M) || exit 26
+          if { [ "$ny_day" -le 5 ] && [ "$((10#$ny_time))" -ge 900 ] && [ "$((10#$ny_time))" -lt 1630 ]; } \
+             || [ "$((10#$sp_time))" -ge 2330 ] || [ "$((10#$sp_time))" -lt 815 ]; then
+            echo 'inside a US session or the nightly window' >&2
+            exit 27
+          fi
+          left=$(( DEADLINE_AT - now ))
+          [ "$left" -ge 600 ] || { echo 'under 10 min left of the deadline' >&2; exit 25; }
+          echo "LAUNCHED $RUN_TOKEN"
+          # `-X valuation_pit_run_token=<run>-<attempt>` (never read by the module): the cleanup stops THIS process only
+          "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api timeout -s TERM -k 120 "$left" \
+            nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m app.valuation_grid_preflight < "$file"
+          REMOTE
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          # only the module's own JSON line, its shape checked (counts, closed outcome words, section labels), never the
+          # host's stderr: a public log
+          filtered=0
+          python3 -I - "$raw/stdout.txt" <<'PY' || filtered=$?
+          import json
+          import re
+          import sys
+
+          KEY = r"(facts|facts_superseded_by_T|rows|quarters_derived|statements_sha256)"
+          WORD = re.compile(r"^(match|ambiguous_map|skipped:rev3_(read_it|neither)|refused:(rev3_reference_missing|%s(,%s)*))$" % (KEY, KEY))
+          SCAN = re.compile(r"^(every_cut|some_cut|no_cut)$")
+          LABEL = re.compile(r"^(NASDAQ|NYSE) [0-9]{4}-[0-9]{2}-[0-9]{2}$")
+          INSTANT = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+-]{8,32}$")
+          CODE = re.compile(r"^[A-Za-z0-9_]{1,80}$")
+
+          def clean(value):
+              if value.get("kind") == "refused":
+                  return {"kind": "refused", "reason": value["reason"]} if CODE.match(str(value.get("reason"))) else None
+              out = {"kind": "preflight"}
+              for key in ("sections", "names", "unreadable_sections"):
+                  if not isinstance(value.get(key), int):
+                      return None
+                  out[key] = value[key]
+              reasons = value.get("unreadable_reasons")
+              if not isinstance(reasons, dict) or not all(CODE.match(k) and isinstance(v, int) for k, v in reasons.items()):
+                  return None
+              out["unreadable_reasons"] = reasons
+              for key in ("first_rev3_write", "last_rev3_write"):
+                  if value.get(key) is not None and not INSTANT.match(str(value[key])):
+                      return None
+                  out[key] = value.get(key)
+              scan = value.get("cut_scan")
+              if not isinstance(scan, dict):
+                  return None
+              kept = {}
+              for key, item in scan.items():
+                  if key in ("every_cut_sections", "some_cut_sections", "no_cut_sections") and isinstance(item, int):
+                      kept[key] = item
+                  elif key in ("no_cut", "some_cut", "unreadable") and isinstance(item, list) and all(isinstance(x, str) and LABEL.match(x) for x in item):
+                      kept[key] = item
+                  elif key == "names" and isinstance(item, dict) and all(SCAN.match(k) and isinstance(v, int) for k, v in item.items()):
+                      kept[key] = item
+                  else:
+                      return None
+              out["cut_scan"] = kept
+              for basis in ("now", "cut_hi", "cut_lo"):
+                  block = value.get(basis)
+                  if not isinstance(block, dict):
+                      return None
+                  kept = {}
+                  for key, item in block.items():
+                      if key in ("stable_sections", "refused_sections", "uncertain_sections", "deviating_sections") and isinstance(item, int):
+                          kept[key] = item
+                      elif key in ("refused", "uncertain", "deviating", "unreadable") and isinstance(item, list) and all(isinstance(x, str) and LABEL.match(x) for x in item):
+                          kept[key] = item
+                      elif key == "first_refused" and (item is None or LABEL.match(str(item))):
+                          kept[key] = item
+                      elif key == "names" and isinstance(item, dict) and all(WORD.match(k) and isinstance(v, int) for k, v in item.items()):
+                          kept[key] = item
+                      else:
+                          return None
+                  out[basis] = kept
+              return out
+
+          printed = withheld = 0
+          for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+              try:
+                  value = json.loads(line.strip())
+              except ValueError:
+                  continue
+              if isinstance(value, dict) and value.get("kind") in ("preflight", "refused"):
+                  checked = clean(value)
+                  if checked is None:
+                      withheld += 1
+                      continue
+                  print(json.dumps(checked, sort_keys=True, indent=1))
+                  printed += 1
+          print(f"result lines: {printed}; withheld (an unexpected shape): {withheld}")
+          sys.exit(1 if withheld or not printed else 0)
+          PY
+          echo "remote exit status: $rc; stderr lines (count only): $(wc -l < "$raw/stderr.log")"
+          [ "$rc" = 0 ] || exit "$rc"
+          exit "$filtered"
+
+      - name: Stop this run's host process and remove the manifest
+        if: always() && steps.sshkey.outcome == 'success'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ ]] || exit 0
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "rm -f /tmp/valuation-grid-preflight-$RUN_ID.json" > /dev/null 2>&1 || true
+          if [ -f "$RUNNER_TEMP/raw/stdout.txt" ] && grep -qxF "LAUNCHED $RUN_TOKEN" "$RUNNER_TEMP/raw/stdout.txt"; then
+            rc=0  # the step runs under bash -e: the status is caught, never left to abort the step
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+              "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T api pkill -TERM -f 'valuation_pit_run_token=$RUN_TOKEN -m app[.]valuation_grid_preflight'" \
+              > /dev/null 2>&1 || rc=$?
+            case "$rc" in
+              0) echo 'a process of this run was still running: SIGTERM sent' ;;
+              1) echo 'no process of this run left in the api container' ;;
+              *) echo 'the stop request failed: check the api container by hand' >&2 ;;
+            esac
+          fi
