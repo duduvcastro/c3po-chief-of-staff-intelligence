@@ -391,17 +391,60 @@ def test_section_plan_and_run_agree_with_compute_grid_section_on_its_own_fixture
     assert result["cut_scan"]["every_cut_sections"] == 1
 
 
+SATURDAY = datetime(2026, 10, 31, 16, 0, tzinfo=UTC).timestamp()  # 13:00 Sao Paulo, 12:00 New York on a Saturday
+
+
+def _main(argv_deadline, **kwargs):
+    return preflight.main(["--deadline-at", str(int(argv_deadline))], clock=kwargs.pop("clock", lambda: SATURDAY),
+                          on_expiry=kwargs.pop("on_expiry", lambda: None), **kwargs)
+
+
 def test_the_command_prints_counts_only_and_refuses_an_unsigned_manifest(front, monkeypatch, capsys) -> None:
     monkeypatch.setattr(preflight.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b'{"complete": false}')})())
-    assert preflight.main([], database=_db()) == 2
+    assert _main(SATURDAY + 3600, database=_db()) == 2
     assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "ensemble_reference_manifest_not_the_complete_signed_rev3"}
 
     def leaky(database, rev3):
         raise ValueError("issuer 0000320193 has no AAPL facts")  # a message that is no code: only the type is printed
     monkeypatch.setattr(preflight, "run", leaky)
     monkeypatch.setattr(preflight.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
-    assert preflight.main([], database=_db()) == 2
+    assert _main(SATURDAY + 3600, database=_db()) == 2
     assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "ValueError"}
+
+
+def test_the_windows_are_the_grids() -> None:
+    def at(y, mo, d, h, mi, zone):
+        return datetime(y, mo, d, h, mi, tzinfo=zone)
+    ny, sp = preflight.NEW_YORK, preflight.SAO_PAULO
+    assert preflight.inside_a_window(at(2026, 11, 2, 9, 0, ny)) and not preflight.inside_a_window(at(2026, 11, 2, 8, 59, ny))
+    assert preflight.inside_a_window(at(2026, 11, 2, 16, 29, ny)) and not preflight.inside_a_window(at(2026, 11, 2, 16, 30, ny))
+    assert not preflight.inside_a_window(at(2026, 10, 31, 10, 0, ny))  # a Saturday morning in New York
+    assert preflight.inside_a_window(at(2026, 10, 31, 23, 30, sp)) and preflight.inside_a_window(at(2026, 11, 1, 8, 14, sp))
+    assert not preflight.inside_a_window(at(2026, 11, 1, 8, 15, sp)) and not preflight.inside_a_window(at(2026, 10, 31, 23, 29, sp))
+
+
+def test_the_process_checks_its_own_start_against_the_original_deadline_and_the_windows(front, monkeypatch, capsys) -> None:
+    """Codex 6545709465 (P2-2): a compose exec that waited 35 min hands the container a stale duration. The module itself
+    reads the clock when it starts: inside a window it refuses (27), under 10 min left of the ORIGINAL deadline it refuses
+    (25), otherwise it arms its own end at that deadline, before any read."""
+    monday_0905 = datetime(2026, 11, 2, 14, 5, tzinfo=UTC).timestamp()  # 09:05 New York
+    assert _main(monday_0905 + 3600, database=_db(), clock=lambda: monday_0905) == 27
+    assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "inside_a_window"}
+    assert _main(SATURDAY + 599, database=_db()) == 25
+    assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "deadline_too_close"}
+    armed = []
+    monkeypatch.setattr(preflight, "arm_deadline", lambda seconds, on_expiry: armed.append(seconds))
+    monkeypatch.setattr(preflight, "run", lambda database, rev3: {"sections": 0})
+    monkeypatch.setattr(preflight.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
+    assert _main(SATURDAY + 1200, database=_db()) == 0 and armed == [1200]
+
+
+def test_the_deadline_timer_fires_on_its_own_thread() -> None:
+    import threading as threads
+
+    fired = threads.Event()
+    preflight.arm_deadline(0.05, fired.set)
+    assert fired.wait(2.0)
 
 
 def _workflow_filter() -> str:

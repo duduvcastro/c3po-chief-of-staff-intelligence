@@ -39,11 +39,15 @@ from __future__ import annotations
 import argparse
 import bisect
 import json
+import os
 import re
 import sys
+import threading
+import time
 from collections import Counter
-from datetime import datetime, timedelta
-from typing import Any, Iterable, Mapping
+from datetime import datetime, time as wall_time, timedelta, timezone
+from typing import Any, Callable, Iterable, Mapping
+from zoneinfo import ZoneInfo
 
 from . import valuation_ensemble_executor as exe
 from . import valuation_ensemble_grid as grid
@@ -55,6 +59,30 @@ BASES = ("now", "cut_hi", "cut_lo")
 WINDOW = timedelta(minutes=60)  # cut_lo's assumption: rev3 read a section's facts at most this long before persisting it
 _CODE = re.compile(r"[a-z0-9_]{1,80}")
 AMBIGUOUS = object()
+NEW_YORK, SAO_PAULO = ZoneInfo("America/New_York"), ZoneInfo("America/Sao_Paulo")
+DEADLINE_FLOOR_SECONDS = 600  # under this left of the deadline the preflight does not start
+
+
+def inside_a_window(instant: datetime) -> bool:
+    """The grid's forbidden windows (.github/workflows/valuation-ensemble-grid.yml): a weekday 09:00-16:30 New York (a
+    holiday counts as a session: conservative) and 23:30-08:15 Sao Paulo (the nightly cycle)."""
+    new_york, sao_paulo = instant.astimezone(NEW_YORK), instant.astimezone(SAO_PAULO)
+    session = new_york.weekday() < 5 and wall_time(9, 0) <= new_york.time() < wall_time(16, 30)
+    night = sao_paulo.time() >= wall_time(23, 30) or sao_paulo.time() < wall_time(8, 15)
+    return session or night
+
+
+def arm_deadline(seconds: float, on_expiry: Callable[[], None]) -> threading.Timer:
+    """A daemon timer that calls ``on_expiry`` when ``seconds`` have passed (the process's own end at the deadline)."""
+    timer = threading.Timer(max(0.0, seconds), on_expiry)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def _end_at_the_deadline() -> None:
+    print(json.dumps({"kind": "refused", "reason": "deadline_reached"}, sort_keys=True), flush=True)
+    os._exit(124)  # from the timer's thread: the process ends now, whatever the main thread waits on
 
 
 def _utc(value: Any) -> datetime:
@@ -290,10 +318,25 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
     return totals
 
 
-def main(argv: list[str] | None = None, *, database: Any = None) -> int:
+def main(argv: list[str] | None = None, *, database: Any = None, clock: Callable[[], float] = time.time,
+         on_expiry: Callable[[], None] = _end_at_the_deadline) -> int:
     parser = argparse.ArgumentParser(description="Read-only preflight of the ensemble grid's statements (rev3 manifest on stdin); "
                                                  "counts only, never a symbol.")
-    parser.parse_args(argv)
+    parser.add_argument("--deadline-at", type=int, required=True,
+                        help="the run's absolute deadline (epoch seconds): checked with the windows when this process starts, "
+                             "and the process ends there")
+    args = parser.parse_args(argv)
+    # inside the container, after every hand-over (ssh, the host's guards, compose exec): the clock and the windows on
+    # this process's own start, and its own end at the ORIGINAL deadline (Codex 6545709465, P2-2)
+    now = clock()
+    if inside_a_window(datetime.fromtimestamp(now, timezone.utc)):
+        print(json.dumps({"kind": "refused", "reason": "inside_a_window"}, sort_keys=True))
+        return 27
+    left = args.deadline_at - now
+    if left < DEADLINE_FLOOR_SECONDS:
+        print(json.dumps({"kind": "refused", "reason": "deadline_too_close"}, sort_keys=True))
+        return 25
+    arm_deadline(left, on_expiry)
     from .valuation_accuracy_report import force_read_only_session
 
     force_read_only_session()

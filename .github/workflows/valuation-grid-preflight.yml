@@ -165,9 +165,11 @@ jobs:
           left=$(( DEADLINE_AT - now ))
           [ "$left" -ge 600 ] || { echo 'under 10 min left of the deadline' >&2; exit 25; }
           echo "LAUNCHED $RUN_TOKEN"
-          # `-X valuation_pit_run_token=<run>-<attempt>` (never read by the module): the cleanup stops THIS process only
+          # `-X valuation_pit_run_token=<run>-<attempt>` (never read by the module): the cleanup stops THIS process only.
+          # The module gets the ORIGINAL deadline too: on its own start, after the compose exec hand-over, it checks the
+          # clock and the windows again and ends itself at that deadline (Codex 6545709465); the timeout is a backstop
           "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api timeout -s TERM -k 120 "$left" \
-            nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m app.valuation_grid_preflight < "$file"
+            nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m app.valuation_grid_preflight --deadline-at "$DEADLINE_AT" < "$file"
           REMOTE
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           # only the module's own JSON line, its shape checked (counts, closed outcome words, section labels), never the
