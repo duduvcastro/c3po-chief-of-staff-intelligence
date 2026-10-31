@@ -2219,7 +2219,6 @@ def test_the_close_mode_and_the_size_rule_keep_the_rule_in_force_by_default() ->
     assert engine_module.size_weight(4.0) == 1.0 and engine_module.size_weight(0.5) == 1.0
     assert engine_module.size_weight(5.0, "taper") == pytest.approx(0.4) and engine_module.size_weight(1.0, "taper") == 1.0
     assert engine_module.size_weight(4.0, "inverse") == pytest.approx(0.5) and engine_module.size_weight(1.5, "inverse") == 1.0
-    assert engine_module.size_weight(4.0, "unknown") == 1.0
 
 
 def _held_negative(engine: Engine) -> Position:
@@ -2249,8 +2248,78 @@ def test_a_flat_close_confirms_the_feeds_bid_with_any_fresh_trade(monkeypatch) -
     engine = _engine()
     _held_negative(engine)
     t = _at(15, 59, 35)
-    fills = engine.step(t, lambda s: _view(98.0, 98.0, 98.0, 98.01, t) if s == "AAA" else MarketView())  # the feed only
+    # the feed only: its bid at -0.11% net, the fresh last trade elsewhere (-0.05%): any fresh trade confirms the flat sale
+    fills = engine.step(t, lambda s: _view(98.06, 98.0, 98.0, 98.01, t) if s == "AAA" else MarketView())
     assert [f["reason"].split(",")[0] for f in fills if f["side"] == "SELL"] == ["venda: zerada no fechamento"]
+
+
+def test_a_flat_close_never_carries_an_unconfirmed_stop_on_the_feed(monkeypatch) -> None:
+    """Pre-review of f3db006c P1: the feed's bid at the stop (-0.5%), the fresh trade at -0.2% — the stop is unconfirmed,
+    the window's flat sale still stands on that trade; without the flat close it stays unconfirmed."""
+    for flat in (True, False):
+        monkeypatch.setitem(engine_module.RULE, "close_flat", flat)
+        engine = _engine()
+        position = _held_negative(engine)
+        bid = position.cost_usd * (1 - 0.5 / 100) / (position.shares * (1 - FEE_SIDE))
+        trade = position.cost_usd * (1 - 0.2 / 100) / (position.shares * (1 - FEE_SIDE))
+        t = _at(15, 59, 35)
+        fills = engine.step(t, lambda s: _view(trade, 98.0, bid, bid + 0.01, t) if s == "AAA" else MarketView())
+        sold = [f["reason"].split(",")[0] for f in fills if f["side"] == "SELL"]
+        assert sold == (["venda: zerada no fechamento"] if flat else []), flat
+
+
+def test_a_flat_close_cutoff_is_the_instant_before_t30(monkeypatch) -> None:
+    monkeypatch.setitem(engine_module.RULE, "close_flat", True)
+    monkeypatch.setattr(engine_module.clock_time, "monotonic", lambda: 0.0)
+    assert engine_module.FLAT_LAST_ENTRY == time(15, 59, 29, 999999)
+    for at, bought in ((_at(15, 59, 29) + timedelta(microseconds=999999), True), (_at(15, 59, 30), False)):
+        engine = _engine()
+        below_at = at - timedelta(seconds=1)
+        engine.step(below_at, lambda s: _view(97.9, 98.0, 97.89, 97.91, below_at) if s == "AAA" else MarketView())
+        fills = engine.step(at, lambda s: _view(98.1, 98.0, 98.095, 98.105, at) if s == "AAA" else MarketView())
+        assert bool([f for f in fills if f["side"] == "BUY"]) is bought, at
+
+
+def test_a_flat_close_sells_a_carried_position_and_on_the_fast_pass(monkeypatch) -> None:
+    monkeypatch.setitem(engine_module.RULE, "close_flat", True)
+    engine = _engine()
+    position = _held_negative(engine)
+    position.days_held = 1  # a negative carried from an earlier session
+    t = _at(15, 59, 31)
+    fills = engine.fast_exits(t, lambda s: MarketView(), lambda s: (98.0, 98.01, t) if s == "AAA" else None)
+    assert [f["reason"].split(",")[0] for f in fills] == ["venda: zerada no fechamento"]
+    assert "pregão(ões) atrás" in fills[0]["reason"] and not engine.state.positions
+
+
+def test_a_flat_close_carries_nothing_past_the_close(monkeypatch) -> None:
+    for flat in (True, False):
+        monkeypatch.setitem(engine_module.RULE, "close_flat", flat)
+        engine = _engine()
+        position = _held_negative(engine)  # no check after 15:59:30 reached it (no usable quote)
+        engine.close_session()
+        if flat:
+            assert not engine.state.positions and engine.fills[-1]["side"] == "SELL"
+            assert engine.fills[-1]["price"] == position.last_mark and engine.fills[-1]["executed_at"] == _at(16, 0).isoformat()
+        else:
+            assert engine.state.positions["AAA"].days_held == 1
+
+
+def test_the_shadows_follow_the_close_mode_and_the_size(monkeypatch) -> None:
+    monkeypatch.setitem(engine_module.RULE, "close_flat", True)
+    monkeypatch.setitem(engine_module.RULE, "size_rule", "taper")
+    engine = _engine()
+    t = _at(15, 59, 0)
+    engine._shadow_open("AAA", 98.105, 6.0, t)
+    assert engine.state.shadow["AAA"]["size_usd"] == pytest.approx(1_000_000.0 / 20 * engine_module.size_weight(6.0, "taper"))
+    late = _at(15, 59, 31)
+    engine._shadow_exits(late, lambda s: _view(98.05, 98.0, 98.04, 98.06, late) if s == "AAA" else MarketView())
+    assert "AAA" not in engine.state.shadow  # a negative shadow closes in the window under a flat close
+
+
+def test_an_unknown_size_rule_is_refused() -> None:
+    assert engine_module.RULE["size_rule"] in engine_module.SIZE_RULES
+    with pytest.raises(ValueError):
+        engine_module.size_weight(4.0, "Taper")
 
 
 @pytest.mark.parametrize(("hour", "minute", "second", "bought"), [(15, 59, 20, True), (15, 59, 40, False)])
