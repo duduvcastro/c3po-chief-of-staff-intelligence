@@ -2211,3 +2211,68 @@ def test_nbbo_a_stream_message_stamped_in_the_future_never_pins_the_book() -> No
     assert "AAA" not in stream.nbbo
     stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 10, "t": ahead, "ms": "open"}))
     assert stream.view("AAA").price is None
+
+
+def test_the_close_mode_and_the_size_rule_keep_the_rule_in_force_by_default() -> None:
+    """Owner 30/10 ("faremos umas alterações de BPS e tamanho da compra"): the levers exist with the values in force."""
+    assert engine_module.RULE["close_flat"] is False and engine_module.RULE["size_rule"] == "equal"
+    assert engine_module.size_weight(4.0) == 1.0 and engine_module.size_weight(0.5) == 1.0
+    assert engine_module.size_weight(5.0, "taper") == pytest.approx(0.4) and engine_module.size_weight(1.0, "taper") == 1.0
+    assert engine_module.size_weight(4.0, "inverse") == pytest.approx(0.5) and engine_module.size_weight(1.5, "inverse") == 1.0
+    assert engine_module.size_weight(4.0, "unknown") == 1.0
+
+
+def _held_negative(engine: Engine) -> Position:
+    t = _at(15, 50, 0)
+    engine.step(t - timedelta(seconds=1), lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    assert [f["side"] for f in fills] == ["BUY"]
+    return engine.state.positions["AAA"]
+
+
+@pytest.mark.parametrize("flat", [False, True])
+def test_a_flat_close_sells_a_negative_position_from_t30(monkeypatch, flat: bool) -> None:
+    monkeypatch.setitem(engine_module.RULE, "close_flat", flat)
+    engine = _engine()
+    _held_negative(engine)
+    t = _at(15, 59, 31)
+    bid = 98.0  # about -0.12% net: neither the stop nor the lock
+    fills = engine.step(t, lambda s: _view(98.0, 98.0, bid, bid + 0.01, t) if s == "AAA" else MarketView(),
+                        pushed=lambda s: (bid, bid + 0.01, t) if s == "AAA" else None)
+    sold = [(f["side"], f["reason"].split(",")[0]) for f in fills if f["side"] == "SELL"]
+    assert sold == ([("SELL", "venda: zerada no fechamento")] if flat else [])
+    assert ("AAA" in engine.state.positions) is not flat
+
+
+def test_a_flat_close_confirms_the_feeds_bid_with_any_fresh_trade(monkeypatch) -> None:
+    monkeypatch.setitem(engine_module.RULE, "close_flat", True)
+    engine = _engine()
+    _held_negative(engine)
+    t = _at(15, 59, 35)
+    fills = engine.step(t, lambda s: _view(98.0, 98.0, 98.0, 98.01, t) if s == "AAA" else MarketView())  # the feed only
+    assert [f["reason"].split(",")[0] for f in fills if f["side"] == "SELL"] == ["venda: zerada no fechamento"]
+
+
+@pytest.mark.parametrize(("hour", "minute", "second", "bought"), [(15, 59, 20, True), (15, 59, 40, False)])
+def test_a_flat_close_takes_no_entry_in_the_last_30_seconds(monkeypatch, hour, minute, second, bought) -> None:
+    monkeypatch.setitem(engine_module.RULE, "close_flat", True)
+    engine = _engine()
+    t = _at(hour, minute, second)
+    engine.step(t - timedelta(seconds=1), lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    assert bool([f for f in fills if f["side"] == "BUY"]) is bought
+
+
+@pytest.mark.parametrize("rule", ["taper", "inverse"])
+def test_the_size_follows_the_spread_paid(monkeypatch, rule: str) -> None:
+    monkeypatch.setitem(engine_module.RULE, "size_rule", rule)
+    engine = _engine()
+    t = _at(10, 0, 0)
+    bid, ask = 98.065, 98.105  # about 4.1 bps
+    engine.step(t - timedelta(seconds=1), lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, bid, ask, t) if s == "AAA" else MarketView())
+    spread = (ask - bid) / ((ask + bid) / 2) * 1e4
+    position = engine.state.positions["AAA"]
+    assert [f["side"] for f in fills] == ["BUY"]
+    assert position.cost_usd == pytest.approx(1_000_000.0 / 20 * engine_module.size_weight(spread, rule))
+    assert position.cost_usd < 1_000_000.0 / 20
