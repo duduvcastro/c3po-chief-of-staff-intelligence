@@ -19,7 +19,8 @@ new epoch could adopt, and whether each reproduces rev3's references is what the
   cut_scan  every name at lo, at hi and at every write instant in between of its symbol's filings and its issuers' facts:
             "every_cut" (each cut reproduces what rev3 recorded: its reference matched, or neither read), "some_cut" (a
             rule placing the cut inside the window could reproduce it), "no_cut" (no ``first_seen_at`` cut there does — a
-            fact, a remap, or a visibility no cut represents: not a proven historical refusal).
+            fact, a remap, an ambiguous map, or a visibility no cut represents: not a proven historical refusal). A section
+            is "some_cut" only when ONE instant reproduces all its names at once (a rule cuts the whole section).
 Per admitted Stock (a catalogue Stock in rev3's screen) under now, cut_hi and cut_lo: "match"; "refused:<keys>" (covered,
 the reference differs: the grid refuses the section); "refused:rev3_reference_missing" (covered, rev3 has no reference
 both siblings agree on: the grid refuses); "skipped:rev3_read_it" (not covered, but rev3 read it: the grid skips it, the
@@ -51,7 +52,7 @@ from . import valuation_pit_served as served
 from .valuation_ensemble_driver import read_rev3
 
 BASES = ("now", "cut_hi", "cut_lo")
-WINDOW = timedelta(minutes=60)  # rev3 read each section's facts within this before persisting it (~300 s a section)
+WINDOW = timedelta(minutes=60)  # cut_lo's assumption: rev3 read a section's facts at most this long before persisting it
 _CODE = re.compile(r"[a-z0-9_]{1,80}")
 AMBIGUOUS = object()
 
@@ -234,10 +235,16 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
             return "skipped:rev3_read_it" if sections[index]["names"][position][1] is not None else "skipped:rev3_neither"
         return found
 
-    def scanned(index: int, position: int) -> str:
+    def timeline(index: int, position: int) -> list[tuple[datetime, bool]]:
+        """A name's cuts in time order, each with whether it reproduces what rev3 recorded (between two of them nothing
+        about the name changes)."""
         expected = sections[index]["names"][position][1]
-        consistent = [_consistent(result_of(index, position, name), expected) for name in cuts[(index, position)] if name != "now"]
-        return "every_cut" if all(consistent) else "some_cut" if any(consistent) else "no_cut"
+        named = cuts[(index, position)]
+        return sorted((instant, _consistent(result_of(index, position, name), expected))
+                      for name, instant in named.items() if name != "now" and instant is not None)
+
+    def consistent_at(line: list[tuple[datetime, bool]], instant: datetime) -> bool:
+        return line[bisect.bisect_right([at for at, _ in line], instant) - 1][1]  # every line starts at the section's lo
 
     codes = Counter(code for _, code in unreadable)
     totals: dict[str, Any] = {"sections": len(sections) + len(unreadable), "names": sum(len(s["names"]) for s in sections),
@@ -265,12 +272,18 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
     scan: Counter[str] = Counter()
     by_scan: dict[str, list[str]] = {"no_cut": [], "some_cut": []}
     for index, section in enumerate(sections):
-        results = [scanned(index, position) for position in range(len(section["names"]))]
+        lines = [timeline(index, position) for position in range(len(section["names"]))]
+        results = ["every_cut" if all(ok for _, ok in line) else "some_cut" if any(ok for _, ok in line) else "no_cut" for line in lines]
         scan.update(results)
-        if "no_cut" in results:
-            by_scan["no_cut"].append(_label(section))
-        elif "some_cut" in results:
+        # a rule cuts the WHOLE section at one instant: "some_cut" only when one instant reproduces every name at once
+        # (pre-review of 2a2b35be P2: each name with its own cut is no section's rule)
+        instants = sorted({instant for line in lines for instant, _ in line})
+        if all(result == "every_cut" for result in results):
+            continue
+        if any(all(consistent_at(line, instant) for line in lines) for instant in instants):
             by_scan["some_cut"].append(_label(section))
+        else:
+            by_scan["no_cut"].append(_label(section))
     totals["cut_scan"] = {"every_cut_sections": len(sections) - len(by_scan["no_cut"]) - len(by_scan["some_cut"]),
                           "some_cut_sections": len(by_scan["some_cut"]), "no_cut_sections": len(by_scan["no_cut"]), **by_scan,
                           "unreadable": [label for label, _ in unreadable], "names": dict(sorted(scan.items()))}

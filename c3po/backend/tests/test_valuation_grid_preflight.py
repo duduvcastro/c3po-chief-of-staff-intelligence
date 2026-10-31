@@ -138,16 +138,17 @@ def _oracle(db, sections):
     for index, section in enumerate(sections):
         lo, hi = lows[index], section["written"]
         at = [grid_like(_filtered(db, cut), section) for cut in [lo, hi] + [i for i in instants if lo < i < hi]]
-        results = []
-        for position, (_, expected) in enumerate(section["names"]):
-            good = [(r[position] == "match") if expected is not None else (r[position] == "skipped:rev3_neither") for r in at]
-            results.append("every_cut" if all(good) else "some_cut" if any(good) else "no_cut")
+        good = [[(r[position] == "match") if expected is not None else (r[position] == "skipped:rev3_neither") for r in at]
+                for position, (_, expected) in enumerate(section["names"])]
+        results = ["every_cut" if all(g) else "some_cut" if any(g) else "no_cut" for g in good]
         counts.update(results)
         label = "%s %s" % (section["market"], section["session"])
-        if "no_cut" in results:
-            no_cut.append(label)
-        elif "some_cut" in results:
+        if all(result == "every_cut" for result in results):
+            continue
+        if any(all(g[k] for g in good) for k in range(len(at))):  # one cut reproducing every name of the section
             some_cut.append(label)
+        else:
+            no_cut.append(label)
     totals["cut_scan"] = {"no_cut": no_cut, "some_cut": some_cut, "names": dict(sorted(counts.items()))}
     return totals
 
@@ -294,6 +295,27 @@ def test_the_scan_holds_a_fact_of_the_issuer_mapped_before_a_remap(front, monkey
     _add(front, db, issuer="1", doc="C-1", symbols=[], accepted=T - timedelta(days=100), written=READ - timedelta(minutes=3), concepts=CONCEPTS[:2])
     _add(front, db, issuer="2", doc="C-2", symbols=["CCC"], accepted=T - timedelta(days=10), written=READ + timedelta(minutes=3), concepts=[])
     assert _verdict(monkeypatch, db, "CCC", _reference(db, "CCC", READ)) == {"some_cut": 1}
+
+
+def test_a_section_is_some_cut_only_when_one_cut_reproduces_all_its_names(front, monkeypatch) -> None:
+    """Pre-review of 2a2b35be (P2): rev3 reads BBB, a BBB fact lands (w2), an AAA fact lands (w1), rev3 reads AAA. Each name
+    has a reproducing cut (AAA from w1, BBB before w2), but no single cut reproduces both: a rule cannot, "no_cut"."""
+    db = _db()
+    old = WRITTEN - timedelta(days=3)
+    read_b = WRITTEN - timedelta(minutes=20)
+    w2, w1 = read_b + timedelta(minutes=1), read_b + timedelta(minutes=3)
+    read_a = w1 + timedelta(minutes=1)
+    _add(front, db, issuer="1", doc="A-0", symbols=["AAA"], accepted=T - timedelta(days=200), written=old, concepts=CONCEPTS[:2])
+    _add(front, db, issuer="2", doc="B-0", symbols=["BBB"], accepted=T - timedelta(days=200), written=old, concepts=CONCEPTS[:2])
+    _add(front, db, issuer="2", doc="B-1", symbols=[], accepted=T - timedelta(days=50), written=w2, concepts=CONCEPTS[:2])
+    _add(front, db, issuer="1", doc="A-1", symbols=[], accepted=T - timedelta(days=50), written=w1, concepts=CONCEPTS[:2])
+    names = [("AAA", _reference(db, "AAA", read_a)), ("BBB", _reference(db, "BBB", read_b))]
+    result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": names}])
+    assert result["cut_scan"]["names"] == {"some_cut": 2}  # each name alone
+    assert result["cut_scan"]["no_cut"] == ["NASDAQ 2026-06-29"] and result["cut_scan"]["some_cut"] == []  # the section: none
+    names_b = [("AAA", _reference(db, "AAA", read_a)), ("BBB", _reference(db, "BBB", read_a))]  # both read after w1
+    result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": names_b}])
+    assert result["cut_scan"]["some_cut"] == ["NASDAQ 2026-06-29"]  # one cut (from w1 on) reproduces both
 
 
 def test_an_ambiguous_map_is_counted_and_makes_the_section_uncertain(front, monkeypatch) -> None:
