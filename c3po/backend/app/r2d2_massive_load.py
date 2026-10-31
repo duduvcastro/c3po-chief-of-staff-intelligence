@@ -147,6 +147,11 @@ def _schedule(phases: list[tuple[float, float, list[str]]], quote_share: float, 
     return frames, quotes_by_name, crossings, trades, quotes
 
 
+def _no_http(*args: Any, **kwargs: Any) -> Any:
+    """The universe's HTTP reader: never called (``build_universe`` is replaced for the run)."""
+    raise RuntimeError("the load test reads no HTTP")
+
+
 def _revision() -> str | None:
     try:
         return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5,
@@ -274,7 +279,7 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
     try:
         with tempfile.TemporaryDirectory() as cache:
             try:
-                engine_module.run_session(stream=stream, database=Database(Settings(database_url="")), get_json=None,
+                engine_module.run_session(stream=stream, database=Database(Settings(database_url="")), get_json=_no_http,
                                           base_url="", token="", day=DAY, cache_dir=Path(cache), now=now, sleep=sleep,
                                           nbbo=rest, massive=massive)
             except KeyboardInterrupt:
@@ -326,8 +331,9 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
                   "candidate_trades_generated": candidate_generated, "candidate_trades_in_shadow_tapes": candidate_taken,
                   "other_trades_generated": other_generated, "other_trades_in_shadow_tapes": other_taken,
                   "quotes_before_0931": before_exits},
-        # a candidate is followed all session: each of its trades must reach the shadow tapes; another name stops being
-        # followed at 09:31 (its trades then are dropped by design, as on EODHD's feed): informative only
+        # a candidate is followed all session: each of its trades must reach the shadow tapes. The other names are
+        # informative only: the subscription's cap (UNIVERSE_SIZE with the held names) leaves the last 20 never followed
+        # (Codex 6538461047: the whole difference of the full profile), and none is followed after 09:31
         "losses": {"candidate_trades": candidate_generated - candidate_taken, "frames": len(frames) - socket.index},
         "reader_lag_ms": {"p50": _pct(lags, 0.5), "p99": _pct(lags, 0.99), "max": round(max(lags), 2) if lags else None},
         "sale_after_crossing_ms": {"n": len(sale_ms), "of": len(crossings), "p50": _pct(sale_ms, 0.5),
