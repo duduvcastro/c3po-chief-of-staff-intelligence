@@ -1,6 +1,6 @@
-# Pré-registro — Ensemble de valuation, backtest ponto-no-tempo US (`PREREG_VALUATION_ENSEMBLE_PIT_US_V1`, rev 1)
+# Pré-registro — Ensemble de valuation, backtest ponto-no-tempo US (`PREREG_VALUATION_ENSEMBLE_PIT_US_V1`, rev 2)
 
-**Estado:** rascunho **rev 1**, 26/10/2026 (Fable). Fica vinculante como o rev 3 do backtest do TP servido: o `sha256` dos bytes deste arquivo, no commit de `main` que o introduz, é publicado num recibo no canal técnico, com a **assinatura do dono**, **antes da primeira corrida do ensemble na grade**. Depois do hash, qualquer mudança é uma nova revisão, permitida só enquanto nenhum relatório não-`VOID` tiver lido rótulos.
+**Estado:** rascunho **rev 2**, 31/10/2026 (Fable). A rev 1 foi assinada pelo dono em 27/10/2026 às 09:59 BRT (recibo 6442500464; bytes `712b4c171c4d059a31156eba8f7a9624f1195083309471e89e0519271d2e5471`, commit `8b02ba0fbf715a9abb421eea6f00238aad5ef38d`), e a grade dela não pode terminar (§8). Nenhum relatório não-`VOID` leu rótulos, então esta revisão é permitida. Ela fica vinculante como a rev 1: o `sha256` dos bytes deste arquivo, no commit de `main` que a introduz, é publicado num recibo no canal técnico, com a **assinatura do dono**, **antes da primeira corrida da nova época**. Depois do hash, qualquer mudança é uma nova revisão, permitida só enquanto nenhum relatório não-`VOID` tiver lido rótulos.
 
 **Contexto (dono, 26/10/2026):**
 - A grade do TP servido reprovou (`served_internal_tp` FAIL: IC executável 0,0167 em `h = 21`).
@@ -46,7 +46,18 @@
 
 - **Mesmo corte e mesmas fontes:** o mesmo corte transversal triado, o mesmo catálogo pinado, a mesma safra de preços, as mesmas demonstrações e a mesma curva do Tesouro **do manifesto do rev 3** (`manifest 73a81bce…`, passada final 40206452777).
 - **Grade:** o ensemble é calculado nos **mesmos `T`** desse manifesto. Um `T` sem as duas corridas do rev 3 (TP servido e V3) não entra.
-- **Sem republicação:** este documento não reabre a grade do rev 3 nem republica preços. O backfill as-filed fica **pausado** durante as corridas do ensemble (lição do `VOID` de 24/10: `statements_table_not_stable`).
+- **Sem republicação:** este documento não reabre a grade do rev 3 nem republica preços.
+- **Demonstrações congeladas por seção (rev 2):** cada seção lê o store as-filed cortado no instante em que o rev 3 persistiu a sua corrida V3 irmã.
+  - **O corte:** só as linhas de `statement_vintages` e de `statement_filings` com `first_seen_at ≤ published_at` do snapshot V3 da seção. As duas tabelas só aceitam inserção. `first_seen_at` é o `now()` do banco no **início** da transação que inseriu a linha.
+  - **Sobre esse store cortado,** valem as regras do leitor do rev 3:
+    - o mapa símbolo → emissor, com a aceitação mais recente entre os documentos gravados até o corte;
+    - a cobertura: um emissor com algum fato gravado até o corte;
+    - os fatos aceitos até `T` e gravados até o corte.
+  - **Prova:** é uma regra contrafactual e **não reconstrói** o que o rev 3 leu, que segue **desconhecido**. Mesmo assim, o preflight só de leitura (PR #527, run 41232203835, 31/10/2026) mostrou que ela reproduz as referências do rev 3:
+    - nas **534 seções** do manifesto e nas **135.276** checagens por nome;
+    - a leitura sem corte reproduz 518; as 16 seções mais recentes, NASDAQ e NYSE de 2026-07-29 a 2026-09-17, recusam.
+  - **A comparação continua exigida em toda seção:** a referência do rev 3 contra o recálculo sobre o corte. Uma divergência recusa a seção (`statements_table_not_stable`) e nunca é aceita.
+- **Ingestão as-filed (rev 2):** pode seguir ligada durante as corridas, porque uma escrita posterior ao corte de uma seção não entra nela. A guarda do workflow que exige o backfill pausado permanece como defesa.
 - **Horizontes:** `h = 126` (decisório), `h = 252` (condição obrigatória) e `h = 21`/`63` (descritivos). Para cada horizonte entram só os `T` cujo alvo `T + 1 + h` fechou antes do corte dos rótulos (rev 3 §6.2). A cauda da grade fica naturalmente de fora em `h = 126` e `h = 252`.
 
 ## 3. Estatística por horizonte
@@ -75,7 +86,8 @@
    - `ensemble_manifest_not_complete`;
    - `ensemble_sessions_not_rev3_sessions`;
    - `ensemble_inputs_differ_from_rev3` (outra safra, outro catálogo ou outra cobertura as-filed);
-   - `statements_table_not_stable`.
+   - `statements_table_not_stable` (rev 2: a referência recalculada sobre o corte da seção, §2, difere da do rev 3);
+   - `ensemble_statements_cut_missing` (rev 2: o snapshot V3 de uma seção sem `published_at` válido).
 
    Um `VOID` não lê rótulos.
 2. **`UNMEASURED`:** qualquer uma das condições abaixo.
@@ -122,13 +134,14 @@
      - o `sha256` de **cada arquivo** do instrumento: os módulos `c3po/backend/app/valuation_ensemble_*.py` (com as premissas dos 16 modelos e as 8 agregações), o leitor de consenso (`valuation_pit_rerun.py`), o módulo do relatório, o executor e o seu workflow;
      - as constantes deste documento (§4, §5, §1.3).
 - **Garantias do pino:**
-  - **um só pino por revisão:** um segundo pino exige nova revisão deste documento;
+  - **um só pino por revisão:** um segundo pino exige nova revisão deste documento. A rev 2 tem o **seu** pino, no mesmo formato. A lista inclui o leitor congelado do §2 e o executor que o entrega a cada seção. O pino da rev 1 (`b77f2400…`, commit `ac440626…`) não vale para a nova época;
   - **o executor recusa** correr se qualquer arquivo listado difere do pino;
   - **o relatório anula** (`VOID`: `ensemble_instrument_not_pinned`, `ensemble_instrument_mismatch:<arquivo>`) se não houver pino ou se o código de qualquer corrida do manifesto diferir dele, **antes de ler rótulos**;
   - assim, duas implementações com o mesmo texto não podem ambas reclamar este pré-registro. A que vale é a do pino, fixada antes dos rótulos.
 - **Operação:**
   - ordem do dono no formato das ordens da grade (`c3po/ops/owner-orders/<sha>.json`), com `from_session`/`to_session` (#485);
-  - backfill as-filed pausado;
+  - **nova época (rev 2):** ordem nova, pino novo e diário novo. Nenhuma seção calculada na época da rev 1 é reaproveitada: elas leram o store vivo, não o corte do §2. As 534 seções são recalculadas;
+  - a guarda do backfill as-filed pausado permanece; a ingestão as-filed pode seguir ligada (§2);
   - autopiloto desligado;
   - sem deploy durante os trechos;
   - pré-checagem *running/blocking* do host (`host-check`) zerada antes de cada trecho.
@@ -145,3 +158,24 @@
 - **Poder baixo:** com ≈ 9 blocos em `h = 126` e ≈ 4 períodos independentes em `h = 252`. Um `FAIL` é frequente mesmo com sinal fraco real.
 - **Consenso PIT:** o horizonte do consenso PIT não é atestado (rev 3, M4). Ele entra como valor, não como horizonte.
 - **Lookback SEC de 10 anos** (rev 3 §2): os modelos de história longa só existem a partir de `GRID_START = 2021-06-01`, como no rev 3.
+- **Base contrafactual das demonstrações (rev 2):** o corte do §2 é uma regra, não a leitura histórica do rev 3. Uma transação que começou antes do corte e terminou depois dele entra no corte, mesmo que o rev 3 não a tenha visto. O preflight não achou nenhum caso que mudasse uma referência (534/534). Se houver, ele aparece como recusa da seção, nunca como aceitação silenciosa.
+
+## 8. Revisões
+
+**rev 2 (31/10/2026)**, antes de qualquer leitura de rótulos.
+
+- **Motivo:** a grade da rev 1 não pode terminar.
+  - Em 30/10 o lote 41123868230 e a sonda 41152230235 recusaram com `statements_table_not_stable`: fatos aceitos antes do `T` de seções recentes foram gravados no store as-filed depois que o rev 3 o leu (backfill, atrasos, reprocessos).
+  - O preflight da PR #527 mostrou 16 seções irreproduzíveis no store vivo; a grade parou em 393 de 534.
+  - O Codex (6537212289) julgou NO-GO excluir seções e indicou que só uma nova época, com protocolo próprio, poderia mudar a base das demonstrações.
+- **Decisão do dono:**
+  - 31/10 ~08:5x BRT: "Sim, começar", a nova época com os balanços congelados;
+  - ~16:3x BRT: "pode começar o desenho da nova época do Valuation".
+- **O que muda:**
+  - §2: as demonstrações de cada seção são congeladas no `published_at` do seu snapshot V3, e a ingestão as-filed pode seguir ligada;
+  - §4: as causas de `VOID` das demonstrações;
+  - §6: o pino, a ordem e o diário novos, com as 534 seções recalculadas;
+  - §7: a limitação da base contrafactual.
+- **O que não muda:** pergunta, objeto, os 16 modelos, as 8 agregações e a primária, horizontes, estatística, regra de decisão, poder, constantes, fontes, os `T` do manifesto do rev 3 e a leitura única.
+
+**rev 1 (26–27/10/2026):** primeira versão, assinada pelo dono em 27/10 (recibo 6442500464).
