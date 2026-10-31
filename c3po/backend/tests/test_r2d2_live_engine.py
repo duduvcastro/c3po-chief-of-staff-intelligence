@@ -1164,8 +1164,9 @@ def _waiting_session(tmp_path: Path, monkeypatch, start: datetime, ticks: int, f
         return [{"side": "BUY", "symbol": "BBB"}] if buy else []
 
     def sleep(seconds):
-        if sleep_ends or len(steps) >= 3:  # never a whole session: three steps at most
+        if sleep_ends:
             raise KeyboardInterrupt
+        assert len(steps) < 3, "the session ran past the steps this test expects"  # never a whole session
         advance(seconds)
 
     class Writer:
@@ -1201,6 +1202,11 @@ def test_a_pass_that_fails_in_a_wait_ends_the_session_once_the_steps_fills_are_c
         _waiting_session(tmp_path, monkeypatch, _at(9, 30, 59), 60, fast_exits, steps, commits)
     assert len(calls) == 1 and len(steps) == 1  # one pass in the wait, then none, and the session ends after the step
     assert commits == [(steps[0], ["AAA"]), (steps[0], ["AAA"])]  # the opening checkpoint, then the step's buy
+    steps.clear()
+    commits.clear()
+    with pytest.raises(RuntimeError, match="the pass failed"):  # no fill at all: the checkpoint still comes first
+        _waiting_session(tmp_path, monkeypatch, _at(9, 30, 59), 60, fast_exits, steps, commits, buy=False)
+    assert commits == [(steps[0], ["AAA"]), (steps[0], ["AAA"])]
 
     def selling_then_failing(self, now, view, pushed):  # stops AAA, then fails on another name
         assert self._exit(self.state.positions["AAA"], MarketView(price=90.0, trade_at=now), now, 90.0, "fast") is not None

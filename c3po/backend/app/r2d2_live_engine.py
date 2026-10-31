@@ -1756,6 +1756,8 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         except Exception as error:  # noqa: BLE001 - raised again after the step's commit (the step's fills are kept)
             waited.extend(engine.fills[done:])  # a sale this pass made before it raised
             wait_fault.append(error)  # no more passes in this step's waits
+            logger.error("R2D2 live: a pass during a step's wait failed (%s); the session ends after the step's commit",
+                         type(error).__name__)
             return
         waited.extend(fast)
         if fast or clock_time.monotonic() - wait_clock["marks"] >= FAST_EXIT_SECONDS:
@@ -1776,8 +1778,8 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
                     quotes_for(held)
                 if massive is not None:
                     massive.set_symbols(held)
-            if fills or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
-                guarded(lambda: commit(moment))
+            if fills or wait_fault or clock_time.monotonic() - last_marks >= MARKS_EVERY_SECONDS:
+                guarded(lambda: commit(moment))  # a failed pass: the checkpoint first, its marks and locks kept
                 last_marks = clock_time.monotonic()
             if wait_fault:  # a pass failed in the step's wait: the session ends here, as a failed pass after a step did
                 raise wait_fault[0]
