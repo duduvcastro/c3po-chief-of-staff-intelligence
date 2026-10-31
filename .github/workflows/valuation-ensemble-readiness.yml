@@ -141,6 +141,7 @@ jobs:
           set -uo pipefail
           #   10 arguments / app dir   11 manifest file   12 api container   25 under 10 min left of the deadline
           #   26 host clock            27 inside a US session or the nightly window
+          # and the module's own: 2 refused (a code), 3 a section not stable (the line printed first), 124 deadline reached
           [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ && "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 10
           cd /opt/chief-of-staff-digital || exit 10
           file="/tmp/valuation-ensemble-readiness-$RUN_ID.json"

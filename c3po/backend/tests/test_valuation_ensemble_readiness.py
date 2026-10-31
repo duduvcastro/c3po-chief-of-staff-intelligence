@@ -99,6 +99,7 @@ def test_the_readiness_reaches_what_a_chunk_runs_on_every_section(monkeypatch, s
     assert result["sections"] == 1 and result["first_rev3_write"] == result["last_rev3_write"] == cut.isoformat()
     files = instrument_file_hashes(REPOSITORY)
     assert "c3po/backend/app/valuation_ensemble_readiness.py" in files and "c3po/backend/app/valuation_ensemble_frozen.py" in files
+    assert ".github/workflows/valuation-ensemble-readiness.yml" in files  # Codex 6549349754: the new workflow is pinned
     assert result["instrument_files"] == len(files) and result["instrument_files_sha256"] == canonical_hash(files)
     if expected is None:
         assert result["stable_sections"] == 1 and result["refused"] == [] and result["first_refused"] is None
@@ -213,7 +214,8 @@ def test_the_readiness_refuses_to_read_when_the_running_modules_are_not_the_chec
     _section(monkeypatch, fixture)
     shutil.copytree(REPOSITORY / "c3po/backend/app", tmp_path / "c3po/backend/app")
     (tmp_path / ".github/workflows").mkdir(parents=True)
-    shutil.copy(REPOSITORY / ".github/workflows/valuation-ensemble-grid.yml", tmp_path / ".github/workflows/valuation-ensemble-grid.yml")
+    for workflow in ("valuation-ensemble-grid.yml", "valuation-ensemble-readiness.yml"):
+        shutil.copy(REPOSITORY / ".github/workflows" / workflow, tmp_path / ".github/workflows" / workflow)
     assert readiness.run(fixture[0], {}, legacy_root=tmp_path)["stable_sections"] == 1
     frozen = tmp_path / "c3po/backend/app/valuation_ensemble_frozen.py"
     frozen.write_text(frozen.read_text() + "\n# another revision\n")

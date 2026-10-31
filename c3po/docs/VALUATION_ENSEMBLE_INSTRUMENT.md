@@ -1,9 +1,11 @@
 # Signed ensemble: computation and instrument binding
 
-The owner signed `PREREG_VALUATION_ENSEMBLE_PIT_US_V1` revision 1 on 27 October 2026
-at 09:59 BRT, receipt 6442500464. The document bytes are
-`712b4c171c4d059a31156eba8f7a9624f1195083309471e89e0519271d2e5471`
-at commit `8b02ba0fbf715a9abb421eea6f00238aad5ef38d`.
+The owner signed `PREREG_VALUATION_ENSEMBLE_PIT_US_V1` revision 2 on 31 October 2026
+at 18:36 BRT, receipt 6549453772. The document bytes are
+`b786ef8ff21d2b0dbcc2e39bcaec3a984e7a204b8a796d34a84c49ace69db9a9`
+at commit `3908cb9672b7fb4ed03124907b50caa14c5e36f2`. Revision 1 (receipt 6442500464, bytes `712b4c17…`, commit
+`8b02ba0f…`) was superseded: its grade could not complete, and its order and pin do not run
+the new epoch.
 
 The grade computes the 16 model kernels directly from the reference grade's
 as-filed SEC facts, close(D), Treasury curve at T and RAW analyst-target snapshot.

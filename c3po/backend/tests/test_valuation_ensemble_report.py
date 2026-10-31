@@ -169,7 +169,8 @@ def test_exact_covariance_and_reproducible_condition_only_design() -> None:
 
 def fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any], InstrumentBinding, dict[str, str]]:
     names = ["valuation_ensemble_grid.py", "valuation_ensemble_grid_consensus.py", "valuation_ensemble_report.py",
-             "valuation_ensemble_executor.py", "valuation_ensemble_pin.py", "valuation_pit_rerun.py", "valuation_accuracy_report.py", "valuation-ensemble-grid.yml"]
+             "valuation_ensemble_executor.py", "valuation_ensemble_pin.py", "valuation_pit_rerun.py", "valuation_accuracy_report.py", "valuation-ensemble-grid.yml",
+             "valuation_ensemble_frozen.py", "valuation_ensemble_readiness.py", "valuation-ensemble-readiness.yml"]  # rev 2's required files
     files = {(f".github/workflows/{name}" if name.endswith(".yml") else f"c3po/backend/app/{name}"): canonical_hash(name) for name in names}
     pin = {"schema": PIN_SCHEMA, "prereg_commit": PREREG_COMMIT, "prereg_sha256": report.PREREG_SHA256,
            "instrument_commit": "1" * 40, "owner_signature_comment_id": 1, "technical_GO_comment_id": 2,
