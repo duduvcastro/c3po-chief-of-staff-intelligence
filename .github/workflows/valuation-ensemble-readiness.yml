@@ -37,6 +37,45 @@ jobs:
           [[ "$REV3_RUN" =~ ^[0-9]{1,20}$ ]] || { echo "the rev3 run id is not a number" >&2; exit 1; }
           [ "$REF" = refs/heads/main ] || { echo "the readiness runs from main only (the pin's revision)" >&2; exit 1; }
 
+      - name: Check out the executed revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Inventory the executed revision
+        id: inventory
+        working-directory: c3po/backend
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUN_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          # the definition GitHub executes is this file at github.workflow_sha: that revision's instrument inventory (this
+          # workflow among its files), hashed by the pinned functions on the standard library alone, is what the host's
+          # deployed checkout must equal before the module reads anything (Codex 6549808485)
+          [ "$WORKFLOW_SHA" = "$RUN_SHA" ] || { echo 'the workflow revision is not the run revision' >&2; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$WORKFLOW_SHA" ] || { echo 'the checkout is not the workflow revision' >&2; exit 1; }
+          python3 -S - "$GITHUB_WORKSPACE" <<'PY' >> "$GITHUB_OUTPUT" || exit 1
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, ".")
+          from app.valuation_ensemble_inputs import canonical_hash
+          from app.valuation_ensemble_pin import instrument_file_hashes
+
+          files = instrument_file_hashes(Path(sys.argv[1]))
+          if ".github/workflows/valuation-ensemble-readiness.yml" not in files:
+              sys.exit("the executed revision's inventory does not hold this workflow")
+          print(f"instrument_sha256={canonical_hash(files)}")
+          print(f"executed revision inventory: {canonical_hash(files)} ({len(files)} files)", file=sys.stderr)
+          PY
+
       - name: Check the operating window
         id: window
         shell: bash
@@ -125,10 +164,12 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
           DEADLINE_AT: ${{ steps.window.outputs.deadline_epoch }}
+          INSTRUMENT_SHA256: ${{ steps.inventory.outputs.instrument_sha256 }}
         shell: bash
         run: |
           set -uo pipefail
           [[ "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 1
+          [[ "$INSTRUMENT_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'the executed revision has no inventory digest' >&2; exit 1; }
           raw="$RUNNER_TEMP/raw"
           mkdir -p "$raw" || exit 1
           [ $(( DEADLINE_AT - $(date +%s) )) -gt 600 ] || { echo 'the deadline is too close' >&2; exit 1; }
@@ -136,13 +177,13 @@ jobs:
           # the host receives the ABSOLUTE deadline (epoch seconds): no time spent before or during its guards is ever
           # granted again (Codex 6544583420 and 6544952899, P2-2)
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            -i ~/.ssh/c3po_deploy "$USER@$HOST" "RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' DEADLINE_AT='$DEADLINE_AT' bash -s" \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" "RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' DEADLINE_AT='$DEADLINE_AT' INSTRUMENT_SHA256='$INSTRUMENT_SHA256' bash -s" \
             > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
           set -uo pipefail
           #   10 arguments / app dir   11 manifest file   12 api container   25 under 10 min left of the deadline
           #   26 host clock            27 inside a US session or the nightly window
           # and the module's own: 2 refused (a code), 3 a section not stable (the line printed first), 124 deadline reached
-          [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ && "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 10
+          [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ && "$DEADLINE_AT" =~ ^[0-9]+$ && "$INSTRUMENT_SHA256" =~ ^[0-9a-f]{64}$ ]] || exit 10
           cd /opt/chief-of-staff-digital || exit 10
           file="/tmp/valuation-ensemble-readiness-$RUN_ID.json"
           trap 'rm -f "$file"' EXIT
@@ -169,7 +210,7 @@ jobs:
           # The module gets the ORIGINAL deadline too: on its own start, after the compose exec hand-over, it checks the
           # clock and the windows again and ends itself at that deadline (Codex 6545709465); the timeout is a backstop
           "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api timeout -s TERM -k 120 "$left" \
-            nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m app.valuation_ensemble_readiness --deadline-at "$DEADLINE_AT" < "$file"
+            nice -n 10 python -X "valuation_pit_run_token=$RUN_TOKEN" -m app.valuation_ensemble_readiness --deadline-at "$DEADLINE_AT" --expect-instrument-sha256 "$INSTRUMENT_SHA256" < "$file"
           REMOTE
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           # only the module's own JSON line, its shape checked (counts, closed outcome words, section labels), never the

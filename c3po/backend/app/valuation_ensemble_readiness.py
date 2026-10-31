@@ -9,8 +9,11 @@ I/O differs from a chunk: the names are taken issuer by issuer, and each issuer'
 own query, every acceptance); a section's read at T is sliced from them as the store's SQL cuts it (``accepted_at <= T``,
 in its order). Nothing beyond the statements is computed: no prices, no models, no labels; nothing is written. The pin is
 signed only with every section stable, and cites ``instrument_files_sha256``: the digest of the instrument files of the
-deployed checkout (``valuation_ensemble_pin.instrument_file_hashes``, this module among them), which the running modules
-must equal (``valuation_ensemble_driver.running_files``) before anything is read. What decides the check, the window and
+deployed checkout (``valuation_ensemble_pin.instrument_file_hashes``, this module and its workflow among them). Before
+anything is read, the running modules must equal that checkout (``valuation_ensemble_driver.running_files``) and its digest
+must equal ``--expect-instrument-sha256``, the inventory of the revision whose workflow definition GitHub executes
+(computed on the runner from ``github.workflow_sha`` by the same functions): what ran, what is deployed and what is
+published are one set of bytes (Codex 6549808485). What decides the check, the window and
 the deadline is in those files (the window and deadline helpers are the preflight's, kept here so that they are pinned);
 the database connection (``config``, ``database``) is outside them, as for the executor. A refused section, or an
 unreadable one, exits 3 after the line is printed: the gate fails visibly.
@@ -49,6 +52,7 @@ from .valuation_ensemble_inputs import canonical_hash, utc
 from .valuation_ensemble_pin import instrument_file_hashes
 
 _CODE = re.compile(r"[a-z0-9_]{1,80}")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 NEW_YORK, SAO_PAULO = ZoneInfo("America/New_York"), ZoneInfo("America/Sao_Paulo")
 DEADLINE_FLOOR_SECONDS = 600  # under this left of the deadline the readiness does not start
 
@@ -125,9 +129,12 @@ def _code(error: BaseException) -> str:
     return str(error) if isinstance(error, ValueError) and _CODE.fullmatch(str(error)) else type(error).__name__
 
 
-def run(database: Any, rev3: Mapping[str, Any], *, legacy_root: Path = LEGACY_ROOT, app_dir: Path | None = None) -> dict[str, Any]:
+def run(database: Any, rev3: Mapping[str, Any], *, expected_instrument_sha256: str, legacy_root: Path = LEGACY_ROOT,
+        app_dir: Path | None = None) -> dict[str, Any]:
     files = instrument_file_hashes(legacy_root)  # the deployed checkout's instrument, the bytes the pin will list
     running_files(files, app_dir or Path(__file__).resolve().parent)  # and the modules this process runs are those bytes
+    if canonical_hash(files) != expected_instrument_sha256:  # and the executed workflow's revision is that checkout
+        raise ValueError("readiness_instrument_differs_from_the_executed_revision")
     pairs = exe._reference_pairs(rev3)  # the complete, signed rev3 manifest (its digest) or a refusal; the grid's order
     index = FrozenIndex.load(database)
     sections: list[dict[str, Any]] = []
@@ -184,7 +191,11 @@ def main(argv: list[str] | None = None, *, database: Any = None, clock: Callable
     parser.add_argument("--deadline-at", type=int, required=True,
                         help="the run's absolute deadline (epoch seconds): checked with the windows when this process starts, "
                              "and the process ends there")
+    parser.add_argument("--expect-instrument-sha256", required=True,
+                        help="the inventory digest of the revision whose workflow runs this (the runner's, from github.workflow_sha)")
     args = parser.parse_args(argv)
+    if _SHA256.fullmatch(args.expect_instrument_sha256) is None:
+        parser.error("--expect-instrument-sha256 is not a sha256")
     now = clock()  # inside the container, after every hand-over: the windows on this process's own start, its own end
     if inside_a_window(datetime.fromtimestamp(now, timezone.utc)):
         print(json.dumps({"kind": "refused", "reason": "inside_a_window"}, sort_keys=True))
@@ -202,7 +213,7 @@ def main(argv: list[str] | None = None, *, database: Any = None, clock: Callable
         from .database import Database
         database = Database(get_settings())
     try:
-        result = run(database, read_rev3(sys.stdin.buffer))
+        result = run(database, read_rev3(sys.stdin.buffer), expected_instrument_sha256=args.expect_instrument_sha256)
     except Exception as error:  # noqa: BLE001 - a code or the type alone: a message could carry a name
         print(json.dumps({"kind": "refused", "reason": _code(error)}, sort_keys=True))
         return 2

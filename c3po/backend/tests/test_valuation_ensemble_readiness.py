@@ -26,6 +26,11 @@ WORKFLOW = REPOSITORY / ".github/workflows/valuation-ensemble-readiness.yml"
 SATURDAY = datetime(2026, 10, 31, 16, 0, tzinfo=UTC).timestamp()  # 13:00 Sao Paulo, 12:00 New York on a Saturday
 
 
+def _executed() -> str:
+    """The inventory digest of the executed revision: this repository's, as the runner computes it."""
+    return canonical_hash(instrument_file_hashes(REPOSITORY))
+
+
 def _section(monkeypatch, fixture):
     """The fixture's V3/served pair as the rev3 manifest lists it, its store written before the V3 sibling persisted."""
     database, prices, v3, served_snapshot = fixture
@@ -95,7 +100,7 @@ def test_the_readiness_reaches_what_a_chunk_runs_on_every_section(monkeypatch, s
     SCENARIOS[scenario](fixture[0], cut)
     expected = _executor_path(fixture, cut)
     assert expected == EXPECTED[scenario]
-    result = readiness.run(fixture[0], {}, legacy_root=REPOSITORY)
+    result = readiness.run(fixture[0], {}, legacy_root=REPOSITORY, expected_instrument_sha256=_executed())
     assert result["sections"] == 1 and result["first_rev3_write"] == result["last_rev3_write"] == cut.isoformat()
     files = instrument_file_hashes(REPOSITORY)
     assert "c3po/backend/app/valuation_ensemble_readiness.py" in files and "c3po/backend/app/valuation_ensemble_frozen.py" in files
@@ -131,13 +136,14 @@ def test_a_section_whose_snapshot_cannot_be_read_is_refused_and_the_others_go_on
     good = readiness.exe._reference_pairs({})[0]
     missing = (dict(good[0], cycle_id="00000000-0000-0000-0000-00000000dead", session_date="2026-06-29"), good[1])
     monkeypatch.setattr(readiness.exe, "_reference_pairs", lambda rev3: [missing, good])
-    result = readiness.run(fixture[0], {}, legacy_root=REPOSITORY)
+    result = readiness.run(fixture[0], {}, legacy_root=REPOSITORY, expected_instrument_sha256=_executed())
     assert result["sections"] == 2 and result["stable_sections"] == 1 and result["refused"] == ["NASDAQ 2026-06-29"]
     assert result["refusal_reasons"] == {"ensemble_reference_snapshot_missing_or_replaced": 1}
 
 
 def _main(deadline, **kwargs):
-    return readiness.main(["--deadline-at", str(int(deadline))], clock=kwargs.pop("clock", lambda: SATURDAY),
+    return readiness.main(["--deadline-at", str(int(deadline)), "--expect-instrument-sha256", kwargs.pop("expected", "a" * 64)],
+                          clock=kwargs.pop("clock", lambda: SATURDAY),
                           on_expiry=kwargs.pop("on_expiry", lambda: None), **kwargs)
 
 
@@ -149,17 +155,22 @@ def test_the_process_checks_its_start_against_the_windows_and_the_original_deadl
     assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "deadline_too_close"}
     armed = []
     monkeypatch.setattr(readiness, "arm_deadline", lambda seconds, on_expiry: armed.append(seconds))
-    monkeypatch.setattr(readiness, "run", lambda database, rev3: {"sections": 2, "stable_sections": 2})
+    handed: list[str] = []
+
+    def stable(database, rev3, *, expected_instrument_sha256):
+        handed.append(expected_instrument_sha256)
+        return {"sections": 2, "stable_sections": 2}
+    monkeypatch.setattr(readiness, "run", stable)
     monkeypatch.setattr(readiness.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
     monkeypatch.setattr("app.valuation_accuracy_report.force_read_only_session", lambda: None)
-    assert _main(SATURDAY + 1200, database=object()) == 0 and armed == [1200]
+    assert _main(SATURDAY + 1200, database=object(), expected="b" * 64) == 0 and armed == [1200] and handed == ["b" * 64]
     assert json.loads(capsys.readouterr().out) == {"kind": "readiness", "sections": 2, "stable_sections": 2}
-    monkeypatch.setattr(readiness, "run", lambda database, rev3: {"sections": 2, "stable_sections": 1})  # the gate fails visibly
+    monkeypatch.setattr(readiness, "run", lambda database, rev3, **kw: {"sections": 2, "stable_sections": 1})  # the gate fails visibly
     monkeypatch.setattr(readiness.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
     assert _main(SATURDAY + 1200, database=object()) == 3
     assert json.loads(capsys.readouterr().out) == {"kind": "readiness", "sections": 2, "stable_sections": 1}
 
-    def leaky(database, rev3):
+    def leaky(database, rev3, **kwargs):
         raise ValueError("issuer 0000320193 has no AAPL facts")  # a message that is no code: only the type is printed
     monkeypatch.setattr(readiness, "run", leaky)
     monkeypatch.setattr(readiness.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
@@ -178,7 +189,7 @@ def test_the_workflow_prints_the_modules_own_line_whole_and_nothing_of_another_s
     fixture = _fixture()
     cut = _section(monkeypatch, fixture)
     SCENARIOS["fact_written_before_the_cut"](fixture[0], cut)
-    line = {"kind": "readiness", **readiness.run(fixture[0], {}, legacy_root=REPOSITORY)}
+    line = {"kind": "readiness", **readiness.run(fixture[0], {}, legacy_root=REPOSITORY, expected_instrument_sha256=_executed())}
     assert line["refused_sections"] == 1
     script = tmp_path / "filter.py"
     script.write_text(_workflow_filter())
@@ -204,6 +215,9 @@ def test_the_workflow_is_the_preflights_plumbing_with_the_readiness_module_and_n
         assert fragment in text, fragment
     assert "BACKFILL_ISSUERS_PER_POLL" not in text and "investor-relations-worker" not in text and "valuation_grid_preflight" not in text
     assert '[ "$REF" = refs/heads/main ]' in text and '[ ! -L "$file" ]' in text and '[ "$rc" = 0 ] || exit "$rc"' in text
+    for fragment in ("ref: ${{ github.workflow_sha }}", '[ "$WORKFLOW_SHA" = "$RUN_SHA" ]', "INSTRUMENT_SHA256='$INSTRUMENT_SHA256' bash -s",
+                     '--expect-instrument-sha256 "$INSTRUMENT_SHA256"', '"$INSTRUMENT_SHA256" =~ ^[0-9a-f]{64}$'):
+        assert fragment in text, fragment
 
 
 def test_the_readiness_refuses_to_read_when_the_running_modules_are_not_the_checkouts(monkeypatch, tmp_path) -> None:
@@ -216,11 +230,11 @@ def test_the_readiness_refuses_to_read_when_the_running_modules_are_not_the_chec
     (tmp_path / ".github/workflows").mkdir(parents=True)
     for workflow in ("valuation-ensemble-grid.yml", "valuation-ensemble-readiness.yml"):
         shutil.copy(REPOSITORY / ".github/workflows" / workflow, tmp_path / ".github/workflows" / workflow)
-    assert readiness.run(fixture[0], {}, legacy_root=tmp_path)["stable_sections"] == 1
+    assert readiness.run(fixture[0], {}, legacy_root=tmp_path, expected_instrument_sha256=_executed())["stable_sections"] == 1
     frozen = tmp_path / "c3po/backend/app/valuation_ensemble_frozen.py"
     frozen.write_text(frozen.read_text() + "\n# another revision\n")
     with pytest.raises(ValueError, match="ensemble_driver_running_code_differs_from_checkout"):
-        readiness.run(fixture[0], {}, legacy_root=tmp_path)
+        readiness.run(fixture[0], {}, legacy_root=tmp_path, expected_instrument_sha256=_executed())
 
 
 def test_the_readiness_windows_are_the_grids() -> None:
@@ -272,3 +286,51 @@ def test_the_readiness_runs_nothing_of_the_unpinned_preflight() -> None:
     source = (REPOSITORY / "c3po/backend/app/valuation_ensemble_readiness.py").read_text()
     assert "valuation_grid_preflight" not in source
     assert "c3po/backend/app/valuation_ensemble_readiness.py" in instrument_file_hashes(REPOSITORY)
+
+
+class _Untouchable:
+    """A database that fails on any use: nothing may be read before the identity checks pass."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"the database was read ({name}) before the identity checks")
+
+
+def test_a_deployed_checkout_other_than_the_executed_revision_is_refused_before_any_read(tmp_path) -> None:
+    """Codex 6549808485: the workflow GitHub executes (revision A) and the deployed checkout the host reads (B) must be
+    one set of bytes. B differs from A only in the readiness workflow's timeout: the modules agree, and the run is still
+    refused, before the database is touched."""
+    import shutil
+
+    shutil.copytree(REPOSITORY / "c3po/backend/app", tmp_path / "c3po/backend/app")
+    (tmp_path / ".github/workflows").mkdir(parents=True)
+    for workflow in ("valuation-ensemble-grid.yml", "valuation-ensemble-readiness.yml"):
+        shutil.copy(REPOSITORY / ".github/workflows" / workflow, tmp_path / ".github/workflows" / workflow)
+    copy = tmp_path / ".github/workflows/valuation-ensemble-readiness.yml"
+    assert "timeout-minutes: 200" in copy.read_text()
+    copy.write_text(copy.read_text().replace("timeout-minutes: 200", "timeout-minutes: 201"))
+    with pytest.raises(ValueError, match="readiness_instrument_differs_from_the_executed_revision"):
+        readiness.run(_Untouchable(), {}, legacy_root=tmp_path, expected_instrument_sha256=_executed())
+    with pytest.raises(ValueError, match="readiness_instrument_differs_from_the_executed_revision"):
+        readiness.run(_Untouchable(), {}, legacy_root=REPOSITORY, expected_instrument_sha256="0" * 64)
+
+
+def test_the_command_requires_the_executed_revisions_digest(capsys) -> None:
+    with pytest.raises(SystemExit):
+        readiness.main(["--deadline-at", str(int(SATURDAY + 1200))], clock=lambda: SATURDAY, on_expiry=lambda: None)
+    with pytest.raises(SystemExit):
+        readiness.main(["--deadline-at", str(int(SATURDAY + 1200)), "--expect-instrument-sha256", "not-a-digest"],
+                       clock=lambda: SATURDAY, on_expiry=lambda: None)
+
+
+def test_the_runner_computes_the_executed_revisions_digest_with_the_pinned_functions_alone(tmp_path) -> None:
+    """The inventory step's own script, on the standard library alone (-S), from this checkout: the digest the host
+    must equal."""
+    workflow = yaml.safe_load(WORKFLOW.read_text())
+    step = next(step for step in workflow["jobs"]["readiness"]["steps"] if step.get("name") == "Inventory the executed revision")
+    assert step["working-directory"] == "c3po/backend" and "${{ github.workflow_sha }}" in json.dumps(workflow["jobs"]["readiness"]["steps"])
+    script = step["run"].split("<<'PY' >> \"$GITHUB_OUTPUT\" || exit 1\n", 1)[1].split("\nPY\n", 1)[0]
+    (tmp_path / "inventory.py").write_text(script)
+    run = subprocess.run([sys.executable, "-S", str(tmp_path / "inventory.py"), str(REPOSITORY)], cwd=REPOSITORY / "c3po/backend",
+                         capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr[-400:]
+    assert run.stdout.strip() == f"instrument_sha256={_executed()}"
