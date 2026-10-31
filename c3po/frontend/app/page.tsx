@@ -255,6 +255,9 @@ interface R2D2DashboardData {
   book_source?: "v2" | "lab_live";
   live_rule?: string | null;
   live_slots?: number | null;
+  live_risk?: string | null;
+  live_hold?: string | null;
+  live_exits?: string | null;
   nav_usd: number;
   accounting_nav_usd: number;
   accounting_nav_ex_interest_usd: number;
@@ -4012,7 +4015,7 @@ function R2D2RisingView() {
         name: position.name,
         market: position.market,
         rationale: data.book_source === "lab_live"
-          ? "Held by the live rule: stop −0.4% net until the lock arms at +0.10% net; then the floor is the last step reached (every 0.05 to +0.30%, every 0.10 above); sold in the last 30 seconds if positive."
+          ? data.live_hold ?? "Held by the live rule: stop −0.4% net until the lock arms at +0.10% net; then the floor is the last step reached (every 0.05 to +0.30%, every 0.10 above); sold in the last 30 seconds if positive."
           : `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
         detail: `Mark ${signedPositionPercent(position.mark_return_percent, position.mark_pnl_usd)} · net if closed ${signedPositionPercent(position.estimated_exit_return_percent, position.estimated_exit_pnl_usd)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
         tone: "monitor"
@@ -4022,7 +4025,7 @@ function R2D2RisingView() {
   const launchChecks = data.book_source === "lab_live" ? [
     { label: "Market feeds", detail: "EODHD real time (trades and quotes) · Massive NBBO at entry when available (stream fallback) · Nasdaq + NYSE", state: "ready" },
     { label: "Entry rule", detail: data.live_rule ?? data.methodology_version, state: "ready" },
-    { label: "Risk mandate", detail: `No leverage · up to ${slots} positions of ${(100 / slots).toFixed(0)}% · stop −0.4% net · step profit lock from +0.10% net (0.05 steps to +0.30%, then 0.10)`, state: "ready" },
+    { label: "Risk mandate", detail: data.live_risk ?? `No leverage · up to ${slots} positions of ${(100 / slots).toFixed(0)}% · stop −0.4% net · step profit lock from +0.10% net (0.05 steps to +0.30%, then 0.10)`, state: "ready" },
     { label: "Session close", detail: "Positives sold in the last 30 seconds · negatives carried to the next session", state: "ready" },
     { label: "Paper execution", detail: "Entries and exits checked every second on the live stream · fills at the real bid/ask · no broker, no orders", state: "ready" },
     { label: "Valuation decisor", detail: "Shadow · not gating entries", state: "pending" },
@@ -4241,7 +4244,7 @@ function R2D2RisingView() {
         <PanelHeader title="Virtual Positions" icon={WalletCards} />
         <div className="r2d2-ledger-updated">API UPDATED {new Date(positionFeedUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
         <div className="r2d2-ledger-head">
-          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span title="The rule's level in force, as the net of a sale there: red the stop (−0.40%), green the lock's first step (+0.10%), blue a higher step">Stop</span>
+          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span title="The rule's level in force, as the net of a sale there: red the stop, green the lock's first step, blue a higher step">Stop</span>
         </div>
         {positions.length ? positions.map((position) => (
           <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>
@@ -4279,7 +4282,7 @@ function R2D2RisingView() {
             </div>
             {data.book_source === "lab_live" ? <>
               <div data-label="Technical"><strong>—</strong><small>live rule</small></div>
-              <div data-label="Trend / flow"><strong>VWAP rule</strong><small>step lock +0.10% · stop −0.4%</small></div>
+              <div data-label="Trend / flow"><strong>VWAP rule</strong><small>{data.live_exits ?? "step lock +0.10% · stop −0.4%"}</small></div>
             </> : <>
               <div data-label="Technical"><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
               <div data-label="Trend / flow"><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>

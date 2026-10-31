@@ -1,17 +1,19 @@
 """The live R2D2 inside the C3PO server, on the EODHD real-time stream (owner, 27/10/2026: "claro que tem que mudar
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
-The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10; TIT-2S5-RTC, entries until
-the close, from 02/11): stocks that open at least 1% below the previous close,
+The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10; TIT-2S5-F20 from 02/11:
+entries until the close, sizes by the spread paid, stop -0.20%, the new lock steps): stocks that open at least 1% below
+the previous close,
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
 real ask, with a quoted spread of at most 5 bps (owner 29/10; 3 bps until then), up to
 the close, 16:00 ET (owner 30/10; 15:29:59 until then) — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
-not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid:
-stop at -0.4% net until a step profit lock arms at +0.10% net, whose floor is the last step the peak reached (every 0.05 up
-to +0.30%, every 0.10 above; owner 29/10, it was a +0.15% lock trailing the peak), every positive position sold from 15:59:30 ET; the
-negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
+not answer, up to 20 positions sized by the spread paid (owner 31/10: 5% of NAV at <= 2 bps, 4% at <= 3 bps, 2.5% at
+<= 5 bps; NAV/20 each until then), re-entry allowed after an exit. Every second each open position is checked at the real
+bid: stop at -0.20% net (owner 31/10; -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
+last step the peak reached (owner 31/10: +0.10, +0.20, then every 0.15; until then every 0.05 up to +0.30%, every 0.10
+above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
 Universe: the 900 most liquid US common stocks (owner 29/10; 500 until then), from EODHD's end-of-day bulk files of the
@@ -43,8 +45,9 @@ logger = logging.getLogger(__name__)
 
 NEW_YORK = ZoneInfo("America/New_York")
 # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then); owner 30/10: entries until the close from 02/11
-# (TIT-2S5-RT until then: until 15:29:59 ET)
-CONFIG = "TIT-2S5-RTC"
+# (TIT-2S5-RT until then: until 15:29:59 ET); owner 31/10: the sizes by the spread, the -0.20% stop and the new lock steps
+# from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session)
+CONFIG = "TIT-2S5-F20"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -59,12 +62,31 @@ FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's 
 RULE = {
     # owner 29/10/2026 ~17:2x BRT: "vamos mudar para até 5 bps para amanhã também" (it was 3 bps)
     "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 5.0,
-    # owner 29/10/2026 ~17:0x BRT: "a trava arma se ela chegar a 0,10%, aí a cada 0,05% ela gera uma nova trava. Se passar
-    # de 0,3% de lucro a trava sobe a cada 0,10pp" — the floor ON the step reached ("no degrau") — "e coloca o stop sem
-    # trava em -0,4%". Until then: stop -0.5%, a lock armed at +0.15% trailing the peak by 0.05 (0.10 before 13:51 BRT)
-    "stop_percent": 0.4, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.30,
-    "lock_wide_step_percent": 0.10,
+    # owner 31/10/2026 ~14:4x BRT, after the lab's what-ifs (results/whatif_run41202468334, whatif_run41223891729): "2 bps
+    # para 5% da posição de cada ação, 3 bps para 4%, 5 bps para 2,5% ... colocando o stop loss em -0,20% e escalonando o
+    # stop em 0,10%, 0,20% e depois subindo de +0,15pp" — the floor ON the step reached ("no degrau"): +0.10, +0.20, +0.35,
+    # +0.50 ... Until 30/10 (owner 29/10): stop -0.4%, steps of 0.05 from +0.10 to +0.30, then of 0.10; before 29/10 a
+    # -0.5% stop and a +0.15% lock trailing the peak
+    "stop_percent": 0.20, "lock_min_percent": 0.10, "lock_step_percent": 0.10, "lock_wide_from_percent": 0.20,
+    "lock_wide_step_percent": 0.15,
+    # owner 30/10/2026 ~20:3x BRT: "para segunda-feira, faremos umas alterações de BPS e tamanho da compra" — the lab's
+    # studies of 30/10 (results/stopstudy_run41123209315, results/exitstudy2_run41145478129): no stop, spread limit or size
+    # made the rule profitable; selling EVERY position from 15:59:30 (nothing carried overnight) cut the loss a trade most
+    # (-0.061% vs -0.079%), and a size tapered by the spread paid cut the US$ loss with the same trades. The owner, 31/10
+    # ~08:5x BRT: "Zerar é idiotice, não muda nada, pois não pernoitamos com mais de 1 ou dois papeis em carteira" — the
+    # flat close stays off; the sizes are his tiers (above)
+    "close_flat": False,  # True: from SELL_POSITIVES_FROM every position sells at the first check, whatever its sign
+    # "equal": NAV/slots; "taper": x (1 - 0.15 x (spread - 1)) in [0.4, 1]; "inverse": x min(1, 2/spread); "tiers": the
+    # owner's of 31/10, NAV/slots x the weight of the first tier whose bound the spread is within: x 1 at <= 2 bps (5% of
+    # NAV), x 0.8 at <= 3 bps (4%), x 0.5 at <= 5 bps (2.5%); a shadow (wider than the limit) takes the widest tier
+    "size_rule": "tiers", "size_tiers": [[2.0, 1.0], [3.0, 0.8], [5.0, 0.5]],
+    # a spread computed a hair over a bound (float error: 99.99 x 100.01 is 2.0000000001 bps, 119.97 x 120.03 is
+    # 5.0000000002) is within it: the tiers' bounds and the spread limit (the owner's "5 bps" includes 5 bps)
+    "bound_bps": 1e-6,
 }
+SIZE_RULES = ("equal", "taper", "inverse", "tiers")
+if RULE["size_rule"] not in SIZE_RULES or not isinstance(RULE["close_flat"], bool):  # a typo never runs another size
+    raise ValueError("R2D2 rule: unknown size_rule or a close_flat that is not a boolean")
 SESSION_OPEN = time(9, 30)
 OPENING_WINDOW_END = time(9, 31)  # the candidates are fixed once every subscribed name had a chance to print
 # owner 30/10/2026 ~16:1x BRT: "a única coisa que temos que alterar é essa regra de parar de comprar até as 16:30. Tem que
@@ -75,6 +97,8 @@ LAST_ENTRY = time(15, 59, 59, 999999)
 # a session keeps the last entry of the label it started under (a deploy during the session never moves its window)
 LAST_ENTRY_BY_CONFIG = {"TIT-2S3-RT": time(15, 29, 59), "TIT-2S5-RT": time(15, 29, 59)}
 SELL_POSITIVES_FROM = time(15, 59, 30)
+# the last entry under a flat close: the instant before SELL_POSITIVES_FROM (a buy from then on would be sold at once)
+FLAT_LAST_ENTRY = (datetime.combine(date(2000, 1, 3), SELL_POSITIVES_FROM) - timedelta(microseconds=1)).time()
 SESSION_CLOSE = time(16, 0)
 QUOTE_MAX_AGE_SECONDS = 5.0  # the exits: a position is marked only on a quote this recent
 # the entries: the NBBO prevailing at the instant, at most this old — the lab's bound (lab/cost_real.py STALE_NS). The
@@ -534,9 +558,28 @@ def shadow_line(engine: "Engine") -> str:
     return "R2D2 live shadow: limit_bps=%.1f %s" % (RULE["spread_max_bps"], " ".join(parts))
 
 
+def size_weight(spread_bps: float, rule: str | None = None) -> float:
+    """The share of NAV/slots a buy at ``spread_bps`` takes under the size rule (``RULE["size_rule"]`` by default): the
+    wider the spread paid, the smaller the position (owner 30/10). An unknown rule raises ``ValueError``."""
+    rule = RULE["size_rule"] if rule is None else rule
+    if rule not in SIZE_RULES:
+        raise ValueError("unknown size rule")
+    if rule == "taper":
+        return max(0.4, min(1.0, 1.0 - 0.15 * (spread_bps - 1.0)))
+    if rule == "inverse":
+        return min(1.0, 2.0 / spread_bps) if spread_bps > 0 else 1.0
+    if rule == "tiers":  # wider than the last tier only a shadow is (the spread limit): it takes the widest tier
+        for bound, weight in RULE["size_tiers"]:
+            if spread_bps <= bound + RULE["bound_bps"]:
+                return weight
+        return RULE["size_tiers"][-1][1]
+    return 1.0
+
+
 def lock_floor(peak: float) -> float:
-    """The armed lock's floor: the last step the peak reached (owner 29/10, "no degrau"): +0.10% net, then every 0.05 up
-    to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
+    """The armed lock's floor: the last step the peak reached ("no degrau"): from ``lock_min_percent`` every
+    ``lock_step_percent`` up to ``lock_wide_from_percent``, then every ``lock_wide_step_percent`` (owner 31/10: +0.10, +0.20,
+    +0.35, +0.50 ...; until then every 0.05 to +0.30, then 0.10). A peak a hair under a step (float error) still counts it."""
     low, step = RULE["lock_min_percent"], RULE["lock_step_percent"]
     wide_from, wide_step = RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]
     reached = peak + 1e-9  # one tolerance for the band and the step (pre-review: two made a gap just under +0.30%)
@@ -750,7 +793,9 @@ class Engine:
         # Until 29/10 it was the close of each completed minute (the lab's candles): a cross the minute's close no longer
         # showed was never seen.
         minute = local.hour * 60 + local.minute
-        if local <= self.last_entry:
+        # a flat close sells every position from SELL_POSITIVES_FROM: a buy then would be sold at once at a loss
+        last_entry = min(self.last_entry, FLAT_LAST_ENTRY) if RULE["close_flat"] else self.last_entry
+        if local <= last_entry:
             self.state.last_signal_minute = minute
             crosses: list[tuple[str, float, float]] = []  # (symbol, gap, signal price): this second's crosses, in order
             for symbol, gap in self.candidates.items():
@@ -809,7 +854,7 @@ class Engine:
                 if not plausible(quote, close):
                     self.skips["implausible"] += 1
                     continue
-                if moment.astimezone(NEW_YORK).time() > self.last_entry:  # the answer came after the last entry: no buy
+                if moment.astimezone(NEW_YORK).time() > last_entry:  # the answer came after the last entry: no buy
                     self.skips["late"] += 1
                     break
                 self.sources[source] += 1
@@ -821,7 +866,7 @@ class Engine:
                     self.skips["stale"] += 1
                     continue
                 spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
-                if spread_bps > RULE["spread_max_bps"]:
+                if spread_bps > RULE["spread_max_bps"] + RULE["bound_bps"]:
                     self.skips["spread"] += 1
                     try:
                         self._shadow_open(symbol, ask, spread_bps, moment)
@@ -829,7 +874,7 @@ class Engine:
                         logger.error("R2D2 live: a shadow could not be opened")
                     continue
                 if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
-                        and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"]):
+                        and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"] + RULE["bound_bps"]):
                     # the evidence: a buy the stream's fresh quote alone refused (a candidate without a stream quote, the
                     # usual case since the quote feed carries only the held names, is not counted)
                     self.sources["stream_would_refuse"] += 1
@@ -844,7 +889,7 @@ class Engine:
         stats["vetoed"] += 1
         if symbol in self.state.shadow or symbol in self.state.positions:
             return
-        self.state.shadow[symbol] = {"band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"],
+        self.state.shadow[symbol] = {"band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"] * size_weight(spread_bps),
                                      "peak": None, "armed": False, "last_net": None, "opened_at": moment.isoformat()}
 
     def _shadow_close(self, symbol: str, net: float) -> None:
@@ -868,12 +913,13 @@ class Engine:
             row["peak"] = net if row["peak"] is None else max(row["peak"], net)
             if net >= RULE["lock_min_percent"]:
                 row["armed"] = True
-            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"])) or (late and net > 0)):
+            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"]))
+                    or (late and (net > 0 or RULE["close_flat"]))):
                 self._shadow_close(symbol, net)
 
     def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream",
              bid: float | None = None) -> dict[str, Any]:
-        size = self.state.nav_realized / RULE["slots"]
+        size = self.state.nav_realized / RULE["slots"] * size_weight(spread_bps)
         shares = size / (ask * (1 + FEE_SIDE))
         member = self.members[symbol]
         # marked at the bid of its own quote until the first exit check: a buy no check reaches before the close (the last
@@ -958,12 +1004,19 @@ class Engine:
             reason = "lock"
         elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
             reason = "t30_positive"
+        elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and RULE["close_flat"]:
+            reason = "t30_flat"  # the flat close: a negative position sells too, nothing sleeps
         if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
             # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at the
             # same level, else Massive decides at the next check. A confirmed sale is booked at the feed's quoted bid,
-            # never at an estimate (Codex 6525240030 P2-1)
-            self.exit_sources["unconfirmed"] += 1
-            return None
+            # never at an estimate (Codex 6525240030 P2-1). Under a flat close the window's own sale still stands on any
+            # fresh trade: an unconfirmed stop, lock or positive never keeps a position past the close (pre-review of f3db006c)
+            late = moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM
+            if late and RULE["close_flat"] and trade_confirms(position, market, moment, "t30_flat"):
+                reason = "t30_flat"
+            else:
+                self.exit_sources["unconfirmed"] += 1
+                return None
         return self._sell(position, bid, net, reason, moment) if reason else None
 
     def _sell(self, position: Position, bid: float, net: float, reason: str, now: datetime) -> dict[str, Any]:
@@ -983,6 +1036,13 @@ class Engine:
         return fill
 
     def close_session(self) -> None:
+        if RULE["close_flat"]:
+            # a flat close carries nothing: a position no check could mark in the last 30 s (no usable quote) is sold at
+            # its last mark at the close, as the lab's flat cell books it (pre-review of f3db006c P2-2)
+            close = datetime.combine(self.day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)  # as every fill, in UTC
+            for position in list(self.state.positions.values()):
+                if position.last_mark is not None:
+                    self._sell(position, position.last_mark, position.net_percent(position.last_mark), "t30_flat", close)
         for symbol, row in list(self.state.shadow.items()):  # the shadows never carry: closed at their last mark
             if row.get("last_net") is None:
                 self.state.shadow.pop(symbol)
@@ -1027,7 +1087,8 @@ class Engine:
 
 
 def r2d2_lab_live_reason(reason: str) -> str:
-    return {"lock": "trava de lucro", "hard_stop": "stop", "t30_positive": "positiva nos últimos 30 s"}.get(reason, reason)
+    return {"lock": "trava de lucro", "hard_stop": "stop", "t30_positive": "positiva nos últimos 30 s",
+            "t30_flat": "zerada no fechamento"}.get(reason, reason)
 
 
 def _rounded(key: str, value: Any) -> Any:
@@ -1054,14 +1115,17 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 4 from 02/11/2026 (owner, 30/10): entries until the close; version 3 (30/10) the stop at -0.4% and the step
-    # lock from +0.10%; version 2 (29/10 afternoon) the lock trailing the peak by 0.05, version 1 before it
+    # version 6 from 02/11/2026 (owner, 31/10): the sizes by the spread paid, the stop at -0.20% and the lock's steps
+    # +0.10 / +0.20 / every 0.15; version 5 the close mode and the size rule as parameters; version 4 entries until the
+    # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
+    # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 4, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 6, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat()},
-        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
-        "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026); entries "
-        "until the close (owner 30/10/2026)")
+        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second and "
+        "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
+        "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps), the stop at -0.20% and the step profit lock +0.10 / +0.20 / every 0.15 "
+        "(owner 31/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
@@ -1184,6 +1248,8 @@ def trade_confirms(position: Position, market: "MarketView", moment: datetime, r
         return net <= -RULE["stop_percent"]
     if reason == "lock":
         return net <= lock_floor(position.peak_percent if position.peak_percent is not None else RULE["lock_min_percent"])
+    if reason == "t30_flat":
+        return True  # the flat close sells whatever the sign: a fresh last trade is the confirmation
     return net > 0
 
 

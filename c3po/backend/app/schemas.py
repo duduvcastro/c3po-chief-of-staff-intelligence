@@ -922,6 +922,9 @@ class R2D2DashboardResponse(BaseModel):
     book_source: Literal["v2", "lab_live"] = "v2"
     live_rule: str | None = None  # the live scenario's entry rule (book_source "lab_live")
     live_slots: int | None = None
+    live_risk: str | None = None  # its sizes, stop and lock as the Launch Gates panel states them
+    live_hold: str | None = None  # a held position's rationale under that rule
+    live_exits: str | None = None  # a held position's lock/stop label
     experiment_code: str
     status: Literal["scheduled", "running", "paused", "completed"]
     entries_paused: bool = False
