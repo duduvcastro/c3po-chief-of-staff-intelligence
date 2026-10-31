@@ -160,31 +160,37 @@ jobs:
           import re
           import sys
 
-          WORD = re.compile(r"^(match|window|ambiguous_map|skipped:rev3_(read_it|neither)|refused:[A-Za-z0-9_,]{1,160})$")
+          KEY = r"(facts|facts_superseded_by_T|rows|quarters_derived|statements_sha256)"
+          WORD = re.compile(r"^(match|window|ambiguous_map|skipped:rev3_(read_it|neither)|refused:(rev3_reference_missing|%s(,%s)*))$" % (KEY, KEY))
           LABEL = re.compile(r"^(NASDAQ|NYSE) [0-9]{4}-[0-9]{2}-[0-9]{2}$")
           INSTANT = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+-]{8,32}$")
+          CODE = re.compile(r"^[A-Za-z0-9_]{1,80}$")
 
           def clean(value):
               if value.get("kind") == "refused":
-                  return {"kind": "refused", "reason": str(value.get("reason"))} if re.fullmatch(r"[A-Za-z0-9_]{1,80}", str(value.get("reason"))) else None
+                  return {"kind": "refused", "reason": value["reason"]} if CODE.match(str(value.get("reason"))) else None
               out = {"kind": "preflight"}
               for key in ("sections", "names", "unreadable_sections"):
                   if not isinstance(value.get(key), int):
                       return None
                   out[key] = value[key]
+              reasons = value.get("unreadable_reasons")
+              if not isinstance(reasons, dict) or not all(CODE.match(k) and isinstance(v, int) for k, v in reasons.items()):
+                  return None
+              out["unreadable_reasons"] = reasons
               for key in ("first_rev3_write", "last_rev3_write"):
                   if value.get(key) is not None and not INSTANT.match(str(value[key])):
                       return None
                   out[key] = value.get(key)
-              for basis in ("now", "at_rev3"):
+              for basis in ("now", "at_rev3", "at_rev3_hi", "at_rev3_lo"):
                   block = value.get(basis)
                   if not isinstance(block, dict):
                       return None
                   kept = {}
                   for key, item in block.items():
-                      if key in ("stable_sections", "refused_sections", "window_sections", "deviating_sections") and isinstance(item, int):
+                      if key in ("stable_sections", "refused_sections", "uncertain_sections", "deviating_sections") and isinstance(item, int):
                           kept[key] = item
-                      elif key in ("refused", "window", "deviating", "unreadable") and isinstance(item, list) and all(isinstance(x, str) and LABEL.match(x) for x in item):
+                      elif key in ("refused", "uncertain", "deviating", "unreadable") and isinstance(item, list) and all(isinstance(x, str) and LABEL.match(x) for x in item):
                           kept[key] = item
                       elif key == "first_refused" and (item is None or LABEL.match(str(item))):
                           kept[key] = item
@@ -195,7 +201,7 @@ jobs:
                   out[basis] = kept
               return out
 
-          printed = 0
+          printed = withheld = 0
           for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
               try:
                   value = json.loads(line.strip())
@@ -203,9 +209,13 @@ jobs:
                   continue
               if isinstance(value, dict) and value.get("kind") in ("preflight", "refused"):
                   checked = clean(value)
-                  print(json.dumps(checked, sort_keys=True, indent=1) if checked is not None else "a result line of an unexpected shape (not printed)")
+                  if checked is None:
+                      withheld += 1
+                      continue
+                  print(json.dumps(checked, sort_keys=True, indent=1))
                   printed += 1
-          print(f"result lines: {printed}")
+          print(f"result lines: {printed}; withheld (an unexpected shape): {withheld}")
+          sys.exit(1 if withheld or not printed else 0)
           PY
           echo "remote exit status: $rc; stderr lines (count only): $(wc -l < "$raw/stderr.log")"
           exit "$rc"
@@ -225,5 +235,10 @@ jobs:
           if [ -f "$RUNNER_TEMP/raw/stdout.txt" ] && grep -qxF "LAUNCHED $RUN_TOKEN" "$RUNNER_TEMP/raw/stdout.txt"; then
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
               "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml exec -T api pkill -TERM -f 'valuation_pit_run_token=$RUN_TOKEN -m app[.]valuation_grid_preflight'" \
-              > /dev/null 2>&1 && echo 'a process of this run was still running: SIGTERM sent' || echo 'no process of this run left in the api container'
+              > /dev/null 2>&1
+            case $? in
+              0) echo 'a process of this run was still running: SIGTERM sent' ;;
+              1) echo 'no process of this run left in the api container' ;;
+              *) echo 'the stop request failed: check the api container by hand' >&2 ;;
+            esac
           fi

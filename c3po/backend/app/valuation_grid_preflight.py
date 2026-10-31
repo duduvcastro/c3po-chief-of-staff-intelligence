@@ -11,15 +11,18 @@ This counts, for every section of the rev3 manifest (stdin), whether each refere
   at_rev3   the store as it stood when rev3 read it for that section — the facts and filings whose ``first_seen_at``
             (the database's ``now()`` at insert: the inserting transaction's START; both tables only take inserts) is at
             or before a cut. rev3 read between its previous section's persistence and this one's (its runs were
-            serialised), so two cuts bracket the read: "hi", the V3 snapshot's ``published_at``, and "lo", the later of
-            the previous section's ``published_at`` and ``published_at`` minus WINDOW. The same outcome at both cuts is
-            the outcome; different ones are "window" (a row written inside rev3's own compute decides it).
+            serialised): "hi" is the V3 snapshot's ``published_at``, "lo" the later of the previous section's
+            ``published_at`` and ``published_at`` minus WINDOW, and every name is evaluated at lo, at hi and at every
+            write instant in between of its filings and its issuers' facts. A name every cut reproduces (rev3's reference
+            matched, or neither read) keeps that outcome; one some cut reproduces is "window" (a row written during rev3's
+            own compute decides it); one no cut reproduces keeps its outcome at hi — a refusal no frozen cut can fix;
+  at_rev3_hi, at_rev3_lo   the one cut each (the concrete rule a new epoch would adopt: ``first_seen_at <= published_at``).
 Per admitted Stock (a catalogue Stock in rev3's screen) and basis: "match"; "refused:<keys>" (covered, the reference
 differs: the grid refuses the section); "refused:rev3_reference_missing" (covered, rev3 has no reference both siblings
 agree on: the grid refuses); "skipped:rev3_read_it" (not covered, but rev3 read it: the grid skips it, the inputs deviate
 from rev3's); "skipped:rev3_neither"; "ambiguous_map" (two filings of the same acceptance map the symbol to different
-issuers: the grid's SQL picks one arbitrarily); "window" (at_rev3 only). A section is refused, else window, else
-deviating, else stable. The section checks that do not read the store (the siblings' pairing, the catalogue's hash) are
+issuers: the grid's SQL picks one arbitrarily); "window" (at_rev3 only). A section is refused, else uncertain (a window
+or an ambiguous map), else deviating, else stable. The section checks that do not read the store (the siblings' pairing, the catalogue's hash) are
 the grid's, not repeated here; a section whose rev3 snapshots cannot be read is "unreadable".
 
 Counts only (the repository is public): no symbol, issuer, value or error text; sections by their market and session.
@@ -43,8 +46,9 @@ from . import valuation_pit_rerun as pit
 from . import valuation_pit_served as served
 from .valuation_ensemble_driver import read_rev3
 
-BASES = ("now", "at_rev3")
-WINDOW = timedelta(minutes=15)  # the longest a rev3 section read before its persistence (~300 s each)
+BASES = ("now", "at_rev3", "at_rev3_hi", "at_rev3_lo")
+WINDOW = timedelta(minutes=60)  # rev3 read each section's facts within this before persisting it (~300 s a section): a lo
+# too early only widens a window, never a refusal
 _CODE = re.compile(r"[a-z0-9_]{1,80}")
 AMBIGUOUS = object()
 
@@ -56,22 +60,37 @@ def _utc(value: Any) -> datetime:
     return instant
 
 
-def symbol_map(filings: Iterable[Mapping[str, Any]], *, written_until: datetime | None) -> dict[str, Any]:
-    """symbol → issuer as ``StatementVintageStore.symbol_issuers`` maps it (the latest acceptance wins; the SQL's
-    ``DISTINCT ON`` is arbitrary on a tie, so a tie between two issuers is AMBIGUOUS), over the filings written at or
-    before ``written_until`` (all of them when None); keyed as ``AsFiledReader.coverage`` looks a symbol up."""
-    latest: dict[str, tuple[datetime, set[str]]] = {}
+def filing_index(filings: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[datetime, datetime, str]]]:
+    """symbol (as ``AsFiledReader.coverage`` looks it up) → its filings (written, accepted, issuer)."""
+    index: dict[str, list[tuple[datetime, datetime, str]]] = {}
     for row in filings:
-        if written_until is not None and _utc(row["first_seen_at"]) > written_until:
-            continue
-        accepted = _utc(row["accepted_at"])
         for symbol in row.get("symbols") or ():
-            key = str(symbol).upper()
-            if key not in latest or accepted > latest[key][0]:
-                latest[key] = (accepted, {str(row["issuer_key"])})
-            elif accepted == latest[key][0]:
-                latest[key][1].add(str(row["issuer_key"]))
-    return {key.strip(): (next(iter(issuers)) if len(issuers) == 1 else AMBIGUOUS) for key, (_, issuers) in latest.items()}
+            index.setdefault(str(symbol).upper().strip(), []).append(
+                (_utc(row["first_seen_at"]), _utc(row["accepted_at"]), str(row["issuer_key"])))
+    return index
+
+
+def map_at(entries: Iterable[tuple[datetime, datetime, str]], cut: datetime | None) -> Any:
+    """The issuer ``StatementVintageStore.symbol_issuers`` maps a symbol to over the filings written by ``cut`` (all when
+    None): the latest acceptance wins, a tie between two issuers is AMBIGUOUS (the SQL's ``DISTINCT ON`` is arbitrary)."""
+    best: datetime | None = None
+    issuers: set[str] = set()
+    for written, accepted, issuer in entries:
+        if cut is not None and written > cut:
+            continue
+        if best is None or accepted > best:
+            best, issuers = accepted, {issuer}
+        elif accepted == best:
+            issuers.add(issuer)
+    if best is None:
+        return None
+    return next(iter(issuers)) if len(issuers) == 1 else AMBIGUOUS
+
+
+def symbol_map(filings: Iterable[Mapping[str, Any]], *, written_until: datetime | None) -> dict[str, Any]:
+    """symbol → issuer (or AMBIGUOUS) over the filings written at or before ``written_until`` (all when None)."""
+    mapped = {symbol: map_at(entries, written_until) for symbol, entries in filing_index(filings).items()}
+    return {symbol: issuer for symbol, issuer in mapped.items() if issuer is not None}
 
 
 def section_plan(database: Any, v3_entry: Mapping[str, Any], served_entry: Mapping[str, Any],
@@ -104,6 +123,11 @@ def _label(section: Mapping[str, Any]) -> str:
     return "%s %s" % (section["market"], section["session"])
 
 
+def _consistent(result: str, expected: Mapping[str, Any] | None) -> bool:
+    """A cut reproduces what rev3 saw of a name: its reference matched, or neither read it."""
+    return result == "match" if expected is not None else result == "skipped:rev3_neither"
+
+
 def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
     pairs = exe._reference_pairs(rev3)  # the complete, signed rev3 manifest (its digest) or a refusal
     front, _ = pit.as_filed_front()
@@ -114,38 +138,64 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
     store = front.StatementVintageStore(database)
     catalogues: dict[tuple[str, str], list[dict[str, Any]]] = {}
     sections: list[dict[str, Any]] = []
-    unreadable: list[str] = []
+    unreadable: list[tuple[str, str]] = []
     for v3_entry, served_entry in pairs:
         try:
             sections.append(section_plan(database, v3_entry, served_entry, catalogues))
-        except (ValueError, grid.GridInputError) as error:  # a rev3 snapshot the grid would refuse too: counted, not fatal
+        except ValueError as error:  # GridInputError too: a rev3 snapshot the grid would refuse as well, counted, not fatal
             code = str(error) if _CODE.fullmatch(str(error)) else type(error).__name__
-            unreadable.append("%s %s" % (v3_entry.get("market"), v3_entry.get("session_date")) + "|" + code)
-    # the read cuts: hi = this section's persistence, lo = the later of the previous persistence (rev3 ran its sections one
-    # after the other) and hi - WINDOW
+            unreadable.append(("%s %s" % (v3_entry.get("market"), v3_entry.get("session_date")), code))
     ordered = sorted(range(len(sections)), key=lambda i: sections[i]["written"])
-    for rank, index in enumerate(ordered):
+    for rank, index in enumerate(ordered):  # rev3 ran its sections one after the other
         hi = sections[index]["written"]
         previous = sections[ordered[rank - 1]]["written"] if rank else None
-        sections[index]["cuts"] = {"hi": hi, "lo": max(hi - WINDOW, previous) if previous is not None else hi - WINDOW}
-    filings = store.filings(front.MARKET, source=front.FILING_SOURCE)
-    now_map = symbol_map(filings, written_until=None)
-    earliest = min((section["cuts"]["lo"] for section in sections), default=None)
-    # who each (section, name) reads under each cut: the issuer the symbol map of that cut names (the grid's lookup)
-    wanted: dict[str, list[tuple[int, int, str]]] = {}
+        sections[index]["lo"] = max(hi - WINDOW, previous) if previous is not None else hi - WINDOW
+    earliest = min((section["lo"] for section in sections), default=None)
+    index_of = filing_index(store.filings(front.MARKET, source=front.FILING_SOURCE))
+
+    def mapped_at(symbol: str, cut: datetime | None) -> Any:
+        return map_at(index_of.get(symbol, ()), cut)
+
+    # pass 1: every issuer a name maps to at lo, at hi or at a filing written in between (the map changes only there),
+    # and the write instants of each such issuer's facts (any source) after the earliest lo — the cuts a window can hold
+    def filing_cuts(section: Mapping[str, Any], symbol: str) -> set[datetime]:
+        return {written for written, _, _ in index_of.get(symbol, ()) if section["lo"] < written < section["written"]}
+    issuers: set[str] = set()
+    for section in sections:
+        for symbol, _ in section["names"]:
+            for cut in {None, section["lo"], section["written"], *filing_cuts(section, symbol)}:
+                issuer = mapped_at(symbol, cut)
+                if isinstance(issuer, str):
+                    issuers.add(issuer)
+    late: dict[str, list[datetime]] = {}
+    for issuer in sorted(issuers):
+        instants = [_utc(row["first_seen_at"]) for row in store.vintages(front.MARKET, issuer)]
+        late[issuer] = sorted({instant for instant in instants if earliest is not None and instant > earliest})
+    # every (section, name) at each of its cuts: now (None), lo, hi and the write instants strictly between them
+    cuts: dict[tuple[int, int], dict[str, datetime | None]] = {}
+    uses: dict[str, list[tuple[int, int, str]]] = {}
     outcome: dict[tuple[int, int, str], str] = {}
     for index, section in enumerate(sections):
-        maps = {"now": now_map, **{cut: symbol_map(filings, written_until=section["cuts"][cut]) for cut in ("hi", "lo")}}
+        lo, hi = section["lo"], section["written"]
         for position, (symbol, _) in enumerate(section["names"]):
-            for cut, mapping in maps.items():
-                issuer = mapping.get(symbol)
+            between = filing_cuts(section, symbol)
+            for cut in {lo, hi, *between}:
+                issuer = mapped_at(symbol, cut)
+                if isinstance(issuer, str):
+                    between.update(instant for instant in late.get(issuer, ()) if lo < instant < hi)
+            named: dict[str, datetime | None] = {"now": None, "lo": lo, "hi": hi}
+            named.update({"c%d" % k: instant for k, instant in enumerate(sorted(between))})
+            cuts[(index, position)] = named
+            for name, cut in named.items():
+                issuer = mapped_at(symbol, cut)
                 if issuer is AMBIGUOUS:
-                    outcome[(index, position, cut)] = "ambiguous_map"
+                    outcome[(index, position, name)] = "ambiguous_map"
                 elif issuer:
-                    wanted.setdefault(str(issuer), []).append((index, position, cut))
+                    uses.setdefault(str(issuer), []).append((index, position, name))
                 else:
-                    outcome[(index, position, cut)] = "uncovered"
-    for issuer, uses in sorted(wanted.items()):
+                    outcome[(index, position, name)] = "uncovered"
+    # pass 2: each issuer's facts once, every use of it at its own cut
+    for issuer, issuer_uses in sorted(uses.items()):
         rows = store.vintages(front.MARKET, issuer)  # every fact of every source, oldest acceptance first
         seen_any = [_utc(row["first_seen_at"]) for row in rows]  # coverage: a fact of ANY source (issuers_with_vintages)
         facts = [row for row in rows if row["source"] == front.VINTAGE_SOURCE]  # what the reader reads
@@ -154,16 +204,15 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
         if accepted != sorted(accepted):
             raise ValueError("preflight_store_order_unexpected")
         first_written = min(seen_any) if seen_any else None
-        late = [i for i, instant in enumerate(seen) if earliest is not None and instant > earliest]
+        later = [i for i, instant in enumerate(seen) if earliest is not None and instant > earliest]
         references: dict[tuple[int, tuple[int, ...]], dict[str, Any]] = {}
-        for index, position, cut in uses:
-            section = sections[index]
-            written = section["cuts"][cut] if cut in ("hi", "lo") else None
+        for index, position, name in issuer_uses:
+            section, written = sections[index], cuts[(index, position)][name]
             if first_written is None or (written is not None and first_written > written):
-                outcome[(index, position, cut)] = "uncovered"
+                outcome[(index, position, name)] = "uncovered"
                 continue
             end = bisect.bisect_right(accepted, section["as_of"])
-            excluded = () if written is None else tuple(i for i in late if i < end and seen[i] > written)
+            excluded = () if written is None else tuple(i for i in later if i < end and seen[i] > written)
             key = (end, excluded)
             if key not in references:
                 skip = set(excluded)
@@ -171,45 +220,51 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
                                                        market=section["market"], front=front)[1]
             expected, reference = section["names"][position][1], references[key]
             if expected is None:
-                outcome[(index, position, cut)] = "refused:rev3_reference_missing"
+                outcome[(index, position, name)] = "refused:rev3_reference_missing"
                 continue
-            differing = [name for name in reference if expected.get(name) != reference.get(name)]  # the grid's comparison
-            outcome[(index, position, cut)] = "match" if not differing else "refused:" + ",".join(differing)
+            differing = [field for field in reference if expected.get(field) != reference.get(field)]  # the grid's comparison
+            outcome[(index, position, name)] = "match" if not differing else "refused:" + ",".join(differing)
 
-    def result_of(index: int, position: int, cut: str) -> str:
-        found = outcome.get((index, position, cut), "uncovered")
+    def result_of(index: int, position: int, name: str) -> str:
+        found = outcome.get((index, position, name), "uncovered")
         if found == "uncovered":  # the grid skips the name; it deviates from rev3 when rev3 had read it
             return "skipped:rev3_read_it" if sections[index]["names"][position][1] is not None else "skipped:rev3_neither"
         return found
 
-    labels = [label.split("|")[0] for label in unreadable]
+    def bracketed(index: int, position: int) -> str:
+        expected = sections[index]["names"][position][1]
+        results = [result_of(index, position, name) for name in cuts[(index, position)] if name != "now"]
+        consistent = [_consistent(result, expected) for result in results]
+        if all(consistent):
+            return results[0]
+        return "window" if any(consistent) else result_of(index, position, "hi")
+
+    codes = Counter(code for _, code in unreadable)
     totals: dict[str, Any] = {"sections": len(sections) + len(unreadable), "names": sum(len(s["names"]) for s in sections),
-                              "unreadable_sections": len(unreadable),
+                              "unreadable_sections": len(unreadable), "unreadable_reasons": dict(sorted(codes.items())),
                               "first_rev3_write": min(s["written"] for s in sections).isoformat() if sections else None,
                               "last_rev3_write": max(s["written"] for s in sections).isoformat() if sections else None}
     for basis in BASES:
         counts: Counter[str] = Counter()
-        groups: dict[str, list[str]] = {"refused": [], "window": [], "deviating": []}
+        groups: dict[str, list[str]] = {"refused": [], "uncertain": [], "deviating": []}
         for index, section in enumerate(sections):
-            results = []
-            for position in range(len(section["names"])):
-                if basis == "now":
-                    results.append(result_of(index, position, "now"))
-                else:
-                    hi, lo = result_of(index, position, "hi"), result_of(index, position, "lo")
-                    results.append(hi if hi == lo else "window")
+            if basis == "at_rev3":
+                results = [bracketed(index, position) for position in range(len(section["names"]))]
+            else:
+                name = {"now": "now", "at_rev3_hi": "hi", "at_rev3_lo": "lo"}[basis]
+                results = [result_of(index, position, name) for position in range(len(section["names"]))]
             counts.update(results)
             if any(result.startswith("refused:") for result in results):
                 groups["refused"].append(_label(section))
             elif any(result in ("window", "ambiguous_map") for result in results):
-                groups["window"].append(_label(section))
+                groups["uncertain"].append(_label(section))
             elif "skipped:rev3_read_it" in results:
                 groups["deviating"].append(_label(section))
         totals[basis] = {"stable_sections": len(sections) - sum(len(group) for group in groups.values()),
-                         "refused_sections": len(groups["refused"]), "window_sections": len(groups["window"]),
+                         "refused_sections": len(groups["refused"]), "uncertain_sections": len(groups["uncertain"]),
                          "deviating_sections": len(groups["deviating"]),
                          "first_refused": groups["refused"][0] if groups["refused"] else None, **groups,
-                         "unreadable": labels, "names": dict(sorted(counts.items()))}
+                         "unreadable": [label for label, _ in unreadable], "names": dict(sorted(counts.items()))}
     return totals
 
 

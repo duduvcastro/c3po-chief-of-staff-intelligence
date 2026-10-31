@@ -4,6 +4,7 @@ import copy
 import io
 import json
 import random
+import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -107,32 +108,43 @@ def _run(monkeypatch, db, sections):
 
 
 def _oracle(db, sections):
-    """The expected totals: the grid's outcome on the store filtered at each cut (lo, hi as the module brackets them)."""
+    """The expected totals, independently: the grid's own outcome on the store filtered at lo, at hi and at EVERY write
+    instant of the store between them (a superset of the module's cuts: between two writes nothing changes)."""
     order = sorted(range(len(sections)), key=lambda i: sections[i]["written"])
-    cuts = {}
+    lows = {}
     for rank, index in enumerate(order):
         hi = sections[index]["written"]
         previous = sections[order[rank - 1]]["written"] if rank else None
-        cuts[index] = (max(hi - preflight.WINDOW, previous) if previous is not None else hi - preflight.WINDOW, hi)
+        lows[index] = max(hi - preflight.WINDOW, previous) if previous is not None else hi - preflight.WINDOW
+    instants = sorted({row["first_seen_at"] for row in db._statement_filings + db._statement_vintages})  # type: ignore[attr-defined]
     totals = {}
-    for basis in ("now", "at_rev3"):
+    for basis in ("now", "at_rev3", "at_rev3_hi", "at_rev3_lo"):
         counts: Counter[str] = Counter()
-        refused, window, deviating = [], [], []
+        refused, uncertain, deviating = [], [], []
         for index, section in enumerate(sections):
+            lo, hi = lows[index], section["written"]
             if basis == "now":
                 results = grid_like(_filtered(db, None), section)
+            elif basis == "at_rev3_hi":
+                results = grid_like(_filtered(db, hi), section)
+            elif basis == "at_rev3_lo":
+                results = grid_like(_filtered(db, lo), section)
             else:
-                lo, hi = (grid_like(_filtered(db, cut), section) for cut in cuts[index])
-                results = [a if a == b else "window" for a, b in zip(hi, lo)]
+                at = {cut: grid_like(_filtered(db, cut), section) for cut in [lo, hi] + [i for i in instants if lo < i < hi]}
+                results = []
+                for position, (_, expected) in enumerate(section["names"]):
+                    seen = [at[cut][position] for cut in at]
+                    good = [(r == "match") if expected is not None else (r == "skipped:rev3_neither") for r in seen]
+                    results.append(seen[0] if all(good) else "window" if any(good) else at[hi][position])
             counts.update(results)
             label = "%s %s" % (section["market"], section["session"])
             if any(r.startswith("refused:") for r in results):
                 refused.append(label)
-            elif "window" in results:
-                window.append(label)
+            elif any(r in ("window", "ambiguous_map") for r in results):
+                uncertain.append(label)
             elif "skipped:rev3_read_it" in results:
                 deviating.append(label)
-        totals[basis] = {"refused": refused, "window": window, "deviating": deviating, "names": dict(sorted(counts.items()))}
+        totals[basis] = {"refused": refused, "uncertain": uncertain, "deviating": deviating, "names": dict(sorted(counts.items()))}
     return totals
 
 
@@ -181,8 +193,8 @@ def test_the_preflight_agrees_with_the_grids_own_read_of_the_store_at_each_cut(f
         sections.append({"market": "NASDAQ", "session": f"2026-{i + 1:02d}-01", "as_of": as_of, "written": written, "names": names})
     result = _run(monkeypatch, db, copy.deepcopy(sections))
     expected = _oracle(db, sections)
-    for basis in ("now", "at_rev3"):
-        got = {key: result[basis][key] for key in ("refused", "window", "deviating", "names")}
+    for basis in ("now", "at_rev3", "at_rev3_hi", "at_rev3_lo"):
+        got = {key: result[basis][key] for key in ("refused", "uncertain", "deviating", "names")}
         assert got == expected[basis], (basis, got, expected[basis])
 
 
@@ -199,7 +211,7 @@ def test_a_fact_of_another_source_covers_the_issuer_as_the_grid_does(front, monk
 
 def test_rows_written_inside_rev3s_compute_window_are_a_window_never_a_refusal(front, monkeypatch) -> None:
     """Pre-review of 83d351d1 (P1): rev3 read before it persisted; a row written between the two (or a transaction that
-    began before the persistence) is inside the hi cut only. Its verdict differs between the cuts: "window"."""
+    began before the persistence) is inside the hi cut only: "window", while the one-cut rule at hi refuses."""
     db = _db()
     read = WRITTEN - timedelta(minutes=12)  # rev3 read the issuer 12 min before it persisted the section
     _add(front, db, issuer="1", doc="A-1", symbols=["AAA"], accepted=T - timedelta(days=60), written=read - timedelta(days=3),
@@ -211,9 +223,47 @@ def test_rows_written_inside_rev3s_compute_window_are_a_window_never_a_refusal(f
     section = {"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN,
                "names": [("AAA", _reference(db, "AAA", read)), ("BBB", _reference(db, "BBB", read))]}
     result = _run(monkeypatch, db, [section])
-    assert result["at_rev3"]["refused"] == [] and result["at_rev3"]["window"] == ["NASDAQ 2026-06-29"]
+    assert result["at_rev3"]["refused"] == [] and result["at_rev3"]["uncertain"] == ["NASDAQ 2026-06-29"]
     assert result["at_rev3"]["names"] == {"window": 2}
+    assert result["at_rev3_hi"]["refused"] == ["NASDAQ 2026-06-29"] and result["at_rev3_lo"]["stable_sections"] == 1
     assert result["now"]["refused"] == ["NASDAQ 2026-06-29"]  # the grid's read refuses
+
+
+def test_two_writes_straddling_rev3s_read_are_a_window_the_read_instant_reproduces(front, monkeypatch) -> None:
+    """Pre-review of 07f644ea (P1): both ends of the bracket refuse (with the same keys), a cut between them reproduces."""
+    db = _db()
+    read = WRITTEN - timedelta(minutes=8)
+    _add(front, db, issuer="1", doc="X-0", symbols=["XXX"], accepted=T - timedelta(days=200), written=read - timedelta(days=3), concepts=CONCEPTS[:2])
+    _add(front, db, issuer="1", doc="X-1", symbols=["XXX"], accepted=T - timedelta(days=100), written=read - timedelta(minutes=3), concepts=CONCEPTS[:2])
+    _add(front, db, issuer="1", doc="X-2", symbols=["XXX"], accepted=T - timedelta(days=50), written=read + timedelta(minutes=3), concepts=CONCEPTS[:2])
+    rev3 = _reference(db, "XXX", read)
+    assert _reference(db, "XXX", WRITTEN - preflight.WINDOW) != rev3 and _reference(db, "XXX", WRITTEN) != rev3
+    result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [("XXX", rev3)]}])
+    assert result["at_rev3"]["names"] == {"window": 1} and result["at_rev3"]["refused"] == []
+    assert result["at_rev3_hi"]["refused_sections"] == 1 and result["at_rev3_lo"]["refused_sections"] == 1
+
+
+def test_a_refusal_no_cut_can_fix_stays_a_refusal(front, monkeypatch) -> None:
+    """Pre-review of 07f644ea (P1): rev3's reference matches the store at no instant and a row inside the bracket changes
+    other keys at hi: the labels differ between the ends, yet no cut reproduces — a refusal, never a window."""
+    db = _db()
+    read = WRITTEN - timedelta(minutes=8)
+    _add(front, db, issuer="1", doc="D-0", symbols=["DDD"], accepted=T - timedelta(days=200), written=read - timedelta(days=3), concepts=CONCEPTS[:2])
+    _add(front, db, issuer="1", doc="D-1", symbols=["DDD"], accepted=T - timedelta(days=50), written=read + timedelta(minutes=3), concepts=CONCEPTS[:2])
+    rev3 = dict(_reference(db, "DDD", read), statements_sha256="f" * 64)
+    result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [("DDD", rev3)]}])
+    assert result["at_rev3"]["refused"] == ["NASDAQ 2026-06-29"] and result["at_rev3"]["uncertain"] == []
+
+
+def test_an_ambiguous_map_is_counted_and_makes_the_section_uncertain(front, monkeypatch) -> None:
+    db = _db()
+    accepted = T - timedelta(days=60)
+    _add(front, db, issuer="1", doc="M-1", symbols=["MMM"], accepted=accepted, written=WRITTEN - timedelta(days=3), concepts=["us-gaap:Revenues"])
+    _add(front, db, issuer="2", doc="M-2", symbols=["MMM"], accepted=accepted, written=WRITTEN - timedelta(days=3), concepts=["us-gaap:Revenues"])
+    result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN,
+                                     "names": [("MMM", {"facts": 1})]}])
+    for basis in ("now", "at_rev3", "at_rev3_hi"):
+        assert result[basis]["names"] == {"ambiguous_map": 1} and result[basis]["uncertain"] == ["NASDAQ 2026-06-29"]
 
 
 def test_a_section_whose_rev3_snapshots_cannot_be_read_is_counted_and_the_others_go_on(front, monkeypatch) -> None:
@@ -231,6 +281,7 @@ def test_a_section_whose_rev3_snapshots_cannot_be_read_is_counted_and_the_others
     monkeypatch.setattr(preflight, "section_plan", plan)
     result = preflight.run(db, {})
     assert result["sections"] == 2 and result["unreadable_sections"] == 1
+    assert result["unreadable_reasons"] == {"rev3_sibling_manifest_hash_mismatch": 1}
     assert result["now"]["unreadable"] == ["NYSE 2026-06-29"] and result["now"]["stable_sections"] == 1
 
 
@@ -265,3 +316,44 @@ def test_the_command_prints_counts_only_and_refuses_an_unsigned_manifest(front, 
     monkeypatch.setattr(preflight.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b'{"complete": false}')})())
     assert preflight.main([], database=_db()) == 2
     assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "ensemble_reference_manifest_not_the_complete_signed_rev3"}
+
+    def leaky(database, rev3):
+        raise ValueError("issuer 0000320193 has no AAPL facts")  # a message that is no code: only the type is printed
+    monkeypatch.setattr(preflight, "run", leaky)
+    monkeypatch.setattr(preflight.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
+    assert preflight.main([], database=_db()) == 2
+    assert json.loads(capsys.readouterr().out) == {"kind": "refused", "reason": "ValueError"}
+
+
+def _workflow_filter() -> str:
+    """The printing filter of .github/workflows/valuation-grid-preflight.yml (the python between its <<'PY' and PY)."""
+    import yaml
+    from pathlib import Path
+
+    workflow = yaml.safe_load((Path(__file__).resolve().parents[3] / ".github/workflows/valuation-grid-preflight.yml").read_text())
+    script = next(step["run"] for step in workflow["jobs"]["preflight"]["steps"] if step.get("name") == "Run the preflight on the host (read-only)")
+    body = script.split("<<'PY' || exit 1\n", 1)[1]
+    return body.split("\nPY\n", 1)[0]
+
+
+def test_the_workflow_prints_the_modules_own_line_whole_and_nothing_of_another_shape(front, monkeypatch, tmp_path) -> None:
+    import subprocess
+
+    db = _db()
+    _add(front, db, issuer="1", doc="A-1", symbols=["AAA"], accepted=T - timedelta(days=60), written=WRITTEN - timedelta(days=3),
+         concepts=["us-gaap:Revenues"])
+    _add(front, db, issuer="1", doc="A-2", symbols=["AAA"], accepted=T - timedelta(days=30), written=WRITTEN + timedelta(days=3),
+         concepts=["us-gaap:Revenues", "us-gaap:NetIncomeLoss"])
+    section = {"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [("AAA", _reference(db, "AAA", WRITTEN))]}
+    line = {"kind": "preflight", **_run(monkeypatch, db, [section])}
+    assert any(key.startswith("refused:") for key in line["now"]["names"])
+    script = tmp_path / "filter.py"
+    script.write_text(_workflow_filter())
+    stdout = tmp_path / "stdout.txt"
+    stdout.write_text("LAUNCHED 1-1\n" + json.dumps(line, sort_keys=True) + "\n")
+    printed = subprocess.run([sys.executable, "-I", str(script), str(stdout)], capture_output=True, text=True, check=True).stdout
+    assert json.loads(printed.split("\nresult lines:")[0]) == json.loads(json.dumps(line))
+    leaked = dict(line, now=dict(line["now"], refused=["AAPL 2026-06-29"]))  # anything off the module's shape is withheld
+    stdout.write_text(json.dumps(leaked) + "\n")
+    run = subprocess.run([sys.executable, "-I", str(script), str(stdout)], capture_output=True, text=True)
+    assert "AAPL" not in run.stdout and run.returncode != 0
