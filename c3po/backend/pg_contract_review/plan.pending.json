@@ -1,0 +1,21 @@
+{
+  "schema": "FULL-UNIVERSE-LOCAL-PG-REVIEW-PLAN-v1",
+  "database": null,
+  "database_nonce": null,
+  "socket_directory": null,
+  "port": null,
+  "server_system_identifier": null,
+  "ddl_sha256": null,
+  "users": {
+    "schema_admin": null,
+    "legacy": "c3po",
+    "publisher": "c3po_full_universe_publisher",
+    "operator": "c3po_full_universe_operator"
+  },
+  "password_env": {
+    "schema_admin": null,
+    "legacy": null,
+    "publisher": null,
+    "operator": null
+  }
+}
