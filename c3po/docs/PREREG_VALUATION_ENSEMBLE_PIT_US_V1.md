@@ -75,8 +75,8 @@
   - **Por que não importa:** toda escrita de agora tem `first_seen_at` depois do último corte de gravação (25/10/2026), então não entra em nenhuma seção.
   - **Saem do instrumento** as duas guardas da rev 1 que serviam à leitura viva:
     - a do workflow da grade, que exigia o backfill em 0 no worker em execução;
-    - a do driver (`operational_guard`), chamada pelo executor antes e depois de cada seção, que esperava o fim de uma coleta as-filed em curso e recusava depois de 180 s.
-  - **Fica a regra do rev 3 §14:** nenhum worker noturno de valuation e nenhuma ingestão em curso há 30 min ou mais. Uma ingestão assim impede o início de um trecho e interrompe o trecho em curso.
+    - a espera do driver por uma coleta as-filed em curso (`asfiled_running`, dentro do `operational_guard`), que aguardava até 180 s e então recusava.
+  - **Fica a regra do rev 3 §14,** no `operational_guard` que o executor chama antes e depois de cada seção: nenhum worker noturno de valuation e nenhuma ingestão em curso há 30 min ou mais. Uma ingestão assim impede o início de um trecho e interrompe o trecho em curso.
 - **Horizontes:** `h = 126` (decisório), `h = 252` (condição obrigatória) e `h = 21`/`63` (descritivos). Para cada horizonte entram só os `T` cujo alvo `T + 1 + h` fechou antes do corte dos rótulos (rev 3 §6.2). A cauda da grade fica naturalmente de fora em `h = 126` e `h = 252`.
 
 ## 3. Estatística por horizonte
@@ -156,12 +156,12 @@
   - **o executor recusa** correr se qualquer arquivo listado difere do pino;
   - **o relatório anula** (`VOID`: `ensemble_instrument_not_pinned`, `ensemble_instrument_mismatch:<arquivo>`) se não houver pino ou se o código de qualquer corrida do manifesto diferir dele, **antes de ler rótulos**;
   - assim, duas implementações com o mesmo texto não podem ambas reclamar este pré-registro. A que vale é a do pino, fixada antes dos rótulos.
-- **Prontidão (rev 2), antes da assinatura do pino:** uma corrida só de leitura no host, sobre o commit de `main` do pino (`valuation_ensemble_readiness.py`, workflow `valuation-ensemble-readiness.yml`), aplica a cada uma das 534 seções a checagem pinada do §2.
+- **Prontidão (rev 2), antes da assinatura do pino:** uma corrida só de leitura no host, sobre o checkout implantado cujo `instrument_files_sha256` é o do pino (`valuation_ensemble_readiness.py`, workflow `valuation-ensemble-readiness.yml`), aplica a cada uma das 534 seções a checagem pinada do §2.
   - **A checagem:** as mesmas funções que o executor chama antes de cada seção (`valuation_ensemble_frozen`), com o leitor congelado no corte de gravação da seção.
     - Só a leitura muda: os fatos de cada emissor são lidos uma vez e fatiados em cada `T` como a consulta do store os corta.
     - Nada é gravado, e a corrida não é um trecho da época.
   - **O escopo:** o pareamento das irmãs e as demonstrações. Preços, conteúdo do catálogo e Tesouro ficam com o executor, como na rev 1.
-  - **A identidade:** a corrida publica o `sha256` canônico dos arquivos do instrumento no checkout implantado, este módulo entre eles, e recusa ler se os módulos em execução diferem dele. O recibo do pino cita o run e esse `sha256`, que tem de ser o dos arquivos que o pino lista.
+  - **A identidade:** a corrida publica o `sha256` canônico dos arquivos do instrumento no checkout implantado, este módulo entre eles, e recusa ler se os módulos em execução diferem dele. O que decide a checagem, a janela e o prazo está nesses arquivos; a conexão ao banco (`config.py`, `database.py`) fica fora, como no executor. O recibo do pino cita o run e esse `sha256`, que tem de ser o dos arquivos que o pino lista.
   - **A publicação:** no canal técnico, só contagens e rótulos de seção (bolsa e sessão), sem símbolos.
   - **A condição:** o pino só é assinado com 534 de 534 seções sem recusa. Com menos, não há GO nem assinatura do pino, e a época não começa. Mudar a regra exige nova revisão.
 - **Operação:**
