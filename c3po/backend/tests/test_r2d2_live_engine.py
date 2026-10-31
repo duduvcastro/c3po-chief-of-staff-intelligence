@@ -2413,3 +2413,17 @@ def test_the_massive_trade_path_keeps_up_with_an_opening_burst() -> None:
     assert stream.take_trade_gauges()[1] == 200_000
     assert all(tapes.tapes[name].volume > 0 for name in names)
     assert rate > 5 * 5_984
+
+
+def test_the_shared_massive_path_keeps_the_exits_served_under_an_opening_load() -> None:
+    """Codex 6537835879: the REAL reader loop with trades and quotes mixed (a short opening burst, then a regular rate),
+    the shadow tapes and the engine's REAL fast exits on the pushed quotes — no trade or frame lost, no reconnect, and the
+    held names' quotes readable by the exits within bounds generous for a shared CI runner (the full profile is
+    ``python -m app.r2d2_massive_load``)."""
+    from app import r2d2_massive_load
+
+    result = r2d2_massive_load.run(40_000, 2, 6_000, 1)
+    assert result["losses"] == {"trades": 0, "frames": 0} and result["reconnects"] == 0
+    assert result["taken"]["sink_failures"] == 0 and result["tapes_with_trades"] == 900
+    assert result["quote_to_exits_ms"]["n"] > 0 and result["quote_to_exits_ms"]["p99"] < 250
+    assert result["reader_lag_ms"]["p99"] < 250 and result["exit_passes"]["per_second"] > 10
