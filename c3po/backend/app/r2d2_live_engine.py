@@ -64,7 +64,17 @@ RULE = {
     # trava em -0,4%". Until then: stop -0.5%, a lock armed at +0.15% trailing the peak by 0.05 (0.10 before 13:51 BRT)
     "stop_percent": 0.4, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.30,
     "lock_wide_step_percent": 0.10,
+    # owner 30/10/2026 ~20:3x BRT: "para segunda-feira, faremos umas alterações de BPS e tamanho da compra" — the lab's
+    # studies of 30/10 (results/stopstudy_run41123209315, results/exitstudy2_run41145478129): no stop, spread limit or size
+    # made the rule profitable; selling EVERY position from 15:59:30 (nothing carried overnight) cut the loss a trade most
+    # (-0.061% vs -0.079%), and a size tapered by the spread paid cut the US$ loss with the same trades. Both levers are
+    # here with the values in force (False / "equal"): the owner's choice sets them
+    "close_flat": False,  # True: from SELL_POSITIVES_FROM every position sells at the first check, whatever its sign
+    "size_rule": "equal",  # "equal": NAV/slots; "taper": x (1 - 0.15 x (spread - 1)) in [0.4, 1]; "inverse": x min(1, 2/spread)
 }
+SIZE_RULES = ("equal", "taper", "inverse")
+if RULE["size_rule"] not in SIZE_RULES or not isinstance(RULE["close_flat"], bool):  # a typo never runs another size
+    raise ValueError("R2D2 rule: unknown size_rule or a close_flat that is not a boolean")
 SESSION_OPEN = time(9, 30)
 OPENING_WINDOW_END = time(9, 31)  # the candidates are fixed once every subscribed name had a chance to print
 # owner 30/10/2026 ~16:1x BRT: "a única coisa que temos que alterar é essa regra de parar de comprar até as 16:30. Tem que
@@ -75,6 +85,8 @@ LAST_ENTRY = time(15, 59, 59, 999999)
 # a session keeps the last entry of the label it started under (a deploy during the session never moves its window)
 LAST_ENTRY_BY_CONFIG = {"TIT-2S3-RT": time(15, 29, 59), "TIT-2S5-RT": time(15, 29, 59)}
 SELL_POSITIVES_FROM = time(15, 59, 30)
+# the last entry under a flat close: the instant before SELL_POSITIVES_FROM (a buy from then on would be sold at once)
+FLAT_LAST_ENTRY = (datetime.combine(date(2000, 1, 3), SELL_POSITIVES_FROM) - timedelta(microseconds=1)).time()
 SESSION_CLOSE = time(16, 0)
 QUOTE_MAX_AGE_SECONDS = 5.0  # the exits: a position is marked only on a quote this recent
 # the entries: the NBBO prevailing at the instant, at most this old — the lab's bound (lab/cost_real.py STALE_NS). The
@@ -524,6 +536,19 @@ def shadow_line(engine: "Engine") -> str:
     return "R2D2 live shadow: limit_bps=%.1f %s" % (RULE["spread_max_bps"], " ".join(parts))
 
 
+def size_weight(spread_bps: float, rule: str | None = None) -> float:
+    """The share of NAV/slots a buy at ``spread_bps`` takes under the size rule (``RULE["size_rule"]`` by default): the
+    wider the spread paid, the smaller the position (owner 30/10). An unknown rule is the equal size."""
+    rule = RULE["size_rule"] if rule is None else rule
+    if rule not in SIZE_RULES:
+        raise ValueError("unknown size rule")
+    if rule == "taper":
+        return max(0.4, min(1.0, 1.0 - 0.15 * (spread_bps - 1.0)))
+    if rule == "inverse":
+        return min(1.0, 2.0 / spread_bps) if spread_bps > 0 else 1.0
+    return 1.0
+
+
 def lock_floor(peak: float) -> float:
     """The armed lock's floor: the last step the peak reached (owner 29/10, "no degrau"): +0.10% net, then every 0.05 up
     to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
@@ -731,7 +756,9 @@ class Engine:
         # Until 29/10 it was the close of each completed minute (the lab's candles): a cross the minute's close no longer
         # showed was never seen.
         minute = local.hour * 60 + local.minute
-        if local <= self.last_entry:
+        # a flat close sells every position from SELL_POSITIVES_FROM: a buy then would be sold at once at a loss
+        last_entry = min(self.last_entry, FLAT_LAST_ENTRY) if RULE["close_flat"] else self.last_entry
+        if local <= last_entry:
             self.state.last_signal_minute = minute
             crosses: list[tuple[str, float, float]] = []  # (symbol, gap, signal price): this second's crosses, in order
             for symbol, gap in self.candidates.items():
@@ -790,7 +817,7 @@ class Engine:
                 if not plausible(quote, close):
                     self.skips["implausible"] += 1
                     continue
-                if moment.astimezone(NEW_YORK).time() > self.last_entry:  # the answer came after the last entry: no buy
+                if moment.astimezone(NEW_YORK).time() > last_entry:  # the answer came after the last entry: no buy
                     self.skips["late"] += 1
                     break
                 self.sources[source] += 1
@@ -825,7 +852,7 @@ class Engine:
         stats["vetoed"] += 1
         if symbol in self.state.shadow or symbol in self.state.positions:
             return
-        self.state.shadow[symbol] = {"band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"],
+        self.state.shadow[symbol] = {"band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"] * size_weight(spread_bps),
                                      "peak": None, "armed": False, "last_net": None, "opened_at": moment.isoformat()}
 
     def _shadow_close(self, symbol: str, net: float) -> None:
@@ -849,12 +876,13 @@ class Engine:
             row["peak"] = net if row["peak"] is None else max(row["peak"], net)
             if net >= RULE["lock_min_percent"]:
                 row["armed"] = True
-            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"])) or (late and net > 0)):
+            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"]))
+                    or (late and (net > 0 or RULE["close_flat"]))):
                 self._shadow_close(symbol, net)
 
     def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream",
              bid: float | None = None) -> dict[str, Any]:
-        size = self.state.nav_realized / RULE["slots"]
+        size = self.state.nav_realized / RULE["slots"] * size_weight(spread_bps)
         shares = size / (ask * (1 + FEE_SIDE))
         member = self.members[symbol]
         # marked at the bid of its own quote until the first exit check: a buy no check reaches before the close (the last
@@ -938,12 +966,19 @@ class Engine:
             reason = "lock"
         elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
             reason = "t30_positive"
+        elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and RULE["close_flat"]:
+            reason = "t30_flat"  # the flat close: a negative position sells too, nothing sleeps
         if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
             # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at the
             # same level, else Massive decides at the next check. A confirmed sale is booked at the feed's quoted bid,
-            # never at an estimate (Codex 6525240030 P2-1)
-            self.exit_sources["unconfirmed"] += 1
-            return None
+            # never at an estimate (Codex 6525240030 P2-1). Under a flat close the window's own sale still stands on any
+            # fresh trade: an unconfirmed stop, lock or positive never keeps a position past the close (pre-review of f3db006c)
+            late = moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM
+            if late and RULE["close_flat"] and trade_confirms(position, market, moment, "t30_flat"):
+                reason = "t30_flat"
+            else:
+                self.exit_sources["unconfirmed"] += 1
+                return None
         return self._sell(position, bid, net, reason, moment) if reason else None
 
     def _sell(self, position: Position, bid: float, net: float, reason: str, now: datetime) -> dict[str, Any]:
@@ -963,6 +998,13 @@ class Engine:
         return fill
 
     def close_session(self) -> None:
+        if RULE["close_flat"]:
+            # a flat close carries nothing: a position no check could mark in the last 30 s (no usable quote) is sold at
+            # its last mark at the close, as the lab's flat cell books it (pre-review of f3db006c P2-2)
+            close = datetime.combine(self.day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)  # as every fill, in UTC
+            for position in list(self.state.positions.values()):
+                if position.last_mark is not None:
+                    self._sell(position, position.last_mark, position.net_percent(position.last_mark), "t30_flat", close)
         for symbol, row in list(self.state.shadow.items()):  # the shadows never carry: closed at their last mark
             if row.get("last_net") is None:
                 self.state.shadow.pop(symbol)
@@ -1007,7 +1049,8 @@ class Engine:
 
 
 def r2d2_lab_live_reason(reason: str) -> str:
-    return {"lock": "trava de lucro", "hard_stop": "stop", "t30_positive": "positiva nos últimos 30 s"}.get(reason, reason)
+    return {"lock": "trava de lucro", "hard_stop": "stop", "t30_positive": "positiva nos últimos 30 s",
+            "t30_flat": "zerada no fechamento"}.get(reason, reason)
 
 
 def _rounded(key: str, value: Any) -> Any:
@@ -1034,14 +1077,15 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 4 from 02/11/2026 (owner, 30/10): entries until the close; version 3 (30/10) the stop at -0.4% and the step
-    # lock from +0.10%; version 2 (29/10 afternoon) the lock trailing the peak by 0.05, version 1 before it
+    # version 5 from 02/11/2026 (owner, 30/10): the close mode and the size rule in the rule (their values in force: no
+    # change of behaviour by themselves); version 4 entries until the close; version 3 (30/10) the stop at -0.4% and the
+    # step lock from +0.10%; version 2 (29/10 afternoon) the lock trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 4, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 5, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat()},
         "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
         "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026); entries "
-        "until the close (owner 30/10/2026)")
+        "until the close (owner 30/10/2026); the close mode and the size rule as parameters (owner 30/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
@@ -1164,6 +1208,8 @@ def trade_confirms(position: Position, market: "MarketView", moment: datetime, r
         return net <= -RULE["stop_percent"]
     if reason == "lock":
         return net <= lock_floor(position.peak_percent if position.peak_percent is not None else RULE["lock_min_percent"])
+    if reason == "t30_flat":
+        return True  # the flat close sells whatever the sign: a fresh last trade is the confirmation
     return net > 0
 
 
