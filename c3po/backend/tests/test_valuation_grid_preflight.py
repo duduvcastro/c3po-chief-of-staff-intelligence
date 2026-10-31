@@ -108,8 +108,8 @@ def _run(monkeypatch, db, sections):
 
 
 def _oracle(db, sections):
-    """The expected totals, independently: the grid's own outcome on the store filtered at lo, at hi and at EVERY write
-    instant of the store between them (a superset of the module's cuts: between two writes nothing changes)."""
+    """The expected totals, independently: the grid's own outcome on the store filtered at each cut — lo, hi, and for the
+    scan EVERY write instant of the store between them (a superset of the module's cuts: between two writes nothing moves)."""
     order = sorted(range(len(sections)), key=lambda i: sections[i]["written"])
     lows = {}
     for rank, index in enumerate(order):
@@ -118,33 +118,37 @@ def _oracle(db, sections):
         lows[index] = max(hi - preflight.WINDOW, previous) if previous is not None else hi - preflight.WINDOW
     instants = sorted({row["first_seen_at"] for row in db._statement_filings + db._statement_vintages})  # type: ignore[attr-defined]
     totals = {}
-    for basis in ("now", "at_rev3", "at_rev3_hi", "at_rev3_lo"):
+    for basis in ("now", "cut_hi", "cut_lo"):
         counts: Counter[str] = Counter()
         refused, uncertain, deviating = [], [], []
         for index, section in enumerate(sections):
-            lo, hi = lows[index], section["written"]
-            if basis == "now":
-                results = grid_like(_filtered(db, None), section)
-            elif basis == "at_rev3_hi":
-                results = grid_like(_filtered(db, hi), section)
-            elif basis == "at_rev3_lo":
-                results = grid_like(_filtered(db, lo), section)
-            else:
-                at = {cut: grid_like(_filtered(db, cut), section) for cut in [lo, hi] + [i for i in instants if lo < i < hi]}
-                results = []
-                for position, (_, expected) in enumerate(section["names"]):
-                    seen = [at[cut][position] for cut in at]
-                    good = [(r == "match") if expected is not None else (r == "skipped:rev3_neither") for r in seen]
-                    results.append(seen[0] if all(good) else "window" if any(good) else at[hi][position])
+            cut = {"now": None, "cut_hi": section["written"], "cut_lo": lows[index]}[basis]
+            results = grid_like(_filtered(db, cut), section)
             counts.update(results)
             label = "%s %s" % (section["market"], section["session"])
             if any(r.startswith("refused:") for r in results):
                 refused.append(label)
-            elif any(r in ("window", "ambiguous_map") for r in results):
+            elif "ambiguous_map" in results:
                 uncertain.append(label)
             elif "skipped:rev3_read_it" in results:
                 deviating.append(label)
         totals[basis] = {"refused": refused, "uncertain": uncertain, "deviating": deviating, "names": dict(sorted(counts.items()))}
+    counts = Counter()
+    no_cut, some_cut = [], []
+    for index, section in enumerate(sections):
+        lo, hi = lows[index], section["written"]
+        at = [grid_like(_filtered(db, cut), section) for cut in [lo, hi] + [i for i in instants if lo < i < hi]]
+        results = []
+        for position, (_, expected) in enumerate(section["names"]):
+            good = [(r[position] == "match") if expected is not None else (r[position] == "skipped:rev3_neither") for r in at]
+            results.append("every_cut" if all(good) else "some_cut" if any(good) else "no_cut")
+        counts.update(results)
+        label = "%s %s" % (section["market"], section["session"])
+        if "no_cut" in results:
+            no_cut.append(label)
+        elif "some_cut" in results:
+            some_cut.append(label)
+    totals["cut_scan"] = {"no_cut": no_cut, "some_cut": some_cut, "names": dict(sorted(counts.items()))}
     return totals
 
 
@@ -193,9 +197,11 @@ def test_the_preflight_agrees_with_the_grids_own_read_of_the_store_at_each_cut(f
         sections.append({"market": "NASDAQ", "session": f"2026-{i + 1:02d}-01", "as_of": as_of, "written": written, "names": names})
     result = _run(monkeypatch, db, copy.deepcopy(sections))
     expected = _oracle(db, sections)
-    for basis in ("now", "at_rev3", "at_rev3_hi", "at_rev3_lo"):
+    for basis in ("now", "cut_hi", "cut_lo"):
         got = {key: result[basis][key] for key in ("refused", "uncertain", "deviating", "names")}
         assert got == expected[basis], (basis, got, expected[basis])
+    got = {key: result["cut_scan"][key] for key in ("no_cut", "some_cut", "names")}
+    assert got == expected["cut_scan"], (got, expected["cut_scan"])
 
 
 def test_a_fact_of_another_source_covers_the_issuer_as_the_grid_does(front, monkeypatch) -> None:
@@ -209,9 +215,9 @@ def test_a_fact_of_another_source_covers_the_issuer_as_the_grid_does(front, monk
     assert _run(monkeypatch, db, [section])["now"]["names"] == {"match": 1}
 
 
-def test_rows_written_inside_rev3s_compute_window_are_a_window_never_a_refusal(front, monkeypatch) -> None:
-    """Pre-review of 83d351d1 (P1): rev3 read before it persisted; a row written between the two (or a transaction that
-    began before the persistence) is inside the hi cut only: "window", while the one-cut rule at hi refuses."""
+def test_rows_written_inside_rev3s_compute_window_leave_a_cut_inside_it_that_reproduces(front, monkeypatch) -> None:
+    """Pre-review of 83d351d1 (P1): rev3 read before it persisted; a row written between the two is inside the hi cut
+    only: the rule at hi refuses, the scan finds "some_cut" (a cut inside the window reproduces)."""
     db = _db()
     read = WRITTEN - timedelta(minutes=12)  # rev3 read the issuer 12 min before it persisted the section
     _add(front, db, issuer="1", doc="A-1", symbols=["AAA"], accepted=T - timedelta(days=60), written=read - timedelta(days=3),
@@ -223,14 +229,13 @@ def test_rows_written_inside_rev3s_compute_window_are_a_window_never_a_refusal(f
     section = {"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN,
                "names": [("AAA", _reference(db, "AAA", read)), ("BBB", _reference(db, "BBB", read))]}
     result = _run(monkeypatch, db, [section])
-    assert result["at_rev3"]["refused"] == [] and result["at_rev3"]["uncertain"] == ["NASDAQ 2026-06-29"]
-    assert result["at_rev3"]["names"] == {"window": 2}
-    assert result["at_rev3_hi"]["refused"] == ["NASDAQ 2026-06-29"] and result["at_rev3_lo"]["stable_sections"] == 1
+    assert result["cut_scan"]["names"] == {"some_cut": 2} and result["cut_scan"]["some_cut"] == ["NASDAQ 2026-06-29"]
+    assert result["cut_hi"]["refused"] == ["NASDAQ 2026-06-29"] and result["cut_lo"]["stable_sections"] == 1
     assert result["now"]["refused"] == ["NASDAQ 2026-06-29"]  # the grid's read refuses
 
 
-def test_two_writes_straddling_rev3s_read_are_a_window_the_read_instant_reproduces(front, monkeypatch) -> None:
-    """Pre-review of 07f644ea (P1): both ends of the bracket refuse (with the same keys), a cut between them reproduces."""
+def test_two_writes_straddling_rev3s_read_leave_a_cut_between_them(front, monkeypatch) -> None:
+    """Pre-review of 07f644ea (P1): both ends of the window refuse (with the same keys), a cut between them reproduces."""
     db = _db()
     read = WRITTEN - timedelta(minutes=8)
     _add(front, db, issuer="1", doc="X-0", symbols=["XXX"], accepted=T - timedelta(days=200), written=read - timedelta(days=3), concepts=CONCEPTS[:2])
@@ -239,20 +244,20 @@ def test_two_writes_straddling_rev3s_read_are_a_window_the_read_instant_reproduc
     rev3 = _reference(db, "XXX", read)
     assert _reference(db, "XXX", WRITTEN - preflight.WINDOW) != rev3 and _reference(db, "XXX", WRITTEN) != rev3
     result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [("XXX", rev3)]}])
-    assert result["at_rev3"]["names"] == {"window": 1} and result["at_rev3"]["refused"] == []
-    assert result["at_rev3_hi"]["refused_sections"] == 1 and result["at_rev3_lo"]["refused_sections"] == 1
+    assert result["cut_scan"]["names"] == {"some_cut": 1} and result["cut_scan"]["no_cut"] == []
+    assert result["cut_hi"]["refused_sections"] == 1 and result["cut_lo"]["refused_sections"] == 1
 
 
-def test_a_refusal_no_cut_can_fix_stays_a_refusal(front, monkeypatch) -> None:
-    """Pre-review of 07f644ea (P1): rev3's reference matches the store at no instant and a row inside the bracket changes
-    other keys at hi: the labels differ between the ends, yet no cut reproduces — a refusal, never a window."""
+def test_a_reference_no_cut_reproduces_is_no_cut(front, monkeypatch) -> None:
+    """Pre-review of 07f644ea (P1): rev3's reference matches the store at no cut and a row inside the window changes other
+    keys at hi: the ends differ, yet no cut reproduces — "no_cut", never "some_cut"."""
     db = _db()
     read = WRITTEN - timedelta(minutes=8)
     _add(front, db, issuer="1", doc="D-0", symbols=["DDD"], accepted=T - timedelta(days=200), written=read - timedelta(days=3), concepts=CONCEPTS[:2])
     _add(front, db, issuer="1", doc="D-1", symbols=["DDD"], accepted=T - timedelta(days=50), written=read + timedelta(minutes=3), concepts=CONCEPTS[:2])
     rev3 = dict(_reference(db, "DDD", read), statements_sha256="f" * 64)
     result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [("DDD", rev3)]}])
-    assert result["at_rev3"]["refused"] == ["NASDAQ 2026-06-29"] and result["at_rev3"]["uncertain"] == []
+    assert result["cut_scan"]["no_cut"] == ["NASDAQ 2026-06-29"] and result["cut_scan"]["some_cut"] == []
 
 
 READ = WRITTEN - timedelta(minutes=8)  # rev3's read, inside [lo = hi - WINDOW, hi]
@@ -261,7 +266,7 @@ OLD = READ - timedelta(days=3)
 
 def _verdict(monkeypatch, db, symbol, rev3):
     section = {"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [(symbol, rev3)]}
-    return _run(monkeypatch, db, [section])["at_rev3"]["names"]
+    return _run(monkeypatch, db, [section])["cut_scan"]["names"]
 
 
 def test_the_scan_holds_a_fact_only_write_inside_the_window(front, monkeypatch) -> None:
@@ -270,7 +275,7 @@ def test_the_scan_holds_a_fact_only_write_inside_the_window(front, monkeypatch) 
     _add(front, db, issuer="1", doc="A-0", symbols=["AAA"], accepted=T - timedelta(days=200), written=OLD, concepts=CONCEPTS[:2])
     _add(front, db, issuer="1", doc="A-1", symbols=[], accepted=T - timedelta(days=100), written=READ - timedelta(minutes=3), concepts=CONCEPTS[:2])
     _add(front, db, issuer="1", doc="A-2", symbols=[], accepted=T - timedelta(days=50), written=READ + timedelta(minutes=3), concepts=CONCEPTS[:2])
-    assert _verdict(monkeypatch, db, "AAA", _reference(db, "AAA", READ)) == {"window": 1}
+    assert _verdict(monkeypatch, db, "AAA", _reference(db, "AAA", READ)) == {"some_cut": 1}
 
 
 def test_the_scan_holds_a_filing_only_remap_inside_the_window(front, monkeypatch) -> None:
@@ -279,7 +284,7 @@ def test_the_scan_holds_a_filing_only_remap_inside_the_window(front, monkeypatch
     _add(front, db, issuer="2", doc="B-9", symbols=[], accepted=T - timedelta(days=150), written=OLD, concepts=CONCEPTS[:1])
     _add(front, db, issuer="2", doc="B-1", symbols=["BBB"], accepted=T - timedelta(days=20), written=READ - timedelta(minutes=3), concepts=[])
     _add(front, db, issuer="1", doc="B-2", symbols=["BBB"], accepted=T - timedelta(days=10), written=READ + timedelta(minutes=3), concepts=[])
-    assert _verdict(monkeypatch, db, "BBB", _reference(db, "BBB", READ)) == {"window": 1}
+    assert _verdict(monkeypatch, db, "BBB", _reference(db, "BBB", READ)) == {"some_cut": 1}
 
 
 def test_the_scan_holds_a_fact_of_the_issuer_mapped_before_a_remap(front, monkeypatch) -> None:
@@ -288,7 +293,7 @@ def test_the_scan_holds_a_fact_of_the_issuer_mapped_before_a_remap(front, monkey
     _add(front, db, issuer="2", doc="C-9", symbols=[], accepted=T - timedelta(days=150), written=OLD, concepts=CONCEPTS[:1])
     _add(front, db, issuer="1", doc="C-1", symbols=[], accepted=T - timedelta(days=100), written=READ - timedelta(minutes=3), concepts=CONCEPTS[:2])
     _add(front, db, issuer="2", doc="C-2", symbols=["CCC"], accepted=T - timedelta(days=10), written=READ + timedelta(minutes=3), concepts=[])
-    assert _verdict(monkeypatch, db, "CCC", _reference(db, "CCC", READ)) == {"window": 1}
+    assert _verdict(monkeypatch, db, "CCC", _reference(db, "CCC", READ)) == {"some_cut": 1}
 
 
 def test_an_ambiguous_map_is_counted_and_makes_the_section_uncertain(front, monkeypatch) -> None:
@@ -298,8 +303,23 @@ def test_an_ambiguous_map_is_counted_and_makes_the_section_uncertain(front, monk
     _add(front, db, issuer="2", doc="M-2", symbols=["MMM"], accepted=accepted, written=WRITTEN - timedelta(days=3), concepts=["us-gaap:Revenues"])
     result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN,
                                      "names": [("MMM", {"facts": 1})]}])
-    for basis in ("now", "at_rev3", "at_rev3_hi"):
+    for basis in ("now", "cut_hi", "cut_lo"):
         assert result[basis]["names"] == {"ambiguous_map": 1} and result[basis]["uncertain"] == ["NASDAQ 2026-06-29"]
+    assert result["cut_scan"]["names"] == {"no_cut": 1}  # an ambiguous map reproduces nothing
+
+
+def test_a_transaction_that_began_before_the_cut_is_no_cut_never_a_proven_refusal(front, monkeypatch) -> None:
+    """Codex 6544583420 (P2): an ingestion begins at lo - 1 s (its first_seen_at), rev3 reads at lo + 1 s without seeing it,
+    the ingestion commits at lo + 2 s. Every cut at or after lo holds it: the rules refuse (they would not reproduce rev3)
+    and the scan says "no_cut" — what rev3 saw is unknown, so nothing calls it a historical refusal."""
+    db = _db()
+    lo = WRITTEN - preflight.WINDOW
+    _add(front, db, issuer="1", doc="T-0", symbols=["TTT"], accepted=T - timedelta(days=200), written=lo - timedelta(days=2), concepts=CONCEPTS[:2])
+    rev3 = _reference(db, "TTT", lo - timedelta(seconds=2))  # what rev3 saw: one document
+    _add(front, db, issuer="1", doc="T-1", symbols=["TTT"], accepted=T - timedelta(days=50), written=lo - timedelta(seconds=1), concepts=CONCEPTS[:2])
+    result = _run(monkeypatch, db, [{"market": "NASDAQ", "session": "2026-06-29", "as_of": T, "written": WRITTEN, "names": [("TTT", rev3)]}])
+    assert result["cut_hi"]["refused_sections"] == 1 and result["cut_lo"]["refused_sections"] == 1
+    assert result["cut_scan"]["names"] == {"no_cut": 1} and "refused" not in result["cut_scan"]
 
 
 def test_a_section_whose_rev3_snapshots_cannot_be_read_is_counted_and_the_others_go_on(front, monkeypatch) -> None:
@@ -334,7 +354,7 @@ def test_section_plan_and_run_agree_with_compute_grid_section_on_its_own_fixture
                  "run_key": snap["inputs"]["run_key"]}) for snap in (v3, served_snapshot)]
     monkeypatch.setattr(preflight.exe, "_reference_pairs", lambda rev3: [(entries[0], entries[1])])
     result = preflight.run(database, {})
-    assert result["now"]["stable_sections"] == 1 and result["at_rev3"]["stable_sections"] == 1, result
+    assert result["now"]["stable_sections"] == 1 and result["cut_hi"]["stable_sections"] == 1, result
     store = StatementVintageStore(database)
     original = next(row for row in database._statement_vintages if row["concept"] == "us-gaap:Revenues")  # type: ignore[attr-defined]
     store.insert_vintages("US", original["issuer_key"], [dict(original, doc_id="later-comparative", value=1e9,
@@ -345,7 +365,8 @@ def test_section_plan_and_run_agree_with_compute_grid_section_on_its_own_fixture
         if row["doc_id"] == "later-comparative":
             row["first_seen_at"] = NOW + timedelta(days=1)  # written after the V3 sibling persisted
     result = preflight.run(database, {})
-    assert result["now"]["refused_sections"] == 1 and result["at_rev3"]["stable_sections"] == 1, result
+    assert result["now"]["refused_sections"] == 1 and result["cut_hi"]["stable_sections"] == 1, result
+    assert result["cut_scan"]["every_cut_sections"] == 1
 
 
 def test_the_command_prints_counts_only_and_refuses_an_unsigned_manifest(front, monkeypatch, capsys) -> None:

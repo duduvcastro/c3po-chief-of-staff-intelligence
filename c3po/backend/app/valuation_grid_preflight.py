@@ -6,24 +6,28 @@ reference (``valuation_pit_rerun.as_filed_payload`` over the facts accepted at o
 for good: a fact accepted before its T was written after rev3 read the store, and the grid cannot complete. Codex
 (6537212289): excluding sections is NO-GO; a new epoch with its own protocol may change the statements basis.
 
-This counts, for every section of the rev3 manifest (stdin), whether each reference recomputes to rev3's:
-  now       the store as it is: the grid's own read (``AsFiledReader.coverage``/``facts``, the grid's comparison);
-  at_rev3   the store as it stood when rev3 read it for that section — the facts and filings whose ``first_seen_at``
-            (the database's ``now()`` at insert: the inserting transaction's START; both tables only take inserts) is at
-            or before a cut. rev3 read between its previous section's persistence and this one's (its runs were
-            serialised): "hi" is the V3 snapshot's ``published_at``, "lo" the later of the previous section's
-            ``published_at`` and ``published_at`` minus WINDOW, and every name is evaluated at lo, at hi and at every
-            write instant in between of its filings and its issuers' facts. A name every cut reproduces (rev3's reference
-            matched, or neither read) keeps that outcome; one some cut reproduces is "window" (a row written during rev3's
-            own compute decides it); one no cut reproduces keeps its outcome at hi — a refusal no frozen cut can fix;
-  at_rev3_hi, at_rev3_lo   the one cut each (the concrete rule a new epoch would adopt: ``first_seen_at <= published_at``).
-Per admitted Stock (a catalogue Stock in rev3's screen) and basis: "match"; "refused:<keys>" (covered, the reference
-differs: the grid refuses the section); "refused:rev3_reference_missing" (covered, rev3 has no reference both siblings
-agree on: the grid refuses); "skipped:rev3_read_it" (not covered, but rev3 read it: the grid skips it, the inputs deviate
-from rev3's); "skipped:rev3_neither"; "ambiguous_map" (two filings of the same acceptance map the symbol to different
-issuers: the grid's SQL picks one arbitrarily); "window" (at_rev3 only). A section is refused, else uncertain (a window
-or an ambiguous map), else deviating, else stable. The section checks that do not read the store (the siblings' pairing, the catalogue's hash) are
-the grid's, not repeated here; a section whose rev3 snapshots cannot be read is "unreadable".
+This counts, for every section of the rev3 manifest (stdin), whether each reference recomputes to rev3's under COUNTERFACTUAL
+cuts of the store — the facts and filings whose ``first_seen_at`` is at or before a cut (both tables only take inserts).
+``first_seen_at`` is the database's ``now()`` at insert: the inserting TRANSACTION'S START, not its commit, so no cut is the
+store a past reader saw (a transaction that began before a read and committed after it has an earlier ``first_seen_at``
+than the read, yet was invisible to it; Codex 6544583420). What rev3 actually read is UNKNOWN here; the cuts are rules a
+new epoch could adopt, and whether each reproduces rev3's references is what the grid would check under that rule:
+  now       no cut: the store as it is, the grid's own read (``AsFiledReader.coverage``/``facts``, its comparison);
+  cut_hi    ``first_seen_at <= published_at`` of the V3 snapshot — the candidate rule of a new epoch;
+  cut_lo    ``first_seen_at <=`` the later of the previous section's ``published_at`` (rev3 ran its sections one after the
+            other) and ``published_at`` minus WINDOW;
+  cut_scan  every name at lo, at hi and at every write instant in between of its symbol's filings and its issuers' facts:
+            "every_cut" (each cut reproduces what rev3 recorded: its reference matched, or neither read), "some_cut" (a
+            rule placing the cut inside the window could reproduce it), "no_cut" (no ``first_seen_at`` cut there does — a
+            fact, a remap, or a visibility no cut represents: not a proven historical refusal).
+Per admitted Stock (a catalogue Stock in rev3's screen) under now, cut_hi and cut_lo: "match"; "refused:<keys>" (covered,
+the reference differs: the grid refuses the section); "refused:rev3_reference_missing" (covered, rev3 has no reference
+both siblings agree on: the grid refuses); "skipped:rev3_read_it" (not covered, but rev3 read it: the grid skips it, the
+inputs deviate from rev3's); "skipped:rev3_neither"; "ambiguous_map" (two filings of the same acceptance map the symbol to
+different issuers: the grid's SQL picks one arbitrarily). A section is refused, else uncertain (an ambiguous map), else
+deviating, else stable; under cut_scan it is no_cut, else some_cut, else every_cut. The section checks that do not read
+the store (the siblings' pairing, the catalogue's hash) are the grid's, not repeated here; a section whose rev3 snapshots
+cannot be read is "unreadable".
 
 Counts only (the repository is public): no symbol, issuer, value or error text; sections by their market and session.
 
@@ -46,9 +50,8 @@ from . import valuation_pit_rerun as pit
 from . import valuation_pit_served as served
 from .valuation_ensemble_driver import read_rev3
 
-BASES = ("now", "at_rev3", "at_rev3_hi", "at_rev3_lo")
-WINDOW = timedelta(minutes=60)  # rev3 read each section's facts within this before persisting it (~300 s a section): a lo
-# too early only widens a window, never a refusal
+BASES = ("now", "cut_hi", "cut_lo")
+WINDOW = timedelta(minutes=60)  # rev3 read each section's facts within this before persisting it (~300 s a section)
 _CODE = re.compile(r"[a-z0-9_]{1,80}")
 AMBIGUOUS = object()
 
@@ -231,13 +234,10 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
             return "skipped:rev3_read_it" if sections[index]["names"][position][1] is not None else "skipped:rev3_neither"
         return found
 
-    def bracketed(index: int, position: int) -> str:
+    def scanned(index: int, position: int) -> str:
         expected = sections[index]["names"][position][1]
-        results = [result_of(index, position, name) for name in cuts[(index, position)] if name != "now"]
-        consistent = [_consistent(result, expected) for result in results]
-        if all(consistent):
-            return results[0]
-        return "window" if any(consistent) else result_of(index, position, "hi")
+        consistent = [_consistent(result_of(index, position, name), expected) for name in cuts[(index, position)] if name != "now"]
+        return "every_cut" if all(consistent) else "some_cut" if any(consistent) else "no_cut"
 
     codes = Counter(code for _, code in unreadable)
     totals: dict[str, Any] = {"sections": len(sections) + len(unreadable), "names": sum(len(s["names"]) for s in sections),
@@ -248,15 +248,12 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
         counts: Counter[str] = Counter()
         groups: dict[str, list[str]] = {"refused": [], "uncertain": [], "deviating": []}
         for index, section in enumerate(sections):
-            if basis == "at_rev3":
-                results = [bracketed(index, position) for position in range(len(section["names"]))]
-            else:
-                name = {"now": "now", "at_rev3_hi": "hi", "at_rev3_lo": "lo"}[basis]
-                results = [result_of(index, position, name) for position in range(len(section["names"]))]
+            name = {"now": "now", "cut_hi": "hi", "cut_lo": "lo"}[basis]
+            results = [result_of(index, position, name) for position in range(len(section["names"]))]
             counts.update(results)
             if any(result.startswith("refused:") for result in results):
                 groups["refused"].append(_label(section))
-            elif any(result in ("window", "ambiguous_map") for result in results):
+            elif "ambiguous_map" in results:
                 groups["uncertain"].append(_label(section))
             elif "skipped:rev3_read_it" in results:
                 groups["deviating"].append(_label(section))
@@ -265,6 +262,18 @@ def run(database: Any, rev3: Mapping[str, Any]) -> dict[str, Any]:
                          "deviating_sections": len(groups["deviating"]),
                          "first_refused": groups["refused"][0] if groups["refused"] else None, **groups,
                          "unreadable": [label for label, _ in unreadable], "names": dict(sorted(counts.items()))}
+    scan: Counter[str] = Counter()
+    by_scan: dict[str, list[str]] = {"no_cut": [], "some_cut": []}
+    for index, section in enumerate(sections):
+        results = [scanned(index, position) for position in range(len(section["names"]))]
+        scan.update(results)
+        if "no_cut" in results:
+            by_scan["no_cut"].append(_label(section))
+        elif "some_cut" in results:
+            by_scan["some_cut"].append(_label(section))
+    totals["cut_scan"] = {"every_cut_sections": len(sections) - len(by_scan["no_cut"]) - len(by_scan["some_cut"]),
+                          "some_cut_sections": len(by_scan["some_cut"]), "no_cut_sections": len(by_scan["no_cut"]), **by_scan,
+                          "unreadable": [label for label, _ in unreadable], "names": dict(sorted(scan.items()))}
     return totals
 
 
