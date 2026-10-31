@@ -120,28 +120,18 @@ class _Database:
         self._data_sources: dict[str, dict[str, Any]] = {}
 
 
-def test_the_guard_refuses_blocking_ingestions_and_waits_for_an_asfiled_poll() -> None:
+def test_the_guard_refuses_blocking_ingestions_and_never_waits_for_an_asfiled_poll() -> None:
+    """PREREG rev 2 §2: the rev3 rule stays (the nightly worker or a long ingestion refuses); an as-filed poll in flight
+    neither waits nor refuses, because each section reads the store cut at its V3 snapshot's published_at."""
     database = _Database()
-    clock = lambda: NOW  # noqa: E731
-    ticks = {"t": 0.0}
-    sleeps: list[float] = []
-
-    def sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-        ticks["t"] += seconds
-        if len(sleeps) == 3:
-            database._ingestion_runs["p"]["status"] = "succeeded"
-    guard = driver.operational_guard(database, clock=clock, blocking=lambda db, now: 0, sleep=sleep, monotonic=lambda: ticks["t"])
-    assert guard() is None and sleeps == []
     database._ingestion_runs["p"] = {"status": "running", "source_code": "sec_asfiled", "started_at": NOW - timedelta(minutes=1)}
-    assert guard() is None and len(sleeps) == 3  # waited for the poll to end
-    database._ingestion_runs["p"] = {"status": "running", "source_code": "sec_asfiled", "started_at": NOW - timedelta(minutes=1)}
-    with pytest.raises(ValueError, match="asfiled_poll_running"):
-        driver.operational_guard(database, clock=clock, blocking=lambda db, now: 0, sleep=sleep, monotonic=lambda: ticks["t"], wait_seconds=0)()
-    database._ingestion_runs["p"]["started_at"] = NOW - timedelta(hours=13)  # outside the window: not a poll in flight
-    assert driver.operational_guard(database, clock=clock, blocking=lambda db, now: 0, sleep=sleep, monotonic=lambda: ticks["t"], wait_seconds=0)() is None
+    assert driver.operational_guard(database, clock=lambda: NOW, blocking=lambda db, now: 0)() is None
+    assert driver.operational_guard(database, clock=lambda: NOW, blocking=driver.blocking_ingestions)() is None
+    database._ingestion_runs["p"]["started_at"] = NOW - timedelta(minutes=31)  # a long ingestion is the rev3 rule's
     with pytest.raises(ValueError, match="blocking_ingestion"):
-        driver.operational_guard(database, clock=clock, blocking=lambda db, now: 1)()
+        driver.operational_guard(database, clock=lambda: NOW, blocking=driver.blocking_ingestions)()
+    with pytest.raises(ValueError, match="blocking_ingestion"):
+        driver.operational_guard(database, clock=lambda: NOW, blocking=lambda db, now: 1)()
 
 
 def test_a_refusal_prints_a_code_never_free_text(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -295,17 +285,12 @@ def test_the_single_look_is_kept_on_the_host(tmp_path: Path) -> None:
         driver.earlier_reading(reports, "c" * 64)
 
 
-def test_a_blocking_ingestion_that_starts_during_the_asfiled_wait_refuses_and_completes_no_section(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_a_blocking_ingestion_refuses_before_any_section_is_completed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     context = fixture(monkeypatch, tmp_path)
     legacy, order_sha, pin_sha = _legacy(tmp_path, context, monkeypatch)
     ops = _Database()
     ops._ingestion_runs["poll"] = {"status": "running", "source_code": "sec_asfiled", "started_at": NOW - timedelta(minutes=1)}
-    state = {"blocking": 0}
-
-    def sleep(_seconds: float) -> None:  # the poll ends while the nightly worker starts
-        ops._ingestion_runs["poll"]["status"] = "succeeded"
-        state["blocking"] = 1
-    guard = driver.operational_guard(ops, clock=lambda: NOW, blocking=lambda db, now: state["blocking"], sleep=sleep, monotonic=lambda: 0.0)
+    guard = driver.operational_guard(ops, clock=lambda: NOW, blocking=lambda db, now: 1)
     with pytest.raises(ValueError, match="blocking_ingestion"):
         driver.run_chunk(context["database"], None, rev3=context["rev3"], order_sha256=order_sha, pin_sha256=pin_sha, binding=context["binding"],
                          max_runs=4, stop_before=NOW + timedelta(minutes=30), legacy_root=legacy, store_root=tmp_path / "store",

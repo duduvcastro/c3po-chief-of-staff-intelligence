@@ -49,10 +49,28 @@ python -m app.valuation_ensemble_executor --inventory --repository-root /path/to
 
 An inventory is **not** an issued instrument pin, an operational driver or an
 authorization to run. The final host/chunk driver must execute the existing
-deployment lock, host running/blocking, timer/window, backfill-paused and
-autopilot-off guards. That driver and the actual scientific workflow must be
+deployment lock, host blocking-ingestion (the rev3 rule), timer/window and
+autopilot-off guards. Since PREREG rev 2 there is no as-filed backfill or poll
+guard: each section reads the store cut at its V3 snapshot's `published_at`
+(`valuation_ensemble_frozen`), so no write made during a chunk enters it. That driver and the actual scientific workflow must be
 reviewed and included in the single instrument pin before the first run. The
 manual inventory workflow must not be represented as a tested host runner.
+
+## The new epoch (PREREG rev 2)
+
+- **Reader:** `valuation_ensemble_frozen.FrozenAsFiledReader`, one per section,
+  cut at the section's write instant (`analysis_snapshots.published_at` of its V3
+  sibling); a tie of the symbol map is `ambiguous`, never broken.
+- **Check:** `check_section_statements` runs before `compute_grid_section` on the
+  same reader (one read of each issuer's facts at T per section). It refuses a
+  sibling divergence, a tie, a name rev3 read that the cut does not cover and a
+  differing reference. `valuation_ensemble_grid.py` is unchanged: the live
+  producer reads it under the owner-signed rev 1 pin.
+- **Readiness, before the pin is signed:** `valuation_ensemble_readiness` (workflow
+  `valuation-ensemble-readiness.yml`, read only) runs the same functions on all
+  534 sections, each issuer's facts read once and sliced at each T, and prints the
+  canonical digest of the deployed checkout's instrument files. The pin receipt
+  cites that run and digest; it is signed only with 534 of 534 sections stable.
 
 ## Before the first grade or label
 

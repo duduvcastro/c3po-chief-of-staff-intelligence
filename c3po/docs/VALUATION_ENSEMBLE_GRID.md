@@ -46,6 +46,15 @@ posterior a `T` não entra no cálculo. Campos adicionais só podem vir dos mesm
 fatos já presentes, sem nova coleta. Seu digest canônico entra na identidade do
 contexto. O executor continua responsável por manter a tabela estável no trecho.
 
+**Época da rev 2 (PREREG §2):** o executor entrega a cada seção o leitor congelado
+(`valuation_ensemble_frozen.FrozenAsFiledReader`), cortado no `published_at` do
+snapshot V3 da seção (o corte de gravação), e roda antes a checagem por nome do
+§2 (`check_section_statements`): pareamento das irmãs, empate do mapa símbolo →
+emissor, nome com referência do rev 3 sem cobertura no corte e a comparação da
+referência. A checagem e esta função leem os mesmos fatos (uma leitura por emissor
+e `T` na seção). Este módulo não muda: o produtor ao vivo
+(`valuation_live_ensemble.py`) o lê sob o pino assinado da rev 1.
+
 Cada nível de preço é `close(D)`; uma falta de fechamento exato recusa o nome.
 Os retornos ajustados do leitor só alimentam beta/proxy e as convenções de
 triagem do rev3. Uma publicação retrospectiva não é renomeada como captura em

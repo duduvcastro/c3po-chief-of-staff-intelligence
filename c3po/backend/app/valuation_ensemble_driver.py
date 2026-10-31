@@ -1,7 +1,7 @@
 """Host driver of the signed ensemble grade (PREREG_VALUATION_ENSEMBLE_PIT_US_V1): ONE bounded chunk, aggregates out.
 
 ``.github/workflows/valuation-ensemble-grid.yml`` runs it inside the running api container, after its own host preflight
-(reboot flags, R2D2/massive services and timers, blocking ingestions, the as-filed backfill paused, disk and memory) and
+(reboot flags, R2D2/massive services and timers, blocking ingestions, disk and memory) and
 under the deployment lock the remote shell holds SHARED for the whole leg. Everything it reads is pinned:
 
 * the owner's order, ``/legacy/c3po/ops/owner-orders/<sha>.json`` (its bytes; ``execute_grade_chunk`` checks its scope);
@@ -59,8 +59,6 @@ MAX_MANIFEST_BYTES = 256 * 1024 * 1024
 PUBLIC_UPPER = frozenset({"PASS", "FAIL", "VOID", "UNMEASURED", "NEGATIVE", "SINGLE", "US", "NASDAQ", "NYSE"})
 MAX_REV3_BYTES = 64 * 1024 * 1024
 MAX_CHECKOUT_BYTES = 1024 * 1024
-ASFILED_SOURCE_CODE = "sec_asfiled"  # the Investor Relations worker's as-filed poll (investor_relations.py)
-ASFILED_WAIT_SECONDS = 180  # a poll in flight is waited for (it lasts seconds); one still running after this refuses
 INGESTION_WINDOW = timedelta(hours=12)
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -261,39 +259,15 @@ def write_manifest(directory: Path, manifest: Mapping[str, Any], *, key: str = "
 
 
 # ------------------------------------------------------------------ the operational guard (before and after each section)
-def asfiled_running(database: Any, now: datetime) -> int:
-    """The as-filed polls (``sec_asfiled``) still ``running`` that started in the last 12 h: a poll writes statement
-    vintages, so no section starts or ends while one is in flight. Read only."""
-    since = utc(now) - INGESTION_WINDOW
-    if not database.database_url:
-        runs = getattr(database, "_ingestion_runs", {})
-        return sum(1 for run in runs.values() if run.get("status") == "running" and run.get("source_code") == ASFILED_SOURCE_CODE
-                   and _started(run) >= since)
-    with database.connection() as connection:
-        row = connection.execute(
-            "SELECT count(*) FROM ingestion_runs run JOIN data_sources source ON source.id = run.source_id "
-            "WHERE run.status = 'running' AND run.started_at >= %s AND source.code = %s", (since, ASFILED_SOURCE_CODE)).fetchone()
-    return int(row[0]) if row else 0
-
-
-def operational_guard(database: Any, *, clock: Callable[[], datetime], blocking: Callable[[Any, datetime], int],
-                      sleep: Callable[[float], None] = time.sleep, monotonic: Callable[[], float] = time.monotonic,
-                      wait_seconds: float = ASFILED_WAIT_SECONDS) -> Callable[[], None]:
+def operational_guard(database: Any, *, clock: Callable[[], datetime], blocking: Callable[[Any, datetime], int]) -> Callable[[], None]:
     """Raises on a blocked or unknown state, returns ``None`` otherwise (the executor's contract): no nightly valuation
-    worker or long ingestion running (the rev3 rule), and no as-filed poll in flight — waited for up to
-    ``wait_seconds`` (a poll lasts seconds), then a refusal. ``None`` only when BOTH are clear in the same pass: after a
-    wait the blocking rule is read again (a nightly worker may start while a poll ends). A query that cannot answer
-    propagates: fail closed."""
+    worker or long ingestion running (the rev3 rule). An as-filed poll in flight is not waited for (PREREG rev 2 §2):
+    each section reads the store cut at its V3 snapshot's ``published_at``, so no write of a poll enters it. A query that
+    cannot answer propagates: fail closed."""
     def guard() -> None:
-        deadline = monotonic() + wait_seconds
-        while True:
-            if blocking(database, clock()):
-                raise ValueError("ensemble_guard_blocking_ingestion")
-            if not asfiled_running(database, clock()):
-                return None
-            if monotonic() >= deadline:
-                raise ValueError("ensemble_guard_asfiled_poll_running")
-            sleep(5.0)
+        if blocking(database, clock()):
+            raise ValueError("ensemble_guard_blocking_ingestion")
+        return None
     return guard
 
 

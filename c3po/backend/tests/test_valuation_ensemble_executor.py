@@ -20,6 +20,7 @@ from app import valuation_ensemble_calendar as calendar
 from app import valuation_ensemble_executor as executor
 from app import valuation_ensemble_grid as grid
 from app import valuation_ensemble_pin as instrument
+from app.valuation_ensemble_frozen import FrozenAsFiledReader
 from app.valuation_ensemble_inputs import canonical_hash
 from app.valuation_ensemble_persistence import FileReceiptStore
 
@@ -111,6 +112,13 @@ def fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         result["payload_sha256"] = canonical_hash(result)
         return result
     monkeypatch.setattr(grid, "compute_grid_section", compute)
+    context["statement_cuts"] = []
+    def check(database: Any, **kw: Any) -> dict[str, int]:  # rev 2 §2 before the section, on the reader it is handed
+        reader = kw["reader"]
+        assert isinstance(reader, FrozenAsFiledReader) and reader.written_until == executor._written_at(kw["v3_snapshot"])
+        context["statement_cuts"].append(reader.written_until)
+        return {"compared": 0, "not_evaluable": 0}
+    monkeypatch.setattr(executor, "check_section_statements", check)
     def prices(entry: Any) -> Any:
         events.append("prices")
         return object()
@@ -312,12 +320,14 @@ def test_inventory_cli_is_inert_and_the_workflow_runs_a_grade_only_behind_its_gu
     inventory = json.dumps(jobs["inventory"])
     assert "--inventory" in inventory and "secrets." not in inventory and "ssh " not in inventory
     # the grade job: the approved phrase, main only, the order/pin/commit and comment checks, the rev3 digest, the window,
-    # the host preflight (backfill paused, blocking ingestions, R2D2 timers, reboot), the SHARED deployment lock, a read-only
-    # database session, the driver with the rev3 manifest on stdin, aggregates only, the cleanup of this run's process
+    # the host preflight (blocking ingestions, R2D2 timers, reboot), the SHARED deployment lock, a read-only database session,
+    # the driver with the rev3 manifest on stdin, aggregates only, the cleanup of this run's process; no as-filed backfill
+    # guard (PREREG rev 2 §2: each section reads the store cut at its V3 snapshot's published_at)
     grid = json.dumps(jobs["grid"])
+    assert "BACKFILL_ISSUERS_PER_POLL" not in text and "investor-relations-worker" not in text and "exit 36" not in text
     for fragment in ("RUN VALUATION ENSEMBLE GRID", "refs/heads/main", "c3po/ops/owner-orders/", "c3po/ops/valuation-ensemble/",
                      "merge-base --is-ancestor", "VALUATION-ENSEMBLE-INSTRUMENT-{role}", "the whole body, nothing else", "two different comments", instrument.REV3_MANIFEST_SHA256,
-                     "inside the US session or the nightly window", "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL", "exit 36",
+                     "inside the US session or the nightly window",
                      "--host-check", "exit 21", "r2d2*", "reboot.pending", "flock -s -n 9", "default_transaction_read_only=on",
                      "-m app.valuation_ensemble_driver", "< \\\"$rev3_file\\\"", "unexpected lines (counted, not printed)",
                      "valuation_pit_run_token=$RUN_TOKEN", "exit 39", "author_association", "verify-failed", "/var/lib/docker",

@@ -15,7 +15,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from .valuation_ensemble_frozen import FrozenAsFiledReader, FrozenIndex
+from .valuation_ensemble_frozen import FrozenAsFiledReader, FrozenIndex, check_section_statements
 from .valuation_ensemble_inputs import canonical_hash, utc
 from .valuation_ensemble_persistence import FileReceiptStore
 from .valuation_ensemble_pin import (InstrumentBinding, MANIFEST_SCHEMA, PREREG_COMMIT,
@@ -277,6 +277,8 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
         prices = prices_for(v3_ref)
         active()
         vintages = FrozenAsFiledReader(database, written_until=_written_at(v3_snapshot), index=frozen_index)
+        check_section_statements(database, market=str(v3_ref["market"]), as_of=_instant(v3_ref["as_of"]), v3_snapshot=v3_snapshot,
+                                 served_snapshot=served_snapshot, reader=vintages, before_read=active)
         section = compute_grid_section(database, market=str(v3_ref["market"]),
             as_of=_instant(v3_ref["as_of"]), prices=prices, v3_snapshot=v3_snapshot,
             served_snapshot=served_snapshot, implementation=file_hashes, seed=20261026, vintages=vintages,
