@@ -1,6 +1,6 @@
 # Pré-registro — Ensemble de valuation, backtest ponto-no-tempo US (`PREREG_VALUATION_ENSEMBLE_PIT_US_V1`, rev 2)
 
-**Estado:** rascunho **rev 2**, 31/10/2026 (Fable). A rev 1 foi assinada pelo dono em 27/10/2026 às 09:59 BRT (recibo 6442500464; bytes `712b4c171c4d059a31156eba8f7a9624f1195083309471e89e0519271d2e5471`, commit `8b02ba0fbf715a9abb421eea6f00238aad5ef38d`), e a grade dela não pode terminar (§8). Nenhum relatório não-`VOID` leu rótulos, então esta revisão é permitida. Ela fica vinculante como a rev 1: o `sha256` dos bytes deste arquivo, no commit de `main` que a introduz, é publicado num recibo no canal técnico, com a **assinatura do dono**, **antes da primeira corrida da nova época**. Depois do hash, qualquer mudança é uma nova revisão, permitida só enquanto nenhum relatório não-`VOID` tiver lido rótulos.
+**Estado:** rascunho **rev 2**, 31/10/2026 (Fable). A rev 1 foi assinada pelo dono em 27/10/2026 às 09:59 BRT (recibo 6442500464; bytes `712b4c171c4d059a31156eba8f7a9624f1195083309471e89e0519271d2e5471`, commit `8b02ba0fbf715a9abb421eea6f00238aad5ef38d`), e a grade dela não pode terminar (§8). Nenhum relatório não-`VOID` leu rótulos: a leitura exige o manifesto completo do ensemble (§4, `ensemble_manifest_not_complete`), a grade da rev 1 nunca o completou e o preflight da PR #527 não lê rótulos. Por isso esta revisão é permitida. Ela fica vinculante como a rev 1: o `sha256` dos bytes deste arquivo, no commit de `main` que a introduz, é publicado num recibo no canal técnico, com a **assinatura do dono**, **antes da primeira corrida da nova época**. Depois do hash, qualquer mudança é uma nova revisão, permitida só enquanto nenhum relatório não-`VOID` tiver lido rótulos.
 
 **Contexto (dono, 26/10/2026):**
 - A grade do TP servido reprovou (`served_internal_tp` FAIL: IC executável 0,0167 em `h = 21`).
@@ -47,17 +47,36 @@
 - **Mesmo corte e mesmas fontes:** o mesmo corte transversal triado, o mesmo catálogo pinado, a mesma safra de preços, as mesmas demonstrações e a mesma curva do Tesouro **do manifesto do rev 3** (`manifest 73a81bce…`, passada final 40206452777).
 - **Grade:** o ensemble é calculado nos **mesmos `T`** desse manifesto. Um `T` sem as duas corridas do rev 3 (TP servido e V3) não entra.
 - **Sem republicação:** este documento não reabre a grade do rev 3 nem republica preços.
-- **Demonstrações congeladas por seção (rev 2):** cada seção lê o store as-filed cortado no instante em que o rev 3 persistiu a sua corrida V3 irmã.
-  - **O corte:** só as linhas de `statement_vintages` e de `statement_filings` com `first_seen_at ≤ published_at` do snapshot V3 da seção. As duas tabelas só aceitam inserção. `first_seen_at` é o `now()` do banco no **início** da transação que inseriu a linha.
-  - **Sobre esse store cortado,** valem as regras do leitor do rev 3:
-    - o mapa símbolo → emissor, com a aceitação mais recente entre os documentos gravados até o corte;
-    - a cobertura: um emissor com algum fato gravado até o corte;
-    - os fatos aceitos até `T` e gravados até o corte.
-  - **Prova:** é uma regra contrafactual e **não reconstrói** o que o rev 3 leu, que segue **desconhecido**. Mesmo assim, o preflight só de leitura (PR #527, run 41232203835, 31/10/2026) mostrou que ela reproduz as referências do rev 3:
-    - nas **534 seções** do manifesto e nas **135.276** checagens por nome;
-    - a leitura sem corte reproduz 518; as 16 seções mais recentes, NASDAQ e NYSE de 2026-07-29 a 2026-09-17, recusam.
-  - **A comparação continua exigida em toda seção:** a referência do rev 3 contra o recálculo sobre o corte. Uma divergência recusa a seção (`statements_table_not_stable`) e nunca é aceita.
-- **Ingestão as-filed (rev 2):** pode seguir ligada durante as corridas, porque uma escrita posterior ao corte de uma seção não entra nela. A guarda do workflow que exige o backfill pausado permanece como defesa.
+- **Demonstrações congeladas por seção (rev 2):** cada seção lê o store as-filed cortado no instante em que o rev 3 persistiu a sua corrida V3 irmã. Esse é o **corte de gravação** da seção.
+  - **O instante:** a coluna `published_at` de `analysis_snapshots` no snapshot V3 cujo `cycle_id` o manifesto do rev 3 lista para a seção.
+    - A coluna é NOT NULL. Um instante ausente, ilegível ou sem fuso recusa a seção (`ensemble_statements_cut_missing`).
+    - Uma reexecução idempotente do rev 3 mantém o instante da primeira persistência, o mesmo das referências gravadas.
+  - **O corte de gravação:** só entram as linhas de `statement_vintages` e de `statement_filings` com `first_seen_at` menor ou igual a esse instante.
+    - As duas tabelas só aceitam inserção, por gatilho.
+    - `first_seen_at` é o `now()` do banco no **início** da transação que inseriu a linha. Isso vale porque o único escritor, `statement_vintages.py` (no pino), usa o valor padrão da coluna; o esquema não o impõe.
+  - **Sobre o store cortado,** valem as regras do leitor do rev 3:
+    - o mapa símbolo → emissor, pela aceitação mais recente entre os documentos gravados até o corte de gravação;
+    - a cobertura: um emissor com algum fato gravado até o corte de gravação;
+    - os fatos aceitos até `T` e gravados até o corte de gravação.
+  - **Comparação nome a nome:** vale para as ações admitidas, as Stocks do catálogo pinado com insumos na triagem do rev 3 em `T` (as chaves de `outputs.screen`), selecionadas ou não.
+    - **Referência do rev 3:** a que as duas corridas irmãs (V3 e TP servido) gravam iguais para o nome. Uma divergência entre as irmãs recusa a seção antes de qualquer nome (`rev3_siblings_statement_references_mismatch`, como na rev 1). Por construção, toda ação admitida tem referência: a triagem do rev 3 só guarda os nomes cujos insumos resolveram em `T`, e no modo `--statements vintages` resolver exigia cobertura e gravava a referência.
+    - **A seção é recusada (`statements_table_not_stable`) quando:**
+      - a referência recalculada difere da que o rev 3 gravou;
+      - um nome com referência do rev 3 não tem cobertura no corte de gravação;
+      - entre os documentos do símbolo gravados até o corte de gravação, a aceitação mais recente é de dois ou mais emissores. Não há desempate.
+    - **Dois casos que a construção do rev 3 não produz** seguem a rev 1: um nome com cobertura e sem referência recusa a seção (`rev3_statement_source_reference_missing_or_mismatched`); um nome sem referência e sem cobertura é não avaliável (`statement_vintages_missing`).
+    - Uma recusa nunca é aceita.
+  - **Evidência:** a regra é contrafactual e **não reconstrói** o que o rev 3 leu, que segue **desconhecido**. Mesmo assim, ela reproduz o que o rev 3 gravou, segundo o preflight só de leitura da PR #527 (run 41232203835 sobre a `main` `535a74aa`, 31/10/2026, comentário 6547910888):
+    - nas **534 seções** do manifesto e nas **135.276** checagens por nome, sem nenhum dos casos de recusa por nome acima;
+    - a leitura sem corte reproduz 518 seções; as 16 mais recentes, NASDAQ e NYSE de 2026-07-29 a 2026-09-17, são recusadas.
+  - **Prontidão:** o preflight não é arquivo do instrumento. Antes da assinatura do pino, a checagem pinada tem de reproduzir as 534 seções numa corrida só de leitura (§6).
+- **Ingestão as-filed (rev 2):** a ingestão (`C3PO_VALUATION_ASFILED_ENABLED`) e o backfill (`C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL`) podem estar ligados durante as corridas.
+  - **Hoje:** a ingestão está ligada desde 31/10/2026 07:01 BRT, e o backfill está em 0 desde 27/10.
+  - **Por que não importa:** toda escrita de agora tem `first_seen_at` depois do último corte de gravação (25/10/2026), então não entra em nenhuma seção.
+  - **Saem do instrumento** as duas guardas da rev 1 que serviam à leitura viva:
+    - a do workflow da grade, que exigia o backfill em 0 no worker em execução;
+    - a do driver (`operational_guard`), chamada pelo executor antes e depois de cada seção, que esperava o fim de uma coleta as-filed em curso e recusava depois de 180 s.
+  - **Fica a regra do rev 3 §14:** nenhum worker noturno de valuation e nenhuma ingestão em curso há 30 min ou mais. Uma ingestão assim impede o início de um trecho e interrompe o trecho em curso.
 - **Horizontes:** `h = 126` (decisório), `h = 252` (condição obrigatória) e `h = 21`/`63` (descritivos). Para cada horizonte entram só os `T` cujo alvo `T + 1 + h` fechou antes do corte dos rótulos (rev 3 §6.2). A cauda da grade fica naturalmente de fora em `h = 126` e `h = 252`.
 
 ## 3. Estatística por horizonte
@@ -86,8 +105,7 @@
    - `ensemble_manifest_not_complete`;
    - `ensemble_sessions_not_rev3_sessions`;
    - `ensemble_inputs_differ_from_rev3` (outra safra, outro catálogo ou outra cobertura as-filed);
-   - `statements_table_not_stable` (rev 2: a referência recalculada sobre o corte da seção, §2, difere da do rev 3);
-   - `ensemble_statements_cut_missing` (rev 2: o snapshot V3 de uma seção sem `published_at` válido).
+   - **recusa de seção do §2 (rev 2):** `statements_table_not_stable`, `rev3_siblings_statement_references_mismatch`, `rev3_statement_source_reference_missing_or_mismatched` e `ensemble_statements_cut_missing`. A seção não entra no manifesto, e o relatório anula por `ensemble_manifest_not_complete`. Aqui o código é a recusa do executor, não o `VOID` homônimo do rev 3 §2.
 
    Um `VOID` não lê rótulos.
 2. **`UNMEASURED`:** qualquer uma das condições abaixo.
@@ -128,23 +146,32 @@
 
 - **Identidade do instrumento (P2-3 do Codex, 6430457023), vínculo em dois passos:**
   1. **Este documento** fixa as regras e é vinculado pelo hash dos seus bytes, com a assinatura do dono.
-  2. **Pino do instrumento:** antes da **primeira corrida** do ensemble na grade, um recibo **`VALUATION-ENSEMBLE-INSTRUMENT-PIN-v1`** é publicado no canal técnico, com GO técnico do Codex e assinatura do dono. Ele lista:
+  2. **Pino do instrumento:** antes da **primeira corrida da época**, um recibo **`VALUATION-ENSEMBLE-INSTRUMENT-PIN-v1`** é publicado no canal técnico, com GO técnico do Codex e assinatura do dono. Ele lista:
      - o `prereg_sha256` e o `prereg_commit` deste documento;
      - **o commit de `main`** do instrumento;
      - o `sha256` de **cada arquivo** do instrumento: os módulos `c3po/backend/app/valuation_ensemble_*.py` (com as premissas dos 16 modelos e as 8 agregações), o leitor de consenso (`valuation_pit_rerun.py`), o módulo do relatório, o executor e o seu workflow;
      - as constantes deste documento (§4, §5, §1.3).
 - **Garantias do pino:**
-  - **um só pino por revisão:** um segundo pino exige nova revisão deste documento. A rev 2 tem o **seu** pino, no mesmo formato. A lista inclui o leitor congelado do §2 e o executor que o entrega a cada seção. O pino da rev 1 (`b77f2400…`, commit `ac440626…`) não vale para a nova época;
+  - **um só pino por revisão:** um segundo pino exige nova revisão deste documento. A rev 2 tem o **seu** pino, no mesmo formato. A lista inclui o leitor congelado do §2 e o executor que o entrega a cada seção. O pino da rev 1 (`b77f2400…`, sobre o commit do instrumento `ac440626…`) não vale para a nova época;
   - **o executor recusa** correr se qualquer arquivo listado difere do pino;
   - **o relatório anula** (`VOID`: `ensemble_instrument_not_pinned`, `ensemble_instrument_mismatch:<arquivo>`) se não houver pino ou se o código de qualquer corrida do manifesto diferir dele, **antes de ler rótulos**;
   - assim, duas implementações com o mesmo texto não podem ambas reclamar este pré-registro. A que vale é a do pino, fixada antes dos rótulos.
+- **Prontidão (rev 2), antes da assinatura do pino:** uma corrida só de leitura no host, sobre o commit de `main` do pino (`valuation_ensemble_readiness.py`, workflow `valuation-ensemble-readiness.yml`), aplica a cada uma das 534 seções a checagem pinada do §2.
+  - **A checagem:** as mesmas funções que o executor chama antes de cada seção (`valuation_ensemble_frozen`), com o leitor congelado no corte de gravação da seção.
+    - Só a leitura muda: os fatos de cada emissor são lidos uma vez e fatiados em cada `T` como a consulta do store os corta.
+    - Nada é gravado, e a corrida não é um trecho da época.
+  - **O escopo:** o pareamento das irmãs e as demonstrações. Preços, conteúdo do catálogo e Tesouro ficam com o executor, como na rev 1.
+  - **A identidade:** a corrida publica o `sha256` canônico dos arquivos do instrumento no checkout implantado, este módulo entre eles, e recusa ler se os módulos em execução diferem dele. O recibo do pino cita o run e esse `sha256`, que tem de ser o dos arquivos que o pino lista.
+  - **A publicação:** no canal técnico, só contagens e rótulos de seção (bolsa e sessão), sem símbolos.
+  - **A condição:** o pino só é assinado com 534 de 534 seções sem recusa. Com menos, não há GO nem assinatura do pino, e a época não começa. Mudar a regra exige nova revisão.
 - **Operação:**
   - ordem do dono no formato das ordens da grade (`c3po/ops/owner-orders/<sha>.json`), com `from_session`/`to_session` (#485);
-  - **nova época (rev 2):** ordem nova, pino novo e diário novo. Nenhuma seção calculada na época da rev 1 é reaproveitada: elas leram o store vivo, não o corte do §2. As 534 seções são recalculadas;
-  - a guarda do backfill as-filed pausado permanece; a ingestão as-filed pode seguir ligada (§2);
+  - **nova época (rev 2):** ordem nova, pino novo e diário novo. Nenhuma seção calculada na época da rev 1 é reaproveitada: elas leram o store vivo, não o corte de gravação do §2. As 534 seções são recalculadas;
+  - **a ordem da rev 1** (`08bf11a5…`, válida até 02/11/2026 08:00 BRT) fica revogada com a publicação do recibo do hash desta revisão: nenhum trecho da rev 1 corre depois dela. Quando as constantes da rev 2 chegarem à `main`, o executor recusa essa ordem sozinho, porque ela carrega o `prereg_sha256` e o pino da rev 1. Até lá, a revogação é de procedimento;
+  - ingestão e backfill as-filed podem estar ligados, sem as guardas da rev 1 que serviam à leitura viva (§2);
   - autopiloto desligado;
   - sem deploy durante os trechos;
-  - pré-checagem *running/blocking* do host (`host-check`) zerada antes de cada trecho.
+  - pré-checagem do host (`host-check`) com `blocking = 0` antes de cada trecho, a regra do rev 3 §14 repetida no §2. Com a ingestão as-filed ligada, `running` pode passar de 0.
 - **Recibo:** `VALUATION-ENSEMBLE-PIT-REPORT-v1`, com:
   - os campos do rev 3 §12 por horizonte;
   - as oito agregações;
@@ -158,24 +185,38 @@
 - **Poder baixo:** com ≈ 9 blocos em `h = 126` e ≈ 4 períodos independentes em `h = 252`. Um `FAIL` é frequente mesmo com sinal fraco real.
 - **Consenso PIT:** o horizonte do consenso PIT não é atestado (rev 3, M4). Ele entra como valor, não como horizonte.
 - **Lookback SEC de 10 anos** (rev 3 §2): os modelos de história longa só existem a partir de `GRID_START = 2021-06-01`, como no rev 3.
-- **Base contrafactual das demonstrações (rev 2):** o corte do §2 é uma regra, não a leitura histórica do rev 3. Uma transação que começou antes do corte e terminou depois dele entra no corte, mesmo que o rev 3 não a tenha visto. O preflight não achou nenhum caso que mudasse uma referência (534/534). Se houver, ele aparece como recusa da seção, nunca como aceitação silenciosa.
+- **Base contrafactual das demonstrações (rev 2):** o corte de gravação do §2 é uma regra, não a leitura histórica do rev 3.
+  - **Premissa de relógio:** o `published_at` vem do relógio da aplicação, no contêiner `api`, e o `first_seen_at` vem do `now()` do Postgres, no contêiner `db`. Os dois rodam no mesmo host do compose e leem o mesmo relógio do kernel.
+  - **Toda linha que o rev 3 viu está no corte:** a transação dela começou antes da leitura, e a leitura veio antes do `published_at`.
+  - **O corte pode incluir linhas que o rev 3 não viu,** por dois caminhos:
+    - o `published_at` é tomado do relógio da aplicação no `persist` (`valuation_pit_rerun.py`), depois do cálculo da corrida V3, então entra uma linha gravada entre a leitura do rev 3 e esse instante;
+    - entra também uma transação que começou antes do instante e terminou depois dele.
+  - **O preflight mediu essa janela com dois cortes mais cedo:**
+    - `cut_lo`: o mais tarde entre o `published_at` da seção gravada logo antes e 60 min antes do da seção;
+    - `cut_scan`: cada instante de gravação entre os dois, de um documento do símbolo ou de um fato dos seus emissores.
+
+    As premissas do `cut_lo` são duas: cada seção foi lida depois de gravada a anterior (lotes em série, no grupo de concorrência `valuation-pit-backtest`), e no máximo 60 min antes da sua gravação. Os dois cortes deram 534 de 534, como o corte de gravação.
+  - **Nunca como aceitação:** a referência guarda a contagem dos fatos lidos (`facts`) e o `statements_sha256`. Um fato a mais muda a referência, e um documento a mais que remapeie o símbolo muda o emissor ou a cobertura. Os dois casos aparecem como recusa (§2).
 
 ## 8. Revisões
 
 **rev 2 (31/10/2026)**, antes de qualquer leitura de rótulos.
 
 - **Motivo:** a grade da rev 1 não pode terminar.
-  - Em 30/10 o lote 41123868230 e a sonda 41152230235 recusaram com `statements_table_not_stable`: fatos aceitos antes do `T` de seções recentes foram gravados no store as-filed depois que o rev 3 o leu (backfill, atrasos, reprocessos).
-  - O preflight da PR #527 mostrou 16 seções irreproduzíveis no store vivo; a grade parou em 393 de 534.
+  - Em 30/10 o lote 41123868230 e a sonda 41152230235 recusaram com `statements_table_not_stable`. A grade calcula as seções em ordem de data e grava cada uma no diário ao concluí-la. A sonda, com uma seção só, recusou a primeira seção ainda fora do diário.
+  - Linhas gravadas no store as-filed depois da leitura do rev 3 (fatos aceitos até `T` ou documentos) mudaram as referências de seções recentes. A causa de cada uma não foi medida; as hipóteses são backfill, atraso de ingestão e reprocesso.
+  - No store vivo, o preflight da PR #527 achou exatamente 16 seções que não reproduzem, as mais recentes; a primeira é NASDAQ 2026-07-29. As duas tabelas só aceitam inserção, então essas recusas são permanentes.
+  - A contagem do diário da rev 1 não foi lida.
   - O Codex (6537212289) julgou NO-GO excluir seções e indicou que só uma nova época, com protocolo próprio, poderia mudar a base das demonstrações.
-- **Decisão do dono:**
-  - 31/10 ~08:5x BRT: "Sim, começar", a nova época com os balanços congelados;
+- **Decisão do dono, 31/10/2026:**
+  - ~08:5x BRT: "Sim, começar", a nova época com os balanços congelados;
   - ~16:3x BRT: "pode começar o desenho da nova época do Valuation".
 - **O que muda:**
-  - §2: as demonstrações de cada seção são congeladas no `published_at` do seu snapshot V3, e a ingestão as-filed pode seguir ligada;
-  - §4: as causas de `VOID` das demonstrações;
-  - §6: o pino, a ordem e o diário novos, com as 534 seções recalculadas;
+  - cabeçalho e vínculo: o hash desta revisão, assinado pelo dono antes da primeira corrida da época;
+  - §2: cada seção lê as demonstrações no seu corte de gravação, com as recusas nome a nome; ingestão e backfill as-filed podem estar ligados, e saem as guardas as-filed da rev 1;
+  - §4: as recusas de seção das demonstrações;
+  - §6: o pino, a ordem e o diário novos, a prontidão antes do pino, a revogação da ordem da rev 1, a pré-checagem do host sem o backfill pausado e as 534 seções recalculadas;
   - §7: a limitação da base contrafactual.
-- **O que não muda:** pergunta, objeto, os 16 modelos, as 8 agregações e a primária, horizontes, estatística, regra de decisão, poder, constantes, fontes, os `T` do manifesto do rev 3 e a leitura única.
+- **O que não muda:** pergunta, objeto, os 16 modelos, as 8 agregações e a primária, horizontes, estatística, as condições de `PASS`, `FAIL`, `UNMEASURED` e `NEGATIVE`, poder, constantes, fontes, os `T` do manifesto do rev 3 e a leitura única.
 
-**rev 1 (26–27/10/2026):** primeira versão, assinada pelo dono em 27/10 (recibo 6442500464).
+**rev 1 (26–27/10/2026):** primeira versão, assinada pelo dono em 27/10/2026 (recibo 6442500464).
