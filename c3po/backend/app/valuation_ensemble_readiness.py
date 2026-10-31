@@ -26,7 +26,8 @@ queries, as in the preflight, which matched every section.
 Counts only (the repository is public): no symbol, issuer, value or error text; sections by their market and session.
 
     docker compose exec -T -e PGOPTIONS='-c default_transaction_read_only=on' api \
-        python -m app.valuation_ensemble_readiness --deadline-at <epoch seconds> < rev3.json
+        python -m app.valuation_ensemble_readiness --deadline-at <epoch seconds> \
+            --expect-instrument-sha256 <the executed revision's inventory digest> < rev3.json
 """
 from __future__ import annotations
 
