@@ -83,7 +83,7 @@ def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S1", "venda: stop")]
     assert state.positions["S2"].armed  # ~+0.39% armed the lock
     t = _at(10, 1)
-    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to ~+0.26%: below its step floor (+0.30%) → lock
+    marks = {"S2": 100.27, "S3": 100.05}  # S2 back to ~+0.26%: below its step floor (+0.35%) → lock
     fills = engine.step(t, lambda s: _view(marks[s], None, marks[s], marks[s] + 0.01, t) if s in marks else MarketView())
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
     assert fills[0]["realized_pnl_usd"] > 0
@@ -224,8 +224,9 @@ def test_the_rule_in_force_has_its_text_and_slots_on_the_screen() -> None:
     assert "5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps" in risk
     assert [engine_module.size_weight(s) * 5 for s in (2.0, 3.0, 5.0)] == [5.0, 4.0, 2.5]  # the shares the text states
     assert "+0.10%, +0.20%, then every 0.15" in hold and rule["lock_step_percent"] == 0.10 and rule["lock_wide_step_percent"] == 0.15
-    for older in ("TIT-2S3-RT", "TIT-2S5-RT", "TIT-2S5-RTC"):
+    for older in ("TIT-2S5-RT", "TIT-2S5-RTC"):  # 30/10's rule
         assert "stop −0.4% net" in r2d2_lab_live.LIVE_RISK[older][0]
+    assert "TIT-2S3-RT" not in r2d2_lab_live.LIVE_RISK  # 27-29/10 ran another stop and lock: the screen's own text
 
 
 @pytest.mark.parametrize(("bid", "sold"), [(98.12, True), (98.095, False)])
@@ -2226,13 +2227,27 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
-    """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 5.0 bps buy, 5.5 bps is refused (it was 3 bps)."""
+    """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 4.999 bps buy, 5.5 bps is refused (it was 3 bps)."""
     assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
     fills = engine.step(t, lambda s: views.get(s, MarketView()), nbbo=lambda s, now: (29.0, ask, now))
     assert ([f["symbol"] for f in fills] == ["CCC"]) is bought and engine.skips["spread"] == (0 if bought else 1)
+
+
+def test_a_spread_of_exactly_five_basis_points_is_bought_whatever_its_float() -> None:
+    """Pre-review of 43f7a89e: 119.97 x 120.03 is 5.00000000000019 bps in float — bought, as 39.99 x 40.01 (4.999999999999)."""
+    for bid, ask, close, vwap in ((119.97, 120.03, 120.0, 119.9), (39.99, 40.01, 40.0, 39.9)):
+        engine = _engine()
+        engine.members["CCC"] = Member("CCC", "NYSE", close * 1.05, 20e6)
+        engine.candidates["CCC"] = -4.8
+        t = _at(9, 41)
+        engine.step(t - timedelta(seconds=1), lambda s: _view(vwap - 0.1, vwap, bid - 0.1, ask - 0.1, t) if s == "CCC" else MarketView())
+        fills = engine.step(t, lambda s: _view(close, vwap, bid, ask, t) if s == "CCC" else MarketView(),
+                            nbbo=lambda s, now: (bid, ask, now))
+        assert [f["symbol"] for f in fills] == ["CCC"] and engine.skips["spread"] == 0, (bid, ask)
+        assert engine.state.positions["CCC"].cost_usd == pytest.approx(1_000_000.0 / 20 * 0.5)  # the 2.5% tier
 
 
 def test_nbbo_massive_silent_falls_back_to_the_stream_and_an_old_or_wide_nbbo_is_refused() -> None:
@@ -2826,14 +2841,14 @@ def test_a_flat_close_confirms_the_feeds_bid_with_any_fresh_trade(monkeypatch) -
 
 
 def test_a_flat_close_never_carries_an_unconfirmed_stop_on_the_feed(monkeypatch) -> None:
-    """Pre-review of f3db006c P1: the feed's bid at the stop (-0.5%), the fresh trade at -0.2% — the stop is unconfirmed,
+    """Pre-review of f3db006c P1: the feed's bid at the stop (-0.5%), the fresh trade at -0.1% — the stop is unconfirmed,
     the window's flat sale still stands on that trade; without the flat close it stays unconfirmed."""
     for flat in (True, False):
         monkeypatch.setitem(engine_module.RULE, "close_flat", flat)
         engine = _engine()
         position = _held_negative(engine)
         bid = position.cost_usd * (1 - 0.5 / 100) / (position.shares * (1 - FEE_SIDE))
-        trade = position.cost_usd * (1 - 0.2 / 100) / (position.shares * (1 - FEE_SIDE))
+        trade = position.cost_usd * (1 - 0.1 / 100) / (position.shares * (1 - FEE_SIDE))  # above the -0.20% stop
         t = _at(15, 59, 35)
         fills = engine.step(t, lambda s: _view(trade, 98.0, bid, bid + 0.01, t) if s == "AAA" else MarketView())
         sold = [f["reason"].split(",")[0] for f in fills if f["side"] == "SELL"]
@@ -2902,6 +2917,17 @@ def test_a_flat_close_takes_no_entry_in_the_last_30_seconds(monkeypatch, hour, m
     engine.step(t - timedelta(seconds=1), lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
     fills = engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     assert bool([f for f in fills if f["side"] == "BUY"]) is bought
+
+
+@pytest.mark.parametrize(("bid", "ask", "cost"), [(98.0855, 98.105, 50_000.0), (98.0775, 98.105, 40_000.0),
+                                                 (98.065, 98.105, 25_000.0)])
+def test_the_owners_tiers_size_a_buy_by_its_spread(bid: float, ask: float, cost: float) -> None:
+    """Owner 31/10: 1.99 bps → 5% of NAV, 2.80 bps → 4%, 4.08 bps → 2.5% (NAV 1 M), each through a real buy."""
+    engine = _engine()
+    t = _at(10, 0, 0)
+    engine.step(t - timedelta(seconds=1), lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    fills = engine.step(t, lambda s: _view(98.1, 98.0, bid, ask, t) if s == "AAA" else MarketView())
+    assert [f["side"] for f in fills] == ["BUY"] and engine.state.positions["AAA"].cost_usd == pytest.approx(cost)
 
 
 @pytest.mark.parametrize("rule", ["taper", "inverse"])

@@ -4244,7 +4244,7 @@ function R2D2RisingView() {
         <PanelHeader title="Virtual Positions" icon={WalletCards} />
         <div className="r2d2-ledger-updated">API UPDATED {new Date(positionFeedUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
         <div className="r2d2-ledger-head">
-          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span title="The rule's level in force, as the net of a sale there: red the stop (−0.40%), green the lock's first step (+0.10%), blue a higher step">Stop</span>
+          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span title="The rule's level in force, as the net of a sale there: red the stop, green the lock's first step, blue a higher step">Stop</span>
         </div>
         {positions.length ? positions.map((position) => (
           <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>

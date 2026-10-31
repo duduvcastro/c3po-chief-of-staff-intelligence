@@ -74,8 +74,8 @@ _RISK_30_10 = ("No leverage · up to 20 positions of 5% · stop −0.4% net · s
                "Held by the live rule: stop −0.4% net until the lock arms at +0.10% net; then the floor is the last step reached "
                "(every 0.05 to +0.30%, every 0.10 above); sold in the last 30 seconds if positive.",
                "step lock +0.10% · stop −0.4%")
-LIVE_RISK = {
-    "TIT-2S3-RT": _RISK_30_10, "TIT-2S5-RT": _RISK_30_10, "TIT-2S5-RTC": _RISK_30_10,
+LIVE_RISK = {  # TIT-2S3-RT (27-29/10: a -0.5% stop, a trailing +0.15% lock) keeps the screen's own text
+    "TIT-2S5-RT": _RISK_30_10, "TIT-2S5-RTC": _RISK_30_10,
     # owner 31/10/2026
     "TIT-2S5-F20": ("No leverage · up to 20 positions · 5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps · stop −0.20% net · "
                     "step profit lock from +0.10% net (+0.20%, then every 0.15)",
@@ -519,10 +519,10 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
             started_at=datetime.fromisoformat(today + "T09:30:00").replace(tzinfo=NEW_YORK),
             scanned_count=(cycle or {}).get("candidates", 0), signal_count=(cycle or {}).get("signals", 0),
             trade_count=len(today_doc.get("trades") or []), metadata={"source": BOOK_SOURCE, "config": str(today_doc.get("config"))})
+    risk, hold, exits = LIVE_RISK.get(config) or (None, None, None)
     return response.model_copy(update={
         "book_source": BOOK_SOURCE, "live_rule": LIVE_RULES.get(config), "live_slots": LIVE_SLOTS.get(config),
-        "live_risk": (LIVE_RISK.get(config) or (None,) * 3)[0], "live_hold": (LIVE_RISK.get(config) or (None,) * 3)[1],
-        "live_exits": (LIVE_RISK.get(config) or (None,) * 3)[2],
+        "live_risk": risk, "live_hold": hold, "live_exits": exits,
         "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
         "methodology_version": "R2D2 LIVE · %s" % config, "today_episode_stats": episodes, "stats": stats,
         "last_cycle": last_cycle, "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),

@@ -77,11 +77,14 @@ RULE = {
     # flat close stays off; the sizes are his tiers (above)
     "close_flat": False,  # True: from SELL_POSITIVES_FROM every position sells at the first check, whatever its sign
     # "equal": NAV/slots; "taper": x (1 - 0.15 x (spread - 1)) in [0.4, 1]; "inverse": x min(1, 2/spread); "tiers": the
-    # owner's of 31/10, x 1 at <= 2 bps (5% of NAV), x 0.8 at <= 3 bps (4%), x 0.5 above (2.5% up to the 5 bps limit)
-    "size_rule": "tiers",
+    # owner's of 31/10, NAV/slots x the weight of the first tier whose bound the spread is within: x 1 at <= 2 bps (5% of
+    # NAV), x 0.8 at <= 3 bps (4%), x 0.5 at <= 5 bps (2.5%); a shadow (wider than the limit) takes the widest tier
+    "size_rule": "tiers", "size_tiers": [[2.0, 1.0], [3.0, 0.8], [5.0, 0.5]],
+    # a spread computed a hair over a bound (float error: 99.99 x 100.01 is 2.0000000001 bps, 119.97 x 120.03 is
+    # 5.0000000002) is within it: the tiers' bounds and the spread limit (the owner's "5 bps" includes 5 bps)
+    "bound_bps": 1e-6,
 }
 SIZE_RULES = ("equal", "taper", "inverse", "tiers")
-TIER_BOUND_BPS = 1e-6  # a spread computed a hair over a tier's bound (float error: 99.99 x 100.01 is 2.0000000001 bps) is in it
 if RULE["size_rule"] not in SIZE_RULES or not isinstance(RULE["close_flat"], bool):  # a typo never runs another size
     raise ValueError("R2D2 rule: unknown size_rule or a close_flat that is not a boolean")
 SESSION_OPEN = time(9, 30)
@@ -565,8 +568,11 @@ def size_weight(spread_bps: float, rule: str | None = None) -> float:
         return max(0.4, min(1.0, 1.0 - 0.15 * (spread_bps - 1.0)))
     if rule == "inverse":
         return min(1.0, 2.0 / spread_bps) if spread_bps > 0 else 1.0
-    if rule == "tiers":  # wider than 5 bps only a shadow is (the spread limit): it takes the widest tier
-        return 1.0 if spread_bps <= 2.0 + TIER_BOUND_BPS else 0.8 if spread_bps <= 3.0 + TIER_BOUND_BPS else 0.5
+    if rule == "tiers":  # wider than the last tier only a shadow is (the spread limit): it takes the widest tier
+        for bound, weight in RULE["size_tiers"]:
+            if spread_bps <= bound + RULE["bound_bps"]:
+                return weight
+        return RULE["size_tiers"][-1][1]
     return 1.0
 
 
@@ -860,7 +866,7 @@ class Engine:
                     self.skips["stale"] += 1
                     continue
                 spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
-                if spread_bps > RULE["spread_max_bps"]:
+                if spread_bps > RULE["spread_max_bps"] + RULE["bound_bps"]:
                     self.skips["spread"] += 1
                     try:
                         self._shadow_open(symbol, ask, spread_bps, moment)
@@ -868,7 +874,7 @@ class Engine:
                         logger.error("R2D2 live: a shadow could not be opened")
                     continue
                 if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
-                        and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"]):
+                        and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"] + RULE["bound_bps"]):
                     # the evidence: a buy the stream's fresh quote alone refused (a candidate without a stream quote, the
                     # usual case since the quote feed carries only the held names, is not counted)
                     self.sources["stream_would_refuse"] += 1
