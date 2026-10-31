@@ -106,16 +106,16 @@ def _mark(engine: Engine, symbol: str, t: datetime, bid: float) -> list[dict]:
 
 
 def test_the_step_lock_floor_is_the_last_step_the_peak_reached() -> None:
-    """Owner 29/10: arms at +0.10%, a new floor every 0.05 up to +0.30%, every 0.10 above, the floor ON the step."""
+    """Owner 31/10: arms at +0.10%, floors +0.10, +0.20, then every 0.15 (+0.35, +0.50 ...), the floor ON the step."""
     floor = engine_module.lock_floor
-    assert [round(floor(p), 10) for p in (0.10, 0.1499, 0.15, 0.2, 0.2999, 0.30, 0.3999, 0.40, 0.47, 0.95)] == \
-           [0.10, 0.10, 0.15, 0.20, 0.25, 0.30, 0.30, 0.40, 0.40, 0.90]
-    assert floor(0.15 - 1e-12) == floor(0.15)  # a hair under a step (float error) still counts it
-    assert engine_module.RULE["stop_percent"] == 0.4 and engine_module.RULE["lock_min_percent"] == 0.10
+    assert [round(floor(p), 10) for p in (0.10, 0.1999, 0.20, 0.3499, 0.35, 0.4999, 0.50, 0.66, 0.95)] == \
+           [0.10, 0.10, 0.20, 0.20, 0.35, 0.35, 0.50, 0.65, 0.95]
+    assert floor(0.20 - 1e-12) == floor(0.20) and floor(0.35 - 1e-12) == floor(0.35)  # a hair under a step still counts it
+    assert engine_module.RULE["stop_percent"] == 0.20 and engine_module.RULE["lock_min_percent"] == 0.10
 
 
 @pytest.mark.parametrize(("peak", "hold", "sell", "floor"), [
-    (0.12, 0.11, 0.09, 0.10), (0.17, 0.16, 0.14, 0.15), (0.33, 0.31, 0.29, 0.30), (0.47, 0.41, 0.39, 0.40)])
+    (0.12, 0.11, 0.09, 0.10), (0.27, 0.21, 0.19, 0.20), (0.40, 0.36, 0.34, 0.35), (0.55, 0.51, 0.49, 0.50)])
 def test_the_step_lock_sells_when_the_profit_falls_to_its_floor(peak: float, hold: float, sell: float, floor: float) -> None:
     engine = _engine()
     position, bid = _held(engine, "S2")
@@ -133,7 +133,7 @@ def test_a_carried_position_is_armed_by_its_net_never_by_a_peak_of_the_earlier_r
     engine = _engine()
     position, bid = _held(engine, "S2")
     position.peak_percent, position.armed = 0.12, False
-    assert _mark(engine, "S2", _at(10, 0), bid(-0.20)) == [] and not position.armed  # held at -0.20%
+    assert _mark(engine, "S2", _at(10, 0), bid(-0.15)) == [] and not position.armed  # held at -0.15% (the stop is -0.20%)
     assert _mark(engine, "S2", _at(10, 0, 1), bid(0.11)) == [] and position.armed  # back above +0.10%: armed, floor +0.10%
     fills = _mark(engine, "S2", _at(10, 0, 2), bid(0.09))
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
@@ -141,18 +141,19 @@ def test_a_carried_position_is_armed_by_its_net_never_by_a_peak_of_the_earlier_r
 
 def test_the_floor_has_no_gap_under_the_wide_band() -> None:
     floor = engine_module.lock_floor
-    for peak in (0.30 - 5e-10, 0.30 - 2e-10, 0.30, 0.30 + 1e-12):
-        assert round(floor(peak), 10) == 0.30
-    assert round(floor(0.30 - 2e-9), 10) == 0.25
+    for peak in (0.20 - 5e-10, 0.20 - 2e-10, 0.20, 0.20 + 1e-12):
+        assert round(floor(peak), 10) == 0.20
+    assert round(floor(0.20 - 2e-9), 10) == 0.10
 
 
-def test_the_stop_before_the_lock_arms_is_minus_four_tenths() -> None:
+def test_the_stop_before_the_lock_arms_is_minus_two_tenths() -> None:
+    """Owner 31/10: "colocando o stop loss em -0,20%" (-0.4% until then)."""
     engine = _engine()
     position, bid = _held(engine, "S2")
     assert _mark(engine, "S2", _at(10, 0), bid(0.09)) == [] and not position.armed  # positive, under +0.10%: not armed
-    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.4) < 1e-9
-    assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.39)) == []
-    fills = _mark(engine, "S2", _at(10, 0, 2), bid(-0.41))
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.20) < 1e-9
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.19)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(-0.21))
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
 
 
@@ -214,6 +215,17 @@ def test_a_session_keeps_the_last_entry_of_the_label_it_started_under() -> None:
 def test_the_rule_in_force_has_its_text_and_slots_on_the_screen() -> None:
     assert engine_module.CONFIG in r2d2_lab_live.LIVE_RULES and "close" in r2d2_lab_live.LIVE_RULES[engine_module.CONFIG]
     assert r2d2_lab_live.LIVE_SLOTS[engine_module.CONFIG] == engine_module.RULE["slots"]
+    # the screen states the sizes, the stop and the lock of the rule a session ran under (owner 26/10: every field audited
+    # against its source): the rule in force's own numbers, the days before 02/11 their -0.4% and 0.05 steps
+    risk, hold, exits = r2d2_lab_live.LIVE_RISK[engine_module.CONFIG]
+    rule = engine_module.RULE
+    assert "stop −%.2f%% net" % rule["stop_percent"] in risk and "stop −%.2f%% net" % rule["stop_percent"] in hold
+    assert "stop −%.2f%%" % rule["stop_percent"] in exits and "+%.2f%%" % rule["lock_min_percent"] in exits
+    assert "5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps" in risk
+    assert [engine_module.size_weight(s) * 5 for s in (2.0, 3.0, 5.0)] == [5.0, 4.0, 2.5]  # the shares the text states
+    assert "+0.10%, +0.20%, then every 0.15" in hold and rule["lock_step_percent"] == 0.10 and rule["lock_wide_step_percent"] == 0.15
+    for older in ("TIT-2S3-RT", "TIT-2S5-RT", "TIT-2S5-RTC"):
+        assert "stop −0.4% net" in r2d2_lab_live.LIVE_RISK[older][0]
 
 
 @pytest.mark.parametrize(("bid", "sold"), [(98.12, True), (98.095, False)])
@@ -244,7 +256,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == "TIT-2S5-RTC" and len(validated["trades"]) == 1
+    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -369,7 +381,8 @@ def test_a_spread_refusal_is_counted_in_its_band_and_followed_as_a_shadow_trade(
     assert engine.step(t, lambda s: _view(98.1, 98.0, 97.97, 98.03, t) if s == "AAA" else MarketView(), nbbo=wide) == []
     assert engine.skips["spread"] == 1 and engine.state.bands["5_8"]["vetoed"] == 1
     row = engine.state.shadow["AAA"]
-    assert row["band"] == "5_8" and row["ask"] == 98.03 and abs(row["size_usd"] - 1_000_000.0 / 20) < 1e-6
+    # the widest of the owner's tiers (2.5% of NAV): a shadow is wider than the 5 bps limit by definition
+    assert row["band"] == "5_8" and row["ask"] == 98.03 and abs(row["size_usd"] - 1_000_000.0 / 20 * 0.5) < 1e-6
     # its exits: the last trade less half the refused spread is the estimated bid; up ~+0.12% → armed, floor +0.10%
     half = row["spread_bps"] / 2 / 1e4
     price_at = lambda net: row["ask"] * (1 + FEE_SIDE) * (1 + net / 100) / ((1 - FEE_SIDE) * (1 - half))  # noqa: E731
@@ -379,7 +392,7 @@ def test_a_spread_refusal_is_counted_in_its_band_and_followed_as_a_shadow_trade(
     engine.step(down, lambda s: MarketView(price=price_at(0.09), trade_at=down, vwap=98.0) if s == "AAA" else MarketView())
     stats = engine.state.bands["5_8"]
     assert "AAA" not in engine.state.shadow and stats["closed"] == 1 and stats["wins"] == 1
-    assert abs(stats["net_usd"] - 50_000.0 * 0.09 / 100) < 1e-6 and not engine.state.positions and not engine.fills  # no money
+    assert abs(stats["net_usd"] - 50_000.0 * 0.5 * 0.09 / 100) < 1e-6 and not engine.state.positions and not engine.fills  # no money
 
 
 def test_the_shadows_close_with_the_session_and_the_line_and_status_carry_numbers_only() -> None:
@@ -442,7 +455,7 @@ def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, mo
         run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                     now=lambda: clock["t"], sleep=stop_at_noon)
     stored = r2d2_lab_live.latest_book(database, now=_at(12, 0))
-    assert stored is not None and stored[1] == "TIT-2S5-RTC" and len(stored[2]["positions"]) == 1
+    assert stored is not None and stored[1] == engine_module.CONFIG and len(stored[2]["positions"]) == 1
     # the service restarts at noon: the session resumes with its fill, its candidates and its opening NAV
     state = run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
                         now=lambda: clock["t"], sleep=sleep)
@@ -525,7 +538,7 @@ def test_exits_mark_on_massive_and_a_feed_bid_off_the_market_never_stops() -> No
     t = _at(10, 0, 1)
     position = _bought_aaa(engine, t)
     t = _at(10, 0, 2)
-    feed, real = _bid_at(position, -0.75), _bid_at(position, -0.25)
+    feed, real = _bid_at(position, -0.75), _bid_at(position, -0.15)  # the NBBO above the -0.20% stop
     fills = engine.step(t, lambda s: _view(98.0, 98.0, feed, feed + 0.01, t) if s == "AAA" else MarketView(),
                         nbbo=lambda s, now: (real, real + 0.01, now))
     assert fills == [] and position.last_mark == real and engine.exit_sources == {"massive": 1, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
@@ -538,19 +551,19 @@ def test_exits_mark_on_massive_and_a_feed_bid_off_the_market_never_stops() -> No
 
 
 def test_exits_a_held_name_without_a_feed_quote_is_marked_armed_and_locked_on_massive() -> None:
-    """30/10 10:43 BRT: AMD at +0.175% net on the screen, the engine's stop still -0.4% (no fresh feed quote, never
-    armed). Massive marks it every second: the lock arms at +0.10% and sells at the step's floor."""
+    """30/10 10:43 BRT: AMD at +0.175% net on the screen, the engine's stop still at its level (no fresh feed quote,
+    never armed). Massive marks it every second: the lock arms at +0.10% and sells at the step's floor."""
     engine = _engine()
     t = _at(10, 0, 1)
     position = _bought_aaa(engine, t)
     no_quote = MarketView(price=98.2, trade_at=t, vwap=98.0)  # trades only: the quote feed has not delivered it
-    for second, net in ((2, 0.12), (3, 0.17)):
+    for second, net in ((2, 0.12), (3, 0.27)):
         t = _at(10, 0, second)
         bid = _bid_at(position, net)
         assert engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now)) == []
-    assert position.armed and position.peak_percent == pytest.approx(0.17) and position.exit_price() == pytest.approx(_bid_at(position, 0.15))
+    assert position.armed and position.peak_percent == pytest.approx(0.27) and position.exit_price() == pytest.approx(_bid_at(position, 0.20))
     t = _at(10, 0, 4)
-    bid = _bid_at(position, 0.14)
+    bid = _bid_at(position, 0.19)
     fills = engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now))
     assert [(f["side"], f["price"]) for f in fills] == [("SELL", bid)] and "trava" in fills[0]["reason"]
     assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
@@ -906,7 +919,8 @@ def test_entries_a_stop_pushed_while_the_crosses_wait_on_massive_is_sold_in_the_
     assert [(f["side"], f["symbol"], f["price"]) for f in sold] == [("SELL", "AAA", stop)]
     assert [(f["side"], f["symbol"], f["price"]) for f in fills] == [("BUY", "CCC", 29.105)]
     assert engine.state.nav_realized < nav and set(engine.state.positions) == {"CCC"}
-    assert engine.state.positions["CCC"].cost_usd == pytest.approx(engine.state.nav_realized / 20)
+    spread = (29.105 - 29.095) / ((29.105 + 29.095) / 2) * 1e4  # 3.4 bps: the owner's 2.5% tier
+    assert engine.state.positions["CCC"].cost_usd == pytest.approx(engine.state.nav_realized / 20 * engine_module.size_weight(spread))
 
 
 def test_exits_a_quiet_name_judged_in_the_wait_is_never_marked_again_on_the_older_answer() -> None:
@@ -1330,13 +1344,13 @@ def test_the_engines_marks_dress_the_book_it_publishes_through_the_real_store(tm
     engine.marked_moment["AAA"] = mark_at
     row = {"session": DAY.isoformat(), "as_of": mark_at, "marks": engine.marks()}
     dressed = r2d2_lab_live.overlay_marks(found[2], row, DAY.isoformat(), mark_at + timedelta(milliseconds=100))
-    assert dressed["positions"][0]["mark_as_of"] == mark_at.isoformat() and dressed["positions"][0]["stop_percent"] == -0.4
+    assert dressed["positions"][0]["mark_as_of"] == mark_at.isoformat() and dressed["positions"][0]["stop_percent"] == -0.2
     t = _at(10, 0, 2)
     up = _bid_at(position, 0.17)
     engine.step(t, lambda s: MarketView(price=98.3, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
                 nbbo=lambda s, now: (up, up + 0.01, now))
     row = engine.marks()[0]
-    assert row["armed"] is True and row["stop_percent"] == pytest.approx(0.15) and row["net_percent"] == pytest.approx(0.17)
+    assert row["armed"] is True and row["stop_percent"] == pytest.approx(0.10) and row["net_percent"] == pytest.approx(0.17)
     assert row["marked_at"] == t.isoformat() or row["marked_at"] > t.isoformat()
 
 
@@ -2213,7 +2227,7 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 5.0 bps buy, 5.5 bps is refused (it was 3 bps)."""
-    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-RTC"
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
@@ -2766,10 +2780,15 @@ def test_the_shared_massive_path_keeps_the_exits_served_under_an_opening_load() 
     assert result["taken"]["subscribed_channels"] >= r2d2_massive_load.CANDIDATES + 2 * len(r2d2_massive_load.HELD)  # T. and Q.
 
 
-def test_the_close_mode_and_the_size_rule_keep_the_rule_in_force_by_default() -> None:
-    """Owner 30/10 ("faremos umas alterações de BPS e tamanho da compra"): the levers exist with the values in force."""
-    assert engine_module.RULE["close_flat"] is False and engine_module.RULE["size_rule"] == "equal"
-    assert engine_module.size_weight(4.0) == 1.0 and engine_module.size_weight(0.5) == 1.0
+def test_the_owners_sizes_of_31_10_are_the_tiers_and_the_flat_close_stays_off() -> None:
+    """Owner 31/10: "2 bps para 5% da posição de cada ação, 3 bps para 4%, 5 bps para 2,5%" (NAV/20 x 1, 0.8, 0.5); "Zerar
+    é idiotice" — no flat close. The other size rules stay available."""
+    assert engine_module.RULE["close_flat"] is False and engine_module.RULE["size_rule"] == "tiers"
+    weight = engine_module.size_weight
+    assert [weight(s) for s in (0.5, 2.0, 2.0000001, 2.01, 3.0, 3.01, 4.9, 5.0)] == [1.0, 1.0, 1.0, 0.8, 0.8, 0.5, 0.5, 0.5]
+    exact = (100.01 - 99.99) / ((100.01 + 99.99) / 2) * 1e4  # exactly 2 bps, a hair over it in float
+    assert exact > 2.0 and weight(exact) == 1.0
+    assert weight(4.0, "equal") == 1.0 and weight(0.5, "equal") == 1.0
     assert engine_module.size_weight(5.0, "taper") == pytest.approx(0.4) and engine_module.size_weight(1.0, "taper") == 1.0
     assert engine_module.size_weight(4.0, "inverse") == pytest.approx(0.5) and engine_module.size_weight(1.5, "inverse") == 1.0
 

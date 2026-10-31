@@ -61,8 +61,28 @@ LIVE_RULES = {
     # owner 30/10/2026: the entries run until the close
     "TIT-2S5-RTC": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until the close (16:00 ET) · "
                    "ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
+    # owner 31/10/2026: the same entries; the sizes by the spread, the stop and the lock in LIVE_RISK
+    "TIT-2S5-F20": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until the close (16:00 ET) · "
+                   "ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
 }
-LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1, "TIT-2S3-RT": 20, "TIT-2S5-RT": 20, "TIT-2S5-RTC": 20}
+LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1, "TIT-2S3-RT": 20, "TIT-2S5-RT": 20, "TIT-2S5-RTC": 20,
+              "TIT-2S5-F20": 20}
+# the exits and the sizes of the server's engine as the screen states them, per rule (the Launch Gates panel's risk
+# mandate, a held position's rationale and its lock/stop label); a rule without an entry keeps the screen's own text
+_RISK_30_10 = ("No leverage · up to 20 positions of 5% · stop −0.4% net · step profit lock from +0.10% net (0.05 steps to "
+               "+0.30%, then 0.10)",
+               "Held by the live rule: stop −0.4% net until the lock arms at +0.10% net; then the floor is the last step reached "
+               "(every 0.05 to +0.30%, every 0.10 above); sold in the last 30 seconds if positive.",
+               "step lock +0.10% · stop −0.4%")
+LIVE_RISK = {
+    "TIT-2S3-RT": _RISK_30_10, "TIT-2S5-RT": _RISK_30_10, "TIT-2S5-RTC": _RISK_30_10,
+    # owner 31/10/2026
+    "TIT-2S5-F20": ("No leverage · up to 20 positions · 5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps · stop −0.20% net · "
+                    "step profit lock from +0.10% net (+0.20%, then every 0.15)",
+                    "Held by the live rule: stop −0.20% net until the lock arms at +0.10% net; then the floor is the last step "
+                    "reached (+0.10%, +0.20%, then every 0.15); sold in the last 30 seconds if positive.",
+                    "step lock +0.10% · stop −0.20%"),
+}
 SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
 # The one R2D2 book opened on 27/10/2026 from the NAV with interest at the 26/10 close (owner 26/10/2026): the T-bill
 # interest the cash-yield ledger posts for sessions from this one on is money of the book (cash and NAV).
@@ -501,6 +521,8 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
             trade_count=len(today_doc.get("trades") or []), metadata={"source": BOOK_SOURCE, "config": str(today_doc.get("config"))})
     return response.model_copy(update={
         "book_source": BOOK_SOURCE, "live_rule": LIVE_RULES.get(config), "live_slots": LIVE_SLOTS.get(config),
+        "live_risk": (LIVE_RISK.get(config) or (None,) * 3)[0], "live_hold": (LIVE_RISK.get(config) or (None,) * 3)[1],
+        "live_exits": (LIVE_RISK.get(config) or (None,) * 3)[2],
         "experiment_code": "R2D2 LIVE · %s" % config, "status": "running",
         "methodology_version": "R2D2 LIVE · %s" % config, "today_episode_stats": episodes, "stats": stats,
         "last_cycle": last_cycle, "entries_paused": False, "nav_usd": round(nav, 2), "accounting_nav_usd": round(nav, 2),

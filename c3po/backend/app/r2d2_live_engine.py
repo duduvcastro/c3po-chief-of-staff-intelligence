@@ -1,17 +1,19 @@
 """The live R2D2 inside the C3PO server, on the EODHD real-time stream (owner, 27/10/2026: "claro que tem que mudar
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
-The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10; TIT-2S5-RTC, entries until
-the close, from 02/11): stocks that open at least 1% below the previous close,
+The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10; TIT-2S5-F20 from 02/11:
+entries until the close, sizes by the spread paid, stop -0.20%, the new lock steps): stocks that open at least 1% below
+the previous close,
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
 real ask, with a quoted spread of at most 5 bps (owner 29/10; 3 bps until then), up to
 the close, 16:00 ET (owner 30/10; 15:29:59 until then) — the ask and the spread of the NBBO prevailing at that instant, read from Massive as the lab measured them
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
-not answer, 20 positions of NAV/20, re-entry allowed after an exit. Every second each open position is checked at the real bid:
-stop at -0.4% net until a step profit lock arms at +0.10% net, whose floor is the last step the peak reached (every 0.05 up
-to +0.30%, every 0.10 above; owner 29/10, it was a +0.15% lock trailing the peak), every positive position sold from 15:59:30 ET; the
-negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
+not answer, up to 20 positions sized by the spread paid (owner 31/10: 5% of NAV at <= 2 bps, 4% at <= 3 bps, 2.5% at
+<= 5 bps; NAV/20 each until then), re-entry allowed after an exit. Every second each open position is checked at the real
+bid: stop at -0.20% net (owner 31/10; -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
+last step the peak reached (owner 31/10: +0.10, +0.20, then every 0.15; until then every 0.05 up to +0.30%, every 0.10
+above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
 Universe: the 900 most liquid US common stocks (owner 29/10; 500 until then), from EODHD's end-of-day bulk files of the
@@ -43,8 +45,9 @@ logger = logging.getLogger(__name__)
 
 NEW_YORK = ZoneInfo("America/New_York")
 # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then); owner 30/10: entries until the close from 02/11
-# (TIT-2S5-RT until then: until 15:29:59 ET)
-CONFIG = "TIT-2S5-RTC"
+# (TIT-2S5-RT until then: until 15:29:59 ET); owner 31/10: the sizes by the spread, the -0.20% stop and the new lock steps
+# from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session)
+CONFIG = "TIT-2S5-F20"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -59,20 +62,26 @@ FEE_SIDE = 0.00005  # 0.5 bp per side: commission and SEC/FINRA fees (the lab's 
 RULE = {
     # owner 29/10/2026 ~17:2x BRT: "vamos mudar para até 5 bps para amanhã também" (it was 3 bps)
     "gap_min_percent": 1.0, "adv_min_usd": 15e6, "price_min": 5.0, "slots": 20, "spread_max_bps": 5.0,
-    # owner 29/10/2026 ~17:0x BRT: "a trava arma se ela chegar a 0,10%, aí a cada 0,05% ela gera uma nova trava. Se passar
-    # de 0,3% de lucro a trava sobe a cada 0,10pp" — the floor ON the step reached ("no degrau") — "e coloca o stop sem
-    # trava em -0,4%". Until then: stop -0.5%, a lock armed at +0.15% trailing the peak by 0.05 (0.10 before 13:51 BRT)
-    "stop_percent": 0.4, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.30,
-    "lock_wide_step_percent": 0.10,
+    # owner 31/10/2026 ~14:4x BRT, after the lab's what-ifs (results/whatif_run41202468334, whatif_run41223891729): "2 bps
+    # para 5% da posição de cada ação, 3 bps para 4%, 5 bps para 2,5% ... colocando o stop loss em -0,20% e escalonando o
+    # stop em 0,10%, 0,20% e depois subindo de +0,15pp" — the floor ON the step reached ("no degrau"): +0.10, +0.20, +0.35,
+    # +0.50 ... Until 30/10 (owner 29/10): stop -0.4%, steps of 0.05 from +0.10 to +0.30, then of 0.10; before 29/10 a
+    # -0.5% stop and a +0.15% lock trailing the peak
+    "stop_percent": 0.20, "lock_min_percent": 0.10, "lock_step_percent": 0.10, "lock_wide_from_percent": 0.20,
+    "lock_wide_step_percent": 0.15,
     # owner 30/10/2026 ~20:3x BRT: "para segunda-feira, faremos umas alterações de BPS e tamanho da compra" — the lab's
     # studies of 30/10 (results/stopstudy_run41123209315, results/exitstudy2_run41145478129): no stop, spread limit or size
     # made the rule profitable; selling EVERY position from 15:59:30 (nothing carried overnight) cut the loss a trade most
-    # (-0.061% vs -0.079%), and a size tapered by the spread paid cut the US$ loss with the same trades. Both levers are
-    # here with the values in force (False / "equal"): the owner's choice sets them
+    # (-0.061% vs -0.079%), and a size tapered by the spread paid cut the US$ loss with the same trades. The owner, 31/10
+    # ~08:5x BRT: "Zerar é idiotice, não muda nada, pois não pernoitamos com mais de 1 ou dois papeis em carteira" — the
+    # flat close stays off; the sizes are his tiers (above)
     "close_flat": False,  # True: from SELL_POSITIVES_FROM every position sells at the first check, whatever its sign
-    "size_rule": "equal",  # "equal": NAV/slots; "taper": x (1 - 0.15 x (spread - 1)) in [0.4, 1]; "inverse": x min(1, 2/spread)
+    # "equal": NAV/slots; "taper": x (1 - 0.15 x (spread - 1)) in [0.4, 1]; "inverse": x min(1, 2/spread); "tiers": the
+    # owner's of 31/10, x 1 at <= 2 bps (5% of NAV), x 0.8 at <= 3 bps (4%), x 0.5 above (2.5% up to the 5 bps limit)
+    "size_rule": "tiers",
 }
-SIZE_RULES = ("equal", "taper", "inverse")
+SIZE_RULES = ("equal", "taper", "inverse", "tiers")
+TIER_BOUND_BPS = 1e-6  # a spread computed a hair over a tier's bound (float error: 99.99 x 100.01 is 2.0000000001 bps) is in it
 if RULE["size_rule"] not in SIZE_RULES or not isinstance(RULE["close_flat"], bool):  # a typo never runs another size
     raise ValueError("R2D2 rule: unknown size_rule or a close_flat that is not a boolean")
 SESSION_OPEN = time(9, 30)
@@ -556,12 +565,15 @@ def size_weight(spread_bps: float, rule: str | None = None) -> float:
         return max(0.4, min(1.0, 1.0 - 0.15 * (spread_bps - 1.0)))
     if rule == "inverse":
         return min(1.0, 2.0 / spread_bps) if spread_bps > 0 else 1.0
+    if rule == "tiers":  # wider than 5 bps only a shadow is (the spread limit): it takes the widest tier
+        return 1.0 if spread_bps <= 2.0 + TIER_BOUND_BPS else 0.8 if spread_bps <= 3.0 + TIER_BOUND_BPS else 0.5
     return 1.0
 
 
 def lock_floor(peak: float) -> float:
-    """The armed lock's floor: the last step the peak reached (owner 29/10, "no degrau"): +0.10% net, then every 0.05 up
-    to +0.30%, then every 0.10 (+0.40, +0.50, ...). A peak a hair under a step (float error) still counts that step."""
+    """The armed lock's floor: the last step the peak reached ("no degrau"): from ``lock_min_percent`` every
+    ``lock_step_percent`` up to ``lock_wide_from_percent``, then every ``lock_wide_step_percent`` (owner 31/10: +0.10, +0.20,
+    +0.35, +0.50 ...; until then every 0.05 to +0.30, then 0.10). A peak a hair under a step (float error) still counts it."""
     low, step = RULE["lock_min_percent"], RULE["lock_step_percent"]
     wide_from, wide_step = RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]
     reached = peak + 1e-9  # one tolerance for the band and the step (pre-review: two made a gap just under +0.30%)
@@ -1097,15 +1109,17 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 5 from 02/11/2026 (owner, 30/10): the close mode and the size rule in the rule (their values in force: no
-    # change of behaviour by themselves); version 4 entries until the close; version 3 (30/10) the stop at -0.4% and the
-    # step lock from +0.10%; version 2 (29/10 afternoon) the lock trailing the peak by 0.05, version 1 before it
+    # version 6 from 02/11/2026 (owner, 31/10): the sizes by the spread paid, the stop at -0.20% and the lock's steps
+    # +0.10 / +0.20 / every 0.15; version 5 the close mode and the size rule as parameters; version 4 entries until the
+    # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
+    # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 5, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 6, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat()},
-        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second, "
-        "the stop at -0.4%, the step profit lock from +0.10% and the spread at most 5 bps (owner 29/10/2026); entries "
-        "until the close (owner 30/10/2026); the close mode and the size rule as parameters (owner 30/10/2026)")
+        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second and "
+        "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
+        "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps), the stop at -0.20% and the step profit lock +0.10 / +0.20 / every 0.15 "
+        "(owner 31/10/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
