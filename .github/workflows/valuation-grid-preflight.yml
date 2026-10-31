@@ -127,19 +127,17 @@ jobs:
           [[ "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 1
           raw="$RUNNER_TEMP/raw"
           mkdir -p "$raw" || exit 1
-          deadline=$(( DEADLINE_AT - $(date +%s) ))  # what is left of the window's deadline now; the host fixes ONE end from it
-          [ "$deadline" -gt 600 ] || { echo 'the deadline is too close' >&2; exit 1; }
+          [ $(( DEADLINE_AT - $(date +%s) )) -gt 600 ] || { echo 'the deadline is too close' >&2; exit 1; }
           rc=0
+          # the host receives the ABSOLUTE deadline (epoch seconds): no time spent before or during its guards is ever
+          # granted again (Codex 6544583420 and 6544952899, P2-2)
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            -i ~/.ssh/c3po_deploy "$USER@$HOST" "RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' DEADLINE='$deadline' bash -s" \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" "RUN_ID='$RUN_ID' RUN_TOKEN='$RUN_TOKEN' DEADLINE_AT='$DEADLINE_AT' bash -s" \
             > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
           set -uo pipefail
-          #   10 arguments / app dir   11 manifest file   12 api container   25 the deadline passed during the guards
-          #   26 host clock            36 as-filed backfill not paused / worker absent
-          [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ && "$DEADLINE" =~ ^[0-9]+$ ]] || exit 10
-          now=$(date +%s) || exit 26
-          [[ "$now" =~ ^[0-9]+$ ]] || exit 26
-          end=$(( now + DEADLINE ))  # ONE end on the host clock, before any guard waits (Codex 6544583420 P2-2)
+          #   10 arguments / app dir   11 manifest file   12 api container   25 under 10 min left of the deadline
+          #   26 host clock            27 inside a US session or the nightly window   36 as-filed backfill not paused
+          [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_TOKEN" =~ ^[0-9]+-[0-9]+$ && "$DEADLINE_AT" =~ ^[0-9]+$ ]] || exit 10
           cd /opt/chief-of-staff-digital || exit 10
           file="/tmp/valuation-grid-preflight-$RUN_ID.json"
           trap 'rm -f "$file"' EXIT
@@ -152,10 +150,20 @@ jobs:
           [ -n "$ir" ] || exit 36
           backfill=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$ir" | awk -F= '$1 == "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL" {print $2}') || exit 36
           [ "$backfill" = 0 ] || exit 36
-          # what is left of the ONE end, read again right before the module starts: the guards' time is never granted again
+          # right before the module starts, on the host's own clock: the windows again (the grid's: a weekday 09:00-16:30
+          # New York, 23:30-08:15 Sao Paulo) and what is left of the absolute deadline, the module's whole time
           now=$(date +%s) || exit 26
-          left=$(( end - now ))
-          [ "$left" -ge 600 ] || { echo 'the deadline passed during the guards' >&2; exit 25; }
+          [[ "$now" =~ ^[0-9]+$ ]] || exit 26
+          ny_day=$(TZ=America/New_York date -d "@$now" +%u) || exit 26
+          ny_time=$(TZ=America/New_York date -d "@$now" +%H%M) || exit 26
+          sp_time=$(TZ=America/Sao_Paulo date -d "@$now" +%H%M) || exit 26
+          if { [ "$ny_day" -le 5 ] && [ "$((10#$ny_time))" -ge 900 ] && [ "$((10#$ny_time))" -lt 1630 ]; } \
+             || [ "$((10#$sp_time))" -ge 2330 ] || [ "$((10#$sp_time))" -lt 815 ]; then
+            echo 'inside a US session or the nightly window' >&2
+            exit 27
+          fi
+          left=$(( DEADLINE_AT - now ))
+          [ "$left" -ge 600 ] || { echo 'under 10 min left of the deadline' >&2; exit 25; }
           echo "LAUNCHED $RUN_TOKEN"
           # `-X valuation_pit_run_token=<run>-<attempt>` (never read by the module): the cleanup stops THIS process only
           "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api timeout -s TERM -k 120 "$left" \
