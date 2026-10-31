@@ -626,7 +626,9 @@ class Engine:
         self.sources = {"massive": 0, "stream": 0, "unanswered": 0, "mismatch": 0, "stream_would_refuse": 0}
         # what each exit check of a held name marked on: Massive's NBBO, the feed's fresh quote, or nothing (this process)
         self.exit_sources = {"massive": 0, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
-        self.marked_moment: dict[str, datetime] = {}  # when the exits last marked each held name (the screen's marks only)
+        # when the exits last marked each held name: the screen's marks, and the exits' wait on Massive (a name marked during
+        # it is not marked again on the answer asked before it)
+        self.marked_moment: dict[str, datetime] = {}
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
@@ -720,8 +722,8 @@ class Engine:
                                budget=NBBO_EXIT_BUDGET_SECONDS, between=between)
         for symbol in pending:
             position = self.state.positions.get(symbol)
-            # a pass on the pushed NBBO while the step waited (``between``) sold the name, or judged it on a quote newer
-            # than the answer asked before the wait: nothing older marks it again
+            # a pass on the pushed NBBO while the step waited (``between``) sold the name, or marked it since the wait
+            # began: the answer asked before the wait never marks it again (the next pass reads the newest pushed quote)
             if position is None or self.marked_moment.get(symbol) != marked_before[symbol]:
                 continue
             market = view(symbol)
@@ -914,9 +916,10 @@ class Engine:
 
     def fast_exits(self, now: datetime, view: Callable[[str], MarketView],
                    pushed: Callable[[str], tuple[float, float, datetime] | None]) -> list[dict[str, Any]]:
-        """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"): every
-        held name with a usable NBBO pushed by Massive is judged on it, read and used at one instant as in ``step``; a name
-        without one waits for the next full check (Massive asked, then the feed). Never the entries, never the shadows."""
+        """Between the full checks of a second (owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s"), and
+        inside one while it waits on Massive (``run_session``'s ``during_wait``): every held name with a usable NBBO pushed
+        by Massive is judged on it, read and used at one instant as in ``step``; a name without one waits for the next full
+        check (Massive asked, then the feed). Never the entries, never the shadows."""
         started = clock_time.monotonic()
         fills: list[dict[str, Any]] = []
         for symbol in list(self.state.positions):
@@ -1240,8 +1243,9 @@ def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | Non
     answers that came within ``budget`` (default ``NBBO_STEP_BUDGET_SECONDS``) of the first asking (starting the threads counts). One that
     has not answered by then is never waited for (its thread ends on its own request's deadline) and one that raised
     is no answer: the stream's quote stands in. ``between`` is called after every ``FAST_EXIT_MIN_SECONDS`` of the
-    wait while an answer is still due and the budget lasts (load test of 31/10: the session's passes on the pushed NBBO
-    stood still while a step waited, so a stop the stream pushed meanwhile waited up to ~0.7 s for its sale)."""
+    wait while an answer is still due and the budget lasts; an answer that came during a ``between`` call that ran past
+    the budget still counts (load test of 31/10: the session's passes on the pushed NBBO stood still while a step waited,
+    and a stop the stream pushed meanwhile waited for the step's end, p99 613 ms; with the passes, 24 ms)."""
     deadline = clock_time.monotonic() + (NBBO_STEP_BUDGET_SECONDS if budget is None else budget)
     pool = ThreadPoolExecutor(max_workers=max(1, min(NBBO_PARALLEL, len(symbols))), thread_name_prefix="r2d2-nbbo")
     try:
@@ -1332,9 +1336,11 @@ class MassiveQuoteStream:
 
     def wait_update(self, timeout: float) -> bool:
         """Block until a new quote of a followed name arrives (True) or ``timeout`` passes (False). A quote recorded
-        between two waits is never lost: it is stored before the signal, and the pass that follows reads it."""
+        between two waits is never lost: it is stored before the signal, and the signal is cleared only when this wait
+        saw it (a pass that runs only on True — a step's ``during_wait`` — never loses one recorded just after a False)."""
         updated = self._updated.wait(timeout)
-        self._updated.clear()
+        if updated:
+            self._updated.clear()
         return updated
 
     def start(self) -> None:
@@ -1728,13 +1734,13 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         except Exception:  # noqa: BLE001 - display only
             logger.exception("R2D2 live: the screen's marks could not be handed over")
     waited: list[dict[str, Any]] = []  # the sales of the passes run while a step waited on Massive
-    wait_clock = {"pass": 0.0, "marks": 0.0}
+    wait_clock = {"pass": 0.0, "marks": 0.0, "failed": 0.0}
 
     def during_wait() -> None:
         """While a step waits on Massive's answers (the quiet held names' marks, the crosses' NBBO), the held names on
         the pushed NBBO as between the steps: a pass on a new quote, at least one every FAST_EXIT_SECONDS (``ask_nbbo``
         calls this every FAST_EXIT_MIN_SECONDS at most), and the screen's marks on a sale or every FAST_EXIT_SECONDS."""
-        if massive is None or not engine.state.positions:
+        if massive is None or not engine.state.positions or wait_clock["failed"]:
             return
         wake = getattr(massive, "wait_update", None)
         if not (wake is not None and wake(0)) and clock_time.monotonic() - wait_clock["pass"] < FAST_EXIT_SECONDS:
@@ -1743,7 +1749,12 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         instant = now()
         if instant >= at(SESSION_CLOSE):  # never a check past the close
             return
-        fast = engine.fast_exits(instant, stream.view, massive.quote)
+        try:
+            fast = engine.fast_exits(instant, stream.view, massive.quote)
+        except Exception:  # noqa: BLE001 - the step's own sales are kept; the pass after the step surfaces a lasting fault
+            wait_clock["failed"] = 1.0  # no more passes in this step's waits, one log line
+            logger.exception("R2D2 live: a pass during a step's wait failed")
+            return
         waited.extend(fast)
         if fast or clock_time.monotonic() - wait_clock["marks"] >= FAST_EXIT_SECONDS:
             write_marks()
@@ -1752,6 +1763,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         while now() < at(SESSION_CLOSE):
             moment = now()
             began = wait_clock["pass"] = clock_time.monotonic()  # the step's own check is this second's first pass
+            wait_clock["failed"] = 0.0
             fills = engine.step(moment, stream.view, signal, nbbo, pushed=massive.quote if massive is not None else None,
                                 between=during_wait if massive is not None else None)
             if waited:  # a sale of a pass run during the step's wait is one of its fills (the feeds follow, a commit)
