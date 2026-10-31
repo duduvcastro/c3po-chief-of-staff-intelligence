@@ -32,7 +32,8 @@ cannot be read is "unreadable".
 
 Counts only (the repository is public): no symbol, issuer, value or error text; sections by their market and session.
 
-    docker compose exec -T -e PGOPTIONS='-c default_transaction_read_only=on' api python -m app.valuation_grid_preflight < rev3.json
+    docker compose exec -T -e PGOPTIONS='-c default_transaction_read_only=on' api \
+        python -m app.valuation_grid_preflight --deadline-at <epoch seconds> < rev3.json
 """
 from __future__ import annotations
 
@@ -81,7 +82,13 @@ def arm_deadline(seconds: float, on_expiry: Callable[[], None]) -> threading.Tim
 
 
 def _end_at_the_deadline() -> None:
-    print(json.dumps({"kind": "refused", "reason": "deadline_reached"}, sort_keys=True), flush=True)
+    """The process's end at the original deadline, never waiting on its own line (Codex 6546328535): a second timer exits
+    a second later whatever the write does (a full pipe blocks it), and a failed write (a closed one) is ignored."""
+    arm_deadline(1.0, lambda: os._exit(124))
+    try:
+        os.write(1, (json.dumps({"kind": "refused", "reason": "deadline_reached"}, sort_keys=True) + "\n").encode())
+    except OSError:
+        pass
     os._exit(124)  # from the timer's thread: the process ends now, whatever the main thread waits on
 
 

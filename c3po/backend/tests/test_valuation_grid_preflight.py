@@ -5,6 +5,7 @@ import io
 import json
 import random
 import sys
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -437,6 +438,41 @@ def test_the_process_checks_its_own_start_against_the_original_deadline_and_the_
     monkeypatch.setattr(preflight, "run", lambda database, rev3: {"sections": 0})
     monkeypatch.setattr(preflight.sys, "stdin", type("Stdin", (), {"buffer": io.BytesIO(b"{}")})())
     assert _main(SATURDAY + 1200, database=_db()) == 0 and armed == [1200]
+
+
+@pytest.mark.parametrize("stdout", ["closed", "full"])
+def test_the_process_ends_at_its_deadline_whatever_its_stdout_does(stdout) -> None:
+    """Codex 6546328535 (P2-2): the end printed its line first, so a closed stdout raised in the timer's thread and a full
+    one blocked it, and the process lived on. It ends with 124 in both cases (a real process, a real pipe)."""
+    import fcntl
+    import os
+    import subprocess
+    from pathlib import Path
+
+    read_end, write_end = os.pipe()
+    if stdout == "closed":
+        os.close(read_end)  # no reader: the line's write fails (EPIPE)
+    else:
+        flags = fcntl.fcntl(write_end, fcntl.F_GETFL)
+        fcntl.fcntl(write_end, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        try:
+            while True:  # fill the pipe: the child's blocking write then waits forever
+                os.write(write_end, b"x" * 4096)
+        except BlockingIOError:
+            pass
+        fcntl.fcntl(write_end, fcntl.F_SETFL, flags)
+    backend = Path(__file__).resolve().parents[1]
+    code = "import time; from app import valuation_grid_preflight as p; p.arm_deadline(0.05, p._end_at_the_deadline); time.sleep(30)"
+    started = time.monotonic()
+    child = subprocess.Popen([sys.executable, "-c", code], cwd=backend, stdout=write_end, stderr=subprocess.DEVNULL)
+    os.close(write_end)
+    try:
+        assert child.wait(timeout=20) == 124 and time.monotonic() - started < 20
+    finally:
+        if child.poll() is None:
+            child.kill()
+        if stdout == "full":
+            os.close(read_end)
 
 
 def test_the_deadline_timer_fires_on_its_own_thread() -> None:
