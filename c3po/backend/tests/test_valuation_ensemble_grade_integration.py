@@ -46,6 +46,9 @@ def _forbid_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
 def integrated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     database, prices, v3, served = _fixture(etf="FFF")
     assert isinstance(prices, PinnedPrices)
+    # on the host every fact rev3 read was written before it persisted its sections: the statements cut of rev 2 (§2)
+    for row in database._statement_filings + database._statement_vintages:
+        row["first_seen_at"] = min(row["first_seen_at"], executor._written_at(v3) - timedelta(days=1))
     session = prices.session_date
     slot = {"market": "NASDAQ", "session_date": session, "as_of": T.isoformat()}
     rev3 = {"complete": True, "statements": "vintages", "grid_start": "2021-06-01",

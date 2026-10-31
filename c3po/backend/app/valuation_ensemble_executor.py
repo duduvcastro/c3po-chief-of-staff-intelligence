@@ -31,6 +31,19 @@ def _instant(value: Any) -> datetime:
     return utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
 
 
+def _written_at(snapshot: Mapping[str, Any]) -> datetime:
+    """A section's statements cut (PREREG rev 2 §2): its V3 snapshot's persistence instant, zoned, or a refusal."""
+    value = snapshot.get("published_at")
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            value = None
+    if not isinstance(value, datetime) or value.utcoffset() is None:
+        raise ValueError("ensemble_statements_cut_missing")
+    return utc(value)
+
+
 def validate_owner_order(raw: bytes, expected_sha256: str, *, binding: InstrumentBinding,
                          now: datetime) -> dict[str, Any]:
     """Bind the already authorized order bytes; never infer an order from flags.
@@ -158,8 +171,10 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
     ``database`` is an already-open, read-only handle. ``prices_for`` must resolve
     the reference publication, never the latest; compute_grid_section verifies it.
     ``operational_guard`` must execute the operator's actual host/deploy/window/
-    timer/backfill/autopilot guards. It is mandatory and is invoked before and
-    after each section, with expiration checked again after every source read.
+    timer/blocking-ingestion/autopilot guards (no as-filed backfill or poll guard
+    since PREREG rev 2: each section reads the store cut at its V3 published_at).
+    It is mandatory and is invoked before and after each section, with expiration
+    checked again after every source read.
     This library cannot authenticate external operational state from JSON fields.
     """
     now = clock or (lambda: datetime.now(timezone.utc))
@@ -174,6 +189,7 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
     from .valuation_ensemble_calendar import report_calendar_for
     if dict(report_calendar) != report_calendar_for(rev3_manifest):
         raise ValueError("ensemble_calendar_differs_from_reference_publication")
+    from .valuation_ensemble_frozen import FrozenAsFiledReader, FrozenIndex, check_section_statements
     from .valuation_ensemble_grid import compute_grid_section
 
     def active() -> None:
@@ -238,6 +254,14 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
     completed = {_slot(x) for x in entries}
     computed = 0
     reason = None
+    frozen: list[FrozenIndex] = []  # loaded once a chunk, the first time a section reads the store (rev 2 §2)
+
+    def frozen_index() -> FrozenIndex:
+        if not frozen:
+            active()
+            frozen.append(FrozenIndex.load(database))
+            active()
+        return frozen[0]
     for v3_ref, served_ref in pairs:
         if _slot(v3_ref) in completed or not order["from_session"] <= str(v3_ref["session_date"]) <= order["to_session"]:
             continue
@@ -254,9 +278,12 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
         active()
         prices = prices_for(v3_ref)
         active()
+        vintages = FrozenAsFiledReader(database, written_until=_written_at(v3_snapshot), index=frozen_index)
+        check_section_statements(database, market=str(v3_ref["market"]), as_of=_instant(v3_ref["as_of"]), v3_snapshot=v3_snapshot,
+                                 served_snapshot=served_snapshot, reader=vintages, before_read=active)
         section = compute_grid_section(database, market=str(v3_ref["market"]),
             as_of=_instant(v3_ref["as_of"]), prices=prices, v3_snapshot=v3_snapshot,
-            served_snapshot=served_snapshot, implementation=file_hashes, seed=20261026,
+            served_snapshot=served_snapshot, implementation=file_hashes, seed=20261026, vintages=vintages,
             volume_basis=str(rev3_manifest.get("volume_basis", {}).get("decision")), before_read=active)
         guard()
         company_refs = []

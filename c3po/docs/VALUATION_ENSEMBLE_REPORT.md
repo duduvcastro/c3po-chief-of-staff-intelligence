@@ -1,8 +1,8 @@
 # Relatório do ensemble em modo grade
 
-`app.valuation_ensemble_report` implementa a estatística do pré-registro rev 1,
+`app.valuation_ensemble_report` implementa a estatística do pré-registro rev 2,
 vinculado ao documento de SHA256
-`712b4c171c4d059a31156eba8f7a9624f1195083309471e89e0519271d2e5471`.
+`b786ef8ff21d2b0dbcc2e39bcaec3a984e7a204b8a796d34a84c49ace69db9a9` (a estatística é a da rev 1; a rev 2 muda a base das demonstrações).
 Não abre conexões, não captura originais, não altera o preço servido e não promove
 uma fonte. O executor fornece leitores somente de leitura para os snapshots e os
 rótulos da publicação de preços já pinada.

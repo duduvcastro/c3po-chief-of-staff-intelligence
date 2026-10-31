@@ -4,7 +4,7 @@ run-name: Valuation ensemble grid (PREREG_VALUATION_ENSEMBLE_PIT_US_V1) — ${{ 
 # Dispatch only. The scientific runner of PREREG_VALUATION_ENSEMBLE_PIT_US_V1, through the deploy SSH transport and the
 # guards of valuation-pit-backtest.yml (rev3):
 #   inventory   no host, no secret: the instrument's source inventory at this checkout (what the pin must name)
-#   host-check  READ-ONLY: reboot flags, disk and memory, the as-filed backfill setting, the rev3 host check (price
+#   host-check  READ-ONLY: reboot flags, disk and memory, the rev3 host check (price
 #               publications, coverage, running ingestions) — exempt from the operating window
 #   grid        ONE bounded chunk of app.valuation_ensemble_driver in the running api container (read-only database
 #               session; private receipts under /app/day-d-data/valuation-ensemble)
@@ -21,9 +21,9 @@ run-name: Valuation ensemble grid (PREREG_VALUATION_ENSEMBLE_PIT_US_V1) — ${{ 
 # previous day to 08:15 America/Sao_Paulo); a chunk stops 20 minutes before the next one and every host process runs under
 # what is left of ONE deadline, 10 minutes before it. On the host, the preflight fails closed with its own status: no
 # pending reboot, no R2D2/massive host service active or timer due, no nightly valuation worker or long ingestion
-# running, the as-filed backfill paused (C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL=0 in the running Investor
-# Relations worker: the grade reads statement vintages), free disk on the data volume and memory; the deployment lock is
-# taken SHARED for the whole leg. A cancelled or failed run stops the host process THIS run launched (its token). Only
+# running (the rev3 rule), free disk on the data volume and memory; the deployment lock is taken SHARED for the whole leg.
+# The as-filed collection and backfill may run (PREREG rev 2 §2): each section reads the store cut at its V3 snapshot's
+# published_at, so no write after it enters the section. A cancelled or failed run stops the host process THIS run launched (its token). Only
 # aggregates leave the host (counts, digests, timings): the driver prints no symbol, the remote stderr stays in the
 # runner's temp directory — this repository is public. Every guard is explicit (`|| exit N`); nothing relies on `set -e`.
 
@@ -480,7 +480,7 @@ jobs:
           #   20 ingestion check run   21 blocking ingestion  22 free disk read     23 disk below need   24 memory below need
           #   25 leg floor             26 host clock          27 services query     28 timers query      29 timer next elapse
           #   30 timer elapse parse    31 ingestion parse     32 memory read        33 lock open         34 lock error
-          #   36 as-filed backfill not paused / Investor Relations worker absent      37 data volume        38 rev3 manifest file
+          #   37 data volume           38 rev3 manifest file
           #   39 the order or the pin is not in the deployed checkout (deploy first)
           APP_DIR=/opt/chief-of-staff-digital
           cd "$APP_DIR" || exit 10
@@ -499,20 +499,12 @@ jobs:
           [ -n "$api" ] || { echo 'api container is not running' >&2; exit 12; }
           state=$(docker inspect -f '{{.State.Status}}' "$api") || exit 12
           [ "$state" = running ] || { echo "api container is $state" >&2; exit 12; }
-          # the as-filed backfill must be PAUSED in the running Investor Relations worker: the grade re-reads statement vintages
-          ir=$("${compose[@]}" ps -q investor-relations-worker) || { echo 'the Investor Relations worker cannot be listed: refused (fail closed)' >&2; exit 36; }
-          backfill=missing
-          if [ -n "$ir" ]; then
-            backfill=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$ir" | awk -F= '$1 == "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL" {print $2}') \
-              || { echo 'the Investor Relations worker environment cannot be read: refused (fail closed)' >&2; exit 36; }
-          fi
           data=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/day-d-data"}}{{.Source}}{{end}}{{end}}' "$api") || { echo 'the data volume cannot be read' >&2; exit 37; }
           [ -n "$data" ] || { echo 'the api container has no /app/day-d-data mount' >&2; exit 37; }
-          if [ "$MODE" = host-check ]; then  # read only and exempt: it shows a pending reboot or an active backfill instead of refusing on it
+          if [ "$MODE" = host-check ]; then  # read only and exempt: it shows a pending reboot instead of refusing on it
             for flag in /run/c3po-security/reboot.pending /var/run/reboot-required; do
               if [ -e "$flag" ]; then echo "REBOOT pending $flag"; else echo "REBOOT absent $flag"; fi
             done
-            echo "BACKFILL issuers_per_poll=${backfill:-unset}"
             disks=$(df -P / /var/lib/docker "$data") || { echo 'the free disk cannot be read' >&2; exit 13; }
             printf '%s\n' "$disks" | awk 'NR > 1 {print "DISK " $4 " " $2 " " $6}' || exit 13
             memory=$(awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {sub(":", "", $1); print "MEM " $1 " " $2}' /proc/meminfo) || { echo 'the memory cannot be read' >&2; exit 14; }
@@ -521,8 +513,6 @@ jobs:
             exec "${compose[@]}" exec -T "${readonly_session[@]}" api python -m app.valuation_pit_grid --market US --host-check </dev/null
           fi
           case "$MODE" in grid|report) ;; *) echo 'unknown mode' >&2; exit 16 ;; esac
-          [ -n "$ir" ] || { echo 'the Investor Relations worker is not running: the backfill setting cannot be read (fail closed)' >&2; exit 36; }
-          [ "$backfill" = 0 ] || { echo 'the as-filed backfill is not paused (C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL must be 0): the grade must wait' >&2; exit 36; }
           # the driver reads the order and the pin from the DEPLOYED checkout (/legacy): the commit that added them must be deployed
           deployed=("c3po/ops/valuation-ensemble/$PIN.json")
           [ "$MODE" != grid ] || deployed+=("c3po/ops/owner-orders/$ORDER.json")
@@ -640,7 +630,7 @@ jobs:
           # only lines of the expected shapes leave the runner: the preflight's and the host check's own lines, the driver's
           # JSON lines (aggregates by construction); anything else is COUNTED, never printed (this repository is public)
           # host lines: the preflight's and the host check's, BEFORE the driver starts (after LAUNCHED only the driver's JSON lines)
-          shapes = re.compile(r"^(PREFLIGHT disk_kb=\d+ mem_kb=\d+|REBOOT (pending|absent) [/a-z0-9.-]+|BACKFILL issuers_per_poll=[0-9a-z]*|DISK \d+ \d+ [/a-z0-9._-]+|MEM (MemTotal|MemAvailable|SwapTotal|SwapFree) \d+)$")
+          shapes = re.compile(r"^(PREFLIGHT disk_kb=\d+ mem_kb=\d+|REBOOT (pending|absent) [/a-z0-9.-]+|DISK \d+ \d+ [/a-z0-9._-]+|MEM (MemTotal|MemAvailable|SwapTotal|SwapFree) \d+)$")
           upper_ok = {"PASS", "FAIL", "VOID", "UNMEASURED", "NEGATIVE", "SINGLE", "US", "NASDAQ", "NYSE"}
 
 

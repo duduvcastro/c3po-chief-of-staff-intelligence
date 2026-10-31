@@ -16,8 +16,10 @@ FILES = {f"c3po/backend/app/{name}": "a" * 64 for name in (
     "valuation_ensemble_grid.py", "valuation_ensemble_grid_consensus.py", "valuation_ensemble_report.py",
     "valuation_ensemble_executor.py", "valuation_ensemble_pin.py", "valuation_ensemble_models.py",
     "valuation_ensemble_inputs.py", "valuation_ensemble_aggregation.py", "valuation_pit_rerun.py", "valuation_accuracy_report.py",
+    "valuation_ensemble_frozen.py", "valuation_ensemble_readiness.py",  # rev 2's required modules
 )}
 FILES[".github/workflows/valuation-ensemble-grid.yml"] = "b" * 64
+FILES[".github/workflows/valuation-ensemble-readiness.yml"] = "b" * 64  # Codex 6549349754: the readiness workflow is pinned
 for _dependency in ("valuation_pit_backtest_report.py", "valuation_pit_panel.py", "valuation_panel.py",
                     "valuation_price_history.py", "statement_vintages.py", "sec_xbrl.py", "cvm_fundamentals.py",
                     "valuation_asfiled.py", "valuation_v2_engine.py", "valuation_pit_served.py", "valuation_official.py", "valuation_v3_macro.py"):

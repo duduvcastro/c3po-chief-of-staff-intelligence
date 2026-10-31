@@ -20,6 +20,8 @@ from app import valuation_ensemble_calendar as calendar
 from app import valuation_ensemble_executor as executor
 from app import valuation_ensemble_grid as grid
 from app import valuation_ensemble_pin as instrument
+from app import valuation_ensemble_frozen as frozen
+from app.valuation_ensemble_frozen import FrozenAsFiledReader
 from app.valuation_ensemble_inputs import canonical_hash
 from app.valuation_ensemble_persistence import FileReceiptStore
 
@@ -70,7 +72,9 @@ def fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         v3.append({**base, "run_key": vkey, "cycle_id": f"V{index}"})
         served.append({**base, "run_key": skey, "cycle_id": f"S{index}", "v3_run_key": vkey})
         for cid, key in ((f"V{index}", vkey), (f"S{index}", skey)):
-            snapshots[cid] = {"id": cid, "inputs": {"run_key": key, "market": market, "as_of": as_of}}
+            # the V3 sibling's persistence instant: the section's statements cut (PREREG rev 2 §2)
+            snapshots[cid] = {"id": cid, "inputs": {"run_key": key, "market": market, "as_of": as_of},
+                              "published_at": "2026-10-23T12:00:00+00:00"}
     rev3 = {"complete": True, "statements": "vintages", "grid": v3, "served_grid": served,
             "volume_basis": {"decision": "as_traded"}, "grid_start": "2021-06-01"}
     rev3["manifest_sha256"] = canonical_hash(rev3)
@@ -109,6 +113,13 @@ def fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         result["payload_sha256"] = canonical_hash(result)
         return result
     monkeypatch.setattr(grid, "compute_grid_section", compute)
+    context["statement_cuts"] = []
+    def check(database: Any, **kw: Any) -> dict[str, int]:  # rev 2 §2 before the section, on the reader it is handed
+        reader = kw["reader"]
+        assert isinstance(reader, FrozenAsFiledReader) and reader.written_until == executor._written_at(kw["v3_snapshot"])
+        context["statement_cuts"].append(reader.written_until)
+        return {"compared": 0, "not_evaluable": 0}
+    monkeypatch.setattr(frozen, "check_section_statements", check)
     def prices(entry: Any) -> Any:
         events.append("prices")
         return object()
@@ -310,12 +321,14 @@ def test_inventory_cli_is_inert_and_the_workflow_runs_a_grade_only_behind_its_gu
     inventory = json.dumps(jobs["inventory"])
     assert "--inventory" in inventory and "secrets." not in inventory and "ssh " not in inventory
     # the grade job: the approved phrase, main only, the order/pin/commit and comment checks, the rev3 digest, the window,
-    # the host preflight (backfill paused, blocking ingestions, R2D2 timers, reboot), the SHARED deployment lock, a read-only
-    # database session, the driver with the rev3 manifest on stdin, aggregates only, the cleanup of this run's process
+    # the host preflight (blocking ingestions, R2D2 timers, reboot), the SHARED deployment lock, a read-only database session,
+    # the driver with the rev3 manifest on stdin, aggregates only, the cleanup of this run's process; no as-filed backfill
+    # guard (PREREG rev 2 §2: each section reads the store cut at its V3 snapshot's published_at)
     grid = json.dumps(jobs["grid"])
+    assert "BACKFILL_ISSUERS_PER_POLL" not in text and "investor-relations-worker" not in text and "exit 36" not in text
     for fragment in ("RUN VALUATION ENSEMBLE GRID", "refs/heads/main", "c3po/ops/owner-orders/", "c3po/ops/valuation-ensemble/",
                      "merge-base --is-ancestor", "VALUATION-ENSEMBLE-INSTRUMENT-{role}", "the whole body, nothing else", "two different comments", instrument.REV3_MANIFEST_SHA256,
-                     "inside the US session or the nightly window", "C3PO_VALUATION_ASFILED_BACKFILL_ISSUERS_PER_POLL", "exit 36",
+                     "inside the US session or the nightly window",
                      "--host-check", "exit 21", "r2d2*", "reboot.pending", "flock -s -n 9", "default_transaction_read_only=on",
                      "-m app.valuation_ensemble_driver", "< \\\"$rev3_file\\\"", "unexpected lines (counted, not printed)",
                      "valuation_pit_run_token=$RUN_TOKEN", "exit 39", "author_association", "verify-failed", "/var/lib/docker",
@@ -427,3 +440,16 @@ def test_company_write_error_cannot_publish_a_completed_section_header(monkeypat
         run(context, max_runs=1)
     assert calls == ["VALUATION-ENSEMBLE-GRADE-COMPANY-ARTIFACT-v1"]
     assert not list(context["store"].directory.iterdir()) and context["database"].writes == 0
+
+
+def test_the_inventory_runs_on_the_standard_library_alone() -> None:
+    """The grid workflow's inventory job runs on a bare Python (no pip install): importing the executor must not pull a
+    dependency (the frozen reader, the grid and the reader are imported inside the chunk)."""
+    import subprocess
+    import sys
+
+    repository = Path(__file__).resolve().parents[3]
+    run = subprocess.run([sys.executable, "-S", "-m", "app.valuation_ensemble_executor", "--inventory", "--repository-root", str(repository)],
+                         cwd=repository / "c3po/backend", capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr[-500:]
+    assert "c3po/backend/app/valuation_ensemble_frozen.py" in json.loads(run.stdout)["files"]

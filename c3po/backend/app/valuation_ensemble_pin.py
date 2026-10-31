@@ -17,8 +17,8 @@ from typing import Any, Mapping
 from .valuation_ensemble_inputs import canonical_hash
 
 
-PREREG_COMMIT = "8b02ba0fbf715a9abb421eea6f00238aad5ef38d"
-PREREG_SHA256 = "712b4c171c4d059a31156eba8f7a9624f1195083309471e89e0519271d2e5471"
+PREREG_COMMIT = "3908cb9672b7fb4ed03124907b50caa14c5e36f2"  # rev 2, owner-signed 31/10/2026 18:36 BRT (receipt 6549453772)
+PREREG_SHA256 = "b786ef8ff21d2b0dbcc2e39bcaec3a984e7a204b8a796d34a84c49ace69db9a9"
 REV3_MANIFEST_SHA256 = "73a81bcef1cd93425dfab785ae57c52118ba09493a4b7169e31a0e0b6665f805"
 PIN_SCHEMA = "VALUATION-ENSEMBLE-INSTRUMENT-PIN-v1"
 MANIFEST_SCHEMA = "VALUATION-ENSEMBLE-GRID-MANIFEST-v1"
@@ -60,7 +60,7 @@ def _positive_id(value: Any) -> bool:
 def _instrument_path(value: Any) -> bool:
     if not isinstance(value, str):
         return False
-    if value == ".github/workflows/valuation-ensemble-grid.yml":
+    if value in (".github/workflows/valuation-ensemble-grid.yml", ".github/workflows/valuation-ensemble-readiness.yml"):
         return True
     return re.fullmatch(r"c3po/backend/app/(valuation_ensemble_[a-z0-9_]+|valuation_pit_rerun|valuation_accuracy_report|valuation_pit_backtest_report|valuation_pit_panel|valuation_panel|valuation_price_history|statement_vintages|sec_xbrl|cvm_fundamentals|valuation_asfiled|valuation_v2_engine|valuation_pit_served|valuation_official|valuation_v3_macro)\.py", value) is not None
 
@@ -90,11 +90,12 @@ def instrument_file_hashes(repository_root: Path | None = None) -> dict[str, str
         "valuation_pit_backtest_report.py", "valuation_pit_panel.py", "valuation_panel.py",
         "valuation_price_history.py", "statement_vintages.py", "sec_xbrl.py", "cvm_fundamentals.py",
         "valuation_asfiled.py", "valuation_v2_engine.py", "valuation_pit_served.py", "valuation_official.py", "valuation_v3_macro.py")]
-    files += [
-              root / ".github/workflows/valuation-ensemble-grid.yml"]
+    files += [root / ".github/workflows/valuation-ensemble-grid.yml",
+              root / ".github/workflows/valuation-ensemble-readiness.yml"]  # rev 2 §6: the readiness run before the pin
     required = {"valuation_ensemble_grid.py", "valuation_ensemble_grid_consensus.py",
                 "valuation_ensemble_report.py", "valuation_ensemble_executor.py",
-                "valuation_ensemble_pin.py"}
+                "valuation_ensemble_pin.py", "valuation_ensemble_frozen.py", "valuation_ensemble_readiness.py",
+                "valuation-ensemble-readiness.yml"}
     if not required.issubset({p.name for p in files}):
         raise ValueError("ensemble_instrument_inventory_incomplete")
     return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
@@ -144,7 +145,8 @@ def validate_instrument_pin(pin: Mapping[str, Any] | None, *, file_hashes: Mappi
                 problems.append("ensemble_instrument_mismatch:" + name)
         required_names = {"valuation_ensemble_grid.py", "valuation_ensemble_grid_consensus.py",
                           "valuation_ensemble_report.py", "valuation_ensemble_executor.py",
-                          "valuation_ensemble_pin.py", "valuation_pit_rerun.py", "valuation_accuracy_report.py", "valuation-ensemble-grid.yml"}
+                          "valuation_ensemble_pin.py", "valuation_pit_rerun.py", "valuation_accuracy_report.py", "valuation-ensemble-grid.yml",
+                          "valuation_ensemble_frozen.py", "valuation_ensemble_readiness.py", "valuation-ensemble-readiness.yml"}
         if not required_names.issubset({Path(name).name for name in expected_files}):
             problems.append("ensemble_instrument_required_file_missing")
     return sorted(set(problems))
