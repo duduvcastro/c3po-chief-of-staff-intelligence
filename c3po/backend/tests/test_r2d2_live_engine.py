@@ -2416,14 +2416,12 @@ def test_the_massive_trade_path_keeps_up_with_an_opening_burst() -> None:
 
 
 def test_the_shared_massive_path_keeps_the_exits_served_under_an_opening_load() -> None:
-    """Codex 6537835879: the REAL reader loop with trades and quotes mixed (a short opening burst, then a regular rate),
-    the shadow tapes and the engine's REAL fast exits on the pushed quotes — no trade or frame lost, no reconnect, and the
-    held names' quotes readable by the exits within bounds generous for a shared CI runner (the full profile is
-    ``python -m app.r2d2_massive_load``)."""
+    """Codex 6537835879: the REAL run_session (full step, fast passes, commits) with the shadow on the REAL reader loop —
+    trades and quotes mixed in a short opening burst then a regular rate, ten quotes crossing a stop: no trade or frame
+    lost, no reconnect, every crossing sold and every pushed quote read, within the harness's own criteria (the full
+    profile is ``python -m app.r2d2_massive_load``)."""
     from app import r2d2_massive_load
 
-    result = r2d2_massive_load.run(40_000, 2, 6_000, 1)
-    assert result["losses"] == {"trades": 0, "frames": 0} and result["reconnects"] == 0
-    assert result["taken"]["sink_failures"] == 0 and result["tapes_with_trades"] == 900
-    assert result["quote_to_exits_ms"]["n"] > 0 and result["quote_to_exits_ms"]["p99"] < 250
-    assert result["reader_lag_ms"]["p99"] < 250 and result["exit_passes"]["per_second"] > 10
+    result = r2d2_massive_load.run(0, 0, 40_000, 3, 6_000, 1, from_open=False)  # from 09:30:59: the exits at once
+    assert result["criteria"]["verdict"] == "PASS", result["criteria"]
+    assert result["taken"]["subscribed_channels"] >= r2d2_massive_load.CANDIDATES + 2 * len(r2d2_massive_load.HELD)  # T. and Q.
