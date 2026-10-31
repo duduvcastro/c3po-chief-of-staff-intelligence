@@ -58,8 +58,11 @@ LIVE_RULES = {
                   "ADV ≥ US$15M · price ≥ US$5 · spread ≤ 3 bps",
     "TIT-2S5-RT": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until 15:29:59 ET · "
                   "ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
+    # owner 30/10/2026: the entries run until the close
+    "TIT-2S5-RTC": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until the close (16:00 ET) · "
+                   "ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
 }
-LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1, "TIT-2S3-RT": 20, "TIT-2S5-RT": 20}
+LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1, "TIT-2S3-RT": 20, "TIT-2S5-RT": 20, "TIT-2S5-RTC": 20}
 SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
 # The one R2D2 book opened on 27/10/2026 from the NAV with interest at the 26/10 close (owner 26/10/2026): the T-bill
 # interest the cash-yield ledger posts for sessions from this one on is money of the book (cash and NAV).
