@@ -843,8 +843,13 @@ def test_the_live_producer_is_outside_the_signed_instrument_and_leaves_its_bytes
     files = json.loads(SIGNED_PIN.read_text(encoding="utf-8"))["files"]
     assert "c3po/backend/app/valuation_live_ensemble.py" not in files
     assert "c3po/backend/app/valuation_live_ensemble.py" not in instrument_file_hashes(REPOSITORY)
-    for path, digest in files.items():  # every signed instrument file is byte-identical to the owner-signed pin
-        assert hashlib.sha256((REPOSITORY / path).read_bytes()).hexdigest() == digest, path
+    # every signed instrument file the live producer reads is byte-identical to the owner-signed pin it names; the new
+    # epoch's executor and frozen reader (PREREG rev 2 §2, §6) belong to the next pin and are never the live producer's
+    used = {"c3po/backend/app/" + name for name in live.IMPLEMENTATION_FILES}
+    assert "c3po/backend/app/valuation_ensemble_executor.py" not in used and "c3po/backend/app/valuation_ensemble_frozen.py" not in used
+    for path, digest in files.items():
+        if path in used:
+            assert hashlib.sha256((REPOSITORY / path).read_bytes()).hexdigest() == digest, path
     assert not any(name.startswith("valuation_ensemble_") for name in live.__name__.split("."))  # outside the pin's glob
 
 

@@ -15,6 +15,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .valuation_ensemble_frozen import FrozenAsFiledReader, FrozenIndex
 from .valuation_ensemble_inputs import canonical_hash, utc
 from .valuation_ensemble_persistence import FileReceiptStore
 from .valuation_ensemble_pin import (InstrumentBinding, MANIFEST_SCHEMA, PREREG_COMMIT,
@@ -29,6 +30,19 @@ def _instant(value: Any) -> datetime:
     if not isinstance(value, str):
         raise ValueError("ensemble_order_zoned_time_required")
     return utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+
+
+def _written_at(snapshot: Mapping[str, Any]) -> datetime:
+    """A section's statements cut (PREREG rev 2 §2): its V3 snapshot's persistence instant, zoned, or a refusal."""
+    value = snapshot.get("published_at")
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            value = None
+    if not isinstance(value, datetime) or value.utcoffset() is None:
+        raise ValueError("ensemble_statements_cut_missing")
+    return utc(value)
 
 
 def validate_owner_order(raw: bytes, expected_sha256: str, *, binding: InstrumentBinding,
@@ -238,6 +252,14 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
     completed = {_slot(x) for x in entries}
     computed = 0
     reason = None
+    frozen: list[FrozenIndex] = []  # loaded once a chunk, the first time a section reads the store (rev 2 §2)
+
+    def frozen_index() -> FrozenIndex:
+        if not frozen:
+            active()
+            frozen.append(FrozenIndex.load(database))
+            active()
+        return frozen[0]
     for v3_ref, served_ref in pairs:
         if _slot(v3_ref) in completed or not order["from_session"] <= str(v3_ref["session_date"]) <= order["to_session"]:
             continue
@@ -254,9 +276,10 @@ def execute_grade_chunk(database: Any, *, rev3_manifest: Mapping[str, Any], pin:
         active()
         prices = prices_for(v3_ref)
         active()
+        vintages = FrozenAsFiledReader(database, written_until=_written_at(v3_snapshot), index=frozen_index)
         section = compute_grid_section(database, market=str(v3_ref["market"]),
             as_of=_instant(v3_ref["as_of"]), prices=prices, v3_snapshot=v3_snapshot,
-            served_snapshot=served_snapshot, implementation=file_hashes, seed=20261026,
+            served_snapshot=served_snapshot, implementation=file_hashes, seed=20261026, vintages=vintages,
             volume_basis=str(rev3_manifest.get("volume_basis", {}).get("decision")), before_read=active)
         guard()
         company_refs = []

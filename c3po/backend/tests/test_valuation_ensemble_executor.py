@@ -70,7 +70,9 @@ def fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         v3.append({**base, "run_key": vkey, "cycle_id": f"V{index}"})
         served.append({**base, "run_key": skey, "cycle_id": f"S{index}", "v3_run_key": vkey})
         for cid, key in ((f"V{index}", vkey), (f"S{index}", skey)):
-            snapshots[cid] = {"id": cid, "inputs": {"run_key": key, "market": market, "as_of": as_of}}
+            # the V3 sibling's persistence instant: the section's statements cut (PREREG rev 2 §2)
+            snapshots[cid] = {"id": cid, "inputs": {"run_key": key, "market": market, "as_of": as_of},
+                              "published_at": "2026-10-23T12:00:00+00:00"}
     rev3 = {"complete": True, "statements": "vintages", "grid": v3, "served_grid": served,
             "volume_basis": {"decision": "as_traded"}, "grid_start": "2021-06-01"}
     rev3["manifest_sha256"] = canonical_hash(rev3)
