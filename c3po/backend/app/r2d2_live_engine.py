@@ -1241,6 +1241,17 @@ def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | Non
 
 
 MASSIVE_STREAM_URL = "wss://socket.massive.com/stocks"
+# owner 30/10/2026: "vamos fazer isso: ... Passar também os negócios para o stream da Massive aceleraria as entradas. Esse
+# fluxo de 900 papéis é bem maior, então precisa de um teste de volume antes" — the buy signal's trades from Massive's
+# stream ("massive") instead of EODHD's feed ("eodhd": the source in force until the volume test passes; a separate commit
+# switches it). Massive's off-exchange prints (reported to a FINRA facility: ``trfi`` present or exchange 4) are dropped,
+# as the EODHD feed's dark-pool flag is: the lab's replay on Massive's 1-second bars, which keep them, saw ~3x the crosses
+TRADE_SOURCES = ("eodhd", "massive")
+TRADE_SOURCE = "eodhd"
+if TRADE_SOURCE not in TRADE_SOURCES:
+    raise ValueError("R2D2 live: unknown trade source")
+MASSIVE_OFF_EXCHANGE = 4  # Massive's exchange id of the FINRA facilities (ADF/TRFs): the off-exchange (dark-pool) prints
+MASSIVE_SUBSCRIBE_BATCH = 200  # names per subscribe/unsubscribe frame (the lab's ws_trades_probe, 900 names)
 MASSIVE_STREAM_ALIVE_SECONDS = 2.0  # the pushed NBBO is read only while the socket delivered something this recently
 MASSIVE_STREAM_STATES = ("idle", "connecting", "connected", "error", "stopped")
 MASSIVE_STREAM_BACKOFF_SECONDS = (3.0, 60.0)  # a reconnect waits 3 s, doubling up to 60 s while it keeps failing
@@ -1257,11 +1268,21 @@ class MassiveQuoteStream:
     (~0.1 s late against ~0.3-0.7 s per request: the lab's ws_probe, 30/10 run 41070059948). The account allows one such
     connection and this process holds it. The key travels only in the auth frame: never in the URL, a log or an error."""
 
-    def __init__(self, api_key: str, url: str = MASSIVE_STREAM_URL) -> None:
+    def __init__(self, api_key: str, url: str = MASSIVE_STREAM_URL,
+                 trade_sink: Callable[[str, float, float, datetime], None] | None = None) -> None:
         self.api_key, self.url = api_key, url
         self._lock = Lock()
         self._symbols: frozenset[str] = frozenset()
         self._spelled: dict[str, str] = {}  # Massive's spelling (BRK.B) -> the engine's (EODHD's BRK-B)
+        # the buy signal's trades (TRADE_SOURCE "massive"): each one handed to ``trade_sink`` (the engine's tapes,
+        # ``LiveEngineStream.record_trade``) outside this stream's lock, in the order received
+        self._trade_sink = trade_sink
+        self._trade_symbols: frozenset[str] = frozenset()
+        self._trade_spelled: dict[str, str] = {}
+        self.trades = 0
+        self.trade_lag_ms = 0
+        self.trade_lag_max_ms = 0
+        self.off_exchange = 0
         self._version = 0
         self._quotes: dict[str, tuple[float, float, datetime]] = {}
         self._last_message = 0.0  # monotonic instant of the socket's last message
@@ -1302,6 +1323,22 @@ class MassiveQuoteStream:
             self._spelled = {symbol.replace("-", "."): symbol for symbol in names}
             self._version += 1
 
+    def set_trade_symbols(self, symbols: Any) -> None:
+        """The names whose trades feed the buy signal (the universe until 09:31, then the candidates and the held names).
+        Without a trade sink nothing is subscribed."""
+        names = frozenset(symbols) if self._trade_sink is not None else frozenset()
+        with self._lock:
+            self._trade_symbols = names
+            self._trade_spelled = {symbol.replace("-", "."): symbol for symbol in names}
+            self._version += 1
+
+    def take_trade_gauges(self) -> tuple[int, int, int, int]:
+        """(trades handed to the sink, last lag ms, worst lag ms, off-exchange prints dropped) since the last call."""
+        with self._lock:
+            taken = self.trades, self.trade_lag_ms, self.trade_lag_max_ms, self.off_exchange
+            self.trades, self.trade_lag_max_ms, self.off_exchange = 0, 0, 0
+        return taken
+
     def quote(self, symbol: str) -> tuple[float, float, datetime] | None:
         """The name's last pushed NBBO, or None while the socket is not connected or has been silent for
         ``MASSIVE_STREAM_ALIVE_SECONDS`` (Massive is then asked, as before)."""
@@ -1324,9 +1361,15 @@ class MassiveQuoteStream:
             return
         received = clock_time.time() * 1000
         stored = False
+        trades: list[tuple[str, float, float, datetime]] = []
         with self._lock:
             self._last_message = clock_time.monotonic()
             for item in payload if isinstance(payload, list) else [payload]:
+                if isinstance(item, dict) and item.get("ev") == "T":
+                    trade = self._trade_of(item, received)
+                    if trade is not None:
+                        trades.append(trade)
+                    continue
                 spelled = item.get("sym") if isinstance(item, dict) and item.get("ev") == "Q" else None
                 symbol = self._spelled.get(spelled) if isinstance(spelled, str) else None
                 if symbol is None:
@@ -1350,6 +1393,32 @@ class MassiveQuoteStream:
                 self.lag_max_ms = max(self.lag_max_ms, self.lag_ms)
         if stored:
             self._updated.set()
+        sink = self._trade_sink
+        if sink is not None:
+            for trade in trades:  # outside the lock: the sink takes the engine's own (the tapes)
+                sink(*trade)
+
+    def _trade_of(self, item: Mapping[str, Any], received: float) -> tuple[str, float, float, datetime] | None:
+        """One trade event of a followed name as (engine's symbol, price, size, SIP time), or None: an off-exchange print
+        (counted), a malformed or non-positive price, a negative size or a stamp ahead of the clock. Under the lock."""
+        spelled = item.get("sym")
+        symbol = self._trade_spelled.get(spelled) if isinstance(spelled, str) else None
+        if symbol is None:
+            return None
+        if item.get("trfi") is not None or item.get("x") == MASSIVE_OFF_EXCHANGE:
+            self.off_exchange += 1
+            return None
+        try:
+            price, size, stamp = float(item.get("p")), float(item.get("s") or 0.0), float(item.get("t") or 0)
+        except (TypeError, ValueError):
+            return None
+        if (not (math.isfinite(price) and price > 0 and math.isfinite(size) and size >= 0)
+                or not 0 < stamp <= received + FUTURE_TOLERANCE_SECONDS * 1000):
+            return None
+        self.trades += 1
+        self.trade_lag_ms = int(received - stamp)
+        self.trade_lag_max_ms = max(self.trade_lag_max_ms, self.trade_lag_ms)
+        return symbol, price, size, datetime.fromtimestamp(stamp / 1000, tz=timezone.utc)
 
     def _forget(self) -> None:
         """Every connection starts blind: no quote and no message from before it is ever served as live (pre-review of
@@ -1379,14 +1448,15 @@ class MassiveQuoteStream:
                     while not self._stop.is_set():
                         if version != self._version:
                             with self._lock:
-                                version, desired = self._version, {symbol.replace("-", ".") for symbol in self._symbols}
-                            removed, added = sorted(subscribed - desired), sorted(desired - subscribed)
-                            if removed:
-                                await asyncio.wait_for(socket.send(json.dumps(
-                                    {"action": "unsubscribe", "params": ",".join("Q." + name for name in removed)})), timeout=2)
-                            if added:
-                                await asyncio.wait_for(socket.send(json.dumps(
-                                    {"action": "subscribe", "params": ",".join("Q." + name for name in added)})), timeout=2)
+                                version = self._version
+                                desired = ({"Q." + symbol.replace("-", ".") for symbol in self._symbols}
+                                           | {"T." + symbol.replace("-", ".") for symbol in self._trade_symbols})
+                            for action, channels in (("unsubscribe", sorted(subscribed - desired)),
+                                                     ("subscribe", sorted(desired - subscribed))):
+                                for start in range(0, len(channels), MASSIVE_SUBSCRIBE_BATCH):
+                                    await asyncio.wait_for(socket.send(json.dumps(
+                                        {"action": action, "params": ",".join(channels[start:start + MASSIVE_SUBSCRIBE_BATCH])})),
+                                        timeout=2)
                             subscribed = desired
                         try:
                             raw = await asyncio.wait_for(socket.recv(), timeout=1)
@@ -1409,9 +1479,13 @@ class MassiveQuoteStream:
 def massive_line(massive: MassiveQuoteStream, engine: "Engine") -> str:
     """The pushed NBBO's health, numbers and a closed set of states only (published by the status workflow)."""
     quotes, lag, worst, names = massive.take_gauges()
+    take_trades = getattr(massive, "take_trade_gauges", None)  # a stream without the trade source counts none
+    trades, trade_lag, trade_worst, off_exchange = take_trades() if take_trades is not None else (0, 0, 0, 0)
     return ("R2D2 live massive: state=%s symbols=%d quotes=%d lag_ms=%d lag_max_ms=%d pushed=%d fast=%d reconnects=%d"
+            " trades=%d trade_lag_ms=%d trade_lag_max_ms=%d off_exchange=%d"
             % (massive.status if massive.status in MASSIVE_STREAM_STATES else "other", names, quotes, lag, worst,
-               engine.exit_sources["pushed"], engine.exit_sources["fast"], massive.reconnects))
+               engine.exit_sources["pushed"], engine.exit_sources["fast"], massive.reconnects, trades, trade_lag,
+               trade_worst, off_exchange))
 
 
 MARKS_RETRY_SECONDS = 5.0  # after a failed write of the screen's marks, the writer waits this long before the next one
@@ -1506,7 +1580,18 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
     if massive is not None:
         massive.set_symbols(set(state.positions))  # Massive's pushed NBBO: the held names (the exits)
-    stream.set_group(STREAM_GROUP, subscription(universe, state.positions), priority=200)
+    massive_trades = massive is not None and TRADE_SOURCE == "massive" and hasattr(massive, "set_trade_symbols")
+
+    def trades_for(symbols: list[str]) -> None:
+        """The buy signal's trade feed: Massive's stream (TRADE_SOURCE "massive"; EODHD's trade group then empty — a
+        trade is never recorded twice) or EODHD's group, as before."""
+        if massive_trades:
+            assert massive is not None
+            massive.set_trade_symbols(symbols)
+            stream.set_group(STREAM_GROUP, [], priority=200)
+        else:
+            stream.set_group(STREAM_GROUP, symbols, priority=200)
+    trades_for(subscription(universe, state.positions))
     if getattr(stream, "session", None) == day:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
         # complete; a restore a failed attempt left pending is finished first (its held trades applied, nothing cleared)
@@ -1537,8 +1622,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
     engine.set_candidates(dict(stream.opening))
     logger.info("R2D2 live: %d candidates of %d with an opening print", len(engine.candidates), len(stream.opening))
     # once the candidates are fixed the trade feed needs only them and the held names (fewer messages, less lag)
-    stream.set_group(STREAM_GROUP, subscription([member for member in universe if member.symbol in engine.candidates],
-                                                engine.state.positions), priority=200)
+    trades_for(subscription([member for member in universe if member.symbol in engine.candidates], engine.state.positions))
     held = set(engine.state.positions)
     guarded(lambda: commit(now()))
     last_marks = last_lines = clock_time.monotonic()
@@ -1617,7 +1701,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         massive.set_symbols(())  # nothing held is followed past the close
     guarded(lambda: commit(now()))
     logger.info("%s", shadow_line(engine))  # the day's final per band: the T30 and the close's shadows included
-    stream.set_group(STREAM_GROUP, [])
+    trades_for([])
     logger.info("R2D2 live: session %s closed, NAV %.2f, %d fills, %d carried", day, engine.state.nav_realized,
                 len(engine.fills), len(engine.state.positions))
     return engine.state
@@ -1675,7 +1759,9 @@ def main() -> None:
                          settings.massive_api_token) if settings.massive_api_token else None)
     stream = LiveEngineStream(settings.eodhd_api_token)
     stream.start()
-    massive = MassiveQuoteStream(settings.massive_api_token) if settings.massive_api_token else None
+    massive = (MassiveQuoteStream(settings.massive_api_token,
+                                  trade_sink=stream.record_trade if TRADE_SOURCE == "massive" else None)
+               if settings.massive_api_token else None)
     if massive is not None:
         massive.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))

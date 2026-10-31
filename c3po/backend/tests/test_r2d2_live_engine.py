@@ -1186,10 +1186,12 @@ def test_the_status_workflow_publishes_the_massive_line_and_both_feed_lines_whol
     engine = _engine()
     stream = engine_module.MassiveQuoteStream("key")
     line = engine_module.massive_line(stream, engine)
-    assert line == "R2D2 live massive: state=idle symbols=0 quotes=0 lag_ms=0 lag_max_ms=0 pushed=0 fast=0 reconnects=0"
+    assert line == ("R2D2 live massive: state=idle symbols=0 quotes=0 lag_ms=0 lag_max_ms=0 pushed=0 fast=0 reconnects=0"
+                    " trades=0 trade_lag_ms=0 trade_lag_max_ms=0 off_exchange=0")
     feed = engine_module.feed_line(object(), engine)
     old = feed[:feed.index(" exits ")]
-    for text in (line, feed, old):
+    before_trades = line[:line.index(" trades=")]  # the line of a process deployed before the trade source
+    for text in (line, feed, old, before_trades):
         assert accepted.search(text) and accepted.search(text).group(0) == text
     assert not accepted.fullmatch(line + " key=x") and not accepted.fullmatch(feed + " extra")
 
@@ -2211,3 +2213,146 @@ def test_nbbo_a_stream_message_stamped_in_the_future_never_pins_the_book() -> No
     assert "AAA" not in stream.nbbo
     stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 10, "t": ahead, "ms": "open"}))
     assert stream.view("AAA").price is None
+
+
+
+def test_massive_stream_hands_the_followed_names_trades_to_the_sink_and_drops_off_exchange_prints() -> None:
+    """Owner 30/10 ("passar também os negócios para o stream da Massive"): a trade of a followed name reaches the
+    engine's tapes in the engine's spelling, at its SIP time; a print reported to a FINRA facility (TRF id or exchange
+    4: off-exchange, as EODHD's dark-pool flag) never does, nor a name not followed, a bad price or a stamp ahead."""
+    received: list[tuple] = []
+    stream = engine_module.MassiveQuoteStream("key", trade_sink=lambda *trade: received.append(trade))
+    stream.set_trade_symbols({"AAA", "BRK-B"})
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    frame = [{"ev": "T", "sym": "AAA", "x": 11, "p": 98.1, "s": 100, "t": now_ms},
+             {"ev": "T", "sym": "BRK.B", "x": 4, "trfi": 202, "p": 400.0, "s": 50, "t": now_ms},
+             {"ev": "T", "sym": "AAA", "x": 4, "p": 98.2, "s": 10, "t": now_ms},
+             {"ev": "T", "sym": "BRK.B", "x": 12, "p": 400.5, "s": 5, "t": now_ms},
+             {"ev": "T", "sym": "CCC", "x": 11, "p": 10.0, "s": 1, "t": now_ms},
+             {"ev": "T", "sym": "AAA", "x": 11, "p": 98.3, "s": 1, "t": now_ms + 60_000},
+             {"ev": "T", "sym": "AAA", "x": 11, "p": -1, "s": 1, "t": now_ms},
+             {"ev": "Q", "sym": "AAA", "bp": 98.0, "ap": 98.02, "t": now_ms}]
+    stream._record(json.dumps(frame))
+    assert [(symbol, price, size) for symbol, price, size, _ in received] == [("AAA", 98.1, 100.0), ("BRK-B", 400.5, 5.0)]
+    assert all(at.tzinfo is not None and abs(at.timestamp() * 1000 - now_ms) < 1 for *_, at in received)
+    trades, _, _, off_exchange = stream.take_trade_gauges()
+    assert (trades, off_exchange) == (2, 2) and stream.take_trade_gauges()[0] == 0
+    quiet = engine_module.MassiveQuoteStream("key")  # without a sink (the trade source in force): nothing subscribed
+    quiet.set_trade_symbols({"AAA"})
+    assert quiet._trade_symbols == frozenset()
+
+
+def test_massive_stream_subscribes_the_quotes_and_the_trades_in_batches(monkeypatch) -> None:
+    import asyncio
+
+    stream = engine_module.MassiveQuoteStream("key", trade_sink=lambda *trade: None)
+    stream.set_symbols({"AAA"})
+    names = {"N%03d" % i for i in range(450)}
+    stream.set_trade_symbols(names | {"BRK-B"})
+    sent: list[dict] = []
+
+    class Socket:
+        def __init__(self) -> None:
+            self.messages = [json.dumps([{"ev": "status", "status": "connected"}]),
+                             json.dumps([{"ev": "status", "status": "auth_success"}])]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send(self, text: str) -> None:
+            sent.append(json.loads(text))
+
+        async def recv(self) -> str:
+            if self.messages:
+                return self.messages.pop(0)
+            stream._stop.set()
+            raise TimeoutError
+
+    monkeypatch.setattr(engine_module.websockets, "connect", lambda url, **kwargs: Socket())
+    asyncio.run(stream._run())
+    frames = [frame for frame in sent if frame["action"] == "subscribe"]
+    channels = [channel for frame in frames for channel in frame["params"].split(",")]
+    assert all(len(frame["params"].split(",")) <= engine_module.MASSIVE_SUBSCRIBE_BATCH for frame in frames)
+    assert sorted(channels) == sorted({"Q.AAA", "T.BRK.B"} | {"T." + name for name in names})
+
+
+class _MassiveFake:
+    status, reconnects = "connected", 0
+
+    def __init__(self) -> None:
+        self.trade_history: list[list[str]] = []
+
+    def set_symbols(self, symbols) -> None:
+        return None
+
+    def set_trade_symbols(self, symbols) -> None:
+        self.trade_history.append(list(symbols))
+
+    def quote(self, symbol):
+        return None
+
+    def wait_update(self, timeout: float) -> bool:
+        return False
+
+    def take_gauges(self):
+        return 0, 0, 0, 0
+
+    def take_trade_gauges(self):
+        return 0, 0, 0, 0
+
+
+@pytest.mark.parametrize("source", ["massive", "eodhd"])
+def test_the_trade_source_feeds_the_signal_from_one_feed_only(tmp_path: Path, monkeypatch, source: str) -> None:
+    """With the Massive source the universe and then the candidates are followed on Massive and EODHD's trade group stays
+    empty (a trade is never recorded twice); with EODHD's (in force) nothing changes."""
+    monkeypatch.setattr(engine_module, "TRADE_SOURCE", source)
+    database = Database(Settings(database_url=""))
+    monkeypatch.setattr(engine_module, "build_universe",
+                        lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6), Member("BBB", "NYSE", 50.0, 20e6)])
+    monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1e6))
+    clock = {"t": _at(9, 30, 30)}
+    stream = _QuoteFakeStream()
+    massive = _MassiveFake()
+
+    def sleep(seconds):
+        clock["t"] += timedelta(seconds=max(seconds, 1.0))
+        stream.views = {"AAA": _view(97.9, 98.0, 97.89, 97.91, clock["t"])}  # below the VWAP: no buy, nothing held
+        if clock["t"] >= _at(9, 32):
+            raise KeyboardInterrupt
+    with pytest.raises(KeyboardInterrupt):
+        run_session(stream=stream, database=database, get_json=None, base_url="", token="", day=DAY, cache_dir=tmp_path,
+                    now=lambda: clock["t"], sleep=sleep, massive=massive)  # type: ignore[arg-type]
+    if source == "massive":
+        assert massive.trade_history[0] == ["AAA", "BBB"] and massive.trade_history[-1] == ["AAA"]
+        # the fake records only non-empty groups: EODHD's trade group was set, and never to a name
+        assert stream.groups[engine_module.STREAM_GROUP] == [] and stream.subscribed_history == []
+    else:
+        assert massive.trade_history == []
+        assert stream.subscribed_history[0] == ["AAA", "BBB"] and stream.subscribed_history[-1] == ["AAA"]
+
+
+def test_the_massive_trade_path_keeps_up_with_an_opening_burst() -> None:
+    """Owner 30/10: "esse fluxo de 900 papéis é bem maior, então precisa de um teste de volume antes" — 200,000 trades of
+    900 names, in frames of 100 as the socket delivers them, through the stream's handler into the engine's tapes. The
+    lab measured 3,096 trades/s for 900 names on 30/10, 5,984 in the busiest second: the path must take five times that."""
+    from time import perf_counter
+
+    tapes = LiveEngineStream("", max_symbols=1000)
+    tapes.start_session(DAY)
+    names = ["N%03d" % i for i in range(900)]
+    stream = engine_module.MassiveQuoteStream("key", trade_sink=tapes.record_trade)
+    stream.set_trade_symbols(names)
+    base = int(_at(10, 0).timestamp() * 1000)
+    frames = [json.dumps([{"ev": "T", "sym": names[(f * 100 + i) % 900], "x": 11, "p": 50.0 + (i % 7) * 0.01, "s": 100,
+                           "t": base + f} for i in range(100)]) for f in range(2000)]
+    started = perf_counter()
+    for frame in frames:
+        stream._record(frame)
+    rate = 200_000 / (perf_counter() - started)
+    print("massive trade path: %.0f trades/s" % rate)
+    assert stream.take_trade_gauges()[0] == 200_000
+    assert all(tapes.tapes[name].volume > 0 for name in names)
+    assert rate > 5 * 5_984
