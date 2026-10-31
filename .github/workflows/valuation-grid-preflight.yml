@@ -1,0 +1,139 @@
+name: Valuation grid preflight (read-only statements check)
+
+# owner 31/10/2026, the new epoch of the ensemble grid: for every section of the signed rev3 manifest, does the as-filed
+# reference recompute to rev3's with the store as it is, and with the store as it stood when rev3 persisted that
+# section (app/valuation_grid_preflight.py)? Read-only session; counts and section labels (market, session) only: this
+# repository is public. No grid chunk runs meanwhile (the grid's concurrency group), never during a US session.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rev3_manifest_run_id:
+        description: "the rev3 grid run whose artifact holds the signed manifest"
+        default: '40206452777'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: valuation-pit-backtest  # the grid's and rev3's: never alongside a chunk on the host
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Outside a US session
+        shell: bash
+        run: |
+          set -uo pipefail
+          day=$(TZ=America/New_York date +%u) || exit 1
+          minute=$(TZ=America/New_York date +%H%M) || exit 1
+          if [ "$day" -le 5 ] && [ "$((10#$minute))" -ge 900 ] && [ "$((10#$minute))" -le 1630 ]; then
+            echo 'a US session (09:00-16:30 New York, weekdays): refused' >&2
+            exit 1
+          fi
+
+      - name: Download the rev3 grid manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: valuation-pit-backtest-grid-${{ inputs.rev3_manifest_run_id }}
+          path: ${{ runner.temp }}/rev3
+          run-id: ${{ inputs.rev3_manifest_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the rev3 grid manifest
+        shell: bash
+        run: |
+          set -uo pipefail
+          (cd "$RUNNER_TEMP/rev3" && sha256sum -c --strict --quiet SHA256SUMS) || { echo 'the artifact does not match its SHA256SUMS' >&2; exit 2; }
+          python3 -I - "$RUNNER_TEMP/rev3/manifest.json" <<'PY' || exit 1
+          import hashlib
+          import json
+          import sys
+
+          manifest = json.loads(open(sys.argv[1], "rb").read().decode("utf-8"))
+          body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+          digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+          signed = "73a81bcef1cd93425dfab785ae57c52118ba09493a4b7169e31a0e0b6665f805"  # REV3_MANIFEST_SHA256 of valuation_ensemble_pin
+          if digest != signed or manifest.get("manifest_sha256") != signed or manifest.get("complete") is not True:
+              sys.exit("the artifact is not the signed complete rev3 manifest")
+          print(f"rev3 manifest {digest}: {len(manifest.get('grid') or [])} V3 and {len(manifest.get('served_grid') or [])} served sections")
+          PY
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh || exit 1
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy || exit 1
+          chmod 600 ~/.ssh/c3po_deploy || exit 1
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts || exit 1
+          chmod 600 ~/.ssh/known_hosts || exit 1
+
+      - name: Send the rev3 manifest to the host
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "umask 077 && cat > /tmp/valuation-grid-preflight-$RUN_ID.json" < "$RUNNER_TEMP/rev3/manifest.json" 2> /dev/null \
+            || { echo 'the rev3 manifest could not be sent to the host (ssh stderr kept private)' >&2; exit 1; }
+
+      - name: Run the preflight on the host (read-only)
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          raw="$RUNNER_TEMP/raw"
+          mkdir -p "$raw" || exit 1
+          rc=0
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" "RUN_ID='$RUN_ID' bash -s" > "$raw/stdout.txt" 2> "$raw/stderr.log" <<'REMOTE' || rc=$?
+          set -uo pipefail
+          cd /opt/chief-of-staff-digital || exit 10
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 10
+          file="/tmp/valuation-grid-preflight-$RUN_ID.json"
+          trap 'rm -f "$file"' EXIT
+          [ -s "$file" ] || exit 11
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api \
+            nice -n 10 python -m app.valuation_grid_preflight < "$file"
+          REMOTE
+          # only the module's own JSON line (counts and section labels), never the host's stderr: a public log
+          python3 -I - "$raw/stdout.txt" <<'PY'
+          import json
+          import sys
+
+          for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+              try:
+                  value = json.loads(line.strip())
+              except ValueError:
+                  continue
+              if isinstance(value, dict) and value.get("kind") in ("preflight", "refused"):
+                  print(json.dumps(value, sort_keys=True, indent=1))
+          PY
+          echo "remote exit status: $rc; stderr lines (count only): $(wc -l < "$raw/stderr.log")"
+          exit "$rc"
+
+      - name: Remove the manifest from the host
+        if: always()
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 0
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "rm -f /tmp/valuation-grid-preflight-$RUN_ID.json" > /dev/null 2>&1 || true
