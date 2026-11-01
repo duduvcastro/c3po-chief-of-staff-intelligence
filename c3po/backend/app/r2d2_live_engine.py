@@ -1917,6 +1917,34 @@ def next_session(today: date) -> date:
     return date.fromisoformat(str(sessions[0])[:10])
 
 
+def _count(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def valuation_snapshots(database: Any, now: datetime) -> dict[str, Any]:
+    """The nightly ``valuation_ensemble_live`` snapshots of both exchanges, counts only (no symbol; the run log is public:
+    every field is an integer, a boolean or the instant, whatever the snapshot holds): how old each one is and how many
+    names it priced. Display only: a failed read is reported here, never fails the status."""
+    keys = ("population_rows", "with_primary_tp", "pit_tested", "pit_tested_with_primary_tp", "screened_with_primary_tp")
+    seen: dict[str, Any] = {}
+    for entity in ("NASDAQ_UNIVERSE", "NYSE_UNIVERSE"):
+        try:
+            snapshot = database.latest_analysis_snapshot("valuation_ensemble_live", entity)
+            if snapshot is None:
+                seen[entity] = None
+                continue
+            published = snapshot["published_at"]
+            published = datetime.fromisoformat(published.replace("Z", "+00:00")) if isinstance(published, str) else published
+            outputs = snapshot.get("outputs") or {}
+            counts = outputs.get("counts") or {}
+            seen[entity] = {"published_at": published.isoformat(), "age_hours": round((now - published).total_seconds() / 3600, 1),
+                            "complete": outputs.get("complete") is True, "names_pending": _count((counts.get("reach") or {}).get("pending")),
+                            **{key: _count(counts.get(key)) for key in keys}}
+        except Exception as error:  # noqa: BLE001 - the operator's summary stands; the type alone, never a message
+            seen[entity] = {"error": type(error).__name__}
+    return seen
+
+
 def status(database: Any, now: datetime) -> dict[str, Any]:
     """A read-only summary for the operator (no symbols): the engine state and today's document."""
     snapshot = database.latest_analysis_snapshot(STATE_TYPE, STATE_KEY) or {}
@@ -1933,7 +1961,8 @@ def status(database: Any, now: datetime) -> dict[str, Any]:
                              for name, stats in (state.get("bands") or {}).items()},
             "spread_bands_last_session": {"session": (state.get("bands_closed") or {}).get("session"),
                                           "bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
-                                                    for name, stats in ((state.get("bands_closed") or {}).get("bands") or {}).items()}}}
+                                                    for name, stats in ((state.get("bands_closed") or {}).get("bands") or {}).items()}},
+            "valuation_live": valuation_snapshots(database, now)}
 
 
 def main() -> None:
