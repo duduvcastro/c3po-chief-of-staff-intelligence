@@ -13,7 +13,9 @@ not answer, up to 20 positions sized by the spread paid (owner 31/10: 5% of NAV 
 <= 5 bps; NAV/20 each until then), re-entry allowed after an exit. Every second each open position is checked at the real
 bid: stop at -0.20% net (owner 31/10; -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
 last step the peak reached (owner 31/10: +0.10, +0.20, then every 0.15; until then every 0.05 up to +0.30%, every 0.10
-above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
+above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. On the signed grid's PASS
+(owner 31/10: TIT-2S5-F20V) a buy also needs the Valuation ensemble's primary target at least 10% above the ask, pit_tested
+names only (``load_targets``); a refused signal is followed in paper. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
 Universe: the 900 most liquid US common stocks (owner 29/10; 500 until then), from EODHD's end-of-day bulk files of the
@@ -48,7 +50,7 @@ NEW_YORK = ZoneInfo("America/New_York")
 # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then); owner 30/10: entries until the close from 02/11
 # (TIT-2S5-RT until then: until 15:29:59 ET); owner 31/10: the sizes by the spread, the -0.20% stop and the new lock steps
 # from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session)
-CONFIG = "TIT-2S5-F20"
+CONFIG = "TIT-2S5-F20V"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -81,9 +83,13 @@ RULE = {
     # owner's of 31/10, NAV/slots x the weight of the first tier whose bound the spread is within: x 1 at <= 2 bps (5% of
     # NAV), x 0.8 at <= 3 bps (4%), x 0.5 at <= 5 bps (2.5%); a shadow (wider than the limit) takes the widest tier
     "size_rule": "tiers", "size_tiers": [[2.0, 1.0], [3.0, 0.8], [5.0, 0.5]],
+    # owner 31/10/2026 ~21:2x BRT, on the signed grid's PASS: "Se for aprovado, ele so entra com upside minimo de 10%" — a buy
+    # only when the ensemble's primary target price is at least 10% above the ask paid; no target, no buy
+    "valuation_min_upside": 0.10,
     # a spread computed a hair over a bound (float error: 99.99 x 100.01 is 2.0000000001 bps, 119.97 x 120.03 is
     # 5.0000000002) is within it: the tiers' bounds and the spread limit (the owner's "5 bps" includes 5 bps)
     "bound_bps": 1e-6,
+    "upside_bound": 1e-9,  # the same for the upside: a target 10% above the ask computed a hair under it is within the rule
 }
 SIZE_RULES = ("equal", "taper", "inverse", "tiers")
 if RULE["size_rule"] not in SIZE_RULES or not isinstance(RULE["close_flat"], bool):  # a typo never runs another size
@@ -126,6 +132,12 @@ NBBO_PARALLEL = 32
 # same exits (no money, no slot): bought at the real ask it was refused at; marked on the last trade less half that spread
 # (no quote subscription for the shadows: the WebSocket slots go to the universe); closed at the session's close if open
 SHADOW_BANDS = (("5_8", 8.0), ("8_10", 10.0), ("gt10", math.inf))  # the refused spreads above the 5 bps limit, in bps
+# the signals the Valuation refused (their spread within the limit): the rule without the filter, in paper beside it
+VALUATION_BANDS = ("val_lt10", "val_none")  # a target under the minimum upside; no target
+VALUATION_TYPE = "valuation_ensemble_live"  # valuation_live_ensemble.ANALYSIS_TYPE (its import pulls the whole valuation stack)
+VALUATION_SCHEMA = "VALUATION-ENSEMBLE-LIVE-v2"  # its SCHEMA: another shape is no target
+VALUATION_ENTITIES = ("NASDAQ_UNIVERSE", "NYSE_UNIVERSE")
+VALUATION_MAX_AGE = timedelta(hours=72)  # published every night: this covers a weekend and a failed night; older, no buy
 SHADOW_TRADE_MAX_AGE_SECONDS = 10.0  # a shadow is marked only on a trade this recent
 NBBO_MAX_DEVIATION = 0.02  # a quote whose mid is further than this from the signal's own price is another
 # instrument's (a share-class or mapping error) or absurd: never bought on (pre-review of e8ce1f3)
@@ -559,6 +571,53 @@ def shadow_line(engine: "Engine") -> str:
     return "R2D2 live shadow: limit_bps=%.1f %s" % (RULE["spread_max_bps"], " ".join(parts))
 
 
+def valuation_line(engine: "Engine") -> str:
+    """The Valuation's filter, numbers only (published by the status workflow): the targets in force, how many of the
+    day's candidates have one, and per refusal the signals refused and the shadows that follow them, as ``shadow_line``."""
+    targets = engine.targets or {}
+    parts = []
+    for name in VALUATION_BANDS:
+        stats = engine.state.bands.get(name) or {}
+        parts.append("%s vetoed=%d closed=%d open=%d wins=%d net_usd=%.2f" % (
+            name, int(stats.get("vetoed", 0)), int(stats.get("closed", 0)),
+            sum(1 for row in engine.state.shadow.values() if row["band"] == name), int(stats.get("wins", 0)),
+            float(stats.get("net_usd", 0.0))))
+    return "R2D2 live valuation: min_upside_pct=%.1f targets=%d candidates_covered=%d of=%d %s" % (
+        RULE["valuation_min_upside"] * 100, len(targets), sum(1 for symbol in engine.candidates if target_key(symbol) in targets),
+        len(engine.candidates), " ".join(parts))
+
+
+def target_key(symbol: str) -> str:
+    """The same name in both worlds: the catalogue may write a class share with a dot, the stream's codes with a dash."""
+    return str(symbol).strip().upper().replace(".", "-")
+
+
+def load_targets(database: Any, now: datetime) -> dict[str, float]:
+    """The Valuation's buy permission: symbol -> the ensemble's primary target price, from each exchange's newest nightly
+    snapshot (``valuation_live_ensemble``). Only ``pit_tested`` names (the snapshot's own ``buy_permission_scope``) with
+    a positive target. An exchange whose snapshot is missing, older than VALUATION_MAX_AGE or of another schema gives no
+    target, so no buy (fail closed): the names it leaves out are refused and followed in the shadow band ``val_none``."""
+    targets: dict[str, float] = {}
+    for entity in VALUATION_ENTITIES:
+        snapshot = database.latest_analysis_snapshot(VALUATION_TYPE, entity)
+        if not isinstance(snapshot, Mapping) or (snapshot.get("inputs") or {}).get("schema") != VALUATION_SCHEMA:
+            logger.error("R2D2 live: no valuation snapshot of the known schema for an exchange: no target there")
+            continue
+        published = snapshot.get("published_at")
+        published = datetime.fromisoformat(published.replace("Z", "+00:00")) if isinstance(published, str) else published
+        if not isinstance(published, datetime) or published.utcoffset() is None or now - published > VALUATION_MAX_AGE:
+            logger.error("R2D2 live: the valuation snapshot of an exchange is too old or undated: no target there")
+            continue
+        for row in (snapshot.get("outputs") or {}).get("records") or ():
+            if not isinstance(row, Mapping):
+                continue
+            symbol, target = row.get("symbol"), row.get("primary_tp")
+            if (isinstance(symbol, str) and symbol.strip() and isinstance(target, (int, float)) and not isinstance(target, bool)
+                    and math.isfinite(target) and target > 0 and row.get("pit_tested") is True and row.get("origin") == "ensemble"):
+                targets[target_key(symbol)] = float(target)
+    return targets
+
+
 def size_weight(spread_bps: float, rule: str | None = None) -> float:
     """The share of NAV/slots a buy at ``spread_bps`` takes under the size rule (``RULE["size_rule"]`` by default): the
     wider the spread paid, the smaller the position (owner 30/10). An unknown rule raises ``ValueError``."""
@@ -657,7 +716,9 @@ class EngineState:
 class Engine:
     """One session of the rule: candidates at the open, then a decision every call of ``step``."""
 
-    def __init__(self, state: EngineState, day: date, universe: list[Member]):
+    def __init__(self, state: EngineState, day: date, universe: list[Member], targets: Mapping[str, float] | None = None):
+        """``targets``: the Valuation's permission (``load_targets``); empty, nothing is bought; ``None``, no filter (a
+        session started under a rule without it keeps that rule, as it keeps its last entry)."""
         self.state, self.day = state, day
         self.members = {member.symbol: member for member in universe}
         for symbol, position in state.positions.items():  # a carried name stays tradeable for its exit
@@ -681,6 +742,7 @@ class Engine:
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
         self.last_entry = LAST_ENTRY_BY_CONFIG.get(state.config, LAST_ENTRY)
+        self.targets = targets if state.config == CONFIG else None
 
     @property
     def nav_start(self) -> float:
@@ -874,6 +936,14 @@ class Engine:
                     except Exception:  # the measurement never breaks the step
                         logger.error("R2D2 live: a shadow could not be opened")
                     continue
+                if self.targets is not None:  # the Valuation decides what may be bought (owner 31/10/2026, on the grid's PASS)
+                    target = self.targets.get(target_key(symbol))
+                    if target is None or target / ask - 1 < RULE["valuation_min_upside"] - RULE["upside_bound"]:
+                        try:
+                            self._shadow_open(symbol, ask, spread_bps, moment, band="val_none" if target is None else "val_lt10")
+                        except Exception:  # the measurement never breaks the step
+                            logger.error("R2D2 live: a shadow could not be opened")
+                        continue
                 if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
                         and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"] + RULE["bound_bps"]):
                     # the evidence: a buy the stream's fresh quote alone refused (a candidate without a stream quote, the
@@ -882,10 +952,10 @@ class Engine:
                 new.append(self._buy(symbol, ask, gap, spread_bps, moment, source, bid=bid))
         return new
 
-    def _shadow_open(self, symbol: str, ask: float, spread_bps: float, moment: datetime) -> None:
-        """A signal refused by the spread limit: counted in its band, and followed as a shadow trade unless the name is
-        held or already followed."""
-        band = shadow_band(spread_bps)
+    def _shadow_open(self, symbol: str, ask: float, spread_bps: float, moment: datetime, band: str | None = None) -> None:
+        """A signal refused (by the spread limit, or by the Valuation: ``band``): counted in its band, and followed as a
+        shadow trade unless the name is held or already followed."""
+        band = band or shadow_band(spread_bps)
         stats = self.state.bands.setdefault(band, {"vetoed": 0, "closed": 0, "wins": 0, "net_usd": 0.0})
         stats["vetoed"] += 1
         if symbol in self.state.shadow or symbol in self.state.positions:
@@ -1116,17 +1186,19 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
+    # version 7 (owner, 31/10, on the signed grid's PASS): a buy only with the ensemble's target at least 10% above the ask;
     # version 6 from 02/11/2026 (owner, 31/10): the sizes by the spread paid, the stop at -0.20% and the lock's steps
     # +0.10 / +0.20 / every 0.15; version 5 the close mode and the size rule as parameters; version 4 entries until the
     # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
     # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 6, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 7, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat()},
         "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second and "
         "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
         "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps), the stop at -0.20% and the step profit lock +0.10 / +0.20 / every 0.15 "
-        "(owner 31/10/2026)")
+        "(owner 31/10/2026); a buy only with the Valuation ensemble's primary target at least 10% above the ask, pit_tested "
+        "names (owner 31/10/2026, on the signed grid's PASS)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
@@ -1733,7 +1805,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         guarded(lambda: reconciled.append(reconcile_previous(database, state, day, now())))
         if not reconciled:
             sleep(5.0)
-    engine = Engine(state, day, universe)
+    engine = Engine(state, day, universe, targets=load_targets(database, now()))
     quotes_for = getattr(stream, "set_quote_symbols", None)
     if quotes_for is not None:  # BEFORE the group: the quote feed never sees the whole universe, even for an instant
         quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
@@ -1857,6 +1929,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
                 logger.info("%s", heartbeat(stream, engine, moment))
                 logger.info("%s", feed_line(stream, engine))
                 logger.info("%s", shadow_line(engine))
+                logger.info("%s", valuation_line(engine))
                 if massive is not None:
                     logger.info("%s", massive_line(massive, engine))
                 if shadow is not None:
@@ -1903,6 +1976,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         massive.set_symbols(())  # nothing held is followed past the close
     guarded(lambda: commit(now()))
     logger.info("%s", shadow_line(engine))  # the day's final per band: the T30 and the close's shadows included
+    logger.info("%s", valuation_line(engine))
     trades_for([])
     if shadow is not None and massive is not None:
         massive.set_trade_sink(None)  # the shadow ends with the session

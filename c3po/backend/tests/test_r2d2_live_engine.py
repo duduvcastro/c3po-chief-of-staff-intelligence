@@ -55,6 +55,11 @@ def _engine(nav: float = 1_000_000.0) -> Engine:
     return engine
 
 
+def _permissive(database, now):
+    """The Valuation's targets of a session test: every name has a target far above any ask (the filter has its own tests)."""
+    return {symbol: 1e6 for symbol in ("AAA", "BBB", "CCC")}
+
+
 def test_a_buy_is_a_cross_back_above_the_vwap_at_the_ask_with_a_tight_spread() -> None:
     engine = _engine()
     assert set(engine.candidates) == {"AAA", "CCC"}
@@ -257,7 +262,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20" and len(validated["trades"]) == 1
+    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20V" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -341,6 +346,7 @@ class _QuoteFakeStream(_FakeStream):
 
 
 def test_the_session_narrows_the_trades_to_the_candidates_and_the_quotes_follow_the_held_names(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(engine_module, "load_targets", _permissive)
     database = Database(Settings(database_url=""))
     monkeypatch.setattr(engine_module, "build_universe",
                         lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6), Member("BBB", "NYSE", 50.0, 20e6)])
@@ -430,6 +436,7 @@ def test_the_shadows_close_with_the_session_and_the_line_and_status_carry_number
 
 
 def test_a_session_runs_publishes_and_resumes_after_a_restart(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(engine_module, "load_targets", _permissive)
     database = Database(Settings(database_url=""))
     monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
     seed = EngineState(nav_realized=931176.94)
@@ -1693,6 +1700,7 @@ def test_p2_3_a_restart_restores_the_tapes_and_never_selects_again() -> None:
 
 
 def test_p2_4_a_failure_between_the_checkpoint_and_the_screen_loses_nothing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(engine_module, "load_targets", _permissive)
     database = Database(Settings(database_url=""))
     monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: [Member("AAA", "NASDAQ", 100.0, 50e6)])
     monkeypatch.setattr(engine_module, "seed_from_lab_book", lambda db, now: EngineState(nav_realized=1_000_000.0))
@@ -2228,7 +2236,7 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 4.999 bps buy, 5.5 bps is refused (it was 3 bps)."""
-    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20"
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20V"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
@@ -3036,3 +3044,127 @@ def test_the_status_workflow_prints_the_workers_count_only_line_and_no_other() -
         assert re.search(pattern, line.replace("deadline_reached", key))
     assert re.search(pattern, line + " AAPL") is None
 
+
+# ------------------------------------------------------------------ the Valuation's buy permission (owner 31/10, on the PASS)
+def _targeted(targets) -> Engine:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6), Member("CCC", "NYSE", 30.0, 20e6)]
+    engine = Engine(EngineState(nav_realized=1_000_000.0), DAY, universe, targets=targets)
+    engine.set_candidates({"AAA": 98.0, "CCC": 29.0})
+    t = _at(9, 40)
+    views = {"AAA": _view(97.9, 98.0, 97.89, 97.91, t), "CCC": _view(28.9, 29.0, 28.89, 28.91, t)}
+    engine.step(t, lambda s: views.get(s, MarketView()))  # both below the VWAP: armed for a cross
+    return engine
+
+
+def _cross(engine: Engine) -> list[dict]:
+    t = _at(9, 41)
+    views = {"AAA": _view(98.1, 98.0, 98.095, 98.105, t), "CCC": _view(29.1, 29.0, 29.095, 29.105, t)}  # ~1 and ~3.4 bps
+    return engine.step(t, lambda s: views.get(s, MarketView()))
+
+
+def test_the_valuation_buys_only_with_the_target_at_least_ten_percent_above_the_ask() -> None:
+    """Owner 31/10, on the grid's PASS: "ele so entra com upside minimo de 10%". The minimum includes 10%, measured on the ask
+    actually paid; under it the signal is refused and followed in paper (the rule without the filter, beside it)."""
+    ask = 98.105
+    engine = _targeted({"AAA": ask * 1.10, "CCC": 29.105 * 1.0999})
+    fills = _cross(engine)
+    assert [(f["side"], f["symbol"]) for f in fills] == [("BUY", "AAA")] and set(engine.state.shadow) == {"CCC"}
+    assert engine.state.shadow["CCC"]["band"] == "val_lt10" and engine.state.bands["val_lt10"]["vetoed"] == 1
+    assert engine.signals == 2 and "val_none" not in engine.state.bands
+
+
+def test_a_name_without_a_target_is_not_bought_and_no_targets_buy_nothing() -> None:
+    engine = _targeted({"AAA": 500.0})
+    assert [f["symbol"] for f in _cross(engine)] == ["AAA"] and engine.state.shadow["CCC"]["band"] == "val_none"
+    empty = _targeted({})  # fail closed: no snapshot in force, no buy
+    assert _cross(empty) == [] and not empty.state.positions and empty.state.bands["val_none"]["vetoed"] == 2
+
+
+def test_the_spread_limit_is_judged_before_the_valuation() -> None:
+    engine = _targeted({"AAA": 500.0, "CCC": 500.0})
+    t = _at(9, 41)
+    views = {"AAA": _view(98.1, 98.0, 97.97, 98.03, t), "CCC": _view(29.1, 29.0, 29.095, 29.105, t)}  # AAA ~6 bps
+    fills = engine.step(t, lambda s: views.get(s, MarketView()))
+    assert [f["symbol"] for f in fills] == ["CCC"] and engine.state.shadow["AAA"]["band"] == "5_8"
+    assert "val_lt10" not in engine.state.bands and "val_none" not in engine.state.bands
+
+
+def test_a_session_started_under_another_rule_keeps_it_on_a_restart() -> None:
+    state = EngineState(nav_realized=1_000_000.0, session=DAY.isoformat(), config="TIT-2S5-F20")
+    engine = Engine(state, DAY, [Member("AAA", "NASDAQ", 100.0, 50e6)], targets={})
+    assert engine.resumed and engine.targets is None  # the old label: no filter for the rest of that session
+    fresh = Engine(EngineState(nav_realized=1_000_000.0), DAY, [], targets={})
+    assert fresh.state.config == engine_module.CONFIG and fresh.targets == {}
+
+
+def _snapshot(database, entity, records, published, schema=engine_module.VALUATION_SCHEMA):
+    methodology = database.ensure_methodology_version("valuation_ensemble_live", 1, {}, "test")
+    database.save_analysis_snapshot(engine_module.VALUATION_TYPE, entity, methodology, {"schema": schema}, {"records": records}, published)
+
+
+def _row(symbol, tp, *, tested=True, origin="ensemble"):
+    return {"symbol": symbol, "primary_tp": tp, "pit_tested": tested, "origin": origin}
+
+
+def test_the_targets_are_the_tested_names_of_each_exchanges_newest_snapshot() -> None:
+    database = Database(Settings(database_url=""))
+    now = _at(8, 0)
+    _snapshot(database, "NASDAQ_UNIVERSE", [_row("AAA", 1.0)], now - timedelta(days=2))
+    _snapshot(database, "NASDAQ_UNIVERSE", [_row("AAA", 120.0), _row("NOTTESTED", 50.0, tested=False), _row("NOTP", None, origin="not_evaluable:x"),
+                                            _row("ZERO", 0.0), _row("NAN", float("nan")), _row("BOOL", True), _row(None, 10.0), _row(" ", 10.0), "not a row"],
+              now - timedelta(hours=3))
+    _snapshot(database, "NYSE_UNIVERSE", [_row("BRK.B", 500.0), _row("REFUSED", 40.0, origin="not_evaluable:y")], now - timedelta(hours=3))
+    assert engine_module.load_targets(database, now) == {"AAA": 120.0, "BRK-B": 500.0}
+    assert engine_module.target_key("brk.b ") == "BRK-B" == engine_module.target_key("BRK-B")
+
+
+@pytest.mark.parametrize("published,schema", [(timedelta(hours=73), engine_module.VALUATION_SCHEMA), (timedelta(hours=1), "ANOTHER")])
+def test_an_old_or_foreign_snapshot_gives_its_exchange_no_target(published, schema, caplog) -> None:
+    database = Database(Settings(database_url=""))
+    now = _at(8, 0)
+    _snapshot(database, "NASDAQ_UNIVERSE", [_row("AAA", 120.0)], now - published, schema=schema)
+    _snapshot(database, "NYSE_UNIVERSE", [_row("BBB", 120.0)], now - timedelta(hours=1))
+    assert engine_module.load_targets(database, now) == {"BBB": 120.0}
+    assert "no target there" in caplog.text and "AAA" not in caplog.text
+    assert engine_module.load_targets(Database(Settings(database_url="")), now) == {}  # no snapshot at all
+
+
+def test_the_valuation_constants_are_the_live_producers() -> None:
+    from app import valuation_live_ensemble as live
+
+    assert engine_module.VALUATION_TYPE == live.ANALYSIS_TYPE and engine_module.VALUATION_SCHEMA == live.SCHEMA
+    assert engine_module.VALUATION_ENTITIES == tuple(f"{market}_UNIVERSE" for market in sorted(live.MARKETS))
+
+
+def test_the_valuation_line_carries_numbers_only_and_the_status_workflow_prints_it() -> None:
+    engine = _targeted({"AAA": 500.0})
+    _cross(engine)
+    line = engine_module.valuation_line(engine)
+    assert line == ("R2D2 live valuation: min_upside_pct=10.0 targets=1 candidates_covered=1 of=2 val_lt10 vetoed=0 closed=0 open=0 "
+                    "wins=0 net_usd=0.00 val_none vetoed=1 closed=0 open=1 wins=0 net_usd=0.00")
+    import re
+    import yaml
+
+    root = Path(__file__).resolve().parents[3]
+    run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
+    pattern = run.split('grep -oE "', 1)[1].split('" | tail', 1)[0]
+    assert re.search(pattern, "r2d2-live-1  | 2026-11-03 10:00:00 INFO app.r2d2_live_engine " + line)
+
+
+def test_the_shadows_of_the_filter_follow_the_exits_and_keep_their_band() -> None:
+    engine = _targeted({"AAA": 99.0, "CCC": 500.0})  # AAA's target 0.9% above the ask: refused
+    _cross(engine)
+    row = engine.state.shadow["AAA"]
+    assert row["band"] == "val_lt10" and abs(row["size_usd"] - 50_000.0) < 1e-6  # the tier its spread would have paid
+    half = row["spread_bps"] / 2 / 1e4
+    price_at = lambda net: row["ask"] * (1 + FEE_SIDE) * (1 + net / 100) / ((1 - FEE_SIDE) * (1 - half))  # noqa: E731
+    down = _at(9, 42)
+    engine.step(down, lambda s: MarketView(price=price_at(-0.25), trade_at=down, vwap=98.0) if s == "AAA" else MarketView())
+    stats = engine.state.bands["val_lt10"]
+    assert "AAA" not in engine.state.shadow and stats["closed"] == 1 and stats["wins"] == 0 and stats["net_usd"] < 0
+
+
+def test_the_screen_states_the_valuation_rule() -> None:
+    config = engine_module.CONFIG
+    assert "Valuation target ≥ 10% above the ask" in r2d2_lab_live.LIVE_RULES[config]
+    assert r2d2_lab_live.LIVE_SLOTS[config] == 20 and r2d2_lab_live.LIVE_RISK[config] == r2d2_lab_live.LIVE_RISK["TIT-2S5-F20"]
