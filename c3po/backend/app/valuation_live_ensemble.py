@@ -15,8 +15,8 @@ here (``_LiveSection._prepare`` / ``_finalize``); the parity tests pin it to the
 Population (owner, 28/10/2026: "o valuation tem que cobrir todos os papeis USA"), no cap of its own:
 
 * the SERVED catalogue — ``valuation_universe/<M>_UNIVERSE`` (today ≤ 300 stocks + 25 ETFs, ``us_screener``) — is the
-  grid's catalogue: its names are computed EXACTLY as the grid computes them (beta proxy = its symbols, peers = its
-  evaluable names), and ``pit_tested`` marks the ones the grid's screen keeps (``valuation_pit_backtest_report.screen``
+  grid's catalogue: its names are computed EXACTLY as the grid computes them (beta proxy = its symbols with a series,
+  peers = its evaluable names), and ``pit_tested`` marks the ones the grid's screen keeps (``valuation_pit_backtest_report.screen``
   on its admitted names: stock, close ≥ 3, cap ≥ 750 M, 20-session median dollar volume ≥ 20 M, the 300 most liquid);
 * plus every other common stock (``security_type == "Stock"``) of the latest listed-universe publication
   (``official_listing_catalogue/<M>``, the draft listed universe), when one is published and its manifest verifies. These
@@ -47,7 +47,9 @@ says that the grid's screen RULE keeps the name tonight (on tonight's inputs); i
 grid's tested sample on its past dates — a consumer that needs historical membership reads the grid's own records.
 
 Fail closed: an exchange whose price pin, catalogue, statements table or Treasury curve cannot be read writes no snapshot;
-a name it cannot evaluate gets ``origin = not_evaluable:<reason>`` and no number — a target read that fails is a refusal,
+a name it cannot evaluate gets ``origin = not_evaluable:<reason>`` and no number — a series its publication declares
+unreproducible costs that name, counted (``_LivePinnedPrices``, the one refusal of the price pin the night relaxes, up to
+``SERIES_REFUSED_MAX_SHARE`` of the served catalogue); a target read that fails is a refusal,
 never a TP without the consensus it could not read; a section whose provider failed, whose tested names were not all
 reached or which has no TP at all is not published (``unpublishable``). Nothing here is served or selected
 (``valuation_official.market_of_entity`` ignores this analysis type); off by default
@@ -99,6 +101,8 @@ LISTED_SCHEMA = "OFFICIAL-LISTED-UNIVERSE-v1"
 EXTRA_CHUNK = 250  # listed-only names admitted per resolver pass; their series are dropped after it
 EXTRA_TARGET_PAGES = 3  # target pages read for a listed-only name (100 rows each); a full read is refused, never truncated
 TARGET_PAGE_LIMIT = 100  # PitFetchService.fetch_targets' rows per page
+SERIES_REFUSAL = "vintage_unreproducible"  # PriceHistoryService.series: the publication itself declares it will not serve this name
+SERIES_REFUSED_MAX_SHARE = 0.10  # past this share of the served catalogue the proxy and the peers are no longer the rule's: not published
 TARGETS_BREAKER_CONSECUTIVE = 10  # consecutive failed target reads = the provider is down (403/429/outage): stop reading
 TARGETS_MAX_FAILED_SHARE = 0.10  # an exchange whose failed target reads exceed this share of the attempted ones is not published
 REQUEST_TIMEOUT_SECONDS = 30.0  # the WHOLE response of one provider request (headers and body), never past the deadline
@@ -244,6 +248,32 @@ class LiveSourceFetch(pit.PitFetchService):
         if not isinstance(payload, list):
             raise LiveEnsembleError("targets_not_captured")
         return payload
+
+
+class _LivePinnedPrices(pit.PinnedPrices):
+    """Tonight's publication, pinned as the grid pins its own, with one difference. ``bars`` refuses the whole run on the
+    first series its publication will not serve: right for a signed grid, which never reads past a defect of its pin, but a
+    nightly publication of the market holds such names as a matter of course (a provider that dropped a session an earlier
+    run stored makes the symbol ``unreproducible`` in it, 3 of the 647 served names on 01/11), and the exchange would go
+    unpublished every night for one name. Here a name its publication declares so has no bars, as a name the publication
+    does not hold: refused by itself, never read from another publication, and counted. Anything else, the pin no longer
+    resolving or a stored series failing its hash, still refuses the exchange (a listed-only name: its chunk)."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.refused_series: set[str] = set()
+
+    def bars(self, symbol: str) -> dict[str, dict[str, Any]]:
+        try:
+            return super().bars(symbol)
+        except pit.PitRerunInputError:
+            key = symbol.strip().upper()
+            found = self.reader.series(self.market, key, available_before=self._cut)
+            if found["status"] != SERIES_REFUSAL or str(found.get("publication_id")) != self.publication_id:
+                raise
+            self.refused_series.add(key)
+            self._bars[key], self._splits[key] = {}, []
+            return self._bars[key]
 
 
 def live_treasury_curve(fetch: LiveSourceFetch, *, as_of: datetime, market: str = "NASDAQ") -> tuple[dict[str, Any], dict[str, Any]]:
@@ -541,7 +571,10 @@ class _LiveSection:
             name.refusal = "input_error:" + type(error).__name__
 
     def _not_admitted(self, name: _Name, not_admitted: Mapping[str, str]) -> str:
-        """A served name keeps rev3's reason; a listed-only name says which coverage it lacks (the owner reads coverage)."""
+        """A served name keeps rev3's reason; a listed-only name says which coverage it lacks (the owner reads coverage);
+        a name whose series its publication refused says so."""
+        if name.symbol.strip().upper() in self._refused_series():
+            return "price_series_refused"
         if not name.served:
             if not self.prices.bars(name.symbol):
                 return "no_price_history"
@@ -707,6 +740,9 @@ class _LiveSection:
                                                "targets_rows_sha256": targets_sha256}),
         }
 
+    def _refused_series(self) -> set[str]:
+        return getattr(self.prices, "refused_series", set())  # a plain pin (the parity tests) refuses instead
+
     def _listed_coverage(self) -> dict[str, int]:
         extras = [self.names[str(row["symbol"])] for row in self.inputs.extra_rows]
         return {"names": len(extras), "no_price_history": sum(name.refusal == "no_price_history" for name in extras),
@@ -722,6 +758,7 @@ class _LiveSection:
                    "volume_basis": inputs.volume_basis, "pit_tested_rule": self.pit_tested_rule,
                    "canonical_fact_rows_sha256": canonical_sha256(dict(sorted(self.issuer_digests.items()))),
                    "peers_sha256": canonical_sha256(sorted(company.symbol for company in self.peers)),
+                   "price_series_refused_sha256": canonical_sha256(sorted(pit.symbol_hash(symbol) for symbol in self._refused_series())),
                    "implementation": implementation_files(), "signed_instrument_pin": SIGNED_INSTRUMENT_PIN}
         context_sha256 = canonical_sha256(context)
         records = [self._finalize(self.names[symbol], context_sha256) for symbol in sorted(self.names)]
@@ -749,6 +786,8 @@ class _LiveSection:
                   "model_results": {model: dict(sorted(counter.items())) for model, counter in totals.items()},
                   "screen_refused": dict(sorted(self.screen_refused.items())),
                   "listed_only_coverage": self._listed_coverage(),
+                  "price_series_refused": len(self._refused_series()),
+                  "price_series_refused_served": sum(symbol.strip().upper() in self._refused_series() for symbol in self.catalogue_symbols),
                   "targets": {"attempted": int(self.reads["attempted"]), "failed": int(self.reads["failed"]), "circuit_open": reads.open}}
         return {"schema": SCHEMA, "source": SOURCE, "market": self.market, "as_of": self.cut.isoformat(), "session_date": self.prices.session_date,
                 "primary": PRIMARY, "volume_basis": inputs.volume_basis, "volume_check": inputs.volume_check, "complete": not pending,
@@ -817,12 +856,15 @@ def compute_live_section(inputs: LiveInputs, *, deadline: datetime | None = None
 
 
 def unpublishable(section: Mapping[str, Any]) -> str | None:
-    """Why a computed section must NOT be published as tonight's: the provider failed (breaker open, or more than
-    ``TARGETS_MAX_FAILED_SHARE`` of the target reads), a tested name was left pending, or not one name has a primary TP.
+    """Why a computed section must NOT be published as tonight's: too much of the served catalogue had its series refused
+    (more than ``SERIES_REFUSED_MAX_SHARE``: the proxy and the peers are not the rule's), the provider failed (breaker open,
+    or more than ``TARGETS_MAX_FAILED_SHARE`` of the target reads), a tested name was left pending, or not one name has a primary TP.
     A refused section leaves the exchange unpublished, so the phase records a failure and the health card is never green."""
     counts = _mapping(section.get("counts"))
     targets = _mapping(counts.get("targets"))
     attempted, failed = int(targets.get("attempted") or 0), int(targets.get("failed") or 0)
+    if int(counts.get("price_series_refused_served") or 0) > SERIES_REFUSED_MAX_SHARE * int(counts.get("catalogue_rows") or 0):
+        return "price_series_refused_share"
     if targets.get("circuit_open"):
         return "targets_circuit_open"
     if attempted and failed > TARGETS_MAX_FAILED_SHARE * attempted:
@@ -935,7 +977,7 @@ def _run_markets(database: Database, settings: Settings, fetch: LiveSourceFetch,
     prices: dict[str, pit.PinnedPrices] = {}
     for market in MARKETS:
         try:
-            prices[market] = pit.PinnedPrices(series, market, as_of=as_of, pinned_at=as_of, pin_mode="run_start")
+            prices[market] = _LivePinnedPrices(series, market, as_of=as_of, pinned_at=as_of, pin_mode="run_start")
         except LiveEnsembleDeadline:
             raise
         except Exception as error:
