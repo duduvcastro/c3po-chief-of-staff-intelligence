@@ -50,7 +50,8 @@ Fail closed: an exchange whose price pin, catalogue, statements table or Treasur
 a name it cannot evaluate gets ``origin = not_evaluable:<reason>`` and no number — a target read that fails is a refusal,
 never a TP without the consensus it could not read; a section whose provider failed, whose tested names were not all
 reached or which has no TP at all is not published (``unpublishable``). Nothing here is served or selected
-(``valuation_official.market_of_entity`` ignores this analysis type); off by default
+(``valuation_official.market_of_entity`` ignores this analysis type); the one consumer is the R2D2 paper engine's buy
+permission, on the signed grid's PASS (owner 31/10/2026: ``r2d2_live_engine.load_targets``, pit_tested names); off by default
 (``valuation_env.ensemble_live_enabled``). Logs carry counts and error classes only, never a symbol.
 """
 from __future__ import annotations
@@ -848,7 +849,7 @@ def publish(database: Database, section: Mapping[str, Any], *, published_at: dat
     inputs = {"schema": SCHEMA, "source": SOURCE, "market": market, "as_of": section["as_of"], "context": section["context"],
               "context_sha256": section["context_sha256"]}
     outputs = {**section, "published_at": at.isoformat(),
-               "governance": {"served": False, "decision_consumer": False, "official_tp_replacement_authorized": False,
+               "governance": {"served": False, "decision_consumer": "r2d2_live_engine", "official_tp_replacement_authorized": False,
                               "switch_requires": "signed grid PASS and an owner order", "buy_permission_scope": "pit_tested only"}}
     return database.save_analysis_snapshot(ANALYSIS_TYPE, f"{market}_UNIVERSE", methodology_id, inputs, outputs, at)
 

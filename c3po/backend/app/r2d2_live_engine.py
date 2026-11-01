@@ -134,6 +134,8 @@ NBBO_PARALLEL = 32
 SHADOW_BANDS = (("5_8", 8.0), ("8_10", 10.0), ("gt10", math.inf))  # the refused spreads above the 5 bps limit, in bps
 # the signals the Valuation refused (their spread within the limit): the rule without the filter, in paper beside it
 VALUATION_BANDS = ("val_lt10", "val_none")  # a target under the minimum upside; no target
+VALUATION_SHADOW_PREFIX = "V:"  # a Valuation shadow's key in the state: the name's spread shadow keeps the bare symbol
+VALUATION_CONFIGS = frozenset({"TIT-2S5-F20V"})  # the rules with the filter: a session keeps the rule it started under
 VALUATION_TYPE = "valuation_ensemble_live"  # valuation_live_ensemble.ANALYSIS_TYPE (its import pulls the whole valuation stack)
 VALUATION_SCHEMA = "VALUATION-ENSEMBLE-LIVE-v2"  # its SCHEMA: another shape is no target
 VALUATION_ENTITIES = ("NASDAQ_UNIVERSE", "NYSE_UNIVERSE")
@@ -595,27 +597,39 @@ def target_key(symbol: str) -> str:
 def load_targets(database: Any, now: datetime) -> dict[str, float]:
     """The Valuation's buy permission: symbol -> the ensemble's primary target price, from each exchange's newest nightly
     snapshot (``valuation_live_ensemble``). Only ``pit_tested`` names (the snapshot's own ``buy_permission_scope``) with
-    a positive target. An exchange whose snapshot is missing, older than VALUATION_MAX_AGE or of another schema gives no
-    target, so no buy (fail closed): the names it leaves out are refused and followed in the shadow band ``val_none``."""
+    a positive target. An exchange whose snapshot is missing, older than VALUATION_MAX_AGE, of another schema or malformed
+    gives no target, so no buy (fail closed), and an ERROR line; a read of the database that fails propagates, as
+    ``load_state``'s. The names left out are refused and followed in the shadow band ``val_none``."""
     targets: dict[str, float] = {}
     for entity in VALUATION_ENTITIES:
         snapshot = database.latest_analysis_snapshot(VALUATION_TYPE, entity)
-        if not isinstance(snapshot, Mapping) or (snapshot.get("inputs") or {}).get("schema") != VALUATION_SCHEMA:
-            logger.error("R2D2 live: no valuation snapshot of the known schema for an exchange: no target there")
+        try:
+            found = _snapshot_targets(snapshot, now)
+        except (AttributeError, KeyError, OverflowError, TypeError, ValueError) as error:
+            logger.error("R2D2 live: a valuation snapshot is unreadable (%s): no target there", type(error).__name__)
             continue
-        published = snapshot.get("published_at")
-        published = datetime.fromisoformat(published.replace("Z", "+00:00")) if isinstance(published, str) else published
-        if not isinstance(published, datetime) or published.utcoffset() is None or now - published > VALUATION_MAX_AGE:
-            logger.error("R2D2 live: the valuation snapshot of an exchange is too old or undated: no target there")
+        if found is None:
+            logger.error("R2D2 live: no valuation snapshot of the known schema within the age limit for an exchange: no target there")
             continue
-        for row in (snapshot.get("outputs") or {}).get("records") or ():
-            if not isinstance(row, Mapping):
-                continue
-            symbol, target = row.get("symbol"), row.get("primary_tp")
-            if (isinstance(symbol, str) and symbol.strip() and isinstance(target, (int, float)) and not isinstance(target, bool)
-                    and math.isfinite(target) and target > 0 and row.get("pit_tested") is True and row.get("origin") == "ensemble"):
-                targets[target_key(symbol)] = float(target)
+        targets.update(found)
+    if not targets:  # also a fresh snapshot without one tested name: the day buys nothing, and that is never silent
+        logger.error("R2D2 live: no valuation target at all: nothing is bought this session")
     return targets
+
+
+def _snapshot_targets(snapshot: Any, now: datetime) -> dict[str, float] | None:
+    if not isinstance(snapshot, Mapping) or (snapshot.get("inputs") or {}).get("schema") != VALUATION_SCHEMA:
+        return None
+    published = snapshot.get("published_at")
+    if not isinstance(published, datetime) or published.utcoffset() is None or now - published > VALUATION_MAX_AGE:
+        return None
+    found: dict[str, float] = {}
+    for row in snapshot["outputs"]["records"]:
+        symbol, target = row.get("symbol"), row.get("primary_tp")
+        if (isinstance(symbol, str) and symbol.strip() and isinstance(target, (int, float)) and not isinstance(target, bool)
+                and math.isfinite(target) and target > 0 and row.get("pit_tested") is True and row.get("origin") == "ensemble"):
+            found[target_key(symbol)] = float(target)
+    return found
 
 
 def size_weight(spread_bps: float, rule: str | None = None) -> float:
@@ -690,6 +704,7 @@ class EngineState:
     shadow: dict[str, dict[str, Any]] = field(default_factory=dict)  # the open shadow trades (never published by name)
     bands: dict[str, dict[str, float]] = field(default_factory=dict)  # per spread band: refused, closed, wins, net USD
     bands_closed: dict[str, Any] = field(default_factory=dict)  # the last CLOSED session's bands: {"session", "bands"}
+    targets: dict[str, float] | None = None  # the Valuation's targets of the session in the state, read once at its start
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
@@ -697,7 +712,7 @@ class EngineState:
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
                 "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config,
-                "shadow": self.shadow, "bands": self.bands, "bands_closed": self.bands_closed}
+                "shadow": self.shadow, "bands": self.bands, "bands_closed": self.bands_closed, "targets": self.targets}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -710,15 +725,16 @@ class EngineState:
                    candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}),
                    config=str(data.get("config") or ""),
                    shadow=dict(data.get("shadow") or {}), bands=dict(data.get("bands") or {}),
-                   bands_closed=dict(data.get("bands_closed") or {}))
+                   bands_closed=dict(data.get("bands_closed") or {}), targets=data.get("targets"))
 
 
 class Engine:
     """One session of the rule: candidates at the open, then a decision every call of ``step``."""
 
     def __init__(self, state: EngineState, day: date, universe: list[Member], targets: Mapping[str, float] | None = None):
-        """``targets``: the Valuation's permission (``load_targets``); empty, nothing is bought; ``None``, no filter (a
-        session started under a rule without it keeps that rule, as it keeps its last entry)."""
+        """``targets``: the Valuation's permission (``load_targets``), kept in the state for the session (a restart buys on
+        the same targets); empty, nothing is bought; ``None``, no filter. A session started under a rule without it keeps
+        that rule, as it keeps its last entry."""
         self.state, self.day = state, day
         self.members = {member.symbol: member for member in universe}
         for symbol, position in state.positions.items():  # a carried name stays tradeable for its exit
@@ -738,11 +754,13 @@ class Engine:
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
             state.config = CONFIG
-            state.shadow, state.bands = {}, {}
+            state.shadow, state.bands, state.targets = {}, {}, None
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
         self.last_entry = LAST_ENTRY_BY_CONFIG.get(state.config, LAST_ENTRY)
-        self.targets = targets if state.config == CONFIG else None
+        if state.targets is None and targets is not None:
+            state.targets = dict(targets)
+        self.targets = state.targets if state.config in VALUATION_CONFIGS else None
 
     @property
     def nav_start(self) -> float:
@@ -929,6 +947,7 @@ class Engine:
                     self.skips["stale"] += 1
                     continue
                 spread_bps = (ask - bid) / ((ask + bid) / 2) * 1e4
+                upside: float | None = None
                 if spread_bps > RULE["spread_max_bps"] + RULE["bound_bps"]:
                     self.skips["spread"] += 1
                     try:
@@ -944,27 +963,31 @@ class Engine:
                         except Exception:  # the measurement never breaks the step
                             logger.error("R2D2 live: a shadow could not be opened")
                         continue
+                    upside = target / ask - 1
                 if (source == "massive" and market.quote_fresh(moment) and market.bid is not None and market.ask is not None
                         and (market.ask - market.bid) / ((market.ask + market.bid) / 2) * 1e4 > RULE["spread_max_bps"] + RULE["bound_bps"]):
                     # the evidence: a buy the stream's fresh quote alone refused (a candidate without a stream quote, the
                     # usual case since the quote feed carries only the held names, is not counted)
                     self.sources["stream_would_refuse"] += 1
-                new.append(self._buy(symbol, ask, gap, spread_bps, moment, source, bid=bid))
+                new.append(self._buy(symbol, ask, gap, spread_bps, moment, source, bid=bid, upside=upside))
         return new
 
     def _shadow_open(self, symbol: str, ask: float, spread_bps: float, moment: datetime, band: str | None = None) -> None:
         """A signal refused (by the spread limit, or by the Valuation: ``band``): counted in its band, and followed as a
-        shadow trade unless the name is held or already followed."""
+        shadow trade unless the name is held or already followed in its family (a spread shadow and a Valuation shadow of
+        one name run side by side: each family measures its own rule)."""
+        family = band is not None
         band = band or shadow_band(spread_bps)
         stats = self.state.bands.setdefault(band, {"vetoed": 0, "closed": 0, "wins": 0, "net_usd": 0.0})
         stats["vetoed"] += 1
-        if symbol in self.state.shadow or symbol in self.state.positions:
+        key = VALUATION_SHADOW_PREFIX + symbol if family else symbol
+        if key in self.state.shadow or symbol in self.state.positions:
             return
-        self.state.shadow[symbol] = {"band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"] * size_weight(spread_bps),
+        self.state.shadow[key] = {"symbol": symbol, "band": band, "ask": ask, "spread_bps": spread_bps, "size_usd": self.state.nav_realized / RULE["slots"] * size_weight(spread_bps),
                                      "peak": None, "armed": False, "last_net": None, "opened_at": moment.isoformat()}
 
-    def _shadow_close(self, symbol: str, net: float) -> None:
-        row = self.state.shadow.pop(symbol)
+    def _shadow_close(self, key: str, net: float) -> None:
+        row = self.state.shadow.pop(key)
         stats = self.state.bands.setdefault(row["band"], {"vetoed": 0, "closed": 0, "wins": 0, "net_usd": 0.0})
         stats["closed"] += 1
         stats["wins"] += 1 if net > 0 else 0
@@ -974,8 +997,8 @@ class Engine:
         """The same exits as a position (stop, step lock, positives sold in the last 30 s), on the last trade less half
         the spread the shadow was refused at — an estimate of the bid (the shadows have no quote subscription)."""
         late = now.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM
-        for symbol, row in list(self.state.shadow.items()):
-            market = view(symbol)
+        for key, row in list(self.state.shadow.items()):
+            market = view(row.get("symbol", key))  # a row of a restored session before the families has only its key
             if market.price is None or market.trade_at is None or (now - market.trade_at).total_seconds() > SHADOW_TRADE_MAX_AGE_SECONDS:
                 continue
             bid = market.price * (1 - row["spread_bps"] / 2 / 1e4)
@@ -986,10 +1009,10 @@ class Engine:
                 row["armed"] = True
             if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"]))
                     or (late and (net > 0 or RULE["close_flat"]))):
-                self._shadow_close(symbol, net)
+                self._shadow_close(key, net)
 
     def _buy(self, symbol: str, ask: float, gap: float, spread_bps: float, now: datetime, source: str = "stream",
-             bid: float | None = None) -> dict[str, Any]:
+             bid: float | None = None, upside: float | None = None) -> dict[str, Any]:
         size = self.state.nav_realized / RULE["slots"] * size_weight(spread_bps)
         shares = size / (ask * (1 + FEE_SIDE))
         member = self.members[symbol]
@@ -1000,8 +1023,9 @@ class Engine:
         fill = {"side": "BUY", "symbol": symbol, "market": member.market, "quantity": shares, "price": ask,
                 "executed_at": now.isoformat(), "fees_usd": shares * ask * FEE_SIDE, "realized_pnl_usd": None,
                 "realized_return_percent": None,
-                "reason": "compra: abertura %+.2f%% sobre o fechamento anterior, voltou acima do VWAP, spread %.1f bps (%s)"
-                          % (gap, spread_bps, "NBBO Massive" if source == "massive" else "cotação do stream")}
+                "reason": "compra: abertura %+.2f%% sobre o fechamento anterior, voltou acima do VWAP, spread %.1f bps (%s)%s"
+                          % (gap, spread_bps, "NBBO Massive" if source == "massive" else "cotação do stream",
+                             "" if upside is None else ", upside Valuation %+.1f%%" % (upside * 100))}
         self.fills.append(fill)
         return fill
 
@@ -1805,7 +1829,8 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         guarded(lambda: reconciled.append(reconcile_previous(database, state, day, now())))
         if not reconciled:
             sleep(5.0)
-    engine = Engine(state, day, universe, targets=load_targets(database, now()))
+    resumed_targets = state.targets is not None and state.session == day.isoformat()  # a restart buys on the session's own
+    engine = Engine(state, day, universe, targets=state.targets if resumed_targets else load_targets(database, now()))
     quotes_for = getattr(stream, "set_quote_symbols", None)
     if quotes_for is not None:  # BEFORE the group: the quote feed never sees the whole universe, even for an instant
         quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
@@ -2053,7 +2078,9 @@ def status(database: Any, now: datetime) -> dict[str, Any]:
             "today_fills": len(document.get("trades") or []), "today_cycle": document.get("cycle"),
             "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of"),
             "spread_bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
-                             for name, stats in (state.get("bands") or {}).items()},
+                             for name, stats in (state.get("bands") or {}).items() if name not in VALUATION_BANDS},
+            "valuation_bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
+                                for name, stats in (state.get("bands") or {}).items() if name in VALUATION_BANDS},
             "spread_bands_last_session": {"session": (state.get("bands_closed") or {}).get("session"),
                                           "bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
                                                     for name, stats in ((state.get("bands_closed") or {}).get("bands") or {}).items()}},
