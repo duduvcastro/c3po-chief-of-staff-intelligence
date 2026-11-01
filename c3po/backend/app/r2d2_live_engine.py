@@ -1926,7 +1926,7 @@ def valuation_snapshots(database: Any, now: datetime) -> dict[str, Any]:
     """The nightly ``valuation_ensemble_live`` snapshots of both exchanges, counts only (no symbol; the run log is public:
     every field is an integer, a boolean or the instant, whatever the snapshot holds): how old each one is and how many
     names it priced. Display only: a failed read is reported here, never fails the status."""
-    keys = ("population_rows", "with_primary_tp", "pit_tested", "pit_tested_with_primary_tp", "screened_with_primary_tp")
+    keys = ("population_rows", "with_primary_tp", "pit_tested", "pit_tested_with_primary_tp", "screened_with_primary_tp", "price_series_refused_served")
     seen: dict[str, Any] = {}
     for entity in ("NASDAQ_UNIVERSE", "NYSE_UNIVERSE"):
         try:
