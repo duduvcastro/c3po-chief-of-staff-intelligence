@@ -3148,6 +3148,44 @@ def test_a_buy_records_the_upside_it_was_allowed_on() -> None:
     assert ", upside" not in _crossed_without_filter()["reason"]
 
 
+def test_a_target_exactly_ten_percent_above_the_ask_passes_though_its_float_falls_a_hair_under() -> None:
+    ask, target = 5.20, 5.72
+    assert target / ask - 1 < engine_module.RULE["valuation_min_upside"]  # the case the bound exists for
+    engine = Engine(EngineState(nav_realized=1_000_000.0), DAY, [Member("AAA", "NASDAQ", 5.30, 50e6)], targets={"AAA": target})
+    engine.set_candidates({"AAA": 5.18})
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(5.17, 5.18, 5.169, 5.171, t) if s == "AAA" else MarketView())
+    t = _at(9, 41)
+    fills = engine.step(t, lambda s: _view(5.1995, 5.18, 5.199, ask, t) if s == "AAA" else MarketView())
+    assert [(f["side"], f["symbol"]) for f in fills] == [("BUY", "AAA")] and not engine.state.shadow
+
+
+def test_a_shadow_row_of_a_session_restored_from_before_the_families_still_follows_its_exits() -> None:
+    engine = _targeted({"AAA": 99.0})
+    _cross(engine)
+    row = engine.state.shadow.pop("V:AAA")
+    del row["symbol"]
+    engine.state.shadow["AAA"] = {**row, "band": "5_8"}  # a bare key: the name itself, as a restored state holds it
+    t = _at(9, 42)
+    engine.step(t, lambda s: MarketView(price=97.0, trade_at=t, vwap=98.0) if s == "AAA" else MarketView())
+    assert "AAA" not in engine.state.shadow and engine.state.bands["5_8"]["closed"] == 1
+
+
+def test_the_status_keeps_the_two_families_apart_during_and_after_the_session() -> None:
+    database = Database(Settings(database_url=""))
+    methodology = database.ensure_methodology_version(engine_module.STATE_TYPE, 1, {}, "test")
+    stats = {"vetoed": 2.0, "closed": 1.0, "open": 1.0, "wins": 0.0, "net_usd": -12.345}
+    bands = {"5_8": stats, "val_lt10": stats, "val_none": stats}
+    state = {"bands": bands, "bands_closed": {"session": DAY.isoformat(), "bands": bands}}
+    database.save_analysis_snapshot(engine_module.STATE_TYPE, engine_module.STATE_KEY, methodology, {}, state, _at(8, 0))
+    summary = engine_module.status(database, _at(8, 0))
+    rounded = {**stats, "net_usd": -12.35}
+    assert summary["spread_bands"] == {"5_8": rounded} and summary["valuation_bands"] == {"val_lt10": rounded, "val_none": rounded}
+    last = {"session": DAY.isoformat(), "bands": {"5_8": rounded}}
+    assert summary["spread_bands_last_session"] == last
+    assert summary["valuation_bands_last_session"] == {"session": DAY.isoformat(), "bands": {"val_lt10": rounded, "val_none": rounded}}
+
+
 def _crossed_without_filter() -> dict:
     engine = _targeted(None)
     return _cross(engine)[0]
@@ -3215,6 +3253,18 @@ def test_a_malformed_snapshot_gives_no_target_and_never_ends_the_session(snapsho
 
     assert engine_module.load_targets(Stored(), _at(8, 0)) == {}
     assert "no target" in caplog.text and "nothing is bought this session" in caplog.text
+
+
+def test_a_target_past_any_price_is_no_target_and_never_reaches_a_fill(caplog) -> None:
+    now = _at(8, 0)
+    snapshot = {"inputs": {"schema": engine_module.VALUATION_SCHEMA}, "published_at": _at(7, 0),
+                "outputs": {"records": [{"symbol": "AAA", "primary_tp": 1e100, "pit_tested": True, "origin": "ensemble"}]}}
+
+    class Stored:
+        def latest_analysis_snapshot(self, analysis_type, entity):
+            return snapshot
+
+    assert engine_module.load_targets(Stored(), now) == {} and "nothing is bought this session" in caplog.text
 
 
 def test_a_fresh_snapshot_without_one_tested_name_is_never_a_silent_day(caplog) -> None:

@@ -627,7 +627,8 @@ def _snapshot_targets(snapshot: Any, now: datetime) -> dict[str, float] | None:
     for row in snapshot["outputs"]["records"]:
         symbol, target = row.get("symbol"), row.get("primary_tp")
         if (isinstance(symbol, str) and symbol.strip() and isinstance(target, (int, float)) and not isinstance(target, bool)
-                and math.isfinite(target) and target > 0 and row.get("pit_tested") is True and row.get("origin") == "ensemble"):
+                and math.isfinite(target) and 0 < target <= r2d2_lab_live.MAX_PRICE and row.get("pit_tested") is True
+                and row.get("origin") == "ensemble"):  # a cap well short of the size at which the fill's reason would refuse the day's document, not the name
             found[target_key(symbol)] = float(target)
     return found
 
@@ -2072,18 +2073,20 @@ def status(database: Any, now: datetime) -> dict[str, Any]:
     day = now.astimezone(NEW_YORK).date().isoformat()
     document = (database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, day) or {}).get("outputs") or {}
     book = document.get("book") or {}
+    closed = state.get("bands_closed") or {}
+
+    def bands_of(bands: Any, valuation: bool) -> dict[str, dict[str, float]]:
+        return {name: {key: round(float(value), 2) for key, value in stats.items()}
+                for name, stats in (bands or {}).items() if (name in VALUATION_BANDS) is valuation}
+
     return {"now": now.isoformat(), "state_saved_at": str(snapshot.get("published_at")), "last_session": state.get("last_session"),
             "session_in_progress": state.get("session"), "nav_realized": state.get("nav_realized"),
             "positions": len(state.get("positions") or []), "today_config": document.get("config"),
             "today_fills": len(document.get("trades") or []), "today_cycle": document.get("cycle"),
             "today_nav": book.get("nav_usd"), "today_book_as_of": book.get("as_of"),
-            "spread_bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
-                             for name, stats in (state.get("bands") or {}).items() if name not in VALUATION_BANDS},
-            "valuation_bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
-                                for name, stats in (state.get("bands") or {}).items() if name in VALUATION_BANDS},
-            "spread_bands_last_session": {"session": (state.get("bands_closed") or {}).get("session"),
-                                          "bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
-                                                    for name, stats in ((state.get("bands_closed") or {}).get("bands") or {}).items()}},
+            "spread_bands": bands_of(state.get("bands"), False), "valuation_bands": bands_of(state.get("bands"), True),
+            "spread_bands_last_session": {"session": closed.get("session"), "bands": bands_of(closed.get("bands"), False)},
+            "valuation_bands_last_session": {"session": closed.get("session"), "bands": bands_of(closed.get("bands"), True)},
             "valuation_live": valuation_snapshots(database, now), "valuation_phase": valuation_phase(database)}
 
 
