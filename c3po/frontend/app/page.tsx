@@ -1,6 +1,7 @@
 "use client";
 
 import { PortfolioSummary, PortfolioHoldingEditor, PortfolioHistory, usePortfolioAccount } from "./portfolio-account";
+import { ListedUniverse } from "./listed-universe";
 
 import {
   Activity,
@@ -5859,6 +5860,7 @@ function CandidatesView({ reports, marketProviders }: { reports: ReportItem[]; m
   ];
   return (
     <div className="content-stack">
+      <ListedUniverse market={activeMarket} apiUrl={API_URL} module="candidates" />
       <section className="panel candidate-ranking-panel">
         <div className="research-market-tabs" role="tablist" aria-label="Last Jedi markets">
           {(["B3", "NASDAQ", "NYSE"] as ResearchMarket[]).map((market) => (
@@ -6080,6 +6082,7 @@ function MatrixPowerView() {
 
   return (
     <div className="content-stack matrix-power-view">
+      <ListedUniverse market={activeMarket} apiUrl={API_URL} module="matrix-power" />
       <section className="panel matrix-control-panel">
         <div className="research-market-tabs" role="tablist" aria-label="Dark Side markets">
           {(["B3", "NASDAQ", "NYSE"] as ResearchMarket[]).map((market) => (
