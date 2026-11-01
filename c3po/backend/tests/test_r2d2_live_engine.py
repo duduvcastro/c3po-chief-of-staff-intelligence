@@ -2943,3 +2943,40 @@ def test_the_size_follows_the_spread_paid(monkeypatch, rule: str) -> None:
     assert [f["side"] for f in fills] == ["BUY"]
     assert position.cost_usd == pytest.approx(1_000_000.0 / 20 * engine_module.size_weight(spread, rule))
     assert position.cost_usd < 1_000_000.0 / 20
+
+
+def test_the_status_shows_the_valuation_snapshots_in_counts_only() -> None:
+    database = Database(Settings(database_url=""))
+    now = _at(8, 0)
+    assert engine_module.status(database, now)["valuation_live"] == {"NASDAQ_UNIVERSE": None, "NYSE_UNIVERSE": None}
+    methodology = database.ensure_methodology_version("valuation_ensemble_live", 1, {}, "test")
+    outputs = {"complete": True, "records": [{"symbol": "AAPL", "primary_tp": 200.0}],
+               "counts": {"population_rows": 900, "with_primary_tp": 400, "pit_tested": 600, "pit_tested_with_primary_tp": 350,
+                          "screened_with_primary_tp": 300, "reach": {"reached": 900, "pending": 0}}}
+    database.save_analysis_snapshot("valuation_ensemble_live", "NASDAQ_UNIVERSE", methodology, {}, outputs, now - timedelta(hours=3))
+    seen = engine_module.status(database, now)["valuation_live"]
+    assert seen["NYSE_UNIVERSE"] is None and seen["NASDAQ_UNIVERSE"] == {
+        "published_at": (now - timedelta(hours=3)).isoformat(), "age_hours": 3.0, "complete": True, "names_pending": 0,
+        "population_rows": 900, "with_primary_tp": 400, "pit_tested": 600, "pit_tested_with_primary_tp": 350,
+        "screened_with_primary_tp": 300}
+    assert "AAPL" not in json.dumps(seen)
+
+
+def test_the_status_prints_only_integers_whatever_a_snapshot_holds() -> None:
+    database = Database(Settings(database_url=""))
+    now = _at(8, 0)
+    methodology = database.ensure_methodology_version("valuation_ensemble_live", 1, {}, "test")
+    outputs = {"complete": "AAPL", "counts": {"population_rows": "AAPL", "with_primary_tp": ["AAPL"], "pit_tested": True, "reach": {"pending": "AAPL"}}}
+    database.save_analysis_snapshot("valuation_ensemble_live", "NYSE_UNIVERSE", methodology, {}, outputs, now - timedelta(hours=1))
+    seen = engine_module.valuation_snapshots(database, now)["NYSE_UNIVERSE"]
+    assert seen["complete"] is False and seen["names_pending"] is None and seen["population_rows"] is None
+    assert seen["with_primary_tp"] is None and seen["pit_tested"] is None and "AAPL" not in json.dumps(seen)
+
+
+def test_a_failed_valuation_read_never_fails_the_status_and_prints_no_message() -> None:
+    class Broken:
+        def latest_analysis_snapshot(self, analysis_type, entity):
+            raise RuntimeError("AAPL went wrong")
+
+    assert engine_module.valuation_snapshots(Broken(), _at(8, 0)) == {"NASDAQ_UNIVERSE": {"error": "RuntimeError"}, "NYSE_UNIVERSE": {"error": "RuntimeError"}}
+
