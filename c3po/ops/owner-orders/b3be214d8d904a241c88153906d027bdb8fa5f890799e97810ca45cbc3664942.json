@@ -1,12 +1,12 @@
 {
   "from_session": "2021-06-01",
-  "instrument_pin_sha256": null,
+  "instrument_pin_sha256": "fba51eddb2c189d3208d20c6b4cbe773e7717bbe48c1741996a6ba8587551eab",
   "max_runs_cap": 200,
   "modes": [
     "grid"
   ],
   "not_after": "2026-11-07T08:00:00-03:00",
-  "not_before": null,
+  "not_before": "2026-11-01T01:13:15+00:00",
   "prereg": "PREREG_VALUATION_ENSEMBLE_PIT_US_V1",
   "prereg_commit": "3908cb9672b7fb4ed03124907b50caa14c5e36f2",
   "prereg_sha256": "b786ef8ff21d2b0dbcc2e39bcaec3a984e7a204b8a796d34a84c49ace69db9a9",
