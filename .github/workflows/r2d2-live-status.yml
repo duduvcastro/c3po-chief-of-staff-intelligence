@@ -26,7 +26,7 @@ jobs:
   status:
     runs-on: ubuntu-latest
     environment: production  # the host's address and known hosts are the production environment's (the repository-level ones predate the host migration)
-    timeout-minutes: 25
+    timeout-minutes: 36
     steps:
       - name: Configure deployment SSH key
         env:
@@ -85,7 +85,7 @@ jobs:
 
       # One-off: the live Valuation producer has never published and its nightly line is lost with each deploy. This runs
       # its REAL run_nightly once, inside the idle valuation-worker container, in a read-only PostgreSQL session, with
-      # publish replaced by a no-op, under a 12-minute deadline. Nothing is written. Stderr is dropped and only one line of
+      # publish replaced by a no-op, under a 20-minute deadline. Nothing is written. Stderr is dropped and only one line of
       # a closed shape is printed: step timings, counts, exception class names, HTTP status counts per provider and a closed
       # vocabulary of refusal codes (the text of an error may hold a symbol or a URL with a key, so it is never printed).
       - name: Dry-run the live Valuation producer (read-only, publishes nothing)
@@ -102,7 +102,7 @@ jobs:
           set -uo pipefail
           cd /opt/chief-of-staff-digital || exit 10
           exec docker compose --env-file .env -f c3po/compose.yml exec -T \
-            -e 'PGOPTIONS=-c default_transaction_read_only=on' valuation-worker timeout -s TERM -k 30 1200 nice -n 10 python - <<'PY'
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' valuation-worker timeout -s TERM -k 30 1620 nice -n 10 python - <<'PY'
           import json
           import logging
           import re
@@ -212,6 +212,25 @@ jobs:
           live._LiveSection.prepare_served = timed("prepare_served", live._LiveSection.prepare_served)
           live._read_all = timed("read_targets", live._read_all)
           live._LiveSection.result = timed("section_result", live._LiveSection.result)
+          # the first dry run stopped at PinnedPrices.bars: one series the vintage refuses cost the whole exchange. This run measures
+          # which refusal it is and goes on as if it cost that name only, to find what fails after it. Nothing here touches the deployed code.
+          SERIES_REFUSALS = ("vintage_unreproducible", "vintage_mismatch", "bar_hash_mismatch")
+          bars_of = pit.PinnedPrices.bars
+          refused = Counter()
+
+          def tolerant_bars(self, symbol):
+              try:
+                  return bars_of(self, symbol)
+              except pit.PitRerunInputError:
+                  key = symbol.strip().upper()
+                  status = self.reader.series(self.market, key, available_before=self._cut)["status"]
+                  if status not in SERIES_REFUSALS:
+                      raise
+                  refused[self.market + ":" + status] += 1
+                  self._bars[key], self._splits[key] = {}, []
+                  return self._bars[key]
+
+          pit.PinnedPrices.bars = tolerant_bars
           refuse = live.unpublishable
 
           def unpublishable(section):
@@ -257,9 +276,20 @@ jobs:
                   vintage = series.vintage(market, available_before=now) or {}
                   report["price_" + market] = {"status": str(vintage.get("status") or "none"), "to": str(vintage.get("to") or "none"),
                                                "available_at": str(vintage.get("available_at") or "none")[:19], "session": session_date_of(market, now)}
+                  try:  # the refusal's size; a failure here never costs the run below
+                      pinned = pit.PinnedPrices(series, market, as_of=now, pinned_at=now, pin_mode="run_start")
+                      stale, names = vintage.get("symbols_unreproducible") or {}, pit._catalogue_symbols(database, market, before=now)
+                      last = max((max(days) for days in stale.values() if days), default="none")
+                      report["series_" + market] = {"catalogue": len(names), "declared_unreproducible": len(stale), "in_catalogue": sum(name in stale for name in names),
+                                                    "stale_sessions_total": sum(len(days) for days in stale.values()),
+                                                    "stale_sessions_max": max((len(days) for days in stale.values()), default=0), "stale_latest_session": str(last)[:10],
+                                                    "from": str(vintage.get("from") or "none"), "series_hashes": len(vintage.get("series_sha256") or {}),
+                                                    "statuses": labelled(Counter(series.series(market, name, available_before=pinned._cut)["status"] for name in names))}
+                  except Exception as error:
+                      report["series_" + market] = {"error": code(error)}
               outcome = "published_all"
               try:
-                  live.run_nightly(database, settings, MarketDataService(settings, database).http, deadline=now + timedelta(minutes=12))
+                  live.run_nightly(database, settings, MarketDataService(settings, database).http, deadline=now + timedelta(minutes=20))
               except Exception as error:
                   outcome = code(error)
           except BaseException as error:  # SIGTERM's SystemExit too
@@ -267,10 +297,12 @@ jobs:
           finally:
               summary = seen.get("summary") or {}
               failures = {(key if CODE.fullmatch(str(key)) else "other"): int(value) for key, value in (seen.get("failures") or {}).items()}
-              if any(key.startswith("deadline_reached") for key in failures):  # this run's own 12 minutes, not a reproduction of the night's failure
+              if any(key.startswith("deadline_reached") for key in failures):  # this run's own deadline, not a reproduction of the night's failure
                   outcome = "dry_deadline:" + outcome
+              if refused:  # the deployed code would have stopped at the first of these: this outcome is not production's
+                  outcome = "tolerant:" + outcome
               report.update(outcome=outcome, seconds=round(time.monotonic() - started, 1), steps=steps, failures=failures, sections=sections, inputs=counts,
-                            http=dict(http), targets=dict(targets), bytes=sizes, published_dry=int(summary.get("published") or 0),
+                            http=dict(http), targets=dict(targets), bytes=sizes, refused_series=dict(refused), published_dry=int(summary.get("published") or 0),
                             partial=int(summary.get("partial") or 0), names=int(summary.get("names") or 0),
                             with_primary_tp=int(summary.get("with_primary_tp") or 0), tested_with_tp=int(summary.get("pit_tested_with_primary_tp") or 0),
                             names_pending=int(summary.get("names_pending") or 0))
@@ -279,4 +311,4 @@ jobs:
           REMOTE
           echo "remote exit status: $rc"
           # one line of a closed shape, or nothing: no other byte of the remote output reaches this public log
-          awk 'length($0) <= 12000' "$RUNNER_TEMP/dry.txt" | grep -E '^PRODUCER-DRY-RUN \{[A-Za-z0-9_:.,{}" +-]+\}$' || echo "no dry-run line"
+          awk 'length($0) <= 20000' "$RUNNER_TEMP/dry.txt" | grep -E '^PRODUCER-DRY-RUN \{[A-Za-z0-9_:.,{}" +-]+\}$' || echo "no dry-run line"
