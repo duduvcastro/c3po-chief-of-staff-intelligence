@@ -2980,3 +2980,59 @@ def test_a_failed_valuation_read_never_fails_the_status_and_prints_no_message() 
 
     assert engine_module.valuation_snapshots(Broken(), _at(8, 0)) == {"NASDAQ_UNIVERSE": {"error": "RuntimeError"}, "NYSE_UNIVERSE": {"error": "RuntimeError"}}
 
+
+def test_the_status_shows_the_producers_last_run_in_a_closed_shape() -> None:
+    at = _at(5, 0)
+
+    class Runs:
+        def __init__(self, error, status="failed"):
+            self.run = {"last_status": status, "started_at": at, "completed_at": at + timedelta(minutes=30), "last_success_at": None,
+                        "last_error": error, "metadata": {"secret": "AAPL"}}
+
+        def ingestion_run_health(self, codes):
+            assert codes == ["valuation-worker-ensemble-live"]
+            return {codes[0]: self.run}
+
+    seen = engine_module.valuation_phase(Runs("LiveEnsembleError: markets_not_published:2"))
+    assert seen == {"last_status": "failed", "started_at": at.isoformat(), "completed_at": (at + timedelta(minutes=30)).isoformat(),
+                    "last_success_at": None, "last_error": "LiveEnsembleError: markets_not_published:2"}
+    assert engine_module.valuation_phase(Runs("LiveEnsembleError: markets_partial:1:names_pending:300"))["last_error"].endswith("names_pending:300")
+    assert engine_module.valuation_phase(Runs("ValueError: AAPL has no price"))["last_error"] == "ValueError"  # never the message
+    assert engine_module.valuation_phase(Runs("AAPL broke: at 3"))["last_error"] == "other"
+    assert engine_module.valuation_phase(Runs("AAPL: broke"))["last_error"] == "other"  # a ticker never passes for a class
+    assert engine_module.valuation_phase(Runs("AAPL"))["last_error"] == "other"
+    assert engine_module.valuation_phase(Runs("orphaned: the worker restarted"))["last_error"] == "orphaned"
+    assert engine_module.valuation_phase(Runs("QueryCanceled: canceling statement"))["last_error"] == "QueryCanceled"
+    assert engine_module.valuation_phase(Runs("no colon AAPL here"))["last_error"] == "other"
+    assert engine_module.valuation_phase(Runs(None, "succeeded")) == {"last_status": "succeeded", "started_at": at.isoformat(),
+                                                                      "completed_at": (at + timedelta(minutes=30)).isoformat(),
+                                                                      "last_success_at": None, "last_error": None}
+    assert "AAPL" not in json.dumps([engine_module.valuation_phase(Runs(text)) for text in ("ValueError: AAPL", "no colon AAPL here")])
+
+
+def test_a_failed_phase_read_never_fails_the_status() -> None:
+    class Broken:
+        def ingestion_run_health(self, codes):
+            raise RuntimeError("AAPL went wrong")
+
+    assert engine_module.valuation_phase(Broken()) == {"error": "RuntimeError"}
+    empty = engine_module.valuation_phase(Database(Settings(database_url="")))
+    assert empty == {"last_status": None, "started_at": None, "completed_at": None, "last_success_at": None, "last_error": None}
+
+
+def test_the_status_workflow_prints_the_workers_count_only_line_and_no_other() -> None:
+    import re
+    import yaml
+
+    root = Path(__file__).resolve().parents[3]
+    run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
+    assert 'logs --no-color --since 30h --tail 20000 valuation-worker' in run
+    pattern = run.split('printf \'%s\\n\' "$worker" | grep -oE "', 1)[1].split('" | tail', 1)[0]
+    line = "Valuation ensemble live: pending=2 published=0 partial=0 names=0 with_primary_tp=0 names_pending=0 failures={'deadline_reached': 1, 'market_setup:ValueError': 2}"
+    assert re.search(pattern, "c3po-valuation-worker-1  | INFO " + line).group(0) == line
+    assert re.search(pattern, line.replace("deadline_reached", "AAPL")) is None
+    assert re.search(pattern, line.replace("deadline_reached", "section:AAPL")) is None
+    for key in ("section:publication_not_after_T", "price_vintage:NotEvaluable", "section:QueryCanceled"):  # a key of the code stays
+        assert re.search(pattern, line.replace("deadline_reached", key))
+    assert re.search(pattern, line + " AAPL") is None
+
