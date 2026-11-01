@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import re
 import time as clock_time
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -1945,6 +1946,26 @@ def valuation_snapshots(database: Any, now: datetime) -> dict[str, Any]:
     return seen
 
 
+def valuation_phase(database: Any) -> dict[str, Any]:
+    """The nightly producer's last run (``valuation_worker``'s ``ensemble_live`` phase), for a public log: the status, the
+    instants, and its error only in the closed shape the producer raises (a class and a code with counts); any other error
+    shows its class alone. Display only: a failed read is reported here, never fails the status."""
+    code = "valuation-worker-ensemble-live"
+    try:
+        run = database.ingestion_run_health([code]).get(code) or {}
+        error = str(run.get("last_error") or "")
+        kind = r"[A-Z]+[a-z][A-Za-z]{0,60}"  # a class name holds a lower-case letter: a ticker never passes
+        if error and re.fullmatch(kind + r": [a-z_]{1,60}(:[a-z_0-9]{1,40}){0,4}", error) is None:
+            head = error.split(":", 1)[0]
+            error = head if head == "orphaned" or re.fullmatch(kind, head) else "other"  # the reapers' fixed text; else the class
+        return {"last_status": run.get("last_status") if run.get("last_status") in ("running", "succeeded", "failed") else None,
+                **{key: run[key].isoformat() if isinstance(run.get(key), datetime) else None
+                   for key in ("started_at", "completed_at", "last_success_at")},
+                "last_error": error or None}
+    except Exception as error:  # noqa: BLE001 - the operator's summary stands; the type alone, never a message
+        return {"error": type(error).__name__}
+
+
 def status(database: Any, now: datetime) -> dict[str, Any]:
     """A read-only summary for the operator (no symbols): the engine state and today's document."""
     snapshot = database.latest_analysis_snapshot(STATE_TYPE, STATE_KEY) or {}
@@ -1962,7 +1983,7 @@ def status(database: Any, now: datetime) -> dict[str, Any]:
             "spread_bands_last_session": {"session": (state.get("bands_closed") or {}).get("session"),
                                           "bands": {name: {key: round(float(value), 2) for key, value in stats.items()}
                                                     for name, stats in ((state.get("bands_closed") or {}).get("bands") or {}).items()}},
-            "valuation_live": valuation_snapshots(database, now)}
+            "valuation_live": valuation_snapshots(database, now), "valuation_phase": valuation_phase(database)}
 
 
 def main() -> None:
