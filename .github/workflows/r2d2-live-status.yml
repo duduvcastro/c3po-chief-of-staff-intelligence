@@ -11,6 +11,9 @@ on:
       minutes:
         description: "log window, in minutes (1-240)"
         default: "30"
+      producer_dry_run:
+        description: "yes = one read-only dry run of the live Valuation producer (publishes nothing)"
+        default: "no"
 
 permissions:
   contents: read
@@ -23,7 +26,7 @@ jobs:
   status:
     runs-on: ubuntu-latest
     environment: production  # the host's address and known hosts are the production environment's (the repository-level ones predate the host migration)
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - name: Configure deployment SSH key
         env:
@@ -79,3 +82,201 @@ jobs:
           sed -E 's/(api_token=)[^&[:space:]"]+/\1[redacted]/g' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "remote exit status: $rc"
           exit "$rc"
+
+      # One-off: the live Valuation producer has never published and its nightly line is lost with each deploy. This runs
+      # its REAL run_nightly once, inside the idle valuation-worker container, in a read-only PostgreSQL session, with
+      # publish replaced by a no-op, under a 12-minute deadline. Nothing is written. Stderr is dropped and only one line of
+      # a closed shape is printed: step timings, counts, exception class names, HTTP status counts per provider and a closed
+      # vocabulary of refusal codes (the text of an error may hold a symbol or a URL with a key, so it is never printed).
+      - name: Dry-run the live Valuation producer (read-only, publishes nothing)
+        if: inputs.producer_dry_run == 'yes'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "bash -s" <<'REMOTE' > "$RUNNER_TEMP/dry.txt" 2>/dev/null || rc=$?
+          set -uo pipefail
+          cd /opt/chief-of-staff-digital || exit 10
+          exec docker compose --env-file .env -f c3po/compose.yml exec -T \
+            -e 'PGOPTIONS=-c default_transaction_read_only=on' valuation-worker timeout -s TERM -k 30 1200 nice -n 10 python - <<'PY'
+          import json
+          import logging
+          import re
+          import signal
+          import sys
+          import time
+          import traceback
+          from collections import Counter
+          from datetime import datetime, timedelta, timezone
+
+          logging.disable(logging.CRITICAL)  # a module's log line may name a symbol: none leaves this process
+
+          import httpx
+
+          from app import valuation_live_ensemble as live, valuation_pit_rerun as pit
+          from app.config import get_settings
+          from app.database import Database
+          from app.market_data.service import MarketDataService
+          from app.valuation_official import session_date_of
+          from app.valuation_panel import _NoNetworkHttp
+          from app.valuation_price_history import PriceHistoryService
+
+          REFUSALS = (("lacks the columns", "asfiled_columns"), ("not a timestamp with time", "asfiled_accepted_at"),
+                      ("exists but its reader is not complete", "asfiled_reader_incomplete"), ("no verifiable price vintage", "no_verifiable_vintage"),
+                      ("calendar cannot place", "calendar"), ("is after the last session", "session_after_vintage"),
+                      ("no longer resolves", "vintage_no_longer_resolves"), ("names the source", "treasury_source"), ("is outside", "treasury_bounds"),
+                      ("no dated macro package", "no_macro"), ("catalogue published before", "no_catalogue_before_pin"),
+                      ("does not exist", "vintages_table_missing"), ("and none of the", "coverage_none"))
+          CODE = re.compile(r"[A-Za-z0-9_:.-]{1,90}")
+          SEGMENT = r"(?:[a-z](?:[a-z0-9_]|(?<=_)[DT](?![A-Za-z0-9]))*|[A-Z][a-z][A-Za-z]*)"  # never an uppercase ticker
+          LABEL = re.compile(SEGMENT + r"(?::" + SEGMENT + r")*")
+
+          def where(error):
+              frames = traceback.extract_tb(error.__traceback__)
+              own = [frame for frame in frames if "/app/" in frame.filename] or frames
+              if not own:
+                  return ""
+              return ":" + re.sub(r"\W", "_", own[-1].filename.rsplit("/", 1)[-1].removesuffix(".py")) + "." + str(own[-1].lineno)
+
+          def code(error):
+              name = type(error).__name__
+              if isinstance(error, live.LiveEnsembleError):
+                  return live._failure_code(error) if CODE.fullmatch(str(error)) else name
+              text = str(error)
+              return next((name + ":" + label for needle, label in REFUSALS if needle in text), name) + where(error)
+
+          def labelled(figures):
+              kept = Counter()
+              for label, count in figures.items():
+                  kept[str(label) if LABEL.fullmatch(str(label)) else "other"] += int(count)
+              return dict(kept.most_common(30))
+
+          steps, http, targets, sections, counts, sizes = {}, Counter(), Counter(), {}, {}, {}
+
+          def timed(name, inner):
+              def call(*args, **kwargs):
+                  started, serial = time.monotonic(), sum(key.startswith(name + ".") for key in steps) + 1
+                  try:
+                      result = inner(*args, **kwargs)
+                  except Exception as error:
+                      steps[f"{name}.{serial}"] = f"{time.monotonic() - started:.1f}s {code(error)}"
+                      raise
+                  steps[f"{name}.{serial}"] = f"{time.monotonic() - started:.1f}s ok"
+                  return result
+              return call
+
+          async_get = httpx.AsyncClient.get
+
+          async def counted_get(self, url, **kwargs):
+              host = httpx.URL(url).host
+              label = {"financialmodelingprep.com": "fmp", "eodhd.com": "eodhd"}.get(host, "other")
+              try:
+                  response = await async_get(self, url, **kwargs)
+              except BaseException as error:  # a whole-response timeout arrives as CancelledError
+                  http[label + ":" + type(error).__name__] += 1
+                  raise
+              http[f"{label}:{response.status_code}"] += 1
+              return response
+
+          httpx.AsyncClient.get = counted_get
+          target_rows = live.LiveSourceFetch.target_rows
+
+          def counted_rows(self, *args, **kwargs):
+              try:
+                  rows = target_rows(self, *args, **kwargs)
+              except Exception as error:
+                  targets[code(error)] += 1
+                  raise
+              targets["ok"] += 1
+              return rows
+
+          live.LiveSourceFetch.target_rows = counted_rows
+          gather = live.gather_live_inputs
+
+          def gathered(*args, **kwargs):
+              inputs = gather(*args, **kwargs)
+              counts[str(inputs.market)] = {"catalogue": len(inputs.catalogue), "extras": len(inputs.extra_rows), "screen_inputs": len(inputs.screen_inputs),
+                                            "not_admitted": len(inputs.not_admitted),
+                                            "not_admitted_why": labelled(Counter(inputs.not_admitted.values()))}
+              return inputs
+
+          live.live_treasury_curve = timed("treasury_curve", live.live_treasury_curve)
+          pit.PinnedPrices.__init__ = timed("price_pin", pit.PinnedPrices.__init__)
+          live.decide_volume_basis = timed("volume_basis", live.decide_volume_basis)
+          live.gather_live_inputs = timed("gather_inputs", gathered)
+          pit.PitSourceResolver.resolve = timed("resolver", pit.PitSourceResolver.resolve)
+          live._LiveSection.prepare_served = timed("prepare_served", live._LiveSection.prepare_served)
+          live._read_all = timed("read_targets", live._read_all)
+          live._LiveSection.result = timed("section_result", live._LiveSection.result)
+          refuse = live.unpublishable
+
+          def unpublishable(section):
+              refusal = refuse(section)
+              figures = section.get("counts") or {}
+              reads = figures.get("targets") or {}
+              sections[str(section.get("market"))] = {"refusal": refusal or "publishable", "attempted": int(reads.get("attempted") or 0),
+                                                      "failed": int(reads.get("failed") or 0), "circuit_open": bool(reads.get("circuit_open")),
+                                                      "tested_pending": int(figures.get("pit_tested_pending") or 0),
+                                                      "with_primary_tp": int(figures.get("with_primary_tp") or 0),
+                                                      "admitted_at_T": int(figures.get("admitted_at_T") or 0),
+                                                      "evaluable_inputs": int(figures.get("evaluable_inputs") or 0),
+                                                      "pit_tested": int(figures.get("pit_tested") or 0),
+                                                      "origins": labelled(figures.get("origins") or {}),
+                                                      "consensus": labelled(figures.get("consensus") or {}),
+                                                      "screen_refused": labelled(figures.get("screen_refused") or {})}
+              return refusal
+
+          live.unpublishable = unpublishable
+
+          def dry_publish(database, section, *, published_at):  # the run's only writer, never called: the same strict encoding, no write
+              body = json.dumps({**section, "published_at": published_at.isoformat()}, allow_nan=False)
+              sizes[str(section.get("market"))] = len(body)
+              return "dry-run"
+
+          live.publish = timed("publish", dry_publish)
+          run_markets, seen = live._run_markets, {}
+
+          def spied(database, settings, fetch, pending, **kwargs):
+              seen.update(failures=kwargs["failures"], summary=kwargs["summary"], fetch=fetch)
+              return run_markets(database, settings, fetch, pending, **kwargs)
+
+          live._run_markets = spied
+          report, outcome, started = {}, "did_not_finish", time.monotonic()
+          signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # the time limit: the line below is still printed
+          try:
+              settings = get_settings()
+              database = Database(settings)
+              report.update(fmp_token=bool(settings.fmp_api_token), eodhd_token=bool(settings.eodhd_api_token), enabled=live.valuation_env.ensemble_live_enabled())
+              now = datetime.now(timezone.utc)
+              series = PriceHistoryService(settings, database, _NoNetworkHttp())
+              for market in live.MARKETS:
+                  vintage = series.vintage(market, available_before=now) or {}
+                  report["price_" + market] = {"status": str(vintage.get("status") or "none"), "to": str(vintage.get("to") or "none"),
+                                               "available_at": str(vintage.get("available_at") or "none")[:19], "session": session_date_of(market, now)}
+              outcome = "published_all"
+              try:
+                  live.run_nightly(database, settings, MarketDataService(settings, database).http, deadline=now + timedelta(minutes=12))
+              except Exception as error:
+                  outcome = code(error)
+          except BaseException as error:  # SIGTERM's SystemExit too
+              outcome = "aborted:" + type(error).__name__ + where(error)
+          finally:
+              summary = seen.get("summary") or {}
+              failures = {(key if CODE.fullmatch(str(key)) else "other"): int(value) for key, value in (seen.get("failures") or {}).items()}
+              if any(key.startswith("deadline_reached") for key in failures):  # this run's own 12 minutes, not a reproduction of the night's failure
+                  outcome = "dry_deadline:" + outcome
+              report.update(outcome=outcome, seconds=round(time.monotonic() - started, 1), steps=steps, failures=failures, sections=sections, inputs=counts,
+                            http=dict(http), targets=dict(targets), bytes=sizes, published_dry=int(summary.get("published") or 0),
+                            partial=int(summary.get("partial") or 0), names=int(summary.get("names") or 0),
+                            with_primary_tp=int(summary.get("with_primary_tp") or 0), tested_with_tp=int(summary.get("pit_tested_with_primary_tp") or 0),
+                            names_pending=int(summary.get("names_pending") or 0))
+              print("PRODUCER-DRY-RUN " + json.dumps(report, sort_keys=True, separators=(",", ":")), flush=True)
+          PY
+          REMOTE
+          echo "remote exit status: $rc"
+          # one line of a closed shape, or nothing: no other byte of the remote output reaches this public log
+          awk 'length($0) <= 12000' "$RUNNER_TEMP/dry.txt" | grep -E '^PRODUCER-DRY-RUN \{[A-Za-z0-9_:.,{}" +-]+\}$' || echo "no dry-run line"
