@@ -1,4 +1,7 @@
+import asyncio
+import dataclasses
 import json
+import logging
 import math
 import threading
 from datetime import date, datetime, time, timedelta, timezone
@@ -12,7 +15,8 @@ from app import r2d2_live_engine as engine_module
 from app.config import Settings
 from app.database import Database
 from app.r2d2_live_engine import (FEE_SIDE, Engine, EngineState, LiveEngineStream, MarketView, Member, NEW_YORK,
-                                  Position, build_universe, run_session)
+                                  Position, Tape, build_universe, massive_minute_tape, recover_opening, recover_tapes,
+                                  run_session)
 
 DAY = date(2026, 10, 28)
 
@@ -274,6 +278,49 @@ def test_the_stream_keeps_the_open_the_vwap_and_the_nbbo_of_the_session() -> Non
     assert stream.opening["AAA"] == 98.0 and view.price == 100.0
     assert abs((view.vwap or 0) - (98 * 100 + 100 * 300) / 400) < 1e-9
     assert (view.bid, view.ask) == (99.99, 100.01)
+
+
+def test_a_frame_no_parser_can_read_costs_that_frame_never_the_socket(monkeypatch, caplog) -> None:
+    """02/11/2026: EODHD's frames came stamped with 19 digits, each one raised and reached the reconnect handler, 299 times in
+    the night. The stamp is not guessed: those frames stay unread, on the engine's real parsers, and the socket stays up."""
+    good = json.dumps({"s": "AAA", "p": 98.0, "v": 100, "t": int(_at(9, 30, 1).timestamp() * 1000), "ms": "open"})
+    nineteen = json.dumps({"s": "AAA", "p": 90.0, "v": 100, "t": 1793633393631600000, "ms": "open"})
+    connections: list[list[str]] = []
+
+    class Socket:
+        def __init__(self):
+            if connections:  # a second connection is the failure itself: the test ends instead of reconnecting for ever
+                stream._stop.set()
+            self.frames = [json.dumps({"status_code": 200}), nineteen, nineteen, good]
+            connections.append(self.frames)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def send(self, _):
+            return None
+
+        async def recv(self):
+            if self.frames:
+                return self.frames.pop(0)
+            stream._stop.set()
+            raise TimeoutError
+
+    stream = LiveEngineStream("token")
+    stream.start_session(DAY)
+    monkeypatch.setattr(engine_module.websockets, "connect", lambda *_, **__: Socket())
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        asyncio.run(stream._run_feed("trade", "us", stream._record))
+    assert len(connections) == 1 and stream.opening == {"AAA": 98.0} and stream.unreadable["trade"] == 2
+    assert [row.getMessage() for row in caplog.records] == ["EODHD realtime trade: a frame could not be read (ValueError)"]
+    with pytest.raises(ValueError):  # the quote parser's raise is the same one, and the same guard takes it
+        stream._record_quote(json.dumps({"s": "AAA", "bp": 97.99, "ap": 98.01, "t": 1793633393631600000}))
+    assert stream.nbbo == {}
+    stream.start_session(DAY)
+    assert stream.unreadable == {"trade": 0, "quote": 0}  # per session
 
 
 class _FakeStream:
@@ -1818,6 +1865,240 @@ def test_r2_an_in_process_retry_keeps_the_live_tapes_and_the_opening_is_the_earl
     assert calls == [] and stream.view("AAA").price == 101.0  # the live tape was kept, not replaced by the checkpoint
 
 
+def _bar(minute: datetime, opening: float, close: float, size: float, average: float) -> dict[str, float]:
+    return {"t": int(minute.timestamp() * 1000), "o": opening, "c": close, "h": max(opening, close), "l": min(opening, close),
+            "v": size, "vw": average, "n": 10}
+
+
+def test_lost_opening_the_minute_bars_replay_through_the_tapes_own_add() -> None:
+    calls: list[tuple[str, dict]] = []
+    bars = [_bar(_at(9, 30), 98.0, 99.0, 100.0, 98.5), _bar(_at(9, 31), 99.0, 100.0, 300.0, 99.5)]
+
+    def get_json(url, *, params=None):
+        calls.append((url, params))
+        return {"results": bars}
+
+    tape = massive_minute_tape(get_json, "https://massive.test/", "key", "BRK-B", DAY, _at(9, 32))
+    assert tape is not None and tape.opening == 98.0 and tape.opening_at == _at(9, 30).timestamp()
+    assert tape.last_price == 100.0 and tape.minute == 9 * 60 + 31 and tape.closed_minute == 9 * 60 + 30
+    assert tape.vwap == pytest.approx((98.5 * 100 + 99.5 * 300) / 400) and tape.closed_price == 99.0
+    assert tape.closed_vwap == pytest.approx(98.5)
+    url, params = calls[0]
+    assert url == (f"https://massive.test/v2/aggs/ticker/BRK.B/range/1/minute/{int(_at(9, 30).timestamp() * 1000)}/"
+                   f"{int(_at(9, 32).timestamp() * 1000) - 1}")
+    assert params == {"adjusted": "false", "sort": "asc", "limit": 50000, "apiKey": "key"}
+    assert massive_minute_tape(lambda *a, **k: {"results": []}, "", "k", "AAA", DAY, _at(9, 40)) is None
+    assert massive_minute_tape(lambda *a, **k: None, "", "k", "AAA", DAY, _at(9, 40)) is None
+    with pytest.raises(ValueError):
+        massive_minute_tape(lambda *a, **k: {"results": [_bar(_at(9, 30), float("nan"), 99.0, 100.0, 98.5)]}, "", "k", "AAA", DAY,
+                            _at(9, 40))
+
+
+def test_lost_opening_a_bar_at_or_past_the_cut_stays_out_even_when_the_provider_sends_it() -> None:
+    bars = [_bar(_at(9, 30), 98.0, 99.0, 100.0, 98.5), _bar(_at(9, 31), 99.0, 100.0, 300.0, 99.5)]
+    tape = massive_minute_tape(lambda *a, **k: {"results": bars}, "", "k", "AAA", DAY, _at(9, 31))
+    assert tape is not None and tape.volume == 100.0 and tape.last_price == 99.0
+
+
+def test_lost_opening_the_cut_is_a_whole_minute_with_the_lead_ahead_of_it() -> None:
+    assert engine_module.recovery_cut(_at(11, 0, 0)) == _at(11, 1)
+    assert engine_module.recovery_cut(_at(11, 0, 29)) == _at(11, 1)
+    assert engine_module.recovery_cut(_at(11, 0, 31)) == _at(11, 2)
+
+
+def test_lost_opening_no_trade_counts_twice_and_none_after_the_cut_is_lost() -> None:
+    """Codex 6582103096: bars and held trades are made disjoint by one cut. A trade stamped before it is in the bars, whatever
+    the moment it arrives (held or after the restore), and across the checkpoint; one stamped from it is on the tape."""
+    cut, bars = _at(11, 1), Tape(pv=18800.0, volume=200.0, opening=94.0, opening_at=_at(9, 30).timestamp(), last_price=94.0,
+                                 last_at=_at(11, 0).timestamp() + 0.002, minute=11 * 60)
+
+    def run(*trades):
+        stream = LiveEngineStream("")
+        stream.start_session(DAY, restoring=True, floor=cut.timestamp())
+        for price, moment in trades:
+            stream.record_trade("AAA", price, 100, moment)
+        stream.restore({"AAA": dataclasses.asdict(bars)}, _at(11, 3))
+        return stream
+
+    overlap = run((90.0, cut - timedelta(seconds=1)), (95.0, cut), (96.0, cut + timedelta(seconds=5)))
+    clean = run((95.0, cut), (96.0, cut + timedelta(seconds=5)))
+    for stream in (overlap, clean):
+        tape = stream.tapes["AAA"]
+        assert (tape.volume, tape.pv) == (400.0, 18800.0 + 9500.0 + 9600.0) and tape.last_price == 96.0
+    overlap.record_trade("AAA", 90.0, 100, cut - timedelta(seconds=2))  # a late print of the bars' part, after the restore
+    assert overlap.tapes["AAA"].volume == 400.0
+    overlap.record_trade("AAA", 97.0, 100, _at(11, 4))
+    assert overlap.tapes["AAA"].volume == 500.0
+    saved = overlap.export({"AAA"})
+    fresh = LiveEngineStream("")
+    fresh.start_session(DAY, restoring=True, floor=cut.timestamp())  # the next restart of the session, the same floor
+    fresh.record_trade("AAA", 90.0, 100, cut - timedelta(seconds=3))
+    fresh.restore(saved, _at(11, 6))
+    assert fresh.tapes["AAA"].volume == 500.0
+
+
+def test_lost_opening_the_cut_lives_in_the_state_and_ends_with_the_session(monkeypatch, tmp_path) -> None:
+    saved = EngineState(nav_realized=1.0, session=DAY.isoformat(), tape_floor=123.5)
+    assert EngineState.from_json(json.loads(json.dumps(saved.to_json()))).tape_floor == 123.5
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6)]
+    assert Engine(EngineState(nav_realized=1.0, session="2026-10-27", tape_floor=123.5), DAY, universe).state.tape_floor is None
+    stream = LiveEngineStream("")
+    stream.start_session(DAY, floor=5.0)
+    stream.start_session(DAY)
+    assert stream.floor is None
+    resumed = EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True, candidates={"AAA": -2.0},
+                          tape_floor=_at(11, 1).timestamp(), config=engine_module.CONFIG)
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: universe)
+    monkeypatch.setattr(engine_module, "load_state", lambda db, seed: resumed)
+    monkeypatch.setattr(engine_module, "reconcile_previous", lambda *a, **k: True)
+    again = LiveEngineStream("")
+    run_session(stream=again, database=Database(Settings(database_url="")), get_json=lambda *a, **k: None, base_url="", token="",
+                day=DAY, cache_dir=tmp_path, now=lambda: _at(16, 0, 1), sleep=lambda s: None,
+                recover=lambda *a: pytest.fail("a selected session recovers nothing"))
+    assert again.floor == _at(11, 1).timestamp()
+
+
+def test_lost_opening_keeps_the_names_that_answered() -> None:
+    def fetch(symbol, day, now):
+        if symbol == "BAD":
+            raise RuntimeError("no answer")
+        return None if symbol == "NONE" else Tape(opening=1.0)
+
+    universe = [Member(symbol, "NYSE", 100.0, 50e6) for symbol in ("AAA", "BAD", "NONE", "BBB")]
+    assert sorted(recover_tapes(fetch, universe, DAY, _at(10, 0))) == ["AAA", "BBB"]
+
+
+def test_lost_opening_is_only_a_selection_that_found_nothing_with_nothing_since() -> None:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6)]
+    lost = lambda **fields: Engine(EngineState(nav_realized=1000.0, session=DAY.isoformat(), **fields), DAY, universe)  # noqa: E731
+    assert lost(candidates_fixed=True).lost_opening()
+    assert not lost(candidates_fixed=False).lost_opening()
+    assert not lost(candidates_fixed=True, candidates={"AAA": -2.0}).lost_opening()
+    assert not lost(candidates_fixed=True, fills=[{"symbol": "AAA"}]).lost_opening()
+    assert not lost(candidates_fixed=True, positions={"AAA": _engine_position()}).lost_opening()
+    assert not Engine(EngineState(nav_realized=1000.0, session="2026-10-27", candidates_fixed=True), DAY, universe).lost_opening()
+
+
+def _engine_position() -> Position:
+    engine = _engine()
+    engine.state.candidates, engine.state.below = {"AAA": -2.0}, {"AAA": False}
+    engine._buy("AAA", 101.01, -2.0, 2.0, _at(10, 0))
+    return engine.state.positions["AAA"]
+
+
+def _lost_session(monkeypatch) -> tuple[EngineState, list[Member]]:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6), Member("BBB", "NYSE", 50.0, 20e6)]
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: universe)
+    state = EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True, config=engine_module.CONFIG)
+    monkeypatch.setattr(engine_module, "load_state", lambda db, seed: state)
+    monkeypatch.setattr(engine_module, "reconcile_previous", lambda *a, **k: True)
+    return state, universe
+
+
+def _run_lost_session(tmp_path, recover, stream=None) -> tuple[LiveEngineStream, list[list[str]]]:
+    """A restart at 11:00:10: the cut is 11:01, the bars are read from 11:03, and the rest of the day passes at once."""
+    stream = stream or LiveEngineStream("")
+    groups: list[list[str]] = []
+    real = stream.set_group
+    stream.set_group = lambda name, symbols, priority=50: (groups.append(list(symbols)), real(name, symbols, priority=priority))[1]  # type: ignore[method-assign]
+    clock = {"t": _at(11, 0, 10)}
+
+    def sleep(seconds):
+        clock["t"] += timedelta(seconds=seconds)
+
+    def closing(names, day, cut):
+        assert cut == _at(11, 1) and clock["t"] >= _at(11, 3)
+        try:
+            return recover(names, day, cut)
+        finally:
+            clock["t"] = _at(16, 0, 1)
+
+    run_session(stream=stream, database=Database(Settings(database_url="")), get_json=lambda *a, **k: None, base_url="", token="",
+                day=DAY, cache_dir=tmp_path, now=lambda: clock["t"], sleep=sleep, recover=closing)
+    return stream, groups
+
+
+def test_lost_opening_a_restart_selects_by_the_same_rule_and_restores_the_tapes(monkeypatch, tmp_path) -> None:
+    """02/11/2026: the feed gave no print, 09:31 fixed an empty selection, and the session stood idle until the close."""
+    state, universe = _lost_session(monkeypatch)
+    tapes = {"AAA": Tape(pv=9800.0, volume=100.0, opening=98.0, opening_at=_at(9, 30).timestamp(), last_price=98.5, minute=600),
+             "BBB": Tape(pv=5000.0, volume=100.0, opening=50.0, opening_at=_at(9, 30).timestamp(), last_price=50.0, minute=600)}
+    asked: list[tuple[int, date]] = []
+
+    def recover(names, day, cut):
+        asked.append((len(names), day))
+        return tapes
+
+    stream, groups = _run_lost_session(tmp_path, recover)
+    assert asked == [(2, DAY)] and state.candidates == {"AAA": pytest.approx(-2.0)} and state.candidates_fixed
+    assert list(state.stream_context) == ["AAA"] and stream.opening == {"AAA": 98.0}  # BBB opened flat: not a candidate
+    assert groups[0] == ["AAA", "BBB"] and groups[1] == ["AAA"]  # the feed narrows to the candidates, as after a normal open
+
+
+def test_lost_opening_a_name_that_first_printed_after_the_window_was_never_a_candidate() -> None:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6), Member("LATE", "NYSE", 100.0, 20e6), Member("EDGE", "NYSE", 100.0, 20e6)]
+    engine = Engine(EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True), DAY, universe)
+    engine.adopt_opening({"AAA": Tape(opening=98.0, opening_at=_at(9, 30).timestamp()),
+                          "LATE": Tape(opening=92.0, opening_at=_at(9, 47).timestamp()),
+                          "EDGE": Tape(opening=92.0, opening_at=_at(9, 31).timestamp())})
+    assert engine.candidates == {"AAA": pytest.approx(-2.0)} and engine.state.candidates_fixed
+
+
+def test_lost_opening_never_starts_when_the_bars_could_not_settle_before_the_close() -> None:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6)]
+    engine = Engine(EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True), DAY, universe)
+    recover_opening(engine, universe, lambda *a: pytest.fail("too late to read the bars"), DAY, _at(15, 59), lambda: _at(15, 58),
+                    lambda s: pytest.fail("too late to wait"))
+    assert engine.candidates == {}
+
+
+def test_lost_opening_an_in_process_retry_recovers_too(monkeypatch, tmp_path) -> None:
+    """The first commit after a recovery may fail: the retry in the same process reloads the empty selection and still owns
+    today's stream, and must not settle for it."""
+    state, universe = _lost_session(monkeypatch)
+    stream = LiveEngineStream("")
+    stream.start_session(DAY)
+    tapes = {"AAA": Tape(pv=9800.0, volume=100.0, opening=98.0, opening_at=_at(9, 30).timestamp(), last_price=98.5, minute=600),
+             "BBB": Tape(pv=5000.0, volume=100.0, opening=50.0, opening_at=_at(9, 30).timestamp(), last_price=50.0, minute=600)}
+    _run_lost_session(tmp_path, lambda names, day, cut: tapes, stream=stream)
+    assert state.candidates == {"AAA": pytest.approx(-2.0)} and stream.opening == {"AAA": 98.0}
+    assert stream.floor == _at(11, 1).timestamp()
+
+
+def test_lost_opening_a_recovery_that_fails_leaves_the_session_as_it_was(monkeypatch, tmp_path, caplog) -> None:
+    state, universe = _lost_session(monkeypatch)
+    secret = "https://x.test/?apiKey=SECRET"
+
+    def broken(names, day, cut):
+        raise RuntimeError(secret)
+
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        _run_lost_session(tmp_path, broken)
+    assert state.candidates == {} and state.candidates_fixed
+    assert any("could not be recovered (RuntimeError)" in row.getMessage() for row in caplog.records)
+    assert "SECRET" not in caplog.text
+
+
+def test_lost_opening_never_selects_on_a_fragment_of_the_universe(caplog) -> None:
+    universe = [Member(symbol, "NYSE", 100.0, 50e6) for symbol in ("AAA", "BBB", "CCC")]
+    engine = Engine(EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True), DAY, universe)
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        recover_opening(engine, universe, lambda *a: {"AAA": Tape(opening=90.0)}, DAY, _at(10, 0), lambda: _at(10, 3), lambda s: None)
+    assert engine.candidates == {} and engine.lost_opening()
+    assert any("1 tapes of 3 names" in row.getMessage() for row in caplog.records)
+
+
+def test_a_session_that_opens_on_too_few_prints_says_so_in_an_error_line(monkeypatch, tmp_path, caplog) -> None:
+    universe = [Member(symbol, "NYSE", 100.0, 50e6) for symbol in ("AAA", "BBB", "CCC")]
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: universe)
+    monkeypatch.setattr(engine_module, "load_state", lambda db, seed: EngineState(nav_realized=1000.0))
+    monkeypatch.setattr(engine_module, "reconcile_previous", lambda *a, **k: True)
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        run_session(stream=LiveEngineStream(""), database=Database(Settings(database_url="")), get_json=lambda *a, **k: None,
+                    base_url="", token="", day=DAY, cache_dir=tmp_path, now=lambda: _at(16, 0, 1), sleep=lambda s: None)
+    assert any("the feed gave 0 opening prints of 3 names" in row.getMessage() for row in caplog.records)
+
+
 def test_r2_a_long_holiday_never_wedges_the_reconcile() -> None:
     database = Database(Settings(database_url=""))
     engine = Engine(EngineState(nav_realized=1_000_000.0), DAY, [Member("AAA", "NASDAQ", 100.0, 50e6)])
@@ -2044,7 +2325,7 @@ def test_feed_the_lag_and_the_reasons_a_signal_did_not_buy_are_counted() -> None
 
     line = engine_module.feed_line(stream, engine)
     assert line.startswith("R2D2 live feed: trade_messages=0 quote_messages=2 trade_lag_ms=0 quote_lag_ms=")
-    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 late=0 implausible=0 nbbo massive=0 stream=3 unanswered=0 mismatch=0 stream_would_refuse=0 exits massive=0 stream=0 none=0 unconfirmed=0")
+    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 late=0 implausible=0 nbbo massive=0 stream=3 unanswered=0 mismatch=0 stream_would_refuse=0 exits massive=0 stream=0 none=0 unconfirmed=0 unreadable trade=0 quote=0")
     assert stream.lag_max_ms == {"trade": 0, "quote": 0} and stream.messages == {"trade": 0, "quote": 0}  # per interval
     root = Path(__file__).resolve().parents[3]
     run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
@@ -2792,6 +3073,7 @@ def test_the_shared_massive_path_keeps_the_exits_served_under_an_opening_load() 
 
     result = r2d2_massive_load.run(0, 0, 40_000, 3, 6_000, 1, from_open=False)  # from 09:30:59: the exits at once
     assert result["criteria"]["verdict"] == "PASS", result["criteria"]
+    assert result["profile"]["trade_source"] == engine_module.TRADE_SOURCE == "massive"
     assert result["taken"]["subscribed_channels"] >= r2d2_massive_load.CANDIDATES + 2 * len(r2d2_massive_load.HELD)  # T. and Q.
 
 

@@ -2,10 +2,10 @@
 um teste de volume antes"; Codex 6537835879: the reader, T and Q together, the shadow tapes and the exits' service).
 
 The REAL ``run_session`` (its once-a-second full step, its fast passes on ``wait_update``, its commits and marks writer)
-runs on a database without a server, from 09:30:59 of a past session on the wall clock, with the shadow mode in force:
-the REAL ``MassiveQuoteStream`` reader (its own thread) takes frames a simulated socket delivers on a schedule — trades of
-900 names (the universe, into the shadow tapes) mixed with quotes of 20 carried positions — at an opening rate, then a
-regular one. Three positions go quiet (no quote after the first seconds): the full step asks Massive's REST for them (a
+runs on a database without a server, from 09:30:59 of a past session on the wall clock, with the engine's own trade source
+in force: the REAL ``MassiveQuoteStream`` reader (its own thread) takes frames a simulated socket delivers on a schedule —
+trades of 900 names (the universe, into the session's tapes with TRADE_SOURCE "massive", into the shadow tapes with
+"eodhd") mixed with quotes of 20 carried positions — at an opening rate, then a regular one. Three positions go quiet (no quote after the first seconds): the full step asks Massive's REST for them (a
 simulated answer 0.3-0.7 s late) and the fast passes wait on it, as in production. Ten quotes cross a position's stop at
 known instants. Measured (aggregates only, no symbol of any market):
   sale      from a stop-crossing quote's scheduled arrival to the engine booking the sale;
@@ -41,7 +41,8 @@ from .r2d2_live_engine import NEW_YORK, EngineState, LiveEngineStream, Member, M
 
 DAY = date(2026, 10, 28)  # a past session: the wall clock is mapped onto it from 09:30:59
 NAMES = ["N%03d" % i for i in range(900)]
-CANDIDATES = 280  # NAMES[:CANDIDATES] open 2% under their last close on EODHD's tape: the candidates fixed at 09:31
+CANDIDATES = 280  # NAMES[:CANDIDATES] open under the gap, the others above it: the candidates fixed at 09:31
+OPENING_GAP = frozenset(NAMES[:CANDIDATES])
 HELD = ["H%02d" % i for i in range(20)]
 QUIET = HELD[:3]  # no quote after QUIET_AFTER_SECONDS: the full step asks Massive's REST for them
 QUIET_AFTER_SECONDS = 2.0
@@ -138,7 +139,9 @@ def _schedule(phases: list[tuple[float, float, list[str]]], quote_share: float, 
                     events.append({"ev": "Q", "sym": name, "bp": bid, "ap": bid + 0.01, "t": stamp})
                 else:
                     name = traded[trades % len(traded)]
-                    events.append({"ev": "T", "sym": name, "x": 11, "p": 49.0 + rng.random(), "s": 100, "t": stamp})
+                    # against the last close of 50: every candidate's print is under the rule's gap, no other name's is
+                    price = (49.0 if name in OPENING_GAP else 49.6) + 0.4 * rng.random()
+                    events.append({"ev": "T", "sym": name, "x": 11, "p": price, "s": 100, "t": stamp})
                     per_name[name] = per_name.get(name, 0) + 1
                     trades += 1
             frames.append((clock, json.dumps(events)))
@@ -174,7 +177,9 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
     for name in HELD:  # carried positions: the exits run from 09:31, the entries find no candidate (no opening print)
         state.positions[name] = Position(name, "NASDAQ", 100.0, ENTRY_BID, 100.0 * ENTRY_BID * (1 + engine_module.FEE_SIDE),
                                          opened, last_mark=ENTRY_BID, days_held=1)
-    massive = MassiveQuoteStream("load-test", url="ws://127.0.0.1:9/")
+    stream = LiveEngineStream("", max_symbols=1000)  # EODHD's, never connected: no fallback quote
+    source_is_massive = engine_module.TRADE_SOURCE == "massive"
+    massive = MassiveQuoteStream("load-test", url="ws://127.0.0.1:9/", trade_sink=stream.record_trade if source_is_massive else None)
     lags: list[float] = []
     served: dict[str, list[tuple[float, float, float | None]]] = {}
     reads: dict[str, list[float]] = {name: [] for name in HELD}
@@ -265,16 +270,18 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
     engine_module.Engine._sell = recorded_sell  # type: ignore[method-assign]
     engine_module.TRADE_SHADOW = True
     massive.quote = recorded_quote  # type: ignore[method-assign]
-    stream = LiveEngineStream("", max_symbols=1000)  # EODHD's, never connected: no fallback quote
 
     def opening_prints() -> None:
-        """EODHD's opening print of the candidates (2% under their last close), once the session has started."""
+        """The candidates' opening print (2% under their last close), once the session has started: EODHD's with that source;
+        with Massive's and no opening minute, the print the skipped minute would have given, with no volume of its own."""
         while stream.session != DAY:
             time.sleep(0.01)
         at = now()
         for name in NAMES[:CANDIDATES]:
-            stream.record_trade(name, 49.0, 100, max(at, datetime.combine(DAY, day_time(9, 30, 0, 500000), tzinfo=NEW_YORK)))
-    threading.Thread(target=opening_prints, name="opening-prints", daemon=True).start()
+            stream.record_trade(name, 49.0, 0 if source_is_massive else 100,
+                                max(at, datetime.combine(DAY, day_time(9, 30, 0, 500000), tzinfo=NEW_YORK)))
+    if not (source_is_massive and from_open):  # with Massive's trades and the opening minute the prints are the socket's own
+        threading.Thread(target=opening_prints, name="opening-prints", daemon=True).start()
     massive.start()
     try:
         with tempfile.TemporaryDirectory() as cache:
@@ -296,9 +303,8 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
         engine_module.websockets.connect = patched["connect"]  # type: ignore[assignment]
     massive.take_trade_gauges()  # the counts since the session's last minute line, into the totals
     per_name = getattr(_schedule, "per_name", {})
-    shadow = shadows[-1] if shadows else None
-    tape_trades = {name: int(round(shadow.tapes[name].volume / 100)) if shadow is not None and name in shadow.tapes else 0
-                   for name in per_name}
+    tapes = stream.tapes if source_is_massive else (shadows[-1].tapes if shadows else None)
+    tape_trades = {name: int(round(tapes[name].volume / 100)) if tapes is not None and name in tapes else 0 for name in per_name}
     candidates = set(NAMES[:CANDIDATES])
     candidate_generated = sum(count for name, count in per_name.items() if name in candidates)
     candidate_taken = sum(count for name, count in tape_trades.items() if name in candidates)
@@ -318,7 +324,8 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
     result = {
         "revision": _revision(), "python": platform.python_version(), "platform": platform.platform(),
         "websockets": getattr(engine_module.websockets, "__version__", None),
-        "profile": {"from_open": from_open, "opening_events_per_second": opening_events, "opening_seconds": opening_seconds,
+        "profile": {"trade_source": engine_module.TRADE_SOURCE, "from_open": from_open,
+                    "opening_events_per_second": opening_events, "opening_seconds": opening_seconds,
                     "session_events_per_second": session_events, "session_seconds": session_seconds,
                     "regular_events_per_second": regular_events, "regular_seconds": regular_seconds,
                     "candidates": CANDIDATES,
@@ -328,10 +335,10 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
                       "frames": len(frames)},
         "taken": {"trades": totals["trades"], "frames_read": socket.index, "subscribed_channels": socket.subscribed,
                   "off_exchange": totals["off_exchange"], "extended": totals["extended"], "sink_failures": totals["sink_failures"],
-                  "candidate_trades_generated": candidate_generated, "candidate_trades_in_shadow_tapes": candidate_taken,
-                  "other_trades_generated": other_generated, "other_trades_in_shadow_tapes": other_taken,
+                  "candidate_trades_generated": candidate_generated, "candidate_trades_in_tapes": candidate_taken,
+                  "other_trades_generated": other_generated, "other_trades_in_tapes": other_taken,
                   "quotes_before_0931": before_exits},
-        # a candidate is followed all session: each of its trades must reach the shadow tapes. The other names are
+        # a candidate is followed all session: each of its trades must reach the tapes. The other names are
         # informative only: the subscription's cap (UNIVERSE_SIZE with the held names) leaves the last 20 never followed
         # (Codex 6538461047: the whole difference of the full profile), and none is followed after 09:31
         "losses": {"candidate_trades": candidate_generated - candidate_taken, "frames": len(frames) - socket.index},
@@ -346,7 +353,7 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
         "reconnects": massive.reconnects,
     }
     checks = {
-        "no_loss": result["losses"] == {"candidate_trades": 0, "frames": 0} and shadow is not None,
+        "no_loss": result["losses"] == {"candidate_trades": 0, "frames": 0} and tapes is not None,
         "no_reconnect": massive.reconnects == 0,
         "no_sink_failure": totals["sink_failures"] == 0,
         "every_crossing_sold": len(sale_ms) == len(crossings) > 0,

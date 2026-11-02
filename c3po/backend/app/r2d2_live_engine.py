@@ -217,6 +217,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.nbbo: dict[str, tuple[float, float, datetime]] = {}
         self._pending: list[tuple[str, float, float, int, float]] | None = None
         self.restored_minute: int | None = None  # the minute of a restore: earlier minutes may miss the trades of the gap
+        self.floor: float | None = None  # a recovered opening's cut (epoch seconds): an earlier trade is in its minute bars
         self._groups_version = 0  # bumped by every ``set_group``: the feed loop recomputes its subscription only then
         self._quote_symbols: frozenset[str] | None = None  # the quote feed's names (None: every grouped name, as trades)
         # False when the tapes are fed by Massive (TRADE_SOURCE "massive"): EODHD's trade feed keeps its subscription (its
@@ -228,6 +229,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.lag_ms = {"trade": 0, "quote": 0}
         self.lag_max_ms = {"trade": 0, "quote": 0}
         self.messages = {"trade": 0, "quote": 0}
+        self.unreadable = {"trade": 0, "quote": 0}  # frames no parser could read, this session
         self._gauge_lock = Lock()  # the feed thread updates, the heartbeat takes and resets: every message in ONE interval
 
     def set_group(self, name: str, symbols: list[str], *, priority: int = 50) -> None:
@@ -303,7 +305,10 @@ class LiveEngineStream(EodhdRealtimeStream):
                         if refused is not None:  # e.g. 422 "Symbols limit reached": a name of this feed was not subscribed
                             logger.error("EODHD realtime %s refused a subscription: status %d", feed, refused)
                             continue
-                        recorder(payload)
+                        try:
+                            recorder(payload)
+                        except Exception as error:  # noqa: BLE001 - see ``_unreadable``
+                            self._unreadable(feed, error)
             except Exception as exc:
                 if self._stop.is_set():
                     break
@@ -312,6 +317,17 @@ class LiveEngineStream(EodhdRealtimeStream):
                 self._set_feed_state(feed, "error", safe_error)
                 await asyncio.sleep(3)
         self._set_feed_state(feed, "stopped")
+
+    def _unreadable(self, feed: str, error: Exception) -> None:
+        """A frame no parser could read costs that frame, never the socket: on 02/11/2026 EODHD's stamps came with 19 digits,
+        each frame raised, each one dropped the connection, and the session opened with no print at all. The stamp is not
+        guessed: such a frame stays unread. One error line per feed and session (the error's type, never its text), because
+        the next frame may be the same; the feed line counts them all."""
+        with self._gauge_lock:
+            self.unreadable[feed] += 1
+            first = self.unreadable[feed] == 1
+        if first:
+            logger.error("EODHD realtime %s: a frame could not be read (%s)", feed, type(error).__name__)
 
     def _lag(self, feed: str, stamp: int) -> None:
         lag = int(clock_time.time() * 1000) - stamp
@@ -329,14 +345,18 @@ class LiveEngineStream(EodhdRealtimeStream):
             self.lag_max_ms, self.messages = {"trade": 0, "quote": 0}, {"trade": 0, "quote": 0}
         return taken
 
-    def start_session(self, day: date, *, restoring: bool = False) -> None:
+    def start_session(self, day: date, *, restoring: bool = False, floor: float | None = None) -> None:
         """A new session's tapes. ``restoring``: the trades the feed delivers until ``restore`` are HELD, then applied on top
-        of the saved prefix in arrival order — none lost, none counted twice, no signal from a partial tape (Codex #500 P2-2)."""
+        of the saved prefix in arrival order — none lost, none counted twice, no signal from a partial tape (Codex #500 P2-2).
+        ``floor``: a trade stamped before it never reaches a tape, held or live: it is in a recovered opening's bars."""
         with self._view_lock:
             self.session = day
             self.tapes = {}
             self._pending = [] if restoring else None
             self.restored_minute = None
+            self.floor = floor
+        with self._gauge_lock:
+            self.unreadable = {"trade": 0, "quote": 0}
 
     @property
     def opening(self) -> dict[str, float]:
@@ -395,6 +415,8 @@ class LiveEngineStream(EodhdRealtimeStream):
         minute = local.hour * 60 + local.minute
         with self._view_lock:
             if self.session is None or local.date() != self.session or local.time() < SESSION_OPEN:
+                return
+            if self.floor is not None and at.timestamp() < self.floor:
                 return
             if self._pending is not None:  # a restart: held until the saved prefix is installed (Codex #500 P2-2)
                 self._pending.append((symbol, price, size, minute, at.timestamp()))
@@ -627,6 +649,7 @@ class EngineState:
     last_signal_minute: int = -1  # minutes after midnight ET of the last minute the entries were checked in (every second)
     candidates_fixed: bool = False  # the selection at the open happened (even when it found none)
     stream_context: dict[str, dict[str, Any]] = field(default_factory=dict)  # the tapes, for a restart
+    tape_floor: float | None = None  # a recovered opening's cut, kept for every restart of its session (``start_session``)
     config: str = ""  # the rule the session in the state ran under (its documents keep it when the rule changes)
     shadow: dict[str, dict[str, Any]] = field(default_factory=dict)  # the open shadow trades (never published by name)
     bands: dict[str, dict[str, float]] = field(default_factory=dict)  # per spread band: refused, closed, wins, net USD
@@ -637,7 +660,8 @@ class EngineState:
                 "positions": [asdict(position) for position in self.positions.values()], "session": self.session,
                 "nav_start": self.nav_start, "candidates": self.candidates, "below": self.below, "signals": self.signals,
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
-                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context, "config": self.config,
+                "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context,
+                "tape_floor": self.tape_floor, "config": self.config,
                 "shadow": self.shadow, "bands": self.bands, "bands_closed": self.bands_closed}
 
     @classmethod
@@ -648,7 +672,7 @@ class EngineState:
                    candidates=dict(data.get("candidates") or {}), below=dict(data.get("below") or {}),
                    signals=int(data.get("signals") or 0), fills=list(data.get("fills") or []),
                    last_signal_minute=int(data.get("last_signal_minute", -1)),
-                   candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}),
+                   candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}), tape_floor=data.get("tape_floor"),
                    config=str(data.get("config") or ""),
                    shadow=dict(data.get("shadow") or {}), bands=dict(data.get("bands") or {}),
                    bands_closed=dict(data.get("bands_closed") or {}))
@@ -676,6 +700,7 @@ class Engine:
         if not self.resumed:  # a new session: the opening NAV is the last close marked at the last known prices
             state.session, state.candidates, state.below, state.signals, state.fills = day.isoformat(), {}, {}, 0, []
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
+            state.tape_floor = None
             state.config = CONFIG
             state.shadow, state.bands = {}, {}
             state.nav_start = state.nav_realized + sum(
@@ -716,6 +741,20 @@ class Engine:
                 gap = (price / member.prev_close - 1) * 100
                 if gap <= -RULE["gap_min_percent"]:
                     self.candidates[symbol] = gap
+
+    def lost_opening(self) -> bool:
+        """The selection ran and found nothing, and nothing happened since: what a dead feed leaves (02/11/2026)."""
+        return self.resumed and self.state.candidates_fixed and not (self.candidates or self.state.positions or self.fills)
+
+    def adopt_opening(self, tapes: Mapping[str, Tape]) -> None:
+        """The selection of a lost opening: the same rule on these tapes' opening prints, once, and only the prints the
+        selection at the open could have seen (a name that first prints after the window was never a candidate). The chosen
+        names' tapes become the session's checkpoint, which the restart then restores."""
+        window_end = datetime.combine(self.day, OPENING_WINDOW_END, tzinfo=NEW_YORK).timestamp()
+        self.state.candidates_fixed = False
+        self.set_candidates({symbol: tape.opening for symbol, tape in tapes.items()
+                             if tape.opening is not None and tape.opening_at is not None and tape.opening_at < window_end})
+        self.state.stream_context = {symbol: asdict(tapes[symbol]) for symbol in self.candidates}
 
     def step(self, now: datetime, view: Callable[[str], MarketView],
              signal: Callable[[str], tuple[float, float] | None] | None = None,
@@ -1116,14 +1155,16 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 6 from 02/11/2026 (owner, 31/10): the sizes by the spread paid, the stop at -0.20% and the lock's steps
+    # version 7 from 02/11/2026: the buy signal's trades on Massive's stream, the rule unchanged; version 6 from 02/11/2026
+    # (owner, 31/10): the sizes by the spread paid, the stop at -0.20% and the lock's steps
     # +0.10 / +0.20 / every 0.15; version 5 the close mode and the size rule as parameters; version 4 entries until the
     # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
     # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 6, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
-                                "last_entry": LAST_ENTRY.isoformat()},
-        "The live R2D2 inside the C3PO server on the EODHD real-time stream (owner 27/10/2026); entries every second and "
+        "r2d2_live_engine", 7, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+                                "last_entry": LAST_ENTRY.isoformat(), "trade_source": TRADE_SOURCE},
+        "The live R2D2 inside the C3PO server on a real-time stream (owner 27/10/2026), Massive's for the buy signal's "
+        "trades since 02/11/2026; entries every second and "
         "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
         "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps), the stop at -0.20% and the step profit lock +0.10 / +0.20 / every 0.15 "
         "(owner 31/10/2026)")
@@ -1339,14 +1380,108 @@ def ask_nbbo(nbbo: Callable[[str, datetime], tuple[float, float, datetime] | Non
         pool.shutdown(wait=False, cancel_futures=True)
 
 
+# The opening a dead feed lost (02/11/2026: the trade feed gave no print, the selection at 09:31 found nothing, and a restart
+# never selects again). A restart that finds no candidate, no fill and nothing held picks a cut, the first whole minute at
+# least RECOVERY_LEAD_SECONDS ahead: a tape is then Massive's minute bars BEFORE the cut and the live trades stamped FROM it,
+# whatever the order they arrive in (``LiveEngineStream.floor``), so no trade counts twice and none after the cut is lost.
+# It selects once, by the same rule, RECOVERY_SETTLE_SECONDS after the cut, when those bars are complete (the newest bar
+# stood 110 s behind the clock from its start, 02/11). What the bars cannot give: the live tape's off-exchange filter (the
+# bars are consolidated, so the part of the VWAP before the cut keeps those prints).
+RECOVERY_LEAD_SECONDS = 30.0  # the stream is up and following the universe before the cut
+RECOVERY_SETTLE_SECONDS = 120.0
+RECOVERY_TIMEOUT_SECONDS = 15.0  # the WHOLE request of one name, no retry
+RECOVERY_BUDGET_SECONDS = 120.0  # the whole universe; nothing is held meanwhile
+RECOVERY_PARALLEL = 16
+RECOVERY_MIN_SHARE = 0.5  # fewer tapes than this share of the universe select nothing: never a selection on a fragment
+OPENING_MIN_SHARE = 0.5  # fewer opening prints than this share of the universe: an error line, the feed did not open
+
+
+def recovery_cut(now: datetime) -> datetime:
+    return (now + timedelta(seconds=RECOVERY_LEAD_SECONDS)).replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+
+def massive_minute_tape(get_json: Callable[..., Any], base_url: str, token: str, symbol: str, day: date,
+                        cut: datetime) -> Tape | None:
+    """One name's session before ``cut`` from Massive's minute bars, replayed through the tape's own ``add``: each bar's open
+    with no volume, its whole volume at its own VWAP, and its close with no volume. A bar that starts at the cut or later
+    stays out, so a bar still open never enters. None: no bar. Raises on a bar that is no number (the name stays out)."""
+    from urllib.parse import quote as quoted
+    start = datetime.combine(day, SESSION_OPEN, tzinfo=NEW_YORK)
+    last = int(cut.timestamp() * 1000) - 1
+    payload = get_json(f"{base_url.rstrip('/')}/v2/aggs/ticker/{quoted(symbol.replace('-', '.'), safe='')}/range/1/minute/"
+                       f"{int(start.timestamp() * 1000)}/{last}",
+                       params={"adjusted": "false", "sort": "asc", "limit": 50000, "apiKey": token})
+    tape = Tape()
+    for row in (payload.get("results") or []) if isinstance(payload, dict) else []:
+        if float(row["t"]) > last:
+            continue
+        stamp = float(row["t"]) / 1000
+        opening, close, size = float(row["o"]), float(row["c"]), float(row["v"])
+        average = float(row.get("vw") or close)
+        if not all(math.isfinite(value) and value > 0 for value in (stamp, opening, close, average)) or not math.isfinite(size) or size < 0:
+            raise ValueError("a minute bar that is no number")
+        local = datetime.fromtimestamp(stamp, tz=timezone.utc).astimezone(NEW_YORK)
+        minute = local.hour * 60 + local.minute
+        tape.add(opening, 0.0, minute, stamp)
+        tape.add(average, size, minute, stamp + 0.001)
+        tape.add(close, 0.0, minute, stamp + 0.002)
+    return tape if tape.opening is not None else None
+
+
+def recover_tapes(fetch: Callable[[str, date, datetime], Tape | None], universe: list[Member], day: date, cut: datetime,
+                  *, budget: float = RECOVERY_BUDGET_SECONDS) -> dict[str, Tape]:
+    """The session before ``cut`` of the universe's names, those that answered within ``budget`` (a name that raised or has
+    no bar stays out)."""
+    pool = ThreadPoolExecutor(max_workers=RECOVERY_PARALLEL, thread_name_prefix="r2d2-recovery")
+    try:
+        asked = {pool.submit(fetch, member.symbol, day, cut): member.symbol for member in universe}
+        done, _ = wait_futures(set(asked), timeout=budget)
+        tapes: dict[str, Tape] = {}
+        for future in done:
+            try:
+                tape = future.result()
+            except Exception:  # noqa: BLE001 - that name stays out; the count below is what reads this
+                continue
+            if tape is not None:
+                tapes[asked[future]] = tape
+        return tapes
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def recover_opening(engine: "Engine", universe: list[Member], recover: Callable[[list[Member], date, datetime], dict[str, Tape]],
+                    day: date, cut: datetime, now: Callable[[], datetime], sleep: Callable[[float], None]) -> None:
+    """The selection a dead feed lost, once the bars before ``cut`` are complete, or nothing: the session goes on as it was
+    on any failure here (a type and counts in the log, never a text: the token travels in the query). Too late to settle
+    before the close, it does not try."""
+    ready = cut + timedelta(seconds=RECOVERY_SETTLE_SECONDS)
+    if ready >= datetime.combine(day, SESSION_CLOSE, tzinfo=NEW_YORK):
+        return
+    while now() < ready:
+        sleep(min(1.0, max(0.05, (ready - now()).total_seconds())))
+    try:
+        tapes = recover(universe, day, cut)
+    except Exception as error:  # noqa: BLE001 - see the docstring
+        logger.error("R2D2 live: the lost opening could not be recovered (%s)", type(error).__name__)
+        return
+    if len(tapes) < RECOVERY_MIN_SHARE * len(universe):
+        logger.error("R2D2 live: the lost opening could not be recovered: %d tapes of %d names", len(tapes), len(universe))
+        return
+    engine.adopt_opening(tapes)
+    logger.info("R2D2 live: the lost opening recovered: %d tapes of %d names, %d candidates", len(tapes), len(universe),
+                len(engine.candidates))
+
+
 MASSIVE_STREAM_URL = "wss://socket.massive.com/stocks"
 # owner 30/10/2026: "vamos fazer isso: ... Passar também os negócios para o stream da Massive aceleraria as entradas. Esse
 # fluxo de 900 papéis é bem maior, então precisa de um teste de volume antes" — the buy signal's trades from Massive's
-# stream ("massive") instead of EODHD's feed ("eodhd": the source in force until the volume test passes; a separate commit
-# switches it). Massive's off-exchange prints (reported to a FINRA facility: ``trfi`` present or exchange 4) are dropped,
-# as the EODHD feed's dark-pool flag is: the lab's replay on Massive's 1-second bars, which keep them, saw ~3x the crosses
+# stream ("massive") instead of EODHD's feed ("eodhd", in force until 02/11/2026). Massive's since 02/11: that morning's
+# shadow took the 900 names through the open with no sink failure, and EODHD's trade feed had stopped being a tape (stamps
+# off the clock, 86% of the regular session's frames marked closed or extended, no conditions, no dark-pool flag). Massive's
+# off-exchange prints (reported to a FINRA facility: ``trfi`` present or exchange 4) are dropped, as the EODHD feed's
+# dark-pool flag did: the lab's replay on Massive's 1-second bars, which keep them, saw ~3x the crosses
 TRADE_SOURCES = ("eodhd", "massive")
-TRADE_SOURCE = "eodhd"
+TRADE_SOURCE = "massive"
 if TRADE_SOURCE not in TRADE_SOURCES:
     raise ValueError("R2D2 live: unknown trade source")
 # the owner's volume test, live: with EODHD in force, Massive's trades of the same names go to a SHADOW set of tapes (never
@@ -1702,24 +1837,28 @@ def feed_line(stream: Any, engine: "Engine") -> str:
     take = getattr(stream, "take_gauges", None)
     lag, worst, count = take() if take is not None else ({}, {}, {})
     skips, sources = engine.skips, engine.sources
+    unreadable = getattr(stream, "unreadable", {})
     return ("R2D2 live feed: trade_messages=%d quote_messages=%d trade_lag_ms=%d quote_lag_ms=%d trade_lag_max_ms=%d "
             "quote_lag_max_ms=%d skips held=%d slots=%d noquote=%d stale=%d spread=%d late=%d implausible=%d "
             "nbbo massive=%d stream=%d unanswered=%d mismatch=%d stream_would_refuse=%d exits massive=%d stream=%d none=%d unconfirmed=%d"
+            " unreadable trade=%d quote=%d"
             % (int(count.get("trade", 0)), int(count.get("quote", 0)), int(lag.get("trade", 0)), int(lag.get("quote", 0)),
                int(worst.get("trade", 0)), int(worst.get("quote", 0)),
                skips["held"], skips["slots"], skips["noquote"], skips["stale"], skips["spread"], skips["late"], skips["implausible"],
                sources["massive"], sources["stream"], sources["unanswered"], sources["mismatch"], sources["stream_would_refuse"],
                engine.exit_sources["massive"], engine.exit_sources["stream"], engine.exit_sources["none"],
-               engine.exit_sources["unconfirmed"]))
+               engine.exit_sources["unconfirmed"], int(unreadable.get("trade", 0)), int(unreadable.get("quote", 0))))
 
 
 def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[..., Any], base_url: str, token: str,
                 day: date, cache_dir: Path, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                 sleep: Callable[[float], None] = clock_time.sleep, job: Callable[[], Any] | None = None,
                 nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None,
-                massive: MassiveQuoteStream | None = None) -> EngineState:
+                massive: MassiveQuoteStream | None = None,
+                recover: Callable[[list[Member], date, datetime], dict[str, Tape]] | None = None) -> EngineState:
     """One session, from the universe before the open to the close. Every database write goes through ``job`` (the
-    host's maintenance gate) when given."""
+    host's maintenance gate) when given. ``recover``: the session before a cut of the universe's names, for a restart
+    that finds the opening lost (``recover_opening``)."""
     def guarded(action: Callable[[], Any]) -> Any:
         if job is None:
             return action()
@@ -1756,13 +1895,18 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if massive is not None and (massive_trades or shadow is not None):
             massive.set_trade_symbols(symbols)
     trades_for(subscription(universe, state.positions))
-    if getattr(stream, "session", None) == day:
+    lost = recover is not None and engine.lost_opening()
+    if getattr(stream, "session", None) == day and not lost:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
         # complete; a restore a failed attempt left pending is finished first (its held trades applied, nothing cleared)
         if getattr(stream, "restoring", False):
             stream.restore(state.stream_context if engine.resumed else {}, now())
     elif engine.resumed and hasattr(stream, "restore"):
-        stream.start_session(day, restoring=True)
+        if lost:
+            state.tape_floor = recovery_cut(now()).timestamp()
+        stream.start_session(day, restoring=True, floor=state.tape_floor)
+        if lost and recover is not None and state.tape_floor is not None:
+            recover_opening(engine, universe, recover, day, datetime.fromtimestamp(state.tape_floor, tz=timezone.utc), now, sleep)
         stream.restore(state.stream_context, now())  # a fresh process continues the tapes of the candidates and positions
     else:
         stream.start_session(day)
@@ -1785,6 +1929,8 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         sleep(min(1.0, max(0.05, (at(OPENING_WINDOW_END) - now()).total_seconds())))
     engine.set_candidates(dict(stream.opening))
     logger.info("R2D2 live: %d candidates of %d with an opening print", len(engine.candidates), len(stream.opening))
+    if not engine.resumed and len(stream.opening) < OPENING_MIN_SHARE * len(universe):
+        logger.error("R2D2 live: the feed gave %d opening prints of %d names", len(stream.opening), len(universe))
     # once the candidates are fixed the trade feed needs only them and the held names (fewer messages, less lag)
     trades_for(subscription([member for member in universe if member.symbol in engine.candidates], engine.state.positions))
     held = set(engine.state.positions)
@@ -2015,6 +2161,12 @@ def main() -> None:
     massive = (MassiveQuoteStream(settings.massive_api_token,
                                   trade_sink=stream.record_trade if TRADE_SOURCE == "massive" else None)
                if settings.massive_api_token else None)
+    bars = DeadlineJsonHttpClient(timeout=RECOVERY_TIMEOUT_SECONDS).get_json
+
+    def recover_from_massive(universe: list[Member], session: date, cut: datetime) -> dict[str, Tape]:
+        return recover_tapes(lambda symbol, day_of, at: massive_minute_tape(bars, settings.massive_base_url,
+                                                                            settings.massive_api_token, symbol, day_of, at),
+                             universe, session, cut)
     if massive is not None:
         massive.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))
@@ -2034,7 +2186,8 @@ def main() -> None:
             continue
         try:
             run_session(stream=stream, database=database, get_json=http.get_json, base_url=base_url,
-                        token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo, massive=massive)
+                        token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo, massive=massive,
+                        recover=recover_from_massive if settings.massive_api_token else None)
         except Exception:
             logger.exception("R2D2 live: the session failed")
             clock_time.sleep(60)
