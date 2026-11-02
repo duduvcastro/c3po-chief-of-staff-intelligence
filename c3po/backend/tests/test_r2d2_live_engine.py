@@ -3062,13 +3062,100 @@ def test_the_quote_feed_keeps_the_held_names_whatever_the_trade_source() -> None
     stream.set_group(engine_module.STREAM_GROUP, ["AAA", "HLD"], priority=200)
     stream.set_quote_symbols({"HLD"})
     stream.feed_trades = False
-    assert stream.feed_symbols("quote") == {"HLD"} and stream.feed_symbols("trade") == {"AAA", "HLD"}
+    assert stream.feed_symbols("quote") == {"HLD"}
+    assert stream.feed_symbols("trade") == set()  # 900 slots of the plan for trades no one reads
     stamp = int(_at(10, 0).timestamp() * 1000)
     stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 10, "t": stamp}))
     assert "AAA" not in stream.tapes  # the trade is not recorded twice: Massive feeds the tapes
     stream.feed_trades = True
+    assert stream.feed_symbols("trade") == {"AAA", "HLD"}
     stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 10, "t": stamp}))
     assert stream.tapes["AAA"].last_price == 98.0
+
+
+def _massive_get(asked: list[tuple[str, dict]]):
+    tickers = [
+        [{"ticker": "AAA", "type": "CS", "primary_exchange": "XNAS"}, {"ticker": "BRK.B", "type": "CS", "primary_exchange": "XNYS"},
+         {"ticker": "SPY", "type": "ETF", "primary_exchange": "ARCX"}],
+        [{"ticker": "TSM", "type": "ADRC", "primary_exchange": "XNYS"}, {"ticker": "OTC", "type": "CS", "primary_exchange": "OTC"},
+         {"ticker": "CHEAP", "type": "CS", "primary_exchange": "XNAS"}, {"ticker": "THIN", "type": "CS", "primary_exchange": "XNAS"}],
+    ]
+
+    def get_json(url: str, *, params: dict) -> dict:
+        asked.append((url, dict(params)))
+        if url.endswith("/v3/reference/tickers"):
+            page = 1 if params.get("cursor") else 0
+            body: dict = {"results": tickers[page]}
+            if page == 0:
+                body["next_url"] = "https://api.massive.test/v3/reference/tickers?cursor=abc"
+            return body
+        filler = [{"T": "F%d" % index, "c": 10.0, "v": 1.0} for index in range(engine_module.MIN_MASSIVE_SESSION_ROWS)]
+        return {"results": [{"T": "AAA", "c": 100.0, "v": 1e6}, {"T": "BRK.B", "c": 400.0, "v": 1e6}, {"T": "TSM", "c": 200.0, "v": 1e6},
+                            {"T": "SPY", "c": 600.0, "v": 1e9}, {"T": "CHEAP", "c": 4.0, "v": 1e9}, {"T": "THIN", "c": 100.0, "v": 10.0}, *filler]}
+    return get_json
+
+
+def test_massive_universe_follows_the_rule_in_the_engines_spelling(tmp_path: Path) -> None:
+    asked: list[tuple[str, dict]] = []
+    get_json = _massive_get(asked)
+    members = engine_module.massive_universe(get_json, "https://api.massive.test", "k", DAY, tmp_path)
+    assert [(member.symbol, member.market) for member in members] == [("BRK-B", "NYSE"), ("TSM", "NYSE"), ("AAA", "NASDAQ")]
+    assert members[0].prev_close == 400.0
+    follow = [params for url, params in asked if url.endswith("/v3/reference/tickers")][1]
+    assert follow == {"cursor": "abc", "apiKey": "k"}  # the page's cursor and the key, nothing of the first request
+    days = sum(1 for url, _ in asked if "/grouped/" in url)
+    assert days == engine_module.ADV_DAYS
+    asked.clear()
+    engine_module.massive_universe(get_json, "https://api.massive.test", "k", DAY, tmp_path)
+    assert not [url for url, _ in asked if "/grouped/" in url]  # the summaries are cached per session
+
+
+def test_a_short_session_summary_is_refused_and_never_cached(tmp_path: Path) -> None:
+    def short(url: str, *, params: dict) -> dict:
+        if url.endswith("/v3/reference/tickers"):
+            return {"results": [{"ticker": "AAA", "type": "CS", "primary_exchange": "XNAS"}]}
+        return {"results": [{"T": "AAA", "c": 100.0, "v": 1e6}]}
+    with pytest.raises(RuntimeError):
+        engine_module.massive_universe(short, "https://api.massive.test", "k", DAY, tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_ticker_list_that_never_ends_is_a_failure() -> None:
+    def endless(url: str, *, params: dict) -> dict:
+        return {"results": [], "next_url": "https://api.massive.test/v3/reference/tickers?cursor=again"}
+    with pytest.raises(RuntimeError):
+        engine_module.massive_listing(endless, "https://api.massive.test", "k")
+
+
+def test_eodhds_universe_stands_in_when_massive_fails_or_comes_back_short(caplog: pytest.LogCaptureFixture) -> None:
+    def member(index: int) -> Member:
+        return Member("N%d" % index, "NYSE", 10.0, 1e7)
+    full = [member(index) for index in range(engine_module.MIN_MASSIVE_UNIVERSE)]
+    stand_in = [member(index) for index in range(engine_module.MIN_MASSIVE_UNIVERSE + 100)]
+
+    def broken() -> list[Member]:
+        raise ValueError("https://api.massive.test/x?apiKey=secret")
+    assert engine_module.universe_on_massive(lambda: full, lambda: stand_in) is full
+    assert engine_module.universe_on_massive(lambda: full[:-1], lambda: stand_in) is stand_in
+    assert engine_module.universe_on_massive(broken, lambda: stand_in) is stand_in
+    assert "secret" not in caplog.text
+
+
+def test_with_both_lists_short_the_longer_trades_and_with_none_the_service_retries() -> None:
+    def member(index: int) -> Member:
+        return Member("N%d" % index, "NYSE", 10.0, 1e7)
+    short = [member(index) for index in range(100)]
+    smaller = [member(0)]
+
+    def broken() -> list[Member]:
+        raise ValueError("down")
+    assert engine_module.universe_on_massive(lambda: short, lambda: smaller) is short
+    assert engine_module.universe_on_massive(lambda: short, broken) is short
+    assert engine_module.universe_on_massive(lambda: smaller, lambda: short) is short
+    with pytest.raises(RuntimeError):
+        engine_module.universe_on_massive(broken, lambda: [])
+    with pytest.raises(RuntimeError):
+        engine_module.universe_on_massive(lambda: [], broken)
 
 
 def test_the_shadow_line_compares_massives_tape_with_eodhds() -> None:
