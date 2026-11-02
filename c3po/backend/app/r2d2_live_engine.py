@@ -2161,14 +2161,12 @@ def main() -> None:
     massive = (MassiveQuoteStream(settings.massive_api_token,
                                   trade_sink=stream.record_trade if TRADE_SOURCE == "massive" else None)
                if settings.massive_api_token else None)
-    recover = None
-    if settings.massive_api_token:
-        bars = DeadlineJsonHttpClient(timeout=RECOVERY_TIMEOUT_SECONDS).get_json
+    bars = DeadlineJsonHttpClient(timeout=RECOVERY_TIMEOUT_SECONDS).get_json
 
-        def recover(universe: list[Member], session: date, cut: datetime) -> dict[str, Tape]:
-            return recover_tapes(lambda symbol, day_of, at: massive_minute_tape(bars, settings.massive_base_url,
-                                                                                settings.massive_api_token, symbol, day_of, at),
-                                 universe, session, cut)
+    def recover_from_massive(universe: list[Member], session: date, cut: datetime) -> dict[str, Tape]:
+        return recover_tapes(lambda symbol, day_of, at: massive_minute_tape(bars, settings.massive_base_url,
+                                                                            settings.massive_api_token, symbol, day_of, at),
+                             universe, session, cut)
     if massive is not None:
         massive.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))
@@ -2189,7 +2187,7 @@ def main() -> None:
         try:
             run_session(stream=stream, database=database, get_json=http.get_json, base_url=base_url,
                         token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo, massive=massive,
-                        recover=recover)
+                        recover=recover_from_massive if settings.massive_api_token else None)
         except Exception:
             logger.exception("R2D2 live: the session failed")
             clock_time.sleep(60)
