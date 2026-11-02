@@ -7,6 +7,7 @@ import logging
 import hashlib
 from threading import Event, RLock, Thread
 from time import monotonic
+from time import time as wall_clock
 from typing import Any
 
 import exchange_calendars as xcals
@@ -23,13 +24,18 @@ MAX_STREAM_PRICE_DEVIATION = 0.35
 # +3.9% above the official close).
 MAX_STREAM_QUOTE_SPREAD = 0.01
 MAX_STREAM_STAMP = 10**20  # stream_epoch_ms: past this, no unit EODHD ever sent
+# stream_epoch_ms: what the 19 digits of 02/11/2026 are divided by to reach the clock. Read as nanoseconds they stood 1791 s
+# ahead of it; divided by this, the quotes were 0.7 to 4.8 s old (4480 frames, run 41471428225).
+STREAM_STAMP_SKEWED_DIVISOR = 1_000_001
 
 
-def stream_epoch_ms(raw: Any) -> int:
-    """A stream frame's ``t`` in epoch milliseconds. The frames came in milliseconds through the session of 30/10/2026;
-    on 02/11/2026 the trade feed came in nanoseconds, which no ``datetime`` holds, so every frame dropped the socket. The
-    unit is read from the number: this century's epoch has 13 digits in ms, 16 in us and 19 in ns. Raises ``ValueError``
-    on a number that is none of them, and the frame is dropped like any other malformed one."""
+def stream_epoch_ms(raw: Any, *, now_ms: float | None = None) -> int:
+    """A stream frame's ``t`` in epoch milliseconds. The frames came in milliseconds through the session of 30/10/2026. On
+    02/11/2026 both feeds came with 19 digits, which no ``datetime`` holds as milliseconds, so every frame dropped the
+    socket. The unit is read from the number: this century's epoch has 13 digits in ms, 16 in us, and 19 either in ns or
+    as that day's skewed stamp, whichever stands nearer the clock ``now_ms`` (the skew is ~30 minutes, so the two never
+    meet, and a repair of the feed needs no change here). Raises ``ValueError`` on a number that is none of them, and the
+    frame is dropped like any other malformed one."""
     try:
         stamp = int(raw)
     except OverflowError as error:  # JSON's Infinity
@@ -37,7 +43,8 @@ def stream_epoch_ms(raw: Any) -> int:
     if stamp >= MAX_STREAM_STAMP:
         raise ValueError("a stream stamp beyond any unit")
     if stamp >= 10**17:
-        return stamp // 10**6
+        clock = wall_clock() * 1000 if now_ms is None else now_ms
+        return min(stamp // 10**6, stamp // STREAM_STAMP_SKEWED_DIVISOR, key=lambda reading: abs(reading - clock))
     if stamp >= 10**14:
         return stamp // 10**3
     return stamp

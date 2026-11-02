@@ -228,7 +228,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.lag_ms = {"trade": 0, "quote": 0}
         self.lag_max_ms = {"trade": 0, "quote": 0}
         self.messages = {"trade": 0, "quote": 0}
-        self.unreadable = {"trade": 0, "quote": 0}  # frames no parser could read, since the process started
+        self.unreadable = {"trade": 0, "quote": 0}  # frames no parser could read, this session
         self._gauge_lock = Lock()  # the feed thread updates, the heartbeat takes and resets: every message in ONE interval
 
     def set_group(self, name: str, symbols: list[str], *, priority: int = 50) -> None:
@@ -319,8 +319,8 @@ class LiveEngineStream(EodhdRealtimeStream):
 
     def _unreadable(self, feed: str, error: Exception) -> None:
         """A frame no parser could read costs that frame, never the socket: on 02/11/2026 each trade frame raised, each one
-        dropped the connection, and the session opened with no print at all. One error line per feed (the error's type,
-        never its text), because the next frame may be the same."""
+        dropped the connection, and the session opened with no print at all. One error line per feed and session (the
+        error's type, never its text), because the next frame may be the same; the feed line counts them all."""
         with self._gauge_lock:
             self.unreadable[feed] += 1
             first = self.unreadable[feed] == 1
@@ -351,6 +351,8 @@ class LiveEngineStream(EodhdRealtimeStream):
             self.tapes = {}
             self._pending = [] if restoring else None
             self.restored_minute = None
+        with self._gauge_lock:
+            self.unreadable = {"trade": 0, "quote": 0}
 
     @property
     def opening(self) -> dict[str, float]:
@@ -1441,11 +1443,13 @@ def recover_opening(engine: "Engine", universe: list[Member], recover: Callable[
 MASSIVE_STREAM_URL = "wss://socket.massive.com/stocks"
 # owner 30/10/2026: "vamos fazer isso: ... Passar também os negócios para o stream da Massive aceleraria as entradas. Esse
 # fluxo de 900 papéis é bem maior, então precisa de um teste de volume antes" — the buy signal's trades from Massive's
-# stream ("massive") instead of EODHD's feed ("eodhd": the source in force until the volume test passes; a separate commit
-# switches it). Massive's off-exchange prints (reported to a FINRA facility: ``trfi`` present or exchange 4) are dropped,
-# as the EODHD feed's dark-pool flag is: the lab's replay on Massive's 1-second bars, which keep them, saw ~3x the crosses
+# stream ("massive") instead of EODHD's feed ("eodhd", in force until 02/11/2026). Massive's since 02/11: that morning's
+# shadow took the 900 names through the open with no sink failure, and EODHD's trade feed had stopped being a tape (stamps
+# off the clock, 86% of the regular session's frames marked closed or extended, no conditions, no dark-pool flag). Massive's
+# off-exchange prints (reported to a FINRA facility: ``trfi`` present or exchange 4) are dropped, as the EODHD feed's
+# dark-pool flag did: the lab's replay on Massive's 1-second bars, which keep them, saw ~3x the crosses
 TRADE_SOURCES = ("eodhd", "massive")
-TRADE_SOURCE = "eodhd"
+TRADE_SOURCE = "massive"
 if TRADE_SOURCE not in TRADE_SOURCES:
     raise ValueError("R2D2 live: unknown trade source")
 # the owner's volume test, live: with EODHD in force, Massive's trades of the same names go to a SHADOW set of tapes (never
@@ -1801,15 +1805,17 @@ def feed_line(stream: Any, engine: "Engine") -> str:
     take = getattr(stream, "take_gauges", None)
     lag, worst, count = take() if take is not None else ({}, {}, {})
     skips, sources = engine.skips, engine.sources
+    unreadable = getattr(stream, "unreadable", {})
     return ("R2D2 live feed: trade_messages=%d quote_messages=%d trade_lag_ms=%d quote_lag_ms=%d trade_lag_max_ms=%d "
             "quote_lag_max_ms=%d skips held=%d slots=%d noquote=%d stale=%d spread=%d late=%d implausible=%d "
             "nbbo massive=%d stream=%d unanswered=%d mismatch=%d stream_would_refuse=%d exits massive=%d stream=%d none=%d unconfirmed=%d"
+            " unreadable trade=%d quote=%d"
             % (int(count.get("trade", 0)), int(count.get("quote", 0)), int(lag.get("trade", 0)), int(lag.get("quote", 0)),
                int(worst.get("trade", 0)), int(worst.get("quote", 0)),
                skips["held"], skips["slots"], skips["noquote"], skips["stale"], skips["spread"], skips["late"], skips["implausible"],
                sources["massive"], sources["stream"], sources["unanswered"], sources["mismatch"], sources["stream_would_refuse"],
                engine.exit_sources["massive"], engine.exit_sources["stream"], engine.exit_sources["none"],
-               engine.exit_sources["unconfirmed"]))
+               engine.exit_sources["unconfirmed"], int(unreadable.get("trade", 0)), int(unreadable.get("quote", 0))))
 
 
 def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[..., Any], base_url: str, token: str,

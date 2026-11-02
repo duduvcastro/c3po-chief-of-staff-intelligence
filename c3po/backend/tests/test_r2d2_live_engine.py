@@ -13,6 +13,7 @@ from app import r2d2_lab_live
 from app import r2d2_live_engine as engine_module
 from app.config import Settings
 from app.database import Database
+from app.market_data import eodhd_stream
 from app.market_data.eodhd_stream import EodhdRealtimeStream, stream_epoch_ms
 from app.r2d2_live_engine import (FEE_SIDE, Engine, EngineState, LiveEngineStream, MarketView, Member, NEW_YORK,
                                   Position, Tape, build_universe, massive_minute_tape, recover_opening, recover_tapes,
@@ -280,17 +281,20 @@ def test_the_stream_keeps_the_open_the_vwap_and_the_nbbo_of_the_session() -> Non
     assert (view.bid, view.ask) == (99.99, 100.01)
 
 
-def test_the_stream_reads_a_frames_stamp_in_milliseconds_microseconds_or_nanoseconds() -> None:
-    """02/11/2026: EODHD's trade feed came in nanoseconds, ``datetime`` could not hold them, and every frame dropped the
-    socket. The same trade in any of the three units is the same trade, on the base class (the api's) and on the engine's."""
+def test_the_stream_reads_a_frames_stamp_in_every_unit_it_came_in(monkeypatch) -> None:
+    """02/11/2026: both EODHD feeds came with 19 digits, ``datetime`` could not hold them, and every frame dropped the socket.
+    The same trade in any of the units is the same trade, on the base class (the api's) and on the engine's."""
     at = _at(9, 30, 1)
     stamp = int(at.timestamp() * 1000)
-    assert [stream_epoch_ms(stamp * unit) for unit in (1, 10**3, 10**6)] == [stamp] * 3
-    assert stream_epoch_ms(float(stamp * 10**6)) == pytest.approx(stamp, abs=1)
+    near = {"now_ms": stamp + 2_500}
+    assert [stream_epoch_ms(stamp * unit, **near) for unit in (1, 10**3, 10**6, 1_000_001)] == [stamp] * 4
+    assert stream_epoch_ms(stamp * 1_000_001 + 496_295, **near) == stamp  # that day's frames carry digits below the ms
+    assert stream_epoch_ms(float(stamp * 10**6), **near) == pytest.approx(stamp, abs=1)
     for raw in (10**20, 10**25, float("inf"), float("nan")):
         with pytest.raises(ValueError):
             stream_epoch_ms(raw)
-    for unit in (1, 10**3, 10**6):
+    monkeypatch.setattr(eodhd_stream, "wall_clock", lambda: stamp / 1000 + 2.5)
+    for unit in (1, 10**3, 10**6, 1_000_001):
         stream = LiveEngineStream("")
         stream.start_session(DAY)
         stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 100, "t": stamp * unit, "ms": "open"}))
@@ -322,6 +326,8 @@ def test_a_frame_no_parser_can_read_costs_that_frame_never_the_socket(monkeypatc
 
     class Socket:
         def __init__(self):
+            if connections:  # a second connection is the failure itself: the test ends instead of reconnecting for ever
+                stream._stop.set()
             self.frames = [json.dumps({"status_code": 200}), "first bad", "second bad", good]
             connections.append(self.frames)
 
@@ -2251,7 +2257,7 @@ def test_feed_the_lag_and_the_reasons_a_signal_did_not_buy_are_counted() -> None
 
     line = engine_module.feed_line(stream, engine)
     assert line.startswith("R2D2 live feed: trade_messages=0 quote_messages=2 trade_lag_ms=0 quote_lag_ms=")
-    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 late=0 implausible=0 nbbo massive=0 stream=3 unanswered=0 mismatch=0 stream_would_refuse=0 exits massive=0 stream=0 none=0 unconfirmed=0")
+    assert line.endswith("skips held=0 slots=0 noquote=1 stale=1 spread=1 late=0 implausible=0 nbbo massive=0 stream=3 unanswered=0 mismatch=0 stream_would_refuse=0 exits massive=0 stream=0 none=0 unconfirmed=0 unreadable trade=0 quote=0")
     assert stream.lag_max_ms == {"trade": 0, "quote": 0} and stream.messages == {"trade": 0, "quote": 0}  # per interval
     root = Path(__file__).resolve().parents[3]
     run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
