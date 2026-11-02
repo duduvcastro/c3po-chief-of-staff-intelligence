@@ -15,7 +15,8 @@ from app.config import Settings
 from app.database import Database
 from app.market_data.eodhd_stream import EodhdRealtimeStream, stream_epoch_ms
 from app.r2d2_live_engine import (FEE_SIDE, Engine, EngineState, LiveEngineStream, MarketView, Member, NEW_YORK,
-                                  Position, build_universe, run_session)
+                                  Position, Tape, build_universe, massive_minute_tape, recover_opening, recover_tapes,
+                                  run_session)
 
 DAY = date(2026, 10, 28)
 
@@ -1895,6 +1896,133 @@ def test_r2_an_in_process_retry_keeps_the_live_tapes_and_the_opening_is_the_earl
     run_session(stream=stream, database=database, get_json=lambda *a, **k: None, base_url="", token="", day=DAY,  # type: ignore[arg-type]
                 cache_dir=tmp_path, now=lambda: clock["t"], sleep=lambda s: None)
     assert calls == [] and stream.view("AAA").price == 101.0  # the live tape was kept, not replaced by the checkpoint
+
+
+def _bar(minute: datetime, opening: float, close: float, size: float, average: float) -> dict[str, float]:
+    return {"t": int(minute.timestamp() * 1000), "o": opening, "c": close, "h": max(opening, close), "l": min(opening, close),
+            "v": size, "vw": average, "n": 10}
+
+
+def test_lost_opening_the_minute_bars_replay_through_the_tapes_own_add() -> None:
+    calls: list[tuple[str, dict]] = []
+    bars = [_bar(_at(9, 30), 98.0, 99.0, 100.0, 98.5), _bar(_at(9, 31), 99.0, 100.0, 300.0, 99.5)]
+
+    def get_json(url, *, params=None):
+        calls.append((url, params))
+        return {"results": bars}
+
+    tape = massive_minute_tape(get_json, "https://massive.test/", "key", "BRK-B", DAY, _at(9, 32, 5))
+    assert tape is not None and tape.opening == 98.0 and tape.opening_at == _at(9, 30).timestamp()
+    assert tape.last_price == 100.0 and tape.minute == 9 * 60 + 31 and tape.closed_minute == 9 * 60 + 30
+    assert tape.vwap == pytest.approx((98.5 * 100 + 99.5 * 300) / 400) and tape.closed_price == 99.0
+    assert tape.closed_vwap == pytest.approx(98.5)
+    url, params = calls[0]
+    assert url == (f"https://massive.test/v2/aggs/ticker/BRK.B/range/1/minute/{int(_at(9, 30).timestamp() * 1000)}/"
+                   f"{int(_at(9, 32, 5).timestamp() * 1000)}")
+    assert params == {"adjusted": "false", "sort": "asc", "limit": 50000, "apiKey": "key"}
+    assert massive_minute_tape(lambda *a, **k: {"results": []}, "", "k", "AAA", DAY, _at(9, 40)) is None
+    assert massive_minute_tape(lambda *a, **k: None, "", "k", "AAA", DAY, _at(9, 40)) is None
+    with pytest.raises(ValueError):
+        massive_minute_tape(lambda *a, **k: {"results": [_bar(_at(9, 30), float("nan"), 99.0, 100.0, 98.5)]}, "", "k", "AAA", DAY,
+                            _at(9, 40))
+
+
+def test_lost_opening_keeps_the_names_that_answered() -> None:
+    def fetch(symbol, day, now):
+        if symbol == "BAD":
+            raise RuntimeError("no answer")
+        return None if symbol == "NONE" else Tape(opening=1.0)
+
+    universe = [Member(symbol, "NYSE", 100.0, 50e6) for symbol in ("AAA", "BAD", "NONE", "BBB")]
+    assert sorted(recover_tapes(fetch, universe, DAY, _at(10, 0))) == ["AAA", "BBB"]
+
+
+def test_lost_opening_is_only_a_selection_that_found_nothing_with_nothing_since() -> None:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6)]
+    lost = lambda **fields: Engine(EngineState(nav_realized=1000.0, session=DAY.isoformat(), **fields), DAY, universe)  # noqa: E731
+    assert lost(candidates_fixed=True).lost_opening()
+    assert not lost(candidates_fixed=False).lost_opening()
+    assert not lost(candidates_fixed=True, candidates={"AAA": -2.0}).lost_opening()
+    assert not lost(candidates_fixed=True, fills=[{"symbol": "AAA"}]).lost_opening()
+    assert not lost(candidates_fixed=True, positions={"AAA": _engine_position()}).lost_opening()
+    assert not Engine(EngineState(nav_realized=1000.0, session="2026-10-27", candidates_fixed=True), DAY, universe).lost_opening()
+
+
+def _engine_position() -> Position:
+    engine = _engine()
+    engine.state.candidates, engine.state.below = {"AAA": -2.0}, {"AAA": False}
+    engine._buy("AAA", 101.01, -2.0, 2.0, _at(10, 0))
+    return engine.state.positions["AAA"]
+
+
+def _lost_session(monkeypatch) -> tuple[EngineState, list[Member]]:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6), Member("BBB", "NYSE", 50.0, 20e6)]
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: universe)
+    state = EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True, config=engine_module.CONFIG)
+    monkeypatch.setattr(engine_module, "load_state", lambda db, seed: state)
+    monkeypatch.setattr(engine_module, "reconcile_previous", lambda *a, **k: True)
+    return state, universe
+
+
+def _run_lost_session(tmp_path, recover) -> tuple[LiveEngineStream, list[list[str]]]:
+    stream = LiveEngineStream("")
+    groups: list[list[str]] = []
+    real = stream.set_group
+    stream.set_group = lambda name, symbols, priority=50: (groups.append(list(symbols)), real(name, symbols, priority=priority))[1]  # type: ignore[method-assign]
+    run_session(stream=stream, database=Database(Settings(database_url="")), get_json=lambda *a, **k: None, base_url="", token="",
+                day=DAY, cache_dir=tmp_path, now=lambda: _at(16, 0, 1), sleep=lambda s: None, recover=recover)
+    return stream, groups
+
+
+def test_lost_opening_a_restart_selects_by_the_same_rule_and_restores_the_tapes(monkeypatch, tmp_path) -> None:
+    """02/11/2026: the feed gave no print, 09:31 fixed an empty selection, and the session stood idle until the close."""
+    state, universe = _lost_session(monkeypatch)
+    tapes = {"AAA": Tape(pv=9800.0, volume=100.0, opening=98.0, opening_at=_at(9, 30).timestamp(), last_price=98.5, minute=600),
+             "BBB": Tape(pv=5000.0, volume=100.0, opening=50.0, opening_at=_at(9, 30).timestamp(), last_price=50.0, minute=600)}
+    asked: list[tuple[int, date]] = []
+
+    def recover(names, day, now):
+        asked.append((len(names), day))
+        return tapes
+
+    stream, groups = _run_lost_session(tmp_path, recover)
+    assert asked == [(2, DAY)] and state.candidates == {"AAA": pytest.approx(-2.0)} and state.candidates_fixed
+    assert list(state.stream_context) == ["AAA"] and stream.opening == {"AAA": 98.0}  # BBB opened flat: not a candidate
+    assert groups[0] == ["AAA", "BBB"] and groups[1] == ["AAA"]  # the feed narrows to the candidates, as after a normal open
+
+
+def test_lost_opening_a_recovery_that_fails_leaves_the_session_as_it_was(monkeypatch, tmp_path, caplog) -> None:
+    state, universe = _lost_session(monkeypatch)
+    secret = "https://x.test/?apiKey=SECRET"
+
+    def broken(names, day, now):
+        raise RuntimeError(secret)
+
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        _run_lost_session(tmp_path, broken)
+    assert state.candidates == {} and state.candidates_fixed
+    assert any("could not be recovered (RuntimeError)" in row.getMessage() for row in caplog.records)
+    assert "SECRET" not in caplog.text
+
+
+def test_lost_opening_never_selects_on_a_fragment_of_the_universe(caplog) -> None:
+    universe = [Member(symbol, "NYSE", 100.0, 50e6) for symbol in ("AAA", "BBB", "CCC")]
+    engine = Engine(EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True), DAY, universe)
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        recover_opening(engine, universe, lambda *a: {"AAA": Tape(opening=90.0)}, DAY, _at(10, 0))
+    assert engine.candidates == {} and engine.lost_opening()
+    assert any("1 tapes of 3 names" in row.getMessage() for row in caplog.records)
+
+
+def test_a_session_that_opens_on_too_few_prints_says_so_in_an_error_line(monkeypatch, tmp_path, caplog) -> None:
+    universe = [Member(symbol, "NYSE", 100.0, 50e6) for symbol in ("AAA", "BBB", "CCC")]
+    monkeypatch.setattr(engine_module, "build_universe", lambda *a, **k: universe)
+    monkeypatch.setattr(engine_module, "load_state", lambda db, seed: EngineState(nav_realized=1000.0))
+    monkeypatch.setattr(engine_module, "reconcile_previous", lambda *a, **k: True)
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        run_session(stream=LiveEngineStream(""), database=Database(Settings(database_url="")), get_json=lambda *a, **k: None,
+                    base_url="", token="", day=DAY, cache_dir=tmp_path, now=lambda: _at(16, 0, 1), sleep=lambda s: None)
+    assert any("the feed gave 0 opening prints of 3 names" in row.getMessage() for row in caplog.records)
 
 
 def test_r2_a_long_holiday_never_wedges_the_reconcile() -> None:
