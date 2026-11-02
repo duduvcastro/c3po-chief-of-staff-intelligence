@@ -64,9 +64,12 @@ LIVE_RULES = {
     # owner 31/10/2026: the same entries; the sizes by the spread, the stop and the lock in LIVE_RISK
     "TIT-2S5-F20": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until the close (16:00 ET) · "
                    "ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
+    # owner 31/10/2026, on the signed grid's PASS: the same, with the Valuation's permission
+    "TIT-2S5-F20V": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until the close (16:00 ET) · "
+                    "ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps · Valuation target ≥ 10% above the ask",
 }
 LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1, "TIT-2S3-RT": 20, "TIT-2S5-RT": 20, "TIT-2S5-RTC": 20,
-              "TIT-2S5-F20": 20}
+              "TIT-2S5-F20": 20, "TIT-2S5-F20V": 20}
 # the exits and the sizes of the server's engine as the screen states them, per rule (the Launch Gates panel's risk
 # mandate, a held position's rationale and its lock/stop label); a rule without an entry keeps the screen's own text
 _RISK_30_10 = ("No leverage · up to 20 positions of 5% · stop −0.4% net · step profit lock from +0.10% net (0.05 steps to "
@@ -74,14 +77,14 @@ _RISK_30_10 = ("No leverage · up to 20 positions of 5% · stop −0.4% net · s
                "Held by the live rule: stop −0.4% net until the lock arms at +0.10% net; then the floor is the last step reached "
                "(every 0.05 to +0.30%, every 0.10 above); sold in the last 30 seconds if positive.",
                "step lock +0.10% · stop −0.4%")
+_RISK_31_10 = ("No leverage · up to 20 positions · 5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps · stop −0.20% net · "
+               "step profit lock from +0.10% net (+0.20%, then every 0.15)",
+               "Held by the live rule: stop −0.20% net until the lock arms at +0.10% net; then the floor is the last step "
+               "reached (+0.10%, +0.20%, then every 0.15); sold in the last 30 seconds if positive.",
+               "step lock +0.10% · stop −0.20%")
 LIVE_RISK = {  # TIT-2S3-RT (27-29/10: a -0.5% stop, a trailing +0.15% lock) keeps the screen's own text
     "TIT-2S5-RT": _RISK_30_10, "TIT-2S5-RTC": _RISK_30_10,
-    # owner 31/10/2026
-    "TIT-2S5-F20": ("No leverage · up to 20 positions · 5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps · stop −0.20% net · "
-                    "step profit lock from +0.10% net (+0.20%, then every 0.15)",
-                    "Held by the live rule: stop −0.20% net until the lock arms at +0.10% net; then the floor is the last step "
-                    "reached (+0.10%, +0.20%, then every 0.15); sold in the last 30 seconds if positive.",
-                    "step lock +0.10% · stop −0.20%"),
+    "TIT-2S5-F20": _RISK_31_10, "TIT-2S5-F20V": _RISK_31_10,  # owner 31/10/2026
 }
 SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
 # The one R2D2 book opened on 27/10/2026 from the NAV with interest at the 26/10 close (owner 26/10/2026): the T-bill
