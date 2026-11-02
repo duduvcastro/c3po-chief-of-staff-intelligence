@@ -1995,9 +1995,9 @@ def _lost_session(monkeypatch) -> tuple[EngineState, list[Member]]:
     return state, universe
 
 
-def _run_lost_session(tmp_path, recover) -> tuple[LiveEngineStream, list[list[str]]]:
+def _run_lost_session(tmp_path, recover, stream=None) -> tuple[LiveEngineStream, list[list[str]]]:
     """A restart at 11:00:10: the cut is 11:01, the bars are read from 11:03, and the rest of the day passes at once."""
-    stream = LiveEngineStream("")
+    stream = stream or LiveEngineStream("")
     groups: list[list[str]] = []
     real = stream.set_group
     stream.set_group = lambda name, symbols, priority=50: (groups.append(list(symbols)), real(name, symbols, priority=priority))[1]  # type: ignore[method-assign]
@@ -2050,6 +2050,19 @@ def test_lost_opening_never_starts_when_the_bars_could_not_settle_before_the_clo
     recover_opening(engine, universe, lambda *a: pytest.fail("too late to read the bars"), DAY, _at(15, 59), lambda: _at(15, 58),
                     lambda s: pytest.fail("too late to wait"))
     assert engine.candidates == {}
+
+
+def test_lost_opening_an_in_process_retry_recovers_too(monkeypatch, tmp_path) -> None:
+    """The first commit after a recovery may fail: the retry in the same process reloads the empty selection and still owns
+    today's stream, and must not settle for it."""
+    state, universe = _lost_session(monkeypatch)
+    stream = LiveEngineStream("")
+    stream.start_session(DAY)
+    tapes = {"AAA": Tape(pv=9800.0, volume=100.0, opening=98.0, opening_at=_at(9, 30).timestamp(), last_price=98.5, minute=600),
+             "BBB": Tape(pv=5000.0, volume=100.0, opening=50.0, opening_at=_at(9, 30).timestamp(), last_price=50.0, minute=600)}
+    _run_lost_session(tmp_path, lambda names, day, cut: tapes, stream=stream)
+    assert state.candidates == {"AAA": pytest.approx(-2.0)} and stream.opening == {"AAA": 98.0}
+    assert stream.floor == _at(11, 1).timestamp()
 
 
 def test_lost_opening_a_recovery_that_fails_leaves_the_session_as_it_was(monkeypatch, tmp_path, caplog) -> None:

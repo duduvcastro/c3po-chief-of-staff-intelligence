@@ -272,13 +272,15 @@ def run(opening_events: float, opening_seconds: float, session_events: float, se
     massive.quote = recorded_quote  # type: ignore[method-assign]
 
     def opening_prints() -> None:
-        """EODHD's opening print of the candidates (2% under their last close), once the session has started."""
+        """The candidates' opening print (2% under their last close), once the session has started: EODHD's with that source;
+        with Massive's and no opening minute, the print the skipped minute would have given, with no volume of its own."""
         while stream.session != DAY:
             time.sleep(0.01)
         at = now()
         for name in NAMES[:CANDIDATES]:
-            stream.record_trade(name, 49.0, 100, max(at, datetime.combine(DAY, day_time(9, 30, 0, 500000), tzinfo=NEW_YORK)))
-    if not source_is_massive:  # with Massive's trades the opening prints are the socket's own
+            stream.record_trade(name, 49.0, 0 if source_is_massive else 100,
+                                max(at, datetime.combine(DAY, day_time(9, 30, 0, 500000), tzinfo=NEW_YORK)))
+    if not (source_is_massive and from_open):  # with Massive's trades and the opening minute the prints are the socket's own
         threading.Thread(target=opening_prints, name="opening-prints", daemon=True).start()
     massive.start()
     try:

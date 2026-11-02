@@ -1895,13 +1895,13 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if massive is not None and (massive_trades or shadow is not None):
             massive.set_trade_symbols(symbols)
     trades_for(subscription(universe, state.positions))
-    if getattr(stream, "session", None) == day:
+    lost = recover is not None and engine.lost_opening()
+    if getattr(stream, "session", None) == day and not lost:
         # an in-process retry (with or without a durable checkpoint of today): the stream's own tapes of today are the most
         # complete; a restore a failed attempt left pending is finished first (its held trades applied, nothing cleared)
         if getattr(stream, "restoring", False):
             stream.restore(state.stream_context if engine.resumed else {}, now())
     elif engine.resumed and hasattr(stream, "restore"):
-        lost = recover is not None and engine.lost_opening()
         if lost:
             state.tape_floor = recovery_cut(now()).timestamp()
         stream.start_session(day, restoring=True, floor=state.tape_floor)
