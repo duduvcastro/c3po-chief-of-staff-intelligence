@@ -40,7 +40,7 @@ from zoneinfo import ZoneInfo
 import websockets
 
 from . import r2d2_lab_live
-from .market_data.eodhd_stream import EodhdRealtimeStream
+from .market_data.eodhd_stream import EodhdRealtimeStream, stream_epoch_ms
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +228,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.lag_ms = {"trade": 0, "quote": 0}
         self.lag_max_ms = {"trade": 0, "quote": 0}
         self.messages = {"trade": 0, "quote": 0}
+        self.unreadable = {"trade": 0, "quote": 0}  # frames no parser could read, since the process started
         self._gauge_lock = Lock()  # the feed thread updates, the heartbeat takes and resets: every message in ONE interval
 
     def set_group(self, name: str, symbols: list[str], *, priority: int = 50) -> None:
@@ -303,7 +304,10 @@ class LiveEngineStream(EodhdRealtimeStream):
                         if refused is not None:  # e.g. 422 "Symbols limit reached": a name of this feed was not subscribed
                             logger.error("EODHD realtime %s refused a subscription: status %d", feed, refused)
                             continue
-                        recorder(payload)
+                        try:
+                            recorder(payload)
+                        except Exception as error:  # noqa: BLE001 - see ``_unreadable``
+                            self._unreadable(feed, error)
             except Exception as exc:
                 if self._stop.is_set():
                     break
@@ -312,6 +316,16 @@ class LiveEngineStream(EodhdRealtimeStream):
                 self._set_feed_state(feed, "error", safe_error)
                 await asyncio.sleep(3)
         self._set_feed_state(feed, "stopped")
+
+    def _unreadable(self, feed: str, error: Exception) -> None:
+        """A frame no parser could read costs that frame, never the socket: on 02/11/2026 each trade frame raised, each one
+        dropped the connection, and the session opened with no print at all. One error line per feed (the error's type,
+        never its text), because the next frame may be the same."""
+        with self._gauge_lock:
+            self.unreadable[feed] += 1
+            first = self.unreadable[feed] == 1
+        if first:
+            logger.error("EODHD realtime %s: a frame could not be read (%s)", feed, type(error).__name__)
 
     def _lag(self, feed: str, stamp: int) -> None:
         lag = int(clock_time.time() * 1000) - stamp
@@ -380,7 +394,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         try:
             item = json.loads(text)
             symbol = str(item.get("s") or "").strip().upper()
-            price, size, stamp = float(item.get("p")), float(item.get("v") or 0.0), int(item.get("t"))
+            price, size, stamp = float(item.get("p")), float(item.get("v") or 0.0), stream_epoch_ms(item.get("t"))
         except (TypeError, ValueError, AttributeError):
             return
         if (not symbol or not math.isfinite(price) or price <= 0 or not math.isfinite(size) or stamp <= 0 or item.get("dp") is True
@@ -407,7 +421,7 @@ class LiveEngineStream(EodhdRealtimeStream):
         try:
             item = json.loads(text)
             symbol = str(item.get("s") or "").strip().upper()
-            bid, ask, stamp = float(item.get("bp") or 0.0), float(item.get("ap") or 0.0), int(item.get("t"))
+            bid, ask, stamp = float(item.get("bp") or 0.0), float(item.get("ap") or 0.0), stream_epoch_ms(item.get("t"))
         except (TypeError, ValueError, AttributeError):
             return
         if (not symbol or not (math.isfinite(bid) and math.isfinite(ask)) or bid <= 0 or ask <= 0 or ask < bid or stamp <= 0

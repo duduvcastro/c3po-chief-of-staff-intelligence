@@ -22,6 +22,25 @@ MAX_STREAM_PRICE_DEVIATION = 0.35
 # thin books replaced the close on 29/09/2026 (QQQM +9.3%, ZVRA +5.4%, AVGO
 # +3.9% above the official close).
 MAX_STREAM_QUOTE_SPREAD = 0.01
+MAX_STREAM_STAMP = 10**20  # stream_epoch_ms: past this, no unit EODHD ever sent
+
+
+def stream_epoch_ms(raw: Any) -> int:
+    """A stream frame's ``t`` in epoch milliseconds. The frames came in milliseconds through the session of 30/10/2026;
+    on 02/11/2026 the trade feed came in nanoseconds, which no ``datetime`` holds, so every frame dropped the socket. The
+    unit is read from the number: this century's epoch has 13 digits in ms, 16 in us and 19 in ns. Raises ``ValueError``
+    on a number that is none of them, and the frame is dropped like any other malformed one."""
+    try:
+        stamp = int(raw)
+    except OverflowError as error:  # JSON's Infinity
+        raise ValueError("a stream stamp is not a number") from error
+    if stamp >= MAX_STREAM_STAMP:
+        raise ValueError("a stream stamp beyond any unit")
+    if stamp >= 10**17:
+        return stamp // 10**6
+    if stamp >= 10**14:
+        return stamp // 10**3
+    return stamp
 
 
 @dataclass(frozen=True)
@@ -386,7 +405,7 @@ class EodhdRealtimeStream:
             return
         try:
             price = float(item.get("p"))
-            timestamp_ms = int(item.get("t"))
+            timestamp_ms = stream_epoch_ms(item.get("t"))
         except (TypeError, ValueError):
             return
         if not symbol or price <= 0 or timestamp_ms <= 0:
@@ -445,7 +464,7 @@ class EodhdRealtimeStream:
         try:
             bid = float(item.get("bp") or 0.0)
             ask = float(item.get("ap") or 0.0)
-            timestamp_ms = int(item.get("t"))
+            timestamp_ms = stream_epoch_ms(item.get("t"))
         except (TypeError, ValueError):
             return
         if not symbol or timestamp_ms <= 0 or (bid <= 0 and ask <= 0):

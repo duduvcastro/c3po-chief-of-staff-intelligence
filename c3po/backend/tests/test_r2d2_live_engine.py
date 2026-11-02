@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import math
 import threading
 from datetime import date, datetime, time, timedelta, timezone
@@ -11,6 +13,7 @@ from app import r2d2_lab_live
 from app import r2d2_live_engine as engine_module
 from app.config import Settings
 from app.database import Database
+from app.market_data.eodhd_stream import EodhdRealtimeStream, stream_epoch_ms
 from app.r2d2_live_engine import (FEE_SIDE, Engine, EngineState, LiveEngineStream, MarketView, Member, NEW_YORK,
                                   Position, build_universe, run_session)
 
@@ -274,6 +277,82 @@ def test_the_stream_keeps_the_open_the_vwap_and_the_nbbo_of_the_session() -> Non
     assert stream.opening["AAA"] == 98.0 and view.price == 100.0
     assert abs((view.vwap or 0) - (98 * 100 + 100 * 300) / 400) < 1e-9
     assert (view.bid, view.ask) == (99.99, 100.01)
+
+
+def test_the_stream_reads_a_frames_stamp_in_milliseconds_microseconds_or_nanoseconds() -> None:
+    """02/11/2026: EODHD's trade feed came in nanoseconds, ``datetime`` could not hold them, and every frame dropped the
+    socket. The same trade in any of the three units is the same trade, on the base class (the api's) and on the engine's."""
+    at = _at(9, 30, 1)
+    stamp = int(at.timestamp() * 1000)
+    assert [stream_epoch_ms(stamp * unit) for unit in (1, 10**3, 10**6)] == [stamp] * 3
+    assert stream_epoch_ms(float(stamp * 10**6)) == pytest.approx(stamp, abs=1)
+    for raw in (10**20, 10**25, float("inf"), float("nan")):
+        with pytest.raises(ValueError):
+            stream_epoch_ms(raw)
+    for unit in (1, 10**3, 10**6):
+        stream = LiveEngineStream("")
+        stream.start_session(DAY)
+        stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 100, "t": stamp * unit, "ms": "open"}))
+        stream._record_quote(json.dumps({"s": "AAA", "bp": 97.99, "ap": 98.01, "t": stamp * unit}))
+        view = stream.view("AAA")
+        assert stream.opening == {"AAA": 98.0} and stream.tapes["AAA"].opening_at == stamp / 1000
+        assert view.trade_at == at and view.quote_at == at and stream.quote("AAA").as_of == at
+        assert stream.take_gauges()[2] == {"trade": 1, "quote": 1}
+        base = EodhdRealtimeStream("")
+        base._record(json.dumps({"s": "AAA", "p": 98.0, "v": 100, "t": stamp * unit, "ms": "open"}))
+        assert base.quote("AAA").as_of == at
+        base._record_quote(json.dumps({"s": "BBB", "bp": 97.99, "ap": 98.01, "t": stamp * unit}))
+        assert base.quote("BBB").as_of == at
+
+
+def test_the_stream_drops_a_frame_whose_stamp_is_no_unit_and_keeps_going() -> None:
+    stream = LiveEngineStream("")
+    stream.start_session(DAY)
+    stream._record(json.dumps({"s": "AAA", "p": 98.0, "v": 100, "t": 10**25, "ms": "open"}))
+    stream._record('{"s": "AAA", "p": 98.0, "v": 100, "t": Infinity, "ms": "open"}')
+    stream._record_quote(json.dumps({"s": "AAA", "bp": 97.99, "ap": 98.01, "t": 10**25}))
+    assert stream.opening == {} and stream.nbbo == {} and stream.quote("AAA") is None
+
+
+def test_a_frame_no_parser_can_read_costs_that_frame_never_the_socket(monkeypatch, caplog) -> None:
+    """02/11/2026: the frame that raised reached the reconnect handler, 299 times in the night."""
+    good = json.dumps({"s": "AAA", "p": 98.0, "v": 100, "t": int(_at(9, 30, 1).timestamp() * 1000), "ms": "open"})
+    connections: list[list[str]] = []
+
+    class Socket:
+        def __init__(self):
+            self.frames = [json.dumps({"status_code": 200}), "first bad", "second bad", good]
+            connections.append(self.frames)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def send(self, _):
+            return None
+
+        async def recv(self):
+            if self.frames:
+                return self.frames.pop(0)
+            stream._stop.set()
+            raise TimeoutError
+
+    stream = LiveEngineStream("token")
+    stream.start_session(DAY)
+    real = stream._record
+
+    def record(payload):
+        if "bad" in payload:
+            raise OverflowError("a stamp no datetime holds")
+        real(payload)
+
+    monkeypatch.setattr(engine_module.websockets, "connect", lambda *_, **__: Socket())
+    with caplog.at_level(logging.ERROR, logger=engine_module.logger.name):
+        asyncio.run(stream._run_feed("trade", "us", record))
+    assert len(connections) == 1 and stream.opening == {"AAA": 98.0} and stream.unreadable["trade"] == 2
+    assert [row.getMessage() for row in caplog.records] == ["EODHD realtime trade: a frame could not be read (OverflowError)"]
 
 
 class _FakeStream:
