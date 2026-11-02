@@ -24,7 +24,7 @@ def test_all_application_services_use_the_three_named_images() -> None:
         "investor-relations-worker",
         "valuation-worker",
         "server-usage-worker",
-        "r2d2-worker",
+        "r2d2-live",
     ):
         assert services[service]["image"] == "c3po/backend:production"
         assert services[service]["build"]["dockerfile"] == "backend/Dockerfile"
@@ -33,6 +33,16 @@ def test_all_application_services_use_the_three_named_images() -> None:
     assert services["web"]["build"]["context"] == "./frontend"
     assert services["db"]["image"] == "c3po/database:production"
     assert services["db"]["build"]["dockerfile"] == "database/Dockerfile"
+
+
+def test_the_old_r2d2_workers_are_retired_and_the_deploy_removes_their_containers() -> None:
+    services = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
+    workflow = PIPELINE.read_text(encoding="utf-8")
+
+    assert not {"r2d2-worker", "r2d2-shadow-candidate-worker"} & set(services)
+    assert "for retired in r2d2-worker r2d2-shadow-candidate-worker; do" in workflow
+    assert "ps -q r2d2-live" in workflow  # the health gate watches the engine that trades...
+    assert '[ "$engine_state" = "running $engine_restarts" ]' in workflow  # ...and a restart since `up` fails it
 
 
 def test_production_builds_and_transfers_images_before_connecting_to_host() -> None:

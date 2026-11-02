@@ -713,21 +713,6 @@ def test_session_run_publishes_then_recovers_without_duplicate_rows(
     assert store.report_exists(str(experiment["id"]), SESSION) is True
 
 
-def test_compose_arms_hot_logger_and_isolates_nightly_worker() -> None:
-    compose = (ROOT / "compose.yml").read_text(encoding="utf-8")
-    pipeline = (ROOT.parent / ".github" / "workflows" / "c3po-pipeline.yml").read_text(
-        encoding="utf-8"
-    )
-    assert 'C3PO_R2D2_SHADOW_CANDIDATE_LOG_ENABLED: "true"' in compose
-    assert "r2d2-shadow-candidate-worker:" in compose
-    assert 'C3PO_R2D2_SHADOW_CANDIDATE_OUTCOMES_ENABLED: "true"' in compose
-    assert 'command: ["python", "-m", "app.r2d2_shadow_candidate_worker"]' in compose
-    assert 'ps -q r2d2-shadow-candidate-worker' in pipeline
-    assert "import app.r2d2_shadow_candidate_worker" in pipeline
-    assert 'if [ "$rollback_has_shadow_worker" != "true" ]' in pipeline
-    assert 'stop r2d2-shadow-candidate-worker' in pipeline
-
-
 def test_report_package_publish_is_atomic_across_mid_write_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

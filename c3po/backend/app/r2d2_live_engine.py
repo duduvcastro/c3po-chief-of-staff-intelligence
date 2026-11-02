@@ -1192,6 +1192,15 @@ def publish(database: Any, engine: Engine, now: datetime, *, as_of: datetime | N
     return r2d2_lab_live.store(database, engine.document(as_of or now, config=config), now=now, max_trades=ENGINE_MAX_TRADES)
 
 
+def published_before(document: Mapping[str, Any], moment: datetime) -> bool:
+    """A stored document whose book was published before ``moment``; a document with no readable book is not one."""
+    stamp = (document.get("book") or {}).get("as_of")
+    try:
+        return isinstance(stamp, str) and datetime.fromisoformat(stamp) < moment
+    except (TypeError, ValueError):  # TypeError: a stamp with no zone, against an aware moment
+        return False
+
+
 def reconcile_previous(database: Any, state: EngineState, day: date, now: datetime) -> bool:
     """Before a NEW session clears the fills: the previous session's document as its checkpoint holds it (Codex #500 P2-3).
     A session the checkpoint never closed (a crash before the close) is closed first; then its public document is
@@ -1201,7 +1210,13 @@ def reconcile_previous(database: Any, state: EngineState, day: date, now: dateti
         return False
     prior_day = date.fromisoformat(prior)
     unclosed = state.session == prior
-    if not unclosed and not state.fills:
+    close_at = datetime.combine(prior_day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    stored_doc = (database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}
+    stored = stored_doc.get("trades")
+    # the screen's book stopped short of the close (a final publish that failed): the same fills, but not yet the closed book
+    # the T-bill interest needs. With no fills in the state, only a document with no fills of its own may be replaced
+    short = published_before(stored_doc, close_at) and (bool(state.fills) or not stored)
+    if not unclosed and not state.fills and not short:
         return False
     keep = state.session
     state.session = prior  # an Engine on the prior day that keeps its fills
@@ -1210,15 +1225,12 @@ def reconcile_previous(database: Any, state: EngineState, day: date, now: dateti
         engine.close_session()
     else:
         state.session = keep
-    close_at = datetime.combine(prior_day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
-    stored_doc = (database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, prior) or {}).get("outputs") or {}
-    stored = stored_doc.get("trades")
     # the day keeps the rule it ran under: a rule changed since then (a new CONFIG) never rewrites it (pre-review b84a436),
     # even when its public document is missing (a publish that failed after the checkpoint: Codex 6508087909)
     config = str(stored_doc.get("config") or state.config or "")
     if state.fills and not config:  # never written under a rule it did not run under; the close and its save still happen
         logger.error("R2D2 live: previous session %s has no recorded rule; not republished", prior)
-    pending = bool(state.fills) and bool(config) and stored != engine.document(close_at, config=config)["trades"]
+    pending = bool(config) and (short or (bool(state.fills) and stored != engine.document(close_at, config=config)["trades"]))
     if not unclosed and not pending:
         return False
     if unclosed:

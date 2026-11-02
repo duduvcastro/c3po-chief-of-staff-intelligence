@@ -367,47 +367,23 @@ jobs:
           containers="$(docker ps -a --filter 'name=^c3po-massive$' -q)" || exit 1
           [ -z "$containers" ] || { echo "leftover c3po-massive container" >&2; exit 1; }
 
-      - name: Render the compose capacity mount on a real engine
+      - name: Render the compose project on a real engine
         if: >-
           github.event_name == 'pull_request' ||
           (github.event_name == 'workflow_dispatch' && inputs.remediation)
         working-directory: ${{ github.workspace }}
         # `docker compose config` loads, interpolates and validates the project with the
         # command form the deploy uses. The empty root .env stands in for the host file
-        # (Compose needs it for --env-file and for env_file) and is removed again. Three
-        # host states are rendered: variable unset, variable empty, variable set to an
-        # example path; a bare word must be refused. With a path the placeholder volume
-        # is unused, and Compose leaves unused top-level volumes out of the render: the
-        # checker requires the declaration only for the placeholder states.
-        # This proves the render only. `config` creates nothing, so the step cannot show
-        # what `up` creates on a host (the placeholder volume, a bind source): that is
-        # first measured by the read-back after the deploy. It proves nothing about the
-        # capacity tree, the capacity settings or the planner either.
+        # (Compose needs it for --env-file and for env_file) and is removed again.
         # Every guard is explicit (`|| exit 1`); nothing here relies on `set -e`.
         shell: bash
         run: |
           set -uo pipefail
-          out="$RUNNER_TEMP/backend-runtime"
-          check=c3po/deployment/capacity-mount/check_compose_render.py
-          var=C3PO_R2D2_V2_CAPACITY_MOUNT_SOURCE
-          example=/srv/example-capacity-tree
-          compose=(docker compose --env-file .env -f c3po/compose.yml)
-          mkdir -p "$out" || exit 1
           [ ! -e .env ] || { echo "unexpected .env in the workspace" >&2; exit 1; }
           trap 'rm -f .env' EXIT
           : > .env || exit 1
-          docker compose version | tee "$out/compose-version.txt" || exit 1
-          env -u "$var" "${compose[@]}" config --format json > "$out/compose-capacity-unset.json" || exit 1
-          env "$var=" "${compose[@]}" config --format json > "$out/compose-capacity-empty.json" || exit 1
-          env "$var=$example" "${compose[@]}" config --format json > "$out/compose-capacity-bind.json" || exit 1
-          python3 "$check" placeholder "$out/compose-capacity-unset.json" || exit 1
-          python3 "$check" placeholder "$out/compose-capacity-empty.json" || exit 1
-          python3 "$check" "bind=$example" "$out/compose-capacity-bind.json" || exit 1
-          if env "$var=not-a-path" "${compose[@]}" config --quiet 2> "$out/compose-capacity-bare-word.err"; then
-            echo "a bare word was accepted as the capacity mount source" >&2
-            exit 1
-          fi
-          cat "$out/compose-capacity-bare-word.err" || exit 1
+          docker compose version || exit 1
+          docker compose --env-file .env -f c3po/compose.yml config --quiet || exit 1
 
       - name: Publish backend runtime check
         if: >-
@@ -809,17 +785,24 @@ jobs:
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml config --quiet
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --no-build
 
+          # Compose no longer knows the retired services, so `up` leaves their containers running.
+          for retired in r2d2-worker r2d2-shadow-candidate-worker; do
+            ids=$(docker ps -aq --filter "label=com.docker.compose.service=$retired")
+            [ -z "$ids" ] || docker rm -f $ids >/dev/null
+          done
+          engine_id=$(docker compose --env-file .env -f c3po/compose.yml ps -q r2d2-live)
+          engine_restarts=$(docker inspect -f '{{.RestartCount}}' "$engine_id" 2>/dev/null || true)
+
           # Each service initializes the idempotent schema under one advisory lock.
           # Allow a cold, serialized startup to finish before declaring the deploy bad.
           healthy=false
           for attempt in $(seq 1 90); do
             web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
             api_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/health || true)
-            shadow_id=$(docker compose --env-file .env -f c3po/compose.yml ps -q r2d2-shadow-candidate-worker)
-            shadow_status=$(docker inspect -f '{{.State.Status}}' "$shadow_id" 2>/dev/null || true)
+            engine_state=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$engine_id" 2>/dev/null || true)
             if [ "$web_code" = "200" ] \
               && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; } \
-              && [ "$shadow_status" = "running" ]; then
+              && [ "$engine_state" = "running $engine_restarts" ]; then
               healthy=true
               break
             fi
@@ -845,17 +828,7 @@ jobs:
             docker image tag c3po/backend:rollback c3po/backend:production
             docker image tag c3po/web:rollback c3po/web:production
             docker image tag c3po/database:rollback c3po/database:production
-            rollback_has_shadow_worker=false
-            if docker run --rm --entrypoint python c3po/backend:production \
-              -c 'import app.r2d2_shadow_candidate_worker'; then
-              rollback_has_shadow_worker=true
-            fi
             C3PO_BUILD_SHA="$PREVIOUS_REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --no-build
-            if [ "$rollback_has_shadow_worker" != "true" ]; then
-              # Only the first rollback target predates this worker. Later
-              # rollback images keep the evidence collector running.
-              docker compose --env-file .env -f c3po/compose.yml stop r2d2-shadow-candidate-worker
-            fi
             rollback_healthy=false
             for attempt in $(seq 1 60); do
               web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)

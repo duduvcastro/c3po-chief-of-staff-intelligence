@@ -2486,6 +2486,51 @@ def test_a_day_whose_publish_failed_is_republished_under_its_own_rule_after_a_ru
     assert Engine(state, next_day, []).state.config == "TIT-2S5-RT"  # the new session runs under the rule in force
 
 
+def test_a_close_a_failed_publish_left_short_is_republished_with_the_same_fills() -> None:
+    """Codex 6589768753: the closed book proves the interest's base, so the same fills are not enough to leave it intraday."""
+    database = Database(Settings(database_url=""))
+    engine = _engine()
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    t = _at(9, 41)
+    engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    engine_module.publish(database, engine, _at(15, 59), as_of=_at(15, 59))
+    engine.close_session()  # the checkpoint closed; the publish after it failed
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    next_day = DAY + timedelta(days=1)
+    assert engine_module.reconcile_previous(database, engine.state, next_day, close_at + timedelta(hours=17)) is True
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert datetime.fromisoformat(stored["book"]["as_of"]) >= close_at and len(stored["trades"]) == 1
+    assert engine_module.reconcile_previous(database, engine.state, next_day, close_at + timedelta(hours=18)) is False
+
+
+def test_a_session_with_no_fills_left_short_is_republished_too() -> None:
+    database = Database(Settings(database_url=""))
+    engine = _engine()
+    engine_module.publish(database, engine, _at(15, 59), as_of=_at(15, 59))
+    engine.close_session()
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    assert engine_module.reconcile_previous(database, engine.state, DAY + timedelta(days=1), close_at + timedelta(hours=17)) is True
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert datetime.fromisoformat(stored["book"]["as_of"]) >= close_at
+
+
+def test_a_document_with_fills_is_never_replaced_by_a_state_without_them() -> None:
+    database = Database(Settings(database_url=""))
+    engine = _engine()
+    t = _at(9, 40)
+    engine.step(t, lambda s: _view(97.9, 98.0, 97.89, 97.91, t) if s == "AAA" else MarketView())
+    t = _at(9, 41)
+    engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
+    engine_module.publish(database, engine, _at(15, 59), as_of=_at(15, 59))
+    engine.close_session()
+    engine.state.fills = []
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    assert engine_module.reconcile_previous(database, engine.state, DAY + timedelta(days=1), close_at + timedelta(hours=17)) is False
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert len(stored["trades"]) == 1
+
+
 def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> None:
     """Pre-review of b84a436: 29/10 ran under TIT-2S3-RT; the next session (TIT-2S5-RT) reconciles it and must keep its
     config and trade ids — nothing is republished when the stored document already holds the day's fills."""

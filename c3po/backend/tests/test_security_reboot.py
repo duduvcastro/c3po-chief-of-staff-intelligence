@@ -446,27 +446,26 @@ def test_new_boot_cleans_gate_marker_before_health_has_finished_recovering(host)
     assert not (host/'runtime/security/maintenance/reboot.pending').exists()
 
 
-@pytest.mark.parametrize('raw,processor,expected',[(False,True,True),(False,False,True),(True,False,True),(True,True,False)])
-def test_coverage_veto_matches_actual_processor_activation(host,monkeypatch,raw,processor,expected):
-    import contextlib,hashlib,io
-    from types import SimpleNamespace
-    import app.config
+BACKEND=['api','investor-relations-worker','valuation-worker','server-usage-worker','r2d2-live']
+
+
+@pytest.mark.parametrize('services,expected',[
+    ([*BACKEND,'pluggy-webhook'],True),  # the engine runs under the same gate, so it never holds a reboot back on its own
+    ([s for s in BACKEND if s!='r2d2-live']+['pluggy-webhook'],False),  # a stopped engine is not a covered host
+    ([*BACKEND,'pluggy-webhook','r2d2-worker'],False),  # a retired service still running is an unknown workload
+])
+def test_coverage_is_the_services_that_run_today(host,services,expected):
+    import hashlib
     source=host/'c3po/backend/app/maintenance_gate.py'
     source.parent.mkdir(parents=True);source.write_text('reviewed gate')
     handler=host/'work/pluggy_webhook.py';handler.parent.mkdir();handler.write_text('reviewed handler')
     gate_hash=hashlib.sha256(source.read_bytes()).hexdigest()
     handler_hash=hashlib.sha256(handler.read_bytes()).hexdigest()
-    services=['api','investor-relations-worker','valuation-worker','server-usage-worker','r2d2-worker','r2d2-shadow-candidate-worker','pluggy-webhook']
     containers=[{'Id':s,'Config':{'Labels':{'com.docker.compose.service':s,'org.opencontainers.image.revision':'a'*40},'Env':['C3PO_MAINTENANCE_GATE_DIR=/run/c3po-maintenance']},'Mounts':[{'Source':str(host/'runtime/security/maintenance'),'Destination':'/run/c3po-maintenance','RW':False}]} for s in services]
-    monkeypatch.setattr(app.config,'get_settings',lambda:SimpleNamespace(r2d2_microstructure_raw_capture_enabled=raw,r2d2_microstructure_processor_enabled=processor))
     def run(args):
         if args[:2]==['docker','ps']:return '\n'.join(services)
         if args[:2]==['docker','inspect']:return json.dumps(containers)
         if 'sha256sum' in args:return gate_hash+'  module'
         if args[2]=='pluggy-webhook':return json.dumps({'maintenance_module_sha256':gate_hash,'maintenance_handler_sha256':handler_hash})
-        if args[2]=='r2d2-worker':
-            output=io.StringIO()
-            with contextlib.redirect_stdout(output):exec(args[-1],{})
-            return output.getvalue().strip()
         raise AssertionError(args)
     assert ACTUAL_COVERAGE(host,run) is expected

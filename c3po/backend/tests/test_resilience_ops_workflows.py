@@ -36,7 +36,7 @@ def test_resilience_installer_is_manual_production_and_secret_driven() -> None:
     assert "systemctl enable --now c3po-postgres-backup.timer" in workflow
     assert "install -o root -g ubuntu -m 0750" in workflow
     assert "--force-recreate" in workflow
-    assert "api investor-relations-worker valuation-worker server-usage-worker r2d2-worker" in workflow
+    assert "api investor-relations-worker valuation-worker server-usage-worker r2d2-live" in workflow
     assert "server_usage_worker_running=" in workflow
     assert "python -m app.governance_vulnerability --root /host/disk" in workflow
 
