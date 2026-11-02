@@ -190,8 +190,7 @@ def admission_coverage(root, command):
     if not ids:
         return False
     containers = json.loads(command(["docker", "inspect", *ids]))
-    backend = {"api", "investor-relations-worker", "valuation-worker", "server-usage-worker",
-               "r2d2-worker", "r2d2-shadow-candidate-worker"}
+    backend = {"api", "investor-relations-worker", "valuation-worker", "server-usage-worker", "r2d2-live"}
     found = set()
     source = str(root / "runtime/security/maintenance")
     expected = hashlib.sha256((root / "c3po/backend/app/maintenance_gate.py").read_bytes()).hexdigest()
@@ -219,12 +218,5 @@ def admission_coverage(root, command):
                 "import json,urllib.request; print(json.dumps(json.load(urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=5))))"]))
             handler = hashlib.sha256((root / "work/pluggy_webhook.py").read_bytes()).hexdigest()
             if live.get("maintenance_module_sha256") != expected or live.get("maintenance_handler_sha256") != handler:
-                return False
-        if service == "r2d2-worker":
-            # The optional processor has an independent retained queue. Until it
-            # implements the same drain protocol, its activation vetoes reboot.
-            active = command(["docker", "exec", container["Id"], "python3", "-B", "-c",
-                              "from app.config import get_settings; s=get_settings(); print(int(s.r2d2_microstructure_raw_capture_enabled and s.r2d2_microstructure_processor_enabled))"])
-            if active != "0":
                 return False
     return backend | {"pluggy-webhook"} == found

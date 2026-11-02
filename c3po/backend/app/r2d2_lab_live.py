@@ -84,6 +84,7 @@ LIVE_RISK = {  # TIT-2S3-RT (27-29/10: a -0.5% stop, a trailing +0.15% lock) kee
                     "step lock +0.10% · stop −0.20%"),
 }
 SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
+CASH_TOLERANCE_USD = 0.05  # a published book is rounded: its cash against the checkpoint's
 # The one R2D2 book opened on 27/10/2026 from the NAV with interest at the 26/10 close (owner 26/10/2026): the T-bill
 # interest the cash-yield ledger posts for sessions from this one on is money of the book (cash and NAV).
 BOOK_FIRST_SESSION = "2026-10-27"
@@ -314,6 +315,41 @@ def _lab_snapshots(database: Any, now: datetime | None, days: int) -> list[tuple
     return found
 
 
+def checkpoint_cash(checkpoint: Mapping[str, Any]) -> float:
+    """The cash of the engine's durable state, as ``Engine.book`` counts it."""
+    return float(checkpoint["nav_realized"]) - sum(float(position["cost_usd"]) for position in checkpoint.get("positions") or [])
+
+
+def closing_cash(database: Any, *, checkpoint: Mapping[str, Any] | None = None, now: datetime | None = None) -> dict[date, float]:
+    """The book's cash at the end of each finished session, what the T-bill interest of the next one accrues on. Only what
+    is proved closed counts (a posted entry is never rewritten): a book published at or after the close, since a failed close
+    leaves an intraday one behind; the newest of them agreeing with the engine's durable ``checkpoint``. A session after it
+    keeps that cash only if the checkpoint shows nothing happened since. Anything else is absent, so its interest stays pending."""
+    import exchange_calendars as xcals
+    today = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK).date()
+    days = (today - date.fromisoformat(BOOK_FIRST_SESSION)).days + 1
+    stored: dict[date, float] = {}
+    for day, outputs in _lab_snapshots(database, now, days):
+        book = outputs.get("book")
+        if day < today.isoformat() and isinstance(book, dict) and datetime.fromisoformat(book["as_of"]) >= _session_close(day):
+            stored[date.fromisoformat(day)] = float(book["cash_usd"])
+    if not stored:
+        return {}
+    newest = max(stored)
+    if checkpoint is None or checkpoint.get("session") or checkpoint.get("last_session") != newest.isoformat():
+        return stored
+    cash = stored[newest]
+    if abs(checkpoint_cash(checkpoint) - cash) > CASH_TOLERANCE_USD:
+        return {session: value for session, value in stored.items() if session != newest}
+    for stamp in xcals.get_calendar("XNYS").sessions_in_range(newest, today - timedelta(days=1)):
+        stored[stamp.date()] = cash
+    return stored
+
+
+def _session_close(day: str) -> datetime:
+    return datetime.fromisoformat(day + "T16:00:00").replace(tzinfo=NEW_YORK)
+
+
 def latest_book(database: Any, *, now: datetime | None = None) -> tuple[str, str, dict[str, Any], list[tuple[str, dict[str, Any]]]] | None:
     """The newest lab session that posted a book (day, config, book) and every session with a book, oldest first."""
     sessions = [(day, outputs) for day, outputs in _lab_snapshots(database, now, 90) if isinstance(outputs.get("book"), dict)]
@@ -482,11 +518,12 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
     exposure = sum(position.market_value_usd for position in positions)
     starting = response.starting_capital_usd
     total_return = (nav / starting - 1) * 100 if starting > 0 else 0.0
-    known = {point.session_date for point in response.track_record}
-    track = list(response.track_record)
+    # the track from the live book's first session is the live book's: a row of the paused book there is its own flat NAV
+    # (with the T-bill interest of the day, posted before the session opens), whatever the live book did
+    replaced = [point for point in response.track_record if point.session_date in results or point.session_date >= BOOK_FIRST_SESSION]
+    track = [point for point in response.track_record if point not in replaced]
+    paused_days = sum(1 for point in replaced if point.is_final)
     for session_day, (session_open, session_close) in sorted(results.items()):
-        if session_day in known:
-            continue
         session_accrued, session_interest = _interest(interest, session_day)
         session_previous = session_open + session_accrued - session_interest
         track.append(R2D2TrackPoint(
@@ -494,6 +531,7 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
             daily_pnl_usd=round(session_close - session_open, 2),
             daily_return_percent=round((session_close - session_open) / session_previous * 100, 4) if session_previous > 0 else 0.0,
             is_final=session_day < today or closed_now))
+    track.sort(key=lambda point: point.session_date)
     total = close_nav - previous
     delta = R2D2NavSessionDelta(
         status="available", session_date=today, previous_session_date=None, current_total_nav_usd=round(close_nav, 2),
@@ -510,15 +548,17 @@ def apply_book(response: R2D2DashboardResponse, database: Any, *, now: datetime 
         session_date=today, closed_episodes=len(closed_results), decided_episodes=positive + negative,
         positive_episodes=positive, negative_episodes=negative, flat_episodes=len(closed_results) - positive - negative,
         win_rate_percent=round(positive / (positive + negative) * 100, 2) if positive + negative else 0.0)
-    stats = _scoreboard(response.stats, track, by_day, today, closed_now)
-    cycle = today_doc.get("cycle")
+    stats = _scoreboard(response.stats, track, by_day, today, closed_now, paused_days)
+    cycle_day = today if today_doc else day  # no session today (a weekend, before the open): the last one the book traded
+    cycle_doc = today_doc or by_day.get(day) or {}
+    cycle = cycle_doc.get("cycle")
     last_cycle = response.last_cycle
-    if today_doc:
+    if cycle_doc:
         last_cycle = R2D2CycleStatus(
-            status="completed" if closed_now else "running",
-            started_at=datetime.fromisoformat(today + "T09:30:00").replace(tzinfo=NEW_YORK),
+            status="completed" if closed_now or cycle_day < today else "running",
+            started_at=datetime.fromisoformat(cycle_day + "T09:30:00").replace(tzinfo=NEW_YORK),
             scanned_count=(cycle or {}).get("candidates", 0), signal_count=(cycle or {}).get("signals", 0),
-            trade_count=len(today_doc.get("trades") or []), metadata={"source": BOOK_SOURCE, "config": str(today_doc.get("config"))})
+            trade_count=len(cycle_doc.get("trades") or []), metadata={"source": BOOK_SOURCE, "config": str(cycle_doc.get("config"))})
     risk, hold, exits = LIVE_RISK.get(config) or (None, None, None)
     return response.model_copy(update={
         "book_source": BOOK_SOURCE, "live_rule": LIVE_RULES.get(config), "live_slots": LIVE_SLOTS.get(config),
@@ -612,19 +652,20 @@ def episode_summary(database: Any, *, now: datetime | None = None) -> dict[str, 
 
 
 def _scoreboard(v2: R2D2SummaryStats, track: list[R2D2TrackPoint], by_day: dict[str, dict[str, Any]], today: str,
-                closed_now: bool) -> R2D2SummaryStats:
-    """The paused V2 book's lifetime scoreboard plus the live sessions (days from the track, legs from the sells)."""
+                closed_now: bool, paused_days: int = 0) -> R2D2SummaryStats:
+    """The paused V2 book's lifetime scoreboard plus the live sessions (days from the track, legs from the sells), less
+    the ``paused_days`` it logged itself as flat on those same sessions."""
     lab_days = [point for point in track if point.session_date in by_day and (point.session_date < today or closed_now)]
     sells = [item.get("realized_pnl_usd") for day, outputs in by_day.items() if day <= today
              for item in outputs.get("trades") or [] if item.get("side") == "SELL"]
-    closed = v2.closed_days + len(lab_days)
+    closed = max(0, v2.closed_days - paused_days) + len(lab_days)
     positive_days = v2.positive_days + sum(point.daily_return_percent > 0 for point in lab_days)
     return R2D2SummaryStats(
         closed_days=closed, positive_days=positive_days,
         above_half_percent_days=v2.above_half_percent_days + sum(point.daily_return_percent >= 0.5 for point in lab_days),
         negative_days=v2.negative_days + sum(point.daily_return_percent < 0 for point in lab_days),
         below_minus_half_percent_days=v2.below_minus_half_percent_days + sum(point.daily_return_percent <= -0.5 for point in lab_days),
-        flat_days=v2.flat_days + sum(abs(point.daily_return_percent) < 1e-9 for point in lab_days),
+        flat_days=max(0, v2.flat_days - paused_days) + sum(abs(point.daily_return_percent) < 1e-9 for point in lab_days),
         win_rate_percent=round(positive_days / closed * 100, 2) if closed else 0.0,
         total_transactions=v2.total_transactions + len(sells),
         positive_transactions=v2.positive_transactions + sum(1 for pnl in sells if pnl is not None and pnl > 0),

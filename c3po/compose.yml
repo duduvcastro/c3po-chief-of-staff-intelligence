@@ -135,74 +135,6 @@ services:
       - c3po_internal
       - legacy_proxy
 
-  r2d2-worker:
-    image: c3po/backend:production
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    env_file:
-      - ../.env
-    environment:
-      C3PO_MAINTENANCE_GATE_DIR: /run/c3po-maintenance
-      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
-      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
-      C3PO_MIGRATIONS_DIR: /app/db
-      C3PO_R2D2_EXPERIMENT_CODE: R2D2-90D-001
-      C3PO_R2D2_START_DATE: "2026-08-17"
-      C3PO_R2D2_CHECKPOINT_DAYS: 90
-      C3PO_R2D2_STARTING_CAPITAL_USD: 1000000
-      C3PO_R2D2_CYCLE_SECONDS: 60
-      C3PO_R2D2_MAX_MARKET_PERCENT: 48
-      C3PO_R2D2_TRADE_COOLDOWN_MINUTES: 8
-      C3PO_R2D2_MAX_DAILY_ORDERS: ${C3PO_R2D2_MAX_DAILY_ORDERS:-500}
-      C3PO_R2D2_SHADOW_CANDIDATE_LOG_ENABLED: "true"
-      C3PO_R2D2_MICROSTRUCTURE_RAW_DIR: /app/day-d-data/provider=eodhd/microstructure/raw
-      C3PO_SERVICE_NAME: r2d2-worker
-      TZ: America/Sao_Paulo
-    command: ["python", "-m", "app.r2d2_worker"]
-    volumes:
-      - ../runtime/security/maintenance:/run/c3po-maintenance:ro
-      - ${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data
-      # Capacity tree: read-only, top-level target. Unset keeps an empty placeholder volume, so a host
-      # that is not provisioned deploys as before. The mount alone enables nothing: capacity stays off
-      # until the host .env sets the capacity settings. Set a host path only after the tree exists.
-      - ${C3PO_R2D2_V2_CAPACITY_MOUNT_SOURCE:-c3po_capacity_unprovisioned}:/c3po-capacity:ro
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - c3po_internal
-      - legacy_proxy
-
-  r2d2-shadow-candidate-worker:
-    image: c3po/backend:production
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    env_file:
-      - ../.env
-    environment:
-      C3PO_MAINTENANCE_GATE_DIR: /run/c3po-maintenance
-      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
-      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
-      C3PO_MIGRATIONS_DIR: /app/db
-      C3PO_R2D2_EXPERIMENT_CODE: R2D2-90D-001
-      C3PO_R2D2_SHADOW_CANDIDATE_OUTCOMES_ENABLED: "true"
-      C3PO_R2D2_SHADOW_CANDIDATE_EVIDENCE_DIR: /app/day-d-data/evidence/r2d2-shadow-candidate-log-v1
-      TZ: America/Sao_Paulo
-    command: ["python", "-m", "app.r2d2_shadow_candidate_worker"]
-    volumes:
-      - ../runtime/security/maintenance:/run/c3po-maintenance:ro
-      - ..:/legacy:ro
-      - ${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - c3po_internal
-
   r2d2-live:
     # The live R2D2 inside the C3PO server on the EODHD real-time stream (owner, 27/10/2026): its own stream
     # connection for the 900 most liquid US common stocks (trades; quotes only for the held names), paper only.
@@ -256,7 +188,6 @@ volumes:
   c3po_postgres:
   c3po_one_pagers:
   c3po_day_d_data:
-  c3po_capacity_unprovisioned:
 
 networks:
   c3po_internal:

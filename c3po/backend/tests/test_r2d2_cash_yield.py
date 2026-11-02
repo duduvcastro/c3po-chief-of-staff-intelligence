@@ -15,6 +15,7 @@ from app.r2d2 import (
     _build_nav_session_delta,
     _canonical_nav_close,
 )
+from app import r2d2_lab_live
 from app.schemas import R2D2Position
 from app.r2d2_cash_yield import (
     CashYieldDataError,
@@ -761,6 +762,74 @@ def test_cash_yield_is_append_only_idempotent_and_does_not_change_operational_na
     assert dashboard.interest_income_epoch_start_date == "2026-08-17"
     assert dashboard.interest_income_rate_date == "2026-08-17"
     assert dashboard.interest_income_status == "posted"
+
+
+def test_the_interest_accrues_on_the_live_books_closing_cash(monkeypatch) -> None:
+    """The live book is the R2D2's one book (owner 26/10/2026) and nobody writes the paused book's rows any more: its closing
+    cash is the next session's base, and a paused row of the same session gives way to it."""
+    class TheMorningAfter(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 10, 29, 12, 0, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr("app.r2d2_cash_yield.datetime", TheMorningAfter)
+    monkeypatch.setattr("app.r2d2_lab_live.datetime", TheMorningAfter)
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    experiment = paper.ensure_initialized()
+    for session_date in (date(2026, 10, 26), date(2026, 10, 27)):
+        paper.repo.memory["snapshots"][session_date] = {
+            "session_date": session_date,
+            "cash_usd": 923_704.18,
+            "nav_usd": 923_704.18,
+            "is_final": True,
+        }
+    for day, cash_usd in (("2026-10-27", 800_000.0), ("2026-10-28", 900_000.0)):
+        book = {"nav_start_usd": 930_000.0, "nav_usd": 930_000.0, "realized_nav_usd": 930_000.0, "cash_usd": cash_usd,
+                "as_of": day + "T16:00:00-04:00", "positions": []}
+        r2d2_lab_live.store(
+            database,
+            {"schema": r2d2_lab_live.SCHEMA, "day": day, "config": "TIT-1", "trades": [], "book": book},
+            now=datetime.fromisoformat(day + "T17:00:00-04:00"),
+        )
+    http = FakeTreasuryHttp(_xml("2026-10-27", "2026-10-28"))
+    service = R2D2CashYieldService(settings, database, http)  # type: ignore[arg-type]
+    database._r2d2_cash_yield_entries.append(  # type: ignore[attr-defined]
+        {"experiment_id": experiment["id"], "session_date": date(2026, 10, 27), "interest_income_usd": 105.02, "entry_sha256": "a" * 64}
+    )
+
+    result = service.run_through(date(2026, 10, 29))
+
+    assert result["posted_session_dates"] == ["2026-10-28", "2026-10-29"]
+    entries = database._r2d2_cash_yield_entries[1:]  # type: ignore[attr-defined]
+    assert [entry["base_cash_usd"] for entry in entries] == [800_000.0, 900_000.0]
+
+
+def test_a_paused_row_never_stands_in_for_an_unproved_close(monkeypatch) -> None:
+    class TheMorningAfter(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 10, 29, 12, 0, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr("app.r2d2_cash_yield.datetime", TheMorningAfter)
+    monkeypatch.setattr("app.r2d2_lab_live.datetime", TheMorningAfter)
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    for session_date in (date(2026, 10, 26), date(2026, 10, 27), date(2026, 10, 28)):
+        paper.repo.memory["snapshots"][session_date] = {
+            "session_date": session_date, "cash_usd": 923_704.18, "nav_usd": 923_704.18, "is_final": True,
+        }
+    service = R2D2CashYieldService(settings, database, FakeTreasuryHttp(_xml("2026-10-26", "2026-10-27", "2026-10-28")))  # type: ignore[arg-type]
+
+    result = service.run_through(date(2026, 10, 29))
+
+    assert result["posted_session_dates"] == ["2026-10-27"]  # on the 26th's paused close, before the live book
+    assert {row["session_date"] for row in result["pending_sessions"]} == {"2026-10-28", "2026-10-29"}
 
 
 def test_run_latest_catches_up_missing_sessions_oldest_first(monkeypatch) -> None:

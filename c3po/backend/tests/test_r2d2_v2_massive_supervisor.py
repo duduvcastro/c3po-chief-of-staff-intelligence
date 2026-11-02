@@ -359,7 +359,7 @@ def test_rendered_unit_paths_match_the_signed_placement(monkeypatch,placement):
     assert Path(arguments['--manifest-directory']).parent==Path(arguments['--token-file']).parent==Path('/etc/c3po-bar')
     host_journal=Path(mounts[str(journal)])
     compose=(UNIT_ROOT.parents[1]/'compose.yml').read_text()
-    worker=re.search(r'^  r2d2-worker:\n((?:    .*\n|\n)+)',compose,re.M)
+    worker=re.search(r'^  api:\n((?:    .*\n|\n)+)',compose,re.M)
     assert worker is not None and re.search(r'^      - \S+:'+re.escape(str(DATA_TARGET))+'$',worker.group(1),re.M)
     dockerfile=(UNIT_ROOT.parents[1]/'backend'/'Dockerfile').read_text()
     if placement=='A':
@@ -374,9 +374,8 @@ def test_rendered_unit_paths_match_the_signed_placement(monkeypatch,placement):
     else:
         # Same leaf below the data mount on both sides: host /mnt/day-d-data/<leaf> is /app/day-d-data/<leaf>.
         assert journal.parent==DATA_TARGET and host_journal.name==journal.name and host_journal.parent==DATA_VOLUME
-    # r2d2-worker is NOT the journal reader (it runs app.r2d2_worker); it only shows how the backend image mounts the
-    # data volume and that neither compose nor the image selects a user. The reader's launcher must match both.
-    assert re.search(r'^    command: \["python", "-m", "app\.r2d2_worker"\]$',worker.group(1),re.M)
+    # The api is NOT the journal reader; it only shows how the backend image mounts the data volume and that neither
+    # compose nor the image selects a user. The reader's launcher must match both.
     assert 'r2d2_v2_shadow_worker' not in compose
     assert not re.search(r'^    user:',worker.group(1),re.M)
     assert not re.search(r'^\s*USER\b',dockerfile,re.M)

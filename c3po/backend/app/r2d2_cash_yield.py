@@ -13,6 +13,7 @@ import exchange_calendars as xcals
 from .config import Settings
 from .database import Database
 from .market_data.http import JsonHttpClient
+from . import r2d2_lab_live
 
 
 SCHEMA_VERSION = "R2D2-CASH-YIELD-v2"
@@ -453,18 +454,28 @@ class R2D2CashYieldService:
         raise CashYieldDataError("R2D2 experiment is not initialized")
 
     def _final_snapshots(self, experiment_id: str) -> list[dict[str, Any]]:
+        """Each finished session's closing cash: the paused book's daily rows, then the live book's (owner 26/10/2026: one
+        R2D2 book), whose sessions no paused row describes any more."""
         if not self.database.database_url:
             snapshots = getattr(self.database, "_r2d2_memory", {}).get("snapshots", {})
-            return [
+            rows = [
                 dict(item) for _, item in sorted(snapshots.items()) if item.get("is_final")
             ]
-        with self.database.connection() as connection:
-            rows = connection.execute(
-                """SELECT session_date, cash_usd FROM r2d2_daily_snapshots
-                   WHERE experiment_id=%s AND is_final=TRUE ORDER BY session_date""",
-                (experiment_id,),
-            ).fetchall()
-        return [{"session_date": row[0], "cash_usd": row[1], "is_final": True} for row in rows]
+        else:
+            with self.database.connection() as connection:
+                found = connection.execute(
+                    """SELECT session_date, cash_usd FROM r2d2_daily_snapshots
+                       WHERE experiment_id=%s AND is_final=TRUE ORDER BY session_date""",
+                    (experiment_id,),
+                ).fetchall()
+            rows = [{"session_date": row[0], "cash_usd": row[1], "is_final": True} for row in found]
+        from .r2d2_live_engine import STATE_KEY, STATE_TYPE
+        checkpoint = (self.database.latest_analysis_snapshot(STATE_TYPE, STATE_KEY) or {}).get("outputs")
+        # from the live book's first session a paused row proves nothing: without a proved close the entry stays pending
+        by_session = {row["session_date"]: row for row in rows if row["session_date"].isoformat() < r2d2_lab_live.BOOK_FIRST_SESSION}
+        for session, cash in r2d2_lab_live.closing_cash(self.database, checkpoint=checkpoint).items():
+            by_session[session] = {"session_date": session, "cash_usd": cash, "is_final": True}
+        return [by_session[session] for session in sorted(by_session)]
 
     def _entry(self, experiment_id: str, session_date: date) -> dict[str, Any] | None:
         if not self.database.database_url:

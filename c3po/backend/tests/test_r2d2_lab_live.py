@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -9,6 +9,7 @@ from app import main as app_main
 from app import r2d2_lab_live
 from app.config import Settings
 from app.database import Database
+from app.schemas import R2D2TrackPoint
 
 TOKEN = "a" * 64
 NEW_YORK = ZoneInfo("America/New_York")
@@ -367,6 +368,92 @@ def test_the_history_survives_the_new_york_date_change_without_a_new_write() -> 
     assert evening.daily_pnl_usd == 627.48 and evening.daily_pnl_date == "2026-10-26"
     assert night.daily_pnl_usd == 0.0 and night.daily_pnl_date == "2026-10-27"  # the new session has not traded yet
     assert night.today_episode_stats.closed_episodes == 0
+
+
+def _closed_session(database, day, *, nav_start, nav, cash=None, **document) -> None:
+    book = _book(nav_start_usd=nav_start, nav_usd=nav, realized_nav_usd=nav, cash_usd=nav if cash is None else cash, positions=[],
+                 as_of=day + "T16:00:00-04:00")
+    close = datetime.fromisoformat(day + "T17:00:00-04:00")
+    r2d2_lab_live.store(database, dict(_payload(day=day), book=book, **document), now=close)
+
+
+def test_a_live_session_replaces_the_paused_books_row_and_counts_once() -> None:
+    """The paused book logged a flat row for every session: the chart and the day scoreboard showed the live sessions flat
+    (-8,011 on 30/10/2026 among them), and the scoreboard counted those days twice."""
+    database = Database(Settings(database_url=""))
+    _closed_session(database, "2026-10-27", nav_start=931176.94, nav=930675.11)
+    _closed_session(database, "2026-10-28", nav_start=930675.11, nav=931000.0)
+    flat = [R2D2TrackPoint(session_date=day, nav_usd=923704.18, daily_pnl_usd=0.0, daily_return_percent=0.0, is_final=True)
+            for day in ("2026-10-26", "2026-10-27", "2026-10-28")]
+    # the T-bill interest of a session posts before it opens: the paused book's row of that day is no point of the live book
+    flat.append(R2D2TrackPoint(session_date="2026-10-29", nav_usd=923809.2, daily_pnl_usd=105.02, daily_return_percent=0.01, is_final=False))
+    base = app_main.r2d2.dashboard()
+    stats = base.stats.model_copy(update={"closed_days": 10, "flat_days": 4, "positive_days": 3, "negative_days": 3, "win_rate_percent": 30.0})
+    shown = r2d2_lab_live.apply_book(base.model_copy(update={"track_record": flat, "stats": stats}), database,
+                                     now=datetime(2026, 10, 29, 1, 0, tzinfo=timezone.utc))
+    assert [point.session_date for point in shown.track_record] == ["2026-10-26", "2026-10-27", "2026-10-28"]
+    assert shown.track_record[0].nav_usd == 923704.18  # a session the live book did not trade keeps its row
+    assert [point.daily_pnl_usd for point in shown.track_record[1:]] == [-501.83, 324.89]
+    assert [point.nav_usd for point in shown.track_record[1:]] == [930675.11, 931000.0]
+    assert (shown.stats.closed_days, shown.stats.flat_days) == (10, 2)  # two flat days out, the same two days in, as they were
+    assert (shown.stats.positive_days, shown.stats.negative_days) == (4, 4)
+    assert shown.stats.win_rate_percent == 40.0
+
+
+def test_the_last_cycle_is_the_last_session_on_a_day_without_one() -> None:
+    """With the old worker retired nobody writes a cycle on a weekend: the footer keeps the last session the book traded."""
+    database = Database(Settings(database_url=""))
+    _closed_session(database, "2026-10-30", nav_start=928474.87, nav=920463.38,
+                    cycle={"candidates": 71, "signals": 508, "entries": 62, "closed": 59})
+    shown = r2d2_lab_live.apply_book(app_main.r2d2.dashboard(), database, now=datetime(2026, 10, 31, 15, 0, tzinfo=timezone.utc))
+    assert shown.last_cycle is not None and shown.last_cycle.status == "completed"
+    assert shown.last_cycle.started_at.astimezone(NEW_YORK).date().isoformat() == "2026-10-30"
+    assert (shown.last_cycle.scanned_count, shown.last_cycle.signal_count) == (71, 508)
+
+
+def test_closing_cash_is_the_book_of_each_finished_session() -> None:
+    database = Database(Settings(database_url=""))
+    _closed_session(database, "2026-10-27", nav_start=1000.0, nav=1000.0, cash=800.0)
+    _closed_session(database, "2026-10-28", nav_start=1000.0, nav=1000.0, cash=900.0)
+    assert r2d2_lab_live.closing_cash(database, now=datetime(2026, 10, 27, 20, 0, tzinfo=timezone.utc)) == {}
+    assert r2d2_lab_live.closing_cash(database, now=datetime(2026, 10, 28, 20, 0, tzinfo=timezone.utc)) == {date(2026, 10, 27): 800.0}
+    assert r2d2_lab_live.closing_cash(database, now=datetime(2026, 10, 29, 10, 0, tzinfo=timezone.utc)) == {
+        date(2026, 10, 27): 800.0, date(2026, 10, 28): 900.0}
+
+
+def test_a_book_published_before_the_close_is_no_closing_cash() -> None:
+    """Codex 6589768753 P2: the checkpoint is saved first, so a failed close leaves an intraday book: a base it would fix for good."""
+    database = Database(Settings(database_url=""))
+    book = _book(nav_start_usd=1000.0, nav_usd=1000.0, realized_nav_usd=1000.0, cash_usd=800.0, positions=[], as_of="2026-10-27T15:59:00-04:00")
+    r2d2_lab_live.store(database, dict(_payload(day="2026-10-27"), book=book), now=datetime(2026, 10, 27, 19, 59, tzinfo=timezone.utc))
+    assert r2d2_lab_live.closing_cash(database, now=datetime(2026, 10, 28, 10, 0, tzinfo=timezone.utc)) == {}
+    _closed_session(database, "2026-10-27", nav_start=1000.0, nav=1000.0, cash=900.0)  # what the next session's reconciliation republishes
+    assert r2d2_lab_live.closing_cash(database, now=datetime(2026, 10, 28, 10, 0, tzinfo=timezone.utc)) == {date(2026, 10, 27): 900.0}
+
+
+def test_the_newest_close_must_agree_with_the_checkpoint() -> None:
+    database = Database(Settings(database_url=""))
+    _closed_session(database, "2026-10-27", nav_start=1000.0, nav=1000.0, cash=800.0)
+    _closed_session(database, "2026-10-28", nav_start=1000.0, nav=1000.0, cash=900.0)
+    morning = datetime(2026, 10, 29, 10, 0, tzinfo=timezone.utc)
+    agreed = {"session": "", "last_session": "2026-10-28", "nav_realized": 950.0, "positions": [{"cost_usd": 50.0}]}
+    assert r2d2_lab_live.closing_cash(database, checkpoint=agreed, now=morning)[date(2026, 10, 28)] == 900.0
+    other = dict(agreed, nav_realized=1000.0)
+    assert r2d2_lab_live.closing_cash(database, checkpoint=other, now=morning) == {date(2026, 10, 27): 800.0}
+
+
+def test_a_session_the_engine_did_not_run_keeps_the_cash_only_with_the_checkpoints_proof() -> None:
+    database = Database(Settings(database_url=""))
+    _closed_session(database, "2026-10-27", nav_start=1000.0, nav=1000.0, cash=800.0)
+    morning = datetime(2026, 10, 30, 10, 0, tzinfo=timezone.utc)
+    quiet = {"session": "", "last_session": "2026-10-27", "nav_realized": 800.0, "positions": []}
+    assert r2d2_lab_live.closing_cash(database, checkpoint=quiet, now=morning) == {
+        date(2026, 10, 27): 800.0, date(2026, 10, 28): 800.0, date(2026, 10, 29): 800.0}
+    assert r2d2_lab_live.closing_cash(database, now=morning) == {date(2026, 10, 27): 800.0}  # no proof: pending
+    running = dict(quiet, session="2026-10-29")  # a session in the state, closed or not, was run
+    assert r2d2_lab_live.closing_cash(database, checkpoint=running, now=morning) == {date(2026, 10, 27): 800.0}
+    later = dict(quiet, last_session="2026-10-29")
+    assert r2d2_lab_live.closing_cash(database, checkpoint=later, now=morning) == {date(2026, 10, 27): 800.0}
 
 
 def test_episodes_are_positions_closed_not_sell_legs() -> None:
