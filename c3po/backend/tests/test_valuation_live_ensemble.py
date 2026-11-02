@@ -603,6 +603,124 @@ def test_the_nightly_run_publishes_one_snapshot_per_market_from_live_reads_and_w
     assert again["markets_pending"] == 0 and again["published"] == 0 and len(http.calls) == calls
 
 
+def _one_series_answers(monkeypatch: pytest.MonkeyPatch, change: dict[str, Any]) -> str:
+    """One name's reads answer with ``change`` once the night's inputs are being gathered (the pin and the volume vote are behind)."""
+    refused = sorted(SYMBOLS)[0]
+    reader = PriceHistoryService.series
+    gather = live.gather_live_inputs
+    gathering: list[bool] = []
+
+    def spy(*args: Any, **kwargs: Any) -> live.LiveInputs:
+        gathering.append(True)
+        return gather(*args, **kwargs)
+
+    def series_of(self: PriceHistoryService, market: str, symbol: str, *, available_before: datetime) -> dict[str, Any]:
+        found = reader(self, market, symbol, available_before=available_before)
+        return {**found, **change} if gathering and symbol == refused else found
+
+    monkeypatch.setattr(live, "gather_live_inputs", spy)
+    monkeypatch.setattr(PriceHistoryService, "series", series_of)
+    return refused
+
+
+def test_one_series_its_publication_declares_unreproducible_costs_that_name_never_the_exchange(monkeypatch: pytest.MonkeyPatch,
+                                                                                                caplog: pytest.LogCaptureFixture) -> None:
+    """Found on 01/11: the producer had never published, because a nightly publication of the market holds names it will not
+    serve and ``PinnedPrices.bars`` refuses the run on the first. The grid keeps that refusal; the night loses the name only."""
+    _on(monkeypatch)
+    monkeypatch.setattr(live, "SERIES_REFUSED_MAX_SHARE", 0.20)  # the fixture's catalogue has six names: one is 16.7%
+    database, http = _live_world()
+    refused = _one_series_answers(monkeypatch, {"status": "vintage_unreproducible", "bars": {}})
+    with caplog.at_level(logging.INFO):
+        summary = live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
+    assert summary["published"] == 1 and summary["failures"] == {} and summary["with_primary_tp"] == len(SYMBOLS) - 1
+    outputs = database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE")["outputs"]
+    assert outputs["counts"]["price_series_refused"] == 1 and outputs["counts"]["price_series_refused_served"] == 1
+    rows = {row["symbol"]: row for row in outputs["records"]}
+    assert rows[refused]["primary_tp"] is None and rows[refused]["origin"] == "not_evaluable:price_series_refused"
+    assert all(row["origin"] == "ensemble" for symbol, row in rows.items() if symbol != refused)
+    assert refused not in "\n".join(record.getMessage() for record in caplog.records)
+    assert refused not in json.dumps(outputs["counts"]) and refused not in json.dumps(outputs["context"])
+    assert outputs["context"]["price_series_refused_sha256"] == live.canonical_sha256([pit.symbol_hash(refused)])
+
+
+def test_a_refused_listed_only_name_says_so_and_never_counts_toward_the_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The limit protects the proxy and the peers, which a listed-only name never enters; and it had bars and filings, so
+    ``no_price_history`` would be false."""
+    database = _wide_world()
+    with monkeypatch.context() as scoped:
+        scoped.setattr(grid_tests, "SYMBOLS", (*SYMBOLS, "GGG"))
+        _canonical_facts(database)
+    _listed(database, (*SYMBOLS, "GGG", "PPP", "ZZZ"))
+    reader = PriceHistoryService.series
+
+    def series_of(self: PriceHistoryService, market: str, symbol: str, *, available_before: datetime) -> dict[str, Any]:
+        found = reader(self, market, symbol, available_before=available_before)
+        return {**found, "status": "vintage_unreproducible", "bars": {}} if symbol == "GGG" else found
+
+    monkeypatch.setattr(PriceHistoryService, "series", series_of)
+    prices = live._LivePinnedPrices(PriceHistoryService(_settings(), database, _NoNetworkHttp()), "NASDAQ", as_of=T,
+                                    pinned_at=VINTAGE_AT + timedelta(seconds=1), pin_mode="explicit")
+    snapshot = database.latest_analysis_snapshot(pit.SOURCE_ANALYSIS_TYPE, pit.MACRO_TREASURY_KEY)
+    assert snapshot is not None
+    curve = pit.curve_package_at(snapshot["outputs"]["payload"], as_of=T, economic_date=pit.economic_date_of("NASDAQ", T))
+    assert curve is not None
+    section = live.compute_live_section(live.gather_live_inputs(database, market="NASDAQ", as_of=T, prices=prices, curve=curve, curve_reference={"origin": "fixture"},
+                                                                targets=_pinned_targets(database), volume_basis="as_traded"))
+    rows = {row["symbol"]: row for row in section["records"]}
+    assert rows["GGG"]["origin"] == "not_evaluable:price_series_refused" and rows["GGG"]["primary_tp"] is None
+    assert section["counts"]["price_series_refused"] == 1 and section["counts"]["price_series_refused_served"] == 0
+    assert section["counts"]["listed_only_coverage"]["no_price_history"] == 1  # ZZZ alone, which really has none
+    assert live.unpublishable(section) is None
+
+
+def test_past_the_limit_of_refused_series_the_exchange_is_not_published(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """A proxy and peers thin enough move the numbers of the clean names, so the section is refused, as a failed night."""
+    _on(monkeypatch)
+    database, http = _live_world()
+    assert live.SERIES_REFUSED_MAX_SHARE == 0.10
+    _one_series_answers(monkeypatch, {"status": "vintage_unreproducible", "bars": {}})  # one of six: over 10%
+    with caplog.at_level(logging.INFO), pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
+    assert database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
+    assert "failures={'section:price_series_refused_share': 1}" in "\n".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.parametrize("change", [
+    {"status": "no_vintage", "bars": {}}, {"status": "manifest_mismatch", "bars": {}}, {"status": "something_new", "bars": {}},
+    {"status": "vintage_mismatch", "bars": {}}, {"status": "bar_hash_mismatch", "bars": {}},  # the store failing its own hash: never one name's matter
+    {"publication_id": "another"},  # a mixed publication under an ok status
+    {"status": "vintage_unreproducible", "bars": {}, "publication_id": "another"},  # and under a status that alone costs the name only
+    {"bars": {"2025-13-45": {}}},  # a bar the calendar cannot place
+], ids=["no_vintage", "manifest_mismatch", "an_unknown_status", "vintage_mismatch", "bar_hash_mismatch", "ok_from_another_publication",
+        "refused_from_another_publication", "a_bad_date"])
+def test_a_pin_that_no_longer_resolves_still_refuses_the_exchange(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+                                                                  change: dict[str, Any]) -> None:
+    _on(monkeypatch)
+    monkeypatch.setattr(live, "SERIES_REFUSED_MAX_SHARE", 0.20)
+    database, http = _live_world()
+    _one_series_answers(monkeypatch, change)  # one name only: this is the refusal of the exchange, never a thin section
+    with caplog.at_level(logging.INFO), pytest.raises(live.LiveEnsembleError, match=r"^markets_not_published:1$"):
+        live.run_nightly(database, _settings(), cast(JsonHttpClient, http), clock=lambda: CLOCK, markets=("NASDAQ",))
+    assert database.latest_analysis_snapshot(live.ANALYSIS_TYPE, "NASDAQ_UNIVERSE") is None
+    assert "failures={'section:PitRerunInputError': 1}" in "\n".join(record.getMessage() for record in caplog.records)
+
+
+def test_the_grid_keeps_refusing_its_run_on_one_series_its_pin_will_not_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    database, _http = _live_world()
+    reader = PriceHistoryService.series
+    refused = sorted(SYMBOLS)[0]
+
+    def series_of(self: PriceHistoryService, market: str, symbol: str, *, available_before: datetime) -> dict[str, Any]:
+        found = reader(self, market, symbol, available_before=available_before)
+        return {**found, "status": "vintage_unreproducible", "bars": {}} if symbol == refused else found
+
+    monkeypatch.setattr(PriceHistoryService, "series", series_of)
+    prices = pit.PinnedPrices(PriceHistoryService(_settings(), database, _NoNetworkHttp()), "NASDAQ", as_of=CLOCK, pinned_at=CLOCK, pin_mode="run_start")
+    with pytest.raises(pit.PitRerunInputError, match="no longer resolves as pinned"):
+        prices.bars(refused)
+
+
 def test_the_volume_basis_is_voted_over_both_exchanges_even_when_one_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     _on(monkeypatch)
     database, http = _live_world()
