@@ -738,10 +738,13 @@ class Engine:
         return self.resumed and self.state.candidates_fixed and not (self.candidates or self.state.positions or self.fills)
 
     def adopt_opening(self, tapes: Mapping[str, Tape]) -> None:
-        """The selection of a lost opening: the same rule on these tapes' opening prints, once. The chosen names' tapes
-        become the session's checkpoint, which the restart then restores."""
+        """The selection of a lost opening: the same rule on these tapes' opening prints, once, and only the prints the
+        selection at the open could have seen (a name that first prints after the window was never a candidate). The chosen
+        names' tapes become the session's checkpoint, which the restart then restores."""
+        window_end = datetime.combine(self.day, OPENING_WINDOW_END, tzinfo=NEW_YORK).timestamp()
         self.state.candidates_fixed = False
-        self.set_candidates({symbol: tape.opening for symbol, tape in tapes.items() if tape.opening is not None})
+        self.set_candidates({symbol: tape.opening for symbol, tape in tapes.items()
+                             if tape.opening is not None and tape.opening_at is not None and tape.opening_at < window_end})
         self.state.stream_context = {symbol: asdict(tapes[symbol]) for symbol in self.candidates}
 
     def step(self, now: datetime, view: Callable[[str], MarketView],

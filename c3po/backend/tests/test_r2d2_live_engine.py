@@ -1997,6 +1997,15 @@ def test_lost_opening_a_restart_selects_by_the_same_rule_and_restores_the_tapes(
     assert groups[0] == ["AAA", "BBB"] and groups[1] == ["AAA"]  # the feed narrows to the candidates, as after a normal open
 
 
+def test_lost_opening_a_name_that_first_printed_after_the_window_was_never_a_candidate() -> None:
+    universe = [Member("AAA", "NASDAQ", 100.0, 50e6), Member("LATE", "NYSE", 100.0, 20e6), Member("EDGE", "NYSE", 100.0, 20e6)]
+    engine = Engine(EngineState(nav_realized=1000.0, session=DAY.isoformat(), candidates_fixed=True), DAY, universe)
+    engine.adopt_opening({"AAA": Tape(opening=98.0, opening_at=_at(9, 30).timestamp()),
+                          "LATE": Tape(opening=92.0, opening_at=_at(9, 47).timestamp()),
+                          "EDGE": Tape(opening=92.0, opening_at=_at(9, 31).timestamp())})
+    assert engine.candidates == {"AAA": pytest.approx(-2.0)} and engine.state.candidates_fixed
+
+
 def test_lost_opening_a_recovery_that_fails_leaves_the_session_as_it_was(monkeypatch, tmp_path, caplog) -> None:
     state, universe = _lost_session(monkeypatch)
     secret = "https://x.test/?apiKey=SECRET"
