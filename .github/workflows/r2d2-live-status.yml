@@ -22,7 +22,7 @@ concurrency:
 jobs:
   status:
     runs-on: ubuntu-latest
-    # no environment: the repository-level host secrets are the PREVIOUS host's (set 17/08/2026, before the 05/09 migration)
+    environment: production  # the current host
     timeout-minutes: 10
     steps:
       - name: Configure deployment SSH key
@@ -36,7 +36,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts || exit 1
           chmod 600 ~/.ssh/known_hosts || exit 1
 
-      - name: Read the previous host, once, read-only
+      - name: Read the AI API costs and the B2 storage, sealed to a one-time key, once
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
@@ -44,30 +44,86 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          # ssh's own errors name the host's address: they go to a private file and only their count is printed
+          # costs never reach this public log in the clear: the result is sealed (X25519 + HKDF-SHA256 + AES-256-GCM) to a
+          # one-time public key whose private half stays on the owner's Mac; ssh's errors (they name the address) stay private
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
-            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2> "$RUNNER_TEMP/ssh_err.txt" || rc=$?
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" "bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2> "$RUNNER_TEMP/ssh_err.txt" || rc=$?
           set -uo pipefail
           exec 2>/dev/null
-          echo "== previous host"
-          awk '{ printf "uptime_days=%d\n", $1 / 86400 }' /proc/uptime
-          free -m | awk '/^Mem:/ { printf "mem_mb total=%d used=%d\n", $2, $3 }'
-          nproc | awk '{ printf "cpus=%d\n", $1 }'
-          df -BG --output=size,used / | awk 'NR == 2 { gsub("G", ""); printf "root_gb size=%d used=%d\n", $1, $2 }'
-          [ -d /opt/chief-of-staff-digital ] && echo "app_dir=present" || echo "app_dir=absent"
-          version=$(cut -c1-12 /opt/chief-of-staff-digital/.deploy-version)
-          [[ "$version" =~ ^[0-9a-f]{12}$ ]] && echo "deploy_version=$version" || echo "deploy_version=none"
-          # every count carries its command's exit status: a denied docker or systemd never reads as "nothing runs"
-          ids=$(timeout 20 docker ps -q); echo "docker_rc=$? containers_running=$(printf '%s' "$ids" | grep -c .)"
-          timeout 20 docker ps --format '{{.Label "com.docker.compose.service"}} up={{.RunningFor}}' | grep -E '^[a-z0-9-]+ up=[A-Za-z0-9 ]+$' | sort
-          timers=$(timeout 20 systemctl list-timers --all --no-legend --full); echo "systemctl_rc=$? c3po_timers=$(printf '%s\n' "$timers" | grep -cE 'c3po|r2d2|valuation|massive|backup|f2s')"
-          cron=$(crontab -l); echo "crontab_rc=$? cron_lines=$(printf '%s\n' "$cron" | grep -cvE '^(#|$)')"
-          echo "cron_d_files=$(find /etc/cron.d -maxdepth 1 -type f ! -name '.placeholder' ! -name 'e2scrub_all' ! -name 'sysstat' ! -name 'popularity-contest' | wc -l)"
-          # wtmp also moves on reboots: lastlog moves only on interactive logins
-          echo "last_login_days=$(( ( $(date +%s) - $(stat -c %Y /var/log/lastlog) ) / 86400 ))"
+          cd /opt/chief-of-staff-digital || exit 10
+          timeout 240 docker compose --env-file .env -f c3po/compose.yml exec -T api python - <<'PY'
+          import base64, json, os, zlib
+          from datetime import datetime, timezone
+          import httpx
+          from cryptography.hazmat.primitives import hashes, serialization
+          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+          from app.config import get_settings
+          s = get_settings()
+          RECIPIENT = "qVcmdAkdoAAG1shtad/wTHt4UA6N4Isyg5/4kEspEDo="
+          out = {"read_at": datetime.now(timezone.utc).isoformat(), "anthropic_admin_set": bool(s.anthropic_admin_api_key),
+                 "openai_admin_set": bool(s.openai_admin_api_key)}
+          def pages(name, url, params, headers):
+              rows, status, query = [], [], dict(params)
+              for _ in range(12):
+                  response = httpx.get(url, params=query, headers=headers, timeout=30.0)
+                  status.append(response.status_code)
+                  if response.status_code != 200:
+                      break
+                  body = response.json()
+                  rows.extend(body.get("data") or [])
+                  following = body.get("next_page")
+                  if not body.get("has_more") or not following:
+                      break
+                  query["page"] = following
+              out[name] = {"status": status, "data": rows}
+          try:
+              if s.anthropic_admin_api_key:
+                  pages("anthropic_cost", "https://api.anthropic.com/v1/organizations/cost_report",
+                        {"starting_at": "2026-09-01T00:00:00Z", "ending_at": "2026-11-04T00:00:00Z", "bucket_width": "1d", "limit": 31},
+                        {"x-api-key": s.anthropic_admin_api_key, "anthropic-version": "2023-06-01"})
+          except Exception as error:
+              out["anthropic_error"] = type(error).__name__
+          try:
+              if s.openai_admin_api_key:
+                  pages("openai_cost", "https://api.openai.com/v1/organization/costs",
+                        {"start_time": int(datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()), "bucket_width": "1d", "limit": 31},
+                        {"Authorization": "Bearer " + s.openai_admin_api_key})
+          except Exception as error:
+              out["openai_error"] = type(error).__name__
+          try:
+              if s.day_d_b2_key_id and s.day_d_b2_application_key and s.day_d_b2_bucket:
+                  import boto3
+                  from botocore.config import Config
+                  client = boto3.client("s3", endpoint_url=s.day_d_b2_endpoint, aws_access_key_id=s.day_d_b2_key_id,
+                                        aws_secret_access_key=s.day_d_b2_application_key, region_name=s.day_d_b2_region,
+                                        config=Config(signature_version="s3v4", retries={"max_attempts": 2}))
+                  total = count = pages_read = 0
+                  for page in client.get_paginator("list_objects_v2").paginate(Bucket=s.day_d_b2_bucket):
+                      pages_read += 1
+                      for item in page.get("Contents") or []:
+                          total, count = total + int(item.get("Size") or 0), count + 1
+                      if pages_read >= 300:
+                          break
+                  out["b2"] = {"objects": count, "bytes": total, "pages": pages_read, "truncated": pages_read >= 300}
+              else:
+                  out["b2"] = "not_configured"
+          except Exception as error:
+              out["b2_error"] = type(error).__name__
+          ephemeral = X25519PrivateKey.generate()
+          shared = ephemeral.exchange(X25519PublicKey.from_public_bytes(base64.b64decode(RECIPIENT)))
+          aes = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"c3po-costs-oneoff").derive(shared)
+          nonce = os.urandom(12)
+          sealed = AESGCM(aes).encrypt(nonce, zlib.compress(json.dumps(out).encode()), None)
+          text = base64.b64encode(ephemeral.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+                                  + nonce + sealed).decode()
+          for start in range(0, len(text), 76):
+              print("E " + text[start:start + 76])
+          print("sealed_chars=%d" % len(text))
+          PY
           exit 0
           REMOTE
           echo "ssh_rc=$rc ssh_err_lines=$(grep -c . "$RUNNER_TEMP/ssh_err.txt")"
-          grep -E '^(== previous host|uptime_days=[0-9]+|mem_mb total=[0-9]+ used=[0-9]+|cpus=[0-9]+|root_gb size=[0-9]+ used=[0-9]+|app_dir=(present|absent)|deploy_version=([0-9a-f]{12}|none)|docker_rc=[0-9]+ containers_running=[0-9]+|[a-z0-9-]+ up=[A-Za-z0-9 ]+|systemctl_rc=[0-9]+ c3po_timers=[0-9]+|crontab_rc=[0-9]+ cron_lines=[0-9]+|cron_d_files=[0-9]+|last_login_days=-?[0-9]+)$' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY" || true
+          grep -E '^(E [A-Za-z0-9+/=]{1,76}|sealed_chars=[0-9]+)$' "$RUNNER_TEMP/out.txt" || true
           exit 0
