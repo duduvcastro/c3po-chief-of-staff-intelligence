@@ -1237,19 +1237,20 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 7 from 02/11/2026: the buy signal's trades on Massive's stream, the rule unchanged; version 6 from 02/11/2026
+    # version 8 from 04/11/2026 (owner 03/11): the lock's steps every 0.05 from +0.10 (TIT-2S5-F20-L5); version 7 from
+    # 02/11/2026: the buy signal's trades on Massive's stream, the rule unchanged; version 6 from 02/11/2026
     # (owner, 31/10): the sizes by the spread paid, the stop at -0.20% and the lock's steps
     # +0.10 / +0.20 / every 0.15; version 5 the close mode and the size rule as parameters; version 4 entries until the
     # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
     # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 7, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 8, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat(), "trade_source": TRADE_SOURCE},
         "The live R2D2 inside the C3PO server on a real-time stream (owner 27/10/2026), Massive's for the buy signal's "
         "trades since 02/11/2026; entries every second and "
         "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
-        "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps), the stop at -0.20% and the step profit lock +0.10 / +0.20 / every 0.15 "
-        "(owner 31/10/2026)")
+        "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps) and the stop at -0.20% (owner 31/10/2026); the step profit lock from "
+        "+0.10, every 0.05 (owner 03/11/2026)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
