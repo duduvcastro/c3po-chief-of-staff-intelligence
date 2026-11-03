@@ -304,8 +304,12 @@ class ChewieFundamentalsPdfRenderer:
             lines.append("• Blend do screener noturno: múltiplos validados no ciclo canônico diário.")
         if payload.get("fmp_consensus"):
             lines.append("• FMP: consenso de preço-alvo dos analistas.")
-        if payload.get("news_sentiment"):
-            lines.append("• Finnhub: sentimento agregado de notícias.")
+        sentiment = payload.get("news_sentiment")
+        if sentiment:  # the stored weekly row names its source: Massive since 03/11/2026, Finnhub before
+            lines.append("• " + {
+                "massive": "Massive: sentimento semanal de notícias (insights por artigo, últimos 7 dias).",
+                "finnhub": "Finnhub: sentimento agregado de notícias.",
+            }.get(str(sentiment.get("source") or ""), "Sentimento semanal de notícias."))
         lines.append("• Massive/EODHD intraday não participam: fundamentos apenas.")
         paragraph = Paragraph("<br/>".join(escape(line) for line in lines), self.styles["small"])
         _, used = paragraph.wrap(w - 24, h - 34)

@@ -1062,7 +1062,7 @@ class ValuationChangeResponse(BaseModel):
 
 
 class InvestorRelationsSourceHealth(BaseModel):
-    code: Literal["cvm", "sec", "ri", "massive", "finnhub"]
+    code: Literal["cvm", "sec", "ri", "massive"]  # the sources polled; Finnhub's left with the contract (owner 03/11/2026)
     name: str
     status: Literal["healthy", "attention", "unconfigured"]
     last_success_at: datetime | None = None

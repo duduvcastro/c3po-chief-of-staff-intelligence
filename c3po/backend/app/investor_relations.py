@@ -33,7 +33,8 @@ from .database import Database
 from .investor_relations_pdf import InvestorRelationsPdf
 from .market_data.eodhd import EodhdClient
 from .market_data.finnhub import FinnhubClient
-from .market_data.http import JsonHttpClient
+from .market_data.http import DeadlineJsonHttpClient, JsonHttpClient
+from .market_data.massive import MassiveClient
 from .official_fundamentals import save_official_fundamentals
 from .official_statements import save_official_statements
 from .sec_xbrl import (
@@ -83,8 +84,19 @@ SEC_FULLTEXT_KEYWORDS = (
 SEC_FULLTEXT_LOOKBACK_DAYS = 14
 SEC_FULLTEXT_CIK_BATCH_SIZE = 40
 FINNHUB_INSIDER_LOOKBACK_DAYS = 90
-FINNHUB_NEWS_LOOKBACK_DAYS = 7
-FINNHUB_NEWS_KEYWORDS = (
+# The weekly news sentiment of the watched US companies (owner 03/11/2026: Finnhub is cut, "usar a Massive"): Massive's
+# /v2/reference/news, in the Stocks Advanced plan already paid (no per-call cost), tags each article with per-ticker
+# insights -- positive, negative or neutral, with the model's reasoning. Probe of 03/11/2026 on the 17 watched US names:
+# 14 had insights in the last 7 days (median 17 a name; 213 positive, 53 negative, 241 neutral).
+MASSIVE_NEWS_LOOKBACK_DAYS = 7
+MASSIVE_NEWS_PAGE_SIZE = 100  # articles a page, as the probe read them
+MASSIVE_NEWS_MAX_PAGES = 10  # at most 1,000 articles a name a run; a longer listing is cut there and counted as truncated
+MASSIVE_NEWS_TIMEOUT_SECONDS = 15.0  # each page one complete response (DeadlineJsonHttpClient), no retry: the next run re-reads the week
+MASSIVE_NEWS_SENTIMENTS = ("positive", "negative", "neutral")
+MASSIVE_NEWS_FALLBACK_URL = "https://massive.com"  # a sentiment row's link when none of its articles carries a URL
+# "News Mention" rows: only articles carrying one of these words in the title or description (Finnhub's company news had
+# the same gate: no server-side relevance filter, and every routine article would flood ir_events)
+NEWS_MENTION_KEYWORDS = (
     "guidance", "acquisition", "merger", "earnings", "upgrade", "downgrade",
     "lawsuit", "recall", "restructuring", "layoffs", "investigation", "buyback",
 )
@@ -193,6 +205,160 @@ def date_at_midnight(value: str) -> datetime:
     return datetime.combine(date.fromisoformat(value[:10]), time.min, tzinfo=SAO_PAULO)
 
 
+def massive_published_at(value: Any) -> datetime | None:
+    """A Massive article's ``published_utc`` (RFC 3339, "…Z") as an aware instant; None when absent or unreadable."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def massive_ticker_sentiment(article: dict[str, Any], ticker: str) -> str | None:
+    """The label of the article's insight about ``ticker`` (Massive's spelling: BRK.B): the first insight whose ticker IS
+    it with a label Massive documents (positive, negative, neutral). None when the article carries no such insight — an
+    article tagged with many tickers says nothing about the names it gives no insight on."""
+    insights = article.get("insights")
+    if not isinstance(insights, list):
+        return None
+    for insight in insights:
+        if not isinstance(insight, dict) or str(insight.get("ticker") or "").strip().upper().replace("-", ".") != ticker:
+            continue
+        label = str(insight.get("sentiment") or "").strip().lower()
+        if label in MASSIVE_NEWS_SENTIMENTS:
+            return label
+    return None
+
+
+def massive_news_events(
+    symbol: str,
+    company_id: Any,
+    company_name: str,
+    articles: list[dict[str, Any]],
+    *,
+    since: datetime,
+    now: datetime,
+    truncated: bool = False,
+) -> list[dict[str, Any]]:
+    """The Investor Relations rows of ONE watched US name from its Massive articles (owner 03/11/2026: Finnhub is cut).
+    An article counts once (by id), only when published at or after ``since`` (the window's exact instant: the request
+    sends its date) and only when it carries an insight about the name (``massive_ticker_sentiment``; BRK-B is read as
+    Massive's BRK.B):
+
+    * ONE "News Sentiment" row for the ISO week of ``now`` (UTC): ``massive-sentiment-<SYMBOL>-<YYYY>-W<WW>`` — Finnhub's
+      convention under its own prefix, refreshed by every run of the week — on the scale the One Pager reads, percents of
+      0-100 as Finnhub's rows were stored (``_sentiment_confidence_adjustment`` divides bullish − bearish by 100):
+      bullish = 100·pos/(pos+neg), bearish = 100·neg/(pos+neg), one decimal as Finnhub's; ``articles_last_week`` = the
+      articles with an insight about the name (neutral ones included: the One Pager's coverage weight), with the three
+      counts and ``source: "massive"``. With no positive or negative insight there is NO row: a 0/0 split says nothing,
+      and the readers then hold no sentiment for the name this week (the One Pager adjusts by 0);
+    * a "News Mention" row per such article whose title or description carries a NEWS_MENTION_KEYWORDS word, the gate
+      Finnhub's company news had (``massive-news-<SYMBOL>-<article id>``: an article about two watched names is a row of
+      each)."""
+    ticker = MassiveClient.news_ticker(symbol)
+    counts = dict.fromkeys(MASSIVE_NEWS_SENTIMENTS, 0)
+    seen: set[str] = set()
+    newest: tuple[datetime, str] | None = None
+    collected_at = datetime.now().astimezone()
+    mentions: list[dict[str, Any]] = []
+    for article in articles:
+        if not isinstance(article, dict):
+            continue
+        article_id = clean_text(str(article.get("id") or ""))
+        published_at = massive_published_at(article.get("published_utc"))
+        if not article_id or article_id in seen or published_at is None or published_at < since:
+            continue
+        label = massive_ticker_sentiment(article, ticker)
+        if label is None:
+            continue
+        seen.add(article_id)
+        counts[label] += 1
+        url = str(article.get("article_url") or "").strip()
+        url = url if url.startswith(("https://", "http://")) else ""
+        if url and (newest is None or published_at > newest[0]):
+            newest = (published_at, url)
+        title = clean_text(str(article.get("title") or ""))
+        description = clean_text(str(article.get("description") or ""))
+        matched = [keyword for keyword in NEWS_MENTION_KEYWORDS if keyword in f"{title} {description}".lower()]
+        if not matched or not title or not url:
+            continue
+        publisher = article.get("publisher") if isinstance(article.get("publisher"), dict) else {}
+        mentions.append({
+            "source_code": "massive",
+            "external_id": f"massive-news-{symbol}-{article_id}",
+            "company_id": company_id,
+            "market": "US",
+            "symbol": symbol,
+            "company_name": company_name,
+            "regulator_id": None,
+            "event_type": "News Mention",
+            "form": None,
+            "title": title,
+            "summary": f"{(description or title)[:500]} (menções: {', '.join(matched)})",
+            "published_at": published_at,
+            "published_time_precision": "datetime",
+            "reference_date": published_at.date(),
+            "official_url": url,
+            "document_url": url,
+            "materiality": "low",
+            "valuation_relevant": False,
+            "valuation_status": "informational",
+            "raw_metadata": {
+                "source": "massive", "matched_keywords": matched, "sentiment": label,
+                "article_source": clean_text(str((publisher or {}).get("name") or "")),
+            },
+            "collected_at": collected_at,
+        })
+    positive, negative, neutral = counts["positive"], counts["negative"], counts["neutral"]
+    if not positive + negative:
+        return mentions
+    bullish = round(100 * positive / (positive + negative), 1)
+    bearish = round(100 * negative / (positive + negative), 1)
+    articles_last_week = positive + negative + neutral
+    iso_year, iso_week, _ = now.astimezone(timezone.utc).isocalendar()
+    sentiment = {
+        "source_code": "massive",
+        "external_id": f"massive-sentiment-{symbol}-{iso_year}-W{iso_week:02d}",
+        "company_id": company_id,
+        "market": "US",
+        "symbol": symbol,
+        "company_name": company_name,
+        "regulator_id": None,
+        "event_type": "News Sentiment",
+        "form": None,
+        "title": f"Sentimento de notícias: {bullish:.0f}% bullish",
+        "summary": (
+            f"{bullish:.0f}% bullish / {bearish:.0f}% bearish nos artigos com insight Massive sobre o ticker; "
+            f"{positive} positivos, {negative} negativos e {neutral} neutros em {articles_last_week} artigos "
+            f"nos últimos {MASSIVE_NEWS_LOOKBACK_DAYS} dias."
+        ),
+        "published_at": now,
+        "published_time_precision": "collected",
+        "reference_date": now.date(),
+        "official_url": newest[1] if newest else MASSIVE_NEWS_FALLBACK_URL,
+        "document_url": None,
+        "materiality": "low",
+        "valuation_relevant": False,
+        "valuation_status": "informational",
+        "raw_metadata": {
+            "source": "massive",
+            "bullish_percent": bullish,
+            "bearish_percent": bearish,
+            "articles_last_week": articles_last_week,
+            "positive": positive,
+            "negative": negative,
+            "neutral": neutral,
+            "window_start": since.isoformat(),
+            "truncated": truncated,
+        },
+        "collected_at": collected_at,
+    }
+    return [sentiment, *mentions]
+
+
 class LinkCollector(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -245,11 +411,13 @@ class InvestorRelationsService:
         self._sec_header_failures: dict[str, tuple[int, datetime]] = {}  # accession -> (failed reads, next attempt)
         self._sec_contact_warned = False
         self._asfiled_ingestor: SecXbrlIngestor | None = None
+        # Finnhub is cut (owner 03/11/2026): its token is blank in every service, so the insider step reads EODHD's Form 4
         self.finnhub = FinnhubClient(settings.finnhub_base_url, settings.finnhub_api_token, self.client)
         self.eodhd = EodhdClient(
             settings.eodhd_base_url, settings.eodhd_api_token,
             JsonHttpClient(timeout=30.0, max_retries=2, client=self.client),
         )
+        self.massive_news: MassiveClient | None = None  # the news sentiment's client, built on first use (_massive_news_client)
 
     def _sec_fair_access(self, request: httpx.Request) -> None:
         """Every SEC request of this client waits on the process-wide fair-access limiter shared with the as-filed
@@ -327,7 +495,8 @@ class InvestorRelationsService:
         )
 
     def sync(self, source: str = "all") -> InvestorRelationsSyncResponse:
-        selected = ("cvm", "sec", "ri", "finnhub") if source == "all" else (source,)
+        # "massive": the weekly news sentiment, Finnhub's place in "all" since the owner cut it (03/11/2026)
+        selected = ("cvm", "sec", "ri", "massive") if source == "all" else (source,)
         read = 0
         written = 0
         states: dict[str, str] = {}
@@ -341,8 +510,8 @@ class InvestorRelationsService:
                     source_read, source_written = self.sync_sec()
                 elif code == "ri":
                     source_read, source_written = self.sync_ri()
-                elif code == "finnhub":
-                    source_read, source_written = self.sync_finnhub_news()
+                elif code == "massive":
+                    source_read, source_written = self.sync_massive_news()
                 elif code == "sec_asfiled":
                     source_read, source_written = self.sync_sec_asfiled()
                 else:
@@ -908,6 +1077,8 @@ class InvestorRelationsService:
         avoids touching the Literal["cvm","sec","ri"] type shared elsewhere.
         Best-effort: a missing API token or any request failure returns []
         rather than breaking sync_sec()'s submissions-based sync around it.
+        Finnhub is cut (owner 03/11/2026): its token is blank in every
+        service, so this returns [] and EODHD's Form 4 below is the path.
         """
         if not self.settings.finnhub_api_token:
             return []
@@ -1018,126 +1189,72 @@ class InvestorRelationsService:
             })
         return events
 
-    def sync_finnhub_news(self) -> tuple[int, int]:
-        """News sentiment (one snapshot per company per ISO week) and keyword-
-        matched company news for the same watched US companies -- source_code
-        "finnhub" (db/020_ir_events_finnhub_source.sql), separate from "sec"
-        since this isn't SEC-derived data, unlike insider transactions.
-        """
-        run_id = self.database.begin_ingestion_run("finnhub", "Finnhub", "market_sentiment", {"operation": "news_and_sentiment"})
+    def sync_massive_news(self) -> tuple[int, int]:
+        """The weekly news sentiment of the watched US companies from Massive's news API (owner 03/11/2026: Finnhub is cut,
+        "usar a Massive") -- source_code "massive" (db/056_ir_events_massive_source.sql), as Finnhub's was its own source
+        since market news is not SEC-derived. The same names Finnhub read: the active watched US companies. For each, the
+        articles of the last MASSIVE_NEWS_LOOKBACK_DAYS days (at most MASSIVE_NEWS_MAX_PAGES pages, each one complete
+        response within MASSIVE_NEWS_TIMEOUT_SECONDS), turned into its weekly "News Sentiment" row and "News Mention" rows
+        by ``massive_news_events``. A name that cannot be read is counted and skipped -- the row an earlier run of the week
+        wrote stays -- and only its symbol and the error's class are logged: a provider message may carry the request URL,
+        so neither it, the token nor a URL ever reaches a log or the run's summary. Some names unread: a 'partial' run;
+        none read: a failed run (``sync`` records it and carries on with the other sources). Without a Massive token:
+        nothing is read."""
+        run_id = self.database.begin_ingestion_run("massive", "Massive", "market_sentiment", {"operation": "news_sentiment"})
         try:
-            if not self.settings.finnhub_api_token:
+            if not self.settings.massive_api_token:
                 self.database.finish_ingestion_run(run_id, "succeeded", 0, 0)
                 return 0, 0
             watched = {item["symbol"]: item for item in self.database.ir_watch_symbols() if item["market"] == "US"}
-            since = (datetime.now(timezone.utc) - timedelta(days=FINNHUB_NEWS_LOOKBACK_DAYS)).date()
-            until = datetime.now(timezone.utc).date()
+            now = datetime.now(timezone.utc)
+            since = now - timedelta(days=MASSIVE_NEWS_LOOKBACK_DAYS)
             read = 0
+            failed: list[str] = []
+            truncated: list[str] = []
             events: list[dict[str, Any]] = []
             for symbol in sorted(watched):
-                company = self._company_for_symbol("US", symbol)
-                company_name = clean_text(str(watched[symbol].get("company_name") or symbol))
-                events.extend(self._finnhub_sentiment_event(symbol, company, company_name))
-                articles = self._finnhub_news_events(symbol, company, company_name, since, until)
+                try:
+                    articles, cut = self._massive_news_client().news(
+                        symbol, published_since=since, limit=MASSIVE_NEWS_PAGE_SIZE, max_pages=MASSIVE_NEWS_MAX_PAGES,
+                    )
+                    company = self._company_for_symbol("US", symbol)
+                    company_name = clean_text(str(watched[symbol].get("company_name") or symbol))
+                    events.extend(massive_news_events(
+                        symbol, company.get("id") if company else None, company_name, articles,
+                        since=since, now=now, truncated=cut,
+                    ))
+                except Exception as exc:
+                    failed.append(symbol)
+                    logger.warning("Massive news: %s not read (%s)", symbol, type(exc).__name__)
+                    continue
                 read += len(articles)
-                events.extend(articles)
+                if cut:
+                    truncated.append(symbol)
             written = self.database.save_ir_events(events)
-            self.database.finish_ingestion_run(run_id, "succeeded", read, written)
+            sentiment_rows = sum(event["event_type"] == "News Sentiment" for event in events)
+            self.database.update_ingestion_run_metadata(run_id, {
+                "names": len(watched), "failed_symbols": failed, "truncated_symbols": truncated,
+                "sentiment_rows": sentiment_rows, "mention_rows": len(events) - sentiment_rows,
+            })
+            if watched and len(failed) == len(watched):
+                raise RuntimeError(f"Massive news: none of the {len(watched)} watched US names could be read")
+            warning = f"Massive news: {len(failed)} of {len(watched)} watched US names not read" if failed else None
+            self.database.finish_ingestion_run(run_id, "partial" if failed else "succeeded", read, written, warning)
             return read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
 
-    def _finnhub_sentiment_event(
-        self, symbol: str, company: dict[str, Any] | None, company_name: str,
-    ) -> list[dict[str, Any]]:
-        """One event per company per ISO week (external_id keyed by
-        year+week), so polling every 15 minutes doesn't spam the feed with
-        near-duplicate snapshots -- save_ir_events upserts on
-        (source_code, external_id), so re-running this same week just
-        refreshes the one row instead of creating a new one.
-        """
-        try:
-            sentiment = self.finnhub.news_sentiment(symbol)
-        except Exception:
-            return []
-        if not sentiment:
-            return []
-        now = datetime.now(timezone.utc)
-        iso_year, iso_week, _ = now.isocalendar()
-        bullish = sentiment["bullish_percent"]
-        bearish = sentiment["bearish_percent"]
-        return [{
-            "source_code": "finnhub",
-            "external_id": f"finnhub-sentiment-{symbol}-{iso_year}-W{iso_week:02d}",
-            "company_id": company.get("id") if company else None,
-            "market": "US",
-            "symbol": symbol,
-            "company_name": company_name,
-            "regulator_id": None,
-            "event_type": "News Sentiment",
-            "form": None,
-            "title": f"Sentimento de notícias: {bullish:.0f}% bullish",
-            "summary": (
-                f"{bullish:.0f}% bullish / {bearish:.0f}% bearish nos artigos recentes; "
-                f"{sentiment['articles_last_week']} artigos na última semana."
-            ),
-            "published_at": now,
-            "published_time_precision": "collected",
-            "reference_date": now.date(),
-            "official_url": f"https://finnhub.io/quote/{symbol}",
-            "document_url": None,
-            "materiality": "low",
-            "valuation_relevant": False,
-            "valuation_status": "informational",
-            "raw_metadata": {"source": "finnhub", **sentiment},
-            "collected_at": datetime.now().astimezone(),
-        }]
-
-    def _finnhub_news_events(
-        self, symbol: str, company: dict[str, Any] | None, company_name: str, since: date, until: date,
-    ) -> list[dict[str, Any]]:
-        """Company news filtered to FINNHUB_NEWS_KEYWORDS -- Finnhub's feed has
-        no server-side relevance filter, and ingesting every routine article
-        would flood ir_events with noise the whole system is designed to
-        avoid (see feed()'s methodology text). Same keyword-gating philosophy
-        as _enrich_with_sec_fulltext, just for a different data source.
-        """
-        try:
-            articles = self.finnhub.company_news(symbol, since=since, until=until)
-        except Exception:
-            return []
-        events = []
-        for article in articles:
-            haystack = f"{article['headline']} {article['summary']}".lower()
-            matched = [keyword for keyword in FINNHUB_NEWS_KEYWORDS if keyword in haystack]
-            if not matched:
-                continue
-            summary = (article["summary"] or article["headline"])[:500]
-            events.append({
-                "source_code": "finnhub",
-                "external_id": f"finnhub-news-{article['article_id']}",
-                "company_id": company.get("id") if company else None,
-                "market": "US",
-                "symbol": symbol,
-                "company_name": company_name,
-                "regulator_id": None,
-                "event_type": "News Mention",
-                "form": None,
-                "title": article["headline"],
-                "summary": f"{summary} (menções: {', '.join(matched)})",
-                "published_at": article["published_at"],
-                "published_time_precision": "datetime",
-                "reference_date": article["published_at"].date(),
-                "official_url": article["url"] or f"https://finnhub.io/quote/{symbol}",
-                "document_url": article["url"],
-                "materiality": "low",
-                "valuation_relevant": False,
-                "valuation_status": "informational",
-                "raw_metadata": {"source": "finnhub", "matched_keywords": matched, "article_source": article["source"]},
-                "collected_at": datetime.now().astimezone(),
-            })
-        return events
+    def _massive_news_client(self) -> MassiveClient:
+        """The news sentiment's Massive client, built on first use: a misconfigured base URL fails the run, never the
+        service. Each request is one complete response bounded by MASSIVE_NEWS_TIMEOUT_SECONDS, with no retry, and its
+        failure carries only the error's class (DeadlineJsonHttpClient); Massive's own errors are redacted of the key."""
+        if self.massive_news is None:
+            self.massive_news = MassiveClient(
+                self.settings.massive_base_url, self.settings.massive_api_token,
+                DeadlineJsonHttpClient(timeout=MASSIVE_NEWS_TIMEOUT_SECONDS),
+            )
+        return self.massive_news
 
     def sync_ri(self) -> tuple[int, int]:
         run_id = self.database.begin_ingestion_run("ri", "Issuer Investor Relations", "issuer_relations", {"operation": "official_pages"})
@@ -1851,15 +1968,16 @@ class InvestorRelationsService:
             "cvm": ("CVM Dados Abertos", "Fatos, comunicados, ITR/DFP and issuer documents"),
             "sec": ("SEC EDGAR", "US filings with real-time EDGAR acceptance timestamps"),
             "ri": ("Issuer RI", "Official issuer pages configured in the watchlist"),
-            "finnhub": ("Finnhub", "US news sentiment and company news (Fundamental-1 plan)"),
+            # Finnhub's place since the owner cut it (03/11/2026); its rows stay in the feed under their own source
+            "massive": ("Massive", "US weekly news sentiment and news mentions from article insights (Stocks Advanced plan)"),
         }
         output = []
         for code, (name, detail) in definitions.items():
             state = health.get(code, {})
             if code == "ri":
                 configured = any(item.get("ri_url") for item in self.database.list_ir_companies())
-            elif code == "finnhub":
-                configured = bool(self.settings.finnhub_api_token)
+            elif code == "massive":
+                configured = bool(self.settings.massive_api_token)
             else:
                 configured = True
             status = "unconfigured" if not configured else "healthy" if state.get("last_status") == "succeeded" else "attention"

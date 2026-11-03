@@ -1446,7 +1446,7 @@ def investor_relations_feed(
 
 @app.post("/api/v1/investor-relations/sync", response_model=InvestorRelationsSyncResponse)
 def sync_investor_relations(
-    source: str = Query(default="all", pattern=r"^(all|cvm|sec|ri|finnhub)$"),
+    source: str = Query(default="all", pattern=r"^(all|cvm|sec|ri|massive)$"),  # massive: the news sentiment, Finnhub's place (03/11/2026)
 ) -> InvestorRelationsSyncResponse:
     response = investor_relations.sync(source)
     ir_valuation_processor.process()

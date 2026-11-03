@@ -633,10 +633,10 @@ def test_the_asfiled_poll_extends_the_sec_polling_to_the_valuation_universe(monk
     monkeypatch.setattr(ir, "sync_cvm", lambda: selected.append("cvm") or (0, 0))
     monkeypatch.setattr(ir, "sync_sec", lambda: selected.append("sec") or (0, 0))
     monkeypatch.setattr(ir, "sync_ri", lambda: selected.append("ri") or (0, 0))
-    monkeypatch.setattr(ir, "sync_finnhub_news", lambda: selected.append("finnhub") or (0, 0))
+    monkeypatch.setattr(ir, "sync_massive_news", lambda: selected.append("massive") or (0, 0))  # Finnhub's place (03/11/2026)
     monkeypatch.setattr(ir, "sync_sec_asfiled", lambda: selected.append("sec_asfiled") or (0, 0))
     ir.sync("all")
-    assert selected == ["cvm", "sec", "ri", "finnhub"]  # the heavy pass is the IR worker's own source, never part of "all"
+    assert selected == ["cvm", "sec", "ri", "massive"]  # the heavy pass is the IR worker's own source, never part of "all"
     read, written = original()
     assert read == 1 and written > 7
     assert {row["doc_id"] for row in StatementVintageStore(database).filings("US")} >= {TEN_K, EIGHT_K}

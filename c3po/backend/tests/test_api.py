@@ -328,3 +328,15 @@ def test_leah_sync_guard_rejections_map_to_retry_after_responses(monkeypatch) ->
     assert busy.headers["retry-after"] == "30"
     assert ok.status_code == 200
     assert ok.json()["items"] == []
+
+
+def test_the_investor_relations_routes_take_massive_and_keep_the_finnhub_history_filterable() -> None:
+    # owner 03/11/2026: Finnhub is cut. The feed (and its report) filter 'massive' and still 'finnhub', whose rows stay; the
+    # source health lists Massive in Finnhub's place; a manual sync of 'finnhub' is refused before anything runs
+    with TestClient(app) as client:
+        for source in ("massive", "finnhub"):
+            response = client.get("/api/v1/investor-relations", params={"source": source})
+            assert response.status_code == 200, source
+        assert [item["code"] for item in response.json()["sources"]] == ["cvm", "sec", "ri", "massive"]
+        assert client.get("/api/v1/investor-relations", params={"source": "fmp"}).status_code == 422
+        assert client.post("/api/v1/investor-relations/sync", params={"source": "finnhub"}).status_code == 422
