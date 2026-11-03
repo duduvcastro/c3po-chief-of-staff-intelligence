@@ -133,6 +133,25 @@ def test_the_step_lock_sells_when_the_profit_falls_to_its_floor(peak: float, hol
     assert abs(fills[0]["realized_return_percent"] - sell) < 1e-6
 
 
+def test_a_session_keeps_the_lock_ladder_of_its_own_rule() -> None:
+    """Codex 6616267525: the republish of a TIT-2S5-F20 session (03/11) prices its stops and its lock on ITS ladder (+0.10,
+    +0.20, then every 0.15), never on the rule in force (every 0.05); a label-less checkpoint takes the rule in force."""
+    floor = engine_module.lock_floor
+    assert [round(floor(p, "TIT-2S5-F20"), 10) for p in (0.17, 0.27, 0.40)] == [0.10, 0.20, 0.35]
+    assert [round(floor(p, engine_module.CONFIG), 10) for p in (0.17, 0.27, 0.40)] == [0.15, 0.25, 0.40]
+    assert floor(0.17, "") == floor(0.17) == floor(0.17, engine_module.CONFIG)
+    engine = _engine()
+    engine.state.config = "TIT-2S5-F20"  # the session being republished ran under the earlier rule
+    position, bid = _held(engine, "S2")
+    assert _mark(engine, "S2", _at(10, 0), bid(0.17)) == [] and position.armed
+    stop = engine.book(_at(10, 0))["positions"][0]["stop_price"]
+    assert abs(position.net_percent(stop) - 0.10) < 1e-9  # F20's floor for a +0.17 peak, not L5's +0.15
+    assert abs(engine.marks()[0]["stop_percent"] - 0.10) < 1e-9
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(0.12)) == []  # above F20's floor: held (L5 would have sold under +0.15)
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(0.09))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
+
+
 def test_a_carried_position_is_armed_by_its_net_never_by_a_peak_of_the_earlier_rule() -> None:
     """Pre-review: a negative position carried from the +0.15% rule with a peak of +0.12% was never armed; under the new
     rule it must not be armed (and sold as a 'lock' at a loss) by that stored peak — only when its net reaches +0.10%."""

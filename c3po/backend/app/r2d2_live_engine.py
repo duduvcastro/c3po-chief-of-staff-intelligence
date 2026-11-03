@@ -680,13 +680,21 @@ def size_weight(spread_bps: float, rule: str | None = None) -> float:
     return 1.0
 
 
-def lock_floor(peak: float) -> float:
+# the lock's ladder of each rule label as (min, step, wide_from, wide_step): a session keeps the ladder it ran under, so the
+# republish of an earlier session (reconcile_previous) prices its stops by ITS rule, never the one in force (Codex
+# 6616267525); a label without an entry takes the rule in force
+LOCK_LADDERS: dict[str, tuple[float, float, float, float]] = {
+    "TIT-2S5-F20": (0.10, 0.10, 0.20, 0.15),  # 02-03/11: +0.10, +0.20, then every 0.15
+    CONFIG: (RULE["lock_min_percent"], RULE["lock_step_percent"], RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]),
+}
+
+
+def lock_floor(peak: float, config: str | None = None) -> float:
     """The armed lock's floor: the last step the peak reached ("no degrau"): from ``lock_min_percent`` every
     ``lock_step_percent`` up to ``lock_wide_from_percent``, then every ``lock_wide_step_percent`` (owner 03/11: every 0.05 —
     +0.10, +0.15, +0.20, +0.25 ...; 02-03/11: +0.10, +0.20, +0.35, +0.50 ...; until then every 0.05 to +0.30, then 0.10). A
-    peak a hair under a step (float error) still counts it."""
-    low, step = RULE["lock_min_percent"], RULE["lock_step_percent"]
-    wide_from, wide_step = RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]
+    peak a hair under a step (float error) still counts it. ``config``: the rule label of the session (its own ladder)."""
+    low, step, wide_from, wide_step = LOCK_LADDERS.get(config or CONFIG, LOCK_LADDERS[CONFIG])
     reached = peak + 1e-9  # one tolerance for the band and the step (pre-review: two made a gap just under +0.30%)
     if reached < wide_from:
         return low + step * math.floor((reached - low) / step)
@@ -709,10 +717,11 @@ class Position:
     def net_percent(self, bid: float) -> float:
         return (self.shares * bid * (1 - FEE_SIDE) / self.cost_usd - 1) * 100
 
-    def exit_price(self) -> float:
-        """The bid at which the rule sells now: the armed lock's floor (``lock_floor`` of the peak), else the stop —
-        the level the screen shows as the position's stop (owner 29/10: "o stop não tá mexendo")."""
-        floor = lock_floor(self.peak_percent or RULE["lock_min_percent"]) if self.armed else -RULE["stop_percent"]
+    def exit_price(self, config: str | None = None) -> float:
+        """The bid at which the rule sells now: the armed lock's floor (``lock_floor`` of the peak, on the ladder of the
+        session's rule ``config``), else the stop — the level the screen shows as the position's stop (owner 29/10: "o stop
+        não tá mexendo")."""
+        floor = lock_floor(self.peak_percent or RULE["lock_min_percent"], config) if self.armed else -RULE["stop_percent"]
         return self.cost_usd * (1 + floor / 100) / (self.shares * (1 - FEE_SIDE))
 
 
@@ -1035,7 +1044,7 @@ class Engine:
             row["peak"] = net if row["peak"] is None else max(row["peak"], net)
             if net >= RULE["lock_min_percent"]:
                 row["armed"] = True
-            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"]))
+            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"], self.state.config))
                     or (late and (net > 0 or RULE["close_flat"]))):
                 self._shadow_close(symbol, net)
 
@@ -1070,11 +1079,12 @@ class Engine:
                 continue
             marked = self.marked_moment.get(symbol)
             # the level the rule sells at, as the net of a sale there: the lock's floor once armed, else the stop
-            level = lock_floor(position.peak_percent or RULE["lock_min_percent"]) if position.armed else -RULE["stop_percent"]
+            level = (lock_floor(position.peak_percent or RULE["lock_min_percent"], self.state.config) if position.armed
+                     else -RULE["stop_percent"])
             # the position's own identity (its opening, shares and cost): the screen lays a mark only on the very position
             # it was taken of — never on a re-buy of the same ticker, nor a re-buy's mark on the sold one (Codex 6528658844)
             rows.append({"symbol": symbol, "bid": position.last_mark, "net_percent": position.net_percent(position.last_mark),
-                         "armed": position.armed, "stop_price": position.exit_price(), "stop_percent": level,
+                         "armed": position.armed, "stop_price": position.exit_price(self.state.config), "stop_percent": level,
                          "marked_at": marked.isoformat() if marked is not None else None,
                          # rounded exactly as the published book rounds them (Engine.document): the same position, the same
                          # numbers (pre-review of eb72ce47)
@@ -1122,19 +1132,19 @@ class Engine:
         reason = None
         if net <= -RULE["stop_percent"]:
             reason = "hard_stop"
-        elif position.armed and net <= lock_floor(position.peak_percent):
+        elif position.armed and net <= lock_floor(position.peak_percent, self.state.config):
             reason = "lock"
         elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and net > 0:
             reason = "t30_positive"
         elif moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM and RULE["close_flat"]:
             reason = "t30_flat"  # the flat close: a negative position sells too, nothing sleeps
-        if reason and source == "stream" and not trade_confirms(position, market, moment, reason):
+        if reason and source == "stream" and not trade_confirms(position, market, moment, reason, self.state.config):
             # the feed's bid alone never sells (30/10: off the market by 0.5%): the name's fresh last trade must be at the
             # same level, else Massive decides at the next check. A confirmed sale is booked at the feed's quoted bid,
             # never at an estimate (Codex 6525240030 P2-1). Under a flat close the window's own sale still stands on any
             # fresh trade: an unconfirmed stop, lock or positive never keeps a position past the close (pre-review of f3db006c)
             late = moment.astimezone(NEW_YORK).time() >= SELL_POSITIVES_FROM
-            if late and RULE["close_flat"] and trade_confirms(position, market, moment, "t30_flat"):
+            if late and RULE["close_flat"] and trade_confirms(position, market, moment, "t30_flat", self.state.config):
                 reason = "t30_flat"
             else:
                 self.exit_sources["unconfirmed"] += 1
@@ -1187,7 +1197,7 @@ class Engine:
             positions.append({"symbol": position.symbol, "market": position.market, "quantity": position.shares,
                               "average_cost": position.entry_price, "last_price": mark, "cost_usd": position.cost_usd,
                               "unrealized_pnl_usd": result, "unrealized_return_percent": net,
-                              "stop_price": position.exit_price(),  # the lock's floor once armed, else the stop
+                              "stop_price": position.exit_price(self.state.config),  # the lock's floor once armed, else the stop
                               "opened_at": position.opened_at})
         cash = self.state.nav_realized - sum(position.cost_usd for position in self.state.positions.values())
         return {"nav_start_usd": self.nav_start, "nav_usd": self.state.nav_realized + unrealized,
@@ -1374,7 +1384,7 @@ def exit_bid(quote: tuple[float, float, datetime] | None, market: "MarketView", 
     return bid
 
 
-def trade_confirms(position: Position, market: "MarketView", moment: datetime, reason: str) -> bool:
+def trade_confirms(position: Position, market: "MarketView", moment: datetime, reason: str, config: str | None = None) -> bool:
     """A sale the feed's bid triggers stands only when the name's fresh last trade (at most ``QUOTE_MAX_AGE_SECONDS``
     old) is at the same level: at or under the stop, at or under the lock's floor, or positive for the T30 rule."""
     if (market.price is None or market.trade_at is None
@@ -1384,7 +1394,7 @@ def trade_confirms(position: Position, market: "MarketView", moment: datetime, r
     if reason == "hard_stop":
         return net <= -RULE["stop_percent"]
     if reason == "lock":
-        return net <= lock_floor(position.peak_percent if position.peak_percent is not None else RULE["lock_min_percent"])
+        return net <= lock_floor(position.peak_percent if position.peak_percent is not None else RULE["lock_min_percent"], config)
     if reason == "t30_flat":
         return True  # the flat close sells whatever the sign: a fresh last trade is the confirmation
     return net > 0
