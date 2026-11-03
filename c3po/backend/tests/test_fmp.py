@@ -211,3 +211,27 @@ def test_recent_grades_batch_isolates_per_symbol_failures():
     assert len(result["AAPL"]) == 1
     assert result["AAPL"][0]["grading_company"] == "Jefferies"
     assert result["JPM"] == []
+
+
+def test_fmp_is_switched_off_in_every_backend_service(monkeypatch):
+    """FMP is cancelled (owner 03/11/2026). Every service built from the backend image reads Settings, and each one blanks
+    the PREFIXED token in its own ``environment:``: compose's environment beats ``../.env`` (env_file), the prefixed alias
+    beats the legacy ``FMP_API_TOKEN`` in config.py, and an empty value is kept, not skipped. The client stays (frozen)."""
+    from pathlib import Path
+
+    import yaml
+
+    from app.config import Settings
+
+    root = Path(__file__).resolve().parents[2]
+    services = yaml.safe_load((root / "compose.yml").read_text(encoding="utf-8"))["services"]
+    backend = {name for name, service in services.items() if service.get("image") == "c3po/backend:production"}
+    assert backend == {"api", "investor-relations-worker", "valuation-worker", "server-usage-worker", "r2d2-live"}
+    for name in sorted(backend):
+        assert services[name]["environment"]["C3PO_FMP_API_TOKEN"] == "", name
+    monkeypatch.setenv("FMP_API_TOKEN", "a-token-still-in-the-env-file")
+    monkeypatch.setenv("C3PO_FMP_API_TOKEN", "")
+    assert Settings().fmp_api_token == ""
+    monkeypatch.delenv("C3PO_FMP_API_TOKEN")
+    assert Settings().fmp_api_token == "a-token-still-in-the-env-file"  # what the blank prevents
+    assert "FMP" not in (root / ".env.example").read_text(encoding="utf-8")
