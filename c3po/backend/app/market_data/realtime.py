@@ -1796,7 +1796,7 @@ class RealtimeMarketsService:
         live_count = sum(item.status == "live" for group in groups for item in updated[group])
         source = "EODHD T-15 market scan"
         if live_count:
-            source += " + real-time WebSocket quotes"
+            source += f" + {live_label(self.stream)} quotes"
         return response.model_copy(update={
             **updated,
             "source": source,

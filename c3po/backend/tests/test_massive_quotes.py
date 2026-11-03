@@ -2,13 +2,21 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 
 from app.market_data.eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from app.market_data import massive_quotes
 from app.market_data.massive_quotes import (
     CHUNK,
+    CLOSED_POLL_SECONDS,
+    EODHD_FALLBACK_MAX_SYMBOLS,
+    EXTENDED_HOURS,
+    FRESH_SECONDS,
     GROUP_IDLE_SECONDS,
+    MAX_BACKOFF_SECONDS,
+    OFF_EXCHANGE,
+    POLL_SECONDS,
     MassiveSnapshotStream,
     live_label,
     regular_session,
@@ -26,7 +34,7 @@ def ns(moment: datetime) -> int:
 
 def snapshot(*rows: tuple[str, float, datetime]) -> dict[str, Any]:
     return {"status": "OK", "tickers": [
-        {"ticker": ticker, "lastTrade": {"p": price, "s": 100, "t": ns(at), "x": 4}, "day": {"c": price}}
+        {"ticker": ticker, "lastTrade": {"p": price, "s": 100, "t": ns(at), "x": 12, "c": [14, 41]}, "day": {"c": price}}
         for ticker, price, at in rows
     ]}
 
@@ -68,7 +76,7 @@ def test_a_poll_keeps_the_last_trade_as_a_display_tick_in_the_screens_spelling()
     assert live.poll_once() == 2
 
     assert massive.calls[0]["url"] == "https://api.massive.example/v2/snapshot/locale/us/markets/stocks/tickers"
-    assert massive.calls[0]["params"] == {"tickers": "AAA,BRK.B", "apiKey": TOKEN}
+    assert massive.calls[0]["params"] == {"tickers": "AAA,BRK.B", "include_otc": "true", "apiKey": TOKEN}
     tick = live.quote("brk-b.us")
     assert tick is not None and (tick.symbol, tick.price, tick.as_of, tick.source) == ("BRK-B", 480.5, at, "trade")
     assert tick.market_state == "open"
@@ -192,8 +200,10 @@ def test_the_api_takes_massive_when_its_token_is_set_and_eodhd_otherwise() -> No
     base = {"massive_base_url": "https://api.massive.example", "eodhd_api_token": "eodhd", "r2d2_ws_max_symbols": 77}
     chosen = screen_stream(SimpleNamespace(massive_api_token=TOKEN, **base))
     assert isinstance(chosen, MassiveSnapshotStream) and chosen.max_symbols == 77
+    assert isinstance(chosen._get_json.__self__.client, httpx.Client)  # type: ignore[attr-defined]  # one kept-alive connection
     fallback = screen_stream(SimpleNamespace(massive_api_token="", **base))
-    assert isinstance(fallback, EodhdRealtimeStream) and fallback.max_symbols == 77
+    # EODHD's fallback fits the plan's 50 slots with the engine's 20 held names: 15 names, two slots each
+    assert isinstance(fallback, EodhdRealtimeStream) and fallback.max_symbols == EODHD_FALLBACK_MAX_SYMBOLS == 15
 
 
 def test_the_regular_session_is_new_york_s() -> None:
@@ -319,7 +329,7 @@ def test_the_status_workflow_reads_eodhd_s_daily_counter_as_two_numbers_and_a_da
     root = Path(__file__).resolve().parents[3]
     run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
     section = run.split('echo "== EODHD calls today"', 1)[1]
-    pattern = section.split("grep -oE '", 1)[1].split("' ||", 1)[0]
+    pattern = section.split("grep -oE '", 1)[1].split("'\n", 1)[0]
     script = section.split("<<'PY'", 1)[1].split("\nPY\n", 1)[0].split("\n", 1)[1]
     compile(script, "eodhd_usage", "exec")  # the remote snippet is valid Python as YAML hands it over
 
@@ -327,3 +337,84 @@ def test_the_status_workflow_reads_eodhd_s_daily_counter_as_two_numbers_and_a_da
     assert re.search(pattern, "eodhd usage read failed=MarketDataRequestError")
     assert not re.search(pattern, "eodhd_calls_today=41999 limit=100000 date=2026-11-03 someone@example.com")
     assert "print(" in script and script.count("print(") == 2 and "api_token" not in script.split("print(", 1)[1]
+
+
+def test_off_exchange_and_form_t_prints_never_become_the_last_price() -> None:
+    at = NOW - timedelta(seconds=2)
+    lit = {"p": 10.0, "t": ns(at - timedelta(seconds=5)), "x": 12}
+    massive = Massive(
+        {"tickers": [{"ticker": "AAA", "lastTrade": lit}]},
+        {"tickers": [
+            {"ticker": "AAA", "lastTrade": {"p": 10.4, "t": ns(at), "x": OFF_EXCHANGE}},
+            {"ticker": "BBB", "lastTrade": {"p": 7.0, "t": ns(at), "x": 12, "trfi": 202}},
+            {"ticker": "CCC", "lastTrade": {"p": 3.0, "t": ns(at), "x": 12, "c": [12]}},
+            {"ticker": "DDD", "lastTrade": {"p": 3.0, "t": ns(at), "x": 11, "c": [13, 37]}},
+        ]},
+    )
+    live = stream(massive)
+    live.set_group("portfolio", ["AAA", "BBB", "CCC", "DDD"])
+    live.poll_once()
+
+    assert live.poll_once() == 0
+
+    tick = live.quote("AAA")
+    assert tick is not None and tick.price == 10.0  # the lit trade stays, Massive still answers for the name
+    assert all(live.quote(symbol) is None for symbol in ("BBB", "CCC", "DDD"))
+
+
+def test_the_filters_are_the_engine_s() -> None:
+    from app import r2d2_live_engine
+
+    assert OFF_EXCHANGE == r2d2_live_engine.MASSIVE_OFF_EXCHANGE
+    assert EXTENDED_HOURS == r2d2_live_engine.MASSIVE_EXTENDED_HOURS
+
+
+def test_a_tick_is_shown_only_while_massive_keeps_answering_for_its_name() -> None:
+    idle = Idle()
+    at = NOW - timedelta(seconds=1)
+    massive = Massive(snapshot(("AAA", 10.0, at)), RuntimeError("outage"), RuntimeError("outage"))
+    live = stream(massive, idle=idle)
+    live.set_group("portfolio", ["AAA"])
+    live.poll_once()
+    idle.now += FRESH_SECONDS - 1
+    live.poll_once()  # Massive down: the name is not answered again
+
+    assert live.quote("AAA") is not None
+    idle.now += 2
+    assert live.quote("AAA") is None  # never an old tick marked live during an outage
+    live.set_group("portfolio", ["AAA"])
+    live.poll_once()
+    assert live.quote("AAA") is None
+
+
+def test_a_screen_back_from_idle_gets_no_old_tick() -> None:
+    idle = Idle()
+    at = NOW - timedelta(seconds=1)
+    massive = Massive(snapshot(("AAA", 10.0, at)))
+    live = stream(massive, idle=idle)
+    live.set_group("portfolio", ["AAA"])
+    live.poll_once()
+    idle.now += GROUP_IDLE_SECONDS + 1
+
+    assert live.desired() == ()  # the group expired, and its names' ticks with it
+    assert live._quotes == {} and live._answered == {}
+    live.set_group("portfolio", ["AAA"])
+    assert live.quote("AAA") is None  # until the next round answers
+
+
+def test_failed_rounds_back_off_and_a_closed_market_waits_longer() -> None:
+    massive = Massive(*[RuntimeError("429")] * 8, snapshot(("AAA", 10.0, NOW - timedelta(seconds=1))))
+    live = stream(massive)
+    live.set_group("portfolio", ["AAA"])
+    pauses = []
+    for _ in range(8):
+        live.poll_once()
+        pauses.append(live.pause())
+    assert pauses == [POLL_SECONDS * 2, POLL_SECONDS * 4, POLL_SECONDS * 8, POLL_SECONDS * 16, MAX_BACKOFF_SECONDS,
+                      MAX_BACKOFF_SECONDS, MAX_BACKOFF_SECONDS, MAX_BACKOFF_SECONDS]
+    live.poll_once()
+    assert live.pause() == POLL_SECONDS
+    closed = stream(Massive(), is_open=False)
+    closed.set_group("portfolio", ["AAA"])
+    closed.poll_once()
+    assert closed.pause() == CLOSED_POLL_SECONDS

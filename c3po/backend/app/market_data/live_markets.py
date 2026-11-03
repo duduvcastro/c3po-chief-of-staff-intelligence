@@ -221,7 +221,7 @@ class LiveMarketsService:
         eodhd_plan = self.settings.eodhd_plan.replace("-", " ").title()
         global_methodology = (
             f"EODHD {eodhd_plan} is active for US portfolio securities, FX and crypto; "
-            "its real-time WebSocket supersedes delayed US equity quotes when trades arrive. "
+            f"{live_label(self.stream)} supersedes delayed US equity quotes when trades arrive. "
             "EODHD Government Bonds supplies the US yield curve, while Yahoo Finance remains "
             "the source for futures and the identified fallback; FMP supplies the six cash indices."
             if self.settings.eodhd_api_token else
