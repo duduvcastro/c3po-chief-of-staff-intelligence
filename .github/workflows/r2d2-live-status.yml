@@ -91,17 +91,20 @@ jobs:
               since = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
               covered, articles, sentiments, failures, started = 0, [], {"positive": 0, "negative": 0, "neutral": 0, "other": 0}, 0, time.monotonic()
               for symbol in watched[:400]:
-                  if time.monotonic() - started > 150:
+                  if time.monotonic() - started > 120:
                       break
                   try:
                       response = httpx.get(s.massive_base_url.rstrip("/") + "/v2/reference/news",
                                            params={"ticker": symbol.replace("-", "."), "published_utc.gte": since, "limit": 100, "apiKey": s.massive_api_token}, timeout=15.0)
-                      results = (response.json().get("results") or []) if response.status_code == 200 else []
+                      if response.status_code != 200:
+                          failures += 1
+                          continue
+                      results = response.json().get("results") or []
+                      mine = [insight for article in results if isinstance(article, dict) for insight in (article.get("insights") or [])
+                              if isinstance(insight, dict) and str(insight.get("ticker") or "").upper() == symbol.replace("-", ".").upper()]
                   except Exception:
                       failures += 1
                       continue
-                  mine = [insight for article in results if isinstance(article, dict) for insight in (article.get("insights") or [])
-                          if isinstance(insight, dict) and str(insight.get("ticker") or "").upper() == symbol.replace("-", ".").upper()]
                   if mine:
                       covered += 1
                   articles.append(len(mine))
