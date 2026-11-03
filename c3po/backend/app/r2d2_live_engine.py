@@ -35,6 +35,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
 from threading import Event, Lock, Thread
 from typing import Any, Callable, Mapping
+from urllib.parse import parse_qsl, urlsplit
 from zoneinfo import ZoneInfo
 
 import websockets
@@ -220,8 +221,8 @@ class LiveEngineStream(EodhdRealtimeStream):
         self.floor: float | None = None  # a recovered opening's cut (epoch seconds): an earlier trade is in its minute bars
         self._groups_version = 0  # bumped by every ``set_group``: the feed loop recomputes its subscription only then
         self._quote_symbols: frozenset[str] | None = None  # the quote feed's names (None: every grouped name, as trades)
-        # False when the tapes are fed by Massive (TRADE_SOURCE "massive"): EODHD's trade feed keeps its subscription (its
-        # quote feed is the grouped names among the held ones) and its lag is still measured, but no trade of it is recorded
+        # False when the tapes are fed by Massive (TRADE_SOURCE "massive"): EODHD's trade feed subscribes nothing, 900 slots of
+        # the plan for trades no one reads (its quote feed stays, the grouped names among the held ones)
         self.feed_trades = True
         # how late the feed is: receipt time minus the message's own time (ms), the last message and the worst since the
         # last heartbeat, and the messages since the last heartbeat (0 = a silent feed, not a punctual one), per feed;
@@ -256,10 +257,13 @@ class LiveEngineStream(EodhdRealtimeStream):
             self._groups_version += 1
 
     def feed_symbols(self, feed: str) -> set[str]:
-        """The names one feed subscribes: every grouped name for trades; for quotes, only the quote names among them."""
+        """The names one feed subscribes: every grouped name for trades, none when Massive feeds the tapes; for quotes, only
+        the quote names among them."""
         with self._lock:
             desired = set(self._desired_symbols())
             quotes = self._quote_symbols
+        if feed == "trade" and not self.feed_trades:
+            return set()
         return desired & quotes if feed == "quote" and quotes is not None else desired
 
     async def _run_feed(self, feed: str, endpoint: str, recorder: Any) -> None:
@@ -502,6 +506,14 @@ class MarketView:
 
 
 # ------------------------------------------------------------------ the universe (before the open)
+MASSIVE_KINDS = ("CS", "ADRC")
+MASSIVE_MARKETS = {"XNAS": "NASDAQ", "XNYS": "NYSE", "XASE": "NYSE", "ARCX": "NYSE", "BATS": "NYSE"}
+MASSIVE_LISTING_PAGES = 40  # 14 on 02/11/2026
+MIN_MASSIVE_UNIVERSE = 800
+MIN_MASSIVE_SESSION_ROWS = 10_000  # 12,633 names with a close on 30/10/2026
+UNIVERSE_TIMEOUT_SECONDS = 15.0  # with one retry: the list and the 20 summaries stay well inside the half hour before the open
+
+
 @dataclass
 class Member:
     symbol: str
@@ -532,17 +544,82 @@ def build_universe(get_json: Callable[..., Any], base_url: str, token: str, day:
             listing[code] = "NASDAQ"
         elif exchange.startswith("NYSE") or exchange in {"AMEX", "BATS", "NYSE ARCA", "NYSE MKT"}:
             listing[code] = "NYSE"
+
+    def rows_of(session: date) -> list[dict[str, Any]]:
+        raw = get_json(f"{base_url}/api/eod-bulk-last-day/US",
+                       params={"api_token": token, "fmt": "json", "date": session.isoformat()}) or []
+        return [{"code": r.get("code"), "close": r.get("close"), "volume": r.get("volume")} for r in raw if isinstance(r, dict)]
+    return rank_universe(listing, previous_sessions(day, ADV_DAYS), rows_of, cache_dir)
+
+
+def massive_listing(get_json: Callable[..., Any], base_url: str, token: str) -> dict[str, str]:
+    """The active US common stocks and ADRs, in the engine's spelling (Massive's BRK.B is BRK-B here), each with its market."""
+    listing: dict[str, str] = {}
+    url, params = f"{base_url}/v3/reference/tickers", {"market": "stocks", "active": "true", "limit": 1000, "apiKey": token}
+    for _ in range(MASSIVE_LISTING_PAGES):
+        body = get_json(url, params=params) or {}
+        for row in body.get("results") or []:
+            market = MASSIVE_MARKETS.get(str(row.get("primary_exchange")))
+            if row.get("type") in MASSIVE_KINDS and market and row.get("ticker"):
+                listing[str(row["ticker"]).strip().upper().replace(".", "-")] = market
+        following = body.get("next_url")
+        if not following:
+            return listing
+        parts = urlsplit(str(following))
+        url, params = f"{base_url}{parts.path}", {**dict(parse_qsl(parts.query)), "apiKey": token}
+    raise RuntimeError("Massive's ticker list did not end")
+
+
+def massive_universe(get_json: Callable[..., Any], base_url: str, token: str, day: date, cache_dir: Path) -> list[Member]:
+    """``build_universe``'s rule on Massive's ticker list and daily market summaries. CS and ADRC make EODHD's "Common Stock":
+    898 of the 900 names alike for 03/11/2026 (run 41548213346), 41 of them ADRs."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    listing = massive_listing(get_json, base_url, token)
+
+    def rows_of(session: date) -> list[dict[str, Any]]:
+        body = get_json(f"{base_url}/v2/aggs/grouped/locale/us/market/stocks/{session.isoformat()}",
+                        params={"adjusted": "false", "apiKey": token}) or {}
+        rows = body.get("results") or []
+        if len(rows) < MIN_MASSIVE_SESSION_ROWS:  # never cached, never ranked: a short day would pick the wrong names in silence
+            raise RuntimeError("Massive's summary of a session came back short")
+        return [{"code": str(r.get("T") or "").replace(".", "-"), "close": r.get("c"), "volume": r.get("v")} for r in rows]
+    return rank_universe(listing, previous_sessions(day, ADV_DAYS), rows_of, cache_dir, prefix="massive-")
+
+
+def universe_on_massive(massive_of: Callable[[], list[Member]], eodhd_of: Callable[[], list[Member]]) -> list[Member]:
+    """Massive's universe; EODHD's while its plan lasts when Massive fails or comes back short; the longer of the two when
+    neither is whole; an error, which the service retries, when both are empty. The error's type only: the token travels in
+    the query."""
+    members: list[Member] = []
+    try:
+        members = massive_of()
+        if len(members) >= MIN_MASSIVE_UNIVERSE:
+            return members
+        logger.error("R2D2 live: Massive's universe has %d names, EODHD's stands in", len(members))
+    except Exception as error:  # noqa: BLE001 - any failure of the list costs the fallback, never the session
+        logger.error("R2D2 live: Massive's universe failed (%s), EODHD's stands in", type(error).__name__)
+    stand_in: list[Member] = []
+    try:
+        stand_in = eodhd_of()
+    except Exception as error:  # noqa: BLE001 - a short Massive list is still a session
+        logger.error("R2D2 live: EODHD's universe failed (%s)", type(error).__name__)
+    chosen = stand_in if len(stand_in) >= len(members) else members
+    if not chosen:
+        raise RuntimeError("no universe for the session")
+    return chosen
+
+
+def rank_universe(listing: Mapping[str, str], sessions: list[date], rows_of: Callable[[date], list[dict[str, Any]]], cache_dir: Path,
+                  *, prefix: str = "") -> list[Member]:
+    """The rule over a list of names and each session's (code, close, volume) rows, these cached per session."""
     dollar: dict[str, list[float]] = {}
     last_close: dict[str, float] = {}
-    sessions = previous_sessions(day, ADV_DAYS)
     for session in sessions:
-        path = cache_dir / f"{session.isoformat()}.json"
+        path = cache_dir / f"{prefix}{session.isoformat()}.json"
         if path.exists():
             rows = json.loads(path.read_text())
         else:
-            raw = get_json(f"{base_url}/api/eod-bulk-last-day/US",
-                           params={"api_token": token, "fmt": "json", "date": session.isoformat()}) or []
-            rows = [{"code": r.get("code"), "close": r.get("close"), "volume": r.get("volume")} for r in raw if isinstance(r, dict)]
+            rows = rows_of(session)
             path.write_text(json.dumps(rows))
         for row in rows:
             code = str(row.get("code") or "").strip().upper()
@@ -1867,17 +1944,18 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
                 sleep: Callable[[float], None] = clock_time.sleep, job: Callable[[], Any] | None = None,
                 nbbo: Callable[[str, datetime], tuple[float, float, datetime] | None] | None = None,
                 massive: MassiveQuoteStream | None = None,
-                recover: Callable[[list[Member], date, datetime], dict[str, Tape]] | None = None) -> EngineState:
+                recover: Callable[[list[Member], date, datetime], dict[str, Tape]] | None = None,
+                universe_of: Callable[[date], list[Member]] | None = None) -> EngineState:
     """One session, from the universe before the open to the close. Every database write goes through ``job`` (the
     host's maintenance gate) when given. ``recover``: the session before a cut of the universe's names, for a restart
-    that finds the opening lost (``recover_opening``)."""
+    that finds the opening lost (``recover_opening``). ``universe_of``: the session's names; ``build_universe`` without it."""
     def guarded(action: Callable[[], Any]) -> Any:
         if job is None:
             return action()
         with job() as admitted:
             return action() if admitted else None
 
-    universe = build_universe(get_json, base_url, token, day, cache_dir)
+    universe = universe_of(day) if universe_of is not None else build_universe(get_json, base_url, token, day, cache_dir)
     state = load_state(database, lambda: seed_from_lab_book(database, now()))
     reconciled: list[bool] = []
     while not reconciled:  # never a new session over the previous one's pending state (the gate may refuse: wait)
@@ -2183,6 +2261,16 @@ def main() -> None:
         massive.start()
     cache_dir = Path(os.environ.get("C3PO_R2D2_LIVE_CACHE_DIR", "/app/day-d-data/r2d2-live/eod-bulk"))
     base_url = settings.eodhd_base_url.rstrip("/")
+
+    quick = JsonHttpClient(timeout=UNIVERSE_TIMEOUT_SECONDS, max_retries=1)
+
+    def universe_of(session: date) -> list[Member]:
+        def on_eodhd() -> list[Member]:
+            return build_universe(http.get_json, base_url, settings.eodhd_api_token, session, cache_dir)
+        if not settings.massive_api_token:
+            return on_eodhd()
+        return universe_on_massive(lambda: massive_universe(quick.get_json, settings.massive_base_url.rstrip("/"), settings.massive_api_token,
+                                                            session, cache_dir), on_eodhd)
     while True:
         today_ny = datetime.now(NEW_YORK).date()
         day = next_session(today_ny)
@@ -2199,7 +2287,7 @@ def main() -> None:
         try:
             run_session(stream=stream, database=database, get_json=http.get_json, base_url=base_url,
                         token=settings.eodhd_api_token, day=day, cache_dir=cache_dir, job=job, nbbo=nbbo, massive=massive,
-                        recover=recover_from_massive if settings.massive_api_token else None)
+                        recover=recover_from_massive if settings.massive_api_token else None, universe_of=universe_of)
         except Exception:
             logger.exception("R2D2 live: the session failed")
             clock_time.sleep(60)
