@@ -41,8 +41,9 @@ from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data import LiveMarketsService, MarketDataService, RealtimeMarketsService
 from .market_data.indices import IndexQuotesService
 from .market_data.b3_screener import B3ScreenerService
-from .market_data.eodhd_stream import EodhdRealtimeStream, usable_display_tick
+from .market_data.eodhd_stream import usable_display_tick
 from .market_data.http import MarketDataRequestError
+from .market_data.massive_quotes import screen_stream
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
 from .push_notifications import PushNotificationService
@@ -159,10 +160,11 @@ database = Database(settings)
 legacy = LegacySummaryReader(settings.legacy_root)
 auth_service = AuthService(settings, database)
 market_data = MarketDataService(settings, database)
-eodhd_stream = EodhdRealtimeStream(settings.eodhd_api_token, max_symbols=settings.r2d2_ws_max_symbols)
+# the screens' live US prices: Massive's snapshot, EODHD's WebSocket only without a Massive token (owner 03/11/2026)
+live_quotes = screen_stream(settings)
 index_quotes = IndexQuotesService(settings, market_data.http)
-live_markets = LiveMarketsService(settings, market_data.http, stream=eodhd_stream, indices=index_quotes)
-realtime_markets = RealtimeMarketsService(settings, database, market_data.http, stream=eodhd_stream, indices=index_quotes)
+live_markets = LiveMarketsService(settings, market_data.http, stream=live_quotes, indices=index_quotes)
+realtime_markets = RealtimeMarketsService(settings, database, market_data.http, stream=live_quotes, indices=index_quotes)
 b3_screener = B3ScreenerService(settings, database, market_data.http)
 investor_relations = InvestorRelationsService(settings, database)
 ir_valuation_processor = InvestorRelationsValuationProcessor(database, b3_screener)
@@ -234,7 +236,7 @@ async def lifespan(_: FastAPI):
         database.ensure_access_owner(settings.auth_email, list(ALL_VIEW_PERMISSIONS), list(ALL_CAPABILITIES))
         ensure_builtin_official_fundamentals(database)
         r2d2.ensure_initialized()
-        eodhd_stream.start()
+        live_quotes.start()
         performance_stop = asyncio.Event()
         performance_task = asyncio.create_task(
             run_performance_flush_loop(performance_observability, performance_stop)
@@ -244,7 +246,7 @@ async def lifespan(_: FastAPI):
     finally:
         performance_stop.set()
         await performance_task
-        eodhd_stream.stop()
+        live_quotes.stop()
 
 
 app = FastAPI(
