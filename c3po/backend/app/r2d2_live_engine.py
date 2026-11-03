@@ -687,6 +687,7 @@ LOCK_LADDERS: dict[str, tuple[float, float, float, float]] = {
     "TIT-2S5-F20": (0.10, 0.10, 0.20, 0.15),  # 02-03/11: +0.10, +0.20, then every 0.15
     CONFIG: (RULE["lock_min_percent"], RULE["lock_step_percent"], RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]),
 }
+_LADDER_IN_FORCE = LOCK_LADDERS[CONFIG]  # bound once: a label without its own ladder takes the rule in force
 
 
 def lock_floor(peak: float, config: str | None = None) -> float:
@@ -694,7 +695,7 @@ def lock_floor(peak: float, config: str | None = None) -> float:
     ``lock_step_percent`` up to ``lock_wide_from_percent``, then every ``lock_wide_step_percent`` (owner 03/11: every 0.05 —
     +0.10, +0.15, +0.20, +0.25 ...; 02-03/11: +0.10, +0.20, +0.35, +0.50 ...; until then every 0.05 to +0.30, then 0.10). A
     peak a hair under a step (float error) still counts it. ``config``: the rule label of the session (its own ladder)."""
-    low, step, wide_from, wide_step = LOCK_LADDERS.get(config or CONFIG, LOCK_LADDERS[CONFIG])
+    low, step, wide_from, wide_step = LOCK_LADDERS.get(config or CONFIG, _LADDER_IN_FORCE)
     reached = peak + 1e-9  # one tolerance for the band and the step (pre-review: two made a gap just under +0.30%)
     if reached < wide_from:
         return low + step * math.floor((reached - low) / step)
