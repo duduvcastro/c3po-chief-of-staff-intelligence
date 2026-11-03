@@ -110,16 +110,18 @@ def _mark(engine: Engine, symbol: str, t: datetime, bid: float) -> list[dict]:
 
 
 def test_the_step_lock_floor_is_the_last_step_the_peak_reached() -> None:
-    """Owner 31/10: arms at +0.10%, floors +0.10, +0.20, then every 0.15 (+0.35, +0.50 ...), the floor ON the step."""
+    """Owner 03/11: arms at +0.10%, then a step every 0.05 (+0.15, +0.20, +0.25 ...), the floor ON the step."""
     floor = engine_module.lock_floor
-    assert [round(floor(p), 10) for p in (0.10, 0.1999, 0.20, 0.3499, 0.35, 0.4999, 0.50, 0.66, 0.95)] == \
-           [0.10, 0.10, 0.20, 0.20, 0.35, 0.35, 0.50, 0.65, 0.95]
-    assert floor(0.20 - 1e-12) == floor(0.20) and floor(0.35 - 1e-12) == floor(0.35)  # a hair under a step still counts it
+    assert [round(floor(p), 10) for p in (0.10, 0.1499, 0.15, 0.1999, 0.20, 0.2499, 0.25, 0.3499, 0.35, 0.66, 0.95)] == \
+           [0.10, 0.10, 0.15, 0.15, 0.20, 0.20, 0.25, 0.30, 0.35, 0.65, 0.95]
+    for step in (0.15, 0.20, 0.25, 0.35, 0.80):  # a hair under a step still counts it
+        assert floor(step - 1e-12) == floor(step)
     assert engine_module.RULE["stop_percent"] == 0.20 and engine_module.RULE["lock_min_percent"] == 0.10
 
 
 @pytest.mark.parametrize(("peak", "hold", "sell", "floor"), [
-    (0.12, 0.11, 0.09, 0.10), (0.27, 0.21, 0.19, 0.20), (0.40, 0.36, 0.34, 0.35), (0.55, 0.51, 0.49, 0.50)])
+    (0.12, 0.11, 0.09, 0.10), (0.17, 0.16, 0.14, 0.15), (0.27, 0.26, 0.24, 0.25), (0.43, 0.41, 0.39, 0.40),
+    (0.58, 0.56, 0.54, 0.55)])
 def test_the_step_lock_sells_when_the_profit_falls_to_its_floor(peak: float, hold: float, sell: float, floor: float) -> None:
     engine = _engine()
     position, bid = _held(engine, "S2")
@@ -147,7 +149,7 @@ def test_the_floor_has_no_gap_under_the_wide_band() -> None:
     floor = engine_module.lock_floor
     for peak in (0.20 - 5e-10, 0.20 - 2e-10, 0.20, 0.20 + 1e-12):
         assert round(floor(peak), 10) == 0.20
-    assert round(floor(0.20 - 2e-9), 10) == 0.10
+    assert round(floor(0.20 - 2e-9), 10) == 0.15  # the step under +0.20 is +0.15 (owner 03/11)
 
 
 def test_the_stop_before_the_lock_arms_is_minus_two_tenths() -> None:
@@ -227,7 +229,9 @@ def test_the_rule_in_force_has_its_text_and_slots_on_the_screen() -> None:
     assert "stop −%.2f%%" % rule["stop_percent"] in exits and "+%.2f%%" % rule["lock_min_percent"] in exits
     assert "5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps" in risk
     assert [engine_module.size_weight(s) * 5 for s in (2.0, 3.0, 5.0)] == [5.0, 4.0, 2.5]  # the shares the text states
-    assert "+0.10%, +0.20%, then every 0.15" in hold and rule["lock_step_percent"] == 0.10 and rule["lock_wide_step_percent"] == 0.15
+    assert "+0.10%, then every 0.05: +0.15%, +0.20%, +0.25%" in hold
+    assert rule["lock_step_percent"] == rule["lock_wide_step_percent"] == 0.05
+    assert "+0.10%, +0.20%, then every 0.15" in r2d2_lab_live.LIVE_RISK["TIT-2S5-F20"][1]  # 02-03/11 keep their own text
     for older in ("TIT-2S5-RT", "TIT-2S5-RTC"):  # 30/10's rule
         assert "stop −0.4% net" in r2d2_lab_live.LIVE_RISK[older][0]
     assert "TIT-2S3-RT" not in r2d2_lab_live.LIVE_RISK  # 27-29/10 ran another stop and lock: the screen's own text
@@ -261,7 +265,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20" and len(validated["trades"]) == 1
+    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20-L5" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -609,9 +613,9 @@ def test_exits_a_held_name_without_a_feed_quote_is_marked_armed_and_locked_on_ma
         t = _at(10, 0, second)
         bid = _bid_at(position, net)
         assert engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now)) == []
-    assert position.armed and position.peak_percent == pytest.approx(0.27) and position.exit_price() == pytest.approx(_bid_at(position, 0.20))
+    assert position.armed and position.peak_percent == pytest.approx(0.27) and position.exit_price() == pytest.approx(_bid_at(position, 0.25))
     t = _at(10, 0, 4)
-    bid = _bid_at(position, 0.19)
+    bid = _bid_at(position, 0.24)  # under the +0.25 step the +0.27 peak reached (owner 03/11: every 0.05)
     fills = engine.step(t, lambda s: no_quote if s == "AAA" else MarketView(), nbbo=lambda s, now: (bid, bid + 0.01, now))
     assert [(f["side"], f["price"]) for f in fills] == [("SELL", bid)] and "trava" in fills[0]["reason"]
     assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
@@ -1398,7 +1402,7 @@ def test_the_engines_marks_dress_the_book_it_publishes_through_the_real_store(tm
     engine.step(t, lambda s: MarketView(price=98.3, trade_at=t, vwap=98.0) if s == "AAA" else MarketView(),
                 nbbo=lambda s, now: (up, up + 0.01, now))
     row = engine.marks()[0]
-    assert row["armed"] is True and row["stop_percent"] == pytest.approx(0.10) and row["net_percent"] == pytest.approx(0.17)
+    assert row["armed"] is True and row["stop_percent"] == pytest.approx(0.15) and row["net_percent"] == pytest.approx(0.17)
     assert row["marked_at"] == t.isoformat() or row["marked_at"] > t.isoformat()
 
 
@@ -2554,7 +2558,7 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 4.999 bps buy, 5.5 bps is refused (it was 3 bps)."""
-    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20"
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20-L5"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}

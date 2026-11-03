@@ -2,7 +2,8 @@
 para dentro do servidor do C3PO, não quero nada rodando no GitHub"; "a cada segundo").
 
 The rule in force grew from the one the owner chose on 26/10 (TIT-2S3; TIT-2S5-RT from 30/10; TIT-2S5-F20 from 02/11:
-entries until the close, sizes by the spread paid, stop -0.20%, the new lock steps): stocks that open at least 1% below
+entries until the close, sizes by the spread paid, stop -0.20%, the new lock steps; TIT-2S5-F20-L5 from 04/11: the lock's
+steps every 0.05): stocks that open at least 1% below
 the previous close,
 20-session dollar volume of at least US$ 15 M, price of at least US$ 5; a buy when the last trade, checked every second,
 crosses back above the session VWAP (owner 29/10; until then a minute close, the lab's candles), executed at once at the
@@ -12,8 +13,8 @@ the close, 16:00 ET (owner 30/10; 15:29:59 until then) — the ask and the sprea
 not answer, up to 20 positions sized by the spread paid (owner 31/10: 5% of NAV at <= 2 bps, 4% at <= 3 bps, 2.5% at
 <= 5 bps; NAV/20 each until then), re-entry allowed after an exit. Every second each open position is checked at the real
 bid: stop at -0.20% net (owner 31/10; -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
-last step the peak reached (owner 31/10: +0.10, +0.20, then every 0.15; until then every 0.05 up to +0.30%, every 0.10
-above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
+last step the peak reached (owner 03/11: every 0.05 — +0.10, +0.15, +0.20, +0.25 ...; 02-03/11: +0.10, +0.20, then every
+0.15; until then every 0.05 up to +0.30%, every 0.10 above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
 
 Universe: the 900 most liquid US common stocks (owner 29/10; 500 until then), from EODHD's end-of-day bulk files of the
@@ -48,8 +49,9 @@ logger = logging.getLogger(__name__)
 NEW_YORK = ZoneInfo("America/New_York")
 # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then); owner 30/10: entries until the close from 02/11
 # (TIT-2S5-RT until then: until 15:29:59 ET); owner 31/10: the sizes by the spread, the -0.20% stop and the new lock steps
-# from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session)
-CONFIG = "TIT-2S5-F20"
+# from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session); owner 03/11: the
+# lock's steps every 0.05 from 04/11 (TIT-2S5-F20 until then: +0.10, +0.20, then every 0.15)
+CONFIG = "TIT-2S5-F20-L5"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -68,9 +70,11 @@ RULE = {
     # para 5% da posição de cada ação, 3 bps para 4%, 5 bps para 2,5% ... colocando o stop loss em -0,20% e escalonando o
     # stop em 0,10%, 0,20% e depois subindo de +0,15pp" — the floor ON the step reached ("no degrau"): +0.10, +0.20, +0.35,
     # +0.50 ... Until 30/10 (owner 29/10): stop -0.4%, steps of 0.05 from +0.10 to +0.30, then of 0.10; before 29/10 a
-    # -0.5% stop and a +0.15% lock trailing the peak
-    "stop_percent": 0.20, "lock_min_percent": 0.10, "lock_step_percent": 0.10, "lock_wide_from_percent": 0.20,
-    "lock_wide_step_percent": 0.15,
+    # -0.5% stop and a +0.15% lock trailing the peak. Owner 03/11/2026 ~17:5x BRT: "Quero que você escalone o stop do R2D2
+    # acima de 0,10% para a cada 5pp. Ou seja, 0,15%, 0,20%, 0,25% e por ai vai" — every 0.05 from +0.10, both bands
+    # (TIT-2S5-F20-L5 from 04/11)
+    "stop_percent": 0.20, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.20,
+    "lock_wide_step_percent": 0.05,
     # owner 30/10/2026 ~20:3x BRT: "para segunda-feira, faremos umas alterações de BPS e tamanho da compra" — the lab's
     # studies of 30/10 (results/stopstudy_run41123209315, results/exitstudy2_run41145478129): no stop, spread limit or size
     # made the rule profitable; selling EVERY position from 15:59:30 (nothing carried overnight) cut the loss a trade most
@@ -678,8 +682,9 @@ def size_weight(spread_bps: float, rule: str | None = None) -> float:
 
 def lock_floor(peak: float) -> float:
     """The armed lock's floor: the last step the peak reached ("no degrau"): from ``lock_min_percent`` every
-    ``lock_step_percent`` up to ``lock_wide_from_percent``, then every ``lock_wide_step_percent`` (owner 31/10: +0.10, +0.20,
-    +0.35, +0.50 ...; until then every 0.05 to +0.30, then 0.10). A peak a hair under a step (float error) still counts it."""
+    ``lock_step_percent`` up to ``lock_wide_from_percent``, then every ``lock_wide_step_percent`` (owner 03/11: every 0.05 —
+    +0.10, +0.15, +0.20, +0.25 ...; 02-03/11: +0.10, +0.20, +0.35, +0.50 ...; until then every 0.05 to +0.30, then 0.10). A
+    peak a hair under a step (float error) still counts it."""
     low, step = RULE["lock_min_percent"], RULE["lock_step_percent"]
     wide_from, wide_step = RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]
     reached = peak + 1e-9  # one tolerance for the band and the step (pre-review: two made a gap just under +0.30%)
