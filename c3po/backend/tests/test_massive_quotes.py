@@ -200,7 +200,8 @@ def test_the_api_takes_massive_when_its_token_is_set_and_eodhd_otherwise() -> No
     base = {"massive_base_url": "https://api.massive.example", "eodhd_api_token": "eodhd", "r2d2_ws_max_symbols": 77}
     chosen = screen_stream(SimpleNamespace(massive_api_token=TOKEN, **base))
     assert isinstance(chosen, MassiveSnapshotStream) and chosen.max_symbols == 77
-    assert isinstance(chosen._get_json.__self__.client, httpx.Client)  # type: ignore[attr-defined]  # one kept-alive connection
+    client = chosen._get_json.__self__.client  # type: ignore[attr-defined]
+    assert isinstance(client, httpx.Client) and client.follow_redirects  # one kept-alive connection, redirects as before
     fallback = screen_stream(SimpleNamespace(massive_api_token="", **base))
     # EODHD's fallback fits the plan's 50 slots with the engine's 20 held names: 15 names, two slots each
     assert isinstance(fallback, EodhdRealtimeStream) and fallback.max_symbols == EODHD_FALLBACK_MAX_SYMBOLS == 15
@@ -418,3 +419,33 @@ def test_failed_rounds_back_off_and_a_closed_market_waits_longer() -> None:
     closed.set_group("portfolio", ["AAA"])
     closed.poll_once()
     assert closed.pause() == CLOSED_POLL_SECONDS
+
+
+def test_a_screen_left_open_overnight_never_shows_yesterday_s_trade() -> None:
+    yesterday_close = datetime(2026, 11, 2, 20, 59, 57, tzinfo=timezone.utc)  # Monday 15:59:57 ET
+    now = {"at": datetime(2026, 11, 2, 20, 59, 58, tzinfo=timezone.utc)}
+    massive = Massive(snapshot(("AAA", 10.0, yesterday_close)), snapshot(("AAA", 10.0, yesterday_close)))
+    live = MassiveSnapshotStream("https://api.massive.example", TOKEN, get_json=massive.get_json, clock=lambda: now["at"],
+                                 is_open=lambda _: True, idle_clock=Idle())
+    live.set_group("portfolio", ["AAA"])
+    live.poll_once()
+    assert live.quote("AAA") is not None
+
+    now["at"] = NOW  # Tuesday 10:00:30 ET, the name has not traded yet: Massive answers with Monday's trade
+    live.poll_once()
+
+    assert live.quote("AAA") is None
+
+
+def test_one_failing_chunk_does_not_slow_the_healthy_names() -> None:
+    names = [f"N{index:03d}" for index in range(CHUNK + 1)]
+    at = NOW - timedelta(seconds=1)
+    massive = Massive(snapshot(*[(name, 1.0, at) for name in names[:CHUNK]]), RuntimeError("chunk two"),
+                      snapshot(*[(name, 1.0, at) for name in names[:CHUNK]]), RuntimeError("chunk two"))
+    live = stream(massive)
+    live.set_group("market:NASDAQ", names)
+    live.poll_once()
+    live.poll_once()
+
+    assert live.status == "error" and live.pause() == POLL_SECONDS  # an answered request keeps the normal pace
+    assert live.quote(names[0]) is not None and live.quote(names[-1]) is None

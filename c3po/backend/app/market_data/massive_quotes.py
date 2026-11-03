@@ -205,7 +205,7 @@ class MassiveSnapshotStream:
         if not self._is_open(self._clock()):
             self._set_state("closed")
             return 0
-        taken, failed = 0, ""
+        taken, failed, answered = 0, "", 0
         for start in range(0, len(names), CHUNK):
             chunk = names[start:start + CHUNK]
             try:
@@ -217,15 +217,15 @@ class MassiveSnapshotStream:
             except Exception as error:
                 failed = type(error).__name__
                 continue
+            answered += 1
             taken += self._take(payload, set(chunk))
         with self._lock:
             self._counts["polls"] += 1
             self._counts["ticks"] += taken
             if failed:
                 self._counts["failures"] += 1
-                self._failed_rounds += 1
-            else:
-                self._failed_rounds = 0
+            # the pause backs off only when no request was answered: one failing chunk does not slow the healthy ones
+            self._failed_rounds = self._failed_rounds + 1 if not answered else 0
             self._state, self._error = ("error", failed) if failed else ("connected", "")
         return taken
 
@@ -246,6 +246,9 @@ class MassiveSnapshotStream:
                 continue
             with self._lock:
                 self._answered[symbol] = answered_at
+                current = self._quotes.get(symbol)
+                if current is not None and current.as_of.astimezone(NEW_YORK).date() != session:
+                    del self._quotes[symbol]  # a screen left open overnight never shows yesterday's last trade as live
             trade = row.get("lastTrade")
             if not isinstance(trade, dict) or not _lit(trade):
                 continue
@@ -330,7 +333,7 @@ def screen_stream(settings: Any) -> LiveQuoteStream:
             settings.massive_base_url,
             settings.massive_api_token,
             get_json=JsonHttpClient(timeout=REQUEST_TIMEOUT_SECONDS, max_retries=0,
-                                    client=httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS)).get_json,
+                                    client=httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=True)).get_json,
             max_symbols=settings.r2d2_ws_max_symbols,
         )
     return EodhdRealtimeStream(settings.eodhd_api_token,
