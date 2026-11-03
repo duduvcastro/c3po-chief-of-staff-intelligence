@@ -48,9 +48,10 @@ logger = logging.getLogger("c3po.valuation_worker")
 
 # Without EODHD's Extra Daily API Calls add-on the plan allows 100,000 weighted calls a day (owner 03/11/2026: cancel it).
 # A failed canonical cycle can spend up to ~10,000 (US screener + B3) and was retried every 15 min all day; a failed Chewie
-# night up to its whole budget, every 30 min until 08:00. The canonical now waits longer after each failure and stops after
-# four failures of the RUNNING build in a day (a deploy with a fix starts afresh; ~4 h of outage are still recovered);
-# Chewie and the price history stop for the night after two failed attempts.
+# night up to its whole budget, every 30 min until 08:00. The canonical now waits 15 min, 1 h, then 3 h after the day's
+# failures (of any build: a deploy waits for the next slot instead of burning attempts) and stops after four failures of
+# the running build or six in the day: an outage of ~4 h at the start of a day is still recovered, a fix deployed after a
+# fully failed day may have to wait for the next one. Chewie and the price history stop for the night after two failures.
 CANONICAL_RETRY_DELAYS = (timedelta(minutes=15), timedelta(hours=1), timedelta(hours=3))  # after the 1st, 2nd, 3rd failure
 CANONICAL_MAX_FAILURES = 4  # of the running build, a day
 CANONICAL_MAX_FAILURES_ALL_BUILDS = 6  # a day across deploys: every merge deploys a new build (2-9 a day)
@@ -409,16 +410,16 @@ def run_worker_iteration(
                                              build_sha=build)
 
     if canonical_due:
-        failures = canonical_failures(_build_sha())
-        if failures >= CANONICAL_MAX_FAILURES or canonical_failures(None) >= CANONICAL_MAX_FAILURES_ALL_BUILDS:
+        failures, failures_today = canonical_failures(_build_sha()), canonical_failures(None)
+        if failures >= CANONICAL_MAX_FAILURES or failures_today >= CANONICAL_MAX_FAILURES_ALL_BUILDS:
             canonical_due = False  # today's attempts are spent: the next day's cycle (or a new build, under the day's ceiling)
             canonical_status = "retry_cap"
             failed_work = True  # the dead-man check never reads a capped day as a success (pre-review of 8f07d0c6)
-        elif failures:
-            # the wait after the last failure holds even when another phase or a restart wakes the worker earlier
-            last = database.last_ingestion_run_started_at(canonical_code, "failed", scheduled_for=start_of_today(now).isoformat(),
-                                                          build_sha=_build_sha())
-            retry_at = last + CANONICAL_RETRY_DELAYS[min(failures, len(CANONICAL_RETRY_DELAYS)) - 1] if last else None
+        elif failures_today:
+            # the wait after the day's last failure (of any build) holds when another phase, a restart or a deploy wakes the
+            # worker earlier
+            last = database.last_ingestion_run_started_at(canonical_code, "failed", scheduled_for=start_of_today(now).isoformat())
+            retry_at = last + CANONICAL_RETRY_DELAYS[min(failures_today, len(CANONICAL_RETRY_DELAYS)) - 1] if last else None
             if retry_at is not None and now < retry_at:
                 canonical_due = False
                 canonical_status = "retry_wait"
@@ -451,9 +452,9 @@ def run_worker_iteration(
                     deep_link="/?view=health",
                     event_key=f"valuation-canonical-failure:{start_of_today(now).date()}",
                 )
-            failures = canonical_failures(_build_sha())
-            if failures < CANONICAL_MAX_FAILURES and canonical_failures(None) < CANONICAL_MAX_FAILURES_ALL_BUILDS:
-                wake_targets.append(now + CANONICAL_RETRY_DELAYS[min(max(failures, 1), len(CANONICAL_RETRY_DELAYS)) - 1])
+            failures, failures_today = canonical_failures(_build_sha()), canonical_failures(None)
+            if failures < CANONICAL_MAX_FAILURES and failures_today < CANONICAL_MAX_FAILURES_ALL_BUILDS:
+                wake_targets.append(now + CANONICAL_RETRY_DELAYS[min(max(failures_today, 1), len(CANONICAL_RETRY_DELAYS)) - 1])
 
     for phase in offhours_phases:
         phase_due_at = start_of_today(now) + timedelta(hours=phase.start_hour)

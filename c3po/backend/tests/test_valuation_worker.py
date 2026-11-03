@@ -672,3 +672,23 @@ def test_deploys_do_not_multiply_the_day_s_attempts(monkeypatch) -> None:
     capped = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
 
     assert CANONICAL_MAX_FAILURES_ALL_BUILDS == 6 and capped.canonical_status == "retry_cap"
+
+
+
+def test_a_deploy_during_an_outage_waits_for_the_next_slot(monkeypatch) -> None:
+    """Third pre-review of the caps: a new build has no failures of its own, but the day's wait still holds."""
+    database = _database()
+
+    def fail() -> None:
+        raise RuntimeError("provider outage")
+
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+    first_at = datetime(2026, 11, 4, 0, 5, tzinfo=SAO_PAULO)
+    run_worker_iteration(database, now=first_at, canonical_due=True, canonical_operation=fail, offhours_phases=())
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-b")  # an unrelated deploy ten minutes later
+
+    deployed = run_worker_iteration(database, now=first_at + timedelta(minutes=10), canonical_due=True,
+                                    canonical_operation=fail, offhours_phases=())
+
+    assert deployed.canonical_status == "retry_wait"
+    assert deployed.next_wake_at == first_at + timedelta(minutes=15)
