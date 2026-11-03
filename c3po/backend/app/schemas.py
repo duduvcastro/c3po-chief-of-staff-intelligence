@@ -604,7 +604,7 @@ class LiveMarketIndexResponse(BaseModel):
 
 
 class RealtimeMarketIndex(BaseModel):
-    source: str = "Financial Modeling Prep"
+    source: str = "EODHD"  # the cash indices' provider since FMP was cut (owner 03/11/2026)
     delay_minutes: int = 0
     symbol: str
     name: str

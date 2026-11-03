@@ -987,8 +987,9 @@ def test_live_markets_separates_spot_and_future_index_groups() -> None:
 
 
 def test_live_markets_refreshes_spot_indices_on_three_second_channel() -> None:
-    http = StubHttp([{"symbol": symbol, "price": 100.0, "previousClose": 99.0, "timestamp": 1785859200} for symbol in ("^BVSP", "^IXIC", "^NYA", "^N225", "000001.SS", "^GDAXI")])
-    service = LiveMarketsService(Settings(fmp_api_token="configured", auth_cookie_secure=False), http)  # type: ignore[arg-type]
+    http = StubHttp([{"code": code, "close": 100.0, "previousClose": 99.0, "timestamp": 1785859200}
+                     for code in ("BVSP.INDX", "IXIC.INDX", "NYA.INDX", "N225.INDX", "000001.SHG", "GDAXI.INDX")])
+    service = LiveMarketsService(Settings(eodhd_api_token="configured", auth_cookie_secure=False), http)  # type: ignore[arg-type]
 
     first = service.index_snapshot()
     second = service.index_snapshot()
@@ -1038,10 +1039,16 @@ def test_live_markets_prefers_eodhd_for_us_portfolio_quotes() -> None:
     assert http.calls[0]["url"].endswith("/api/real-time/AMZN.US")
 
 
-def test_six_cash_indices_use_fmp() -> None:
-    indices = [spec for spec in LIVE_MARKET_SPECS if spec.provider == "fmp_index"]
+def test_six_cash_indices_use_eodhd() -> None:
+    # owner 03/11/2026: FMP is cut; the six cash indices come from EODHD's real-time endpoint (app/market_data/indices.py)
+    from app.market_data.indices import INDICES
+
+    indices = [spec for spec in LIVE_MARKET_SPECS if spec.provider == "eodhd_index"]
     assert {spec.symbol for spec in indices} == {"IBOV", "NASDAQ", "NYSE", "Nikkei", "DAX", "Shanghai"}
     assert {spec.symbol: spec.currency for spec in indices}["Nikkei"] == "JPY"
+    assert {spec.provider_symbol for spec in indices} == set(INDICES)
+    assert all(INDICES[spec.provider_symbol].currency == spec.currency for spec in indices)
+    assert not [spec for spec in LIVE_MARKET_SPECS if "fmp" in spec.provider]
 
 
 
@@ -1182,9 +1189,9 @@ def test_realtime_b3_ranks_each_board_from_full_quote_list() -> None:
     ]
     http = RoutingStubHttp({
         "/api/quote/list": {"stocks": rows},
-        "/stable/batch-quote": [{"symbol": symbol, "price": 140000, "previousClose": 139000, "timestamp": 1785859200} for symbol in ("^BVSP", "^IXIC", "^NYA")],
+        "/api/real-time/BVSP.INDX": [{"code": code, "close": 140000, "previousClose": 139000, "timestamp": 1785859200} for code in ("BVSP.INDX", "IXIC.INDX", "NYA.INDX")],
     })
-    settings = Settings(fmp_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
+    settings = Settings(eodhd_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     response = service.snapshot("b3")
@@ -1196,6 +1203,9 @@ def test_realtime_b3_ranks_each_board_from_full_quote_list() -> None:
     assert response.volume_leaders[0].symbol == "TESC3"
     assert response.cash_leaders[0].cash_volume == 18 * 80_000
     assert http.calls[1]["params"]["limit"] == 2000
+    assert http.calls[0]["url"].endswith("/api/real-time/BVSP.INDX")  # the cash index, from EODHD (owner 03/11/2026)
+    assert response.index is not None and (response.index.symbol, response.index.value, response.index.source) == ("^BVSP", 140000, "EODHD")
+    assert response.index.currency == "BRL"
 
 
 def test_realtime_b3_leaders_carry_the_provider_quote_session_not_collection_time() -> None:
@@ -1212,9 +1222,9 @@ def test_realtime_b3_leaders_carry_the_provider_quote_session_not_collection_tim
             "regularMarketVolume": 54_000_000,
             "regularMarketTime": timestamp,
         }]},
-        "/stable/batch-quote": [{"symbol": symbol, "price": 141422, "previousClose": 140993, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
+        "/api/real-time/BVSP.INDX": [{"code": code, "close": 141422, "previousClose": 140993, "timestamp": timestamp} for code in ("BVSP.INDX", "IXIC.INDX", "NYA.INDX")],
     })
-    settings = Settings(fmp_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
+    settings = Settings(eodhd_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     response = service.snapshot("B3")
@@ -1233,9 +1243,9 @@ def test_realtime_b3_leaders_do_not_borrow_index_time_when_detail_timestamp_is_u
         "/api/quote/list": {"stocks": [
             {"stock": "BHIA3", "name": "Grupo Casas Bahia", "close": 0.40, "change": 17.65, "volume": 54_000_000},
         ]},
-        "/stable/batch-quote": [{"symbol": symbol, "price": 141422, "previousClose": 140993, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
+        "/api/real-time/BVSP.INDX": [{"code": code, "close": 141422, "previousClose": 140993, "timestamp": timestamp} for code in ("BVSP.INDX", "IXIC.INDX", "NYA.INDX")],
     })
-    settings = Settings(fmp_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
+    settings = Settings(eodhd_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     response = service.snapshot("B3")
@@ -1258,9 +1268,9 @@ def test_realtime_us_separates_nasdaq_and_nyse_common_stocks() -> None:
     http = RoutingStubHttp({
         "/api/exchange-symbol-list/US": catalog,
         "/api/real-time/AAPL.US": quotes,
-        "/stable/batch-quote": [{"symbol": symbol, "price": 22000, "previousClose": 21800, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
+        "/api/real-time/BVSP.INDX": [{"code": code, "close": 22000, "previousClose": 21800, "timestamp": timestamp} for code in ("BVSP.INDX", "IXIC.INDX", "NYA.INDX")],
     })
-    settings = Settings(fmp_api_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     nasdaq = service.snapshot("nasdaq")
@@ -1339,7 +1349,7 @@ def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
     http = RoutingStubHttp({
         "/api/exchange-symbol-list/US": catalog,
         "/api/real-time/AAPL.US": quotes,
-        "/stable/batch-quote": [{"symbol": symbol, "price": 22000, "previousClose": 21800, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
+        "/api/real-time/BVSP.INDX": [{"code": code, "close": 22000, "previousClose": 21800, "timestamp": timestamp} for code in ("BVSP.INDX", "IXIC.INDX", "NYA.INDX")],
     })
     stream = StubRealtimeStream({"MSFT": EodhdStreamQuote(
         symbol="MSFT",
@@ -1347,7 +1357,7 @@ def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
         as_of=datetime.fromtimestamp(timestamp + 60, tz=timezone.utc),
         market_state="open",
     )})
-    settings = Settings(fmp_api_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http, stream=stream)  # type: ignore[arg-type]
 
     response = service.snapshot("nasdaq")

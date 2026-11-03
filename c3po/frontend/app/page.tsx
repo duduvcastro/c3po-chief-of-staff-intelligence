@@ -5069,7 +5069,7 @@ function LiveMarketRow({ item }: { item: LiveMarketItem }) {
         <span>{item.low !== null ? formatLiveMarketPrice({ ...item, price: item.low }) : "N/D"}</span>
         <span>{item.high !== null ? formatLiveMarketPrice({ ...item, price: item.high }) : "N/D"}</span>
       </div>
-      <div className="live-market-quote"><span className={`market-state market-state-${item.status}`}>{item.status}</span><strong>{formatDate(item.as_of)}</strong><small>{item.provider} · {item.provider === "Financial Modeling Prep" ? (item.status === "closed" ? "fechamento" : `cotação há ${item.delay_minutes} min`) : `~${item.delay_minutes}m`}</small></div>
+      <div className="live-market-quote"><span className={`market-state market-state-${item.status}`}>{item.status}</span><strong>{formatDate(item.as_of)}</strong><small>{item.provider} · {item.provider === "EODHD" ? (item.status === "closed" ? "fechamento" : `cotação há ${item.delay_minutes} min`) : `~${item.delay_minutes}m`}</small></div>
     </article>
   );
 }

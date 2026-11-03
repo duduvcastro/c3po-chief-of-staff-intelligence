@@ -40,12 +40,14 @@ MARKET_SPECS = (
     MarketSpec("Future Index", "US3Y", "US 3-Year Treasury Yield", "US3Y.GBOND", "%", "eodhd_bond", "US3Y.GBOND"),
     MarketSpec("Future Index", "US10Y", "US 10-Year Treasury Yield", "US10Y.GBOND", "%", "eodhd_bond", "US10Y.GBOND"),
     MarketSpec("Future Index", "US30Y", "US 30-Year Treasury Yield", "US30Y.GBOND", "%", "eodhd_bond", "US30Y.GBOND"),
-    MarketSpec("Index", "IBOV", "Ibovespa B3", "^BVSP", "BRL", "fmp_index"),
-    MarketSpec("Index", "NASDAQ", "Nasdaq Composite", "^IXIC", "USD", "fmp_index"),
-    MarketSpec("Index", "NYSE", "NYSE Composite", "^NYA", "USD", "fmp_index"),
-    MarketSpec("Index", "Nikkei", "Nikkei 225", "^N225", "JPY", "fmp_index"),
-    MarketSpec("Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY", "fmp_index"),
-    MarketSpec("Index", "DAX", "DAX Performance Index", "^GDAXI", "EUR", "fmp_index"),
+    # The six cash indices: EODHD real-time through IndexQuotesService (owner 03/11/2026: FMP is cut); the EODHD codes live in
+    # indices.INDICES, and the symbols the application exposes (^BVSP...) do not change
+    MarketSpec("Index", "IBOV", "Ibovespa B3", "^BVSP", "BRL", "eodhd_index"),
+    MarketSpec("Index", "NASDAQ", "Nasdaq Composite", "^IXIC", "USD", "eodhd_index"),
+    MarketSpec("Index", "NYSE", "NYSE Composite", "^NYA", "USD", "eodhd_index"),
+    MarketSpec("Index", "Nikkei", "Nikkei 225", "^N225", "JPY", "eodhd_index"),
+    MarketSpec("Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY", "eodhd_index"),
+    MarketSpec("Index", "DAX", "DAX Performance Index", "^GDAXI", "EUR", "eodhd_index"),
     MarketSpec("Currencies", "USD/BRL", "US Dollar / Brazilian Real", "BRL=X", "BRL", "eodhd", "USDBRL.FOREX"),
     MarketSpec("Currencies", "EUR/BRL", "Euro / Brazilian Real", "EURBRL=X", "BRL", "eodhd", "EURBRL.FOREX"),
     MarketSpec("Currencies", "GBP/BRL", "British Pound / Brazilian Real", "GBPBRL=X", "BRL", "eodhd", "GBPBRL.FOREX"),
@@ -178,12 +180,12 @@ class LiveMarketsService:
             errors.append("EODHD credential unavailable; Yahoo fallback active")
 
         for spec in MARKET_SPECS:
-            if spec.provider == "fmp_index":
+            if spec.provider == "eodhd_index":
                 try:
                     items[spec.symbol] = self._fetch_index(spec)
                 except Exception:
-                    errors.append(f"{spec.symbol}: FMP index quote unavailable")
-        # Futures retain their existing source; cash indices use FMP exclusively.
+                    errors.append(f"{spec.symbol}: EODHD index quote unavailable")
+        # Futures retain their existing source; cash indices use EODHD's index quotes exclusively (no Yahoo fallback).
         yahoo_specs = [spec for spec in MARKET_SPECS if spec.provider == "yahoo"]
         yahoo_specs.extend(spec for spec in eodhd_specs if spec.symbol not in items)
         with ThreadPoolExecutor(max_workers=8) as executor:
@@ -223,7 +225,7 @@ class LiveMarketsService:
             f"EODHD {eodhd_plan} is active for US portfolio securities, FX and crypto; "
             f"{live_label(self.stream)} supersedes delayed US equity quotes when trades arrive. "
             "EODHD Government Bonds supplies the US yield curve, while Yahoo Finance remains "
-            "the source for futures and the identified fallback; FMP supplies the six cash indices."
+            "the source for futures and the identified fallback; EODHD supplies the six cash indices (delayed quotes)."
             if self.settings.eodhd_api_token else
             "Yahoo Finance public chart feed is active because EODHD is not configured."
         )

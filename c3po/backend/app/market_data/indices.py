@@ -1,4 +1,6 @@
-"""One FMP quote snapshot for the six cash indices used across the application."""
+"""One EODHD real-time snapshot for the six cash indices used across the application (owner 03/11/2026: FMP is cut and
+the indices move to EODHD, whose plan is already paid). EODHD's index quotes are delayed (~15 min for IBOV, Nasdaq, NYSE
+and DAX in the probe of 03/11/2026), so a card usually reads "delayed": quote_status says so from the quote's own time."""
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -13,9 +15,17 @@ from zoneinfo import ZoneInfo
 import exchange_calendars as xcals
 
 from ..config import Settings
-from ..schemas import LiveMarketItem
+from ..schemas import LiveMarketItem, NormalizedQuote
+from .eodhd import EodhdClient
 from .http import JsonHttpClient, DeadlineJsonHttpClient
-from .models import number
+
+
+PROVIDER = 'EODHD'
+# One refresh is one batch request that EODHD bills as six calls (one per symbol): at most one a minute (FMP's was 10 s)
+CACHE_SECONDS = 60
+# EODHD answers the Shanghai Composite as 000001.SHG: SSEC.INDX returned "NA" fields on 19/08/2026 and nothing in the
+# probe of 03/11/2026. Kept apart so a provider-side change is a one-line edit.
+SHANGHAI_EODHD_CODE = '000001.SHG'
 
 
 @dataclass(frozen=True)
@@ -24,15 +34,16 @@ class IndexSpec:
     name: str
     currency: str
     calendar: str
+    eodhd_code: str  # the provider's code; the key of INDICES stays the symbol the application exposes
 
 
 INDICES = {
-    '^BVSP': IndexSpec('IBOV', 'Ibovespa B3', 'BRL', 'BVMF'),
-    '^IXIC': IndexSpec('NASDAQ', 'Nasdaq Composite', 'USD', 'XNYS'),
-    '^NYA': IndexSpec('NYSE', 'NYSE Composite', 'USD', 'XNYS'),
-    '^N225': IndexSpec('Nikkei', 'Nikkei 225', 'JPY', 'XTKS'),
-    '000001.SS': IndexSpec('Shanghai', 'Shanghai Composite', 'CNY', 'XSHG'),
-    '^GDAXI': IndexSpec('DAX', 'DAX Performance Index', 'EUR', 'XETR'),
+    '^BVSP': IndexSpec('IBOV', 'Ibovespa B3', 'BRL', 'BVMF', 'BVSP.INDX'),
+    '^IXIC': IndexSpec('NASDAQ', 'Nasdaq Composite', 'USD', 'XNYS', 'IXIC.INDX'),
+    '^NYA': IndexSpec('NYSE', 'NYSE Composite', 'USD', 'XNYS', 'NYA.INDX'),
+    '^N225': IndexSpec('Nikkei', 'Nikkei 225', 'JPY', 'XTKS', 'N225.INDX'),
+    '000001.SS': IndexSpec('Shanghai', 'Shanghai Composite', 'CNY', 'XSHG', SHANGHAI_EODHD_CODE),
+    '^GDAXI': IndexSpec('DAX', 'DAX Performance Index', 'EUR', 'XETR', 'GDAXI.INDX'),
 }
 
 
@@ -114,7 +125,7 @@ class IndexQuotesService:
                             if previous is None or item.as_of >= previous.as_of:
                                 self._items[key] = item
                                 self._failed.discard(key)
-                        self._expires = datetime.now(timezone.utc) + timedelta(seconds=10)
+                        self._expires = datetime.now(timezone.utc) + timedelta(seconds=CACHE_SECONDS)
                 finally:
                     with self._lock:
                         self._refreshing = None
@@ -127,7 +138,7 @@ class IndexQuotesService:
             item = self._items.get(symbol)
             stale = symbol in self._failed
         if item is None:
-            raise RuntimeError('FMP index quote unavailable')
+            raise RuntimeError('EODHD index quote unavailable')
         now = datetime.now(timezone.utc)
         status, market_state = quote_status(INDICES[symbol], item.as_of, now)
         if stale:
@@ -138,50 +149,56 @@ class IndexQuotesService:
         })
 
     def _fetch(self, now: datetime) -> dict[str, LiveMarketItem]:
-        items = {}
-        if not self.settings.fmp_api_token:
+        """The six indices in ONE batch through the frozen EodhdClient.quotes (as live_markets reads .INDX codes). Without
+        an EODHD token nothing is fetched and every quote() reports the index unavailable."""
+        items: dict[str, LiveMarketItem] = {}
+        if not self.settings.eodhd_api_token:
             return items
+        by_code = {spec.eodhd_code.upper(): symbol for symbol, spec in INDICES.items()}
         try:
-            payload = self.http.get_json(
-                f'{self.settings.fmp_base_url.rstrip("/")}/stable/batch-quote',
-                params={'symbols': ','.join(INDICES), 'apikey': self.settings.fmp_api_token},
-            )
-            if not isinstance(payload, list):
-                return items
-            for row in payload:
-                if not isinstance(row, dict) or row.get('symbol') not in INDICES:
-                    continue
-                symbol = row['symbol']
-                try:
-                    items[symbol] = self._normalize(symbol, row, now)
-                except (ValueError, TypeError, OverflowError, OSError):
-                    continue
+            client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.http)
+            quotes = client.quotes([spec.eodhd_code for spec in INDICES.values()])
         except Exception as exc:
+            # The class name only: a provider error may carry the URL and its token.
             logging.getLogger(__name__).warning("Index quote fetch failed (%s)", type(exc).__name__)
             return {}
+        for quote in quotes:
+            symbol = by_code.get(quote.provider_symbol.upper())
+            if symbol is None:
+                continue
+            try:
+                items[symbol] = self._normalize(symbol, quote, now)
+            except (ValueError, TypeError, OverflowError, OSError):
+                continue
         return items
 
     @staticmethod
-    def _normalize(symbol: str, row: dict, now: datetime) -> LiveMarketItem:
+    def _normalize(symbol: str, quote: NormalizedQuote, now: datetime) -> LiveMarketItem:
         spec = INDICES[symbol]
-        price, stamp = number(row.get('price')), number(row.get('timestamp'))
-        if price is None or not math.isfinite(price) or price <= 0 or stamp is None or not math.isfinite(stamp) or stamp <= 0:
-            raise ValueError('FMP index quote invalid')
-        as_of = datetime.fromtimestamp(stamp, timezone.utc)
+        price = quote.price
+        if not math.isfinite(price) or price <= 0:
+            raise ValueError('EODHD index quote has no valid price')
+        # The helper stamps a record without a usable provider timestamp ("NA", missing) with its own collection instant:
+        # that is no observation time, and a quote without one never becomes fresh.
+        as_of = quote.as_of
+        if as_of == quote.collected_at or as_of.timestamp() <= 0:
+            raise ValueError('EODHD index quote has no provider timestamp')
         if as_of > now + timedelta(seconds=60):
-            raise ValueError('FMP index quote is future dated')
-        def finite(key: str) -> float | None:
-            value = number(row.get(key))
+            raise ValueError('EODHD index quote is future dated')
+
+        def finite(value: float | None) -> float | None:
             return value if value is not None and math.isfinite(value) else None
-        previous = finite('previousClose')
-        change = price - previous if previous is not None and previous > 0 else finite('change')
-        percent = change / previous * 100 if change is not None and previous is not None and previous > 0 else finite('changePercentage')
+
+        previous = finite(quote.previous_close)
+        change = price - previous if previous is not None and previous > 0 else finite(quote.change)
+        percent = change / previous * 100 if change is not None and previous is not None and previous > 0 else finite(quote.change_percent)
         status, state = quote_status(spec, as_of, now)
         return LiveMarketItem(
+            # The currency is the index's own: the helper defaults a quote without one to USD.
             group='Index', symbol=spec.symbol, name=spec.name, provider_symbol=symbol,
-            provider='Financial Modeling Prep', exchange=spec.calendar, currency=spec.currency,
+            provider=PROVIDER, exchange=spec.calendar, currency=spec.currency,
             price=price, change=change, change_percent=percent, previous_close=previous,
-            open=finite('open'), low=finite('dayLow'), high=finite('dayHigh'),
+            open=finite(quote.open), low=finite(quote.low), high=finite(quote.high),
             market_state=state, status=status, delay_minutes=max(0, int((now-as_of).total_seconds()//60)),
-            as_of=as_of, collected_at=now, quality_score=95,
+            as_of=as_of, collected_at=now, quality_score=quote.quality_score,
         )
