@@ -22,7 +22,7 @@ concurrency:
 jobs:
   status:
     runs-on: ubuntu-latest
-    environment: production  # the host's address and known hosts are the production environment's (the repository-level ones predate the host migration)
+    # no environment: the repository-level host secrets are the PREVIOUS host's (set 17/08/2026, before the 05/09 migration)
     timeout-minutes: 10
     steps:
       - name: Configure deployment SSH key
@@ -36,80 +36,34 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts || exit 1
           chmod 600 ~/.ssh/known_hosts || exit 1
 
-      - name: Read the r2d2-live state, summary and logs
+      - name: Read the previous host, once, read-only
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
-          MINUTES: ${{ inputs.minutes }}
         shell: bash
         run: |
           set -uo pipefail
-          [[ "$MINUTES" =~ ^[0-9]{1,3}$ ]] && [ "$MINUTES" -ge 1 ] && [ "$MINUTES" -le 240 ] || { echo "minutes must be 1-240"; exit 1; }
           rc=0
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "MINUTES=$MINUTES bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2>&1 || rc=$?
+          # ssh's own errors name the host's address: they go to a private file and only their count is printed
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2> "$RUNNER_TEMP/ssh_err.txt" || rc=$?
           set -uo pipefail
           exec 2>/dev/null
-          cd /opt/chief-of-staff-digital || exit 10
-          compose=(docker compose --env-file .env -f c3po/compose.yml)
-          echo "== massive snapshot: response shape and trade ages over the whole market, keys and numbers only"
-          timeout 90 "${compose[@]}" exec -T api python - <<'PY' | grep -oE '^(token_set=(True|False)|http=[0-9]{3}|status=(OK|ERROR|DELAYED|NOT_AUTHORIZED|NOT_FOUND|None|other) rows=[0-9]+ with_trade=[0-9]+ dotted=[0-9]+|row_keys=[A-Za-z_,]+|last_trade_keys=[A-Za-z_,]*|t_bad=[0-9]+|t_digits=[0-9,]* today=[0-9]+ age_s_p50=-?[0-9]+ age_s_p90=-?[0-9]+|snapshot failed=[A-Za-z]+)$'
-          from datetime import datetime, timezone
-          from zoneinfo import ZoneInfo
-          import httpx
-          from app.config import get_settings
-          s = get_settings()
-          print("token_set=%s" % bool(s.massive_api_token))
-          try:
-              response = httpx.get(s.massive_base_url.rstrip("/") + "/v2/snapshot/locale/us/markets/stocks/tickers",
-                                   params={"apiKey": s.massive_api_token}, timeout=60.0)
-              print("http=%d" % response.status_code)
-              body = response.json()
-              rows = body.get("tickers") if isinstance(body, dict) else None
-              rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
-              status = str(body.get("status")) if isinstance(body, dict) else "None"
-              trades = [row["lastTrade"] for row in rows if isinstance(row.get("lastTrade"), dict)]
-              print("status=%s rows=%d with_trade=%d dotted=%d" % (
-                  status if status in ("OK", "ERROR", "DELAYED", "NOT_AUTHORIZED", "NOT_FOUND", "None") else "other", len(rows),
-                  len(trades), sum(1 for row in rows if "." in str(row.get("ticker") or ""))))
-              print("row_keys=%s" % ",".join(sorted({key for row in rows[:200] for key in row if key != "ticker"})))
-              print("last_trade_keys=%s" % ",".join(sorted({key for trade in trades[:200] for key in trade})))
-              now = datetime.now(timezone.utc)
-              session = now.astimezone(ZoneInfo("America/New_York")).date()
-              raw = [trade.get("t") for trade in trades]
-              stamps = [t for t in raw if isinstance(t, int) and not isinstance(t, bool) and 0 < t < 10**20]
-              print("t_bad=%d" % (len(raw) - len(stamps)))
-              ages = sorted(int(now.timestamp() - stamp / 1e9) for stamp in stamps
-                            if stamp > 0 and datetime.fromtimestamp(stamp / 1e9, timezone.utc).astimezone(ZoneInfo("America/New_York")).date() == session)
-              digits = ",".join(str(count) for count in sorted({len(str(stamp)) for stamp in stamps}))
-              print("t_digits=%s today=%d age_s_p50=%d age_s_p90=%d" % (
-                  digits, len(ages), ages[len(ages) // 2] if ages else -1, ages[int(len(ages) * 0.9)] if ages else -1))
-          except Exception as error:
-              print("snapshot failed=%s" % type(error).__name__)
-          PY
-          echo "snapshot rc=$?"
-          echo "== host peaks per day (sysstat), numbers only"
-          peak() {  # file, sadf report, column, max|min
-            sadf -d "$1" -- "$2" | awk -F';' -v col="$3" -v mode="$4" '
-              /^# hostname/ { sub(/^# /, ""); for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
-              c && $c ~ /^[0-9]+([.][0-9]+)?$/ { v = $c + 0; if (!n || (mode == "max" ? v > m : v < m)) m = v; n++ }
-              END { if (n) printf "%.1f", m; else printf "na" }'
-          }
-          echo "sa_files=$(ls /var/log/sysstat/sa[0-9][0-9] 2>/dev/null | wc -l)"
-          for f in $(ls -tr /var/log/sysstat/sa[0-9][0-9] 2>/dev/null); do
-            printf 'day=%s date=%s memused_pct_max=%s kbmemused_max=%s kbcommit_max=%s cpu_idle_pct_min=%s ldavg1_max=%s\n' "$(basename "$f")" "$(date -r "$f" +%F)" \
-              "$(peak "$f" -r %memused max)" "$(peak "$f" -r kbmemused max)" "$(peak "$f" -r kbcommit max)" \
-              "$(peak "$f" -u %idle min)" "$(peak "$f" -q ldavg-1 max)"
-          done | grep -E '^day=sa[0-9]{2} date=[0-9]{4}-[0-9]{2}-[0-9]{2} memused_pct_max=[0-9.na]+ kbmemused_max=[0-9.na]+ kbcommit_max=[0-9.na]+ cpu_idle_pct_min=[0-9.na]+ ldavg1_max=[0-9.na]+$'
-          echo "== now"
-          free -m | awk '/^Mem:/ { printf "mem_mb total=%d used=%d available=%d\n", $2, $3, $7 }'
+          echo "== previous host"
+          awk '{ printf "uptime_days=%d\n", $1 / 86400 }' /proc/uptime
+          free -m | awk '/^Mem:/ { printf "mem_mb total=%d used=%d\n", $2, $3 }'
           nproc | awk '{ printf "cpus=%d\n", $1 }'
-          stats=$(timeout 30 docker stats --no-stream --format '{{.Name}} mem={{.MemUsage}}')
-          echo "stats_lines=$(printf '%s\n' "$stats" | grep -c .)"
-          printf '%s\n' "$stats" | grep -E '^[a-z0-9][a-z0-9_.-]* mem=[0-9.]+(B|[KMGT]iB) / [0-9.]+(B|[KMGT]iB)$'
+          df -BG --output=size,used / | awk 'NR == 2 { gsub("G", ""); printf "root_gb size=%d used=%d\n", $1, $2 }'
+          [ -d /opt/chief-of-staff-digital ] && echo "app_dir=present" || echo "app_dir=absent"
+          version=$(cut -c1-12 /opt/chief-of-staff-digital/.deploy-version)
+          [[ "$version" =~ ^[0-9a-f]{12}$ ]] && echo "deploy_version=$version" || echo "deploy_version=none"
+          echo "containers_running=$(docker ps -q | wc -l)"
+          docker ps --format '{{.Label "com.docker.compose.service"}} up={{.RunningFor}}' | grep -E '^[a-z0-9-]+ up=[A-Za-z0-9 ]+$' | sort
+          echo "c3po_timers=$(systemctl list-timers --all --no-legend | grep -cE 'c3po|r2d2|valuation|massive|backup|f2s')"
+          echo "cron_lines=$(crontab -l | grep -cvE '^(#|$)')"
+          echo "last_login_days=$(( ( $(date +%s) - $(stat -c %Y /var/log/wtmp) ) / 86400 ))"
           exit 0
           REMOTE
-          # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)
-          sed -E 's/(api_token=|[aA]pi[kK]ey=)[^&[:space:]"]+/\1[redacted]/g' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "remote exit status: $rc"
-          exit "$rc"
+          echo "ssh_rc=$rc ssh_err_lines=$(grep -c . "$RUNNER_TEMP/ssh_err.txt")"
+          grep -E '^(== previous host|uptime_days=[0-9]+|mem_mb total=[0-9]+ used=[0-9]+|cpus=[0-9]+|root_gb size=[0-9]+ used=[0-9]+|app_dir=(present|absent)|deploy_version=([0-9a-f]{12}|none)|containers_running=[0-9]+|[a-z0-9-]+ up=[A-Za-z0-9 ]+|c3po_timers=[0-9]+|cron_lines=[0-9]+|last_login_days=-?[0-9]+)$' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0
