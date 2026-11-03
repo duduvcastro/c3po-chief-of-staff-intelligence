@@ -8,7 +8,8 @@ from ..config import Settings
 from ..schemas import LiveMarketIndexResponse, LiveMarketItem, LiveMarketsResponse
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
-from .eodhd_stream import EodhdRealtimeStream, usable_display_tick
+from .eodhd_stream import usable_display_tick
+from .massive_quotes import LiveQuoteStream, live_label
 from .http import JsonHttpClient
 from .indices import IndexQuotesService
 from .models import from_unix, number
@@ -78,7 +79,7 @@ class LiveMarketsService:
         self,
         settings: Settings,
         http: JsonHttpClient,
-        stream: EodhdRealtimeStream | None = None,
+        stream: LiveQuoteStream | None = None,
         indices: IndexQuotesService | None = None,
     ) -> None:
         self.settings = settings
@@ -365,7 +366,7 @@ class LiveMarketsService:
         change_percent = change / previous_close * 100 if change is not None and previous_close else item.change_percent
         is_open = tick.market_state.lower() in {"open", "extended-hours"}
         return item.model_copy(update={
-            "provider": "EODHD Real-Time WebSocket",
+            "provider": live_label(self.stream),
             "price": tick.price,
             "change": change,
             "change_percent": change_percent,

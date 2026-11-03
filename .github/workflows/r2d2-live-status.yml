@@ -73,6 +73,12 @@ jobs:
           echo "== valuation worker line (last 30 h)"
           worker=$("${compose[@]}" logs --no-color --since 30h --tail 20000 valuation-worker 2>&1) || worker=""
           printf '%s\n' "$worker" | grep -oE "Valuation ensemble live: pending=[0-9]+ published=[0-9]+ partial=[0-9]+ names=[0-9]+ with_primary_tp=[0-9]+ names_pending=[0-9]+ failures=\{('[a-z_]+(:([a-z_0-9]+(_T)?|[A-Z]+[a-z][A-Za-z]*))*': [0-9]+(, )?)*\}$" | tail -4
+          # the screens' live US source (03/11/2026: Massive's snapshot, no EODHD WebSocket in the api): the api's own
+          # count-only line (numbers and a closed state set) and the NUMBER of its EODHD stream lines (0 once it is gone)
+          echo "== screen quotes (api, last ${MINUTES} min)"
+          screens=$("${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 20000 api 2>&1) || screens=""
+          printf '%s\n' "$screens" | grep -oE "Screen quotes [(]Massive[)]: state=(stopped|idle|closed|connected|error) symbols=[0-9]+ polls=[0-9]+ failures=[0-9]+ ticks=[0-9]+$" | tail -12
+          echo "== api EODHD stream lines (count only): $(printf '%s\n' "$screens" | grep -cE "EODHD realtime")"
           exit 0
           REMOTE
           # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)
