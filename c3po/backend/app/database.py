@@ -3697,6 +3697,35 @@ class Database:
             for symbol, bucket in buckets.items()
         }
 
+    def finnhub_insider_transactions(self, symbol: str, *, since: date, market: str = "US") -> list[dict[str, Any]]:
+        """The transactions (raw_metadata: insider_name, transaction_code, share_change, transaction_date, …) of the
+        "Insider Transaction" rows Finnhub wrote for ONE name (source_code 'sec', external_id 'finnhub-insider-…') whose
+        transaction (reference_date) is on or after ``since``. Finnhub is cut (owner 03/11/2026) but its rows stay and
+        insider_transaction_activity counts them: the EODHD Form 4 path reads these so it never writes the same
+        transaction twice (investor_relations.eodhd_insider_transactions_not_in_finnhub)."""
+        clean = symbol.strip().upper()
+        if not clean:
+            return []
+        if not self.database_url:
+            return [
+                dict(event.get("raw_metadata") or {}) for event in self._ir_events.values()
+                if event.get("source_code") == "sec" and event.get("market") == market and event.get("symbol") == clean
+                and event.get("event_type") == "Insider Transaction"
+                and str(event.get("external_id") or "").startswith("finnhub-insider-")
+                and str(event.get("reference_date") or "")[:10] >= since.isoformat()
+            ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT raw_metadata
+                FROM ir_events
+                WHERE source_code = 'sec' AND market = %s AND symbol = %s AND event_type = 'Insider Transaction'
+                  AND external_id LIKE %s AND reference_date >= %s
+                """,
+                (market, clean, "finnhub-insider-%", since),
+            ).fetchall()
+        return [raw if isinstance(raw, dict) else (json.loads(raw) if raw else {}) for (raw,) in rows]
+
     def _news_sentiment_rows(self, symbol: str, market: str) -> list[dict[str, Any]]:
         """The in-memory double's weekly "News Sentiment" rows of one symbol, of either source (NEWS_SENTIMENT_SOURCES)."""
         return [

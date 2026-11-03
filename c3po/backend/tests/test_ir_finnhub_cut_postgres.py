@@ -1,5 +1,6 @@
-"""The weekly news sentiment on a real PostgreSQL after the owner cut Finnhub (03/11/2026): migration 056 admits the
-'massive' source next to 'finnhub' (whose rows stay), and the readers take the latest row of either.
+"""The Finnhub cut (owner 03/11/2026) on a real PostgreSQL: migration 056 admits the 'massive' source next to 'finnhub'
+(whose rows stay), the weekly news-sentiment readers take the latest row of either, and the EODHD Form 4 path reads the
+insider rows Finnhub stored so it never writes the same transaction twice.
 
 Runs only with C3PO_MIGRATED_TEST_DSN: the CI's disposable database on a local socket where every migration was applied
 twice (.github/workflows/backend-postgres.yml). Each test is ONE transaction on one connection, rolled back at the end —
@@ -113,3 +114,30 @@ def test_a_massive_run_reaches_the_source_health(migrated: tuple[Database, psyco
     run_id = store.begin_ingestion_run("massive", "Massive", "market_sentiment", {"operation": "news_sentiment"})
     store.finish_ingestion_run(run_id, "succeeded", 40, 3)
     assert store.ir_source_health()["massive"]["last_status"] == "succeeded"
+
+
+def test_the_eodhd_path_reads_one_name_s_finnhub_insider_rows_of_the_window(migrated: tuple[Database, psycopg.Connection]) -> None:
+    store, _connection = migrated
+    symbol, other = (f"ZZ{uuid4().hex[:6].upper()}" for _ in range(2))
+    today = datetime.now(timezone.utc).date()
+
+    def insider(prefix: str, name: str, days_ago: int) -> dict[str, Any]:
+        day = today - timedelta(days=days_ago)
+        return {
+            "source_code": "sec", "external_id": f"{prefix}-{name}-{day.isoformat()}-x-S", "company_id": None, "market": "US",
+            "symbol": name, "company_name": name, "regulator_id": None, "event_type": "Insider Transaction", "form": "Form 4",
+            "title": "t", "summary": "", "published_at": datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc),
+            "published_time_precision": "date", "reference_date": day, "official_url": "https://www.sec.gov", "document_url": None,
+            "materiality": "low", "valuation_relevant": False, "valuation_status": "informational",
+            "raw_metadata": {"source": prefix.split("-")[0], "transaction_date": day.isoformat(), "transaction_code": "S"},
+            "collected_at": datetime.now(timezone.utc),
+        }
+
+    assert store.save_ir_events([
+        insider("finnhub-insider", symbol, 10), insider("finnhub-insider", symbol, 91),
+        insider("eodhd-insider", symbol, 10), insider("finnhub-insider", other, 10),
+    ]) == 4
+
+    read = store.finnhub_insider_transactions(symbol.lower(), since=today - timedelta(days=90))
+    assert [item["transaction_date"] for item in read] == [(today - timedelta(days=10)).isoformat()]
+    assert read[0]["source"] == "finnhub"

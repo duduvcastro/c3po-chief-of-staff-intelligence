@@ -205,6 +205,80 @@ def date_at_midnight(value: str) -> datetime:
     return datetime.combine(date.fromisoformat(value[:10]), time.min, tzinfo=SAO_PAULO)
 
 
+def insider_slug(insider_name: str) -> str:
+    """The insider's name as both insider producers put it in their external ids (``<provider>-insider-<SYMBOL>-<date>-
+    <slug>-<code>``): lower case, every run of other characters one dash — "COOK TIMOTHY D" and "Cook, Timothy D." alike."""
+    return re.sub(r"[^a-z0-9]+", "-", insider_name.lower()).strip("-")
+
+
+def insider_identity(transaction: dict[str, Any]) -> tuple[str, str, str] | None:
+    """(transaction date, code, insider slug): the row a Form 4 transaction is stored as by either insider producer — one
+    row per insider, day and code, a day's several lots collapsing into it through the shared external id. None when a
+    field is missing (such a transaction is never stored)."""
+    day = safe_date(str(transaction.get("transaction_date") or ""))
+    code = str(transaction.get("transaction_code") or "").strip().upper()
+    slug = insider_slug(clean_text(str(transaction.get("insider_name") or "")))
+    return (day.isoformat(), code, slug) if day and code and slug else None
+
+
+def insider_shares_key(transaction: dict[str, Any]) -> tuple[str, str, float] | None:
+    """(transaction date, code, signed share change): both providers sign the change — Finnhub's ``change``, EODHD's
+    shares × +1 acquired / −1 disposed — on the same transaction date. None without a date, a code or a non-zero change."""
+    day = safe_date(str(transaction.get("transaction_date") or ""))
+    code = str(transaction.get("transaction_code") or "").strip().upper()
+    try:
+        change = round(float(transaction.get("share_change") or 0), 4)
+    except (TypeError, ValueError):
+        return None
+    return (day.isoformat(), code, change) if day and code and change else None
+
+
+def eodhd_insider_transactions_not_in_finnhub(
+    transactions: list[dict[str, Any]], finnhub_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """The EODHD Form 4 transactions of ONE name that Finnhub has not already stored. Finnhub is cut (owner 03/11/2026):
+    its "Insider Transaction" rows stay, and Database.insider_transaction_activity counts every row, so the same
+    transaction written again from EODHD (the path once Finnhub's token is blank) would double the name's insider
+    activity in the One Pager and the US screener for the 180 days they read.
+
+    The key uses only what both normalizers fill alike (FinnhubClient._normalize_transaction and the frozen
+    EodhdClient._normalize_form4_row: transaction_date as an ISO date, transaction_code upper case, share_change signed,
+    insider_name); price, shares_held_after and filing_date are left out, as providers round or date them differently.
+    Both producers store ONE row per insider, day and code (their external ids collapse a day's lots into it), so
+    EODHD's transactions are judged by that group (``insider_identity``):
+
+    * a group whose (transaction date, code, insider slug) Finnhub has is dropped whole — any one of its lots would
+      recreate the second row;
+    * a group whose insider Finnhub spelled otherwise is dropped when one of its lots carries the (transaction date, code,
+      signed share change) of a Finnhub row no group matched by name; each Finnhub row absorbs at most one group, so two
+      insiders trading the same size on the same day are never merged.
+
+    Everything else is kept, in order: the transactions Finnhub never stored (every one after the cut)."""
+    stored = [(insider_identity(row), insider_shares_key(row)) for row in finnhub_rows]
+    stored_identities = {identity for identity, _ in stored if identity}
+    groups: dict[tuple[str, str, str] | None, list[dict[str, Any]]] = {}
+    for transaction in transactions:
+        groups.setdefault(insider_identity(transaction), []).append(transaction)
+    by_name = {identity for identity in groups if identity in stored_identities}
+    by_shares: dict[tuple[str, str, float], int] = {}
+    for identity, shares in stored:
+        if shares and identity not in by_name:
+            by_shares[shares] = by_shares.get(shares, 0) + 1
+    kept_identities: set[tuple[str, str, str] | None] = set()
+    for identity, lots in groups.items():
+        if identity is None:
+            kept_identities.add(identity)  # an incomplete row: never stored, passed through as before
+            continue
+        if identity in by_name:
+            continue
+        match = next((key for key in map(insider_shares_key, lots) if key and by_shares.get(key)), None)
+        if match:
+            by_shares[match] -= 1
+            continue
+        kept_identities.add(identity)
+    return [transaction for transaction in transactions if insider_identity(transaction) in kept_identities]
+
+
 def massive_published_at(value: Any) -> datetime | None:
     """A Massive article's ``published_utc`` (RFC 3339, "…Z") as an aware instant; None when absent or unreadable."""
     text = str(value or "").strip()
@@ -1100,7 +1174,7 @@ class InvestorRelationsService:
             action = "compra" if transaction.get("is_purchase") else "venda" if transaction.get("is_sale") else "movimentação"
             price = transaction.get("price")
             price_note = f" a ${price:,.2f}/ação" if price else ""
-            slug = re.sub(r"[^a-z0-9]+", "-", insider_name.lower()).strip("-")
+            slug = insider_slug(insider_name)
             published_at = datetime.combine(transaction_date, time.min, tzinfo=timezone.utc)
             events.append({
                 "source_code": "sec",
@@ -1141,14 +1215,22 @@ class InvestorRelationsService:
         "eodhd-insider-..."-prefixed (vs Finnhub's "finnhub-insider-...")
         so the two never collide in ir_events even for the same filing.
         Best-effort: a missing token or any request failure returns [].
+        Since the owner cut Finnhub (03/11/2026) this is the insider path of
+        every name, and the transactions Finnhub already stored (its rows stay,
+        and are counted) are dropped first:
+        eodhd_insider_transactions_not_in_finnhub.
         """
         if not self.settings.eodhd_api_token:
             return []
         cutoff_date = (datetime.now(timezone.utc) - timedelta(days=FINNHUB_INSIDER_LOOKBACK_DAYS)).date()
         try:
             transactions = self.eodhd.insider_transactions(symbol, since=cutoff_date)
+            if transactions:  # Finnhub is cut (owner 03/11/2026): what it already stored is never written twice
+                transactions = eodhd_insider_transactions_not_in_finnhub(
+                    transactions, self.database.finnhub_insider_transactions(symbol, since=cutoff_date),
+                )
         except Exception:
-            return []
+            return []  # without Finnhub's rows the duplicates cannot be told apart: nothing this poll, the next one retries
         events = []
         for transaction in transactions:
             transaction_date = safe_date(transaction.get("transaction_date"))
@@ -1162,7 +1244,7 @@ class InvestorRelationsService:
             action = "compra" if transaction.get("is_purchase") else "venda" if transaction.get("is_sale") else "movimentação"
             price = transaction.get("price")
             price_note = f" a ${price:,.2f}/ação" if price else ""
-            slug = re.sub(r"[^a-z0-9]+", "-", insider_name.lower()).strip("-")
+            slug = insider_slug(insider_name)
             published_at = datetime.combine(transaction_date, time.min, tzinfo=timezone.utc)
             events.append({
                 "source_code": "sec",

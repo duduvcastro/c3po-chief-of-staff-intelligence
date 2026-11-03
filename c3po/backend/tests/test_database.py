@@ -337,3 +337,60 @@ def test_migration_056_admits_massive_and_keeps_finnhub_without_rewriting_020() 
     assert not re.search(r"\b(DELETE|UPDATE|TRUNCATE)\b", statements, re.I)  # the stored rows are never touched
     legacy = (db_dir / "020_ir_events_finnhub_source.sql").read_text(encoding="utf-8")
     assert "CHECK (source_code IN ('cvm', 'sec', 'ri', 'finnhub'))" in legacy and "massive" not in legacy
+
+
+def test_the_finnhub_insider_rows_the_eodhd_path_checks_are_one_name_s_finnhub_rows_of_the_window(tmp_path) -> None:
+    """What the EODHD Form 4 path reads to drop what Finnhub already stored (owner 03/11/2026): one name's "Insider
+    Transaction" rows Finnhub wrote ('finnhub-insider-…'), whose transaction is on or after the window's first day."""
+    from datetime import date
+
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    today = date.today()
+
+    def row(external_id: str, symbol: str, days_ago: int, event_type: str = "Insider Transaction") -> dict:
+        day = today - timedelta(days=days_ago)
+        return {"source_code": "sec", "external_id": external_id, "market": "US", "symbol": symbol, "company_name": symbol,
+                "event_type": event_type, "title": "t", "published_at": datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc),
+                "reference_date": day, "official_url": "https://www.sec.gov", "raw_metadata": {"source": external_id.split("-")[0],
+                                                                                              "transaction_date": day.isoformat()}}
+
+    database.save_ir_events([
+        row("finnhub-insider-AAPL-a", "AAPL", 10), row("finnhub-insider-AAPL-b", "AAPL", 90),
+        row("finnhub-insider-AAPL-old", "AAPL", 91), row("eodhd-insider-AAPL-c", "AAPL", 10),
+        row("finnhub-insider-MSFT-d", "MSFT", 10), row("finnhub-insider-AAPL-e", "AAPL", 10, event_type="Material Fact"),
+    ])
+
+    read = database.finnhub_insider_transactions("aapl", since=today - timedelta(days=90))
+
+    assert sorted(item["transaction_date"] for item in read) == sorted([(today - timedelta(days=d)).isoformat() for d in (10, 90)])
+    assert {item["source"] for item in read} == {"finnhub"}
+    assert database.finnhub_insider_transactions("", since=today) == []
+
+
+def test_the_finnhub_insider_rows_query_is_one_name_s_finnhub_rows_of_the_window() -> None:
+    from datetime import date
+
+    captured: list[tuple[str, tuple]] = []
+
+    class Rows:
+        def fetchall(self):
+            return [({"insider_name": "COOK TIMOTHY D"},), ('{"insider_name": "WILLIAMS JEFFREY E"}',)]
+
+    class Connection:
+        def execute(self, query, params=()):
+            captured.append((" ".join(query.split()), params))
+            return Rows()
+
+    database = Database(Settings(database_url="postgresql://configured"))
+
+    @contextmanager
+    def connection():
+        yield Connection()
+
+    database.connection = connection  # type: ignore[method-assign]
+    since = date(2026, 8, 5)
+    assert database.finnhub_insider_transactions("aapl", since=since) == [{"insider_name": "COOK TIMOTHY D"}, {"insider_name": "WILLIAMS JEFFREY E"}]
+    ((query, params),) = captured
+    assert "source_code = 'sec' AND market = %s AND symbol = %s AND event_type = 'Insider Transaction'" in query
+    assert "external_id LIKE %s AND reference_date >= %s" in query
+    assert params == ("US", "AAPL", "finnhub-insider-%", since)

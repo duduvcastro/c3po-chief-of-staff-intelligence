@@ -847,6 +847,123 @@ def test_eodhd_insider_events_used_only_as_a_fallback_when_finnhub_has_nothing(t
     assert events[0]["external_id"].startswith("finnhub-")
 
 
+def _days_ago(days: int) -> str:
+    return (date.today() - timedelta(days=days)).isoformat()
+
+
+class FinnhubInsiderRows:
+    """Finnhub's insider-transactions API as it answered before the cut: ``data`` rows, the same for any symbol."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def get(self, url, *, params=None):
+        rows = self.rows
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"data": rows}
+
+        return Response()
+
+
+def _finnhub_api_row(name: str, day: str, code: str, change: float) -> dict:
+    return {"name": name, "share": 10_000, "change": change, "filingDate": day, "transactionDate": day,
+            "transactionCode": code, "transactionPrice": 100.0}
+
+
+def _form4_row(name: str, day: str, code: str, shares: float, *, acquired: bool = False) -> dict:
+    return {"reporting_owner_name": name, "transaction_code": code, "acquired_or_disposed": "A" if acquired else "D",
+            "shares_amount": shares, "price_per_share": 100.25, "shares_owned_after": 9_000,
+            "transaction_date": f"{day}T00:00:00+00:00"}
+
+
+def test_eodhd_insider_events_never_write_again_a_transaction_finnhub_stored(tmp_path):
+    """Owner 03/11/2026: Finnhub is cut and its insider rows stay. With its token blank, EODHD's Form 4 is the insider path
+    of every name (the last 90 days, every poll); a transaction Finnhub already stored is dropped, since
+    insider_transaction_activity counts every row and the One Pager and the US screener read 180 days of it. A new
+    transaction is kept, and another name is unaffected by this one's Finnhub rows."""
+    settings = Settings(database_url="", migrations_dir=tmp_path, investor_relations_output_dir=tmp_path / "ir-pdf",
+                        finnhub_api_token="test-token", eodhd_api_token="test-token")
+    database = Database(settings)
+    ir = InvestorRelationsService(settings, database)
+    # before the cut: Finnhub stored one row per insider, day and code (a day's lots collapse into its external id)
+    ir.finnhub.client = FinnhubInsiderRows([
+        _finnhub_api_row("COOK TIMOTHY D", _days_ago(10), "S", -2_500),
+        _finnhub_api_row("COOK TIMOTHY D", _days_ago(10), "S", -1_000),  # the day's last lot: the row Finnhub kept
+        _finnhub_api_row("WILLIAMS JEFFREY E", _days_ago(20), "S", -2_000),
+        _finnhub_api_row("LEVINSON ARTHUR D", _days_ago(30), "P", 500),
+    ])
+    database.save_ir_events(ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc."))
+    assert len(database.finnhub_insider_transactions("AAPL", since=date.today() - timedelta(days=90))) == 3
+    # the cut: Finnhub's token is blank, EODHD answers the same filings and new ones
+    settings.finnhub_api_token = ""
+    ir.eodhd.http = FakeEodhdHttp({"data": [{
+        "accession_number": "acc-1", "filed_at": _days_ago(1), "period_of_report": _days_ago(1), "derivative": [], "footnotes": [],
+        "non_derivative": [
+            _form4_row("Cook Timothy D.", _days_ago(10), "S", 2_500),  # the same insider, day and code: dropped whole
+            _form4_row("COOK TIMOTHY D", _days_ago(10), "S", 1_000),
+            _form4_row("Williams Jeff", _days_ago(20), "S", 2_000),  # spelled otherwise, same day, code and signed size
+            _form4_row("LEVINSON ARTHUR D", _days_ago(30), "P", 500, acquired=True),
+            _form4_row("O'BRIEN DEIRDRE", _days_ago(5), "S", 300),  # new: kept
+            _form4_row("MAESTRI LUCA", _days_ago(10), "S", 1_000),  # Cook's size and day, another insider: kept
+        ],
+    }], "meta": {}, "links": {"next": None}})
+
+    events = ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.") or ir._eodhd_insider_events(
+        "AAPL", "0000320193", None, "Apple Inc.")  # sync_sec's insider step
+    other = ir._eodhd_insider_events("MSFT", "0000789019", None, "Microsoft")
+
+    assert sorted(event["external_id"] for event in events) == [
+        f"eodhd-insider-AAPL-{_days_ago(10)}-maestri-luca-S", f"eodhd-insider-AAPL-{_days_ago(5)}-o-brien-deirdre-S",
+    ]
+    assert len({event["external_id"] for event in other}) == 5  # MSFT has no Finnhub row: every insider of its filing
+    database.save_ir_events(events)
+    since = datetime.now(timezone.utc) - timedelta(days=180)
+    # Finnhub's 1 buy + 2 sells, EODHD's 2 new sells; without the filter EODHD would add 1 buy + 4 sells more
+    assert database.insider_transaction_activity(["AAPL"], "US", since)["AAPL"] == {"buy_count": 1, "sell_count": 4, "total_count": 5}
+
+
+def test_eodhd_insider_events_write_nothing_when_finnhub_s_rows_cannot_be_read(tmp_path):
+    ir, database = _service_with_eodhd(tmp_path)
+    ir.eodhd.http = FakeEodhdHttp({"data": [{"accession_number": "acc-1", "filed_at": _days_ago(1), "derivative": [],
+                                             "non_derivative": [_form4_row("COOK TIMOTHY D", _days_ago(3), "S", 100)]}],
+                                   "meta": {}, "links": {"next": None}})
+
+    def unreadable(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    database.finnhub_insider_transactions = unreadable  # type: ignore[method-assign]
+    assert ir._eodhd_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []  # no duplicate risked: the next poll retries
+
+
+def test_the_insider_dedup_matches_by_name_first_and_by_size_one_to_one():
+    from app.investor_relations import eodhd_insider_transactions_not_in_finnhub, insider_identity, insider_shares_key
+
+    def transaction(name, day, code, change):
+        return {"insider_name": name, "transaction_date": day, "transaction_code": code, "share_change": change}
+
+    finnhub = [transaction("SMITH JOHN", "2026-10-01", "S", -100.0), transaction("GRANT DIRECTOR", "2026-10-02", "A", 0.0)]
+    eodhd = [
+        transaction("Smyth John", "2026-10-01", "S", -100.0),  # spelled otherwise, same size: Finnhub's row absorbs it
+        transaction("DOE JANE", "2026-10-01", "S", -100.0),  # same size again: the row is spent, a different insider
+        transaction("OTHER DIRECTOR", "2026-10-02", "A", 0.0),  # no size to compare: never matched by size
+        transaction("SMITH JOHN", "2026-10-01", "M", -100.0),  # another code
+        transaction("", "2026-10-01", "S", -5.0),  # incomplete: passed through (never stored)
+    ]
+
+    kept = eodhd_insider_transactions_not_in_finnhub(eodhd, finnhub)
+
+    assert [item["insider_name"] for item in kept] == ["DOE JANE", "OTHER DIRECTOR", "SMITH JOHN", ""]
+    assert insider_identity(transaction("Cook, Timothy D.", "2026-10-01T00:00:00", "s", -1)) == ("2026-10-01", "S", "cook-timothy-d")
+    assert insider_shares_key(transaction("X", "2026-10-01", "S", -223986)) == ("2026-10-01", "S", -223986.0)
+    assert insider_shares_key(transaction("X", "2026-10-01", "S", 0)) is None
+    assert eodhd_insider_transactions_not_in_finnhub(eodhd, []) == eodhd
+
+
 MASSIVE_TOKEN = "massive-secret-token"
 
 
