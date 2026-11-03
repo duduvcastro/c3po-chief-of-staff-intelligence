@@ -308,3 +308,22 @@ def test_the_status_workflow_prints_the_heartbeat_by_its_exact_shape() -> None:
     assert re.search(pattern, "api-1  | " + line)
     assert not re.search(pattern, "api-1  | " + line + " AAA")  # anything after the numbers is never printed
     assert 'grep -cE "EODHD realtime"' in section  # the api's EODHD stream lines are only counted
+
+
+def test_the_status_workflow_reads_eodhd_s_daily_counter_as_two_numbers_and_a_date() -> None:
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[3]
+    run = yaml.safe_load((root / ".github" / "workflows" / "r2d2-live-status.yml").read_text())["jobs"]["status"]["steps"][1]["run"]
+    section = run.split('echo "== EODHD calls today"', 1)[1]
+    pattern = section.split("grep -oE '", 1)[1].split("' ||", 1)[0]
+    script = section.split("<<'PY'", 1)[1].split("\nPY\n", 1)[0].split("\n", 1)[1]
+    compile(script, "eodhd_usage", "exec")  # the remote snippet is valid Python as YAML hands it over
+
+    assert re.search(pattern, "eodhd_calls_today=41999 limit=100000 date=2026-11-03")
+    assert re.search(pattern, "eodhd usage read failed=MarketDataRequestError")
+    assert not re.search(pattern, "eodhd_calls_today=41999 limit=100000 date=2026-11-03 someone@example.com")
+    assert "print(" in script and script.count("print(") == 2 and "api_token" not in script.split("print(", 1)[1]

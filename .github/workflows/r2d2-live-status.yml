@@ -79,6 +79,22 @@ jobs:
           screens=$("${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 20000 api 2>&1) || screens=""
           printf '%s\n' "$screens" | grep -oE "Screen quotes [(]Massive[)]: state=(stopped|idle|closed|connected|error) symbols=[0-9]+ polls=[0-9]+ failures=[0-9]+ ticks=[0-9]+$" | tail -12
           echo "== api EODHD stream lines (count only): $(printf '%s\n' "$screens" | grep -cE "EODHD realtime")"
+          # EODHD's own daily counter (weighted calls since 00:00 GMT) against the plan's limit, read once: the decision to
+          # cancel the Extra Daily API Calls add-on (owner 03/11/2026) needs the real daily use. Two numbers and a date only.
+          echo "== EODHD calls today"
+          "${compose[@]}" exec -T api python - <<'PY' 2>/dev/null | grep -oE '^(eodhd_calls_today=[0-9]+ limit=[0-9]+ date=[0-9-]{0,10}|eodhd usage read failed=[A-Za-z]+)$' || echo "eodhd usage read failed"
+          from app.config import get_settings
+          from app.market_data.http import JsonHttpClient
+          s = get_settings()
+          base = s.eodhd_base_url.rstrip("/")
+          try:
+              body = JsonHttpClient(timeout=10.0, max_retries=1).get_json(base + "/user/" if base.endswith("/api") else base + "/api/user/",
+                                                                          params={"api_token": s.eodhd_api_token, "fmt": "json"})
+              print("eodhd_calls_today=%d limit=%d date=%s" % (int(body.get("apiRequests") or 0), int(body.get("dailyRateLimit") or 0),
+                                                               str(body.get("apiRequestsDate") or "")[:10]))
+          except Exception as error:
+              print("eodhd usage read failed=%s" % type(error).__name__)
+          PY
           exit 0
           REMOTE
           # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)
