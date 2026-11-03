@@ -692,3 +692,34 @@ def test_a_deploy_during_an_outage_waits_for_the_next_slot(monkeypatch) -> None:
 
     assert deployed.canonical_status == "retry_wait"
     assert deployed.next_wake_at == first_at + timedelta(minutes=15)
+
+
+
+def test_the_08_00_turn_never_masks_an_exhausted_phase_as_a_success(monkeypatch) -> None:
+    """Codex 6609521687: Chewie spent its two attempts; at 08:00 its window ends while another piece of work succeeds in the
+    same iteration — the aggregate ping stays fail, the phase is not readmitted and no success is invented."""
+    from app import valuation_worker
+
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+    database = _database()
+    calls = []
+
+    def failing() -> None:
+        calls.append(1)
+        raise RuntimeError("provider outage")
+
+    chewie = OffhoursPhase("chewie", lambda: None, failing, max_failures=valuation_worker.EODHD_PHASE_MAX_FAILURES)
+    for at in (datetime(2026, 11, 4, 6, 0, tzinfo=SAO_PAULO), datetime(2026, 11, 4, 6, 30, tzinfo=SAO_PAULO)):
+        run_worker_iteration(database, now=at, canonical_due=False, canonical_operation=lambda: None, offhours_phases=(chewie,))
+    assert len(calls) == 2
+    for at, expected in ((datetime(2026, 11, 4, 7, 59, tzinfo=SAO_PAULO), "retry_cap"),
+                         (datetime(2026, 11, 4, 8, 0, tzinfo=SAO_PAULO), "outside_window")):
+        pings = _Pings()
+        result = run_worker_iteration(database, now=at, canonical_due=True, canonical_operation=lambda: None,
+                                      offhours_phases=(chewie,), healthchecks={"valuation": pings})  # type: ignore[dict-item]
+        assert result.canonical_status == "succeeded" and result.phase_statuses["chewie"] == expected
+        assert pings.sent == ["start", "fail"], at
+    assert len(calls) == 2  # never readmitted
+    next_night = run_worker_iteration(database, now=datetime(2026, 11, 5, 1, 10, tzinfo=SAO_PAULO), canonical_due=False,
+                                      canonical_operation=lambda: None, offhours_phases=(chewie,))
+    assert next_night.phase_statuses["chewie"] == "failed" and len(calls) == 3  # the next night tries again

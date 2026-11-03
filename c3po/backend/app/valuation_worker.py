@@ -466,12 +466,15 @@ def run_worker_iteration(
             wake_targets.append(phase_due_at)
             phase_statuses[phase.key] = "pending"
             continue
+        # this night's attempts are spent: the next night tries again; until then a non-advisory phase keeps the dead-man
+        # check failing, inside the window and after it (Codex 6609521687: the 08:00 turn must not mask it as a success)
+        exhausted = phase.max_failures is not None and database.count_ingestion_runs(
+            VALUATION_WORKER_PHASES[phase.key]["code"], "failed", scheduled_for=phase_due_at.isoformat()) >= phase.max_failures
+        if exhausted and not phase.advisory:
+            failed_work = True
         if current < phase_window_end:
-            if phase.max_failures is not None and database.count_ingestion_runs(
-                    VALUATION_WORKER_PHASES[phase.key]["code"], "failed", scheduled_for=phase_due_at.isoformat()) >= phase.max_failures:
-                phase_statuses[phase.key] = "retry_cap"  # this night's attempts are spent: the next night tries again
-                if not phase.advisory:
-                    failed_work = True  # a capped phase is never read as a success by the dead-man check
+            if exhausted:
+                phase_statuses[phase.key] = "retry_cap"
                 continue
             ready_at = phase.not_before() if phase.not_before is not None else None
             if ready_at is not None and current < ready_at:  # not yet: nothing run, nothing recorded, the worker wakes at ready_at
