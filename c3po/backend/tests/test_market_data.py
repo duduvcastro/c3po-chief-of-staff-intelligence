@@ -1357,7 +1357,7 @@ def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
     assert response.gainers[0].status == "live"
     assert response.gainers[0].delay_minutes == 0
     assert response.refresh_seconds == 3
-    assert "real-time WebSocket" in response.source
+    assert response.source == "EODHD T-15 market scan + EODHD Real-Time WebSocket quotes"  # the live source by name
     assert stream.groups["market:NASDAQ"]["symbols"] == ["MSFT"]
 
     stream.quotes["MSFT"] = EodhdStreamQuote(
