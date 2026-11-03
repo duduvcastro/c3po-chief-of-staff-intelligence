@@ -49,30 +49,48 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
             "MINUTES=$MINUTES bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2>&1 || rc=$?
           set -uo pipefail
+          exec 2>/dev/null
           cd /opt/chief-of-staff-digital || exit 10
           compose=(docker compose --env-file .env -f c3po/compose.yml)
-          echo "== container"
-          state=$("${compose[@]}" ps r2d2-live --format '{{.Name}} {{.State}} {{.Status}}') || exit 11
-          [ -n "$state" ] || { echo "r2d2-live is not running"; exit 12; }
-          echo "$state"
-          # whether the entries can read the Massive NBBO: the credential's PRESENCE only, never its value
-          cid=$("${compose[@]}" ps -q r2d2-live) || exit 11
-          massive=unset
-          docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$cid" | grep -qE '^(C3PO_)?MASSIVE_API_TOKEN=.+' && massive=set
-          echo "R2D2 live config: massive_token=$massive"
-          echo "== summary"
-          "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api python -m app.r2d2_live_engine --status </dev/null || exit 13
-          # This repository is PUBLIC and so are its run logs: only the engine's own count-only lines (no symbol) are
-          # printed, and the error lines are COUNTED, never shown.
-          logs=$("${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 2000 r2d2-live 2>&1) || exit 14
-          echo "== engine lines (last ${MINUTES} min)"
-          # only the engine's own lines of EXACT shapes: numbers, dates and a closed set of stream states (Codex #500 P2-5)
-          printf '%s\n' "$logs" | grep -oE "R2D2 live heartbeat: stream=(connecting|connected|error|stopped|idle|other) error=[01] trades=[0-9]+ quotes=[0-9]+ candidates=[0-9]+ signals=[0-9]+ positions=[0-9]+ fills=[0-9]+ nav=-?[0-9]+[.][0-9]{2}$|R2D2 live: session [0-9]{4}-[0-9]{2}-[0-9]{2}( [(]resumed[)])?, universe [0-9]+, carried [0-9]+, NAV -?[0-9]+[.][0-9]{2}$|R2D2 live: [0-9]+ candidates of [0-9]+ with an opening print$|R2D2 live: the lost opening recovered: [0-9]+ tapes of [0-9]+ names, [0-9]+ candidates$|R2D2 live: session [0-9]{4}-[0-9]{2}-[0-9]{2} closed, NAV -?[0-9]+[.][0-9]{2}, [0-9]+ fills, [0-9]+ carried$|R2D2 live: next session [0-9]{4}-[0-9]{2}-[0-9]{2}, waiting [0-9]+ s$|R2D2 live: the session failed$|R2D2 live: previous session [0-9]{4}-[0-9]{2}-[0-9]{2} not republished [(]refused by the screen[)]$|R2D2 live feed: trade_messages=[0-9]+ quote_messages=[0-9]+ trade_lag_ms=-?[0-9]+ quote_lag_ms=-?[0-9]+ trade_lag_max_ms=-?[0-9]+ quote_lag_max_ms=-?[0-9]+ skips held=[0-9]+ slots=[0-9]+ noquote=[0-9]+ stale=[0-9]+ spread=[0-9]+ late=[0-9]+ implausible=[0-9]+ nbbo massive=[0-9]+ stream=[0-9]+ unanswered=[0-9]+ mismatch=[0-9]+ stream_would_refuse=[0-9]+( exits massive=[0-9]+ stream=[0-9]+ none=[0-9]+ unconfirmed=[0-9]+)?( unreadable trade=[0-9]+ quote=[0-9]+)?$|R2D2 live massive: state=(idle|connecting|connected|error|stopped|other) symbols=[0-9]+ quotes=[0-9]+ lag_ms=-?[0-9]+ lag_max_ms=-?[0-9]+ pushed=[0-9]+( fast=[0-9]+)? reconnects=[0-9]+( trade_symbols=[0-9]+ trades=[0-9]+ trade_lag_ms=-?[0-9]+ trade_lag_max_ms=-?[0-9]+ off_exchange=[0-9]+ extended=[0-9]+ sink_failures=[0-9]+)?$|R2D2 live shadow trades: names=[0-9]+ both=[0-9]+ vwap_bps_p50=[0-9]+[.][0-9] vwap_bps_p90=[0-9]+[.][0-9] last_bps_p50=[0-9]+[.][0-9] last_bps_p90=[0-9]+[.][0-9] open_agree=[0-9]+$|R2D2 live shadow: limit_bps=[0-9]+[.][0-9] 5_8 vetoed=[0-9]+ closed=[0-9]+ open=[0-9]+ wins=[0-9]+ net_usd=-?[0-9]+[.][0-9]{2} 8_10 vetoed=[0-9]+ closed=[0-9]+ open=[0-9]+ wins=[0-9]+ net_usd=-?[0-9]+[.][0-9]{2} gt10 vetoed=[0-9]+ closed=[0-9]+ open=[0-9]+ wins=[0-9]+ net_usd=-?[0-9]+[.][0-9]{2}$" | tail -90
-          echo "== error lines (count only): $(printf '%s\n' "$logs" | grep -cE "ERROR|Traceback|Exception")"
-          # the valuation worker's nightly producer line: counts and a closed vocabulary of failure codes, never a symbol
-          echo "== valuation worker line (last 30 h)"
-          worker=$("${compose[@]}" logs --no-color --since 30h --tail 20000 valuation-worker 2>&1) || worker=""
-          printf '%s\n' "$worker" | grep -oE "Valuation ensemble live: pending=[0-9]+ published=[0-9]+ partial=[0-9]+ names=[0-9]+ with_primary_tp=[0-9]+ names_pending=[0-9]+ failures=\{('[a-z_]+(:([a-z_0-9]+(_T)?|[A-Z]+[a-z][A-Za-z]*))*': [0-9]+(, )?)*\}$" | tail -4
+          echo "== massive snapshot: response shape and trade age, keys and numbers only"
+          timeout 60 "${compose[@]}" exec -T api python - <<'PY' | grep -oE '^(status=[A-Za-z]{0,12} rows=[0-9]+|keys=[A-Za-z_,]+ last_trade_keys=[A-Za-z_,]* price_positive=(True|False) t_digits=[0-9]+ age_s=-?[0-9]+|snapshot failed=[A-Za-z]+)$' || echo "snapshot read printed nothing"
+          from datetime import datetime, timezone
+          from app.config import get_settings
+          from app.market_data.http import JsonHttpClient
+          s = get_settings()
+          try:
+              body = JsonHttpClient(timeout=10.0, max_retries=0).get_json(
+                  s.massive_base_url.rstrip("/") + "/v2/snapshot/locale/us/markets/stocks/tickers",
+                  params={"tickers": "SPY,QQQ,BRK.B", "apiKey": s.massive_api_token})
+              rows = body.get("tickers") if isinstance(body, dict) else None
+              rows = rows if isinstance(rows, list) else []
+              print("status=%s rows=%d" % (str(body.get("status") if isinstance(body, dict) else "")[:12], len(rows)))
+              now = datetime.now(timezone.utc).timestamp()
+              for row in rows:
+                  trade = row.get("lastTrade") if isinstance(row, dict) and isinstance(row.get("lastTrade"), dict) else {}
+                  stamp = int(trade.get("t") or 0)
+                  print("keys=%s last_trade_keys=%s price_positive=%s t_digits=%d age_s=%d" % (
+                      ",".join(sorted(key for key in row if key != "ticker")) if isinstance(row, dict) else "", ",".join(sorted(trade)),
+                      float(trade.get("p") or 0) > 0, len(str(stamp)), int(now - stamp / 1e9) if stamp else -1))
+          except Exception as error:
+              print("snapshot failed=%s" % type(error).__name__)
+          PY
+          echo "== host peaks per day (sysstat), numbers only"
+          peak() {  # file, sadf report, column, max|min
+            sadf -d "$1" -- "$2" | awk -F';' -v col="$3" -v mode="$4" '
+              /^# hostname/ { sub(/^# /, ""); for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
+              c && $c ~ /^[0-9]+([.][0-9]+)?$/ { v = $c + 0; if (!n || (mode == "max" ? v > m : v < m)) m = v; n++ }
+              END { if (n) printf "%.1f", m; else printf "na" }'
+          }
+          for f in $(ls /var/log/sysstat/sa[0-9][0-9] 2>/dev/null | sort); do
+            printf 'day=%s memused_pct_max=%s kbmemused_max=%s kbcommit_max=%s cpu_idle_pct_min=%s ldavg1_max=%s\n' "$(basename "$f")" \
+              "$(peak "$f" -r %memused max)" "$(peak "$f" -r kbmemused max)" "$(peak "$f" -r kbcommit max)" \
+              "$(peak "$f" -u %idle min)" "$(peak "$f" -q ldavg-1 max)"
+          done | grep -E '^day=sa[0-9]{2} memused_pct_max=[0-9.na]+ kbmemused_max=[0-9.na]+ kbcommit_max=[0-9.na]+ cpu_idle_pct_min=[0-9.na]+ ldavg1_max=[0-9.na]+$'
+          echo "== now"
+          free -m | awk '/^Mem:/ { printf "mem_mb total=%d used=%d available=%d\n", $2, $3, $7 }'
+          nproc | awk '{ printf "cpus=%d\n", $1 }'
+          timeout 30 docker stats --no-stream --format '{{.Name}} mem={{.MemUsage}}' | grep -E '^[a-z0-9-]+ mem=[0-9.]+[KMG]iB / [0-9.]+[KMG]iB$'
           exit 0
           REMOTE
           # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)
