@@ -53,7 +53,7 @@ jobs:
           cd /opt/chief-of-staff-digital || exit 10
           compose=(docker compose --env-file .env -f c3po/compose.yml)
           echo "== massive snapshot: response shape and trade ages over the whole market, keys and numbers only"
-          timeout 90 "${compose[@]}" exec -T api python - <<'PY' | grep -oE '^(token_set=(True|False)|http=[0-9]{3}|status=(OK|ERROR|DELAYED|NOT_AUTHORIZED|NOT_FOUND|None|other) rows=[0-9]+ with_trade=[0-9]+ dotted=[0-9]+|row_keys=[A-Za-z_,]+|last_trade_keys=[A-Za-z_,]*|t_digits=[0-9]+ today=[0-9]+ age_s_p50=-?[0-9]+ age_s_p90=-?[0-9]+|snapshot failed=[A-Za-z]+)$'
+          timeout 90 "${compose[@]}" exec -T api python - <<'PY' | grep -oE '^(token_set=(True|False)|http=[0-9]{3}|status=(OK|ERROR|DELAYED|NOT_AUTHORIZED|NOT_FOUND|None|other) rows=[0-9]+ with_trade=[0-9]+ dotted=[0-9]+|row_keys=[A-Za-z_,]+|last_trade_keys=[A-Za-z_,]*|t_bad=[0-9]+|t_digits=[0-9,]* today=[0-9]+ age_s_p50=-?[0-9]+ age_s_p90=-?[0-9]+|snapshot failed=[A-Za-z]+)$'
           from datetime import datetime, timezone
           from zoneinfo import ZoneInfo
           import httpx
@@ -76,11 +76,13 @@ jobs:
               print("last_trade_keys=%s" % ",".join(sorted({key for trade in trades[:200] for key in trade})))
               now = datetime.now(timezone.utc)
               session = now.astimezone(ZoneInfo("America/New_York")).date()
-              stamps = [int(trade.get("t") or 0) for trade in trades]
+              raw = [trade.get("t") for trade in trades]
+              stamps = [t for t in raw if isinstance(t, int) and not isinstance(t, bool) and 0 < t < 10**20]
+              print("t_bad=%d" % (len(raw) - len(stamps)))
               ages = sorted(int(now.timestamp() - stamp / 1e9) for stamp in stamps
                             if stamp > 0 and datetime.fromtimestamp(stamp / 1e9, timezone.utc).astimezone(ZoneInfo("America/New_York")).date() == session)
-              digits = max((len(str(stamp)) for stamp in stamps if stamp > 0), default=0)
-              print("t_digits=%d today=%d age_s_p50=%d age_s_p90=%d" % (
+              digits = ",".join(str(count) for count in sorted({len(str(stamp)) for stamp in stamps}))
+              print("t_digits=%s today=%d age_s_p50=%d age_s_p90=%d" % (
                   digits, len(ages), ages[len(ages) // 2] if ages else -1, ages[int(len(ages) * 0.9)] if ages else -1))
           except Exception as error:
               print("snapshot failed=%s" % type(error).__name__)
