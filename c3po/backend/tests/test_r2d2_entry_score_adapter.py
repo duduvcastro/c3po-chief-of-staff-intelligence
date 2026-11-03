@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app import r2d2_entry_control
 from app.config import Settings
 from app.database import Database
 from app.r2d2 import R2D2PaperService, R2D2Repository
@@ -329,62 +328,8 @@ def test_entry_score_adapter_runs_after_the_entry_path(
     assert calls == ["entry", "adapter"]
 
 
-def test_resume_is_plan_first_and_atomically_stamps_policy_epoch(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    settings = _settings(adapter_enabled=False)
-    database = Database(settings)
-    repository = R2D2Repository(database)
-    experiment = repository.ensure_experiment(settings)
-    repository.set_entries_paused(
-        experiment["code"], paused=True, operator="Dudu", reason="Evidence review",
-    )
-    monkeypatch.setattr(r2d2_entry_control, "Settings", lambda: settings)
-    monkeypatch.setattr(r2d2_entry_control, "Database", lambda _: database)
-    arguments = [
-        "--resume",
-        "--operator", "Dudu",
-        "--reason", "Six-hands resume under unchanged policy A",
-        "--policy-epoch", "policy-a-resume-2026-08-26",
-    ]
-
-    assert r2d2_entry_control.main(arguments) == 0
-    blocked_plan = json.loads(capsys.readouterr().out)
-    assert blocked_plan["resume_ready"] is False
-    assert blocked_plan["state_change_required"] is True
-    assert r2d2_entry_control.main([*arguments, "--execute"]) == 2
-    blocked_execute = json.loads(capsys.readouterr().out)
-    assert blocked_execute["entry_score_adapter"]["configured"] is False
-    assert repository.experiment(experiment["code"])["entries_paused"] is True
-
-    settings.r2d2_entry_score_adapter_enabled = True
-    assert r2d2_entry_control.main(arguments) == 0
-    ready_plan = json.loads(capsys.readouterr().out)
-    assert ready_plan["resume_ready"] is True
-    assert ready_plan["requested_policy_epoch"] == "policy-a-resume-2026-08-26"
-    assert repository.experiment(experiment["code"])["entries_paused"] is True
-
-    assert r2d2_entry_control.main([*arguments, "--execute"]) == 0
-    executed = json.loads(capsys.readouterr().out)
-    current = repository.experiment(experiment["code"])
-    assert executed["entries_paused"] is False
-    assert executed["policy_epoch"] == "policy-a-resume-2026-08-26"
-    assert current["policy_epoch"] == "policy-a-resume-2026-08-26"
-    assert current["entry_score_adapter_version"] == ADAPTER_VERSION
-    assert current["status"] == "running"
-    events = database.list_audit_events(action="r2d2.entries_resumed")
-    assert len(events) == 1
-    assert events[0]["actor"] == "Dudu"
-    assert events[0]["detail"]["policy_epoch"] == "policy-a-resume-2026-08-26"
-    assert events[0]["detail"]["entry_score_adapter_version"] == ADAPTER_VERSION
 
 
-def test_resume_requires_policy_epoch() -> None:
-    with pytest.raises(SystemExit, match="policy-epoch"):
-        r2d2_entry_control.main([
-            "--resume", "--operator", "Dudu", "--reason", "Missing epoch",
-        ])
 
 
 def _official_row(symbol: str, *, tp: float, buy_in: float, price: float, internal_tp: float) -> dict:

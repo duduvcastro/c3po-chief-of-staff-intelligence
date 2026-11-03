@@ -474,5 +474,5 @@ def test_only_the_valuation_worker_runs_the_stale_reaper_at_startup_and_while_id
     assert main.index(startup) < main.index(stale) < main.index("stale_sweep()") < main.index("InvestorRelationsService(") < main.index("while True:")
     loop = main[main.index("while True:"):]
     assert "idle_until_wake(max(30, int((wake_at - now).total_seconds())), stale_sweep)" in loop and "time.sleep(max(30" not in loop
-    for module in ("ir_worker", "r2d2_worker", "main"):
+    for module in ("ir_worker", "main"):
         assert "reap_stale" not in (APP / f"{module}.py").read_text(encoding="utf-8"), module

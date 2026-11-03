@@ -21,7 +21,6 @@ from app.r2d2 import (
     _quote_freshness,
 )
 from app import r2d2 as r2d2_module
-from app import r2d2_entry_control
 from app.market_data.eodhd_stream import EodhdRealtimeStream, EodhdStreamQuote
 from app.valuation_official import official_rows
 from fastapi.testclient import TestClient
@@ -645,10 +644,6 @@ def test_contracted_websocket_capacity_is_global_and_wired_to_worker() -> None:
     assert settings.r2d2_standard_technical_review_per_market == 350
     assert settings.r2d2_ws_max_symbols == 550
 
-    worker_source = (
-        Path(__file__).resolve().parents[1] / "app" / "r2d2_worker.py"
-    ).read_text(encoding="utf-8")
-    assert "max_symbols=settings.r2d2_ws_max_symbols" in worker_source
 
 
 def test_r2d2_keeps_websocket_window_for_grace_then_rotates_deterministically() -> None:
@@ -2368,28 +2363,6 @@ def test_r2d2_entry_pause_blocks_stale_cycle_buy_and_rotation_defensively() -> N
     ) == 0
 
 
-def test_r2d2_entry_control_is_plan_first(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    settings = _settings()
-    database = Database(settings)
-    repository = R2D2Repository(database)
-    repository.ensure_experiment(settings)
-    monkeypatch.setattr(r2d2_entry_control, "Settings", lambda: settings)
-    monkeypatch.setattr(r2d2_entry_control, "Database", lambda _: database)
-    arguments = ["--pause", "--operator", "Dudu", "--reason", "Evidence review"]
-
-    assert r2d2_entry_control.main(arguments) == 0
-    planned = json.loads(capsys.readouterr().out)
-    assert planned["mode"] == "plan"
-    assert repository.experiment(settings.r2d2_experiment_code)["entries_paused"] is False
-
-    assert r2d2_entry_control.main([*arguments, "--execute"]) == 0
-    executed = json.loads(capsys.readouterr().out)
-    assert executed["mode"] == "execute"
-    assert executed["entries_paused"] is True
-    assert repository.experiment(settings.r2d2_experiment_code)["entries_paused"] is True
 
 
 def test_r2d2_weekly_conviction_rejects_an_uncontrolled_pullback() -> None:
