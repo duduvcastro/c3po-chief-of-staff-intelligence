@@ -45,7 +45,8 @@ jobs:
           set -uo pipefail
           rc=0
           # ssh's own errors name the host's address: they go to a private file and only their count is printed
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            -i ~/.ssh/c3po_deploy "$USER@$HOST" \
             "bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2> "$RUNNER_TEMP/ssh_err.txt" || rc=$?
           set -uo pipefail
           exec 2>/dev/null
@@ -57,13 +58,16 @@ jobs:
           [ -d /opt/chief-of-staff-digital ] && echo "app_dir=present" || echo "app_dir=absent"
           version=$(cut -c1-12 /opt/chief-of-staff-digital/.deploy-version)
           [[ "$version" =~ ^[0-9a-f]{12}$ ]] && echo "deploy_version=$version" || echo "deploy_version=none"
-          echo "containers_running=$(docker ps -q | wc -l)"
-          docker ps --format '{{.Label "com.docker.compose.service"}} up={{.RunningFor}}' | grep -E '^[a-z0-9-]+ up=[A-Za-z0-9 ]+$' | sort
-          echo "c3po_timers=$(systemctl list-timers --all --no-legend | grep -cE 'c3po|r2d2|valuation|massive|backup|f2s')"
-          echo "cron_lines=$(crontab -l | grep -cvE '^(#|$)')"
-          echo "last_login_days=$(( ( $(date +%s) - $(stat -c %Y /var/log/wtmp) ) / 86400 ))"
+          # every count carries its command's exit status: a denied docker or systemd never reads as "nothing runs"
+          ids=$(timeout 20 docker ps -q); echo "docker_rc=$? containers_running=$(printf '%s' "$ids" | grep -c .)"
+          timeout 20 docker ps --format '{{.Label "com.docker.compose.service"}} up={{.RunningFor}}' | grep -E '^[a-z0-9-]+ up=[A-Za-z0-9 ]+$' | sort
+          timers=$(timeout 20 systemctl list-timers --all --no-legend --full); echo "systemctl_rc=$? c3po_timers=$(printf '%s\n' "$timers" | grep -cE 'c3po|r2d2|valuation|massive|backup|f2s')"
+          cron=$(crontab -l); echo "crontab_rc=$? cron_lines=$(printf '%s\n' "$cron" | grep -cvE '^(#|$)')"
+          echo "cron_d_files=$(find /etc/cron.d -maxdepth 1 -type f ! -name '.placeholder' ! -name 'e2scrub_all' ! -name 'sysstat' ! -name 'popularity-contest' | wc -l)"
+          # wtmp also moves on reboots: lastlog moves only on interactive logins
+          echo "last_login_days=$(( ( $(date +%s) - $(stat -c %Y /var/log/lastlog) ) / 86400 ))"
           exit 0
           REMOTE
           echo "ssh_rc=$rc ssh_err_lines=$(grep -c . "$RUNNER_TEMP/ssh_err.txt")"
-          grep -E '^(== previous host|uptime_days=[0-9]+|mem_mb total=[0-9]+ used=[0-9]+|cpus=[0-9]+|root_gb size=[0-9]+ used=[0-9]+|app_dir=(present|absent)|deploy_version=([0-9a-f]{12}|none)|containers_running=[0-9]+|[a-z0-9-]+ up=[A-Za-z0-9 ]+|c3po_timers=[0-9]+|cron_lines=[0-9]+|last_login_days=-?[0-9]+)$' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -E '^(== previous host|uptime_days=[0-9]+|mem_mb total=[0-9]+ used=[0-9]+|cpus=[0-9]+|root_gb size=[0-9]+ used=[0-9]+|app_dir=(present|absent)|deploy_version=([0-9a-f]{12}|none)|docker_rc=[0-9]+ containers_running=[0-9]+|[a-z0-9-]+ up=[A-Za-z0-9 ]+|systemctl_rc=[0-9]+ c3po_timers=[0-9]+|crontab_rc=[0-9]+ cron_lines=[0-9]+|cron_d_files=[0-9]+|last_login_days=-?[0-9]+)$' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit 0
