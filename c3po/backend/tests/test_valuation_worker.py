@@ -517,3 +517,71 @@ def test_incident_ledger_failure_never_breaks_the_worker(monkeypatch) -> None:
     assert _night(database, phase, date(2026, 10, 13), hours=(1,)) == ["failed"]
     ok = OffhoursPhase("chewie", lambda: None, lambda: {"ok": 1})
     assert _night(database, ok, date(2026, 10, 14), hours=(1,)) == ["succeeded"]
+
+
+def test_a_canonical_cycle_that_keeps_failing_stops_for_the_day_after_its_cap() -> None:
+    """Owner 03/11/2026: without EODHD's Extra Daily API Calls add-on (100,000 calls a day), a failing cycle (~10,000 calls
+    each) is no longer retried every 15 min all day."""
+    from app.valuation_worker import CANONICAL_MAX_FAILURES
+
+    database = _database()
+    attempts: list[datetime] = []
+
+    def fail_canonical() -> None:
+        attempts.append(now)
+        raise RuntimeError("provider outage")
+
+    phase = OffhoursPhase("peer_quality", lambda: None, lambda: {"US": 1})
+    now = datetime(2026, 11, 4, 1, 5, tzinfo=SAO_PAULO)
+    for _ in range(CANONICAL_MAX_FAILURES):
+        result = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail_canonical,
+                                      offhours_phases=())
+        assert result.canonical_status == "failed" and result.next_wake_at == now + timedelta(minutes=15)
+        now = result.next_wake_at
+
+    capped = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail_canonical,
+                                  offhours_phases=(phase,))
+
+    assert len(attempts) == CANONICAL_MAX_FAILURES == 3
+    assert capped.canonical_status == "retry_cap"
+    assert capped.next_wake_at == next_midnight(now)  # no retry wake: the next day's cycle tries again
+    last = list(database._ingestion_runs.values())[-1]
+    assert last["metadata"]["phase"] == "peer_quality" and last["metadata"]["uses_persisted_universe_fallback"] is True
+    tomorrow = run_worker_iteration(database, now=next_midnight(now) + timedelta(minutes=5), canonical_due=True,
+                                    canonical_operation=lambda: None, offhours_phases=())
+    assert tomorrow.canonical_status == "succeeded"
+
+
+def test_chewie_stops_for_the_night_after_two_failed_attempts() -> None:
+    import inspect
+
+    from app import valuation_worker
+
+    assert valuation_worker.CHEWIE_MAX_FAILURES == 2
+    assert "max_failures=CHEWIE_MAX_FAILURES" in inspect.getsource(valuation_worker.main)
+    database = _database()
+    calls = []
+
+    def failing() -> None:
+        calls.append(1)
+        raise RuntimeError("provider outage")
+
+    phase = OffhoursPhase("chewie", lambda: None, failing, max_failures=valuation_worker.CHEWIE_MAX_FAILURES)
+    now = datetime(2026, 11, 4, 1, 10, tzinfo=SAO_PAULO)
+    statuses = []
+    for _ in range(4):
+        result = run_worker_iteration(database, now=now, canonical_due=False, canonical_operation=lambda: None,
+                                      offhours_phases=(phase,))
+        statuses.append(result.phase_statuses["chewie"])
+        now += timedelta(minutes=30)
+
+    assert statuses == ["failed", "failed", "retry_cap", "retry_cap"] and len(calls) == 2
+
+
+def test_chewie_budget_in_production_is_1500_names_a_night() -> None:
+    from pathlib import Path
+
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).resolve().parents[2] / "compose.yml").read_text())
+    assert compose["services"]["valuation-worker"]["environment"]["C3PO_CHEWIE_DAILY_SYMBOL_BUDGET"] == "1500"

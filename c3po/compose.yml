@@ -91,6 +91,9 @@ services:
       C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
+      # Chewie is display-only: 1,500 names a night (each listing still refreshed every few nights) instead of 2,500 keeps
+      # EODHD's daily calls far from the plan's 100,000 once the Extra Daily API Calls add-on goes (owner 03/11/2026)
+      C3PO_CHEWIE_DAILY_SYMBOL_BUDGET: "1500"
       TZ: America/Sao_Paulo
     command: ["python", "-m", "app.valuation_worker"]
     volumes:

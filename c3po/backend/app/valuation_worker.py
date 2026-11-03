@@ -46,6 +46,11 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("c3po.valuation_worker")
 
 CANONICAL_RETRY_DELAY = timedelta(minutes=15)
+# Without EODHD's Extra Daily API Calls add-on the plan allows 100,000 weighted calls a day (owner 03/11/2026: cancel it).
+# A failed canonical cycle costs up to ~10,000 (US screener + B3) and was retried every 15 min all day; a failed Chewie
+# night up to its whole budget, every 30 min until 08:00. Each now stops for the day after its cap.
+CANONICAL_MAX_FAILURES = 3
+CHEWIE_MAX_FAILURES = 2
 OFFHOURS_RETRY_DELAY = timedelta(minutes=30)
 OFFHOURS_START_HOUR = 1
 OFFHOURS_END_HOUR = 8
@@ -327,7 +332,7 @@ def _run_recorded_phase(
         "canonical_status": canonical_status,
         "uses_persisted_universe_fallback": (
             phase_key != VALUATION_WORKER_CANONICAL_PHASE
-            and canonical_status == "failed"
+            and canonical_status in ("failed", "retry_cap")
         ),
         "count_semantics": "top_level_result_items",
     }
@@ -387,6 +392,12 @@ def run_worker_iteration(
         attempted_work = True
         if worker_healthcheck:
             worker_healthcheck.ping("start")
+
+    if canonical_due and database.count_ingestion_runs(
+            VALUATION_WORKER_PHASES[VALUATION_WORKER_CANONICAL_PHASE]["code"], "failed",
+            scheduled_for=start_of_today(now).isoformat()) >= CANONICAL_MAX_FAILURES:
+        canonical_due = False  # today's attempts are spent: the next day's cycle tries again, no retry wake
+        canonical_status = "retry_cap"
 
     if canonical_due:
         start_worker_healthcheck()
@@ -608,6 +619,7 @@ def main() -> None:
                 "chewie",
                 chewie.last_refreshed_at,
                 lambda: chewie.refresh_all(budget=settings.chewie_daily_symbol_budget),
+                max_failures=CHEWIE_MAX_FAILURES,
             ),
             OffhoursPhase("v2_data", v2_data.last_refreshed_at, v2_data.refresh_all),
             OffhoursPhase("shadow", v2_shadow.last_run_at, v2_shadow.run_all),
