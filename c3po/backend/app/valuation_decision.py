@@ -74,8 +74,9 @@ canonical ``row_sha256`` — recomputed and verified by every reader (``stored_d
 ``(run_id, market, symbol)``; ``mode`` is ``shadow`` (the migration admits nothing else). Causal: the TP is read from the
 generation IN FORCE AT the run's clock (``generation_at``, never a later one — a replay decides what that night saw), and
 a served row predicted after the clock, or published after D − ε, is not decided. ``replay_sha256`` hashes what a
-verdict decided without the run's identity: a re-run of the night reproduces it, the Finnhub sentiment excepted (its
-source overwrites the week: the value read stays in the record, outside that hash).
+verdict decided without the run's identity: a re-run of the night reproduces it, the weekly news sentiment excepted (its
+source — Massive since 03/11/2026, Finnhub before — overwrites the week: the value read stays in the record, outside that
+hash).
 
 The nightly phase (``valuation_worker``, flag ``C3PO_VALUATION_DECISOR_SHADOW``, default OFF) runs LAST, after the official
 cut and every existing phase, and never writes the selection or any served number. ``run_shadow`` writes only when asked
@@ -148,7 +149,7 @@ EARNINGS_CALENDAR_UNAVAILABLE = "EARNINGS_CALENDAR_UNAVAILABLE"  # no calendar a
 # an unreadable provider row about the name is a warning, not evidence of no event); with an estimate, a mark
 EARNINGS_CALENDAR_ROW_INVALID = "EARNINGS_CALENDAR_ROW_INVALID"
 CONSENSUS_EPS_CUT_30D = "CONSENSUS_EPS_CUT_30D"  # FY1 consensus EPS cut over the last 30 days beyond the block's limit
-NEWS_SENTIMENT_NEGATIVE = "NEWS_SENTIMENT_NEGATIVE"  # the weekly Finnhub sentiment read at D is bearish beyond the block's limit (never a gate)
+NEWS_SENTIMENT_NEGATIVE = "NEWS_SENTIMENT_NEGATIVE"  # the weekly news sentiment read at D is bearish beyond the block's limit (never a gate)
 EVENT_CODES: tuple[str, ...] = (EARNINGS_WITHIN_N, EARNINGS_CALENDAR_ROW_INVALID, EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE,
                                 CONSENSUS_EPS_CUT_30D, NEWS_SENTIMENT_NEGATIVE)
 MARK_CODES: tuple[str, ...] = (EARNINGS_DATE_ESTIMATED, EARNINGS_CALENDAR_UNAVAILABLE, CONSENSUS_EPS_CUT_30D, NEWS_SENTIMENT_NEGATIVE)
@@ -857,16 +858,18 @@ def name_consensus(current: Mapping[str, Any] | None, past: Mapping[str, Any] | 
 
 
 def name_sentiment(read: Mapping[str, Any] | None, market: str, symbol: str, *, at: datetime) -> dict[str, Any]:
-    """The weekly Finnhub news sentiment of ONE US name as read at ``at`` (``Database.news_sentiment_at``) — the values
-    recorded here are the only copy of what was read (the source overwrites the week's row on every poll: a replay
-    reads other numbers, so ``replay_sha256`` leaves them out and the code is never a gate). B3: ``not_applicable``."""
+    """The weekly news sentiment of ONE US name as read at ``at`` (``Database.news_sentiment_at``: Massive's row since the
+    owner cut Finnhub on 03/11/2026, Finnhub's before — ``source`` names the row's own, ``ir_events/<source_code>``) —
+    the values recorded here are the only copy of what was read (the source overwrites the week's row on every run: a
+    replay reads other numbers, so ``replay_sha256`` leaves them out and the code is never a gate). B3: ``not_applicable``."""
     if market not in US_STALENESS_MARKETS:
-        return {"status": "not_applicable", "detail": "the Finnhub sentiment is a US source"}
+        return {"status": "not_applicable", "detail": "the news sentiment is a US source"}
     if not read:
         return {"status": "unavailable", "detail": "no sentiment row published by the run's clock"}
     metadata = read.get("raw_metadata") if isinstance(read.get("raw_metadata"), Mapping) else {}
     published = _utc(read["published_at"]) if read.get("published_at") else None
-    return {"status": "ok", "source": "ir_events/finnhub", "external_id": _text(read.get("external_id")),
+    source_code = _text(read.get("source_code"))
+    return {"status": "ok", "source": f"ir_events/{source_code}" if source_code else "ir_events", "external_id": _text(read.get("external_id")),
             "published_at": published.isoformat() if published else None,
             "age_days": (_utc(at) - published).total_seconds() / 86400 if published else None,
             "bullish_percent": _number((metadata or {}).get("bullish_percent")), "bearish_percent": _number((metadata or {}).get("bearish_percent")),
@@ -1145,8 +1148,8 @@ def replay_sha256(record: Mapping[str, Any]) -> str:
     of a night at the same clock has the same one, whatever was published or marked after that clock (every read is
     causal: the generation, the cycles, the calibration and the rate packages at ≤ D; the served records, the 053 marks
     and the poll, the calendars, the 051 filings and the consensus snapshots at D − ε on their insert clocks) — with ONE
-    declared exception left out of it: the Finnhub sentiment (``inputs.events.sentiment``, ``checks.events.sentiment`` and
-    the ``NEWS_SENTIMENT_NEGATIVE`` mark). Its source overwrites the week's row on every poll, so a replay cannot see the
+    declared exception left out of it: the weekly news sentiment (``inputs.events.sentiment``, ``checks.events.sentiment`` and
+    the ``NEWS_SENTIMENT_NEGATIVE`` mark). Its source overwrites the week's row on every run, so a replay cannot see the
     value read at D; that value stays in the record, and the code is never a gate (``NEVER_GATES``)."""
     content = copy.deepcopy({key: value for key, value in record.items() if key not in REPLAY_EXCLUDED_KEYS})
     for part in ("inputs", "checks"):

@@ -1062,7 +1062,7 @@ class ValuationChangeResponse(BaseModel):
 
 
 class InvestorRelationsSourceHealth(BaseModel):
-    code: Literal["cvm", "sec", "ri", "finnhub"]
+    code: Literal["cvm", "sec", "ri", "massive", "finnhub"]
     name: str
     status: Literal["healthy", "attention", "unconfigured"]
     last_success_at: datetime | None = None
@@ -1072,7 +1072,7 @@ class InvestorRelationsSourceHealth(BaseModel):
 
 class InvestorRelationsEvent(BaseModel):
     id: str
-    source: Literal["cvm", "sec", "ri", "finnhub"]
+    source: Literal["cvm", "sec", "ri", "massive", "finnhub"]  # 'finnhub': the rows written before the owner cut it (03/11/2026)
     market: Literal["B3", "US"]
     symbol: str | None = None
     company_name: str

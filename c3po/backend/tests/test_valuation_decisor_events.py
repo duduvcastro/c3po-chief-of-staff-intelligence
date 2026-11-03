@@ -98,14 +98,14 @@ def _fy1(eps: float, fiscal: str = "2027-09-30") -> dict[str, Any]:
                                                                                                {"fiscal_year_end": "2028-09-30", "eps_avg": eps * 1.1}]}
 
 
-def _sentiment(database: Database, symbol: str, published: datetime, *, bearish: float, articles: int) -> None:
-    database.save_ir_events([{"source_code": "finnhub", "external_id": f"finnhub-sentiment-{symbol}-{published:%G-W%V}", "company_id": None,
+def _sentiment(database: Database, symbol: str, published: datetime, *, bearish: float, articles: int, source: str = "finnhub") -> None:
+    database.save_ir_events([{"source_code": source, "external_id": f"{source}-sentiment-{symbol}-{published:%G-W%V}", "company_id": None,
                               "market": "US", "symbol": symbol, "company_name": symbol, "regulator_id": None, "event_type": "News Sentiment", "form": None,
                               "title": "sentiment", "summary": "sentiment", "published_at": published, "published_time_precision": "collected",
                               "reference_date": published.date(), "official_url": None, "document_url": None, "materiality": "low",
                               "valuation_relevant": False, "valuation_status": "informational",
-                              "raw_metadata": {"source": "finnhub", "bullish_percent": 100.0 - bearish, "bearish_percent": bearish,
-                                               "articles_last_week": articles, "company_news_score": 0.4},
+                              "raw_metadata": {"source": source, "bullish_percent": 100.0 - bearish, "bearish_percent": bearish,
+                                               "articles_last_week": articles, **({"company_news_score": 0.4} if source == "finnhub" else {})},
                               "collected_at": published}])
 
 
@@ -809,6 +809,24 @@ def test_a_negative_weekly_sentiment_read_at_the_clock_is_a_mark_with_its_value_
                              ({"articles_last_week": 4}, False), ({"age_days": 8.0}, True), ({"age_days": 8.0001}, False)):
         raised = decisor._event_codes({"sentiment": {**sentiment, **change}}, decisor.THRESHOLDS)[0]
         assert (decisor.NEWS_SENTIMENT_NEGATIVE in raised) is negative, change
+
+
+def test_the_sentiment_names_the_source_of_the_row_it_read() -> None:
+    # owner 03/11/2026: Finnhub is cut and Massive writes the week's row. The latest row at the clock is read, of either
+    # source; the record names the row's own source, and a Finnhub row (the history) still reads as Finnhub's
+    database = _database()
+    _night(database)
+    _sentiment(database, "AAPL", RUN - timedelta(days=3), bearish=20.0, articles=30)  # Finnhub's, earlier in the week
+    _sentiment(database, "AAPL", RUN - timedelta(days=1), bearish=70.0, articles=12, source="massive")
+    _sentiment(database, "KO", RUN - timedelta(days=2), bearish=65.0, articles=9)
+    _run(database)
+    aapl = _record(database, "NASDAQ", "AAPL")["checks"]["events"]["sentiment"]
+    ko = _record(database, "NYSE", "KO")["checks"]["events"]["sentiment"]
+    assert aapl["source"] == "ir_events/massive" and aapl["external_id"].startswith("massive-sentiment-AAPL-")
+    assert aapl["bearish_percent"] == 70.0 and aapl["articles_last_week"] == 12 and aapl["company_news_score"] is None and aapl["negative"] is True
+    assert ko["source"] == "ir_events/finnhub" and ko["bearish_percent"] == 65.0 and ko["negative"] is True
+    assert decisor.name_sentiment({"raw_metadata": {}, "published_at": RUN}, "NASDAQ", "AAPL", at=RUN)["source"] == "ir_events"  # never a guessed source
+    assert decisor.name_sentiment(None, "B3", "PETR4", at=RUN)["detail"] == "the news sentiment is a US source"
 
 
 def test_the_sentiment_is_never_a_gate_and_never_enters_the_replay_hash() -> None:
