@@ -459,17 +459,3 @@ def test_accepted_observation_uses_the_executed_trade_snapshot() -> None:
     assert snapshot["quote_as_of"] == executed_quote_at
     assert snapshot["stop_price"] == 99.1
     assert candidate["price"] == 99.0
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -330,9 +330,3 @@ def test_cstm_mark_gain_is_not_a_net_profit_at_the_close():
         seconds_to_close=20.0,
     )
     assert decision.reason is None
-
-
-
-
-
-

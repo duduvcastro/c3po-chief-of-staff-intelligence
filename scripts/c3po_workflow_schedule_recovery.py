@@ -28,10 +28,13 @@ UTC = timezone.utc
 BRT = ZoneInfo("America/Sao_Paulo")
 REPO = "duduvcastro/c3po-chief-of-staff-intelligence"
 REPO_ID = 1336399383
-ISSUE = 429
+ISSUE = 501  # the channel since #429 reached GitHub's comment limit (27/10/2026)
 OPS = "ops-readonly-report.yml"
 EXPORT = "decisor-verdict-export.yml"
 WORKFLOWS = (OPS, EXPORT)
+# workflows gone from the repository whose ledger entries stay as history only: never validated against today's slots,
+# never reconciled (the PIT grid autopilot left with its finished study, 03/11/2026)
+RETIRED_WORKFLOWS = frozenset({"valuation-pit-grid-autopilot.yml"})
 MIN_AGE = timedelta(minutes=20)
 MAX_AGE = timedelta(minutes=80)
 SCHEMA = "C3PO-WORKFLOW-SCHEDULE-RECOVERY-v1"
@@ -271,6 +274,8 @@ class Ledger:
         for key, entry in self.entries.items():
             if not isinstance(entry, dict) or entry.get("state") not in STATES:
                 raise RecoveryError("invalid_ledger_entry")
+            if entry.get("workflow") in RETIRED_WORKFLOWS:
+                continue
             slot = validate_slot(entry.get("workflow"), entry.get("slot"))
             if key != slot.key or SHA_RE.fullmatch(str(entry.get("head_sha"))) is None:
                 raise RecoveryError("invalid_ledger_entry")
@@ -356,7 +361,7 @@ def recover(gh: GitHub, ledger: Ledger, now: datetime, *, act: bool = False, sle
     candidates = {slot.key: slot for slot in slots(now)}
     # Reconcile old uncertain writes too; never issue a replacement POST for one.
     for key, entry in ledger.entries.items():
-        if entry["state"] not in {"complete", "skipped"}:
+        if entry["state"] not in {"complete", "skipped"} and entry["workflow"] not in RETIRED_WORKFLOWS:
             candidates[key] = validate_slot(entry["workflow"], entry["slot"])
     for slot in candidates.values():
         try:

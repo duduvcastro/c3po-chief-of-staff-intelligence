@@ -7,23 +7,20 @@ enable or start it. The existing deployment and security installers do not call
 The hourly timer samples at minute 03 UTC. It tolerates the first 20 minutes after
 a slot, then considers slots aged 20–80 minutes. Timer/runner/network jitter can
 add delay; this is not an exactly 20-minute recovery guarantee. Old slots are not
-replayed after a long outage. Only the latest eligible PIT tick is considered,
-so an hourly check does not replay a backlog of half-hourly ticks.
+replayed after a long outage.
 
 | Workflow | Slots | Recovery inputs |
 |---|---|---|
 | `ops-readonly-report.yml` | Daily 03:30 and 08:30 America/Sao_Paulo | `recovery_slot` only |
 | `decisor-verdict-export.yml` | Monday–Friday 08:00 America/Sao_Paulo | `night=""`, `recovery_slot` |
-| `valuation-pit-grid-autopilot.yml` | Minute 13 and 43 of every UTC hour | `dry_run="false"`, `recovery_slot` |
 
 An empty export night is the existing `last-completed` contract. The producer's
 XNYS calendar resolves the last closed NYSE session, including holidays and
 Monday→Friday. The host never guesses it by subtracting a civil day. Export
-does not gain a weekend schedule. Ops runs daily; PIT ticks may run on weekends,
-but the autopilot's existing order, `on`, expiry, active-run, failure-stop,
-window and deployment guards still decide whether a chunk can start. This
-feature does not approve PIT release, change parameters, dispatch the backtest
-directly or fix previously published PIT findings. All dispatches target `main`.
+does not gain a weekend schedule. Ops runs daily. All dispatches target `main`.
+The PIT grid autopilot left with its finished study (03/11/2026); its old ledger
+entries stay on the host as history and are never validated or reconciled again.
+Notices go to the channel issue #501.
 
 The optional `recovery_slot` has a strict UTC slot format and is visible in the
 run name. Workflows validate it without a token or API access. Ops uses it for

@@ -149,5 +149,3 @@ def test_capture_drops_without_writing_when_runtime_disk_reserve_is_reached(
     assert capture.stats().disk_guard_dropped == 1
     assert capture.stats().written == 0
     assert not list(tmp_path.rglob("*.ndjson"))
-
-

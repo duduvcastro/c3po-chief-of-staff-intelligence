@@ -1672,23 +1672,12 @@ class SystemHealthService:
             raise ValueError(f"SHA256SUMS mismatch: {path.name}")
 
     @staticmethod
-    def _evidence_time(payload: dict[str, Any]) -> datetime | None:
-        return SystemHealthService._payload_time(payload, "measured_at")
-
-    @staticmethod
     def _payload_time(payload: dict[str, Any], key: str) -> datetime | None:
         try:
             value = datetime.fromisoformat(str(payload.get(key) or ""))
         except ValueError:
             return None
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-
-    @staticmethod
-    def _exact_zero(value: Any) -> bool:
-        try:
-            return float(value) == 0.0
-        except (TypeError, ValueError):
-            return False
 
     def _automation_health(self, now: datetime) -> list[IntegrationHealth]:
         try:

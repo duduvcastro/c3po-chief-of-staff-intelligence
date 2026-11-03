@@ -115,7 +115,7 @@ def test_missed_slot_recovers_once_with_run_and_get_confirmed_receipt(monkeypatc
     fake, ledger, result = once(monkeypatch, tmp_path)
     assert result == {"covered": 0, "planned": 0, "confirmed": 1, "errors": 0}
     assert fake.writes[0] == (f"/actions/workflows/{R.OPS}/dispatches", {"ref": "main", "inputs": slot().inputs})
-    assert len(fake.writes) == 2 and fake.writes[1][0] == "/issues/429/comments"
+    assert len(fake.writes) == 2 and fake.writes[1][0] == "/issues/501/comments"
     assert "run 100" in fake.comments[0]["body"] and "resultado do workflow" in fake.comments[0]["body"]
     assert ledger.entries[slot().key]["state"] == "complete"
     assert (tmp_path / "ledger.json").stat().st_mode & 0o777 == 0o600
@@ -483,3 +483,24 @@ def test_separate_lock_prevents_a_second_cycle(monkeypatch, tmp_path):
         R.fcntl.flock(held, R.fcntl.LOCK_EX | R.fcntl.LOCK_NB)
         assert R.main(["--state-dir", str(state), "--token-file", str(credential)]) == 0
     assert not (state / "ledger.json").exists()
+
+
+def test_a_ledger_holding_retired_pit_entries_still_recovers_the_live_workflows(monkeypatch, tmp_path):
+    """Pre-review of the removal (03/11/2026): the host ledger keeps PIT autopilot entries; validating them against
+    today's workflows would stop every recovery."""
+    retired = {
+        "valuation-pit-grid-autopilot.yml@2026-10-23T06:13:00Z": {
+            "workflow": "valuation-pit-grid-autopilot.yml", "slot": "2026-10-23T06:13:00Z", "state": "complete",
+            "head_sha": SHA, "attempted_at": "2026-10-23T06:40:00Z", "before_id": 1, "run_id": 2},
+        "valuation-pit-grid-autopilot.yml@2026-10-23T06:43:00Z": {
+            "workflow": "valuation-pit-grid-autopilot.yml", "slot": "2026-10-23T06:43:00Z", "state": "dispatch_unknown",
+            "head_sha": SHA, "attempted_at": "2026-10-23T07:10:00Z", "before_id": 1},
+    }
+    (tmp_path / "ledger.json").write_text(json.dumps({"schema": R.SCHEMA, "entries": retired}))
+
+    fake, ledger, result = once(monkeypatch, tmp_path)
+
+    assert result["errors"] == 0 and result["confirmed"] == 1
+    assert fake.writes[0][0].endswith("/actions/workflows/ops-readonly-report.yml/dispatches")
+    assert all(key in ledger.entries for key in retired)  # kept as history, untouched
+    assert ledger.entries["valuation-pit-grid-autopilot.yml@2026-10-23T06:43:00Z"]["state"] == "dispatch_unknown"
