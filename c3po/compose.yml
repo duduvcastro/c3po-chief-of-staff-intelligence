@@ -44,6 +44,9 @@ services:
       # config.py and an empty value is not ignored). With no token the analyst consensus falls back to EODHD and the grades
       # and 13F signals stay neutral
       C3PO_FMP_API_TOKEN: ""
+      # the live ensemble producer served the model the grid failed on 02/11 and needs FMP: off here and in the worker
+      # (owner 03/11/2026: "achar um modelo eficiente de valuation"); this beats any value in ../.env
+      C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED: "0"
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro
       - ..:/legacy:ro
@@ -102,6 +105,7 @@ services:
       C3PO_CHEWIE_DAILY_SYMBOL_BUDGET: "1500"
       TZ: America/Sao_Paulo
       C3PO_FMP_API_TOKEN: ""  # FMP cancelled (owner 03/11/2026): see the api service
+      C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED: "0"  # the failed model's live producer is off: see the api service
     command: ["python", "-m", "app.valuation_worker"]
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro

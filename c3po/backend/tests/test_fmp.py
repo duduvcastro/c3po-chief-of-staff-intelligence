@@ -235,3 +235,19 @@ def test_fmp_is_switched_off_in_every_backend_service(monkeypatch):
     monkeypatch.delenv("C3PO_FMP_API_TOKEN")
     assert Settings().fmp_api_token == "a-token-still-in-the-env-file"  # what the blank prevents
     assert "FMP" not in (root / ".env.example").read_text(encoding="utf-8")
+
+
+def test_the_failed_model_s_live_producer_is_off_in_the_worker_and_the_api(monkeypatch) -> None:
+    """The live ensemble producer served the model the grid failed on 02/11/2026 and needs FMP: compose switches it off in
+    the valuation worker (the phase) and the api (its health card), whatever ../.env says."""
+    from pathlib import Path
+
+    import yaml
+
+    from app import valuation_env
+
+    services = yaml.safe_load((Path(__file__).resolve().parents[2] / "compose.yml").read_text())["services"]
+    for name in ("api", "valuation-worker"):
+        value = services[name]["environment"]["C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED"]
+        monkeypatch.setenv("C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED", value)
+        assert valuation_env.ensemble_live_enabled() is False, name
