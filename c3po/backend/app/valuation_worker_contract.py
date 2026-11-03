@@ -57,9 +57,10 @@ VALUATION_WORKER_CANONICAL_PHASE = "canonical"
 VALUATION_WORKER_ADVISORY_PHASES = ("earnings_calendar", "ensemble_live")
 VALUATION_WORKER_OFFHOURS_PHASES = (
     "chewie",
-    "v2_data",
-    "shadow",
-    "peer_quality",
-    "v3_shadow",
     "cash_yield",
 )
+# Retired with FMP (owner 03/11/2026: FMP is cut). Their entries stay in VALUATION_WORKER_PHASES (the codes of the runs and
+# incidents already recorded) but the worker no longer schedules them and the health card no longer expects them: v2_data
+# and peer_quality read FMP; the V2 shadow would go on publishing fresh-looking snapshots from inputs no longer refreshed;
+# v3_shadow (frozen) refuses inputs not refreshed in its own cycle and would page from the second night on.
+VALUATION_WORKER_RETIRED_PHASES = ("v2_data", "shadow", "peer_quality", "v3_shadow")

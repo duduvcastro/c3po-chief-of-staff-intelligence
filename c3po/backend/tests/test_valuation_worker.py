@@ -723,3 +723,79 @@ def test_the_08_00_turn_never_masks_an_exhausted_phase_as_a_success(monkeypatch)
     next_night = run_worker_iteration(database, now=datetime(2026, 11, 5, 1, 10, tzinfo=SAO_PAULO), canonical_due=False,
                                       canonical_operation=lambda: None, offhours_phases=(chewie,))
     assert next_night.phase_statuses["chewie"] == "failed" and len(calls) == 3  # the next night tries again
+
+
+def test_the_worker_no_longer_schedules_the_phases_retired_with_fmp(monkeypatch) -> None:
+    """Owner 03/11/2026 (FMP is cut): main() wires chewie and the flag-gated phases only, never v2_data, shadow, peer_quality
+    or v3_shadow, whose codes stay in the contract for the runs and incidents already recorded; and it closes, at startup,
+    any incident one of them left open."""
+    from contextlib import contextmanager, nullcontext
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    from app import valuation_env, valuation_worker
+    from app.valuation_worker_contract import VALUATION_WORKER_RETIRED_PHASES
+
+    class _Stop(Exception):
+        pass
+
+    captured: dict[str, Any] = {}
+
+    def first_iteration(_database: Any, **kwargs: Any) -> None:
+        captured.update(kwargs)
+        raise _Stop
+
+    @contextmanager
+    def admitted():
+        yield True
+
+    database = MagicMock()
+    database.latest_analysis_snapshot.return_value = None
+    for name in ("init_sentry", "ingestion_process", "PushNotificationService", "ensure_builtin_official_fundamentals",
+                 "close_retired_phase_incidents", "InvestorRelationsService", "MarketDataService", "B3ScreenerService",
+                 "RealtimeMarketsService", "EodhdRealtimeStream", "OnePagerService", "USScreeningService",
+                 "ChewieFundamentalsService", "PriceHistoryService", "EarningsCalendarService", "R2D2CashYieldService",
+                 "HealthcheckPing"):
+        monkeypatch.setattr(valuation_worker, name, MagicMock())
+    monkeypatch.setattr(valuation_worker, "Database", lambda _settings: database)
+    monkeypatch.setattr(valuation_worker, "startup_job", nullcontext)
+    monkeypatch.setattr(valuation_worker, "job", admitted)
+    monkeypatch.setattr(valuation_worker, "get_settings", lambda: Settings(
+        database_url="", auth_cookie_secure=False, r2d2_cash_yield_accounting_enabled=True, valuation_price_history_enabled=True))
+    monkeypatch.setattr("app.valuation_official.bootstrap_official_selection", lambda _database: None)
+    monkeypatch.setattr(valuation_worker, "run_worker_iteration", first_iteration)
+    for name in (valuation_env.DECISOR_SHADOW_ENV, valuation_env.EARNINGS_CALENDAR_ENV, valuation_env.ENSEMBLE_LIVE_ENV):
+        monkeypatch.setenv(name, "true")  # every switch on: the most phases main() can ever wire
+
+    with pytest.raises(_Stop):
+        valuation_worker.main()
+
+    keys = [phase.key for phase in captured["offhours_phases"]]
+    assert keys == ["chewie", "price_history", "cash_yield", "earnings_calendar", "decisor_shadow", "ensemble_live"]
+    assert not set(keys) & set(VALUATION_WORKER_RETIRED_PHASES)
+    assert set(VALUATION_WORKER_RETIRED_PHASES) <= set(VALUATION_WORKER_PHASES)  # the historical codes stay
+    assert not set(VALUATION_WORKER_RETIRED_PHASES) & set(VALUATION_WORKER_OFFHOURS_PHASES)
+    valuation_worker.close_retired_phase_incidents.assert_called_once()  # type: ignore[attr-defined]
+    assert valuation_worker.close_retired_phase_incidents.call_args.args == (database,)  # type: ignore[attr-defined]
+
+
+def test_an_incident_a_retired_phase_left_open_is_closed_at_startup() -> None:
+    from app.valuation_worker import _signal_phase_failure, close_retired_phase_incidents
+
+    database = _database()
+    night = datetime(2026, 11, 3, 1, 10, tzinfo=SAO_PAULO)
+    for phase in ("v2_data", "v3_shadow", "chewie"):
+        _signal_phase_failure(database, None, phase_key=phase, night=night.date(), error=RuntimeError("provider outage"), at=night)
+    database.record_operational_incident(  # a legacy per-night key of a retired phase
+        incident_key=f"{phase_incident_key('shadow')}:2026-10-14", source="worker", severity="critical",
+        title="Valuation V2 shadow cycle failed", detail="RuntimeError", deep_link="/?view=health", evidence={},
+        evidence_sha256="0" * 64, at=datetime(2026, 10, 14, 9, 0, tzinfo=timezone.utc),
+    )
+
+    assert close_retired_phase_incidents(database, observed_at=night + timedelta(hours=1)) == 3
+    by_key = {item["incident_key"]: item for item in _phase_incidents(database)}
+    assert by_key[phase_incident_key("chewie")]["status"] == "open"  # a live phase closes only on its own success
+    retired = [item for key, item in by_key.items() if key != phase_incident_key("chewie")]
+    assert len(retired) == 3 and all(item["status"] == "resolved" and item["actor_email"] == "system" for item in retired)
+    assert close_retired_phase_incidents(database, observed_at=night + timedelta(hours=2)) == 0  # idempotent
