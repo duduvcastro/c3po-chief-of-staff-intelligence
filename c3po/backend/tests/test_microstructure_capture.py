@@ -7,7 +7,6 @@ import pytest
 
 from app.market_data.eodhd_stream import EodhdRealtimeStream
 from app.microstructure_capture import AppendOnlyRawStreamCapture
-from app.r2d2_worker import _validated_capture_root
 
 
 class RecordingCapture:
@@ -150,16 +149,3 @@ def test_capture_drops_without_writing_when_runtime_disk_reserve_is_reached(
     assert capture.stats().disk_guard_dropped == 1
     assert capture.stats().written == 0
     assert not list(tmp_path.rglob("*.ndjson"))
-
-
-def test_capture_root_must_resolve_below_the_dedicated_data_mount(
-    tmp_path: Path,
-) -> None:
-    data_root = tmp_path / "data"
-    raw_root = data_root / "provider=eodhd" / "microstructure" / "raw"
-
-    assert _validated_capture_root(raw_root, data_root) == raw_root.resolve()
-    with pytest.raises(RuntimeError, match="dedicated Day D data mount"):
-        _validated_capture_root(tmp_path / "application-disk", data_root)
-    with pytest.raises(RuntimeError, match="child directory"):
-        _validated_capture_root(data_root, data_root)

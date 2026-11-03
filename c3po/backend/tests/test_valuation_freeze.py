@@ -4,9 +4,10 @@ ACCEPTED producer is PR #456 (``fable/val-pit-served-tp`` at 739b215, merged her
 thirteen files of PREREG_VALUATION_PIT_BACKTEST_US_V1 §1-bis.10) — seventeen files in all — stay byte-identical to the
 state of that merge (sha256 below: ``valuation_pit_served.py``, ``valuation_pit_rerun.py`` and ``valuation_v3_macro.py`` as
 739b215 has them; the others as main 42f4280 has them, which #456 does not change), and the served producer's identity
-(files AND the nine ``Database`` reader methods, ``engine_sha256``) is pinned too. Also pinned: ``config.py`` and the R2D2
-V2 implementation package (every ``PACKAGE_FILES`` byte, through ``implementation_package_sha``), the R2D2 V2 risk
-differential's auxiliary ``official_fundamentals.py``, and the PREREG_VALUATION_DECISOR_V1 §17 modules.
+(files AND the nine ``Database`` reader methods, ``engine_sha256``) is pinned too. Also pinned: ``config.py``, the R2D2 V2
+risk differential's auxiliary ``official_fundamentals.py``, the PREREG_VALUATION_DECISOR_V1 §17 modules, and the two live
+files that were pinned only through the R2D2 V2 implementation package (``market_data/eodhd_stream.py`` and
+``microstructure_capture.py``): the owner lifted that package's pin on 03/11/2026 to delete the retired V2 code.
 
 A failure here means a change reached a frozen file. Revert it; lifting the freeze is the owner's decision, made in a PR
 that changes this list on purpose — never as a side effect."""
@@ -16,8 +17,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
-from app.r2d2_v2_earnings_package import implementation_package_sha
 
 BACKEND = Path(__file__).resolve().parents[1]
 FREEZE_REVISION = "42f4280 + 739b215 (PR #456) + the P1 lock (main 7f14740, PREREG rev 3)"
@@ -39,13 +38,14 @@ FROZEN: dict[str, str | None] = {
     "app/valuation_v3_inputs.py": "c052fcadba507b1dd1475eae40ee28f82da7a84c24de945bc7635a145ae71ba9",
     "app/valuation_v3_macro.py": "c9edfaeea80c01d9ac3a2424c5b43a878bd28711ca378fcb491e0380d709545c",  # 739b215
     "app/valuation_v3_shadow.py": "3ea257f47924ce669e52c660605a68dde33042a6837f7ff0e5ea8eaec0ae2669",
-    # untouched by the valuation fronts this week: hashed into the R2D2 V2 package / the risk differential / §17
+    # untouched by the valuation fronts this week: the risk differential / §17 / the R2D2 V2 package's live files
     "app/config.py": "91619929a513074f2eee01a6bcd78342305e0066e61ac79f2afd087c2e035897",
+    "app/market_data/eodhd_stream.py": "f22bc20672c76cf17531b74f4da71552f378f8d5f137269e1b04c012dc8289cb",
+    "app/microstructure_capture.py": "7921850a098acb2e9280df0f6e534e2acc577a58db01c981573c1238db9f79be",
     "app/official_fundamentals.py": "b6edf7903931ce781735bc1c80d3c9ee865d6b4a8cd1f414589f8e6c23e27ff5",
     "app/valuation_accuracy_report.py": "3388d3221535b768e68a68e8cdec83914e8d3e3084b8a4eb32256366341f040e",
     "app/valuation_panel.py": "cfebdd986876bd5d2929a4cda6de335e1634ea60cb10c632fa7dee997f883e16",
 }
-R2D2_V2_IMPLEMENTATION_PACKAGE_SHA = "43db2b969fe113594fafe4a9e0cabec1f80ada9f8ab9ee5852677d65e2ec716a"
 SERVED_PRODUCER_ENGINE_SHA256 = "fbadbd374e31bff77e02e68bf5e9b7fc9a9542c7934946629ca2452bae43f7f2"  # files + the nine Database readers
 
 
@@ -58,10 +58,6 @@ def test_a_frozen_file_is_byte_identical_to_the_freeze_revision(path: str) -> No
         return
     actual = hashlib.sha256(target.read_bytes()).hexdigest()
     assert actual == expected, f"{path} changed since {FREEZE_REVISION} (sha256 {actual}): the US PIT backtest grid refuses it — revert"
-
-
-def test_the_r2d2_v2_implementation_package_did_not_move() -> None:
-    assert implementation_package_sha() == R2D2_V2_IMPLEMENTATION_PACKAGE_SHA
 
 
 def test_every_file_of_both_pit_producers_is_frozen() -> None:

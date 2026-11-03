@@ -186,7 +186,6 @@ HEALTH_CARDS = {
     "Valuation V2.1b cycle": "valuation_v2_1b_cycle",
     "V3 pre-A/B gate": "v3_pre_ab_gate",
     "Day D disk reserve": "day_d_disk_reserve",
-    "B2 zero-cap evidence": "b2_zero_cap_evidence",
 }
 HEALTH_CARD_KEYS = (*HEALTH_CARDS.values(), "probe_failed", "unmapped")
 INCIDENT_SCAN_LIMIT = 1000

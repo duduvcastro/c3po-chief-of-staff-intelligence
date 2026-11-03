@@ -45,7 +45,7 @@ NATIVE_MODULES = {
 }
 ENTRY_POINTS = (
     "app.main", "app.ir_worker", "app.valuation_worker",
-    "app.server_usage_worker", "app.r2d2_worker", "app.r2d2_shadow_candidate_worker",
+    "app.server_usage_worker", "app.r2d2_live_engine",
 )
 
 

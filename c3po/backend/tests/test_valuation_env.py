@@ -10,7 +10,6 @@ import pytest
 
 from app import sec_xbrl, valuation_env
 from app.config import Settings
-from app.r2d2_v2_earnings_package import PACKAGE_FILES, implementation_package_sha
 
 APP = Path(__file__).resolve().parents[1] / "app"
 FORMER_SETTINGS_FIELDS = ("sec_contact", "sec_max_requests_per_second", "valuation_asfiled_enabled", "valuation_asfiled_backfill_issuers_per_poll",
@@ -51,18 +50,15 @@ def test_values_parse_into_their_ranges_and_an_unparseable_one_is_the_default(mo
 
 
 def test_config_declares_none_of_them_so_the_r2d2_v2_package_does_not_move(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert "config.py" in PACKAGE_FILES and "valuation_env.py" not in PACKAGE_FILES
     assert not set(FORMER_SETTINGS_FIELDS) & set(Settings.model_fields)
     source = (APP / "config.py").read_text(encoding="utf-8")
     for name in (*valuation_env.ENVIRONMENT_NAMES, *FORMER_SETTINGS_FIELDS):
         assert name not in source, name
     # the values are read at call time from the environment: setting every one of them leaves the package hash alone
     _clean(monkeypatch)
-    before = implementation_package_sha()
     for name, value in ((valuation_env.SEC_CONTACT_ENV, "C3PO test desk"), (valuation_env.SEC_MAX_REQUESTS_PER_SECOND_ENV, "3"),
                         (valuation_env.ASFILED_ENABLED_ENV, "true"), (valuation_env.ASFILED_BACKFILL_ENV, "5"), (valuation_env.DECISOR_SHADOW_ENV, "true")):
         monkeypatch.setenv(name, value)
-    assert implementation_package_sha() == before
     assert "C3PO test desk" not in repr(Settings())  # a Settings object never carries the contact
 
 
