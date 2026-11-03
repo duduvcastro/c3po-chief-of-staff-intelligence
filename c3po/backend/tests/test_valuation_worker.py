@@ -576,7 +576,9 @@ def test_a_new_build_gets_fresh_canonical_attempts(monkeypatch) -> None:
         raise RuntimeError("provider outage")
 
     for _ in range(CANONICAL_MAX_FAILURES):
-        run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
+        result = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
+        assert result.canonical_status == "failed"
+        now = min(result.next_wake_at, now + timedelta(hours=3))  # the last failure schedules no retry before midnight
     assert run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail,
                                 offhours_phases=()).canonical_status == "retry_cap"
 
@@ -620,3 +622,53 @@ def test_chewie_budget_in_production_is_1500_names_a_night() -> None:
 
     compose = yaml.safe_load((Path(__file__).resolve().parents[2] / "compose.yml").read_text())
     assert compose["services"]["valuation-worker"]["environment"]["C3PO_CHEWIE_DAILY_SYMBOL_BUDGET"] == "1500"
+
+
+
+def test_the_wait_after_a_failure_holds_when_another_phase_wakes_the_worker_earlier(monkeypatch) -> None:
+    """Pre-review of 3be792e0: an earlier wake (another phase, a restart) never shortens the canonical's wait."""
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+    database = _database()
+    calls = []
+
+    def fail() -> None:
+        calls.append(1)
+        raise RuntimeError("provider outage")
+
+    first_at = datetime(2026, 11, 4, 1, 5, tzinfo=SAO_PAULO)
+    first = run_worker_iteration(database, now=first_at, canonical_due=True, canonical_operation=fail, offhours_phases=())
+    assert first.next_wake_at == first_at + timedelta(minutes=15)
+    pings = _Pings()
+    early = run_worker_iteration(database, now=first_at + timedelta(minutes=5), canonical_due=True, canonical_operation=fail,
+                                 offhours_phases=(OffhoursPhase("peer_quality", lambda: None, lambda: {"US": 1}),),
+                                 healthchecks={"valuation": pings})  # type: ignore[dict-item]
+
+    assert early.canonical_status == "retry_wait" and len(calls) == 1
+    assert early.next_wake_at == first_at + timedelta(minutes=15)
+    assert pings.sent == ["start", "fail"]
+    on_time = run_worker_iteration(database, now=first_at + timedelta(minutes=15), canonical_due=True,
+                                   canonical_operation=fail, offhours_phases=())
+    assert on_time.canonical_status == "failed" and len(calls) == 2
+    assert on_time.next_wake_at == first_at + timedelta(minutes=15) + timedelta(hours=1)
+
+
+def test_deploys_do_not_multiply_the_day_s_attempts(monkeypatch) -> None:
+    from app.valuation_worker import CANONICAL_MAX_FAILURES_ALL_BUILDS
+
+    database = _database()
+    now = datetime(2026, 11, 4, 0, 5, tzinfo=SAO_PAULO)
+
+    def fail() -> None:
+        raise RuntimeError("provider outage")
+
+    for build in ("build-a", "build-a", "build-a", "build-b", "build-b", "build-c"):  # three deploys in one failing day
+        monkeypatch.setenv("C3PO_BUILD_SHA", build)
+        result = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
+        assert result.canonical_status == "failed"
+        now = min(result.next_wake_at, now + timedelta(hours=3))
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-d")
+    assert now.date() == datetime(2026, 11, 4).date()
+
+    capped = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
+
+    assert CANONICAL_MAX_FAILURES_ALL_BUILDS == 6 and capped.canonical_status == "retry_cap"

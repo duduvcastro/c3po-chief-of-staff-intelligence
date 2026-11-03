@@ -2693,6 +2693,30 @@ class Database:
             ).fetchone()
         return int(row[0]) if row else 0
 
+    def last_ingestion_run_started_at(self, source_code: str, status: str, *, scheduled_for: str,
+                                      build_sha: str | None = None) -> datetime | None:
+        """When the last run of ``source_code`` with ``status`` for ONE scheduled cycle started (optionally of one build) —
+        the valuation worker's wait between failed canonical attempts."""
+        if not self.database_url:
+            starts = [run.get("started_at") for run in self._ingestion_runs.values()
+                      if run.get("source_code") == source_code and run.get("status") == status
+                      and (run.get("metadata") or {}).get("scheduled_for") == scheduled_for
+                      and (build_sha is None or (run.get("metadata") or {}).get("build_sha") == build_sha)]
+            starts = [start for start in starts if isinstance(start, datetime)]
+            return max(starts) if starts else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT max(run.started_at)
+                FROM ingestion_runs run
+                JOIN data_sources source ON source.id = run.source_id
+                WHERE source.code = %s AND run.status = %s AND run.metadata->>'scheduled_for' = %s
+                  AND (%s::text IS NULL OR run.metadata->>'build_sha' = %s)
+                """,
+                (source_code, status, scheduled_for, build_sha, build_sha),
+            ).fetchone()
+        return row[0] if row and row[0] is not None else None
+
     def list_portfolio_events(self) -> list[dict[str, Any]]:
         if not self.database_url:
             with self._portfolio_events_lock:

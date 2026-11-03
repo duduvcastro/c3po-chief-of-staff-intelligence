@@ -164,3 +164,22 @@ def test_the_051_and_053_readers_apply_the_insert_margin(pg: tuple[Database, Any
     staleness = staleness_reader.us_staleness_at(database, D, margin_seconds=60)
     assert staleness["status"] == "ok" and staleness["marks_known"] == 1 and len(staleness["pending"]["AAPL"]) == 1
     assert staleness_reader.us_staleness_at(database, D, margin_seconds=0)["marks_known"] == 2
+
+
+def test_the_canonical_retry_readers_filter_by_build(pg: tuple[Database, Any]) -> None:
+    """The valuation worker's canonical caps (owner 03/11/2026): failed runs of one scheduled day, of one build or of all,
+    and when the last of them started."""
+    database, connection = pg
+    for build, started in (("build-a", D - timedelta(hours=3)), ("build-a", D - timedelta(hours=2)), ("build-b", D - timedelta(hours=1)),
+                           (None, D - timedelta(minutes=30))):
+        metadata = {"scheduled_for": "day-1"} | ({"build_sha": build} if build else {})
+        run_id = database.begin_ingestion_run("sec_asfiled", "SEC EDGAR as-filed statements", "regulatory_disclosure", metadata)
+        database.finish_ingestion_run(run_id, "failed", 0, 0, "RuntimeError: outage")
+        connection.execute("UPDATE ingestion_runs SET started_at = %s WHERE id = %s", (started, run_id))
+    connection.commit()
+    assert database.count_ingestion_runs("sec_asfiled", "failed", scheduled_for="day-1") == 4
+    assert database.count_ingestion_runs("sec_asfiled", "failed", scheduled_for="day-1", build_sha="build-a") == 2
+    assert database.count_ingestion_runs("sec_asfiled", "failed", scheduled_for="day-1", build_sha="build-z") == 0
+    assert database.last_ingestion_run_started_at("sec_asfiled", "failed", scheduled_for="day-1", build_sha="build-a") == D - timedelta(hours=2)
+    assert database.last_ingestion_run_started_at("sec_asfiled", "failed", scheduled_for="day-1") == D - timedelta(minutes=30)
+    assert database.last_ingestion_run_started_at("sec_asfiled", "failed", scheduled_for="day-2") is None

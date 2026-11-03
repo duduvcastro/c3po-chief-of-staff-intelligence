@@ -52,7 +52,8 @@ logger = logging.getLogger("c3po.valuation_worker")
 # four failures of the RUNNING build in a day (a deploy with a fix starts afresh; ~4 h of outage are still recovered);
 # Chewie and the price history stop for the night after two failed attempts.
 CANONICAL_RETRY_DELAYS = (timedelta(minutes=15), timedelta(hours=1), timedelta(hours=3))  # after the 1st, 2nd, 3rd failure
-CANONICAL_MAX_FAILURES = 4
+CANONICAL_MAX_FAILURES = 4  # of the running build, a day
+CANONICAL_MAX_FAILURES_ALL_BUILDS = 6  # a day across deploys: every merge deploys a new build (2-9 a day)
 EODHD_PHASE_MAX_FAILURES = 2
 OFFHOURS_RETRY_DELAY = timedelta(minutes=30)
 OFFHOURS_START_HOUR = 1
@@ -340,7 +341,7 @@ def _run_recorded_phase(
         "canonical_status": canonical_status,
         "uses_persisted_universe_fallback": (
             phase_key != VALUATION_WORKER_CANONICAL_PHASE
-            and canonical_status in ("failed", "retry_cap")
+            and canonical_status in ("failed", "retry_cap", "retry_wait")
         ),
         "count_semantics": "top_level_result_items",
     }
@@ -401,14 +402,28 @@ def run_worker_iteration(
         if worker_healthcheck:
             worker_healthcheck.ping("start")
 
-    def canonical_failures() -> int:  # today's failed cycles of the running build
-        return database.count_ingestion_runs(VALUATION_WORKER_PHASES[VALUATION_WORKER_CANONICAL_PHASE]["code"], "failed",
-                                             scheduled_for=start_of_today(now).isoformat(), build_sha=_build_sha())
+    canonical_code = VALUATION_WORKER_PHASES[VALUATION_WORKER_CANONICAL_PHASE]["code"]
 
-    if canonical_due and canonical_failures() >= CANONICAL_MAX_FAILURES:
-        canonical_due = False  # today's attempts are spent: the next day's cycle (or a new build) tries again
-        canonical_status = "retry_cap"
-        failed_work = True  # the dead-man check never reads a capped day as a success (pre-review of 8f07d0c6)
+    def canonical_failures(build: str | None) -> int:  # today's failed cycles (of one build, or of all)
+        return database.count_ingestion_runs(canonical_code, "failed", scheduled_for=start_of_today(now).isoformat(),
+                                             build_sha=build)
+
+    if canonical_due:
+        failures = canonical_failures(_build_sha())
+        if failures >= CANONICAL_MAX_FAILURES or canonical_failures(None) >= CANONICAL_MAX_FAILURES_ALL_BUILDS:
+            canonical_due = False  # today's attempts are spent: the next day's cycle (or a new build, under the day's ceiling)
+            canonical_status = "retry_cap"
+            failed_work = True  # the dead-man check never reads a capped day as a success (pre-review of 8f07d0c6)
+        elif failures:
+            # the wait after the last failure holds even when another phase or a restart wakes the worker earlier
+            last = database.last_ingestion_run_started_at(canonical_code, "failed", scheduled_for=start_of_today(now).isoformat(),
+                                                          build_sha=_build_sha())
+            retry_at = last + CANONICAL_RETRY_DELAYS[min(failures, len(CANONICAL_RETRY_DELAYS)) - 1] if last else None
+            if retry_at is not None and now < retry_at:
+                canonical_due = False
+                canonical_status = "retry_wait"
+                failed_work = True
+                wake_targets.append(retry_at)
 
     if canonical_due:
         start_worker_healthcheck()
@@ -419,6 +434,7 @@ def run_worker_iteration(
                 canonical_operation,
                 scheduled_for=start_of_today(now),
                 canonical_status="running",
+                started_at=now,  # the attempt's instant: the next attempt's wait counts from it
             )
             canonical_status = "succeeded"
         except Exception as exc:
@@ -435,9 +451,9 @@ def run_worker_iteration(
                     deep_link="/?view=health",
                     event_key=f"valuation-canonical-failure:{start_of_today(now).date()}",
                 )
-            failures = canonical_failures()
-            if failures < CANONICAL_MAX_FAILURES:
-                wake_targets.append(now + CANONICAL_RETRY_DELAYS[min(failures, len(CANONICAL_RETRY_DELAYS)) - 1])
+            failures = canonical_failures(_build_sha())
+            if failures < CANONICAL_MAX_FAILURES and canonical_failures(None) < CANONICAL_MAX_FAILURES_ALL_BUILDS:
+                wake_targets.append(now + CANONICAL_RETRY_DELAYS[min(max(failures, 1), len(CANONICAL_RETRY_DELAYS)) - 1])
 
     for phase in offhours_phases:
         phase_due_at = start_of_today(now) + timedelta(hours=phase.start_hour)
