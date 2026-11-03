@@ -25,7 +25,7 @@ import pytest
 from app import valuation_official as official
 from app.config import Settings
 from app.database import Database
-from app.r2d2_v2_risk_source import ORACLE_ONE_PAGER_SHA256
+ORACLE_ONE_PAGER_SHA256 = "76e8cc35fcd03be591280ff1bfbf76e0eb48495019fbe0484ead4231118a2ca4"
 from app.valuation_accuracy import calls_by_source, load_prediction_calls
 from app.valuation_official_engine import OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE_INTERNAL
 

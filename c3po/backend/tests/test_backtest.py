@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app import backtest, r2d2_strategy as strategy
+from app import r2d2_strategy as strategy
+
 
 
 def _make_bars(days: int, seed: int, drift: float, vol: float) -> list[dict]:
@@ -331,35 +332,7 @@ def test_cstm_mark_gain_is_not_a_net_profit_at_the_close():
     assert decision.reason is None
 
 
-def test_run_backtest_produces_consistent_report_over_synthetic_data():
-    bars_by_symbol = {
-        "TESTA": _make_bars(days=8, seed=1, drift=0.0015, vol=0.004),
-        "TESTB": _make_bars(days=8, seed=2, drift=-0.0010, vol=0.005),
-    }
-    report = backtest.run_backtest(bars_by_symbol, starting_capital=1_000_000.0, max_positions=5)
-    assert report.starting_capital == 1_000_000.0
-    assert report.ending_nav > 0
-    # Every SELL trade must have a realized P&L, mirroring the live ledger invariant.
-    for trade in report.trades:
-        if trade.side == "SELL":
-            assert trade.realized_pnl_usd is not None
-    summary = report.summary()
-    assert 0.0 <= summary["win_rate_percent"] <= 100.0
-    assert summary["max_drawdown_percent"] >= 0.0
 
 
-def test_run_backtest_never_exceeds_starting_cash():
-    bars_by_symbol = {"TESTA": _make_bars(days=5, seed=7, drift=0.002, vol=0.006)}
-    report = backtest.run_backtest(bars_by_symbol, starting_capital=100_000.0, max_positions=1)
-    # No BUY should have committed more than the configured max_position_percent of NAV;
-    # a loose sanity check is that ending NAV stays within a plausible band for one symbol.
-    assert report.ending_nav < report.starting_capital * 3
 
 
-def test_split_walk_forward_returns_nonoverlapping_contiguous_slices():
-    bars_by_symbol = {"TESTA": _make_bars(days=9, seed=1, drift=0.0, vol=0.003)}
-    folds = backtest.split_walk_forward(bars_by_symbol, folds=3)
-    assert len(folds) == 3
-    for train, test in folds:
-        assert len(train["TESTA"]) > 0
-        assert len(test["TESTA"]) > 0
