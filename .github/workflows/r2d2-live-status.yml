@@ -52,29 +52,40 @@ jobs:
           exec 2>/dev/null
           cd /opt/chief-of-staff-digital || exit 10
           compose=(docker compose --env-file .env -f c3po/compose.yml)
-          echo "== massive snapshot: response shape and trade age, keys and numbers only"
-          timeout 60 "${compose[@]}" exec -T api python - <<'PY' | grep -oE '^(status=[A-Za-z]{0,12} rows=[0-9]+|keys=[A-Za-z_,]+ last_trade_keys=[A-Za-z_,]* price_positive=(True|False) t_digits=[0-9]+ age_s=-?[0-9]+|snapshot failed=[A-Za-z]+)$' || echo "snapshot read printed nothing"
+          echo "== massive snapshot: response shape and trade ages over the whole market, keys and numbers only"
+          timeout 90 "${compose[@]}" exec -T api python - <<'PY' | grep -oE '^(token_set=(True|False)|http=[0-9]{3}|status=(OK|ERROR|DELAYED|NOT_AUTHORIZED|NOT_FOUND|None|other) rows=[0-9]+ with_trade=[0-9]+ dotted=[0-9]+|row_keys=[A-Za-z_,]+|last_trade_keys=[A-Za-z_,]*|t_digits=[0-9]+ today=[0-9]+ age_s_p50=-?[0-9]+ age_s_p90=-?[0-9]+|snapshot failed=[A-Za-z]+)$'
           from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          import httpx
           from app.config import get_settings
-          from app.market_data.http import JsonHttpClient
           s = get_settings()
+          print("token_set=%s" % bool(s.massive_api_token))
           try:
-              body = JsonHttpClient(timeout=10.0, max_retries=0).get_json(
-                  s.massive_base_url.rstrip("/") + "/v2/snapshot/locale/us/markets/stocks/tickers",
-                  params={"tickers": "SPY,QQQ,BRK.B", "apiKey": s.massive_api_token})
+              response = httpx.get(s.massive_base_url.rstrip("/") + "/v2/snapshot/locale/us/markets/stocks/tickers",
+                                   params={"apiKey": s.massive_api_token}, timeout=60.0)
+              print("http=%d" % response.status_code)
+              body = response.json()
               rows = body.get("tickers") if isinstance(body, dict) else None
-              rows = rows if isinstance(rows, list) else []
-              print("status=%s rows=%d" % (str(body.get("status") if isinstance(body, dict) else "")[:12], len(rows)))
-              now = datetime.now(timezone.utc).timestamp()
-              for row in rows:
-                  trade = row.get("lastTrade") if isinstance(row, dict) and isinstance(row.get("lastTrade"), dict) else {}
-                  stamp = int(trade.get("t") or 0)
-                  print("keys=%s last_trade_keys=%s price_positive=%s t_digits=%d age_s=%d" % (
-                      ",".join(sorted(key for key in row if key != "ticker")) if isinstance(row, dict) else "", ",".join(sorted(trade)),
-                      float(trade.get("p") or 0) > 0, len(str(stamp)), int(now - stamp / 1e9) if stamp else -1))
+              rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+              status = str(body.get("status")) if isinstance(body, dict) else "None"
+              trades = [row["lastTrade"] for row in rows if isinstance(row.get("lastTrade"), dict)]
+              print("status=%s rows=%d with_trade=%d dotted=%d" % (
+                  status if status in ("OK", "ERROR", "DELAYED", "NOT_AUTHORIZED", "NOT_FOUND", "None") else "other", len(rows),
+                  len(trades), sum(1 for row in rows if "." in str(row.get("ticker") or ""))))
+              print("row_keys=%s" % ",".join(sorted({key for row in rows[:200] for key in row if key != "ticker"})))
+              print("last_trade_keys=%s" % ",".join(sorted({key for trade in trades[:200] for key in trade})))
+              now = datetime.now(timezone.utc)
+              session = now.astimezone(ZoneInfo("America/New_York")).date()
+              stamps = [int(trade.get("t") or 0) for trade in trades]
+              ages = sorted(int(now.timestamp() - stamp / 1e9) for stamp in stamps
+                            if stamp > 0 and datetime.fromtimestamp(stamp / 1e9, timezone.utc).astimezone(ZoneInfo("America/New_York")).date() == session)
+              digits = max((len(str(stamp)) for stamp in stamps if stamp > 0), default=0)
+              print("t_digits=%d today=%d age_s_p50=%d age_s_p90=%d" % (
+                  digits, len(ages), ages[len(ages) // 2] if ages else -1, ages[int(len(ages) * 0.9)] if ages else -1))
           except Exception as error:
               print("snapshot failed=%s" % type(error).__name__)
           PY
+          echo "snapshot rc=$?"
           echo "== host peaks per day (sysstat), numbers only"
           peak() {  # file, sadf report, column, max|min
             sadf -d "$1" -- "$2" | awk -F';' -v col="$3" -v mode="$4" '
@@ -82,18 +93,21 @@ jobs:
               c && $c ~ /^[0-9]+([.][0-9]+)?$/ { v = $c + 0; if (!n || (mode == "max" ? v > m : v < m)) m = v; n++ }
               END { if (n) printf "%.1f", m; else printf "na" }'
           }
-          for f in $(ls /var/log/sysstat/sa[0-9][0-9] 2>/dev/null | sort); do
-            printf 'day=%s memused_pct_max=%s kbmemused_max=%s kbcommit_max=%s cpu_idle_pct_min=%s ldavg1_max=%s\n' "$(basename "$f")" \
+          echo "sa_files=$(ls /var/log/sysstat/sa[0-9][0-9] 2>/dev/null | wc -l)"
+          for f in $(ls -tr /var/log/sysstat/sa[0-9][0-9] 2>/dev/null); do
+            printf 'day=%s date=%s memused_pct_max=%s kbmemused_max=%s kbcommit_max=%s cpu_idle_pct_min=%s ldavg1_max=%s\n' "$(basename "$f")" "$(date -r "$f" +%F)" \
               "$(peak "$f" -r %memused max)" "$(peak "$f" -r kbmemused max)" "$(peak "$f" -r kbcommit max)" \
               "$(peak "$f" -u %idle min)" "$(peak "$f" -q ldavg-1 max)"
-          done | grep -E '^day=sa[0-9]{2} memused_pct_max=[0-9.na]+ kbmemused_max=[0-9.na]+ kbcommit_max=[0-9.na]+ cpu_idle_pct_min=[0-9.na]+ ldavg1_max=[0-9.na]+$'
+          done | grep -E '^day=sa[0-9]{2} date=[0-9]{4}-[0-9]{2}-[0-9]{2} memused_pct_max=[0-9.na]+ kbmemused_max=[0-9.na]+ kbcommit_max=[0-9.na]+ cpu_idle_pct_min=[0-9.na]+ ldavg1_max=[0-9.na]+$'
           echo "== now"
           free -m | awk '/^Mem:/ { printf "mem_mb total=%d used=%d available=%d\n", $2, $3, $7 }'
           nproc | awk '{ printf "cpus=%d\n", $1 }'
-          timeout 30 docker stats --no-stream --format '{{.Name}} mem={{.MemUsage}}' | grep -E '^[a-z0-9-]+ mem=[0-9.]+[KMG]iB / [0-9.]+[KMG]iB$'
+          stats=$(timeout 30 docker stats --no-stream --format '{{.Name}} mem={{.MemUsage}}')
+          echo "stats_lines=$(printf '%s\n' "$stats" | grep -c .)"
+          printf '%s\n' "$stats" | grep -E '^[a-z0-9][a-z0-9_.-]* mem=[0-9.]+(B|[KMGT]iB) / [0-9.]+(B|[KMGT]iB)$'
           exit 0
           REMOTE
           # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)
-          sed -E 's/(api_token=)[^&[:space:]"]+/\1[redacted]/g' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          sed -E 's/(api_token=|[aA]pi[kK]ey=)[^&[:space:]"]+/\1[redacted]/g' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "remote exit status: $rc"
           exit "$rc"
