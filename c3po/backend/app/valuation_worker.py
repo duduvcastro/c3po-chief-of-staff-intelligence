@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, time as wall_time, timedelta, timezone
@@ -45,12 +46,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("c3po.valuation_worker")
 
-CANONICAL_RETRY_DELAY = timedelta(minutes=15)
 # Without EODHD's Extra Daily API Calls add-on the plan allows 100,000 weighted calls a day (owner 03/11/2026: cancel it).
-# A failed canonical cycle costs up to ~10,000 (US screener + B3) and was retried every 15 min all day; a failed Chewie
-# night up to its whole budget, every 30 min until 08:00. Each now stops for the day after its cap.
-CANONICAL_MAX_FAILURES = 3
-CHEWIE_MAX_FAILURES = 2
+# A failed canonical cycle can spend up to ~10,000 (US screener + B3) and was retried every 15 min all day; a failed Chewie
+# night up to its whole budget, every 30 min until 08:00. The canonical now waits longer after each failure and stops after
+# four failures of the RUNNING build in a day (a deploy with a fix starts afresh; ~4 h of outage are still recovered);
+# Chewie and the price history stop for the night after two failed attempts.
+CANONICAL_RETRY_DELAYS = (timedelta(minutes=15), timedelta(hours=1), timedelta(hours=3))  # after the 1st, 2nd, 3rd failure
+CANONICAL_MAX_FAILURES = 4
+EODHD_PHASE_MAX_FAILURES = 2
 OFFHOURS_RETRY_DELAY = timedelta(minutes=30)
 OFFHOURS_START_HOUR = 1
 OFFHOURS_END_HOUR = 8
@@ -98,6 +101,10 @@ class WorkerIterationResult:
     next_wake_at: datetime
     canonical_status: str
     phase_statuses: dict[str, str]
+
+
+def _build_sha() -> str:
+    return os.environ.get("C3PO_BUILD_SHA", "")
 
 
 def start_of_today(now: datetime) -> datetime:
@@ -328,6 +335,7 @@ def _run_recorded_phase(
     metadata = {
         "phase": phase_key,
         "scheduled_for": scheduled_for.isoformat(),
+        "build_sha": _build_sha(),
         "timezone": str(SAO_PAULO),
         "canonical_status": canonical_status,
         "uses_persisted_universe_fallback": (
@@ -393,11 +401,14 @@ def run_worker_iteration(
         if worker_healthcheck:
             worker_healthcheck.ping("start")
 
-    if canonical_due and database.count_ingestion_runs(
-            VALUATION_WORKER_PHASES[VALUATION_WORKER_CANONICAL_PHASE]["code"], "failed",
-            scheduled_for=start_of_today(now).isoformat()) >= CANONICAL_MAX_FAILURES:
-        canonical_due = False  # today's attempts are spent: the next day's cycle tries again, no retry wake
+    def canonical_failures() -> int:  # today's failed cycles of the running build
+        return database.count_ingestion_runs(VALUATION_WORKER_PHASES[VALUATION_WORKER_CANONICAL_PHASE]["code"], "failed",
+                                             scheduled_for=start_of_today(now).isoformat(), build_sha=_build_sha())
+
+    if canonical_due and canonical_failures() >= CANONICAL_MAX_FAILURES:
+        canonical_due = False  # today's attempts are spent: the next day's cycle (or a new build) tries again
         canonical_status = "retry_cap"
+        failed_work = True  # the dead-man check never reads a capped day as a success (pre-review of 8f07d0c6)
 
     if canonical_due:
         start_worker_healthcheck()
@@ -424,7 +435,9 @@ def run_worker_iteration(
                     deep_link="/?view=health",
                     event_key=f"valuation-canonical-failure:{start_of_today(now).date()}",
                 )
-            wake_targets.append(now + CANONICAL_RETRY_DELAY)
+            failures = canonical_failures()
+            if failures < CANONICAL_MAX_FAILURES:
+                wake_targets.append(now + CANONICAL_RETRY_DELAYS[min(failures, len(CANONICAL_RETRY_DELAYS)) - 1])
 
     for phase in offhours_phases:
         phase_due_at = start_of_today(now) + timedelta(hours=phase.start_hour)
@@ -440,6 +453,8 @@ def run_worker_iteration(
             if phase.max_failures is not None and database.count_ingestion_runs(
                     VALUATION_WORKER_PHASES[phase.key]["code"], "failed", scheduled_for=phase_due_at.isoformat()) >= phase.max_failures:
                 phase_statuses[phase.key] = "retry_cap"  # this night's attempts are spent: the next night tries again
+                if not phase.advisory:
+                    failed_work = True  # a capped phase is never read as a success by the dead-man check
                 continue
             ready_at = phase.not_before() if phase.not_before is not None else None
             if ready_at is not None and current < ready_at:  # not yet: nothing run, nothing recorded, the worker wakes at ready_at
@@ -619,7 +634,7 @@ def main() -> None:
                 "chewie",
                 chewie.last_refreshed_at,
                 lambda: chewie.refresh_all(budget=settings.chewie_daily_symbol_budget),
-                max_failures=CHEWIE_MAX_FAILURES,
+                max_failures=EODHD_PHASE_MAX_FAILURES,
             ),
             OffhoursPhase("v2_data", v2_data.last_refreshed_at, v2_data.refresh_all),
             OffhoursPhase("shadow", v2_shadow.last_run_at, v2_shadow.run_all),
@@ -629,7 +644,7 @@ def main() -> None:
                 v2_peer_quality.refresh_all,
             ),
             OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
-            *((OffhoursPhase("price_history", price_history.last_run_at, price_history.run_all),)
+            *((OffhoursPhase("price_history", price_history.last_run_at, price_history.run_all, max_failures=EODHD_PHASE_MAX_FAILURES),)
               if settings.valuation_price_history_enabled else ()),  # V3.2 price series (rev 7 §2.2): dormant until the mesa enables it
             *((
                 OffhoursPhase(

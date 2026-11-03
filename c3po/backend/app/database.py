@@ -2672,13 +2672,14 @@ class Database:
             )
             connection.commit()
 
-    def count_ingestion_runs(self, source_code: str, status: str, *, scheduled_for: str) -> int:
+    def count_ingestion_runs(self, source_code: str, status: str, *, scheduled_for: str, build_sha: str | None = None) -> int:
         """How many runs of ``source_code`` ended with ``status`` for ONE scheduled cycle (``metadata.scheduled_for``, the
-        valuation worker's phase clock) — the retry cap of an advisory phase."""
+        valuation worker's phase clock) — the retry cap of a phase; with ``build_sha``, only the runs of that build."""
         if not self.database_url:
             return sum(1 for run in self._ingestion_runs.values()
                        if run.get("source_code") == source_code and run.get("status") == status
-                       and (run.get("metadata") or {}).get("scheduled_for") == scheduled_for)
+                       and (run.get("metadata") or {}).get("scheduled_for") == scheduled_for
+                       and (build_sha is None or (run.get("metadata") or {}).get("build_sha") == build_sha))
         with self.connection() as connection:
             row = connection.execute(
                 """
@@ -2686,8 +2687,9 @@ class Database:
                 FROM ingestion_runs run
                 JOIN data_sources source ON source.id = run.source_id
                 WHERE source.code = %s AND run.status = %s AND run.metadata->>'scheduled_for' = %s
+                  AND (%s::text IS NULL OR run.metadata->>'build_sha' = %s)
                 """,
-                (source_code, status, scheduled_for),
+                (source_code, status, scheduled_for, build_sha, build_sha),
             ).fetchone()
         return int(row[0]) if row else 0
 
