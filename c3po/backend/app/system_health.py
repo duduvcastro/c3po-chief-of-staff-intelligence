@@ -45,7 +45,6 @@ class SystemHealthService:
         *,
         cache_seconds: int = 60,
         external_get: Callable[..., Any] | None = None,
-        backblaze_client: Any | None = None,
         disk_usage: Callable[[Path], Any] | None = None,
     ) -> None:
         self.settings = settings
@@ -56,7 +55,6 @@ class SystemHealthService:
         self.server_usage = server_usage
         self.cache_seconds = cache_seconds
         self.external_get = external_get or httpx.get
-        self.backblaze_client = backblaze_client
         self.disk_usage = disk_usage or shutil.disk_usage
         # One immutable (timestamp, response) entry: readers take it in a single read,
         # so freshness and payload always come from the same version of the cache.
@@ -137,7 +135,6 @@ class SystemHealthService:
             "cloudflare": lambda: self._cloudflare_health(now),
             "github": lambda: self._github_health(now),
             "intermedia": lambda: self._intermedia_health(now),
-            "backblaze": lambda: self._backblaze_health(now),
             "healthchecks": lambda: self._healthchecks_health(now),
             "sentry": lambda: self._sentry_health(now),
             "open_meteo": lambda: self._open_meteo_health(now),
@@ -203,7 +200,6 @@ class SystemHealthService:
                         ("cloudflare", "Cloudflare"),
                         ("github", "GitHub / CI-CD"),
                         ("intermedia", "Intermedia Exchange"),
-                        ("backblaze", "Backblaze B2"),
                         ("healthchecks", "Healthchecks.io"),
                         ("sentry", "Sentry"),
                         ("open_meteo", "Open-Meteo"),
@@ -814,7 +810,6 @@ class SystemHealthService:
             self._cloudflare_health(now),
             self._github_health(now),
             self._intermedia_health(now),
-            self._backblaze_health(now),
             self._healthchecks_health(now),
             self._sentry_health(now),
             self._open_meteo_health(now),
@@ -912,51 +907,6 @@ class SystemHealthService:
             )
         except Exception as exc:
             return self._offline_item("Sentry", exc, now)
-
-    def _backblaze_health(self, now: datetime) -> IntegrationHealth:
-        if not all((
-            self.settings.day_d_b2_key_id,
-            self.settings.day_d_b2_application_key,
-            self.settings.day_d_b2_bucket,
-        )):
-            return IntegrationHealth(
-                name="Backblaze B2",
-                status="offline",
-                detail="Day D cold-storage credentials are not configured",
-                last_update=self._format_time(now),
-            )
-        try:
-            client = self.backblaze_client or self._build_backblaze_client()
-            client.head_bucket(Bucket=self.settings.day_d_b2_bucket)
-            return IntegrationHealth(
-                name="Backblaze B2",
-                status="healthy",
-                detail=(
-                    f"Day D cold storage · private bucket access confirmed · "
-                    f"{self.settings.day_d_b2_region}"
-                ),
-                last_update=self._format_time(now),
-            )
-        except Exception as exc:
-            return self._offline_item("Backblaze B2", exc, now)
-
-    def _build_backblaze_client(self) -> Any:
-        import boto3
-        from botocore.config import Config
-
-        return boto3.client(
-            "s3",
-            endpoint_url=self.settings.day_d_b2_endpoint,
-            aws_access_key_id=self.settings.day_d_b2_key_id,
-            aws_secret_access_key=self.settings.day_d_b2_application_key,
-            region_name=self.settings.day_d_b2_region,
-            config=Config(
-                signature_version="s3v4",
-                connect_timeout=self.settings.system_health_probe_timeout_seconds,
-                read_timeout=self.settings.system_health_probe_timeout_seconds,
-                retries={"max_attempts": 1},
-            ),
-        )
 
     def _cloudflare_health(self, now: datetime) -> IntegrationHealth:
         url = f"{self.settings.public_url.rstrip('/')}/robots.txt"
@@ -1272,7 +1222,6 @@ class SystemHealthService:
             self._valuation_worker_phase_health(now),
             *self._valuation_v2_1b_health(now),
             self._day_d_disk_health(now),
-            self._b2_zero_cap_health(now),
         ]
 
     def _operational_incident_health(self, now: datetime) -> IntegrationHealth:
@@ -1670,84 +1619,6 @@ class SystemHealthService:
             last_update=self._format_time(now),
         )
 
-    def _b2_zero_cap_health(self, now: datetime) -> IntegrationHealth:
-        root = self.settings.day_d_dataset_root
-        reports_root = root / "provider=backblaze" / "raw-restore-reports"
-        try:
-            reports = [
-                (path, self._read_evidence(path))
-                for path in reports_root.glob("lot_id=*/raw-restore-*.json")
-            ]
-        except Exception as exc:
-            return IntegrationHealth(
-                name="B2 zero-cap evidence",
-                status="offline",
-                detail=f"Evidence check failed · {self._safe_error(exc)}",
-                last_update=self._format_time(now),
-            )
-        if not reports:
-            return IntegrationHealth(
-                name="B2 zero-cap evidence",
-                status="healthy",
-                detail="No RAW restore drill is waiting for a zero-cap restoration record",
-                last_update=self._format_time(now),
-            )
-
-        raw_path, raw = max(
-            reports,
-            key=lambda item: self._evidence_time(item[1]) or datetime.min.replace(tzinfo=timezone.utc),
-        )
-        lot_id = str(raw.get("lot_id") or "unknown")
-        if raw.get("schema_version") != "DAY-D-B2-RAW-RESTORE-v1" or raw.get("passed") is not True:
-            return IntegrationHealth(
-                name="B2 zero-cap evidence",
-                status="offline",
-                detail=f"Latest RAW drill is not valid · lot {lot_id}",
-                last_update=self._evidence_display_time(raw, now),
-            )
-
-        expected_ref = {
-            "path": str(raw_path.resolve()),
-            "sha256": self._sha256_file(raw_path),
-        }
-        cap_root = root / "provider=backblaze" / "billing-cap-evidence" / f"lot_id={lot_id}"
-        try:
-            caps = [self._read_evidence(path) for path in cap_root.glob("billing-cap-*.json")]
-        except Exception as exc:
-            return IntegrationHealth(
-                name="B2 zero-cap evidence",
-                status="offline",
-                detail=f"Cap evidence check failed · {self._safe_error(exc)}",
-                last_update=self._evidence_display_time(raw, now),
-            )
-        valid_caps = [
-            cap
-            for cap in caps
-            if cap.get("schema_version") == "DAY-D-B2-BILLING-CAP-v1"
-            and cap.get("operator_attestation") is True
-            and cap.get("raw_restore_report") == expected_ref
-            and self._exact_zero(cap.get("original_cap_usd_per_day"))
-            and self._exact_zero(cap.get("final_cap_usd_per_day"))
-            and self._payload_time(cap, "restored_at") is not None
-        ]
-        if not valid_caps:
-            return IntegrationHealth(
-                name="B2 zero-cap evidence",
-                status="offline",
-                detail=f"Zero-cap restoration is not evidenced · lot {lot_id} · deletion remains blocked",
-                last_update=self._evidence_display_time(raw, now),
-            )
-        latest_cap = max(
-            valid_caps,
-            key=lambda item: self._evidence_time(item) or datetime.min.replace(tzinfo=timezone.utc),
-        )
-        return IntegrationHealth(
-            name="B2 zero-cap evidence",
-            status="healthy",
-            detail=f"Exact US$0/day restoration evidenced · lot {lot_id}",
-            last_update=self._evidence_display_time(latest_cap, now),
-        )
-
     @staticmethod
     def _read_evidence(path: Path) -> dict[str, Any]:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1801,26 +1672,12 @@ class SystemHealthService:
             raise ValueError(f"SHA256SUMS mismatch: {path.name}")
 
     @staticmethod
-    def _evidence_time(payload: dict[str, Any]) -> datetime | None:
-        return SystemHealthService._payload_time(payload, "measured_at")
-
-    @staticmethod
     def _payload_time(payload: dict[str, Any], key: str) -> datetime | None:
         try:
             value = datetime.fromisoformat(str(payload.get(key) or ""))
         except ValueError:
             return None
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-
-    @staticmethod
-    def _exact_zero(value: Any) -> bool:
-        try:
-            return float(value) == 0.0
-        except (TypeError, ValueError):
-            return False
-
-    def _evidence_display_time(self, payload: dict[str, Any], fallback: datetime) -> str:
-        return self._format_time(self._evidence_time(payload) or fallback)
 
     def _automation_health(self, now: datetime) -> list[IntegrationHealth]:
         try:

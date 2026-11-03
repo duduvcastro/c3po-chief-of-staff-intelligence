@@ -96,22 +96,15 @@ def test_slots_grace_and_daily_weekday_weekend_contracts():
     due = R.slots(saturday)
     assert any(x.workflow == R.OPS and x.value == "2026-10-24T11:30:00Z" for x in due)
     assert not any(x.workflow == R.EXPORT for x in due)
-    assert [x.value for x in due if x.workflow == R.PIT] == ["2026-10-24T11:13:00Z"]
+    assert {x.workflow for x in due} == {R.OPS}  # the PIT grid autopilot left with its finished study (03/11/2026)
     monday = R.slots(R.instant("2026-10-26T11:25:00Z"))
     export = next(x for x in monday if x.workflow == R.EXPORT)
     assert export.inputs == {"recovery_slot": "2026-10-26T11:00:00Z", "night": ""}
     # XNYS resolution remains in the existing producer, not a host approximation.
 
 
-def test_pit_latest_eligible_only_no_backlog_and_utc_dst():
-    for moment in ("2026-10-24T12:03:00Z", "2026-11-02T12:03:00Z"):
-        ticks = [x for x in R.slots(R.instant(moment)) if x.workflow == R.PIT]
-        assert len(ticks) == 1 and ticks[0].value.endswith("11:43:00Z")
-        assert ticks[0].inputs["dry_run"] == "false"
-
-
 @pytest.mark.parametrize("workflow,value", [(R.OPS, "2026-10-23T06:31:00Z"), (R.EXPORT, "2026-10-24T11:00:00Z"),
-                                          (R.PIT, "2026-10-23T06:30:00Z"), (R.PIT, "2026-10-23T06:13:00+00:00"),
+                                          ("valuation-pit-grid-autopilot.yml", "2026-10-23T06:13:00Z"),
                                           ("other.yml", "2026-10-23T06:13:00Z")])
 def test_bad_slots_are_refused(workflow, value):
     with pytest.raises(R.RecoveryError):
@@ -122,7 +115,7 @@ def test_missed_slot_recovers_once_with_run_and_get_confirmed_receipt(monkeypatc
     fake, ledger, result = once(monkeypatch, tmp_path)
     assert result == {"covered": 0, "planned": 0, "confirmed": 1, "errors": 0}
     assert fake.writes[0] == (f"/actions/workflows/{R.OPS}/dispatches", {"ref": "main", "inputs": slot().inputs})
-    assert len(fake.writes) == 2 and fake.writes[1][0] == "/issues/429/comments"
+    assert len(fake.writes) == 2 and fake.writes[1][0] == "/issues/501/comments"
     assert "run 100" in fake.comments[0]["body"] and "resultado do workflow" in fake.comments[0]["body"]
     assert ledger.entries[slot().key]["state"] == "complete"
     assert (tmp_path / "ledger.json").stat().st_mode & 0o777 == 0o600
@@ -354,14 +347,6 @@ def test_unobserved_notice_outcome_never_reposts(monkeypatch, tmp_path):
     assert result["errors"] == 1 and ledger.entries[s.key]["state"] == "notice_unknown" and len(fake.writes) == 2
 
 
-def test_dry_run_does_not_cover_acting_tick_and_inputs_stay_fixed(monkeypatch, tmp_path):
-    s = slot(R.PIT, "2026-10-23T06:13:00Z")
-    fake = Fake(s)
-    fake.runs = [run(s, title="Valuation PIT grid autopilot — dry-run", event="workflow_dispatch")]
-    once(monkeypatch, tmp_path, s, fake)
-    assert fake.writes[0][1]["inputs"] == {"dry_run": "false", "recovery_slot": s.value}
-
-
 def test_unknown_manual_export_night_is_not_guessed(monkeypatch, tmp_path):
     s = slot(R.EXPORT, "2026-10-23T11:00:00Z")
     fake = Fake(s)
@@ -427,11 +412,8 @@ def test_workflow_contracts_do_not_expand_permissions_or_grid_inputs():
         assert doc["permissions"] == {"contents": "read"}
         assert doc["concurrency"]["cancel-in-progress"] is False
         assert any(step.get("name") == "Validate the optional recovery slot" for job in doc["jobs"].values() for step in job["steps"])
-    pit = yaml.safe_load((ROOT / ".github/workflows" / R.PIT).read_text())
-    assert set(pit.get("on", pit.get(True))["workflow_dispatch"]["inputs"]) == {"dry_run", "recovery_slot"}
-    assert 'vars.C3PO_PIT_GRID_AUTOPILOT' in pit["jobs"]["tick"]["if"]
-    source = (ROOT / ".github/scripts/valuation_pit_grid_autopilot.py").read_text()
-    assert 'args.ref == "refs/heads/main"' in source and "deploys_in_progress(deploys)" in source
+    assert R.WORKFLOWS == (R.OPS, R.EXPORT)
+    assert not (ROOT / ".github/workflows/valuation-pit-grid-autopilot.yml").exists()
 
 
 def test_validator_needs_no_credential_and_installer_is_separate():
@@ -501,3 +483,24 @@ def test_separate_lock_prevents_a_second_cycle(monkeypatch, tmp_path):
         R.fcntl.flock(held, R.fcntl.LOCK_EX | R.fcntl.LOCK_NB)
         assert R.main(["--state-dir", str(state), "--token-file", str(credential)]) == 0
     assert not (state / "ledger.json").exists()
+
+
+def test_a_ledger_holding_retired_pit_entries_still_recovers_the_live_workflows(monkeypatch, tmp_path):
+    """Pre-review of the removal (03/11/2026): the host ledger keeps PIT autopilot entries; validating them against
+    today's workflows would stop every recovery."""
+    retired = {
+        "valuation-pit-grid-autopilot.yml@2026-10-23T06:13:00Z": {
+            "workflow": "valuation-pit-grid-autopilot.yml", "slot": "2026-10-23T06:13:00Z", "state": "complete",
+            "head_sha": SHA, "attempted_at": "2026-10-23T06:40:00Z", "before_id": 1, "run_id": 2},
+        "valuation-pit-grid-autopilot.yml@2026-10-23T06:43:00Z": {
+            "workflow": "valuation-pit-grid-autopilot.yml", "slot": "2026-10-23T06:43:00Z", "state": "dispatch_unknown",
+            "head_sha": SHA, "attempted_at": "2026-10-23T07:10:00Z", "before_id": 1},
+    }
+    (tmp_path / "ledger.json").write_text(json.dumps({"schema": R.SCHEMA, "entries": retired}))
+
+    fake, ledger, result = once(monkeypatch, tmp_path)
+
+    assert result["errors"] == 0 and result["confirmed"] == 1
+    assert fake.writes[0][0].endswith("/actions/workflows/ops-readonly-report.yml/dispatches")
+    assert all(key in ledger.entries for key in retired)  # kept as history, untouched
+    assert ledger.entries["valuation-pit-grid-autopilot.yml@2026-10-23T06:43:00Z"]["state"] == "dispatch_unknown"

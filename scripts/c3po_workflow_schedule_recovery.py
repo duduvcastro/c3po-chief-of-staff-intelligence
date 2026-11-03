@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Opt-in host safety net for missed GitHub schedules; never run the workloads here.
 
-The hourly timer checks slots aged 20..80 minutes. PIT checks only the most recent
-eligible tick, never a backlog. A durable intent is fsynced BEFORE each POST;
-uncertain writes are reconciled, never retried blindly. GitHub has no atomic
-schedule/dispatch claim: a schedule arriving after the final GET can still race.
-Existing workflow concurrency and every PIT guard remain authoritative.
+The hourly timer checks slots aged 20..80 minutes. A durable intent is fsynced
+BEFORE each POST; uncertain writes are reconciled, never retried blindly. GitHub
+has no atomic schedule/dispatch claim: a schedule arriving after the final GET can
+still race. Existing workflow concurrency remains authoritative. (The PIT grid
+autopilot left with its finished study, 03/11/2026.)
 """
 from __future__ import annotations
 
@@ -28,11 +28,13 @@ UTC = timezone.utc
 BRT = ZoneInfo("America/Sao_Paulo")
 REPO = "duduvcastro/c3po-chief-of-staff-intelligence"
 REPO_ID = 1336399383
-ISSUE = 429
+ISSUE = 501  # the channel since #429 reached GitHub's comment limit (27/10/2026)
 OPS = "ops-readonly-report.yml"
 EXPORT = "decisor-verdict-export.yml"
-PIT = "valuation-pit-grid-autopilot.yml"
-WORKFLOWS = (OPS, EXPORT, PIT)
+WORKFLOWS = (OPS, EXPORT)
+# workflows gone from the repository whose ledger entries stay as history only: never validated against today's slots,
+# never reconciled (the PIT grid autopilot left with its finished study, 03/11/2026)
+RETIRED_WORKFLOWS = frozenset({"valuation-pit-grid-autopilot.yml"})
 MIN_AGE = timedelta(minutes=20)
 MAX_AGE = timedelta(minutes=80)
 SCHEMA = "C3PO-WORKFLOW-SCHEDULE-RECOVERY-v1"
@@ -87,8 +89,6 @@ class Slot:
             # The producer resolves the last CLOSED XNYS session; no host calendar
             # approximation, new dependency, or civil-date subtraction.
             inputs["night"] = ""
-        if self.workflow == PIT:
-            inputs["dry_run"] = "false"
         return inputs
 
 
@@ -106,15 +106,6 @@ def slots(now: datetime) -> list[Slot]:
             at = datetime(day.year, day.month, day.day, 8, tzinfo=BRT).astimezone(UTC)
             if MIN_AGE <= now - at <= MAX_AGE:
                 found.append(Slot(EXPORT, at))
-    pit = []
-    for offset in range(3):
-        hour = (now - timedelta(hours=offset)).replace(minute=0, second=0, microsecond=0)
-        for minute in (13, 43):
-            at = hour.replace(minute=minute)
-            if MIN_AGE <= now - at <= MAX_AGE:
-                pit.append(Slot(PIT, at))
-    if pit:
-        found.append(max(pit, key=lambda value: value.at))
     return found
 
 
@@ -122,12 +113,9 @@ def validate_slot(workflow: str, value: str) -> Slot:
     if workflow not in WORKFLOWS or SLOT_RE.fullmatch(value) is None:
         raise RecoveryError("invalid_recovery_slot")
     at = instant(value)
-    if workflow == PIT:
-        valid = at.minute in (13, 43)
-    else:
-        local = at.astimezone(BRT)
-        valid = ((local.hour, local.minute) in ((3, 30), (8, 30)) if workflow == OPS
-                 else (local.hour, local.minute) == (8, 0) and local.weekday() < 5)
+    local = at.astimezone(BRT)
+    valid = ((local.hour, local.minute) in ((3, 30), (8, 30)) if workflow == OPS
+             else (local.hour, local.minute) == (8, 0) and local.weekday() < 5)
     if not valid:
         raise RecoveryError("invalid_recovery_slot")
     return Slot(workflow, at)
@@ -241,15 +229,6 @@ def covered(slot: Slot, runs: list[dict[str, Any]], now: datetime) -> bool:
             if slot.tag in title:
                 return True
             continue
-        if slot.workflow == PIT:
-            if at >= slot.at + timedelta(minutes=30):
-                continue
-            if run["event"] == "workflow_dispatch" and "— act" not in title:
-                # A dry-run does not replace an acting schedule; unknown manual
-                # inputs are ambiguous and must not invite a second live action.
-                if "— dry-run" in title:
-                    continue
-                raise RecoveryError("ambiguous_manual_tick")
         if slot.workflow == OPS and run["event"] == "schedule" and "[schedule:" in title:
             cron = "30 6 * * *" if slot.at.astimezone(BRT).hour == 3 else "30 11 * * *"
             if f"[schedule:{cron}]" not in title:
@@ -295,6 +274,8 @@ class Ledger:
         for key, entry in self.entries.items():
             if not isinstance(entry, dict) or entry.get("state") not in STATES:
                 raise RecoveryError("invalid_ledger_entry")
+            if entry.get("workflow") in RETIRED_WORKFLOWS:
+                continue
             slot = validate_slot(entry.get("workflow"), entry.get("slot"))
             if key != slot.key or SHA_RE.fullmatch(str(entry.get("head_sha"))) is None:
                 raise RecoveryError("invalid_ledger_entry")
@@ -380,7 +361,7 @@ def recover(gh: GitHub, ledger: Ledger, now: datetime, *, act: bool = False, sle
     candidates = {slot.key: slot for slot in slots(now)}
     # Reconcile old uncertain writes too; never issue a replacement POST for one.
     for key, entry in ledger.entries.items():
-        if entry["state"] not in {"complete", "skipped"}:
+        if entry["state"] not in {"complete", "skipped"} and entry["workflow"] not in RETIRED_WORKFLOWS:
             candidates[key] = validate_slot(entry["workflow"], entry["slot"])
     for slot in candidates.values():
         try:

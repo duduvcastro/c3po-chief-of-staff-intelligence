@@ -322,18 +322,6 @@ def _write_resilience_evidence(root: Path, now: datetime) -> None:
     )
 
 
-class _BackblazeClient:
-    def __init__(self, *, error: Exception | None = None) -> None:
-        self.error = error
-        self.requested_bucket = None
-
-    def head_bucket(self, *, Bucket: str):
-        self.requested_bucket = Bucket
-        if self.error:
-            raise self.error
-        return {"ResponseMetadata": {"HTTPStatusCode": 200}}
-
-
 def _service(
     *,
     disk_percent: float = 62.0,
@@ -360,9 +348,6 @@ def _service(
         finnhub_api_token="configured",
         fmp_api_token="configured",
         massive_api_token="configured",
-        day_d_b2_key_id="configured-key-id",
-        day_d_b2_application_key="configured-application-key",
-        day_d_b2_bucket="c3po-day-d-cold-test",
         sentry_dsn="https://public@example.ingest.sentry.io/123",
         healthcheck_valuation_worker_url="https://hc-ping.com/valuation",
         healthcheck_cash_yield_url="https://hc-ping.com/cash-yield",
@@ -395,7 +380,6 @@ def _service(
         _ServerUsage(now, disk_percent),
         cache_seconds=0,
         external_get=_external_get,
-        backblaze_client=_BackblazeClient(),
         disk_usage=lambda _path: SimpleNamespace(free=int(day_d_free_gib * 1024**3)),
     )
     service._test_temporary_directory = temporary_directory
@@ -410,7 +394,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -529,13 +513,12 @@ def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
 
     controls = next(group for group in response.groups if group.key == "controls")
     assert controls.status == "healthy"
-    assert controls.healthy_count == 5
+    assert controls.healthy_count == 4
     assert {item.name for item in controls.items} == {
         "Valuation worker phases",
         "Valuation V2.1b cycle",
         "V3 pre-A/B gate",
         "Day D disk reserve",
-        "B2 zero-cap evidence",
     }
 
 
@@ -814,58 +797,6 @@ def test_day_d_disk_reserve_is_red_below_the_frozen_20_gib() -> None:
     assert "20.0 GiB" in reserve.detail
 
 
-def test_b2_cap_stays_red_until_exact_zero_evidence_is_chained(tmp_path: Path) -> None:
-    measured_at = datetime(2026, 8, 23, 18, 6, tzinfo=timezone.utc)
-    lot_id = "qualification-2024-12-24"
-    raw_path = (
-        tmp_path
-        / "provider=backblaze"
-        / "raw-restore-reports"
-        / f"lot_id={lot_id}"
-        / "raw-restore-test.json"
-    )
-    raw_path.parent.mkdir(parents=True)
-    raw_path.write_text(json.dumps({
-        "schema_version": "DAY-D-B2-RAW-RESTORE-v1",
-        "lot_id": lot_id,
-        "measured_at": measured_at.isoformat(),
-        "passed": True,
-        "restored_sample_removed": True,
-    }), encoding="utf-8")
-    service = _service(day_d_root=tmp_path)
-
-    pending = service._b2_zero_cap_health(measured_at + timedelta(minutes=5))
-
-    assert pending.status == "offline"
-    assert "deletion remains blocked" in pending.detail
-
-    cap_path = (
-        tmp_path
-        / "provider=backblaze"
-        / "billing-cap-evidence"
-        / f"lot_id={lot_id}"
-        / "billing-cap-test.json"
-    )
-    cap_path.parent.mkdir(parents=True)
-    raw_sha = hashlib.sha256(raw_path.read_bytes()).hexdigest()
-    cap_path.write_text(json.dumps({
-        "schema_version": "DAY-D-B2-BILLING-CAP-v1",
-        "lot_id": lot_id,
-        "measured_at": (measured_at + timedelta(minutes=10)).isoformat(),
-        "operator_attestation": True,
-        "raw_restore_report": {"path": str(raw_path.resolve()), "sha256": raw_sha},
-        "original_cap_usd_per_day": 0.0,
-        "temporary_cap_usd_per_day": 0.5,
-        "final_cap_usd_per_day": 0.0,
-        "restored_at": (measured_at + timedelta(minutes=9)).isoformat(),
-    }), encoding="utf-8")
-
-    restored = service._b2_zero_cap_health(measured_at + timedelta(minutes=11))
-
-    assert restored.status == "healthy"
-    assert "Exact US$0/day restoration evidenced" in restored.detail
-
-
 def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     service = _service()
     service.settings.eodhd_api_token = ""
@@ -876,8 +807,8 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 97
-    assert response.healthy_count == 33
-    assert response.total_count == 34
+    assert response.healthy_count == 31  # the two Backblaze B2 cards left with the bucket (03/11/2026)
+    assert response.total_count == 32
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:
@@ -931,40 +862,6 @@ def test_massive_is_offline_without_a_configured_credential() -> None:
     massive = next(item for item in quotes.items if item.name == "Massive")
     assert massive.status == "offline"
     assert "not configured" in massive.detail
-
-
-def test_backblaze_is_monitored_as_a_contracted_service() -> None:
-    service = _service()
-
-    response = service.snapshot(force=True)
-
-    external = next(group for group in response.groups if group.key == "external_services")
-    backblaze = next(item for item in external.items if item.name == "Backblaze B2")
-    assert backblaze.status == "healthy"
-    assert "private bucket access confirmed" in backblaze.detail
-    assert service.backblaze_client.requested_bucket == "c3po-day-d-cold-test"
-
-
-def test_backblaze_is_offline_without_credentials() -> None:
-    service = _service()
-    service.settings.day_d_b2_application_key = ""
-
-    response = service.snapshot(force=True)
-
-    backblaze = next(item for group in response.groups for item in group.items if item.name == "Backblaze B2")
-    assert backblaze.status == "offline"
-    assert "not configured" in backblaze.detail
-
-
-def test_backblaze_reports_bucket_access_failure_without_leaking_credentials() -> None:
-    service = _service()
-    service.backblaze_client = _BackblazeClient(error=RuntimeError("applicationKey=super-secret failed"))
-
-    response = service.snapshot(force=True)
-
-    backblaze = next(item for group in response.groups for item in group.items if item.name == "Backblaze B2")
-    assert backblaze.status == "offline"
-    assert "super-secret" not in backblaze.detail
 
 
 def test_health_error_redacts_market_data_credentials() -> None:
