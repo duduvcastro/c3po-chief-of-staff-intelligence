@@ -32,7 +32,8 @@ from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import DeadlineJsonHttpClient, JsonHttpClient
 from .massive import MassiveClient
-from .eodhd_stream import EodhdRealtimeStream, usable_display_tick
+from .eodhd_stream import usable_display_tick
+from .massive_quotes import LiveQuoteStream, live_label
 from .models import canonical_us_security_name, canonical_us_security_type, from_unix, number
 from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
 from .indices import INDICES, IndexQuotesService, quote_status
@@ -88,7 +89,7 @@ class RealtimeMarketsService:
         settings: Settings,
         database: Database,
         http: JsonHttpClient,
-        stream: EodhdRealtimeStream | None = None,
+        stream: LiveQuoteStream | None = None,
         indices: IndexQuotesService | None = None,
     ) -> None:
         self.settings = settings
@@ -284,7 +285,7 @@ class RealtimeMarketsService:
             })
             source = "Brapi Pro" if market == "B3" else (
                 official[1] if official is not None
-                else "EODHD Real-Time WebSocket" if quote_row.status == "live"
+                else live_label(self.stream) if quote_row.status == "live"
                 else "EODHD Bulk Live US"
             )
             reference_status = "not_applicable"
@@ -1547,7 +1548,7 @@ class RealtimeMarketsService:
                 else response.day_change_percent
             ),
             "points": points,
-            "source": f"{response.source} + EODHD Real-Time WebSocket",
+            "source": f"{response.source} + {live_label(self.stream)}",
             "delay_minutes": 0,
             "status": "live",
             "generated_at": datetime.now(timezone.utc),
@@ -1795,7 +1796,7 @@ class RealtimeMarketsService:
         live_count = sum(item.status == "live" for group in groups for item in updated[group])
         source = "EODHD T-15 market scan"
         if live_count:
-            source += " + real-time WebSocket quotes"
+            source += f" + {live_label(self.stream)} quotes"
         return response.model_copy(update={
             **updated,
             "source": source,

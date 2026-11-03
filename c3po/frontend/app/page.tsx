@@ -5266,10 +5266,10 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
           <ShieldCheck size={14} />
           <span>Atualização automática a cada {(snapshot ?? portfolio)?.refresh_seconds ?? 60}s enquanto esta aba estiver visível.</span>
           <small>{activeMarket === "PORTFOLIO"
-            ? "Carteira salva no C3PO; papéis dos EUA usam WebSocket quando marcados LIVE."
+            ? "Carteira salva no C3PO; papéis dos EUA usam preço em tempo real quando marcados LIVE."
             : activeMarket === "B3"
               ? "Brapi Pro · melhor cotação disponível próxima de 5 min."
-              : "Ranking amplo T-15; preços visíveis usam WebSocket quando marcados LIVE."}</small>
+              : "Ranking amplo T-15; preços visíveis usam tempo real quando marcados LIVE."}</small>
         </div>
       )}
       {snapshot && activeMarket !== "PORTFOLIO" && <p className="realtime-source-note">Ações: {snapshot.source} · atraso informado: {snapshot.delay_minutes} min</p>}
