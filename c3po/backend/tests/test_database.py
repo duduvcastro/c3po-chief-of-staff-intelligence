@@ -394,3 +394,32 @@ def test_the_finnhub_insider_rows_query_is_one_name_s_finnhub_rows_of_the_window
     assert "source_code = 'sec' AND market = %s AND symbol = %s AND event_type = 'Insider Transaction'" in query
     assert "external_id LIKE %s AND reference_date >= %s" in query
     assert params == ("US", "AAPL", "finnhub-insider-%", since)
+
+
+def test_ir_event_external_ids_says_which_rows_of_a_source_are_stored(tmp_path) -> None:
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    now = datetime.now(timezone.utc)
+    database.save_ir_events([_weekly_sentiment("massive", "AAPL", now, 60.0), _weekly_sentiment("finnhub", "MSFT", now, 60.0)])
+    wanted = [f"massive-sentiment-AAPL-{now:%G-W%V}", f"massive-sentiment-MSFT-{now:%G-W%V}", f"finnhub-sentiment-MSFT-{now:%G-W%V}", ""]
+
+    assert database.ir_event_external_ids("massive", wanted) == {f"massive-sentiment-AAPL-{now:%G-W%V}"}
+    assert database.ir_event_external_ids("massive", []) == set()
+
+    captured: list[tuple[str, tuple]] = []
+
+    class Connection:
+        def execute(self, query, params=()):
+            captured.append((" ".join(query.split()), params))
+            return type("Rows", (), {"fetchall": lambda self: [("massive-sentiment-AAPL-2026-W45",)]})()
+
+    postgres = Database(Settings(database_url="postgresql://configured"))
+
+    @contextmanager
+    def connection():
+        yield Connection()
+
+    postgres.connection = connection  # type: ignore[method-assign]
+    assert postgres.ir_event_external_ids("massive", ["massive-sentiment-MSFT-2026-W45", "massive-sentiment-AAPL-2026-W45"]) == {
+        "massive-sentiment-AAPL-2026-W45"}
+    assert captured == [("SELECT external_id FROM ir_events WHERE source_code = %s AND external_id = ANY(%s)",
+                         ("massive", ["massive-sentiment-AAPL-2026-W45", "massive-sentiment-MSFT-2026-W45"]))]

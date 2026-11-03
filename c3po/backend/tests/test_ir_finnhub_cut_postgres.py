@@ -107,6 +107,11 @@ def test_the_readers_take_the_latest_weekly_row_of_either_source(migrated: tuple
     assert causal[symbol_a]["source_code"] == "finnhub" and causal[symbol_a]["raw_metadata"]["bullish_percent"] == 40.0
     assert causal[symbol_c]["source_code"] == "finnhub"
     assert store.news_sentiment_at([symbol_a], now)[symbol_a]["source_code"] == "massive"
+    stored = store.ir_event_external_ids("massive", [f"massive-sentiment-{symbol}-x" for symbol in (symbol_a, symbol_b, symbol_c)])
+    assert stored == set()  # the Massive sync's lookup of the week's row: these rows carry suffixed ids
+    first_massive = _sentiment("massive", symbol_c, now, 10.0)
+    store.save_ir_events([first_massive])
+    assert store.ir_event_external_ids("massive", [first_massive["external_id"], "absent"]) == {first_massive["external_id"]}
 
 
 def test_a_massive_run_reaches_the_source_health(migrated: tuple[Database, psycopg.Connection]) -> None:

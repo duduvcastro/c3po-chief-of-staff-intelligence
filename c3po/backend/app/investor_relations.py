@@ -12,7 +12,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from difflib import SequenceMatcher
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
@@ -307,6 +307,13 @@ def massive_ticker_sentiment(article: dict[str, Any], ticker: str) -> str | None
     return None
 
 
+def massive_sentiment_external_id(symbol: str, now: datetime) -> str:
+    """The weekly "News Sentiment" row of a name: Finnhub's convention (one row per ISO week of ``now`` in UTC, refreshed
+    by every run of the week) under Massive's own prefix."""
+    iso_year, iso_week, _ = now.astimezone(timezone.utc).isocalendar()
+    return f"massive-sentiment-{symbol}-{iso_year}-W{iso_week:02d}"
+
+
 def massive_news_events(
     symbol: str,
     company_id: Any,
@@ -316,24 +323,27 @@ def massive_news_events(
     since: datetime,
     now: datetime,
     truncated: bool = False,
+    week_row_stored: bool = False,
 ) -> list[dict[str, Any]]:
     """The Investor Relations rows of ONE watched US name from its Massive articles (owner 03/11/2026: Finnhub is cut).
     An article counts once (by id), only when published at or after ``since`` (the window's exact instant: the request
     sends its date) and only when it carries an insight about the name (``massive_ticker_sentiment``; BRK-B is read as
     Massive's BRK.B):
 
-    * ONE "News Sentiment" row for the ISO week of ``now`` (UTC): ``massive-sentiment-<SYMBOL>-<YYYY>-W<WW>`` — Finnhub's
-      convention under its own prefix, refreshed by every run of the week — on the scale the One Pager reads, percents of
-      0-100 as Finnhub's rows were stored (``_sentiment_confidence_adjustment`` divides bullish − bearish by 100):
-      bullish = 100·pos/(pos+neg), bearish = 100·neg/(pos+neg), one decimal as Finnhub's; ``articles_last_week`` = the
-      articles with an insight about the name (neutral ones included: the One Pager's coverage weight), with the three
-      counts and ``source: "massive"``. With no positive or negative insight there is NO row: a 0/0 split says nothing,
-      and the readers then hold no sentiment for the name this week (the One Pager adjusts by 0);
+    * ONE "News Sentiment" row for the ISO week of ``now`` (UTC): ``massive_sentiment_external_id`` — refreshed by every
+      run of the week — on the scale the One Pager reads, percents of 0-100 as Finnhub's rows were stored
+      (``_sentiment_confidence_adjustment`` divides bullish − bearish by 100): bullish = 100·pos/(pos+neg),
+      bearish = 100·neg/(pos+neg), one decimal as Finnhub's; ``articles_last_week`` = the articles with an insight about
+      the name (neutral ones included: the One Pager's coverage weight), with the three counts and ``source: "massive"``.
+      With no positive or negative insight a 0/0 split says nothing: no row is written — the readers then hold no
+      sentiment for the name this week and the One Pager adjusts by 0 — unless the week's row is already stored
+      (``week_row_stored``: an earlier run of the week found one), which is then rewritten NEUTRAL, bullish and bearish 0
+      with the articles counted, so the week never keeps an earlier run's numbers (the One Pager again adjusts by 0);
     * a "News Mention" row per such article whose title or description carries a NEWS_MENTION_KEYWORDS word, the gate
       Finnhub's company news had (``massive-news-<SYMBOL>-<article id>``: an article about two watched names is a row of
       each)."""
     ticker = MassiveClient.news_ticker(symbol)
-    counts = dict.fromkeys(MASSIVE_NEWS_SENTIMENTS, 0)
+    counts: dict[str, int] = dict.fromkeys(MASSIVE_NEWS_SENTIMENTS, 0)
     seen: set[str] = set()
     newest: tuple[datetime, str] | None = None
     collected_at = datetime.now().astimezone()
@@ -387,15 +397,28 @@ def massive_news_events(
             "collected_at": collected_at,
         })
     positive, negative, neutral = counts["positive"], counts["negative"], counts["neutral"]
-    if not positive + negative:
-        return mentions
-    bullish = round(100 * positive / (positive + negative), 1)
-    bearish = round(100 * negative / (positive + negative), 1)
     articles_last_week = positive + negative + neutral
-    iso_year, iso_week, _ = now.astimezone(timezone.utc).isocalendar()
+    if positive + negative:
+        bullish = round(100 * positive / (positive + negative), 1)
+        bearish = round(100 * negative / (positive + negative), 1)
+        title = f"Sentimento de notícias: {bullish:.0f}% bullish"
+        summary = (
+            f"{bullish:.0f}% bullish / {bearish:.0f}% bearish nos artigos com insight Massive sobre o ticker; "
+            f"{positive} positivos, {negative} negativos e {neutral} neutros em {articles_last_week} artigos "
+            f"nos últimos {MASSIVE_NEWS_LOOKBACK_DAYS} dias."
+        )
+    elif week_row_stored:
+        bullish = bearish = 0.0
+        title = "Sentimento de notícias: neutro"
+        summary = (
+            f"Nenhum artigo positivo ou negativo com insight Massive sobre o ticker nos últimos "
+            f"{MASSIVE_NEWS_LOOKBACK_DAYS} dias ({neutral} neutros): o sentimento da semana fica neutro."
+        )
+    else:
+        return mentions
     sentiment = {
         "source_code": "massive",
-        "external_id": f"massive-sentiment-{symbol}-{iso_year}-W{iso_week:02d}",
+        "external_id": massive_sentiment_external_id(symbol, now),
         "company_id": company_id,
         "market": "US",
         "symbol": symbol,
@@ -403,12 +426,8 @@ def massive_news_events(
         "regulator_id": None,
         "event_type": "News Sentiment",
         "form": None,
-        "title": f"Sentimento de notícias: {bullish:.0f}% bullish",
-        "summary": (
-            f"{bullish:.0f}% bullish / {bearish:.0f}% bearish nos artigos com insight Massive sobre o ticker; "
-            f"{positive} positivos, {negative} negativos e {neutral} neutros em {articles_last_week} artigos "
-            f"nos últimos {MASSIVE_NEWS_LOOKBACK_DAYS} dias."
-        ),
+        "title": title,
+        "summary": summary,
         "published_at": now,
         "published_time_precision": "collected",
         "reference_date": now.date(),
@@ -1277,7 +1296,8 @@ class InvestorRelationsService:
         since market news is not SEC-derived. The same names Finnhub read: the active watched US companies. For each, the
         articles of the last MASSIVE_NEWS_LOOKBACK_DAYS days (at most MASSIVE_NEWS_MAX_PAGES pages, each one complete
         response within MASSIVE_NEWS_TIMEOUT_SECONDS), turned into its weekly "News Sentiment" row and "News Mention" rows
-        by ``massive_news_events``. A name that cannot be read is counted and skipped -- the row an earlier run of the week
+        by ``massive_news_events`` (a week whose row is already stored is rewritten neutral when this run finds no positive
+        or negative insight). A name that cannot be read is counted and skipped -- the row an earlier run of the week
         wrote stays -- and only its symbol and the error's class are logged: a provider message may carry the request URL,
         so neither it, the token nor a URL ever reaches a log or the run's summary. Some names unread: a 'partial' run;
         none read: a failed run (``sync`` records it and carries on with the other sources). Without a Massive token:
@@ -1290,6 +1310,9 @@ class InvestorRelationsService:
             watched = {item["symbol"]: item for item in self.database.ir_watch_symbols() if item["market"] == "US"}
             now = datetime.now(timezone.utc)
             since = now - timedelta(days=MASSIVE_NEWS_LOOKBACK_DAYS)
+            stored_this_week = self.database.ir_event_external_ids(
+                "massive", [massive_sentiment_external_id(symbol, now) for symbol in watched],
+            )
             read = 0
             failed: list[str] = []
             truncated: list[str] = []
@@ -1304,6 +1327,7 @@ class InvestorRelationsService:
                     events.extend(massive_news_events(
                         symbol, company.get("id") if company else None, company_name, articles,
                         since=since, now=now, truncated=cut,
+                        week_row_stored=massive_sentiment_external_id(symbol, now) in stored_this_week,
                     ))
                 except Exception as exc:
                     failed.append(symbol)
@@ -2046,7 +2070,7 @@ class InvestorRelationsService:
 
     def _source_health(self) -> list[InvestorRelationsSourceHealth]:
         health = self.database.ir_source_health()
-        definitions = {
+        definitions: dict[Literal["cvm", "sec", "ri", "massive"], tuple[str, str]] = {
             "cvm": ("CVM Dados Abertos", "Fatos, comunicados, ITR/DFP and issuer documents"),
             "sec": ("SEC EDGAR", "US filings with real-time EDGAR acceptance timestamps"),
             "ri": ("Issuer RI", "Official issuer pages configured in the watchlist"),

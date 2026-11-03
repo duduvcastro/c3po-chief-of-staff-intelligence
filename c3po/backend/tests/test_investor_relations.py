@@ -1732,3 +1732,42 @@ def test_a_missing_sec_contact_is_reported_once_per_process(tmp_path, caplog, mo
 
     assert archive.header_reads() == []
     assert caplog.text.count("C3PO_SEC_CONTACT is not configured") == 1
+
+
+def test_a_week_s_row_turns_neutral_when_a_later_run_finds_no_positive_or_negative_insight(tmp_path):
+    """The week's "News Sentiment" row is refreshed by every run of the week: when a later run finds no positive or
+    negative insight (the 7-day window moved past them), the stored row is rewritten neutral (bullish and bearish 0, the
+    articles counted) instead of keeping the earlier run's numbers; a name with no row this week still gets none."""
+    from app.investor_relations import massive_news_events, massive_sentiment_external_id
+    from app.one_pager import OnePagerService
+
+    ir, database = _service_with_massive(tmp_path)
+    ir.add_watch("AAPL", "US")
+    ir.add_watch("MSFT", "US")
+    now = datetime.now(timezone.utc)
+    ir.massive_news = FakeMassiveNews({
+        "AAPL": ([_article("p1", now - timedelta(days=6), [("AAPL", "negative")]),
+                  _article("p2", now - timedelta(days=6), [("AAPL", "negative")])], False),
+        "MSFT": ([_article("m1", now - timedelta(days=1), [("MSFT", "neutral")])], False),
+    })
+    ir.sync("massive")
+    assert database.latest_news_sentiment(["AAPL"], "US")["AAPL"]["bearish_percent"] == 100.0
+
+    ir.massive_news = FakeMassiveNews({  # a later run of the same week: only neutral insights are left in the window
+        "AAPL": ([_article("n1", now - timedelta(days=1), [("AAPL", "neutral")]),
+                  _article("n2", now - timedelta(days=2), [("AAPL", "neutral")])], False),
+        "MSFT": ([_article("m1", now - timedelta(days=1), [("MSFT", "neutral")])], False),
+    })
+    ir.sync("massive")
+
+    row = database._ir_events[("massive", massive_sentiment_external_id("AAPL", now))]
+    assert row["title"] == "Sentimento de notícias: neutro"
+    assert {key: row["raw_metadata"][key] for key in ("bullish_percent", "bearish_percent", "articles_last_week", "positive",
+                                                      "negative", "neutral")} == {
+        "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 2, "positive": 0, "negative": 0, "neutral": 2,
+    }
+    latest = database.latest_news_sentiment(["AAPL", "MSFT"], "US")
+    assert set(latest) == {"AAPL"} and OnePagerService._sentiment_confidence_adjustment(latest["AAPL"]) == 0.0
+    since = now - timedelta(days=7)
+    assert massive_news_events("MSFT", None, "Microsoft", [], since=since, now=now, week_row_stored=True)[0]["raw_metadata"][
+        "articles_last_week"] == 0  # a stored week with no article at all reads neutral as well

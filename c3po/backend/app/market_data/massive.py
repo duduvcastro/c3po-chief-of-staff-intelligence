@@ -144,8 +144,9 @@ class MassiveClient:
         in the Stocks Advanced plan (no per-call cost), each article with its per-ticker ``insights`` (sentiment and
         reasoning): the weekly news sentiment's source since the owner cut Finnhub (03/11/2026). Reference data, not the
         historical tape: no Day D gate. The application's share-class dash goes out as Massive's dot (BRK-B → BRK.B); the
-        window is sent as its UTC date (the caller keeps the exact instant). At most ``max_pages`` pages of ``limit``
-        articles: the second value is True when the listing had more (the rest is not read). Raw article objects."""
+        window is sent as its UTC date (the caller keeps the exact instant), newest first, explicitly (``sort``
+        published_utc, ``order`` desc): a listing cut at ``max_pages`` pages of ``limit`` articles keeps the latest ones,
+        and the second value is then True (the rest is not read). Raw article objects."""
         if published_since.tzinfo is None:
             raise ValueError("Massive news window must be timezone-aware")
         if not 1 <= limit <= 1_000 or max_pages < 1:
@@ -153,6 +154,8 @@ class MassiveClient:
         params = {
             "ticker": self.news_ticker(symbol),
             "published_utc.gte": published_since.astimezone(timezone.utc).date().isoformat(),
+            "order": "desc",
+            "sort": "published_utc",
             "limit": limit,
         }
         articles: list[dict[str, Any]] = []

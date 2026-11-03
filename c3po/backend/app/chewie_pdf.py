@@ -196,12 +196,13 @@ class ChewieFundamentalsPdfRenderer:
         analysts = fundamentals.get("numberOfAnalystOpinions")
         if analysts:
             rows.append(("Analistas cobrindo", str(int(analysts))))
-        sentiment = payload.get("news_sentiment")
-        if sentiment:
-            rows.append((
-                "Sentimento de notícias",
-                f"{sentiment['bullish_percent']:.0f}% bullish · {sentiment['articles_last_week']} artigos/7d",
-            ))
+        sentiment = payload.get("news_sentiment") or {}
+        bullish, bearish = self._num(sentiment.get("bullish_percent")), self._num(sentiment.get("bearish_percent"))
+        if bullish is not None and bearish is not None:  # a row without its split is not shown
+            articles = self._num(sentiment.get("articles_last_week")) or 0
+            # a week rewritten neutral (no positive or negative insight in a later run) reads 0/0: neutral, not 0 % bullish
+            tone = "neutro" if bullish == bearish == 0 else f"{bullish:.0f}% bullish"
+            rows.append(("Sentimento de notícias", f"{tone} · {articles:.0f} artigos/7d"))
         if not rows:
             rows = [("Cobertura", "sem consenso público disponível")]
         row_y = y + h - 40

@@ -248,7 +248,8 @@ def test_massive_historical_rest_is_blocked_by_default() -> None:
 
 def test_massive_news_sends_the_dot_spelling_and_the_window_date_and_reads_every_page() -> None:
     # owner 03/11/2026: the weekly news sentiment comes from /v2/reference/news (reference data: no Day D gate). The
-    # application's BRK-B is Massive's BRK.B; the window goes out as its UTC date (the caller keeps the exact instant)
+    # application's BRK-B is Massive's BRK.B; the window goes out as its UTC date (the caller keeps the exact instant), newest
+    # first explicitly, so a listing cut at its page limit keeps the latest articles
     http = FakeHttp([
         {"results": [{"id": "a1", "insights": [{"ticker": "BRK.B", "sentiment": "positive"}]}],
          "next_url": "https://api.massive.com/v2/reference/news?cursor=next"},
@@ -261,7 +262,8 @@ def test_massive_news_sends_the_dot_spelling_and_the_window_date_and_reads_every
     assert [article["id"] for article in articles] == ["a1", "a2"] and truncated is False
     assert http.calls == [
         ("https://api.massive.com/v2/reference/news",
-         {"ticker": "BRK.B", "published_utc.gte": "2026-10-27", "limit": 100, "apiKey": "secret-token"}),
+         {"ticker": "BRK.B", "published_utc.gte": "2026-10-27", "order": "desc", "sort": "published_utc", "limit": 100,
+          "apiKey": "secret-token"}),
         ("https://api.massive.com/v2/reference/news?cursor=next", {"apiKey": "secret-token"}),
     ]
 

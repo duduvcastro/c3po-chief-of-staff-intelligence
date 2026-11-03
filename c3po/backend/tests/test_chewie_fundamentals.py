@@ -530,3 +530,34 @@ def test_the_report_reads_the_stored_weekly_sentiment_and_never_calls_a_provider
     assert not [url for url in http.calls if "finnhub" in url]
     path = service.render_report("NASDAQ", "AAPL")
     assert path is not None and path.read_bytes()[:5] == b"%PDF-"
+
+
+def test_the_report_shows_a_neutral_week_and_skips_a_row_without_its_split(tmp_path: Path, monkeypatch):
+    from reportlab.pdfgen import canvas
+
+    from app.chewie_pdf import ChewieFundamentalsPdfRenderer
+
+    drawn: list[str] = []
+    original = canvas.Canvas.drawRightString
+
+    def recording(self, x, y, text, *args, **kwargs):
+        drawn.append(str(text))
+        return original(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas.Canvas, "drawRightString", recording)
+    settings = get_settings().model_copy(update={"one_pager_output_dir": tmp_path / "one-pagers"})
+    database = Database(settings.model_copy(update={"database_url": ""}))
+    service = ChewieFundamentalsService(settings, database, StubHttp({"fundamentals/AAPL.US": _eodhd_payload("AAPL", "Apple")}))  # type: ignore[arg-type]
+    payload = service.report_payload("NASDAQ", "AAPL")
+    assert payload is not None
+    for sentiment, expected in (
+        ({"source": "massive", "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 4}, "neutro · 4 artigos/7d"),
+        ({"source": "massive", "bullish_percent": 75.0, "bearish_percent": 25.0, "articles_last_week": 8}, "75% bullish · 8 artigos/7d"),
+        ({"source": "finnhub", "bullish_percent": None, "bearish_percent": 40.0, "articles_last_week": 3}, None),
+    ):
+        drawn.clear()
+        path = tmp_path / f"{sentiment['source']}-{sentiment['bullish_percent']}.pdf"
+        ChewieFundamentalsPdfRenderer().render(path, {**payload, "news_sentiment": sentiment}, datetime.now(timezone.utc))
+        assert path.read_bytes()[:5] == b"%PDF-"
+        shown = [text for text in drawn if "artigos/7d" in text]
+        assert shown == ([expected] if expected else []), sentiment
