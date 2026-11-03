@@ -15,6 +15,10 @@ from .official_statements import statements_capture_enabled, statements_interval
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# httpx logs every request URL at INFO, query string and provider token included (EODHD's form4 lookups every 15 min):
+# only its warnings reach the logs, as in the valuation worker and the live engine
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("c3po.ir_worker")
 
 
