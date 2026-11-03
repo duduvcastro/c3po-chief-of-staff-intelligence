@@ -36,7 +36,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts || exit 1
           chmod 600 ~/.ssh/known_hosts || exit 1
 
-      - name: Read the AI API costs and the B2 storage, sealed to a one-time key, once
+      - name: Read EODHD's six cash indices and Massive's news sentiment coverage, once, read-only
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
@@ -44,90 +44,80 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          # costs never reach this public log in the clear: the result is sealed (X25519 + HKDF-SHA256 + AES-256-GCM) to a
-          # one-time public key whose private half stays on the owner's Mac; ssh's errors (they name the address) stay private
+          # before FMP and Finnhub leave (owner 03/11/2026): do EODHD's .INDX codes answer, how fresh, with intraday bars; how
+          # many watched US names Massive's news insights cover in 7 days. Ordinals and counts only; ssh's errors stay private
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
             -i ~/.ssh/c3po_deploy "$USER@$HOST" "bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2> "$RUNNER_TEMP/ssh_err.txt" || rc=$?
           set -uo pipefail
           exec 2>/dev/null
           cd /opt/chief-of-staff-digital || exit 10
-          timeout 240 docker compose --env-file .env -f c3po/compose.yml exec -T api python - <<'PY'
-          import base64, json, os, zlib
-          from datetime import datetime, timezone
+          timeout 240 docker compose --env-file .env -f c3po/compose.yml exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api python - <<'PY'
+          import statistics, time
+          from datetime import datetime, timedelta, timezone
           import httpx
-          from cryptography.hazmat.primitives import hashes, serialization
-          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
-          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-          from cryptography.hazmat.primitives.kdf.hkdf import HKDF
           from app.config import get_settings
+          from app.database import Database
           s = get_settings()
-          RECIPIENT = "qVcmdAkdoAAG1shtad/wTHt4UA6N4Isyg5/4kEspEDo="
-          out = {"read_at": datetime.now(timezone.utc).isoformat(), "anthropic_admin_set": bool(s.anthropic_admin_api_key),
-                 "openai_admin_set": bool(s.openai_admin_api_key)}
-          def pages(name, url, params, headers):
-              rows, status, query = [], [], dict(params)
-              for _ in range(12):
-                  response = httpx.get(url, params=query, headers=headers, timeout=30.0)
-                  status.append(response.status_code)
-                  if response.status_code != 200:
+          now = datetime.now(timezone.utc)
+          base = s.eodhd_base_url.rstrip("/")
+          base = base if base.endswith("/api") else base + "/api"
+          codes = ["BVSP.INDX", "IXIC.INDX", "NYA.INDX", "N225.INDX", "SSEC.INDX", "GDAXI.INDX", "000001.SHG"]
+          try:
+              response = httpx.get(base + "/real-time/" + codes[0], params={"s": ",".join(codes[1:]), "fmt": "json", "api_token": s.eodhd_api_token}, timeout=20.0)
+              print("eodhd_realtime_http=%d" % response.status_code)
+              rows = response.json() if response.status_code == 200 else []
+              rows = rows if isinstance(rows, list) else [rows]
+              by_code = {str(row.get("code")): row for row in rows if isinstance(row, dict)}
+              for index, code in enumerate(codes, 1):
+                  row = by_code.get(code) or {}
+                  stamp, close, previous = row.get("timestamp"), row.get("close"), row.get("previousClose")
+                  ok = isinstance(stamp, (int, float)) and isinstance(close, (int, float)) and close > 0
+                  age = int(now.timestamp() - stamp) if ok else -1
+                  print("index_%d answered=%s age_s=%d previous_close=%s" % (index, ok, age, isinstance(previous, (int, float)) and previous > 0))
+          except Exception as error:
+              print("eodhd_realtime failed=%s" % type(error).__name__)
+          for index, code in ((2, "IXIC.INDX"), (1, "BVSP.INDX")):
+              try:
+                  response = httpx.get(base + "/intraday/" + code, params={"interval": "5m", "from": int((now - timedelta(days=2)).timestamp()), "fmt": "json", "api_token": s.eodhd_api_token}, timeout=20.0)
+                  bars = response.json() if response.status_code == 200 else []
+                  bars = [bar for bar in bars if isinstance(bar, dict) and bar.get("timestamp")] if isinstance(bars, list) else []
+                  last = max((int(bar["timestamp"]) for bar in bars), default=0)
+                  print("intraday_index_%d http=%d bars=%d last_bar_age_s=%d" % (index, response.status_code, len(bars), int(now.timestamp() - last) if last else -1))
+              except Exception as error:
+                  print("intraday_index_%d failed=%s" % (index, type(error).__name__))
+          try:
+              watched = sorted({item["symbol"] for item in Database(s).ir_watch_symbols() if item["market"] == "US"})
+              print("watched_us=%d" % len(watched))
+              since = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+              covered, articles, sentiments, failures, started = 0, [], {"positive": 0, "negative": 0, "neutral": 0, "other": 0}, 0, time.monotonic()
+              for symbol in watched[:400]:
+                  if time.monotonic() - started > 150:
                       break
-                  body = response.json()
-                  rows.extend(body.get("data") or [])
-                  following = body.get("next_page")
-                  if not body.get("has_more") or not following:
-                      break
-                  query["page"] = following
-              out[name] = {"status": status, "data": rows}
-          try:
-              if s.anthropic_admin_api_key:
-                  pages("anthropic_cost", "https://api.anthropic.com/v1/organizations/cost_report",
-                        {"starting_at": "2026-09-01T00:00:00Z", "bucket_width": "1d", "limit": 31},
-                        {"x-api-key": s.anthropic_admin_api_key, "anthropic-version": "2023-06-01"})
+                  try:
+                      response = httpx.get(s.massive_base_url.rstrip("/") + "/v2/reference/news",
+                                           params={"ticker": symbol.replace("-", "."), "published_utc.gte": since, "limit": 100, "apiKey": s.massive_api_token}, timeout=15.0)
+                      results = (response.json().get("results") or []) if response.status_code == 200 else []
+                  except Exception:
+                      failures += 1
+                      continue
+                  mine = [insight for article in results if isinstance(article, dict) for insight in (article.get("insights") or [])
+                          if isinstance(insight, dict) and str(insight.get("ticker") or "").upper() == symbol.replace("-", ".").upper()]
+                  if mine:
+                      covered += 1
+                  articles.append(len(mine))
+                  for insight in mine:
+                      label = str(insight.get("sentiment") or "").lower()
+                      sentiments[label if label in sentiments else "other"] += 1
+              asked = len(articles)
+              print("massive_news asked=%d failures=%d covered=%d five_or_more=%d median_articles=%d" % (
+                  asked, failures, covered, sum(1 for count in articles if count >= 5), int(statistics.median(articles)) if articles else 0))
+              print("massive_insights positive=%d negative=%d neutral=%d other=%d" % (
+                  sentiments["positive"], sentiments["negative"], sentiments["neutral"], sentiments["other"]))
           except Exception as error:
-              out["anthropic_error"] = type(error).__name__
-          try:
-              if s.openai_admin_api_key:
-                  pages("openai_cost", "https://api.openai.com/v1/organization/costs",
-                        {"start_time": int(datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()), "bucket_width": "1d", "limit": 31},
-                        {"Authorization": "Bearer " + s.openai_admin_api_key})
-          except Exception as error:
-              out["openai_error"] = type(error).__name__
-          try:
-              if s.day_d_b2_key_id and s.day_d_b2_application_key and s.day_d_b2_bucket:
-                  import boto3
-                  from botocore.config import Config
-                  client = boto3.client("s3", endpoint_url=s.day_d_b2_endpoint, aws_access_key_id=s.day_d_b2_key_id,
-                                        aws_secret_access_key=s.day_d_b2_application_key, region_name=s.day_d_b2_region,
-                                        config=Config(signature_version="s3v4", retries={"max_attempts": 2},
-                                                      connect_timeout=10, read_timeout=30))
-                  import time
-                  deadline = time.monotonic() + 120
-                  total = count = pages_read = 0
-                  for page in client.get_paginator("list_objects_v2").paginate(Bucket=s.day_d_b2_bucket):
-                      pages_read += 1
-                      for item in page.get("Contents") or []:
-                          total, count = total + int(item.get("Size") or 0), count + 1
-                      if pages_read >= 300 or time.monotonic() > deadline:
-                          break
-                  out["b2"] = {"objects": count, "bytes": total, "pages": pages_read,
-                               "truncated": pages_read >= 300 or time.monotonic() > deadline}
-              else:
-                  out["b2"] = "not_configured"
-          except Exception as error:
-              out["b2_error"] = type(error).__name__
-          ephemeral = X25519PrivateKey.generate()
-          shared = ephemeral.exchange(X25519PublicKey.from_public_bytes(base64.b64decode(RECIPIENT)))
-          aes = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"c3po-costs-oneoff").derive(shared)
-          nonce = os.urandom(12)
-          sealed = AESGCM(aes).encrypt(nonce, zlib.compress(json.dumps(out).encode()), None)
-          text = base64.b64encode(ephemeral.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-                                  + nonce + sealed).decode()
-          for start in range(0, len(text), 76):
-              print("E " + text[start:start + 76])
-          print("sealed_chars=%d" % len(text))
+              print("massive_news failed=%s" % type(error).__name__)
           PY
           exit 0
           REMOTE
           echo "ssh_rc=$rc ssh_err_lines=$(grep -c . "$RUNNER_TEMP/ssh_err.txt")"
-          grep -E '^(E [A-Za-z0-9+/=]{1,76}|sealed_chars=[0-9]+)$' "$RUNNER_TEMP/out.txt" || true
+          grep -E '^(eodhd_realtime_http=[0-9]{3}|eodhd_realtime failed=[A-Za-z]+|index_[0-9] answered=(True|False) age_s=-?[0-9]+ previous_close=(True|False)|intraday_index_[0-9] (http=[0-9]{3} bars=[0-9]+ last_bar_age_s=-?[0-9]+|failed=[A-Za-z]+)|watched_us=[0-9]+|massive_news (asked=[0-9]+ failures=[0-9]+ covered=[0-9]+ five_or_more=[0-9]+ median_articles=[0-9]+|failed=[A-Za-z]+)|massive_insights positive=[0-9]+ negative=[0-9]+ neutral=[0-9]+ other=[0-9]+)$' "$RUNNER_TEMP/out.txt" || true
           exit 0
