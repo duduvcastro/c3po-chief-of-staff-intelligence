@@ -81,7 +81,7 @@ jobs:
           try:
               if s.anthropic_admin_api_key:
                   pages("anthropic_cost", "https://api.anthropic.com/v1/organizations/cost_report",
-                        {"starting_at": "2026-09-01T00:00:00Z", "ending_at": "2026-11-04T00:00:00Z", "bucket_width": "1d", "limit": 31},
+                        {"starting_at": "2026-09-01T00:00:00Z", "bucket_width": "1d", "limit": 31},
                         {"x-api-key": s.anthropic_admin_api_key, "anthropic-version": "2023-06-01"})
           except Exception as error:
               out["anthropic_error"] = type(error).__name__
@@ -98,15 +98,19 @@ jobs:
                   from botocore.config import Config
                   client = boto3.client("s3", endpoint_url=s.day_d_b2_endpoint, aws_access_key_id=s.day_d_b2_key_id,
                                         aws_secret_access_key=s.day_d_b2_application_key, region_name=s.day_d_b2_region,
-                                        config=Config(signature_version="s3v4", retries={"max_attempts": 2}))
+                                        config=Config(signature_version="s3v4", retries={"max_attempts": 2},
+                                                      connect_timeout=10, read_timeout=30))
+                  import time
+                  deadline = time.monotonic() + 120
                   total = count = pages_read = 0
                   for page in client.get_paginator("list_objects_v2").paginate(Bucket=s.day_d_b2_bucket):
                       pages_read += 1
                       for item in page.get("Contents") or []:
                           total, count = total + int(item.get("Size") or 0), count + 1
-                      if pages_read >= 300:
+                      if pages_read >= 300 or time.monotonic() > deadline:
                           break
-                  out["b2"] = {"objects": count, "bytes": total, "pages": pages_read, "truncated": pages_read >= 300}
+                  out["b2"] = {"objects": count, "bytes": total, "pages": pages_read,
+                               "truncated": pages_read >= 300 or time.monotonic() > deadline}
               else:
                   out["b2"] = "not_configured"
           except Exception as error:
