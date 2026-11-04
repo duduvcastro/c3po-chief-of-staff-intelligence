@@ -75,6 +75,7 @@ def test_a_buy_is_a_cross_back_above_the_vwap_at_the_ask_with_a_tight_spread() -
     assert engine.step(_at(9, 42), lambda s: views.get(s, MarketView())) == []  # no new cross: no second buy
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_the_exits_each_second_stop_lock_and_the_last_thirty_seconds() -> None:
     engine = _engine()
     state = engine.state
@@ -105,6 +106,16 @@ def _held(engine: Engine, symbol: str) -> tuple[Position, Callable[[float], floa
     return engine.state.positions[symbol], lambda net: cost * (1 + net / 100) / (500.0 * (1 - FEE_SIDE))  # the bid at a net
 
 
+
+@pytest.fixture
+def stop_at_two_tenths(monkeypatch):
+    """The exit mechanics these tests drive were written on the -0.20% stop of 02-04/11 (TIT-2S5-F20-L5); the rule in force
+    stops at -1% from 05/11 (owner 04/11). The level is these tests' scenario, not their subject: pinned to -0.20% here."""
+    monkeypatch.setitem(engine_module.STOPS, engine_module.CONFIG, 0.20)
+    monkeypatch.setattr(engine_module, "_STOP_IN_FORCE", 0.20)
+    monkeypatch.setitem(engine_module.RULE, "stop_percent", 0.20)
+
+
 def _mark(engine: Engine, symbol: str, t: datetime, bid: float) -> list[dict]:
     return engine.step(t, lambda s: _view(bid, None, bid, bid + 0.01, t) if s == symbol else MarketView())
 
@@ -116,7 +127,9 @@ def test_the_step_lock_floor_is_the_last_step_the_peak_reached() -> None:
            [0.10, 0.10, 0.15, 0.15, 0.20, 0.20, 0.25, 0.30, 0.35, 0.65, 0.95]
     for step in (0.15, 0.20, 0.25, 0.35, 0.80):  # a hair under a step still counts it
         assert floor(step - 1e-12) == floor(step)
-    assert engine_module.RULE["stop_percent"] == 0.20 and engine_module.RULE["lock_min_percent"] == 0.10
+    assert engine_module.RULE["stop_percent"] == 1.00 and engine_module.RULE["lock_min_percent"] == 0.10  # owner 04/11
+    assert engine_module.stop_of() == 1.00 and engine_module.stop_of("TIT-2S5-F20-L5") == engine_module.stop_of("TIT-2S5-F20") == 0.20
+    assert engine_module.stop_of("TIT-2S3-RT") == 1.00  # a label without its own stop takes the rule in force
 
 
 @pytest.mark.parametrize(("peak", "hold", "sell", "floor"), [
@@ -171,11 +184,23 @@ def test_the_floor_has_no_gap_under_the_wide_band() -> None:
     assert round(floor(0.20 - 2e-9), 10) == 0.15  # the step under +0.20 is +0.15 (owner 03/11)
 
 
-def test_the_stop_before_the_lock_arms_is_minus_two_tenths() -> None:
-    """Owner 31/10: "colocando o stop loss em -0,20%" (-0.4% until then)."""
+def test_the_stop_before_the_lock_arms_is_minus_one_percent_from_05_11() -> None:
+    """Owner 04/11: "coloque o stop do R2D2 em -1%, quero ver se com esse respiro a mais como as ações performam"."""
     engine = _engine()
     position, bid = _held(engine, "S2")
     assert _mark(engine, "S2", _at(10, 0), bid(0.09)) == [] and not position.armed  # positive, under +0.10%: not armed
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -1.00) < 1e-9
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.21)) == [] and _mark(engine, "S2", _at(10, 0, 2), bid(-0.99)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 3), bid(-1.01))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
+
+
+def test_a_session_of_02_04_11_keeps_its_stop_at_two_tenths() -> None:
+    """Owner 31/10: "colocando o stop loss em -0,20%" — the sessions of 02-04/11 (TIT-2S5-F20, TIT-2S5-F20-L5) keep it: the
+    republish of one of them prices its stops by its own rule, as the lock's ladder (Codex 6616267525)."""
+    engine = _engine()
+    engine.state.config = "TIT-2S5-F20-L5"
+    position, bid = _held(engine, "S2")
     assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.20) < 1e-9
     assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.19)) == []
     fills = _mark(engine, "S2", _at(10, 0, 2), bid(-0.21))
@@ -284,7 +309,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20-L5" and len(validated["trades"]) == 1
+    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20-L5-S1" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -545,6 +570,7 @@ def test_the_status_summary_has_no_symbols(tmp_path: Path, monkeypatch) -> None:
     assert "AAA" not in json.dumps(summary)
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_buys_and_exits_are_checked_every_second() -> None:
     """Owner 29/10/2026: "esse cheque tem que ser por segundo e não por minuto" — a cross back above the VWAP buys at the
     second it is seen (until 29/10 it waited for the minute's close); an exit is checked at any second, as before."""
@@ -565,6 +591,7 @@ def test_buys_and_exits_are_checked_every_second() -> None:
     assert engine.step(t, lambda s: above(t).get(s, MarketView())) == [] and engine.signals == 2
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_a_sale_never_buys_back_in_the_same_step() -> None:
     """Pre-review of 81cf1ae P2-B: the bid stops the position while the last trade is still above the VWAP; the same
     step must not buy it back at Massive's ask. A new dip below the VWAP, then back above, is a new entry. Since 30/10 the
@@ -602,6 +629,7 @@ def _bid_at(position: Position, net: float) -> float:
     return position.cost_usd * (1 + net / 100) / (position.shares * (1 - engine_module.FEE_SIDE))
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_exits_mark_on_massive_and_a_feed_bid_off_the_market_never_stops() -> None:
     """30/10 10:36 BRT: the quote feed's bid sold ASX at -0.751% while the NBBO bid was ~0.5% higher (the minute's low
     was above it). The NBBO prevailing at the instant decides; the feed's bid is never the price."""
@@ -640,6 +668,7 @@ def test_exits_a_held_name_without_a_feed_quote_is_marked_armed_and_locked_on_ma
     assert engine.exit_sources == {"massive": 3, "stream": 0, "none": 0, "unconfirmed": 0, "pushed": 0, "fast": 0}
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_exits_without_massive_the_feeds_fresh_quote_stands_in_and_nothing_is_never_a_mark(monkeypatch) -> None:
     import time as wall
 
@@ -817,6 +846,7 @@ def test_massive_stream_authenticates_in_the_frame_subscribes_quotes_and_never_l
     assert refused.status == "stopped" and "PermissionError" in caplog.text and "key-secret" not in caplog.text
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_exits_read_the_pushed_nbbo_first_and_ask_massive_only_for_the_rest() -> None:
     engine = _engine()
     t = _at(10, 0, 1)
@@ -841,6 +871,7 @@ def test_exits_read_the_pushed_nbbo_first_and_ask_massive_only_for_the_rest() ->
     assert asked == ["CCC"] and engine.exit_sources["pushed"] == 1
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_exits_a_pushed_quote_is_read_and_used_at_one_instant_and_one_that_aged_meanwhile_goes_to_massive(monkeypatch) -> None:
     """Codex 6526033042: a pushed quote accepted early aged past 10 s while a read blocked (3 s), was refused at its use,
     and Massive was never asked — no sale that second. Read and used at one instant, it goes down the chain instead."""
@@ -925,6 +956,7 @@ def test_ask_nbbo_calls_between_while_an_answer_is_due_within_the_budget() -> No
         late.set()
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_exits_a_stop_pushed_while_the_step_waits_on_massive_is_sold_in_the_wait() -> None:
     """Load test of 31/10: CCC is quiet (no pushed quote), so the step asks Massive's REST for it; AAA's stop reaches the
     stream meanwhile. The session's pass (``between``) sells AAA during the wait; CCC is still marked on its answer."""
@@ -955,6 +987,7 @@ def test_exits_a_stop_pushed_while_the_step_waits_on_massive_is_sold_in_the_wait
     assert sum(1 for f in engine.fills if f["side"] == "SELL") == 1
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_entries_a_stop_pushed_while_the_crosses_wait_on_massive_is_sold_in_the_wait() -> None:
     """The crosses' wait on Massive (up to NBBO_STEP_BUDGET_SECONDS) runs the session's passes too: AAA's stop pushed
     meanwhile is sold in the wait, and CCC's cross is then bought at the NAV that sale left (pre-review of c0b7c4a4)."""
@@ -1035,6 +1068,7 @@ def test_exits_a_quiet_name_judged_in_the_wait_is_never_marked_again_on_the_olde
     assert [(f["side"], f["price"]) for f in engine.fills if f["symbol"] == "AAA"][-1] == ("SELL", stop)
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_fast_exits_judge_the_held_names_on_the_pushed_nbbo_between_the_full_checks() -> None:
     """Owner 30/10/2026: "com o papel na carteira acompanhar em 0,1 s". Only the pushed NBBO, read and used at one
     instant; a name without a usable one waits for the full check; never an entry."""
@@ -1364,6 +1398,7 @@ def test_the_marks_writer_never_blocks_keeps_only_the_latest_and_logs_a_failure_
     assert sum("written again" in message for message in messages) == 1 and writer.failures == 3  # and its recovery once
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_a_tenth_of_a_second_check_whose_read_crosses_the_close_never_sells(monkeypatch) -> None:
     """Codex 6527492839: the pass began at 15:59:59.900, the view's read took 0.2 s and the pushed quote, stamped
     16:00:00.100, sold. The close is checked again at the effective instant, after the reads."""
@@ -1397,6 +1432,7 @@ def test_the_marks_carry_the_level_the_rule_sells_at() -> None:
                                                                      round(position.cost_usd, 2))
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_the_engines_marks_dress_the_book_it_publishes_through_the_real_store(tmp_path: Path) -> None:
     """Pre-review of eb72ce47: the book rounds cost to cents and shares to 6 decimals; marks with the raw floats matched no
     position, so the screen fell back to the feed for every name. Through document, store and latest_book with an uneven
@@ -2577,7 +2613,7 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 4.999 bps buy, 5.5 bps is refused (it was 3 bps)."""
-    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20-L5"
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20-L5-S1"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
@@ -2840,6 +2876,7 @@ def test_nbbo_the_effective_instant_is_sampled_after_the_buys_quote_read(monkeyp
     assert [f["symbol"] for f in fills] == ["AAA"] and fills[0]["executed_at"] == start.isoformat()
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 @pytest.mark.parametrize("case", ["stale_quote", "t30_positive"])
 def test_the_exits_instant_is_sampled_after_their_quote_read(monkeypatch, case: str) -> None:
     """As the entries (Codex 6499564395): the exit's own quote read waits 2 s; freshness and the T30 rule are judged,
@@ -3280,6 +3317,7 @@ def test_the_massive_trade_path_keeps_up_with_an_opening_burst() -> None:
     assert rate > 5 * 5_984
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_the_shared_massive_path_keeps_the_exits_served_under_an_opening_load() -> None:
     """Codex 6537835879: the REAL run_session (full step, fast passes, commits) with the shadow on the REAL reader loop —
     trades and quotes mixed in a short opening burst then a regular rate, ten quotes crossing a stop: no trade or frame

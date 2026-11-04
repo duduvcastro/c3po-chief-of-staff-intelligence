@@ -50,8 +50,9 @@ NEW_YORK = ZoneInfo("America/New_York")
 # owner 29/10: spread <= 5 bps from 30/10 (TIT-2S3-RT until then); owner 30/10: entries until the close from 02/11
 # (TIT-2S5-RT until then: until 15:29:59 ET); owner 31/10: the sizes by the spread, the -0.20% stop and the new lock steps
 # from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session); owner 03/11: the
-# lock's steps every 0.05 from 04/11 (TIT-2S5-F20 until then: +0.10, +0.20, then every 0.15)
-CONFIG = "TIT-2S5-F20-L5"
+# lock's steps every 0.05 from 04/11 (TIT-2S5-F20 until then: +0.10, +0.20, then every 0.15); owner 04/11: the stop at -1%
+# from 05/11 (TIT-2S5-F20-L5 until then: -0.20%)
+CONFIG = "TIT-2S5-F20-L5-S1"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -72,8 +73,9 @@ RULE = {
     # +0.50 ... Until 30/10 (owner 29/10): stop -0.4%, steps of 0.05 from +0.10 to +0.30, then of 0.10; before 29/10 a
     # -0.5% stop and a +0.15% lock trailing the peak. Owner 03/11/2026 ~17:5x BRT: "Quero que você escalone o stop do R2D2
     # acima de 0,10% para a cada 5pp. Ou seja, 0,15%, 0,20%, 0,25% e por ai vai" — every 0.05 from +0.10, both bands
-    # (TIT-2S5-F20-L5 from 04/11)
-    "stop_percent": 0.20, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.20,
+    # (TIT-2S5-F20-L5 from 04/11). Owner 04/11/2026 ~18:3x BRT: "Amanha coloque o stop do R2D2 em -1%, quero ver se com
+    # esse respiro a mais como as ações performam" — the stop at -1% net from 05/11 (TIT-2S5-F20-L5-S1), the lock unchanged
+    "stop_percent": 1.00, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.20,
     "lock_wide_step_percent": 0.05,
     # owner 30/10/2026 ~20:3x BRT: "para segunda-feira, faremos umas alterações de BPS e tamanho da compra" — the lab's
     # studies of 30/10 (results/stopstudy_run41123209315, results/exitstudy2_run41145478129): no stop, spread limit or size
@@ -692,9 +694,20 @@ def size_weight(spread_bps: float, rule: str | None = None) -> float:
 # 6616267525); a label without an entry takes the rule in force
 LOCK_LADDERS: dict[str, tuple[float, float, float, float]] = {
     "TIT-2S5-F20": (0.10, 0.10, 0.20, 0.15),  # 02-03/11: +0.10, +0.20, then every 0.15
+    "TIT-2S5-F20-L5": (0.10, 0.05, 0.20, 0.05),  # 04/11: every 0.05 from +0.10 (the ladder in force since)
     CONFIG: (RULE["lock_min_percent"], RULE["lock_step_percent"], RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]),
 }
 _LADDER_IN_FORCE = LOCK_LADDERS[CONFIG]  # bound once: a label without its own ladder takes the rule in force
+# the stop (% net) of each rule label, as the lock's ladder: a session keeps the stop it ran under, so the republish of an
+# earlier session prices its stops by ITS rule (owner 04/11: -1% from 05/11; -0.20% on 02-04/11); a label without an entry
+# takes the rule in force
+STOPS: dict[str, float] = {"TIT-2S5-F20": 0.20, "TIT-2S5-F20-L5": 0.20, CONFIG: RULE["stop_percent"]}
+_STOP_IN_FORCE = STOPS[CONFIG]
+
+
+def stop_of(config: str | None = None) -> float:
+    """The stop, % net as a positive number, of the session's rule label ``config`` (the rule in force without one)."""
+    return STOPS.get(config or CONFIG, _STOP_IN_FORCE)
 
 
 def lock_floor(peak: float, config: str | None = None) -> float:
@@ -729,7 +742,7 @@ class Position:
         """The bid at which the rule sells now: the armed lock's floor (``lock_floor`` of the peak, on the ladder of the
         session's rule ``config``), else the stop — the level the screen shows as the position's stop (owner 29/10: "o stop
         não tá mexendo")."""
-        floor = lock_floor(self.peak_percent or RULE["lock_min_percent"], config) if self.armed else -RULE["stop_percent"]
+        floor = lock_floor(self.peak_percent or RULE["lock_min_percent"], config) if self.armed else -stop_of(config)
         return self.cost_usd * (1 + floor / 100) / (self.shares * (1 - FEE_SIDE))
 
 
@@ -1052,7 +1065,7 @@ class Engine:
             row["peak"] = net if row["peak"] is None else max(row["peak"], net)
             if net >= RULE["lock_min_percent"]:
                 row["armed"] = True
-            if (net <= -RULE["stop_percent"] or (row["armed"] and net <= lock_floor(row["peak"], self.state.config))
+            if (net <= -stop_of(self.state.config) or (row["armed"] and net <= lock_floor(row["peak"], self.state.config))
                     or (late and (net > 0 or RULE["close_flat"]))):
                 self._shadow_close(symbol, net)
 
@@ -1088,7 +1101,7 @@ class Engine:
             marked = self.marked_moment.get(symbol)
             # the level the rule sells at, as the net of a sale there: the lock's floor once armed, else the stop
             level = (lock_floor(position.peak_percent or RULE["lock_min_percent"], self.state.config) if position.armed
-                     else -RULE["stop_percent"])
+                     else -stop_of(self.state.config))
             # the position's own identity (its opening, shares and cost): the screen lays a mark only on the very position
             # it was taken of — never on a re-buy of the same ticker, nor a re-buy's mark on the sold one (Codex 6528658844)
             rows.append({"symbol": symbol, "bid": position.last_mark, "net_percent": position.net_percent(position.last_mark),
@@ -1138,7 +1151,7 @@ class Engine:
         if net >= RULE["lock_min_percent"]:  # armed by the net now, never by a peak stored under an earlier rule
             position.armed = True
         reason = None
-        if net <= -RULE["stop_percent"]:
+        if net <= -stop_of(self.state.config):
             reason = "hard_stop"
         elif position.armed and net <= lock_floor(position.peak_percent, self.state.config):
             reason = "lock"
@@ -1255,20 +1268,21 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 8 from 04/11/2026 (owner 03/11): the lock's steps every 0.05 from +0.10 (TIT-2S5-F20-L5); version 7 from
+    # version 9 from 05/11/2026 (owner 04/11): the stop at -1% (TIT-2S5-F20-L5-S1); version 8 from 04/11/2026 (owner
+    # 03/11): the lock's steps every 0.05 from +0.10 (TIT-2S5-F20-L5); version 7 from
     # 02/11/2026: the buy signal's trades on Massive's stream, the rule unchanged; version 6 from 02/11/2026
     # (owner, 31/10): the sizes by the spread paid, the stop at -0.20% and the lock's steps
     # +0.10 / +0.20 / every 0.15; version 5 the close mode and the size rule as parameters; version 4 entries until the
     # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
     # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 8, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 9, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat(), "trade_source": TRADE_SOURCE},
         "The live R2D2 inside the C3PO server on a real-time stream (owner 27/10/2026), Massive's for the buy signal's "
         "trades since 02/11/2026; entries every second and "
         "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
-        "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps) and the stop at -0.20% (owner 31/10/2026); the step profit lock from "
-        "+0.10, every 0.05 (owner 03/11/2026)")
+        "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps) (owner 31/10/2026); the step profit lock from +0.10, every 0.05 "
+        "(owner 03/11/2026); the stop at -1% (owner 04/11/2026: \"com esse respiro a mais\"; -0.20% from 02/11 to 04/11)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
@@ -1400,7 +1414,7 @@ def trade_confirms(position: Position, market: "MarketView", moment: datetime, r
         return False
     net = position.net_percent(market.price)
     if reason == "hard_stop":
-        return net <= -RULE["stop_percent"]
+        return net <= -stop_of(config)
     if reason == "lock":
         return net <= lock_floor(position.peak_percent if position.peak_percent is not None else RULE["lock_min_percent"], config)
     if reason == "t30_flat":
