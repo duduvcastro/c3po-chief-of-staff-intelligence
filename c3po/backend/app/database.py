@@ -61,6 +61,18 @@ PriceBarKey = tuple[str, str, str, str, str]  # (market, symbol, session_date, s
 # never rewritten, and is labelled by the producer stream that wrote it (API ``tp_source_label``):
 LEGACY_TP_SOURCE_PRODUCER = "legacy_producer_blend"  # a producer row's our_tp (universe / on-demand cycle): the internal TP blended with the consensus
 LEGACY_TP_SOURCE_ONE_PAGER = "legacy_one_pager"  # a One Pager row's c3po_tp: the TP the One Pager showed then, its source not stamped
+# The Investor Relations sources (ir_events.source_code, data_sources.code): 'massive' writes the weekly news sentiment since
+# the owner cut Finnhub (03/11/2026, migration 056); 'finnhub' wrote it before and its rows stay readable, never deleted.
+IR_SOURCE_CODES = ("cvm", "sec", "ri", "massive", "finnhub")
+# The weekly "News Sentiment" rows (raw_metadata bullish_percent / bearish_percent on 0-100, articles_last_week): one per
+# name per ISO week, of either source -- the latest published_at wins, so the history stays readable and a week's Massive
+# row supersedes the last Finnhub one.
+NEWS_SENTIMENT_SOURCES = ("massive", "finnhub")
+# latest_news_sentiment reads a row first published at most 8 days ago (the Decisor V1's news_sentiment_max_age_days): a
+# name with no row in those 8 days (not read since) reads nothing -- the One Pager's adjustment is then 0 -- instead of an
+# older week's reading kept forever; a read that finds no positive or negative insight writes its week's row neutral
+# (0/0), which adjusts by 0 too and supersedes the last week's row
+NEWS_SENTIMENT_MAX_AGE = timedelta(days=8)
 # Database.save_sec_filing_events: save_ir_events' upsert plus the filing-header guard, decided inside ON CONFLICT DO UPDATE
 # on the locked conflicting row: a stored header-sourced acceptance instant (and its header fields) survives an incoming
 # event whose time is not from the header; an incoming header-sourced event always wins.
@@ -3447,7 +3459,7 @@ class Database:
             output: dict[str, dict[str, Any]] = {}
             for run in sorted(self._ingestion_runs.values(), key=lambda item: item["started_at"]):
                 code = run.get("source_code")
-                if code not in {"cvm", "sec", "ri", "finnhub"}:
+                if code not in IR_SOURCE_CODES:
                     continue
                 output[code] = {
                     "last_status": run.get("status"),
@@ -3465,7 +3477,7 @@ class Database:
                        CASE WHEN run.status = 'failed' THEN run.error_summary END
                 FROM data_sources source
                 JOIN ingestion_runs run ON run.source_id = source.id
-                WHERE source.code IN ('cvm', 'sec', 'ri', 'finnhub')
+                WHERE source.code IN ('cvm', 'sec', 'ri', 'massive', 'finnhub')  -- IR_SOURCE_CODES
                 ORDER BY source.code, run.started_at DESC
                 """
             ).fetchall()
@@ -3686,35 +3698,79 @@ class Database:
             for symbol, bucket in buckets.items()
         }
 
+    def finnhub_insider_transactions(self, symbol: str, *, since: date, market: str = "US") -> list[dict[str, Any]]:
+        """The transactions (raw_metadata: insider_name, transaction_code, share_change, transaction_date, …) of the
+        "Insider Transaction" rows Finnhub wrote for ONE name (source_code 'sec', external_id 'finnhub-insider-…') whose
+        transaction (reference_date) is on or after ``since``. Finnhub is cut (owner 03/11/2026) but its rows stay and
+        insider_transaction_activity counts them: the EODHD Form 4 path reads these so it never writes the same
+        transaction twice (investor_relations.eodhd_insider_transactions_not_in_finnhub)."""
+        clean = symbol.strip().upper()
+        if not clean:
+            return []
+        if not self.database_url:
+            return [
+                dict(event.get("raw_metadata") or {}) for event in self._ir_events.values()
+                if event.get("source_code") == "sec" and event.get("market") == market and event.get("symbol") == clean
+                and event.get("event_type") == "Insider Transaction"
+                and str(event.get("external_id") or "").startswith("finnhub-insider-")
+                and str(event.get("reference_date") or "")[:10] >= since.isoformat()
+            ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT raw_metadata
+                FROM ir_events
+                WHERE source_code = 'sec' AND market = %s AND symbol = %s AND event_type = 'Insider Transaction'
+                  AND external_id LIKE %s AND reference_date >= %s
+                """,
+                (market, clean, "finnhub-insider-%", since),
+            ).fetchall()
+        return [raw if isinstance(raw, dict) else (json.loads(raw) if raw else {}) for (raw,) in rows]
+
+    def _news_sentiment_rows(self, symbol: str, market: str) -> list[dict[str, Any]]:
+        """The in-memory double's weekly "News Sentiment" rows of one symbol, of either source (NEWS_SENTIMENT_SOURCES)."""
+        return [
+            event for event in self._ir_events.values()
+            if event.get("symbol") == symbol and event.get("market") == market
+            and event.get("source_code") in NEWS_SENTIMENT_SOURCES and event.get("event_type") == "News Sentiment"
+            and isinstance(event.get("published_at"), datetime)
+        ]
+
+    @staticmethod
+    def _latest_news_sentiment_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """The latest row: the latest ``published_at`` wins; on a tie the current source (Massive) does — the order of the
+        SQL readers (``published_at DESC, source_code = 'massive' DESC``)."""
+        return max(rows, key=lambda event: (event["published_at"], event.get("source_code") == "massive"))
+
     def latest_news_sentiment(self, symbols: list[str], market: str = "US") -> dict[str, dict[str, Any]]:
-        """Latest weekly Finnhub news-sentiment snapshot per symbol (raw_metadata
-        with bullish_percent/bearish_percent/articles_last_week). US-only source."""
+        """The latest weekly news-sentiment row per symbol (raw_metadata with bullish_percent / bearish_percent on 0-100 and
+        articles_last_week; ``source`` says whose): Massive's since the owner cut Finnhub (03/11/2026), Finnhub's before.
+        The latest ``published_at`` of either source wins (NEWS_SENTIMENT_SOURCES), so the Finnhub history stays readable
+        and a week's Massive row supersedes it. Only a row first published within NEWS_SENTIMENT_MAX_AGE (8 days) counts: a
+        name with no row in those 8 days (not read since) reads nothing, so the One Pager's sentiment adjustment is 0,
+        instead of an older week's reading; a read that found no positive or negative insight wrote its week's row neutral
+        (bullish and bearish 0: an adjustment of 0 as well), which supersedes the last week's. US-only source."""
         clean = [symbol.upper() for symbol in symbols if symbol]
         if not clean:
             return {}
+        since = datetime.now(timezone.utc) - NEWS_SENTIMENT_MAX_AGE
         if not self.database_url:
             output: dict[str, dict[str, Any]] = {}
             for symbol in clean:
-                matches = [
-                    event for event in self._ir_events.values()
-                    if event.get("symbol") == symbol
-                    and event.get("market") == market
-                    and event.get("source_code") == "finnhub"
-                    and event.get("event_type") == "News Sentiment"
-                ]
+                matches = [event for event in self._news_sentiment_rows(symbol, market) if event["published_at"] >= since]
                 if matches:
-                    output[symbol] = dict(max(matches, key=lambda event: event["published_at"]).get("raw_metadata") or {})
+                    output[symbol] = dict(self._latest_news_sentiment_row(matches).get("raw_metadata") or {})
             return output
         with self.connection() as connection:
             rows = connection.execute(
                 """
                 SELECT DISTINCT ON (symbol) symbol, raw_metadata
                 FROM ir_events
-                WHERE market = %s AND source_code = 'finnhub' AND event_type = 'News Sentiment'
-                  AND symbol = ANY(%s)
-                ORDER BY symbol, published_at DESC
+                WHERE market = %s AND source_code = ANY(%s) AND event_type = 'News Sentiment'
+                  AND symbol = ANY(%s) AND published_at >= %s
+                ORDER BY symbol, published_at DESC, (source_code = 'massive') DESC
                 """,
-                (market, clean),
+                (market, list(NEWS_SENTIMENT_SOURCES), clean, since),
             ).fetchall()
         return {
             symbol: (raw_metadata if isinstance(raw_metadata, dict) else (json.loads(raw_metadata) if raw_metadata else {}))
@@ -3722,42 +3778,39 @@ class Database:
         }
 
     def news_sentiment_at(self, symbols: list[str], cutoff: datetime, market: str = "US") -> dict[str, dict[str, Any]]:
-        """The weekly Finnhub news-sentiment row of each symbol AS READ at ``cutoff`` — the latest ``published_at`` at or
-        before it — with its ``published_at`` and ``external_id`` (Decisor V1, ``NEWS_SENTIMENT_NEGATIVE``). The source
-        upserts one row per symbol per ISO week and overwrites its values on every poll: a later read of the same row may
-        carry other numbers — only the value a decision recorded is reproducible."""
+        """The weekly news-sentiment row of each symbol AS READ at ``cutoff`` — the latest ``published_at`` at or before it,
+        of either source (Massive since the owner cut Finnhub on 03/11/2026, Finnhub before: a replay of an earlier night
+        still reads the Finnhub row that night read) — with its ``published_at``, ``external_id`` and ``source_code``
+        (Decisor V1, ``NEWS_SENTIMENT_NEGATIVE``; the decisor applies its own age limit). The source upserts one row per
+        symbol per ISO week and overwrites its values on every run: a later read of the same row may carry other numbers —
+        only the value a decision recorded is reproducible."""
         clean = sorted({symbol.upper() for symbol in symbols if symbol})
         if not clean:
             return {}
         if not self.database_url:
             output: dict[str, dict[str, Any]] = {}
             for symbol in clean:
-                matches = [
-                    event for event in self._ir_events.values()
-                    if event.get("symbol") == symbol and event.get("market") == market and event.get("source_code") == "finnhub"
-                    and event.get("event_type") == "News Sentiment" and isinstance(event.get("published_at"), datetime)
-                    and event["published_at"] <= cutoff
-                ]
+                matches = [event for event in self._news_sentiment_rows(symbol, market) if event["published_at"] <= cutoff]
                 if matches:
-                    event = max(matches, key=lambda item: item["published_at"])
+                    event = self._latest_news_sentiment_row(matches)
                     output[symbol] = {"raw_metadata": dict(event.get("raw_metadata") or {}), "published_at": event["published_at"],
-                                      "external_id": event.get("external_id")}
+                                      "external_id": event.get("external_id"), "source_code": event.get("source_code")}
             return output
         with self.connection() as connection:
             rows = connection.execute(
                 """
-                SELECT DISTINCT ON (symbol) symbol, raw_metadata, published_at, external_id
+                SELECT DISTINCT ON (symbol) symbol, raw_metadata, published_at, external_id, source_code
                 FROM ir_events
-                WHERE market = %s AND source_code = 'finnhub' AND event_type = 'News Sentiment'
+                WHERE market = %s AND source_code = ANY(%s) AND event_type = 'News Sentiment'
                   AND symbol = ANY(%s) AND published_at <= %s
-                ORDER BY symbol, published_at DESC
+                ORDER BY symbol, published_at DESC, (source_code = 'massive') DESC
                 """,
-                (market, clean, cutoff),
+                (market, list(NEWS_SENTIMENT_SOURCES), clean, cutoff),
             ).fetchall()
         return {
             symbol: {"raw_metadata": raw_metadata if isinstance(raw_metadata, dict) else (json.loads(raw_metadata) if raw_metadata else {}),
-                     "published_at": published_at, "external_id": external_id}
-            for symbol, raw_metadata, published_at, external_id in rows
+                     "published_at": published_at, "external_id": external_id, "source_code": source_code}
+            for symbol, raw_metadata, published_at, external_id, source_code in rows
         }
 
     def reconcile_ir_results(self, fundamentals_by_symbol: dict[str, str | None], market: str = "B3") -> None:

@@ -147,7 +147,6 @@ class SystemHealthService:
             "governance": lambda: self._governance_vulnerability_health(now),
             "incidents": lambda: self._operational_incident_health(now),
             "quote_providers": lambda: self._quote_provider_health(now),
-            "finnhub": lambda: self._finnhub_health(now),
             "massive": lambda: self._massive_health(now),
             "official_sources": lambda: self._official_sources_health(now),
             "automations": lambda: self._automation_health(now),
@@ -265,8 +264,8 @@ class SystemHealthService:
                     durations_ms,
                     [
                         ("quote_providers", "Market data APIs"),
-                        ("finnhub", "Finnhub"),
-                        # the FMP card left with the contract (owner 03/11/2026: FMP is cut)
+                        # the Finnhub and FMP cards left with their contracts (owner 03/11/2026: both are cut; the weekly
+                        # news sentiment comes from Massive, the insider Form 4 from EODHD)
                         ("massive", "Massive"),
                     ],
                     now,
@@ -718,32 +717,6 @@ class SystemHealthService:
             detail="No quote provider is registered",
             last_update=self._format_time(now),
         )]
-
-    def _finnhub_health(self, now: datetime) -> IntegrationHealth:
-        if not self.settings.finnhub_api_token:
-            return IntegrationHealth(
-                name="Finnhub",
-                status="offline",
-                detail="Fundamental-1 credential is not configured",
-                last_update=self._format_time(now),
-            )
-        try:
-            response = self.external_get(
-                f"{self.settings.finnhub_base_url.rstrip('/')}/api/v1/stock/insider-transactions",
-                params={"symbol": "AAPL", "token": self.settings.finnhub_api_token},
-                timeout=self.settings.system_health_probe_timeout_seconds,
-                follow_redirects=True,
-                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
-            )
-            response.raise_for_status()
-            return IntegrationHealth(
-                name="Finnhub",
-                status="healthy",
-                detail="United States · Fundamental-1 · insider transactions",
-                last_update=self._format_time(now),
-            )
-        except Exception as exc:
-            return self._offline_item("Finnhub", exc, now)
 
     def _massive_health(self, now: datetime) -> IntegrationHealth:
         if not self.settings.massive_api_token:

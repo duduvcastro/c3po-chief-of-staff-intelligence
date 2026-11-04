@@ -1433,7 +1433,7 @@ def integrations() -> dict:
 def investor_relations_feed(
     limit: int = Query(default=100, ge=1, le=300),
     market: str | None = Query(default=None, pattern=r"^(B3|US)$"),
-    source: str | None = Query(default=None, pattern=r"^(cvm|sec|ri|finnhub)$"),
+    source: str | None = Query(default=None, pattern=r"^(cvm|sec|ri|massive|finnhub)$"),  # finnhub: its rows before 03/11/2026
     event_type: str | None = Query(default=None, max_length=80),
     q: str | None = Query(default=None, max_length=120),
     scope: str = Query(default="coverage", pattern=r"^(coverage|all)$"),
@@ -1446,7 +1446,7 @@ def investor_relations_feed(
 
 @app.post("/api/v1/investor-relations/sync", response_model=InvestorRelationsSyncResponse)
 def sync_investor_relations(
-    source: str = Query(default="all", pattern=r"^(all|cvm|sec|ri|finnhub)$"),
+    source: str = Query(default="all", pattern=r"^(all|cvm|sec|ri|massive)$"),  # massive: the news sentiment, Finnhub's place (03/11/2026)
 ) -> InvestorRelationsSyncResponse:
     response = investor_relations.sync(source)
     ir_valuation_processor.process()
@@ -1470,7 +1470,7 @@ def review_investor_relations_event(event_id: str, payload: InvestorRelationsRev
 @app.get("/api/v1/investor-relations/report.pdf", response_class=FileResponse)
 def investor_relations_report(
     market: str | None = Query(default=None, pattern=r"^(B3|US)$"),
-    source: str | None = Query(default=None, pattern=r"^(cvm|sec|ri|finnhub)$"),
+    source: str | None = Query(default=None, pattern=r"^(cvm|sec|ri|massive|finnhub)$"),  # finnhub: its rows before 03/11/2026
     event_type: str | None = Query(default=None, max_length=80),
     q: str | None = Query(default=None, max_length=120),
     scope: str = Query(default="coverage", pattern=r"^(coverage|all)$"),

@@ -411,18 +411,13 @@ class ChewieFundamentalsService:
         return self.fmp.price_target_consensus(provider_symbol)
 
     def _news_sentiment(self, market: ChewieMarket, symbol: str) -> dict[str, Any] | None:
-        if market == "B3" or not self.settings.finnhub_api_token:
+        """The name's stored weekly news sentiment (``Database.latest_news_sentiment``: the row the nightly Investor
+        Relations sync wrote from Massive's news insights, or Finnhub's last one while it is the latest of the past 8
+        days). Owner 03/11/2026, Finnhub is cut: the report no longer calls a provider live for it. US only."""
+        if market == "B3":
             return None
         try:
-            import httpx
-
-            from .market_data.finnhub import FinnhubClient
-
-            with httpx.Client(timeout=10) as client:
-                finnhub = FinnhubClient(
-                    self.settings.finnhub_base_url, self.settings.finnhub_api_token, client
-                )
-                return finnhub.news_sentiment(symbol)
+            return self.database.latest_news_sentiment([symbol], "US").get(symbol.upper()) or None
         except Exception:
             return None
 

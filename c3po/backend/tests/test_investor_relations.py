@@ -21,6 +21,7 @@ from app.investor_relations import (
     normalize_company_name,
 )
 from app.market_data.b3_screener import B3ScreenerService
+from app.market_data.massive import MassiveResponseError
 from app.sec_xbrl import (
     SecHeaderError,
     SecRateLimiter,
@@ -846,93 +847,346 @@ def test_eodhd_insider_events_used_only_as_a_fallback_when_finnhub_has_nothing(t
     assert events[0]["external_id"].startswith("finnhub-")
 
 
-def test_finnhub_sentiment_event_is_deduped_by_iso_week(tmp_path):
-    ir, _ = _service_with_finnhub(tmp_path)
-
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "sentiment": {"bullishPercent": 0.7, "bearishPercent": 0.3},
-                "buzz": {"articlesInLastWeek": 12},
-                "companyNewsScore": 0.6,
-            }
-
-    class FakeClient:
-        def get(self, url, *, params=None):
-            return FakeResponse()
-
-    ir.finnhub.client = FakeClient()
-    events = ir._finnhub_sentiment_event("AAPL", None, "Apple Inc.")
-
-    assert len(events) == 1
-    event = events[0]
-    assert event["source_code"] == "finnhub"
-    assert event["event_type"] == "News Sentiment"
-    assert event["materiality"] == "low"
-    assert event["valuation_relevant"] is False
-    iso_year, iso_week, _ = datetime.now(timezone.utc).isocalendar()
-    assert event["external_id"] == f"finnhub-sentiment-AAPL-{iso_year}-W{iso_week:02d}"
+def _days_ago(days: int) -> str:
+    return (date.today() - timedelta(days=days)).isoformat()
 
 
-def test_finnhub_sentiment_event_is_noop_when_no_sentiment_available(tmp_path):
-    ir, _ = _service_with_finnhub(tmp_path)
+class FinnhubInsiderRows:
+    """Finnhub's insider-transactions API as it answered before the cut: ``data`` rows, the same for any symbol."""
 
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
+    def __init__(self, rows):
+        self.rows = rows
 
-        def json(self):
-            return {}
+    def get(self, url, *, params=None):
+        rows = self.rows
 
-    class FakeClient:
-        def get(self, url, *, params=None):
-            return FakeResponse()
+        class Response:
+            def raise_for_status(self):
+                return None
 
-    ir.finnhub.client = FakeClient()
-    assert ir._finnhub_sentiment_event("AAPL", None, "Apple Inc.") == []
+            def json(self):
+                return {"data": rows}
 
-
-def test_finnhub_news_events_only_keeps_keyword_matches(tmp_path):
-    ir, _ = _service_with_finnhub(tmp_path)
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return [
-                {"id": 1, "headline": "Apple announces new acquisition", "summary": "", "source": "Reuters", "url": "https://x/1", "datetime": now_ts},
-                {"id": 2, "headline": "Apple stock closes flat on Tuesday", "summary": "Routine market recap.", "source": "Wire", "url": "https://x/2", "datetime": now_ts},
-            ]
-
-    class FakeClient:
-        def get(self, url, *, params=None):
-            return FakeResponse()
-
-    ir.finnhub.client = FakeClient()
-    events = ir._finnhub_news_events("AAPL", None, "Apple Inc.", date(2026, 8, 1), date(2026, 8, 19))
-
-    assert len(events) == 1
-    event = events[0]
-    assert event["source_code"] == "finnhub"
-    assert event["event_type"] == "News Mention"
-    assert event["external_id"] == "finnhub-news-1"
-    assert "acquisition" in event["raw_metadata"]["matched_keywords"]
+        return Response()
 
 
-def test_sync_finnhub_news_is_a_noop_without_an_api_token(tmp_path):
-    ir, _ = service(tmp_path)  # default helper -- no finnhub_api_token configured
+def _finnhub_api_row(name: str, day: str, code: str, change: float) -> dict:
+    return {"name": name, "share": 10_000, "change": change, "filingDate": day, "transactionDate": day,
+            "transactionCode": code, "transactionPrice": 100.0}
 
-    class FakeClient:
-        def get(self, *args, **kwargs):
-            raise AssertionError("must not call Finnhub without a configured API token")
 
-    ir.finnhub.client = FakeClient()
-    assert ir.sync_finnhub_news() == (0, 0)
+def _form4_row(name: str, day: str, code: str, shares: float, *, acquired: bool = False) -> dict:
+    return {"reporting_owner_name": name, "transaction_code": code, "acquired_or_disposed": "A" if acquired else "D",
+            "shares_amount": shares, "price_per_share": 100.25, "shares_owned_after": 9_000,
+            "transaction_date": f"{day}T00:00:00+00:00"}
+
+
+def test_eodhd_insider_events_never_write_again_a_transaction_finnhub_stored(tmp_path):
+    """Owner 03/11/2026: Finnhub is cut and its insider rows stay. With its token blank, EODHD's Form 4 is the insider path
+    of every name (the last 90 days, every poll); a transaction Finnhub already stored is dropped, since
+    insider_transaction_activity counts every row and the One Pager and the US screener read 180 days of it. A new
+    transaction is kept, and another name is unaffected by this one's Finnhub rows."""
+    settings = Settings(database_url="", migrations_dir=tmp_path, investor_relations_output_dir=tmp_path / "ir-pdf",
+                        finnhub_api_token="test-token", eodhd_api_token="test-token")
+    database = Database(settings)
+    ir = InvestorRelationsService(settings, database)
+    # before the cut: Finnhub stored one row per insider, day and code (a day's lots collapse into its external id)
+    ir.finnhub.client = FinnhubInsiderRows([
+        _finnhub_api_row("COOK TIMOTHY D", _days_ago(10), "S", -2_500),
+        _finnhub_api_row("COOK TIMOTHY D", _days_ago(10), "S", -1_000),  # the day's last lot: the row Finnhub kept
+        _finnhub_api_row("WILLIAMS JEFFREY E", _days_ago(20), "S", -2_000),
+        _finnhub_api_row("LEVINSON ARTHUR D", _days_ago(30), "P", 500),
+    ])
+    database.save_ir_events(ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc."))
+    assert len(database.finnhub_insider_transactions("AAPL", since=date.today() - timedelta(days=90))) == 3
+    # the cut: Finnhub's token is blank, EODHD answers the same filings and new ones
+    settings.finnhub_api_token = ""
+    ir.eodhd.http = FakeEodhdHttp({"data": [{
+        "accession_number": "acc-1", "filed_at": _days_ago(1), "period_of_report": _days_ago(1), "derivative": [], "footnotes": [],
+        "non_derivative": [
+            _form4_row("Cook Timothy D.", _days_ago(10), "S", 2_500),  # the same insider, day and code: dropped whole
+            _form4_row("COOK TIMOTHY D", _days_ago(10), "S", 1_000),
+            _form4_row("Williams, Jeffrey E.", _days_ago(20), "S", 2_000),  # Finnhub's insider, punctuated otherwise: dropped
+            _form4_row("LEVINSON ARTHUR D", _days_ago(30), "P", 500, acquired=True),
+            _form4_row("O'BRIEN DEIRDRE", _days_ago(5), "S", 300),  # new: kept
+            _form4_row("MAESTRI LUCA", _days_ago(10), "S", 1_000),  # Cook's size and day, another insider: kept
+        ],
+    }], "meta": {}, "links": {"next": None}})
+
+    events = ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.") or ir._eodhd_insider_events(
+        "AAPL", "0000320193", None, "Apple Inc.")  # sync_sec's insider step
+    other = ir._eodhd_insider_events("MSFT", "0000789019", None, "Microsoft")
+
+    assert sorted(event["external_id"] for event in events) == [
+        f"eodhd-insider-AAPL-{_days_ago(10)}-maestri-luca-S", f"eodhd-insider-AAPL-{_days_ago(5)}-o-brien-deirdre-S",
+    ]
+    assert len({event["external_id"] for event in other}) == 5  # MSFT has no Finnhub row: every insider of its filing
+    database.save_ir_events(events)
+    since = datetime.now(timezone.utc) - timedelta(days=180)
+    # Finnhub's 1 buy + 2 sells, EODHD's 2 new sells; without the filter EODHD would add 1 buy + 4 sells more
+    assert database.insider_transaction_activity(["AAPL"], "US", since)["AAPL"] == {"buy_count": 1, "sell_count": 4, "total_count": 5}
+
+
+def test_eodhd_insider_events_write_nothing_when_finnhub_s_rows_cannot_be_read(tmp_path):
+    ir, database = _service_with_eodhd(tmp_path)
+    ir.eodhd.http = FakeEodhdHttp({"data": [{"accession_number": "acc-1", "filed_at": _days_ago(1), "derivative": [],
+                                             "non_derivative": [_form4_row("COOK TIMOTHY D", _days_ago(3), "S", 100)]}],
+                                   "meta": {}, "links": {"next": None}})
+
+    def unreadable(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    database.finnhub_insider_transactions = unreadable  # type: ignore[method-assign]
+    assert ir._eodhd_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []  # no duplicate risked: the next poll retries
+
+
+def test_the_insider_dedup_drops_only_the_insider_finnhub_stored_never_a_size_alike():
+    """Codex 6621231383: Finnhub stored Alice's buy of 100 on D; EODHD's answer has Bob's buy of 100 on D and not Alice's.
+    A size, a day and a code alike never make two names one insider: Bob's transaction is kept. The same insider is the
+    same words in the same order, whatever the case or punctuation; a word more or less, or another order, is another
+    name."""
+    from app.investor_relations import eodhd_insider_transactions_not_in_finnhub, insider_identity
+
+    def transaction(name, day, code, change):
+        return {"insider_name": name, "transaction_date": day, "transaction_code": code, "share_change": change}
+
+    finnhub = [transaction("SMITH JOHN A", "2026-10-01", "S", -100.0), transaction("ADAMS ALICE", "2026-10-02", "P", 100.0)]
+    eodhd = [
+        transaction("Smith, John A.", "2026-10-01", "S", -40.0),  # Finnhub's insider, day and code, punctuated otherwise
+        transaction("SMITH JOHN A", "2026-10-01", "S", -60.0),  # another lot of the same stored row
+        transaction("BAKER BOB", "2026-10-02", "P", 100.0),  # Alice's day, code and size, another insider: kept
+        transaction("John A. Smith", "2026-10-01", "S", -100.0),  # another order: not shown to be the same person
+        transaction("SMITH JOHN", "2026-10-01", "S", -100.0),  # no middle initial: likewise
+        transaction("SMITH JOHN A JR", "2026-10-01", "S", -100.0),  # a suffix: another person
+        transaction("SMITH JOHN A", "2026-10-01", "M", -100.0),  # another code
+        transaction("", "2026-10-01", "S", -5.0),  # incomplete: passed through (never stored)
+    ]
+
+    kept = eodhd_insider_transactions_not_in_finnhub(eodhd, finnhub)
+
+    assert [item["insider_name"] for item in kept] == [
+        "BAKER BOB", "John A. Smith", "SMITH JOHN", "SMITH JOHN A JR", "SMITH JOHN A", ""]
+    assert insider_identity(transaction("Cook, Timothy D.", "2026-10-01T00:00:00", "s", -1)) == ("2026-10-01", "S", "cook-timothy-d")
+    assert eodhd_insider_transactions_not_in_finnhub(eodhd, []) == eodhd
+
+
+MASSIVE_TOKEN = "massive-secret-token"
+
+
+def _service_with_massive(tmp_path):
+    settings = Settings(
+        database_url="",
+        migrations_dir=tmp_path,
+        investor_relations_output_dir=tmp_path / "ir-pdf",
+        massive_api_token=MASSIVE_TOKEN,
+    )
+    database = Database(settings)
+    return InvestorRelationsService(settings, database), database
+
+
+def _article(article_id, published_at, insights, *, title="Routine market recap", description="", url=None):
+    return {
+        "id": article_id,
+        "publisher": {"name": "Example Wire"},
+        "title": title,
+        "description": description,
+        "article_url": f"https://news.example.com/{article_id}" if url is None else url,
+        "published_utc": published_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "tickers": sorted({ticker for ticker, _ in insights}),
+        "insights": [{"ticker": ticker, "sentiment": label, "sentiment_reasoning": "reasoning"} for ticker, label in insights],
+    }
+
+
+class FakeMassiveNews:
+    """MassiveClient.news, per symbol: (articles, truncated) or an exception to raise."""
+
+    def __init__(self, by_symbol):
+        self.by_symbol = by_symbol
+        self.calls = []
+
+    def news(self, symbol, *, published_since, limit, max_pages):
+        self.calls.append({"symbol": symbol, "since": published_since, "limit": limit, "max_pages": max_pages})
+        result = self.by_symbol.get(symbol, ([], False))
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def test_massive_news_sentiment_counts_only_the_insights_about_the_name():
+    """Owner 03/11/2026: Finnhub is cut, the weekly sentiment comes from Massive's article insights. Only an insight whose
+    ticker IS the name counts (Massive spells BRK-B as BRK.B), each article once, inside the 7-day window and with a known
+    label; the percents keep the scale Finnhub's rows had and the One Pager reads (0-100)."""
+    from app.investor_relations import massive_news_events
+    from app.one_pager import OnePagerService
+
+    now = datetime(2026, 11, 3, 4, 0, tzinfo=timezone.utc)
+    since = now - timedelta(days=7)
+    day = timedelta(days=1)
+    articles = [
+        _article("a1", now - day, [("BRK.B", "positive"), ("AAPL", "negative")], title="Berkshire earnings beat"),
+        _article("a2", now - 2 * day, [("BRK.B", "negative")], title="Berkshire faces lawsuit"),
+        _article("a3", now - 3 * day, [("BRK.B", "positive")]),
+        _article("a1", now - day, [("BRK.B", "positive")], title="Berkshire earnings beat"),  # the same article again
+        _article("a4", now - day, [("AAPL", "positive")], title="Apple acquisition"),  # tagged, but about another name
+        _article("a5", now - 4 * day, [("BRK.B", "neutral")]),
+        _article("a6", since - timedelta(minutes=1), [("BRK.B", "positive")]),  # before the window
+        _article("a7", now - day, [("BRK.B", "mixed")]),  # a label Massive does not document
+        _article("a8", now - 5 * day, [("brk-b", "positive")]),  # the application's own spelling
+        {"id": "a9", "published_utc": (now - day).strftime("%Y-%m-%dT%H:%M:%SZ"), "title": "No insights"},
+        _article("a10", now - day, [("BRK.B", "negative")], url="", title="Berkshire layoffs"),
+        "not an article",
+    ]
+
+    events = massive_news_events("BRK-B", "company-1", "Berkshire Hathaway", articles, since=since, now=now)
+
+    sentiment = [event for event in events if event["event_type"] == "News Sentiment"]
+    assert len(sentiment) == 1
+    row = sentiment[0]
+    assert row["source_code"] == "massive" and row["external_id"] == "massive-sentiment-BRK-B-2026-W45"
+    assert row["symbol"] == "BRK-B" and row["market"] == "US" and row["company_id"] == "company-1"
+    assert row["published_time_precision"] == "collected" and row["valuation_relevant"] is False and row["materiality"] == "low"
+    # positive: a1, a3, a8; negative: a2, a10; neutral: a5
+    assert row["raw_metadata"] == {
+        "source": "massive", "bullish_percent": 60.0, "bearish_percent": 40.0, "articles_last_week": 6,
+        "positive": 3, "negative": 2, "neutral": 1, "window_start": since.isoformat(), "truncated": False,
+    }
+    assert row["official_url"] == "https://news.example.com/a1"  # the newest article with a URL
+    assert row["title"] == "Sentimento de notícias: 60% bullish"
+    assert OnePagerService._sentiment_confidence_adjustment(row["raw_metadata"]) == pytest.approx(1.0)  # (60 - 40) / 100 x 5
+    mentions = {event["external_id"]: event for event in events if event["event_type"] == "News Mention"}
+    assert set(mentions) == {"massive-news-BRK-B-a1", "massive-news-BRK-B-a2"}  # a10 has no URL; a4 is another name's
+    assert mentions["massive-news-BRK-B-a1"]["raw_metadata"] == {
+        "source": "massive", "matched_keywords": ["earnings"], "sentiment": "positive", "article_source": "Example Wire",
+    }
+    assert mentions["massive-news-BRK-B-a2"]["official_url"] == "https://news.example.com/a2"
+    assert mentions["massive-news-BRK-B-a2"]["published_time_precision"] == "datetime"
+
+
+def test_massive_news_writes_the_week_s_row_neutral_without_a_positive_or_negative_insight():
+    """A read of neutral insights only, or of none, is a 0/0 split: the week's "News Sentiment" row is written NEUTRAL
+    (bullish and bearish 0, the articles counted), so it supersedes any earlier reading and the One Pager adjusts by 0
+    (Codex 6621231383); the keyword-matched mentions are still written."""
+    from app.investor_relations import massive_news_events
+    from app.one_pager import OnePagerService
+
+    now = datetime(2026, 11, 3, 4, 0, tzinfo=timezone.utc)
+    since = now - timedelta(days=7)
+    neutral_only = [
+        _article("n1", now - timedelta(days=1), [("AAPL", "neutral")], title="Apple guidance unchanged"),
+        _article("n2", now - timedelta(days=2), [("AAPL", "neutral"), ("MSFT", "positive")]),
+    ]
+
+    events = massive_news_events("AAPL", None, "Apple Inc.", neutral_only, since=since, now=now)
+
+    assert [event["event_type"] for event in events] == ["News Sentiment", "News Mention"]
+    row, mention = events
+    assert row["external_id"] == "massive-sentiment-AAPL-2026-W45" and row["title"] == "Sentimento de notícias: neutro"
+    assert {key: row["raw_metadata"][key] for key in ("bullish_percent", "bearish_percent", "articles_last_week", "neutral")} == {
+        "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 2, "neutral": 2}
+    assert OnePagerService._sentiment_confidence_adjustment(row["raw_metadata"]) == 0.0
+    assert mention["external_id"] == "massive-news-AAPL-n1"
+    (empty,) = massive_news_events("AAPL", None, "Apple Inc.", [], since=since, now=now)  # a read with no article at all
+    assert empty["event_type"] == "News Sentiment" and empty["raw_metadata"]["articles_last_week"] == 0
+    assert empty["raw_metadata"]["bullish_percent"] == empty["raw_metadata"]["bearish_percent"] == 0.0
+
+
+def test_sync_massive_news_writes_one_weekly_row_per_name_and_counts_a_failure_without_leaking_the_key(tmp_path, caplog):
+    ir, database = _service_with_massive(tmp_path)
+    for symbol in ("TTWO", "AAPL", "BRK-B", "MSFT"):
+        ir.add_watch(symbol, "US")
+    ir.add_watch("PETR4", "B3")
+    now = datetime.now(timezone.utc)
+    leaked = f"Massive request failed: 403 for https://api.massive.com/v2/reference/news?ticker=MSFT&apiKey={MASSIVE_TOKEN}"
+    fake = FakeMassiveNews({
+        "AAPL": ([_article("p1", now - timedelta(days=1), [("AAPL", "positive")], title="Apple earnings beat"),
+                  _article("p2", now - timedelta(days=2), [("AAPL", "positive")]),
+                  _article("p3", now - timedelta(days=2), [("AAPL", "negative")])], False),
+        "BRK-B": ([_article("b1", now - timedelta(days=1), [("BRK.B", "negative")])], True),
+        "MSFT": MassiveResponseError(leaked),
+        "TTWO": ([_article("t1", now - timedelta(days=1), [("TTWO", "neutral")])], False),
+    })
+    ir.massive_news = fake
+
+    with caplog.at_level("DEBUG"):
+        result = ir.sync("massive")
+        again = ir.sync("massive")  # a later run of the same week refreshes the same rows
+
+    assert result.sources["massive"] == "ok · 4 records" and again.sources["massive"] == "ok · 4 records"  # 3 weekly rows, 1 mention
+    assert [call["symbol"] for call in fake.calls[:4]] == ["AAPL", "BRK-B", "MSFT", "TTWO"]  # the watched US names only
+    first = fake.calls[0]
+    assert first["limit"] == 100 and first["max_pages"] == 10
+    assert timedelta(days=7) - timedelta(seconds=30) <= now - first["since"] <= timedelta(days=7) + timedelta(seconds=30)
+    sentiment = database.latest_news_sentiment(["AAPL", "BRK-B", "MSFT", "TTWO"], "US")
+    assert set(sentiment) == {"AAPL", "BRK-B", "TTWO"}  # MSFT was not read: no row
+    assert sentiment["AAPL"]["bullish_percent"] == pytest.approx(66.7) and sentiment["AAPL"]["bearish_percent"] == pytest.approx(33.3)
+    assert sentiment["AAPL"]["articles_last_week"] == 3 and sentiment["AAPL"]["source"] == "massive"
+    assert sentiment["BRK-B"]["bearish_percent"] == 100.0 and sentiment["BRK-B"]["truncated"] is True
+    assert sentiment["TTWO"]["bullish_percent"] == sentiment["TTWO"]["bearish_percent"] == 0.0  # read, neutral only
+    weekly = [event for event in database._ir_events.values() if event["event_type"] == "News Sentiment"]
+    assert sorted(event["symbol"] for event in weekly) == ["AAPL", "BRK-B", "TTWO"]  # one row a name a week, not one a run
+    run = max((run for run in database._ingestion_runs.values() if run["source_code"] == "massive"), key=lambda item: item["started_at"])
+    assert run["status"] == "partial" and run["records_read"] == 5 and run["records_written"] == 4
+    assert run["error_summary"] == "Massive news: 1 of 4 watched US names not read"
+    assert run["metadata"]["failed_symbols"] == ["MSFT"] and run["metadata"]["truncated_symbols"] == ["BRK-B"]
+    assert run["metadata"]["sentiment_rows"] == 3 and run["metadata"]["mention_rows"] == 1
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "MSFT not read (MassiveResponseError)" in logged
+    for secret in (MASSIVE_TOKEN, "apiKey", "https://"):
+        assert secret not in logged and secret not in str(run["error_summary"]) and secret not in result.sources["massive"]
+
+
+def test_sync_massive_news_fails_its_run_when_no_name_is_read_and_the_nightly_carries_on(tmp_path, monkeypatch):
+    ir, database = _service_with_massive(tmp_path)
+    ir.add_watch("AAPL", "US")
+    ir.add_watch("MSFT", "US")
+    failure = MassiveResponseError(f"Massive request failed: timeout for https://api.massive.com/v2/reference/news?apiKey={MASSIVE_TOKEN}")
+    ir.massive_news = FakeMassiveNews({"AAPL": failure, "MSFT": failure})
+    for name in ("sync_cvm", "sync_sec", "sync_ri"):
+        monkeypatch.setattr(ir, name, lambda: (1, 1))
+
+    result = ir.sync("all")
+
+    assert list(result.sources) == ["cvm", "sec", "ri", "massive"]
+    assert result.sources["cvm"] == result.sources["sec"] == result.sources["ri"] == "ok · 1 records"
+    assert result.sources["massive"] == "error · Massive news: none of the 2 watched US names could be read"
+    run = next(run for run in database._ingestion_runs.values() if run["source_code"] == "massive")
+    assert run["status"] == "failed" and run["error_summary"] == "Massive news: none of the 2 watched US names could be read"
+    assert ir.sync("finnhub").sources["finnhub"] == "error · Unsupported Investor Relations source: finnhub"  # Finnhub is cut
+
+
+def test_sync_massive_news_reads_nothing_without_a_token(tmp_path):
+    ir, database = service(tmp_path)  # no massive_api_token configured
+    ir.add_watch("AAPL", "US")
+
+    class NeverCalled:
+        def news(self, *args, **kwargs):
+            raise AssertionError("must not call Massive without a configured API token")
+
+    ir.massive_news = NeverCalled()
+    assert ir.sync_massive_news() == (0, 0)
+    assert next(run for run in database._ingestion_runs.values() if run["source_code"] == "massive")["status"] == "succeeded"
+
+
+def test_the_source_health_lists_massive_in_place_of_finnhub(tmp_path):
+    ir, _ = service(tmp_path)
+    assert [(item.code, item.status) for item in ir.feed().sources][-1] == ("massive", "unconfigured")
+    ir, _ = _service_with_massive(tmp_path)
+    ir.add_watch("AAPL", "US")
+    ir.massive_news = FakeMassiveNews({})
+    ir.sync("massive")
+    sources = ir.feed().sources
+    assert [item.code for item in sources] == ["cvm", "sec", "ri", "massive"]
+    assert sources[-1].name == "Massive" and sources[-1].status == "healthy"
+
+
+def test_the_massive_news_client_is_bounded_and_built_on_first_use(tmp_path):
+    from app.market_data.http import DeadlineJsonHttpClient
+
+    ir, _ = _service_with_massive(tmp_path)
+    assert ir.massive_news is None
+    client = ir._massive_news_client()
+    assert client is ir._massive_news_client() and client.token == MASSIVE_TOKEN
+    assert isinstance(client.http, DeadlineJsonHttpClient) and client.http.timeout == 15.0 and client.http.max_retries == 0
 
 
 def _zip_bytes(filename: str, content: bytes) -> bytes:
@@ -1494,3 +1748,74 @@ def test_a_missing_sec_contact_is_reported_once_per_process(tmp_path, caplog, mo
 
     assert archive.header_reads() == []
     assert caplog.text.count("C3PO_SEC_CONTACT is not configured") == 1
+
+
+def test_a_week_s_row_turns_neutral_when_a_later_run_finds_no_positive_or_negative_insight(tmp_path):
+    """The week's "News Sentiment" row is refreshed by every run of the week: when a later run finds no positive or
+    negative insight (the 7-day window moved past them), the stored row is rewritten neutral (bullish and bearish 0, the
+    articles counted) instead of keeping the earlier run's numbers."""
+    from app.investor_relations import massive_sentiment_external_id
+    from app.one_pager import OnePagerService
+
+    ir, database = _service_with_massive(tmp_path)
+    ir.add_watch("AAPL", "US")
+    ir.add_watch("MSFT", "US")
+    now = datetime.now(timezone.utc)
+    ir.massive_news = FakeMassiveNews({
+        "AAPL": ([_article("p1", now - timedelta(days=6), [("AAPL", "negative")]),
+                  _article("p2", now - timedelta(days=6), [("AAPL", "negative")])], False),
+        "MSFT": ([_article("m1", now - timedelta(days=1), [("MSFT", "neutral")])], False),
+    })
+    ir.sync("massive")
+    assert database.latest_news_sentiment(["AAPL"], "US")["AAPL"]["bearish_percent"] == 100.0
+
+    ir.massive_news = FakeMassiveNews({  # a later run of the same week: only neutral insights are left in the window
+        "AAPL": ([_article("n1", now - timedelta(days=1), [("AAPL", "neutral")]),
+                  _article("n2", now - timedelta(days=2), [("AAPL", "neutral")])], False),
+        "MSFT": ([_article("m1", now - timedelta(days=1), [("MSFT", "neutral")])], False),
+    })
+    ir.sync("massive")
+
+    row = database._ir_events[("massive", massive_sentiment_external_id("AAPL", now))]
+    assert row["title"] == "Sentimento de notícias: neutro"
+    assert {key: row["raw_metadata"][key] for key in ("bullish_percent", "bearish_percent", "articles_last_week", "positive",
+                                                      "negative", "neutral")} == {
+        "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 2, "positive": 0, "negative": 0, "neutral": 2,
+    }
+    latest = database.latest_news_sentiment(["AAPL", "MSFT"], "US")
+    assert set(latest) == {"AAPL", "MSFT"}  # MSFT, neutral only from its first run, holds a neutral row as well
+    assert all(OnePagerService._sentiment_confidence_adjustment(row) == 0.0 for row in latest.values())
+
+
+def test_a_new_week_read_without_direction_supersedes_last_week_s_row_and_a_failed_read_does_not(tmp_path):
+    """Codex 6621231383: last week's positive row, first published 7.5 days ago, is still inside the readers' 8 days. A
+    successful read in the new week that finds no positive or negative insight writes the new week's row neutral, which
+    the readers take (an adjustment of 0); a read that fails writes nothing, so last week's row stays the latest within
+    the 8 days. Last week's row itself is kept as it was (the history)."""
+    from app.investor_relations import massive_news_events, massive_sentiment_external_id
+    from app.one_pager import OnePagerService
+
+    ir, database = _service_with_massive(tmp_path)
+    ir.add_watch("AAPL", "US")
+    ir.add_watch("MSFT", "US")
+    now = datetime.now(timezone.utc)
+    last_week = now - timedelta(days=7, hours=12)
+    for symbol in ("AAPL", "MSFT"):
+        database.save_ir_events(massive_news_events(
+            symbol, None, symbol, [_article(f"{symbol}-1", last_week - timedelta(hours=1), [(symbol, "positive")])],
+            since=last_week - timedelta(days=7), now=last_week,
+        ))
+    before = database.latest_news_sentiment(["AAPL", "MSFT"], "US")
+    assert {symbol: row["bullish_percent"] for symbol, row in before.items()} == {"AAPL": 100.0, "MSFT": 100.0}
+
+    ir.massive_news = FakeMassiveNews({"AAPL": ([], False), "MSFT": MassiveResponseError("Massive request failed: timeout")})
+    ir.sync("massive")
+
+    latest = database.latest_news_sentiment(["AAPL", "MSFT"], "US")
+    assert latest["AAPL"]["bullish_percent"] == latest["AAPL"]["bearish_percent"] == 0.0  # read: nothing directional
+    assert OnePagerService._sentiment_confidence_adjustment(latest["AAPL"]) == 0.0
+    assert latest["MSFT"]["bullish_percent"] == 100.0  # not read: last week's row is still the latest
+    for symbol in ("AAPL", "MSFT"):
+        assert database._ir_events[("massive", massive_sentiment_external_id(symbol, last_week))]["raw_metadata"][
+            "bullish_percent"] == 100.0  # the history is kept
+    assert ("massive", massive_sentiment_external_id("MSFT", now)) not in database._ir_events

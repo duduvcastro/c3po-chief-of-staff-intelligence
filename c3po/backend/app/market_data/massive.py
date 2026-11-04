@@ -18,6 +18,11 @@ class MassiveResponseError(RuntimeError):
     """Raised when Massive returns a shape that cannot be audited safely."""
 
 
+class MassivePageLimitError(MassiveResponseError):
+    """Raised when a listing has more pages than the caller allows: every caller still sees a MassiveResponseError with
+    the same message, and ``news`` reads it as a listing cut short."""
+
+
 class MassiveClient:
     """Small, auditable Massive REST client for Day D research data.
 
@@ -127,6 +132,45 @@ class MassiveClient:
             if normalized is not None:
                 yield normalized
 
+    def news(
+        self,
+        symbol: str,
+        *,
+        published_since: datetime,
+        limit: int = 100,
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """The news articles Massive tags with ``symbol`` published at or after ``published_since`` — /v2/reference/news,
+        in the Stocks Advanced plan (no per-call cost), each article with its per-ticker ``insights`` (sentiment and
+        reasoning): the weekly news sentiment's source since the owner cut Finnhub (03/11/2026). Reference data, not the
+        historical tape: no Day D gate. The application's share-class dash goes out as Massive's dot (BRK-B → BRK.B); the
+        window is sent as its UTC date (the caller keeps the exact instant), newest first, explicitly (``sort``
+        published_utc, ``order`` desc): a listing cut at ``max_pages`` pages of ``limit`` articles keeps the latest ones,
+        and the second value is then True (the rest is not read). Raw article objects."""
+        if published_since.tzinfo is None:
+            raise ValueError("Massive news window must be timezone-aware")
+        if not 1 <= limit <= 1_000 or max_pages < 1:
+            raise ValueError("Massive news pages must hold 1 to 1000 articles, at least one page")
+        params = {
+            "ticker": self.news_ticker(symbol),
+            "published_utc.gte": published_since.astimezone(timezone.utc).date().isoformat(),
+            "order": "desc",
+            "sort": "published_utc",
+            "limit": limit,
+        }
+        articles: list[dict[str, Any]] = []
+        try:
+            for row in self._iter_results("/v2/reference/news", params=params, max_pages=max_pages):
+                articles.append(row)
+        except MassivePageLimitError:
+            return articles, True
+        return articles, False
+
+    @classmethod
+    def news_ticker(cls, symbol: str) -> str:
+        """Massive's spelling of a US share class: a dot where the application writes a dash (BRK-B → BRK.B)."""
+        return cls._symbol(symbol).replace("-", ".")
+
     def splits(
         self,
         *,
@@ -204,7 +248,7 @@ class MassiveClient:
             # Massive cursor URLs omit the API key. Query filters are already
             # embedded in next_url, so only the credential is sent again.
             request_params = {"apiKey": self.token}
-        raise MassiveResponseError("Massive pagination exceeded the safety limit")
+        raise MassivePageLimitError("Massive pagination exceeded the safety limit")
 
     def _redact_request_error(self, exc: Exception) -> str:
         message = str(exc)

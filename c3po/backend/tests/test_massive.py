@@ -244,3 +244,52 @@ def test_massive_historical_rest_is_blocked_by_default() -> None:
 
     with pytest.raises(MassiveResponseError, match="historical REST access is disabled"):
         list(client.iter_trades("AAPL", session_date=date(2026, 8, 21)))
+
+
+def test_massive_news_sends_the_dot_spelling_and_the_window_date_and_reads_every_page() -> None:
+    # owner 03/11/2026: the weekly news sentiment comes from /v2/reference/news (reference data: no Day D gate). The
+    # application's BRK-B is Massive's BRK.B; the window goes out as its UTC date (the caller keeps the exact instant), newest
+    # first explicitly, so a listing cut at its page limit keeps the latest articles
+    http = FakeHttp([
+        {"results": [{"id": "a1", "insights": [{"ticker": "BRK.B", "sentiment": "positive"}]}],
+         "next_url": "https://api.massive.com/v2/reference/news?cursor=next"},
+        {"results": [{"id": "a2"}, "not-an-article"]},
+    ])
+    client = MassiveClient("https://api.massive.com", "secret-token", http)  # type: ignore[arg-type]
+
+    articles, truncated = client.news("brk-b", published_since=datetime(2026, 10, 27, 2, 30, tzinfo=timezone.utc))
+
+    assert [article["id"] for article in articles] == ["a1", "a2"] and truncated is False
+    assert http.calls == [
+        ("https://api.massive.com/v2/reference/news",
+         {"ticker": "BRK.B", "published_utc.gte": "2026-10-27", "order": "desc", "sort": "published_utc", "limit": 100,
+          "apiKey": "secret-token"}),
+        ("https://api.massive.com/v2/reference/news?cursor=next", {"apiKey": "secret-token"}),
+    ]
+
+
+def test_massive_news_is_cut_at_its_page_limit_and_says_so() -> None:
+    from app.market_data.massive import MassivePageLimitError
+
+    http = FakeHttp([
+        {"results": [{"id": f"a{page}"}], "next_url": f"https://api.massive.com/v2/reference/news?cursor={page}"}
+        for page in range(1, 4)
+    ])
+    client = MassiveClient("https://api.massive.com", "secret-token", http)  # type: ignore[arg-type]
+
+    articles, truncated = client.news("AAPL", published_since=datetime(2026, 10, 27, tzinfo=timezone.utc), max_pages=2)
+
+    assert [article["id"] for article in articles] == ["a1", "a2"] and truncated is True and len(http.calls) == 2
+    assert issubclass(MassivePageLimitError, MassiveResponseError)  # every other caller still sees a MassiveResponseError
+
+
+def test_massive_news_refuses_a_naive_window_an_unsafe_symbol_and_a_missing_token() -> None:
+    client = MassiveClient("https://api.massive.com", "secret-token", FakeHttp([]))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="timezone-aware"):
+        client.news("AAPL", published_since=datetime(2026, 10, 27))
+    with pytest.raises(ValueError, match="invalid Massive stock symbol"):
+        client.news("../AAPL", published_since=datetime(2026, 10, 27, tzinfo=timezone.utc))
+    unconfigured = MassiveClient("https://api.massive.com", "", FakeHttp([]))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="not configured"):
+        unconfigured.news("AAPL", published_since=datetime(2026, 10, 27, tzinfo=timezone.utc))
+    assert MassiveClient.news_ticker("brk-b") == "BRK.B" and MassiveClient.news_ticker("AAPL") == "AAPL"

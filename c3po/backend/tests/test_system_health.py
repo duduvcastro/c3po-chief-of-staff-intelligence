@@ -352,11 +352,12 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Day D disk reserve",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Day D disk reserve",
     }
     names = {item.name for group in response.groups for item in group.items}
     assert "WhatsApp capture" not in names
     assert not names & {"Valuation V2.1b cycle", "V3 pre-A/B gate", "FMP"}  # all three left with FMP (03/11/2026)
+    assert "Finnhub" not in names  # left with its contract (03/11/2026)
 
 
 def test_resource_pressure_marks_aws_and_overall_health_for_review() -> None:
@@ -754,20 +755,30 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     usage = next(item for group in response.groups for item in group.items if item.name == "Daily API Usage")
     assert usage.status == "attention"
     assert response.status == "attention"
-    assert response.quality == 97
-    # the two Backblaze B2 cards left with the bucket; the FMP card, the V2.1b cycle and V3 pre-A/B gate cards with FMP
-    # (03/11/2026)
-    assert response.healthy_count == 28
-    assert response.total_count == 29
+    assert response.quality == 96
+    # the two Backblaze B2 cards left with the bucket; the FMP card, the V2.1b cycle and V3 pre-A/B gate cards with FMP,
+    # the Finnhub card with Finnhub (03/11/2026)
+    assert response.healthy_count == 27
+    assert response.total_count == 28
 
 
-def test_finnhub_is_monitored_in_market_quotes() -> None:
-    response = _service().snapshot(force=True)
+def test_finnhub_is_no_longer_monitored_nor_probed() -> None:
+    # owner 03/11/2026: Finnhub is cut (the news sentiment comes from Massive, the insider Form 4 from EODHD). Its card
+    # leaves Market Quotes and the panel never calls it, even with a token still set
+    service = _service()
+    assert service.settings.finnhub_api_token == "configured"
+    called: list[str] = []
+
+    def recording_get(url: str, **kwargs):
+        called.append(url)
+        return _external_get(url, **kwargs)
+
+    service.external_get = recording_get
+    response = service.snapshot(force=True)
 
     quotes = next(group for group in response.groups if group.key == "quotes")
-    finnhub = next(item for item in quotes.items if item.name == "Finnhub")
-    assert finnhub.status == "healthy"
-    assert "Fundamental-1" in finnhub.detail
+    assert [item.name for item in quotes.items] == ["Brapi", "EODHD", "Massive"]
+    assert called and not [url for url in called if "finnhub" in url]
 
 
 def test_fmp_is_no_longer_monitored_nor_probed() -> None:
@@ -784,8 +795,8 @@ def test_fmp_is_no_longer_monitored_nor_probed() -> None:
     response = service.snapshot(force=True)
 
     quotes = next(group for group in response.groups if group.key == "quotes")
-    assert [item.name for item in quotes.items] == ["Brapi", "EODHD", "Finnhub", "Massive"]
-    assert quotes.total_count == 4
+    assert [item.name for item in quotes.items] == ["Brapi", "EODHD", "Massive"]  # Finnhub's card left too (03/11/2026)
+    assert quotes.total_count == 3
     assert called and not [url for url in called if "financialmodelingprep" in url]
 
 

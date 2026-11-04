@@ -500,3 +500,70 @@ def test_render_report_returns_none_for_unknown_symbol():
 
     assert service.render_report("NASDAQ", "NOPE") is None
     assert service.render_report("NASDAQ", "../evil") is None
+
+
+def test_the_report_reads_the_stored_weekly_sentiment_and_never_calls_a_provider_for_it(tmp_path: Path, monkeypatch):
+    """Owner 03/11/2026: Finnhub is cut. The US report shows the weekly row the nightly IR sync wrote from Massive's news
+    insights (the latest of the past 8 days, of either source) instead of calling Finnhub live, even with a token left."""
+    import httpx
+
+    def no_live_client(*args, **kwargs):
+        raise AssertionError("the report must not build a live HTTP client for the sentiment")
+
+    monkeypatch.setattr(httpx, "Client", no_live_client)
+    settings = get_settings().model_copy(update={"one_pager_output_dir": tmp_path / "one-pagers", "finnhub_api_token": "left-over"})
+    database = Database(settings.model_copy(update={"database_url": ""}))
+    now = datetime.now(timezone.utc)
+    database.save_ir_events([{
+        "source_code": "massive", "external_id": f"massive-sentiment-AAPL-{now:%G-W%V}", "market": "US", "symbol": "AAPL",
+        "company_name": "Apple", "event_type": "News Sentiment", "title": "t", "summary": "", "published_at": now,
+        "published_time_precision": "collected", "official_url": "https://news.example.com/a1", "valuation_relevant": False,
+        "raw_metadata": {"source": "massive", "bullish_percent": 75.0, "bearish_percent": 25.0, "articles_last_week": 8,
+                         "positive": 6, "negative": 2, "neutral": 0},
+    }])
+    http = StubHttp({"fundamentals/AAPL.US": _eodhd_payload("AAPL", "Apple")})
+    service = ChewieFundamentalsService(settings, database, http)  # type: ignore[arg-type]
+
+    assert service._news_sentiment("NASDAQ", "aapl") == {"source": "massive", "bullish_percent": 75.0, "bearish_percent": 25.0,
+                                                          "articles_last_week": 8, "positive": 6, "negative": 2, "neutral": 0}
+    assert service._news_sentiment("NYSE", "KO") is None and service._news_sentiment("B3", "PETR4") is None
+    assert not [url for url in http.calls if "finnhub" in url]
+    path = service.render_report("NASDAQ", "AAPL")
+    assert path is not None and path.read_bytes()[:5] == b"%PDF-"
+
+
+def test_the_report_shows_a_neutral_week_and_skips_a_row_without_its_split_or_an_article(tmp_path: Path, monkeypatch):
+    from reportlab.pdfgen import canvas
+
+    from app.chewie_pdf import ChewieFundamentalsPdfRenderer
+
+    drawn: list[str] = []
+    original = canvas.Canvas.drawRightString
+
+    def recording(self, x, y, text, *args, **kwargs):
+        drawn.append(str(text))
+        return original(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas.Canvas, "drawRightString", recording)
+    settings = get_settings().model_copy(update={"one_pager_output_dir": tmp_path / "one-pagers"})
+    database = Database(settings.model_copy(update={"database_url": ""}))
+    service = ChewieFundamentalsService(settings, database, StubHttp({"fundamentals/AAPL.US": _eodhd_payload("AAPL", "Apple")}))  # type: ignore[arg-type]
+    payload = service.report_payload("NASDAQ", "AAPL")
+    assert payload is not None
+    for sentiment, expected in (
+        ({"source": "massive", "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 4}, "neutro · 4 artigos/7d"),
+        ({"source": "massive", "bullish_percent": 75.0, "bearish_percent": 25.0, "articles_last_week": 8}, "75% bullish · 8 artigos/7d"),
+        ({"source": "finnhub", "bullish_percent": None, "bearish_percent": 40.0, "articles_last_week": 3}, None),
+        ({"source": "massive", "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 0}, None),  # no article
+    ):
+        drawn.clear()
+        path = tmp_path / f"{sentiment['source']}-{sentiment['bullish_percent']}-{sentiment['articles_last_week']}.pdf"
+        ChewieFundamentalsPdfRenderer().render(path, {**payload, "news_sentiment": sentiment}, datetime.now(timezone.utc))
+        assert path.read_bytes()[:5] == b"%PDF-"
+        shown = [text for text in drawn if "artigos/7d" in text]
+        assert shown == ([expected] if expected else []), sentiment
+    renderer = ChewieFundamentalsPdfRenderer()
+    zero = {**payload, "news_sentiment": {"source": "massive", "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 0}}
+    assert renderer._shown_sentiment(zero) is None  # its source is not listed either
+    assert renderer._shown_sentiment({**payload, "news_sentiment": {"bullish_percent": 0.0, "bearish_percent": 0.0,
+                                                                      "articles_last_week": 2}}) == (0.0, 0.0, 2.0)

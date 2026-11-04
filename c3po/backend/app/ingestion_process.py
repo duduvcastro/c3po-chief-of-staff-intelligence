@@ -76,8 +76,8 @@ class WorkerOwnership:
 
 
 # The nightly valuation worker: its phases are the only writers of source_type 'valuation_worker'
-# (valuation_worker_contract). The IR sources it also polls inside the nightly (cvm/sec/ri/finnhub) are shared with the
-# Investor Relations worker and the API, so their unmarked runs are left alone.
+# (valuation_worker_contract). The IR sources it also polls inside the nightly (cvm/sec/ri/massive; finnhub until the owner
+# cut it on 03/11/2026) are shared with the Investor Relations worker and the API, so their unmarked runs are left alone.
 VALUATION_WORKER = WorkerOwnership("valuation_worker", legacy_source_types=(VALUATION_WORKER_SOURCE_TYPE,))
 # The Investor Relations worker: 'sec_asfiled' is written only by the SEC-header-reading process (this worker); its
 # other sources (cvm, sec, ri, cvm_statements) are shared with the valuation worker's nightly and the API.
