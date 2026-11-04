@@ -517,3 +517,209 @@ def test_incident_ledger_failure_never_breaks_the_worker(monkeypatch) -> None:
     assert _night(database, phase, date(2026, 10, 13), hours=(1,)) == ["failed"]
     ok = OffhoursPhase("chewie", lambda: None, lambda: {"ok": 1})
     assert _night(database, ok, date(2026, 10, 14), hours=(1,)) == ["succeeded"]
+
+
+
+class _Pings:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    def ping(self, state: str) -> None:
+        self.sent.append(state)
+
+
+def test_a_canonical_cycle_that_keeps_failing_waits_longer_and_stops_for_the_day(monkeypatch) -> None:
+    """Owner 03/11/2026: without EODHD's Extra Daily API Calls add-on (100,000 calls a day), a failing cycle is no longer
+    retried every 15 min all day: 15 min, 1 h, 3 h, then nothing until the next day (or a new build)."""
+    from app.valuation_worker import CANONICAL_MAX_FAILURES
+
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+    database = _database()
+    attempts: list[datetime] = []
+
+    def fail_canonical() -> None:
+        attempts.append(now)
+        raise RuntimeError("provider outage")
+
+    now = datetime(2026, 11, 4, 0, 5, tzinfo=SAO_PAULO)
+    waits = []
+    for _ in range(CANONICAL_MAX_FAILURES):
+        result = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail_canonical,
+                                      offhours_phases=())
+        assert result.canonical_status == "failed"
+        waits.append(result.next_wake_at - now)
+        now = result.next_wake_at
+
+    assert waits[:3] == [timedelta(minutes=15), timedelta(hours=1), timedelta(hours=3)]
+    assert now == next_midnight(now - timedelta(minutes=1))  # the 4th failure schedules no retry: the next wake is midnight
+    pings = _Pings()
+    capped = run_worker_iteration(database, now=datetime(2026, 11, 4, 5, 0, tzinfo=SAO_PAULO), canonical_due=True,
+                                  canonical_operation=fail_canonical,
+                                  offhours_phases=(OffhoursPhase("peer_quality", lambda: None, lambda: {"US": 1}),),
+                                  healthchecks={"valuation": pings})  # type: ignore[dict-item]
+
+    assert len(attempts) == CANONICAL_MAX_FAILURES == 4
+    assert capped.canonical_status == "retry_cap"
+    assert pings.sent == ["start", "fail"]  # a capped day is never a success for the dead-man check
+    last = list(database._ingestion_runs.values())[-1]
+    assert last["metadata"]["phase"] == "peer_quality" and last["metadata"]["uses_persisted_universe_fallback"] is True
+
+
+def test_a_new_build_gets_fresh_canonical_attempts(monkeypatch) -> None:
+    from app.valuation_worker import CANONICAL_MAX_FAILURES
+
+    database = _database()
+    now = datetime(2026, 11, 4, 0, 5, tzinfo=SAO_PAULO)
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+
+    def fail() -> None:
+        raise RuntimeError("provider outage")
+
+    for _ in range(CANONICAL_MAX_FAILURES):
+        result = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
+        assert result.canonical_status == "failed"
+        now = min(result.next_wake_at, now + timedelta(hours=3))  # the last failure schedules no retry before midnight
+    assert run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail,
+                                offhours_phases=()).canonical_status == "retry_cap"
+
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-b")  # the deploy of a fix
+    assert run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=lambda: None,
+                                offhours_phases=()).canonical_status == "succeeded"
+
+
+def test_eodhd_phases_stop_for_the_night_after_two_failed_attempts_and_the_ping_says_fail() -> None:
+    import inspect
+
+    from app import valuation_worker
+
+    assert valuation_worker.EODHD_PHASE_MAX_FAILURES == 2
+    assert inspect.getsource(valuation_worker.main).count("max_failures=EODHD_PHASE_MAX_FAILURES") == 2  # chewie, price_history
+    database = _database()
+    calls = []
+
+    def failing() -> None:
+        calls.append(1)
+        raise RuntimeError("provider outage")
+
+    phases = (OffhoursPhase("chewie", lambda: None, failing, max_failures=valuation_worker.EODHD_PHASE_MAX_FAILURES),
+              OffhoursPhase("peer_quality", lambda: None, lambda: {"US": 1}))
+    now = datetime(2026, 11, 4, 1, 10, tzinfo=SAO_PAULO)
+    statuses, pings = [], _Pings()
+    for _ in range(4):
+        result = run_worker_iteration(database, now=now, canonical_due=False, canonical_operation=lambda: None,
+                                      offhours_phases=phases, healthchecks={"valuation": pings})  # type: ignore[dict-item]
+        statuses.append(result.phase_statuses["chewie"])
+        now += timedelta(minutes=30)
+
+    assert statuses == ["failed", "failed", "retry_cap", "retry_cap"] and len(calls) == 2
+    assert pings.sent[-2:] == ["start", "fail"]  # the capped night never pings success while chewie is spent
+
+
+def test_chewie_budget_in_production_is_1500_names_a_night() -> None:
+    from pathlib import Path
+
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).resolve().parents[2] / "compose.yml").read_text())
+    assert compose["services"]["valuation-worker"]["environment"]["C3PO_CHEWIE_DAILY_SYMBOL_BUDGET"] == "1500"
+
+
+
+def test_the_wait_after_a_failure_holds_when_another_phase_wakes_the_worker_earlier(monkeypatch) -> None:
+    """Pre-review of 3be792e0: an earlier wake (another phase, a restart) never shortens the canonical's wait."""
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+    database = _database()
+    calls = []
+
+    def fail() -> None:
+        calls.append(1)
+        raise RuntimeError("provider outage")
+
+    first_at = datetime(2026, 11, 4, 1, 5, tzinfo=SAO_PAULO)
+    first = run_worker_iteration(database, now=first_at, canonical_due=True, canonical_operation=fail, offhours_phases=())
+    assert first.next_wake_at == first_at + timedelta(minutes=15)
+    pings = _Pings()
+    early = run_worker_iteration(database, now=first_at + timedelta(minutes=5), canonical_due=True, canonical_operation=fail,
+                                 offhours_phases=(OffhoursPhase("peer_quality", lambda: None, lambda: {"US": 1}),),
+                                 healthchecks={"valuation": pings})  # type: ignore[dict-item]
+
+    assert early.canonical_status == "retry_wait" and len(calls) == 1
+    assert early.next_wake_at == first_at + timedelta(minutes=15)
+    assert pings.sent == ["start", "fail"]
+    on_time = run_worker_iteration(database, now=first_at + timedelta(minutes=15), canonical_due=True,
+                                   canonical_operation=fail, offhours_phases=())
+    assert on_time.canonical_status == "failed" and len(calls) == 2
+    assert on_time.next_wake_at == first_at + timedelta(minutes=15) + timedelta(hours=1)
+
+
+def test_deploys_do_not_multiply_the_day_s_attempts(monkeypatch) -> None:
+    from app.valuation_worker import CANONICAL_MAX_FAILURES_ALL_BUILDS
+
+    database = _database()
+    now = datetime(2026, 11, 4, 0, 5, tzinfo=SAO_PAULO)
+
+    def fail() -> None:
+        raise RuntimeError("provider outage")
+
+    for build in ("build-a", "build-a", "build-a", "build-b", "build-b", "build-c"):  # three deploys in one failing day
+        monkeypatch.setenv("C3PO_BUILD_SHA", build)
+        result = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
+        assert result.canonical_status == "failed"
+        now = min(result.next_wake_at, now + timedelta(hours=3))
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-d")
+    assert now.date() == datetime(2026, 11, 4).date()
+
+    capped = run_worker_iteration(database, now=now, canonical_due=True, canonical_operation=fail, offhours_phases=())
+
+    assert CANONICAL_MAX_FAILURES_ALL_BUILDS == 6 and capped.canonical_status == "retry_cap"
+
+
+
+def test_a_deploy_during_an_outage_waits_for_the_next_slot(monkeypatch) -> None:
+    """Third pre-review of the caps: a new build has no failures of its own, but the day's wait still holds."""
+    database = _database()
+
+    def fail() -> None:
+        raise RuntimeError("provider outage")
+
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+    first_at = datetime(2026, 11, 4, 0, 5, tzinfo=SAO_PAULO)
+    run_worker_iteration(database, now=first_at, canonical_due=True, canonical_operation=fail, offhours_phases=())
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-b")  # an unrelated deploy ten minutes later
+
+    deployed = run_worker_iteration(database, now=first_at + timedelta(minutes=10), canonical_due=True,
+                                    canonical_operation=fail, offhours_phases=())
+
+    assert deployed.canonical_status == "retry_wait"
+    assert deployed.next_wake_at == first_at + timedelta(minutes=15)
+
+
+
+def test_the_08_00_turn_never_masks_an_exhausted_phase_as_a_success(monkeypatch) -> None:
+    """Codex 6609521687: Chewie spent its two attempts; at 08:00 its window ends while another piece of work succeeds in the
+    same iteration — the aggregate ping stays fail, the phase is not readmitted and no success is invented."""
+    from app import valuation_worker
+
+    monkeypatch.setenv("C3PO_BUILD_SHA", "build-a")
+    database = _database()
+    calls = []
+
+    def failing() -> None:
+        calls.append(1)
+        raise RuntimeError("provider outage")
+
+    chewie = OffhoursPhase("chewie", lambda: None, failing, max_failures=valuation_worker.EODHD_PHASE_MAX_FAILURES)
+    for at in (datetime(2026, 11, 4, 6, 0, tzinfo=SAO_PAULO), datetime(2026, 11, 4, 6, 30, tzinfo=SAO_PAULO)):
+        run_worker_iteration(database, now=at, canonical_due=False, canonical_operation=lambda: None, offhours_phases=(chewie,))
+    assert len(calls) == 2
+    for at, expected in ((datetime(2026, 11, 4, 7, 59, tzinfo=SAO_PAULO), "retry_cap"),
+                         (datetime(2026, 11, 4, 8, 0, tzinfo=SAO_PAULO), "outside_window")):
+        pings = _Pings()
+        result = run_worker_iteration(database, now=at, canonical_due=True, canonical_operation=lambda: None,
+                                      offhours_phases=(chewie,), healthchecks={"valuation": pings})  # type: ignore[dict-item]
+        assert result.canonical_status == "succeeded" and result.phase_statuses["chewie"] == expected
+        assert pings.sent == ["start", "fail"], at
+    assert len(calls) == 2  # never readmitted
+    next_night = run_worker_iteration(database, now=datetime(2026, 11, 5, 1, 10, tzinfo=SAO_PAULO), canonical_due=False,
+                                      canonical_operation=lambda: None, offhours_phases=(chewie,))
+    assert next_night.phase_statuses["chewie"] == "failed" and len(calls) == 3  # the next night tries again
