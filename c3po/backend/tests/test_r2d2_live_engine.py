@@ -2661,6 +2661,54 @@ def test_nbbo_the_massive_reader_asks_for_the_quote_prevailing_at_the_instant_an
         assert engine_module.massive_nbbo(lambda url, params=None, p=payload: p, "https://x", "t")("AAA", now) is None
 
 
+def test_nbbo_a_lagging_quotes_index_is_checked_against_the_snapshot() -> None:
+    """04/11/2026: Massive's /v3/quotes answered quotes 1 to 34 minutes old for a third of the gap-down names while their
+    snapshots were seconds old. An index answer older than the exits' 10 s is checked against the name's snapshot: its last
+    quote stands in when newer and usable; otherwise the index's answer stands (the caller's age bound refuses it)."""
+    now = _at(10, 15, 7)
+    ns = int(now.timestamp() * 1e9)
+    old = {"results": [{"bid_price": 50.0, "ask_price": 50.01, "sip_timestamp": ns - 1_400 * 1_000_000_000}]}
+
+    def reader(snapshot, index=old):
+        calls = []
+
+        def get_json(url, params=None):
+            calls.append((url, dict(params or {})))
+            if "/v3/quotes/" in url:
+                return index
+            if isinstance(snapshot, Exception):
+                raise snapshot
+            return snapshot
+        return engine_module.massive_nbbo(get_json, "https://api.massive.com/", "tok"), calls
+
+    fresh = {"status": "OK", "ticker": {"ticker": "BRK.B", "lastQuote": {"p": 50.2, "P": 50.21, "t": ns - 400_000_000}}}
+    nbbo, calls = reader(fresh)
+    bid, ask, at = nbbo("BRK-B", now)
+    assert (bid, ask) == (50.2, 50.21) and (now - at).total_seconds() == pytest.approx(0.4)
+    assert calls[1] == ("https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers/BRK.B", {"apiKey": "tok"})
+    for failing in (RuntimeError("timeout for apiKey=tok"), {"ticker": {}}, ["not", "a", "dict"],
+                    {"ticker": {"lastQuote": {"p": 50.3, "P": 50.2, "t": ns}}},  # crossed: no usable NBBO
+                    {"ticker": {"lastQuote": {"p": 50.2, "P": 50.21, "t": ns - 2_000 * 1_000_000_000}}}):  # older still
+        nbbo, calls = reader(failing)
+        bid, ask, at = nbbo("AAA", now)
+        assert (bid, ask) == (50.0, 50.01) and (now - at).total_seconds() == pytest.approx(1_400), failing
+    recent = {"results": [{"bid_price": 50.0, "ask_price": 50.01, "sip_timestamp": ns - 3 * 1_000_000_000}]}
+    nbbo, calls = reader(fresh, index=recent)
+    assert nbbo("AAA", now)[:2] == (50.0, 50.01) and len(calls) == 1  # a recent index answer: no snapshot asked
+    clock = {"t": 100.0}
+    calls = []
+
+    def snapshot_down(url, params=None):
+        calls.append(url)
+        if "/v3/quotes/" in url:
+            return old
+        raise RuntimeError("down")
+    paused = engine_module.massive_nbbo(snapshot_down, "https://x", "t", monotonic=lambda: clock["t"])
+    for _ in range(4):  # the snapshot failing never pauses Massive: the index answered every time
+        assert paused("AAA", now) is not None
+    assert sum("/v3/quotes/" in url for url in calls) == 4
+
+
 def test_nbbo_massive_time_per_minute_is_bounded_and_the_stream_stands_in_past_it(monkeypatch) -> None:
     import threading
     import time as wall

@@ -123,6 +123,9 @@ NBBO_PAUSE_AFTER_FAILURE_SECONDS = 5.0
 NBBO_EXIT_BUDGET_SECONDS = 1.7
 # an exit's NBBO at most this old (the entries keep the lab's 60 s): a lagging Massive never hides a stop the market printed
 NBBO_EXIT_MAX_AGE_SECONDS = 10.0
+# an answer of Massive's quotes index older than this is checked against the name's snapshot (04/11/2026: the index lagged
+# minutes for a third of the gap-down names while their snapshots were seconds old): the exits' bound, so both paths gain
+NBBO_SNAPSHOT_FALLBACK_SECONDS = NBBO_EXIT_MAX_AGE_SECONDS
 # Massive requests in flight at once for one step's crosses. Asked one after the other (~0.7 s each from the host),
 # the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
 NBBO_PARALLEL = 32
@@ -1414,10 +1417,35 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
     the instant): (bid, ask, SIP time), or None — never an exception and never an error text (the token travels in the
     query: ``main`` keeps httpx's request lines out of the logs). Share classes in Massive's spelling (EODHD BRK-B →
     BRK.B). After ``NBBO_FAILURES_BEFORE_PAUSE`` failures in a row Massive is not asked for
-    ``NBBO_PAUSE_AFTER_FAILURE_SECONDS``: the stream stands in."""
+    ``NBBO_PAUSE_AFTER_FAILURE_SECONDS``: the stream stands in.
+
+    04/11/2026: Massive's quotes index lagged for a third of the gap-down names (their last quote 1 to 34 minutes old in
+    /v3/quotes while the snapshot's was seconds old, the names trading: lab stale_probe, run 41860874103), and the engine
+    refused 652 of 1,773 entries as stale. An answer older than ``NBBO_SNAPSHOT_FALLBACK_SECONDS`` is checked against the
+    name's snapshot: its last quote, when newer and a usable NBBO, stands in; otherwise the index's answer stands (the
+    caller's own age bound still refuses it)."""
     from threading import Lock
     from urllib.parse import quote as quoted
     paused_until, failures, lock = [0.0], [0], Lock()  # one step's requests run in parallel threads
+
+    def snapshot_quote(symbol: str, now: datetime) -> tuple[float, float, datetime] | None:
+        """The name's snapshot's last quote (bid ``p``, ask ``P``, SIP time ``t``), or None; never an exception, and its
+        failure never pauses Massive (the index answered)."""
+        try:
+            payload = get_json(f"{base_url.rstrip('/')}/v2/snapshot/locale/us/markets/stocks/tickers/"
+                               f"{quoted(symbol.replace('-', '.'), safe='')}", params={"apiKey": token})
+            last = (payload.get("ticker") or {}).get("lastQuote") if isinstance(payload, dict) else None
+            if not isinstance(last, dict):
+                return None
+            bid, ask, sip = float(last.get("p") or 0.0), float(last.get("P") or 0.0), int(last.get("t") or 0)
+            if not (math.isfinite(bid) and math.isfinite(ask) and 0 < bid <= ask and sip > 0):
+                return None
+            quoted_at = datetime.fromtimestamp(sip / 1e9, tz=timezone.utc)
+        except Exception:
+            return None
+        if not now - timedelta(days=1) <= quoted_at <= now + timedelta(seconds=5):
+            return None
+        return bid, ask, quoted_at
 
     def nbbo(symbol: str, now: datetime) -> tuple[float, float, datetime] | None:
         if monotonic() < paused_until[0]:
@@ -1446,6 +1474,10 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
             return None
         if not now - timedelta(days=1) <= quoted_at <= now + timedelta(seconds=5):
             return None
+        if (now - quoted_at).total_seconds() > NBBO_SNAPSHOT_FALLBACK_SECONDS:
+            fresher = snapshot_quote(symbol, now)
+            if fresher is not None and fresher[2] > quoted_at:
+                return fresher
         return bid, ask, quoted_at
     return nbbo
 
