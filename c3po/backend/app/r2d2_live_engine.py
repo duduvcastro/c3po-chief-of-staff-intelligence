@@ -126,6 +126,10 @@ NBBO_EXIT_MAX_AGE_SECONDS = 10.0
 # an answer of Massive's quotes index older than this is checked against the name's snapshot (04/11/2026: the index lagged
 # minutes for a third of the gap-down names while their snapshots were seconds old): the exits' bound, so both paths gain
 NBBO_SNAPSHOT_FALLBACK_SECONDS = NBBO_EXIT_MAX_AGE_SECONDS
+# the snapshot failed this many times IN A ROW: not asked for NBBO_SNAPSHOT_PAUSE_SECONDS (a hung snapshot never makes every
+# exit wait its whole budget; the index's answer stands meanwhile)
+NBBO_SNAPSHOT_FAILURES_BEFORE_PAUSE = 3
+NBBO_SNAPSHOT_PAUSE_SECONDS = 60.0
 # Massive requests in flight at once for one step's crosses. Asked one after the other (~0.7 s each from the host),
 # the 3 s budget answered ~3 of the ~13 crosses a minute at the 29/10 open: 120 of 156 fell back to the stream's late quote
 NBBO_PARALLEL = 32
@@ -1422,18 +1426,32 @@ def massive_nbbo(get_json: Callable[..., Any], base_url: str, token: str, *,
     04/11/2026: Massive's quotes index lagged for a third of the gap-down names (their last quote 1 to 34 minutes old in
     /v3/quotes while the snapshot's was seconds old, the names trading: lab stale_probe, run 41860874103), and the engine
     refused 652 of 1,773 entries as stale. An answer older than ``NBBO_SNAPSHOT_FALLBACK_SECONDS`` is checked against the
-    name's snapshot: its last quote, when newer and a usable NBBO, stands in; otherwise the index's answer stands (the
-    caller's own age bound still refuses it)."""
+    name's snapshot: its last quote (the latest one, up to 5 s past the instant, not the one at or before it), when newer
+    and a usable NBBO, stands in; otherwise the index's answer stands (the caller's own age bound still refuses it). After
+    ``NBBO_SNAPSHOT_FAILURES_BEFORE_PAUSE`` snapshot failures in a row the snapshot is not asked for
+    ``NBBO_SNAPSHOT_PAUSE_SECONDS``."""
     from threading import Lock
     from urllib.parse import quote as quoted
     paused_until, failures, lock = [0.0], [0], Lock()  # one step's requests run in parallel threads
+    snapshot_paused_until, snapshot_failures = [0.0], [0]
 
     def snapshot_quote(symbol: str, now: datetime) -> tuple[float, float, datetime] | None:
         """The name's snapshot's last quote (bid ``p``, ask ``P``, SIP time ``t``), or None; never an exception, and its
-        failure never pauses Massive (the index answered)."""
+        failure never pauses the index (it answered): only the snapshot itself, after failures in a row."""
+        if monotonic() < snapshot_paused_until[0]:
+            return None
         try:
             payload = get_json(f"{base_url.rstrip('/')}/v2/snapshot/locale/us/markets/stocks/tickers/"
                                f"{quoted(symbol.replace('-', '.'), safe='')}", params={"apiKey": token})
+        except Exception:
+            with lock:
+                snapshot_failures[0] += 1
+                if snapshot_failures[0] >= NBBO_SNAPSHOT_FAILURES_BEFORE_PAUSE:
+                    snapshot_paused_until[0], snapshot_failures[0] = monotonic() + NBBO_SNAPSHOT_PAUSE_SECONDS, 0
+            return None
+        with lock:
+            snapshot_failures[0] = 0
+        try:
             last = (payload.get("ticker") or {}).get("lastQuote") if isinstance(payload, dict) else None
             if not isinstance(last, dict):
                 return None

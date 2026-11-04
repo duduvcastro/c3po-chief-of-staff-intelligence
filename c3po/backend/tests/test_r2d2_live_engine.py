@@ -2704,9 +2704,22 @@ def test_nbbo_a_lagging_quotes_index_is_checked_against_the_snapshot() -> None:
             return old
         raise RuntimeError("down")
     paused = engine_module.massive_nbbo(snapshot_down, "https://x", "t", monotonic=lambda: clock["t"])
-    for _ in range(4):  # the snapshot failing never pauses Massive: the index answered every time
+    for _ in range(4):  # the snapshot failing never pauses the index: it answered every time
         assert paused("AAA", now) is not None
     assert sum("/v3/quotes/" in url for url in calls) == 4
+    # three snapshot failures in a row pause the snapshot alone for 60 s: the 4th was not asked
+    assert sum("/v2/snapshot/" in url for url in calls) == 3
+    clock["t"] = 159.0
+    paused("AAA", now)
+    assert sum("/v2/snapshot/" in url for url in calls) == 3
+    clock["t"] = 160.5
+    paused("AAA", now)
+    assert sum("/v2/snapshot/" in url for url in calls) == 4
+    for odd in ({"ticker": {"lastQuote": {"p": 50.2, "P": 50.21, "t": ns + 6 * 1_000_000_000}}},  # 6 s ahead of the instant
+                {"ticker": {"lastQuote": {"P": 50.21, "t": ns}}}, {"ticker": {"lastQuote": {"p": 50.2, "t": ns}}},
+                {"ticker": {"lastQuote": {"p": float("nan"), "P": 50.21, "t": ns}}}, {"ticker": "AAA"}):
+        nbbo, calls = reader(odd)
+        assert nbbo("AAA", now)[:2] == (50.0, 50.01), odd  # no usable snapshot quote: the index's answer stands
 
 
 def test_nbbo_massive_time_per_minute_is_bounded_and_the_stream_stands_in_past_it(monkeypatch) -> None:
