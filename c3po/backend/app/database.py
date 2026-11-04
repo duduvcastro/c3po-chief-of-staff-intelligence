@@ -69,9 +69,9 @@ IR_SOURCE_CODES = ("cvm", "sec", "ri", "massive", "finnhub")
 # row supersedes the last Finnhub one.
 NEWS_SENTIMENT_SOURCES = ("massive", "finnhub")
 # latest_news_sentiment reads a row first published at most 8 days ago (the Decisor V1's news_sentiment_max_age_days): a
-# name the producer wrote no row for this week (no positive or negative insight in any run of it) reads nothing -- the
-# One Pager's adjustment is then 0 -- instead of an older week's reading kept forever; a week whose row a later run
-# found without them is rewritten neutral (0/0), which adjusts by 0 too
+# name with no row in those 8 days (not read since) reads nothing -- the One Pager's adjustment is then 0 -- instead of an
+# older week's reading kept forever; a read that finds no positive or negative insight writes its week's row neutral
+# (0/0), which adjusts by 0 too and supersedes the last week's row
 NEWS_SENTIMENT_MAX_AGE = timedelta(days=8)
 # Database.save_sec_filing_events: save_ir_events' upsert plus the filing-header guard, decided inside ON CONFLICT DO UPDATE
 # on the locked conflicting row: a stored header-sourced acceptance instant (and its header fields) survives an incoming
@@ -3698,22 +3698,6 @@ class Database:
             for symbol, bucket in buckets.items()
         }
 
-    def ir_event_external_ids(self, source_code: str, external_ids: list[str]) -> set[str]:
-        """Which of ``external_ids`` already have an ir_events row of ``source_code`` (the Massive news sync: is the
-        week's sentiment row of a name already stored)."""
-        clean = sorted({external_id for external_id in external_ids if external_id})
-        if not clean:
-            return set()
-        if not self.database_url:
-            wanted = set(clean)
-            return {external_id for code, external_id in self._ir_events if code == source_code and external_id in wanted}
-        with self.connection() as connection:
-            rows = connection.execute(
-                "SELECT external_id FROM ir_events WHERE source_code = %s AND external_id = ANY(%s)",
-                (source_code, clean),
-            ).fetchall()
-        return {str(row[0]) for row in rows}
-
     def finnhub_insider_transactions(self, symbol: str, *, since: date, market: str = "US") -> list[dict[str, Any]]:
         """The transactions (raw_metadata: insider_name, transaction_code, share_change, transaction_date, …) of the
         "Insider Transaction" rows Finnhub wrote for ONE name (source_code 'sec', external_id 'finnhub-insider-…') whose
@@ -3763,9 +3747,9 @@ class Database:
         articles_last_week; ``source`` says whose): Massive's since the owner cut Finnhub (03/11/2026), Finnhub's before.
         The latest ``published_at`` of either source wins (NEWS_SENTIMENT_SOURCES), so the Finnhub history stays readable
         and a week's Massive row supersedes it. Only a row first published within NEWS_SENTIMENT_MAX_AGE (8 days) counts: a
-        name with no row this week (no run of the week found a positive or negative insight about it) reads nothing, so
-        the One Pager's sentiment adjustment is 0, instead of an older week's reading; a week's row that a later run found
-        without them reads neutral (bullish and bearish 0: an adjustment of 0 as well). US-only source."""
+        name with no row in those 8 days (not read since) reads nothing, so the One Pager's sentiment adjustment is 0,
+        instead of an older week's reading; a read that found no positive or negative insight wrote its week's row neutral
+        (bullish and bearish 0: an adjustment of 0 as well), which supersedes the last week's. US-only source."""
         clean = [symbol.upper() for symbol in symbols if symbol]
         if not clean:
             return {}

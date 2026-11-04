@@ -221,16 +221,11 @@ def insider_identity(transaction: dict[str, Any]) -> tuple[str, str, str] | None
     return (day.isoformat(), code, slug) if day and code and slug else None
 
 
-def insider_shares_key(transaction: dict[str, Any]) -> tuple[str, str, float] | None:
-    """(transaction date, code, signed share change): both providers sign the change — Finnhub's ``change``, EODHD's
-    shares × +1 acquired / −1 disposed — on the same transaction date. None without a date, a code or a non-zero change."""
-    day = safe_date(str(transaction.get("transaction_date") or ""))
-    code = str(transaction.get("transaction_code") or "").strip().upper()
-    try:
-        change = round(float(transaction.get("share_change") or 0), 4)
-    except (TypeError, ValueError):
-        return None
-    return (day.isoformat(), code, change) if day and code and change else None
+def insider_name_tokens(insider_name: str) -> tuple[str, ...]:
+    """The words of an insider's name, lower case and sorted: "COOK TIMOTHY D", "Cook, Timothy D." and "Timothy D. Cook"
+    alike — the same person however a provider orders, cases or punctuates the name. A word more or less (a middle
+    initial, a suffix as JR) or another spelling (a nickname) is another name."""
+    return tuple(sorted(re.findall(r"[a-z0-9]+", clean_text(insider_name).lower())))
 
 
 def eodhd_insider_transactions_not_in_finnhub(
@@ -241,42 +236,28 @@ def eodhd_insider_transactions_not_in_finnhub(
     transaction written again from EODHD (the path once Finnhub's token is blank) would double the name's insider
     activity in the One Pager and the US screener for the 180 days they read.
 
-    The key uses only what both normalizers fill alike (FinnhubClient._normalize_transaction and the frozen
-    EodhdClient._normalize_form4_row: transaction_date as an ISO date, transaction_code upper case, share_change signed,
-    insider_name); price, shares_held_after and filing_date are left out, as providers round or date them differently.
-    Both producers store ONE row per insider, day and code (their external ids collapse a day's lots into it), so
-    EODHD's transactions are judged by that group (``insider_identity``):
+    Both producers store ONE row per insider, day and code (their external ids collapse a day's lots into it), so an
+    EODHD transaction is dropped when Finnhub stored a row of the same transaction date and code for the same insider —
+    the same words in the name (``insider_name_tokens``), whatever their order, case or punctuation: any one of that
+    group's lots would recreate the second row. The date and the code are what both normalizers fill alike
+    (FinnhubClient._normalize_transaction and the frozen EodhdClient._normalize_form4_row: an ISO date, upper case).
 
-    * a group whose (transaction date, code, insider slug) Finnhub has is dropped whole — any one of its lots would
-      recreate the second row;
-    * a group whose insider Finnhub spelled otherwise is dropped when one of its lots carries the (transaction date, code,
-      signed share change) of a Finnhub row no group matched by name; each Finnhub row absorbs at most one group, so two
-      insiders trading the same size on the same day are never merged.
-
-    Everything else is kept, in order: the transactions Finnhub never stored (every one after the cut)."""
-    stored = [(insider_identity(row), insider_shares_key(row)) for row in finnhub_rows]
-    stored_identities = {identity for identity, _ in stored if identity}
-    groups: dict[tuple[str, str, str] | None, list[dict[str, Any]]] = {}
+    Everything else is kept, in order: the transactions Finnhub never stored (every one after the cut) and the incomplete
+    ones (never stored). A size, a day and a code alike never make two names one insider (Codex 6621231383: another
+    insider who traded Finnhub's size on Finnhub's day would have lost a real transaction); a name a provider abbreviates
+    or spells otherwise stays a second row rather than risk dropping a third person's trade."""
+    stored: set[tuple[str, str, tuple[str, ...]]] = set()
+    for row in finnhub_rows:
+        identity = insider_identity(row)
+        if identity:
+            stored.add((identity[0], identity[1], insider_name_tokens(str(row.get("insider_name") or ""))))
+    kept = []
     for transaction in transactions:
-        groups.setdefault(insider_identity(transaction), []).append(transaction)
-    by_name = {identity for identity in groups if identity in stored_identities}
-    by_shares: dict[tuple[str, str, float], int] = {}
-    for identity, shares in stored:
-        if shares and identity not in by_name:
-            by_shares[shares] = by_shares.get(shares, 0) + 1
-    kept_identities: set[tuple[str, str, str] | None] = set()
-    for identity, lots in groups.items():
-        if identity is None:
-            kept_identities.add(identity)  # an incomplete row: never stored, passed through as before
+        identity = insider_identity(transaction)
+        if identity and (identity[0], identity[1], insider_name_tokens(str(transaction.get("insider_name") or ""))) in stored:
             continue
-        if identity in by_name:
-            continue
-        match = next((key for key in map(insider_shares_key, lots) if key and by_shares.get(key)), None)
-        if match:
-            by_shares[match] -= 1
-            continue
-        kept_identities.add(identity)
-    return [transaction for transaction in transactions if insider_identity(transaction) in kept_identities]
+        kept.append(transaction)
+    return kept
 
 
 def massive_published_at(value: Any) -> datetime | None:
@@ -323,7 +304,6 @@ def massive_news_events(
     since: datetime,
     now: datetime,
     truncated: bool = False,
-    week_row_stored: bool = False,
 ) -> list[dict[str, Any]]:
     """The Investor Relations rows of ONE watched US name from its Massive articles (owner 03/11/2026: Finnhub is cut).
     An article counts once (by id), only when published at or after ``since`` (the window's exact instant: the request
@@ -335,10 +315,11 @@ def massive_news_events(
       (``_sentiment_confidence_adjustment`` divides bullish − bearish by 100): bullish = 100·pos/(pos+neg),
       bearish = 100·neg/(pos+neg), one decimal as Finnhub's; ``articles_last_week`` = the articles with an insight about
       the name (neutral ones included: the One Pager's coverage weight), with the three counts and ``source: "massive"``.
-      With no positive or negative insight a 0/0 split says nothing: no row is written — the readers then hold no
-      sentiment for the name this week and the One Pager adjusts by 0 — unless the week's row is already stored
-      (``week_row_stored``: an earlier run of the week found one), which is then rewritten NEUTRAL, bullish and bearish 0
-      with the articles counted, so the week never keeps an earlier run's numbers (the One Pager again adjusts by 0);
+      A read with no positive or negative insight (none at all included) writes the week's row NEUTRAL, bullish and
+      bearish 0 with the articles counted: the readers take the latest row, so neither an earlier run of the week nor last
+      week's row, still inside their 8 days, outlives a reading that found nothing directional (Codex 6621231383); the One
+      Pager adjusts by 0 and the Decisor raises nothing. Only a name that could not be read writes nothing
+      (``InvestorRelationsService.sync_massive_news``), its last row then still read within the 8 days;
     * a "News Mention" row per such article whose title or description carries a NEWS_MENTION_KEYWORDS word, the gate
       Finnhub's company news had (``massive-news-<SYMBOL>-<article id>``: an article about two watched names is a row of
       each)."""
@@ -407,15 +388,13 @@ def massive_news_events(
             f"{positive} positivos, {negative} negativos e {neutral} neutros em {articles_last_week} artigos "
             f"nos últimos {MASSIVE_NEWS_LOOKBACK_DAYS} dias."
         )
-    elif week_row_stored:
+    else:
         bullish = bearish = 0.0
         title = "Sentimento de notícias: neutro"
         summary = (
             f"Nenhum artigo positivo ou negativo com insight Massive sobre o ticker nos últimos "
             f"{MASSIVE_NEWS_LOOKBACK_DAYS} dias ({neutral} neutros): o sentimento da semana fica neutro."
         )
-    else:
-        return mentions
     sentiment = {
         "source_code": "massive",
         "external_id": massive_sentiment_external_id(symbol, now),
@@ -1296,12 +1275,12 @@ class InvestorRelationsService:
         since market news is not SEC-derived. The same names Finnhub read: the active watched US companies. For each, the
         articles of the last MASSIVE_NEWS_LOOKBACK_DAYS days (at most MASSIVE_NEWS_MAX_PAGES pages, each one complete
         response within MASSIVE_NEWS_TIMEOUT_SECONDS), turned into its weekly "News Sentiment" row and "News Mention" rows
-        by ``massive_news_events`` (a week whose row is already stored is rewritten neutral when this run finds no positive
-        or negative insight). A name that cannot be read is counted and skipped -- the row an earlier run of the week
-        wrote stays -- and only its symbol and the error's class are logged: a provider message may carry the request URL,
-        so neither it, the token nor a URL ever reaches a log or the run's summary. Some names unread: a 'partial' run;
-        none read: a failed run (``sync`` records it and carries on with the other sources). Without a Massive token:
-        nothing is read."""
+        by ``massive_news_events`` (a read that finds no positive or negative insight writes the week's row neutral). A
+        name that cannot be read is counted and skipped -- it writes nothing, so its last row stays the one the readers
+        take within their 8 days -- and only its symbol and the error's class are logged: a provider message may carry
+        the request URL, so neither it, the token nor a URL ever reaches a log or the run's summary. Some names unread: a
+        'partial' run; none read: a failed run (``sync`` records it and carries on with the other sources). Without a
+        Massive token: nothing is read."""
         run_id = self.database.begin_ingestion_run("massive", "Massive", "market_sentiment", {"operation": "news_sentiment"})
         try:
             if not self.settings.massive_api_token:
@@ -1310,9 +1289,6 @@ class InvestorRelationsService:
             watched = {item["symbol"]: item for item in self.database.ir_watch_symbols() if item["market"] == "US"}
             now = datetime.now(timezone.utc)
             since = now - timedelta(days=MASSIVE_NEWS_LOOKBACK_DAYS)
-            stored_this_week = self.database.ir_event_external_ids(
-                "massive", [massive_sentiment_external_id(symbol, now) for symbol in watched],
-            )
             read = 0
             failed: list[str] = []
             truncated: list[str] = []
@@ -1327,7 +1303,6 @@ class InvestorRelationsService:
                     events.extend(massive_news_events(
                         symbol, company.get("id") if company else None, company_name, articles,
                         since=since, now=now, truncated=cut,
-                        week_row_stored=massive_sentiment_external_id(symbol, now) in stored_this_week,
                     ))
                 except Exception as exc:
                     failed.append(symbol)
