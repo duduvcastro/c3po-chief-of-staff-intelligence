@@ -242,8 +242,8 @@ def _weekly_sentiment(source: str, symbol: str, published_at: datetime, bullish:
 def test_the_sentiment_readers_take_the_latest_row_of_massive_or_finnhub(tmp_path) -> None:
     """Owner 03/11/2026: Finnhub is cut and Massive writes the weekly row. Both readers take the latest published_at of
     either source (a tie goes to Massive), so the Finnhub history stays readable; the live reader ignores a row first
-    published more than 8 days ago (a name with no row this week reads nothing: the One Pager's adjustment is 0), the
-    causal reader reads at its cutoff whatever the age and names the row's source."""
+    published more than 8 days ago (a name with no row in those 8 days reads nothing: the One Pager's adjustment is 0),
+    the causal reader reads at its cutoff whatever the age and names the row's source."""
     database = Database(Settings(database_url="", migrations_dir=tmp_path))
     now = datetime.now(timezone.utc)
     database.save_ir_events([

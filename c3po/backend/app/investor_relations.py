@@ -221,13 +221,6 @@ def insider_identity(transaction: dict[str, Any]) -> tuple[str, str, str] | None
     return (day.isoformat(), code, slug) if day and code and slug else None
 
 
-def insider_name_tokens(insider_name: str) -> tuple[str, ...]:
-    """The words of an insider's name, lower case and sorted: "COOK TIMOTHY D", "Cook, Timothy D." and "Timothy D. Cook"
-    alike — the same person however a provider orders, cases or punctuates the name. A word more or less (a middle
-    initial, a suffix as JR) or another spelling (a nickname) is another name."""
-    return tuple(sorted(re.findall(r"[a-z0-9]+", clean_text(insider_name).lower())))
-
-
 def eodhd_insider_transactions_not_in_finnhub(
     transactions: list[dict[str, Any]], finnhub_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -237,27 +230,20 @@ def eodhd_insider_transactions_not_in_finnhub(
     activity in the One Pager and the US screener for the 180 days they read.
 
     Both producers store ONE row per insider, day and code (their external ids collapse a day's lots into it), so an
-    EODHD transaction is dropped when Finnhub stored a row of the same transaction date and code for the same insider —
-    the same words in the name (``insider_name_tokens``), whatever their order, case or punctuation: any one of that
-    group's lots would recreate the second row. The date and the code are what both normalizers fill alike
-    (FinnhubClient._normalize_transaction and the frozen EodhdClient._normalize_form4_row: an ISO date, upper case).
+    EODHD transaction is dropped when Finnhub stored the row of its ``insider_identity``: the same transaction date and
+    code (both normalizers, FinnhubClient._normalize_transaction and the frozen EodhdClient._normalize_form4_row, fill
+    them alike: an ISO date, upper case) and the same insider slug — the same words in the same order, case and the
+    separators between words aside, as both carry SEC's reporting-owner name ("COOK TIMOTHY D", "Cook, Timothy D."). Any
+    one of that group's lots would recreate the second row.
 
     Everything else is kept, in order: the transactions Finnhub never stored (every one after the cut) and the incomplete
-    ones (never stored). A size, a day and a code alike never make two names one insider (Codex 6621231383: another
-    insider who traded Finnhub's size on Finnhub's day would have lost a real transaction); a name a provider abbreviates
-    or spells otherwise stays a second row rather than risk dropping a third person's trade."""
-    stored: set[tuple[str, str, tuple[str, ...]]] = set()
-    for row in finnhub_rows:
-        identity = insider_identity(row)
-        if identity:
-            stored.add((identity[0], identity[1], insider_name_tokens(str(row.get("insider_name") or ""))))
-    kept = []
-    for transaction in transactions:
-        identity = insider_identity(transaction)
-        if identity and (identity[0], identity[1], insider_name_tokens(str(transaction.get("insider_name") or ""))) in stored:
-            continue
-        kept.append(transaction)
-    return kept
+    ones (never stored). Only the name says who traded (Codex 6621231383): a size, a day and a code alike never make two
+    names one insider (another insider who traded Finnhub's size on Finnhub's day would have lost a real transaction),
+    nor do the same words in another order ("KIM LEE", "LEE KIM"); a name a provider spells otherwise (a word more or
+    less, an apostrophe dropped without a space as "O'BRIEN" and "OBRIEN", an accent) stays a second row rather than risk
+    dropping a third person's trade."""
+    stored = {identity for identity in map(insider_identity, finnhub_rows) if identity}
+    return [transaction for transaction in transactions if insider_identity(transaction) not in stored]
 
 
 def massive_published_at(value: Any) -> datetime | None:

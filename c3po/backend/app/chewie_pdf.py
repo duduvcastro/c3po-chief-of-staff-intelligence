@@ -196,11 +196,10 @@ class ChewieFundamentalsPdfRenderer:
         analysts = fundamentals.get("numberOfAnalystOpinions")
         if analysts:
             rows.append(("Analistas cobrindo", str(int(analysts))))
-        sentiment = payload.get("news_sentiment") or {}
-        bullish, bearish = self._num(sentiment.get("bullish_percent")), self._num(sentiment.get("bearish_percent"))
-        if bullish is not None and bearish is not None:  # a row without its split is not shown
-            articles = self._num(sentiment.get("articles_last_week")) or 0
-            # a week rewritten neutral (no positive or negative insight in a later run) reads 0/0: neutral, not 0 % bullish
+        shown = self._shown_sentiment(payload)
+        if shown:
+            bullish, bearish, articles = shown
+            # a read with no positive or negative insight writes the week's row neutral (0/0): neutral, never 0 % bullish
             tone = "neutro" if bullish == bearish == 0 else f"{bullish:.0f}% bullish"
             rows.append(("Sentimento de notícias", f"{tone} · {articles:.0f} artigos/7d"))
         if not rows:
@@ -306,7 +305,7 @@ class ChewieFundamentalsPdfRenderer:
         if payload.get("fmp_consensus"):
             lines.append("• FMP: consenso de preço-alvo dos analistas.")
         sentiment = payload.get("news_sentiment")
-        if sentiment:  # the stored weekly row names its source: Massive since 03/11/2026, Finnhub before
+        if sentiment and self._shown_sentiment(payload):  # the row shown names its source: Massive since 03/11/2026, Finnhub before
             lines.append("• " + {
                 "massive": "Massive: sentimento semanal de notícias (insights por artigo, últimos 7 dias).",
                 "finnhub": "Finnhub: sentimento agregado de notícias.",
@@ -386,6 +385,15 @@ class ChewieFundamentalsPdfRenderer:
         except (TypeError, ValueError):
             return None
         return parsed if parsed == parsed and parsed not in (float("inf"), float("-inf")) else None
+
+    def _shown_sentiment(self, payload: dict[str, Any]) -> tuple[float, float, float] | None:
+        """(bullish, bearish, articles) of the weekly news-sentiment row the report shows: one with its split and at least
+        one article. A read with no article at all writes a neutral 0/0 row of 0 articles, which says nothing: neither
+        its line nor its source is shown, and a name without other coverage keeps "sem consenso público disponível"."""
+        sentiment = payload.get("news_sentiment") or {}
+        bullish, bearish = self._num(sentiment.get("bullish_percent")), self._num(sentiment.get("bearish_percent"))
+        articles = self._num(sentiment.get("articles_last_week")) or 0
+        return (bullish, bearish, articles) if bullish is not None and bearish is not None and articles > 0 else None
 
     @staticmethod
     def _multiple(value: float | None) -> str:

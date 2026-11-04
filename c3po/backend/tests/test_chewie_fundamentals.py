@@ -532,7 +532,7 @@ def test_the_report_reads_the_stored_weekly_sentiment_and_never_calls_a_provider
     assert path is not None and path.read_bytes()[:5] == b"%PDF-"
 
 
-def test_the_report_shows_a_neutral_week_and_skips_a_row_without_its_split(tmp_path: Path, monkeypatch):
+def test_the_report_shows_a_neutral_week_and_skips_a_row_without_its_split_or_an_article(tmp_path: Path, monkeypatch):
     from reportlab.pdfgen import canvas
 
     from app.chewie_pdf import ChewieFundamentalsPdfRenderer
@@ -554,10 +554,16 @@ def test_the_report_shows_a_neutral_week_and_skips_a_row_without_its_split(tmp_p
         ({"source": "massive", "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 4}, "neutro · 4 artigos/7d"),
         ({"source": "massive", "bullish_percent": 75.0, "bearish_percent": 25.0, "articles_last_week": 8}, "75% bullish · 8 artigos/7d"),
         ({"source": "finnhub", "bullish_percent": None, "bearish_percent": 40.0, "articles_last_week": 3}, None),
+        ({"source": "massive", "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 0}, None),  # no article
     ):
         drawn.clear()
-        path = tmp_path / f"{sentiment['source']}-{sentiment['bullish_percent']}.pdf"
+        path = tmp_path / f"{sentiment['source']}-{sentiment['bullish_percent']}-{sentiment['articles_last_week']}.pdf"
         ChewieFundamentalsPdfRenderer().render(path, {**payload, "news_sentiment": sentiment}, datetime.now(timezone.utc))
         assert path.read_bytes()[:5] == b"%PDF-"
         shown = [text for text in drawn if "artigos/7d" in text]
         assert shown == ([expected] if expected else []), sentiment
+    renderer = ChewieFundamentalsPdfRenderer()
+    zero = {**payload, "news_sentiment": {"source": "massive", "bullish_percent": 0.0, "bearish_percent": 0.0, "articles_last_week": 0}}
+    assert renderer._shown_sentiment(zero) is None  # its source is not listed either
+    assert renderer._shown_sentiment({**payload, "news_sentiment": {"bullish_percent": 0.0, "bearish_percent": 0.0,
+                                                                      "articles_last_week": 2}}) == (0.0, 0.0, 2.0)

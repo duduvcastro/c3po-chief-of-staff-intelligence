@@ -906,7 +906,7 @@ def test_eodhd_insider_events_never_write_again_a_transaction_finnhub_stored(tmp
         "non_derivative": [
             _form4_row("Cook Timothy D.", _days_ago(10), "S", 2_500),  # the same insider, day and code: dropped whole
             _form4_row("COOK TIMOTHY D", _days_ago(10), "S", 1_000),
-            _form4_row("Jeffrey E. Williams", _days_ago(20), "S", 2_000),  # Finnhub's insider in another order: dropped
+            _form4_row("Williams, Jeffrey E.", _days_ago(20), "S", 2_000),  # Finnhub's insider, punctuated otherwise: dropped
             _form4_row("LEVINSON ARTHUR D", _days_ago(30), "P", 500, acquired=True),
             _form4_row("O'BRIEN DEIRDRE", _days_ago(5), "S", 300),  # new: kept
             _form4_row("MAESTRI LUCA", _days_ago(10), "S", 1_000),  # Cook's size and day, another insider: kept
@@ -943,18 +943,20 @@ def test_eodhd_insider_events_write_nothing_when_finnhub_s_rows_cannot_be_read(t
 def test_the_insider_dedup_drops_only_the_insider_finnhub_stored_never_a_size_alike():
     """Codex 6621231383: Finnhub stored Alice's buy of 100 on D; EODHD's answer has Bob's buy of 100 on D and not Alice's.
     A size, a day and a code alike never make two names one insider: Bob's transaction is kept. The same insider is the
-    same words in the name, in any order, case or punctuation; a word more or less is another name."""
-    from app.investor_relations import eodhd_insider_transactions_not_in_finnhub, insider_identity, insider_name_tokens
+    same words in the same order, whatever the case or punctuation; a word more or less, or another order, is another
+    name."""
+    from app.investor_relations import eodhd_insider_transactions_not_in_finnhub, insider_identity
 
     def transaction(name, day, code, change):
         return {"insider_name": name, "transaction_date": day, "transaction_code": code, "share_change": change}
 
     finnhub = [transaction("SMITH JOHN A", "2026-10-01", "S", -100.0), transaction("ADAMS ALICE", "2026-10-02", "P", 100.0)]
     eodhd = [
-        transaction("John A. Smith", "2026-10-01", "S", -40.0),  # Finnhub's insider, day and code, written otherwise
-        transaction("SMITH, JOHN A", "2026-10-01", "S", -60.0),  # another lot of the same stored row
+        transaction("Smith, John A.", "2026-10-01", "S", -40.0),  # Finnhub's insider, day and code, punctuated otherwise
+        transaction("SMITH JOHN A", "2026-10-01", "S", -60.0),  # another lot of the same stored row
         transaction("BAKER BOB", "2026-10-02", "P", 100.0),  # Alice's day, code and size, another insider: kept
-        transaction("John Smith", "2026-10-01", "S", -100.0),  # no middle initial: not shown to be the same person
+        transaction("John A. Smith", "2026-10-01", "S", -100.0),  # another order: not shown to be the same person
+        transaction("SMITH JOHN", "2026-10-01", "S", -100.0),  # no middle initial: likewise
         transaction("SMITH JOHN A JR", "2026-10-01", "S", -100.0),  # a suffix: another person
         transaction("SMITH JOHN A", "2026-10-01", "M", -100.0),  # another code
         transaction("", "2026-10-01", "S", -5.0),  # incomplete: passed through (never stored)
@@ -962,8 +964,8 @@ def test_the_insider_dedup_drops_only_the_insider_finnhub_stored_never_a_size_al
 
     kept = eodhd_insider_transactions_not_in_finnhub(eodhd, finnhub)
 
-    assert [item["insider_name"] for item in kept] == ["BAKER BOB", "John Smith", "SMITH JOHN A JR", "SMITH JOHN A", ""]
-    assert insider_name_tokens("Cook, Timothy D.") == insider_name_tokens("TIMOTHY D COOK") == ("cook", "d", "timothy")
+    assert [item["insider_name"] for item in kept] == [
+        "BAKER BOB", "John A. Smith", "SMITH JOHN", "SMITH JOHN A JR", "SMITH JOHN A", ""]
     assert insider_identity(transaction("Cook, Timothy D.", "2026-10-01T00:00:00", "s", -1)) == ("2026-10-01", "S", "cook-timothy-d")
     assert eodhd_insider_transactions_not_in_finnhub(eodhd, []) == eodhd
 
