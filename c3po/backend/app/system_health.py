@@ -26,6 +26,7 @@ from .valuation_worker_contract import (
     VALUATION_WORKER_ADVISORY_PHASES,
     VALUATION_WORKER_CANONICAL_PHASE,
     VALUATION_WORKER_PHASES,
+    VALUATION_WORKER_RETIRED_PHASES,
 )
 
 
@@ -147,7 +148,6 @@ class SystemHealthService:
             "incidents": lambda: self._operational_incident_health(now),
             "quote_providers": lambda: self._quote_provider_health(now),
             "finnhub": lambda: self._finnhub_health(now),
-            "fmp": lambda: self._fmp_health(now),
             "massive": lambda: self._massive_health(now),
             "official_sources": lambda: self._official_sources_health(now),
             "automations": lambda: self._automation_health(now),
@@ -266,7 +266,7 @@ class SystemHealthService:
                     [
                         ("quote_providers", "Market data APIs"),
                         ("finnhub", "Finnhub"),
-                        ("fmp", "FMP"),
+                        # the FMP card left with the contract (owner 03/11/2026: FMP is cut)
                         ("massive", "Massive"),
                     ],
                     now,
@@ -695,14 +695,6 @@ class SystemHealthService:
             ))
         return items
 
-    def _quote_health(self, now: datetime) -> list[IntegrationHealth]:
-        return [
-            *self._quote_provider_health(now),
-            self._finnhub_health(now),
-            self._fmp_health(now),
-            self._massive_health(now),
-        ]
-
     def _quote_provider_health(self, now: datetime) -> list[IntegrationHealth]:
         try:
             providers = self.market_data.health()
@@ -752,32 +744,6 @@ class SystemHealthService:
             )
         except Exception as exc:
             return self._offline_item("Finnhub", exc, now)
-
-    def _fmp_health(self, now: datetime) -> IntegrationHealth:
-        if not self.settings.fmp_api_token:
-            return IntegrationHealth(
-                name="FMP",
-                status="offline",
-                detail="Ultimate credential is not configured",
-                last_update=self._format_time(now),
-            )
-        try:
-            response = self.external_get(
-                f"{self.settings.fmp_base_url.rstrip('/')}/stable/price-target-consensus",
-                params={"symbol": "AAPL", "apikey": self.settings.fmp_api_token},
-                timeout=self.settings.system_health_probe_timeout_seconds,
-                follow_redirects=True,
-                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
-            )
-            response.raise_for_status()
-            return IntegrationHealth(
-                name="FMP",
-                status="healthy",
-                detail="United States · Ultimate · consensus, grades, 13F",
-                last_update=self._format_time(now),
-            )
-        except Exception as exc:
-            return self._offline_item("FMP", exc, now)
 
     def _massive_health(self, now: datetime) -> IntegrationHealth:
         if not self.settings.massive_api_token:
@@ -1218,9 +1184,10 @@ class SystemHealthService:
         )
 
     def _day_d_and_valuation_health(self, now: datetime) -> list[IntegrationHealth]:
+        # the "Valuation V2.1b cycle" and "V3 pre-A/B gate" cards left with the phases that fed them (owner 03/11/2026: FMP
+        # is cut; VALUATION_WORKER_RETIRED_PHASES): their snapshots are no longer produced
         return [
             self._valuation_worker_phase_health(now),
-            *self._valuation_v2_1b_health(now),
             self._day_d_disk_health(now),
         ]
 
@@ -1358,11 +1325,13 @@ class SystemHealthService:
         )
 
     def _valuation_worker_phase_plan(self, now: datetime) -> tuple[dict[str, dict[str, str]], dict[str, datetime], datetime]:
-        """The ENABLED phases, the instant each one's last success must reach for the current cycle, and the fallback instant."""
+        """The ENABLED phases, the instant each one's last success must reach for the current cycle, and the fallback instant.
+        A retired phase (VALUATION_WORKER_RETIRED_PHASES, owner 03/11/2026) is never expected: the worker no longer runs it."""
         definitions = {
             phase: definition
             for phase, definition in VALUATION_WORKER_PHASES.items()
-            if (phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled)
+            if phase not in VALUATION_WORKER_RETIRED_PHASES
+            and (phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled)
             and (phase != "price_history" or getattr(self.settings, "valuation_price_history_enabled", False))
             and (phase != "decisor_shadow" or valuation_env.decisor_shadow_enabled())
             and (phase != "earnings_calendar" or valuation_env.earnings_calendar_enabled())
@@ -1484,116 +1453,6 @@ class SystemHealthService:
             detail=detail,
             last_update=self._format_time(max(updates) if updates else now),
         )
-
-    def _valuation_v2_1b_health(self, now: datetime) -> list[IntegrationHealth]:
-        keys = ["B3_V2_PEER_QUALITY", "US_V2_PEER_QUALITY"]
-        try:
-            snapshots = self.database.latest_analysis_snapshot_outputs(
-                "valuation_v2_peer_quality", keys, "pre_ab_report"
-            )
-        except Exception as exc:
-            detail = f"Snapshot check failed · {self._safe_error(exc)}"
-            return [
-                IntegrationHealth(
-                    name="Valuation V2.1b cycle",
-                    status="offline",
-                    detail=detail,
-                    last_update=self._format_time(now),
-                ),
-                IntegrationHealth(
-                    name="V3 pre-A/B gate",
-                    status="offline",
-                    detail=detail,
-                    last_update=self._format_time(now),
-                ),
-            ]
-
-        local_now = now.astimezone(SAO_PAULO)
-        due_today = local_now.replace(hour=1, minute=0, second=0, microsecond=0)
-        expected_due = due_today if local_now >= due_today else due_today - timedelta(days=1)
-        window_end = due_today.replace(hour=8)
-        published: dict[str, datetime] = {}
-        for key, snapshot in snapshots.items():
-            value = snapshot.get("published_at")
-            if isinstance(value, datetime):
-                published[key] = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-
-        missing = [key.split("_")[0] for key in keys if key not in published]
-        stale = [
-            key.split("_")[0]
-            for key, value in published.items()
-            if value.astimezone(SAO_PAULO) < expected_due
-        ]
-        if not published:
-            cycle_status = "attention"
-            cycle_detail = "First V2.1b evidence pending · scheduled window 01:00–08:00 BRT"
-            cycle_update = self._format_time(now)
-        elif not missing and not stale:
-            cycle_status = "healthy"
-            cycle_detail = "B3 and US peer-quality snapshots completed for the expected cycle"
-            cycle_update = self._format_time(min(published.values()))
-        else:
-            inside_current_window = due_today <= local_now < window_end and expected_due == due_today
-            cycle_status = "attention" if inside_current_window else "offline"
-            pending = sorted(set(missing + stale))
-            cycle_detail = (
-                f"Expected cycle since {expected_due:%d/%m %H:%M} BRT · pending: "
-                + ", ".join(pending)
-            )
-            cycle_update = (
-                self._format_time(max(published.values()))
-                if published
-                else self._format_time(now)
-            )
-
-        reports: dict[str, dict[str, Any]] = {}
-        for key, snapshot in snapshots.items():
-            report = snapshot.get("output")
-            if isinstance(report, dict):
-                reports[key.split("_")[0]] = report
-
-        if len(reports) < 2:
-            gate_status = "attention"
-            gate_detail = "Pre-A/B report pending for: " + ", ".join(
-                market for market in ("B3", "US") if market not in reports
-            )
-        else:
-            failed: list[str] = []
-            for market, report in sorted(reports.items()):
-                gates = report.get("gates")
-                if not isinstance(gates, dict):
-                    failed.append(f"{market}:report_malformed")
-                    continue
-                failed.extend(
-                    f"{market}:{name}"
-                    for name, passed in gates.items()
-                    if passed is not True
-                )
-                if report.get("pre_ab_ready") is not True and not any(
-                    item.startswith(f"{market}:") for item in failed
-                ):
-                    failed.append(f"{market}:pre_ab_ready")
-            gate_status = "offline" if failed else "healthy"
-            gate_detail = (
-                "All five frozen gates pass in B3 and US"
-                if not failed
-                else "Blocked · " + ", ".join(failed)
-            )
-
-        return [
-            IntegrationHealth(
-                name="Valuation V2.1b cycle",
-                status=cycle_status,
-                detail=cycle_detail,
-                last_update=cycle_update,
-            ),
-            IntegrationHealth(
-                name="V3 pre-A/B gate",
-                status=gate_status,
-                detail=gate_detail,
-                last_update=cycle_update,
-            ),
-        ]
 
     def _day_d_disk_health(self, now: datetime) -> IntegrationHealth:
         root = self.settings.day_d_dataset_root

@@ -851,10 +851,10 @@ class RealtimeMarketsService:
 
         # Index history must never fetch while holding the shared realtime lock.
         index_spec = next((spec for spec in LIVE_MARKET_SPECS
-            if spec.provider == 'fmp_index' and raw_symbol.casefold() in {
+            if spec.provider == 'eodhd_index' and raw_symbol.casefold() in {
                 spec.symbol.casefold(), spec.provider_symbol.casefold()}), None)
         if index_spec is not None:
-            return self._fmp_index_intraday(index_spec, now, requested_session_date=requested_session_date)
+            return self._index_intraday(index_spec, now, requested_session_date=requested_session_date)
 
         with self._lock:
             now = datetime.now(timezone.utc)
@@ -922,8 +922,8 @@ class RealtimeMarketsService:
         *,
         requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
-        if spec.provider == "fmp_index":
-            return self._fmp_index_intraday(spec, now, requested_session_date=requested_session_date)
+        if spec.provider == "eodhd_index":
+            return self._index_intraday(spec, now, requested_session_date=requested_session_date)
         if spec.provider == "brapi" and self.settings.brapi_token:
             return self._b3_instrument_intraday(
                 symbol=spec.symbol,
@@ -984,7 +984,7 @@ class RealtimeMarketsService:
             requested_session_date=requested_session_date,
         )
 
-    def _fmp_index_intraday(self, spec: Any, now: datetime, *, requested_session_date: date | None = None) -> InstrumentIntradayResponse:
+    def _index_intraday(self, spec: Any, now: datetime, *, requested_session_date: date | None = None) -> InstrumentIntradayResponse:
         index = INDICES[spec.provider_symbol]
         end = requested_session_date or now.astimezone(ZoneInfo(str(xcals.get_calendar(index.calendar).tz))).date()
         key = (spec.provider_symbol, end)
@@ -993,19 +993,19 @@ class RealtimeMarketsService:
             if cached and now < cached[0]:
                 return cached[1]
             if now < self._index_history_failures.get(key, datetime.min.replace(tzinfo=timezone.utc)):
-                raise RuntimeError('FMP index history unavailable')
+                raise RuntimeError('EODHD index history unavailable')
             owner = key not in self._index_history_pending
             if owner:
                 # Limit distinct cold dates too: no unbounded thread fan-out.
                 if len(self._index_history_pending) >= len(INDICES):
-                    raise RuntimeError('FMP index history capacity busy')
+                    raise RuntimeError('EODHD index history capacity busy')
                 self._index_history_pending[key] = (Event(), monotonic()+3.0)
             pending, deadline = self._index_history_pending[key]
         if owner:
             assert pending is not None
             def refresh():
                 try:
-                    result = self._fetch_fmp_index_intraday(spec, now, requested_session_date=requested_session_date)
+                    result = self._fetch_index_intraday(spec, now, requested_session_date=requested_session_date)
                     with self._index_history_lock:
                         written = datetime.now(timezone.utc)
                         self._index_history_result = {k:v for k,v in self._index_history_result.items() if v[0] > written}
@@ -1027,42 +1027,36 @@ class RealtimeMarketsService:
             ready = self._index_history_result.get(key)
         if ready:
             return ready[1].model_copy(update={'status':'stale'}) if ready[0] <= datetime.now(timezone.utc) else ready[1]
-        raise RuntimeError('FMP index history unavailable')
+        raise RuntimeError('EODHD index history unavailable')
 
-    def _fetch_fmp_index_intraday(
+    def _fetch_index_intraday(
         self, spec: Any, now: datetime, *, requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
-        if not self.settings.fmp_api_token:
-            raise RuntimeError("FMP index history unavailable")
+        """The cash index's 5-minute bars from EODHD (owner 03/11/2026: FMP is cut), through the frozen
+        EodhdClient.intraday on the index's own session timezone and the 3 s index transport. EODHD's index bars lag the
+        session by hours (probe of 03/11/2026: Nasdaq's last bar ~9.5 h old, IBOV's ~2.4 h, during the session): the
+        status and delay below are read from the LAST BAR's time, so such a chart reads stale or delayed, never current.
+        No quote is overlaid on the bars (none ever was for the indices)."""
+        if not self.settings.eodhd_api_token:
+            raise RuntimeError("EODHD index history unavailable")
         index = INDICES[spec.provider_symbol]
         market_timezone = ZoneInfo(str(xcals.get_calendar(index.calendar).tz))
-        end = requested_session_date or now.astimezone(market_timezone).date()
-        payload = self.indices.http.get_json(
-            f"{self.settings.fmp_base_url.rstrip('/')}/stable/historical-chart/5min",
-            params={"symbol": spec.provider_symbol, "from": (end-timedelta(days=7)).isoformat(),
-                    "to": end.isoformat(), "apikey": self.settings.fmp_api_token},
+        bars = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.indices.http).intraday(
+            index.eodhd_code, interval="5m", days=7, requested_session_date=requested_session_date,
+            session_timezone=str(market_timezone),
         )
         rows = []
-        for raw in payload if isinstance(payload, list) else []:
-            if not isinstance(raw, dict):
+        for raw in bars:
+            # EODHD bars carry Unix seconds; a bar with its UTC "datetime" only (no tzinfo) is read as UTC, never as local
+            stamp = self._intraday_datetime(raw.get("timestamp"), ZoneInfo("UTC"))
+            if stamp is None or stamp > now:
                 continue
-            try:
-                stamp = datetime.fromisoformat(str(raw.get("date")))
-                # FMP index chart dates are exchange-local (six-market probe,
-                # 2026-09-17); quote timestamps, separately, are UTC Unix seconds.
-                if stamp.tzinfo is None:
-                    stamp = stamp.replace(tzinfo=market_timezone)
-                stamp = stamp.astimezone(timezone.utc)
-                if stamp > now:
-                    continue
-                rows.append({**raw, "timestamp": stamp.timestamp()})
-            except (ValueError, TypeError, OverflowError):
-                continue
+            rows.append({**raw, "timestamp": stamp.timestamp()})
         if not rows:
-            raise RuntimeError("FMP index history unavailable")
+            raise RuntimeError("EODHD index history unavailable")
         response = self._normalize_instrument_intraday(
             rows, symbol=spec.symbol, name=spec.name, market=spec.group, currency=spec.currency,
-            source="Financial Modeling Prep Intraday 5m", delay_minutes=0,
+            source="EODHD Intraday 5m", delay_minutes=0,
             market_timezone=market_timezone, now=now, requested_session_date=requested_session_date,
         )
         status, _ = quote_status(index, response.points[-1].as_of, now)

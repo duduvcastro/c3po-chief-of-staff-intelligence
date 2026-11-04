@@ -178,13 +178,13 @@ INCIDENT_SEVERITIES = ("critical", "attention", "other")
 ACTIVE_STATUSES = ("open", "acknowledged")
 HEALTH_GROUPS = ("governance", "controls")
 HEALTH_STATUSES = ("offline", "attention")  # red, amber
-# The local (database and evidence-file) cards of system_health, by their fixed English/Portuguese label.
+# The local (database and evidence-file) cards of system_health, by their fixed English/Portuguese label ("Valuation V2.1b
+# cycle" and "V3 pre-A/B gate" left with the phases retired with FMP, owner 03/11/2026). The runner's CARD_VOCABULARY in
+# ops-readonly-report.yml lists the same keys (tests/test_ops_readonly_report.py pins them).
 HEALTH_CARDS = {
     "Governança & Vulnerabilidades": "governance_vulnerabilities",
     "Incidentes operacionais": "operational_incidents",
     "Valuation worker phases": "valuation_worker_phases",
-    "Valuation V2.1b cycle": "valuation_v2_1b_cycle",
-    "V3 pre-A/B gate": "v3_pre_ab_gate",
     "Day D disk reserve": "day_d_disk_reserve",
 }
 HEALTH_CARD_KEYS = (*HEALTH_CARDS.values(), "probe_failed", "unmapped")

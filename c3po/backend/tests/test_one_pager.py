@@ -927,7 +927,12 @@ def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_
     assert with_consensus["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]  # the consensus never enters the TP (rev 7, P1)
 
 
-def test_v2_shadow_band_renders_without_replacing_the_official_tp(tmp_path) -> None:
+def test_the_retired_v2_shadow_never_reaches_the_pdf(tmp_path) -> None:
+    """The V2 shadow's phases were retired with FMP (owner 03/11/2026): even with a v2_shadow in the analysis, the PDF
+    prints no V2 strip (its last snapshot would show a frozen TP and upside with no date)."""
+    from app import one_pager_pdf
+
+    assert not any(name.startswith("_v2_shadow") for cls in vars(one_pager_pdf).values() if isinstance(cls, type) for name in vars(cls))
     service = service_for(tmp_path)
     analysis = sample_analysis(service)
     analysis["v2_shadow"] = {

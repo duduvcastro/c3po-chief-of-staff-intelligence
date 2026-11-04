@@ -40,6 +40,13 @@ services:
       C3PO_AUTH_OWNER_IDLE_MINUTES: "360"
       C3PO_AUTH_MEMBER_IDLE_MINUTES: "60"
       C3PO_CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081,http://localhost:3000,http://127.0.0.1:3000
+      # FMP is cancelled (owner 03/11/2026): blank here, it beats any FMP_API_TOKEN left in ../.env (the prefixed name wins in
+      # config.py and an empty value is not ignored). With no token the analyst consensus falls back to EODHD and the grades
+      # and 13F signals stay neutral
+      C3PO_FMP_API_TOKEN: ""
+      # the live ensemble producer served the model the grid failed on 02/11 and needs FMP: off here and in the worker
+      # (owner 03/11/2026: "achar um modelo eficiente de valuation"); this beats any value in ../.env
+      C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED: "0"
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro
       - ..:/legacy:ro
@@ -67,6 +74,7 @@ services:
       C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
+      C3PO_FMP_API_TOKEN: ""  # FMP cancelled (owner 03/11/2026): see the api service
     command: ["python", "-m", "app.ir_worker"]
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro
@@ -96,6 +104,8 @@ services:
       # 100,000 once the Extra Daily API Calls add-on goes (owner 03/11/2026); this overrides any value in ../.env
       C3PO_CHEWIE_DAILY_SYMBOL_BUDGET: "1500"
       TZ: America/Sao_Paulo
+      C3PO_FMP_API_TOKEN: ""  # FMP cancelled (owner 03/11/2026): see the api service
+      C3PO_VALUATION_ENSEMBLE_LIVE_ENABLED: "0"  # the failed model's live producer is off: see the api service
     command: ["python", "-m", "app.valuation_worker"]
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro
@@ -126,6 +136,7 @@ services:
       C3PO_SERVER_USAGE_PROC_STAT_PATH: /host/proc/stat
       C3PO_SERVER_USAGE_DISK_PATH: /host/disk
       C3PO_SERVER_USAGE_INTERVAL_SECONDS: 60
+      C3PO_FMP_API_TOKEN: ""  # FMP cancelled (owner 03/11/2026): see the api service
     command: ["python", "-m", "app.server_usage_worker"]
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro
@@ -156,6 +167,7 @@ services:
       C3PO_SERVICE_NAME: r2d2-live
       C3PO_R2D2_LIVE_CACHE_DIR: /tmp/r2d2-live-eod-bulk
       TZ: America/Sao_Paulo
+      C3PO_FMP_API_TOKEN: ""  # FMP cancelled (owner 03/11/2026): see the api service
     command: ["python", "-m", "app.r2d2_live_engine"]
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro

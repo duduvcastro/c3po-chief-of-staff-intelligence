@@ -28,15 +28,12 @@ from .valuation_asfiled import evaluate_us_filings
 from .valuation_decision import last_run_at as decision_last_run_at, not_before as decision_not_before, run_shadow as run_decisor_shadow
 from .valuation_earnings_calendar import MAX_FAILURES_PER_NIGHT as EARNINGS_CALENDAR_MAX_FAILURES, EarningsCalendarService
 from .valuation_policy import METHODOLOGY_VERSION
-from .valuation_v2_data import ValuationV2DataService
-from .valuation_v2_peer_quality import ValuationV2PeerQualityService
-from .valuation_v2_shadow import ValuationV2ShadowService
-from .valuation_v3_shadow import ValuationV3ShadowService
 from .valuation_price_history import PriceHistoryService
 from .valuation_worker_contract import (
     VALUATION_WORKER_ADVISORY_PHASES,
     VALUATION_WORKER_CANONICAL_PHASE,
     VALUATION_WORKER_PHASES,
+    VALUATION_WORKER_RETIRED_PHASES,
     VALUATION_WORKER_SOURCE_TYPE,
 )
 
@@ -310,6 +307,22 @@ def _signal_phase_failure(
     except Exception:
         logger.exception("Phase incident recording failed without affecting the worker")
         return None
+
+
+def close_retired_phase_incidents(database: Database, *, observed_at: datetime) -> int:
+    """A phase retired with FMP (``VALUATION_WORKER_RETIRED_PHASES``, owner 03/11/2026) never runs again, so no success of
+    its own would ever close an incident it left open: the worker closes them at startup (idempotent, never blocking)."""
+    closed = 0
+    for phase_key in VALUATION_WORKER_RETIRED_PHASES:
+        try:
+            closed += OperationalIncidentService(database).resolve_recovered_family(
+                phase_incident_key(phase_key),
+                observed_at=observed_at,
+                detail=f"{VALUATION_WORKER_PHASES[phase_key]['name']} retired with FMP (owner 03/11/2026); incident closed",
+            )
+        except Exception:
+            logger.exception("Retired phase incident closure failed without affecting the worker")
+    return closed
 
 
 def _resolve_phase_incident(database: Database, *, phase_key: str, observed_at: datetime) -> int:
@@ -607,6 +620,7 @@ def main() -> None:
         stale_sweep()
         push_notifications = PushNotificationService(settings, database)
         ensure_builtin_official_fundamentals(database)
+        close_retired_phase_incidents(database, observed_at=datetime.now(timezone.utc))
         try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
             from .valuation_official import bootstrap_official_selection
             bootstrap_official_selection(database)
@@ -631,12 +645,6 @@ def main() -> None:
         us_screener = USScreeningService(settings, database, realtime, one_pagers)
         one_pagers.set_us_screener(us_screener)
         chewie = ChewieFundamentalsService(settings, database, market_data.http)
-        v2_data = ValuationV2DataService(settings, database, market_data.http)
-        v2_peer_quality = ValuationV2PeerQualityService(
-            settings, database, market_data.http
-        )
-        v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
-        v3_shadow = ValuationV3ShadowService(database)
         price_history = PriceHistoryService(settings, database, market_data.http)
         earnings_calendar = EarningsCalendarService(settings, database)
         cash_yield = R2D2CashYieldService(
@@ -656,14 +664,7 @@ def main() -> None:
                 lambda: chewie.refresh_all(budget=settings.chewie_daily_symbol_budget),
                 max_failures=EODHD_PHASE_MAX_FAILURES,
             ),
-            OffhoursPhase("v2_data", v2_data.last_refreshed_at, v2_data.refresh_all),
-            OffhoursPhase("shadow", v2_shadow.last_run_at, v2_shadow.run_all),
-            OffhoursPhase(
-                "peer_quality",
-                v2_peer_quality.last_refreshed_at,
-                v2_peer_quality.refresh_all,
-            ),
-            OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
+            # v2_data, shadow, peer_quality and v3_shadow are retired with FMP (owner 03/11/2026): VALUATION_WORKER_RETIRED_PHASES
             *((OffhoursPhase("price_history", price_history.last_run_at, price_history.run_all, max_failures=EODHD_PHASE_MAX_FAILURES),)
               if settings.valuation_price_history_enabled else ()),  # V3.2 price series (rev 7 §2.2): dormant until the mesa enables it
             *((

@@ -21,7 +21,7 @@ from app.schemas import (
     ServerUsageServer,
 )
 from app.system_health import SystemHealthService
-from app.valuation_worker_contract import VALUATION_WORKER_PHASES
+from app.valuation_worker_contract import VALUATION_WORKER_PHASES, VALUATION_WORKER_RETIRED_PHASES
 
 
 class _Cursor:
@@ -39,15 +39,9 @@ class _Database:
         self,
         now: datetime,
         *,
-        pre_ab_ready: bool = True,
-        snapshot_published_at: datetime | None = None,
-        include_peer_snapshots: bool = True,
         valuation_phase_states: dict[str, dict] | None = None,
     ) -> None:
         self.now = now
-        self.pre_ab_ready = pre_ab_ready
-        self.snapshot_published_at = snapshot_published_at or now
-        self.include_peer_snapshots = include_peer_snapshots
         self.valuation_phase_states = valuation_phase_states or {
             definition["code"]: {
                 "last_status": "succeeded",
@@ -130,33 +124,6 @@ class _Database:
         }
         report["report_sha256"] = report_sha256(report)
         return report
-
-    def latest_analysis_snapshot_outputs(
-        self,
-        analysis_type: str,
-        entity_keys: list[str],
-        output_key: str,
-    ):
-        if analysis_type != "valuation_v2_peer_quality" or not self.include_peer_snapshots:
-            return {}
-        assert output_key == "pre_ab_report"
-        gates = {
-            "target_schema_current": self.pre_ab_ready,
-            "target_roe_non_null": True,
-            "closure_fully_attempted": True,
-            "chewie_snapshot_new_since_rejected_ab": True,
-            "fmp_forward_structural_eligibility_nonzero": True,
-        }
-        return {
-            key: {
-                "published_at": self.snapshot_published_at,
-                "output": {
-                    "gates": dict(gates),
-                    "pre_ab_ready": self.pre_ab_ready,
-                },
-            }
-            for key in entity_keys
-        }
 
 
 class _Legacy:
@@ -328,9 +295,6 @@ def _service(
     eodhd_base_url: str = "https://eodhd.com",
     day_d_root: Path = Path("/__c3po_system_health_day_d_test__"),
     day_d_free_gib: float = 30.0,
-    pre_ab_ready: bool = True,
-    snapshot_published_at: datetime | None = None,
-    include_peer_snapshots: bool = True,
     valuation_phase_states: dict[str, dict] | None = None,
 ) -> SystemHealthService:
     now = datetime.now(timezone.utc)
@@ -367,13 +331,7 @@ def _service(
     )
     service = SystemHealthService(
         settings,
-        _Database(
-            now,
-            pre_ab_ready=pre_ab_ready,
-            snapshot_published_at=snapshot_published_at,
-            include_peer_snapshots=include_peer_snapshots,
-            valuation_phase_states=valuation_phase_states,
-        ),
+        _Database(now, valuation_phase_states=valuation_phase_states),
         _Legacy(now),
         _OpenFinance(),
         _MarketData(now),
@@ -394,9 +352,11 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Day D disk reserve",
     }
-    assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
+    names = {item.name for group in response.groups for item in group.items}
+    assert "WhatsApp capture" not in names
+    assert not names & {"Valuation V2.1b cycle", "V3 pre-A/B gate", "FMP"}  # all three left with FMP (03/11/2026)
 
 
 def test_resource_pressure_marks_aws_and_overall_health_for_review() -> None:
@@ -513,11 +473,9 @@ def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
 
     controls = next(group for group in response.groups if group.key == "controls")
     assert controls.status == "healthy"
-    assert controls.healthy_count == 4
+    assert controls.healthy_count == 2
     assert {item.name for item in controls.items} == {
         "Valuation worker phases",
-        "Valuation V2.1b cycle",
-        "V3 pre-A/B gate",
         "Day D disk reserve",
     }
 
@@ -670,10 +628,10 @@ def test_valuation_worker_phase_health_expects_the_earnings_calendar_only_when_e
     item = failed._valuation_worker_phase_health(now)
     assert item.status == "attention" and "earnings_calendar: EarningsCalendarError: provider down" in (item.detail or "")
     # a real phase failure still turns the card offline, and the advisory one is named next to it
-    v2 = VALUATION_WORKER_PHASES["v2_data"]["code"]
-    both = _service(valuation_phase_states={**states, v2: {**states[v2], "last_status": "failed", "last_error": "boom"}})
+    chewie = VALUATION_WORKER_PHASES["chewie"]["code"]
+    both = _service(valuation_phase_states={**states, chewie: {**states[chewie], "last_status": "failed", "last_error": "boom"}})
     item = both._valuation_worker_phase_health(now)
-    assert item.status == "offline" and "v2_data: boom" in (item.detail or "") and "Advisory · earnings_calendar" in (item.detail or "")
+    assert item.status == "offline" and "chewie: boom" in (item.detail or "") and "Advisory · earnings_calendar" in (item.detail or "")
     # after every window (12:00 BRT): an advisory phase stuck running (killed mid-download) or last successful days ago is
     # attention, never offline
     noon = datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
@@ -703,16 +661,15 @@ def test_valuation_worker_phase_states_classify_like_the_card(monkeypatch: pytes
     live = VALUATION_WORKER_PHASES["ensemble_live"]["code"]
     service = _service(valuation_phase_states={**fresh, live: {**fresh[live], "last_status": "failed", "last_error": "ZZZZ3 boom"}})
     states = service.valuation_worker_phase_states(noon)
-    assert [item["phase"] for item in states] == sorted(["canonical", "chewie", "v2_data", "shadow", "peer_quality", "v3_shadow",
-                                                         "ensemble_live"])
+    assert [item["phase"] for item in states] == ["canonical", "chewie", "ensemble_live"]  # the phases retired with FMP: never
     assert {item["phase"]: (item["state"], item["advisory"]) for item in states if item["state"] != "ok"} == {"ensemble_live": ("failed", True)}
     assert "ZZZZ3" not in repr(states)
     card = service._valuation_worker_phase_health(noon)
     assert card.status == "attention" and "Advisory · ensemble_live: ZZZZ3 boom" in (card.detail or "")
-    v2 = VALUATION_WORKER_PHASES["v2_data"]["code"]
+    chewie = VALUATION_WORKER_PHASES["chewie"]["code"]
     old = noon - timedelta(days=2)
-    behind = _service(valuation_phase_states={**fresh, v2: {**fresh[v2], "started_at": old, "completed_at": old, "last_success_at": old}})
-    assert {item["phase"]: item["state"] for item in behind.valuation_worker_phase_states(noon)}["v2_data"] == "stale"
+    behind = _service(valuation_phase_states={**fresh, chewie: {**fresh[chewie], "started_at": old, "completed_at": old, "last_success_at": old}})
+    assert {item["phase"]: item["state"] for item in behind.valuation_worker_phase_states(noon)}["chewie"] == "stale"
     assert behind._valuation_worker_phase_health(noon).status == "offline"  # a real phase behind after the window
 
 
@@ -729,7 +686,7 @@ def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
         }
         for phase, definition in VALUATION_WORKER_PHASES.items()
     }
-    failed_code = VALUATION_WORKER_PHASES["v2_data"]["code"]
+    failed_code = VALUATION_WORKER_PHASES["chewie"]["code"]
     states[failed_code] = {
         **states[failed_code],
         "last_status": "failed",
@@ -740,48 +697,39 @@ def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
     item = service._valuation_worker_phase_health(now)
 
     assert item.status == "offline"
-    assert "v2_data" in item.detail
+    assert "chewie" in item.detail
     assert "provider unavailable" in item.detail
 
 
-def test_pre_ab_gate_is_red_when_any_frozen_gate_fails() -> None:
-    response = _service(pre_ab_ready=False).snapshot(force=True)
+def test_the_phases_retired_with_fmp_are_never_expected_by_the_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    # owner 03/11/2026 (FMP is cut): v2_data, shadow, peer_quality and v3_shadow no longer run; whatever their last run says
+    # (failed, stuck running, days old or none at all), neither the card nor the ops report's phase states name them
+    for name in (valuation_env.DECISOR_SHADOW_ENV, valuation_env.EARNINGS_CALENDAR_ENV, valuation_env.ENSEMBLE_LIVE_ENV):
+        monkeypatch.delenv(name, raising=False)
+    noon = datetime(2026, 11, 4, 15, 0, tzinfo=timezone.utc)  # 12:00 BRT: after every window
+    old = noon - timedelta(days=2)
+    fresh = {
+        definition["code"]: {"last_status": "succeeded", "started_at": noon, "completed_at": noon, "last_success_at": noon,
+                             "last_error": None, "metadata": {"phase": phase}}
+        for phase, definition in VALUATION_WORKER_PHASES.items()
+    }
+    left_over = {
+        "v2_data": {"last_status": "failed", "last_error": "RuntimeError: provider outage"},
+        "shadow": {"started_at": old, "completed_at": old, "last_success_at": old},
+        "peer_quality": {"last_status": "running", "completed_at": None, "last_success_at": None},
+    }
+    states = {code: state for code, state in fresh.items() if code != VALUATION_WORKER_PHASES["v3_shadow"]["code"]}
+    for phase, update in left_over.items():
+        code = VALUATION_WORKER_PHASES[phase]["code"]
+        states[code] = {**states[code], **update}
+    service = _service(valuation_phase_states=states)
 
-    gate = next(
-        item
-        for group in response.groups
-        for item in group.items
-        if item.name == "V3 pre-A/B gate"
-    )
-    assert gate.status == "offline"
-    assert "target_schema_current" in gate.detail
+    card = service._valuation_worker_phase_health(noon)
+    phases = [item["phase"] for item in service.valuation_worker_phase_states(noon)]
 
-
-def test_v2_1b_cycle_is_red_after_the_window_when_snapshots_are_stale() -> None:
-    published = datetime(2026, 8, 22, 4, 0, tzinfo=timezone.utc)
-    now = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
-    service = _service(snapshot_published_at=published)
-
-    cycle = next(
-        item
-        for item in service._valuation_v2_1b_health(now)
-        if item.name == "Valuation V2.1b cycle"
-    )
-    assert cycle.status == "offline"
-    assert "B3" in cycle.detail
-    assert "US" in cycle.detail
-
-
-def test_first_v2_1b_cycle_without_evidence_is_pending_not_falsely_red() -> None:
-    service = _service(include_peer_snapshots=False)
-
-    cycle, gate = service._valuation_v2_1b_health(
-        datetime(2026, 8, 24, 2, 0, tzinfo=timezone.utc)
-    )
-
-    assert cycle.status == "attention"
-    assert "First V2.1b evidence pending" in cycle.detail
-    assert gate.status == "attention"
+    assert set(VALUATION_WORKER_RETIRED_PHASES) == {"v2_data", "shadow", "peer_quality", "v3_shadow"}
+    assert card.status == "healthy" and card.detail == "Canonical and all configured phases succeeded for the expected cycle"
+    assert not set(phases) & set(VALUATION_WORKER_RETIRED_PHASES) and phases == ["canonical", "chewie"]
 
 
 def test_day_d_disk_reserve_is_red_below_the_frozen_20_gib() -> None:
@@ -807,8 +755,10 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 97
-    assert response.healthy_count == 31  # the two Backblaze B2 cards left with the bucket (03/11/2026)
-    assert response.total_count == 32
+    # the two Backblaze B2 cards left with the bucket; the FMP card, the V2.1b cycle and V3 pre-A/B gate cards with FMP
+    # (03/11/2026)
+    assert response.healthy_count == 28
+    assert response.total_count == 29
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:
@@ -820,26 +770,23 @@ def test_finnhub_is_monitored_in_market_quotes() -> None:
     assert "Fundamental-1" in finnhub.detail
 
 
-def test_fmp_is_monitored_in_market_quotes() -> None:
-    response = _service().snapshot(force=True)
-
-    quotes = next(group for group in response.groups if group.key == "quotes")
-    fmp = next(item for item in quotes.items if item.name == "FMP")
-    assert fmp.status == "healthy"
-    assert "Ultimate" in fmp.detail
-    assert quotes.total_count == 5
-
-
-def test_fmp_is_offline_without_a_configured_credential() -> None:
+def test_fmp_is_no_longer_monitored_nor_probed() -> None:
+    # owner 03/11/2026: FMP is cut. Its card leaves Market Quotes and the panel never calls it, even with a token still set
     service = _service()
-    service.settings.fmp_api_token = ""
+    assert service.settings.fmp_api_token == "configured"
+    called: list[str] = []
 
+    def recording_get(url: str, **kwargs):
+        called.append(url)
+        return _external_get(url, **kwargs)
+
+    service.external_get = recording_get
     response = service.snapshot(force=True)
 
     quotes = next(group for group in response.groups if group.key == "quotes")
-    fmp = next(item for item in quotes.items if item.name == "FMP")
-    assert fmp.status == "offline"
-    assert "not configured" in fmp.detail
+    assert [item.name for item in quotes.items] == ["Brapi", "EODHD", "Finnhub", "Massive"]
+    assert quotes.total_count == 4
+    assert called and not [url for url in called if "financialmodelingprep" in url]
 
 
 def test_massive_is_monitored_in_market_quotes() -> None:

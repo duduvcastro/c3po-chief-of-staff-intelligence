@@ -19,7 +19,7 @@ from app.config import Settings
 from app.database import Database
 from app.governance_vulnerability import GOVERNANCE_INCIDENT_KEY
 from app.operational_incidents import OperationalIncidentService
-from app.valuation_worker_contract import VALUATION_WORKER_PHASES
+from app.valuation_worker_contract import VALUATION_WORKER_PHASES, VALUATION_WORKER_RETIRED_PHASES
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -176,14 +176,17 @@ def test_the_sole_blocker_counts_rows_that_one_gate_alone_holds(monkeypatch: pyt
 
 
 def test_the_valuation_phases_name_each_enabled_phase_in_closed_words(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # the amber card of 30/10/2026 named no phase anywhere a reader could reach: the report now says which one, never why
+    # the amber card of 30/10/2026 named no phase anywhere a reader could reach: the report now says which one, never why.
+    # The phases retired with FMP (owner 03/11/2026) are never listed, whatever their last run says.
     monkeypatch.setenv(valuation_env.ENSEMBLE_LIVE_ENV, "true")
     for name in (valuation_env.DECISOR_SHADOW_ENV, valuation_env.EARNINGS_CALENDAR_ENV):
         monkeypatch.delenv(name, raising=False)
-    settings = Settings(database_url="", day_d_dataset_root=tmp_path)
+    settings = Settings(database_url="", day_d_dataset_root=tmp_path, valuation_price_history_enabled=True,
+                        r2d2_cash_yield_accounting_enabled=True)
     database = Database(settings)
-    done = NOW - timedelta(hours=1)  # 07:00 BRT: after the 01:00 BRT off-hours due time of this cycle
-    outcome = {"ensemble_live": "failed", "v3_shadow": "running", "shadow": "old"}
+    done = NOW - timedelta(hours=1)  # 07:00 BRT: after the 01:00 BRT off-hours due time of this cycle (and cash_yield's 06:00)
+    outcome = {"ensemble_live": "failed", "price_history": "running", "cash_yield": "old",
+               "v2_data": "failed", "peer_quality": "running", "shadow": "old"}  # the last three: retired
     for phase, definition in VALUATION_WORKER_PHASES.items():
         if phase == "chewie":
             continue  # never ran
@@ -195,27 +198,26 @@ def test_the_valuation_phases_name_each_enabled_phase_in_closed_words(tmp_path: 
     result = module.valuation_phase_diagnostics(settings, database, NOW)
     assert result == {"status": "ok", "phases": [
         {"phase": "canonical", "state": "ok", "advisory": False},
+        {"phase": "cash_yield", "state": "stale", "advisory": False},
         {"phase": "chewie", "state": "pending", "advisory": False},
         {"phase": "ensemble_live", "state": "failed", "advisory": True},
-        {"phase": "peer_quality", "state": "ok", "advisory": False},
-        {"phase": "shadow", "state": "stale", "advisory": False},
-        {"phase": "v2_data", "state": "ok", "advisory": False},
-        {"phase": "v3_shadow", "state": "running", "advisory": False},
-    ]}  # cash_yield, price_history, decisor_shadow and earnings_calendar are off: not expected, not listed
+        {"phase": "price_history", "state": "running", "advisory": False},
+    ]}  # decisor_shadow and earnings_calendar are off, the four retired phases gone: not expected, not listed
+    assert not {item["phase"] for item in result["phases"]} & set(VALUATION_WORKER_RETIRED_PHASES)
     assert SYMBOL not in json.dumps(result) and "boom" not in json.dumps(result)
     report = module.incidents_report(settings, database, NOW)
     assert report["diagnostics"]["valuation_phases"] == result
     verified = _verify(tmp_path, json.dumps(report))
     assert verified.returncode == 0, verified.stderr
     summary = (tmp_path / "verify" / "ops-readonly-report" / "summary.md").read_text(encoding="utf-8")
-    assert ("- Fases do worker do Valuation: chewie sem sucesso registrado; ensemble_live falhou (consultiva); shadow sem sucesso neste ciclo; "
-            "v3_shadow em execução; em dia 3") in summary
+    assert ("- Fases do worker do Valuation: cash_yield sem sucesso neste ciclo; chewie sem sucesso registrado; ensemble_live falhou "
+            "(consultiva); price_history em execução; em dia 1") in summary
     assert SYMBOL not in summary and "boom" not in summary
 
     def unreadable(_codes: list[str]) -> dict[str, Any]:
         raise RuntimeError(f"{SYMBOL} connection refused")
 
-    for phase in ("chewie", "v3_shadow", "shadow", "ensemble_live"):  # every phase in day: the summary says so in one line
+    for phase in ("cash_yield", "chewie", "price_history", "ensemble_live"):  # every phase in day: the summary says so in one line
         run_id = database.begin_ingestion_run(VALUATION_WORKER_PHASES[phase]["code"], SYMBOL, "test", {})
         database._ingestion_runs[run_id].update(started_at=done + timedelta(minutes=1), status="succeeded",
                                                 completed_at=done + timedelta(minutes=1))
@@ -223,7 +225,7 @@ def test_the_valuation_phases_name_each_enabled_phase_in_closed_words(tmp_path: 
     verified = _verify(tmp_path, json.dumps(module.incidents_report(settings, database, NOW)))
     assert verified.returncode == 0, verified.stderr
     summary = (tmp_path / "verify" / "ops-readonly-report" / "summary.md").read_text(encoding="utf-8")
-    assert "- Fases do worker do Valuation: todas em dia (7)" in summary
+    assert "- Fases do worker do Valuation: todas em dia (5)" in summary
 
     # a sixth state word is a defect of the classification, never printed: the block says the reading failed
     with monkeypatch.context() as patch:
@@ -248,6 +250,20 @@ def test_the_valuation_phase_vocabulary_follows_the_worker_contract() -> None:
     assert names is not None and states is not None
     assert ast.literal_eval(" ".join(names.group(1).split())) == set(module.VALUATION_PHASES) == {*VALUATION_WORKER_PHASES, "other"}
     assert ast.literal_eval(states.group(1)) == set(module.VALUATION_PHASE_STATES)
+
+
+def test_the_card_vocabulary_follows_the_health_cards() -> None:
+    # the runner refuses any card word outside its list: it names exactly the cards health_cards can emit (the V2.1b cycle
+    # and V3 pre-A/B gate cards left with the phases retired with FMP, owner 03/11/2026)
+    import ast
+
+    block = re.search(r"CARD_VOCABULARY = (\{.*?\n\s*\})\n", _verifier(), re.S)
+    assert block is not None
+    vocabulary = ast.literal_eval(" ".join(block.group(1).split()))
+    assert vocabulary == {"group": set(module.HEALTH_GROUPS), "card": set(module.HEALTH_CARD_KEYS),
+                          "status": set(module.HEALTH_STATUSES)}
+    assert set(module.HEALTH_CARD_KEYS) == {"governance_vulnerabilities", "operational_incidents", "valuation_worker_phases",
+                                            "day_d_disk_reserve", "probe_failed", "unmapped"}
 
 
 def test_the_runner_vocabularies_match_the_decisor_and_the_export() -> None:
@@ -338,7 +354,8 @@ def test_the_workflow_verifier_accepts_the_cli_output_posts_once_per_run_and_tur
     assert [line for line in comment if line.startswith("- [vermelho]")] == [
         f"- [vermelho] cartão `{card['group']}/{card['card']}`" + (f" — {phases}" if card["card"] == "valuation_worker_phases" else "")
         for card in red_cards]
-    assert "- [vermelho] cartão `controls/valuation_worker_phases` — canonical sem sucesso registrado; chewie sem sucesso registrado;" in "\n".join(comment)
+    # the whole line: the phases retired with FMP (03/11/2026) no longer follow chewie
+    assert "- [vermelho] cartão `controls/valuation_worker_phases` — canonical sem sucesso registrado; chewie sem sucesso registrado" in comment
     assert "incidentes ativos 4 (1 críticos, 2 há mais de 24 h); ingestões presas há mais de 30 min: 1" in comment[1]
     assert "- [vermelho] cartão `governance/operational_incidents`" in comment
     assert "- [crítico] 1 incidente(s) crítico(s) aberto(s)" in comment

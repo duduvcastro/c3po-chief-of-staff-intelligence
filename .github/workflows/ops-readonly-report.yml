@@ -169,8 +169,8 @@ jobs:
           }
           CARD_VOCABULARY = {
               "group": {"governance", "controls"},
-              "card": {"governance_vulnerabilities", "operational_incidents", "valuation_worker_phases", "valuation_v2_1b_cycle",
-                       "v3_pre_ab_gate", "day_d_disk_reserve", "probe_failed", "unmapped"},
+              "card": {"governance_vulnerabilities", "operational_incidents", "valuation_worker_phases", "day_d_disk_reserve",
+                       "probe_failed", "unmapped"},
               "status": {"attention", "offline"},
           }
           DIAGNOSTICS = {"job_failure_families", "governance", "decisor", "valuation_phases"}
