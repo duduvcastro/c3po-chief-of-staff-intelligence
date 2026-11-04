@@ -12,7 +12,7 @@ the close, 16:00 ET (owner 30/10; 15:29:59 until then) — the ask and the sprea
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
 not answer, up to 20 positions sized by the spread paid (owner 31/10: 5% of NAV at <= 2 bps, 4% at <= 3 bps, 2.5% at
 <= 5 bps; NAV/20 each until then), re-entry allowed after an exit. Every second each open position is checked at the real
-bid: stop at -0.20% net (owner 31/10; -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
+bid: stop at -1% net (owner 04/11, from 05/11; -0.20% from 02/11, -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
 last step the peak reached (owner 03/11: every 0.05 — +0.10, +0.15, +0.20, +0.25 ...; 02-03/11: +0.10, +0.20, then every
 0.15; until then every 0.05 up to +0.30%, every 0.10 above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.

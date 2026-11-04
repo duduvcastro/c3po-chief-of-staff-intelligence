@@ -102,7 +102,7 @@ def _schedule(phases: list[tuple[float, float, list[str]]], quote_share: float, 
     """Frames for each (events per second, seconds, traded names) phase from ``start``: trades of the phase's names;
     ``quote_share`` of the events are quotes of HELD in turn (a bid unique per name, rising a hair each time: never a
     stop or a lock); from ``exits_from`` (09:31, when the engine's exits start) one crossing quote per CROSSING name at
-    -0.6% net, spread over the following phases. Returns the frames, each name's quotes (scheduled time, bid), the
+    0.4 point under the stop in force, spread over the following phases. Returns the frames, each name's quotes (scheduled time, bid), the
     crossing instants, and the trade and quote counts."""
     rng = random.Random(30102026)
     frames: list[tuple[float, str]] = []
@@ -130,7 +130,8 @@ def _schedule(phases: list[tuple[float, float, list[str]]], quote_share: float, 
                     if name in crossings or (name in cross_at and clock >= cross_at[name]):
                         if name not in crossings:
                             crossings[name] = clock
-                            bid = round(ENTRY_BID * 0.994, 4)  # about -0.6% net: under the stop
+                            # 0.4 point under the stop of the rule in force (-1% from 05/11, -0.20% until then): a crossing
+                            bid = round(ENTRY_BID * (1 - (engine_module.stop_of() + 0.4) / 100), 4)
                         else:
                             continue  # sold: no more quotes of it
                     else:

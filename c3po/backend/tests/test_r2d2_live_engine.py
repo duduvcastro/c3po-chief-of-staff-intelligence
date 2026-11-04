@@ -1461,6 +1461,7 @@ def test_the_engines_marks_dress_the_book_it_publishes_through_the_real_store(tm
     assert row["marked_at"] == t.isoformat() or row["marked_at"] > t.isoformat()
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_a_full_check_whose_reads_cross_the_close_never_sells(monkeypatch) -> None:
     """The same witness on the full check (pre-review of ab570efb): its pushed phase and its Massive/feed phase never
     mark nor sell at or past 16:00, wherever a read or Massive's wait crosses it."""
@@ -3317,7 +3318,6 @@ def test_the_massive_trade_path_keeps_up_with_an_opening_burst() -> None:
     assert rate > 5 * 5_984
 
 
-@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_the_shared_massive_path_keeps_the_exits_served_under_an_opening_load() -> None:
     """Codex 6537835879: the REAL run_session (full step, fast passes, commits) with the shadow on the REAL reader loop —
     trades and quotes mixed in a short opening burst then a regular rate, ten quotes crossing a stop: no trade or frame
@@ -3376,6 +3376,7 @@ def test_a_flat_close_confirms_the_feeds_bid_with_any_fresh_trade(monkeypatch) -
     assert [f["reason"].split(",")[0] for f in fills if f["side"] == "SELL"] == ["venda: zerada no fechamento"]
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_a_flat_close_never_carries_an_unconfirmed_stop_on_the_feed(monkeypatch) -> None:
     """Pre-review of f3db006c P1: the feed's bid at the stop (-0.5%), the fresh trade at -0.1% — the stop is unconfirmed,
     the window's flat sale still stands on that trade; without the flat close it stays unconfirmed."""
