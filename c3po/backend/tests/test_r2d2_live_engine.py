@@ -110,7 +110,8 @@ def _held(engine: Engine, symbol: str) -> tuple[Position, Callable[[float], floa
 @pytest.fixture
 def stop_at_two_tenths(monkeypatch):
     """The exit mechanics these tests drive were written on the -0.20% stop of 02-04/11 (TIT-2S5-F20-L5); the rule in force
-    stops at -1% from 05/11 (owner 04/11). The level is these tests' scenario, not their subject: pinned to -0.20% here."""
+    stops at -0.125% from 06/11 (owner 05/11; -1% on 05/11). The level is these tests' scenario, not their subject: pinned to
+    -0.20% here."""
     monkeypatch.setitem(engine_module.STOPS, engine_module.CONFIG, 0.20)
     monkeypatch.setattr(engine_module, "_STOP_IN_FORCE", 0.20)
     monkeypatch.setitem(engine_module.RULE, "stop_percent", 0.20)
@@ -127,9 +128,11 @@ def test_the_step_lock_floor_is_the_last_step_the_peak_reached() -> None:
            [0.10, 0.10, 0.15, 0.15, 0.20, 0.20, 0.25, 0.30, 0.35, 0.65, 0.95]
     for step in (0.15, 0.20, 0.25, 0.35, 0.80):  # a hair under a step still counts it
         assert floor(step - 1e-12) == floor(step)
-    assert engine_module.RULE["stop_percent"] == 1.00 and engine_module.RULE["lock_min_percent"] == 0.10  # owner 04/11
-    assert engine_module.stop_of() == 1.00 and engine_module.stop_of("TIT-2S5-F20-L5") == engine_module.stop_of("TIT-2S5-F20") == 0.20
-    assert engine_module.stop_of("TIT-2S3-RT") == 1.00  # a label without its own stop takes the rule in force
+    assert engine_module.RULE["stop_percent"] == 0.125 and engine_module.RULE["lock_min_percent"] == 0.10  # owner 05/11
+    assert engine_module.stop_of() == 0.125 and engine_module.stop_of("TIT-2S5-F20-L5-S1") == 1.00
+    assert engine_module.stop_of("TIT-2S5-F20-L5") == engine_module.stop_of("TIT-2S5-F20") == 0.20
+    assert engine_module.stop_of("TIT-2S3-RT") == 0.125  # a label without its own stop takes the rule in force
+    assert engine_module.LOCK_LADDERS["TIT-2S5-F20-L5-S1"] == engine_module.LOCK_LADDERS[engine_module.CONFIG]  # the same lock
 
 
 @pytest.mark.parametrize(("peak", "hold", "sell", "floor"), [
@@ -165,6 +168,7 @@ def test_a_session_keeps_the_lock_ladder_of_its_own_rule() -> None:
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: trava de lucro")]
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_a_carried_position_is_armed_by_its_net_never_by_a_peak_of_the_earlier_rule() -> None:
     """Pre-review: a negative position carried from the +0.15% rule with a peak of +0.12% was never armed; under the new
     rule it must not be armed (and sold as a 'lock' at a loss) by that stored peak — only when its net reaches +0.10%."""
@@ -184,9 +188,22 @@ def test_the_floor_has_no_gap_under_the_wide_band() -> None:
     assert round(floor(0.20 - 2e-9), 10) == 0.15  # the step under +0.20 is +0.15 (owner 03/11)
 
 
-def test_the_stop_before_the_lock_arms_is_minus_one_percent_from_05_11() -> None:
-    """Owner 04/11: "coloque o stop do R2D2 em -1%, quero ver se com esse respiro a mais como as ações performam"."""
+def test_the_stop_before_the_lock_arms_is_minus_an_eighth_from_06_11() -> None:
+    """Owner 05/11: "Coloque o stop loss amanha em -0,125%"."""
     engine = _engine()
+    position, bid = _held(engine, "S2")
+    assert _mark(engine, "S2", _at(10, 0), bid(0.09)) == [] and not position.armed  # positive, under +0.10%: not armed
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.125) < 1e-9
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.12)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid(-0.13))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
+
+
+def test_the_session_of_05_11_keeps_its_stop_at_minus_one_percent() -> None:
+    """Owner 04/11: "coloque o stop do R2D2 em -1%, quero ver se com esse respiro a mais como as ações performam" — the
+    session of 05/11 (TIT-2S5-F20-L5-S1) keeps it: the republish of it prices its stops by its own rule."""
+    engine = _engine()
+    engine.state.config = "TIT-2S5-F20-L5-S1"
     position, bid = _held(engine, "S2")
     assert _mark(engine, "S2", _at(10, 0), bid(0.09)) == [] and not position.armed  # positive, under +0.10%: not armed
     assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -1.00) < 1e-9
@@ -269,8 +286,10 @@ def test_the_rule_in_force_has_its_text_and_slots_on_the_screen() -> None:
     # against its source): the rule in force's own numbers, the days before 02/11 their -0.4% and 0.05 steps
     risk, hold, exits = r2d2_lab_live.LIVE_RISK[engine_module.CONFIG]
     rule = engine_module.RULE
-    assert "stop −%.2f%% net" % rule["stop_percent"] in risk and "stop −%.2f%% net" % rule["stop_percent"] in hold
-    assert "stop −%.2f%%" % rule["stop_percent"] in exits and "+%.2f%%" % rule["lock_min_percent"] in exits
+    stop = rule["stop_percent"]
+    stop_text = ("%.2f" % stop) if round(stop, 2) == stop else ("%.3f" % stop)  # -0.125% (owner 05/11) has three decimals
+    assert "stop −%s%% net" % stop_text in risk and "stop −%s%% net" % stop_text in hold
+    assert "stop −%s%%" % stop_text in exits and "+%.2f%%" % rule["lock_min_percent"] in exits
     assert "5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps" in risk
     assert [engine_module.size_weight(s) * 5 for s in (2.0, 3.0, 5.0)] == [5.0, 4.0, 2.5]  # the shares the text states
     assert "+0.10%, then every 0.05: +0.15%, +0.20%, +0.25%" in hold
@@ -309,7 +328,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20-L5-S1" and len(validated["trades"]) == 1
+    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20-L5-S0125" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -491,6 +510,7 @@ def test_a_spread_refusal_is_counted_in_its_band_and_followed_as_a_shadow_trade(
     assert abs(stats["net_usd"] - 50_000.0 * 0.5 * 0.09 / 100) < 1e-6 and not engine.state.positions and not engine.fills  # no money
 
 
+@pytest.mark.usefixtures("stop_at_two_tenths")
 def test_the_shadows_close_with_the_session_and_the_line_and_status_carry_numbers_only() -> None:
     engine = _crossing_engine()
     t = _at(9, 41)
@@ -2614,7 +2634,7 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 4.999 bps buy, 5.5 bps is refused (it was 3 bps)."""
-    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20-L5-S1"
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20-L5-S0125"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
