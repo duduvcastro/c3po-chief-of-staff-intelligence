@@ -433,17 +433,7 @@ jobs:
           M=/root/c3po-migration
           W=/var/tmp/c3po-migration
           sudo install -d -m 0700 -o root -g root "$M" "$M/prestop-logs" "$M/units"
-          # 1. the explicit hold FIRST: without it the watchdog re-enables timers and starts db/api/web on its own
-          if ! sudo test -e "$M/hold.recorded"; then
-            if sudo test -e /etc/c3po/security-maintenance.hold; then sudo cp -p /etc/c3po/security-maintenance.hold "$M/hold.before"; fi
-            sudo touch "$M/hold.recorded"
-          fi
-          if ! sudo test -e /etc/c3po/security-maintenance.hold; then
-            ( umask 077; printf '%s\n' 'migration 2026-11-07: old host quiesced in C1a; removed only by R0' | sudo tee /etc/c3po/security-maintenance.hold >/dev/null )
-          fi
-          sudo test -s /etc/c3po/security-maintenance.hold || fail hold
-          say "hold=present"
-          # 2. the crontab, saved ONCE (a re-run keeps the first copy) and then emptied, so no new job starts
+          # 1. the crontab, read and saved ONCE before anything changes (a re-run keeps the first copy)
           if sudo test -s "$M/crontab.before"; then
             live=$(crontab -l 2>/dev/null || true)
             [ -z "$live" ] || [ "$live" = "$(sudo cat "$M/crontab.before")" ] || fail crontab_changed_since_saved
@@ -454,6 +444,17 @@ jobs:
             rm -f "$W.crontab"
             crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_save
           fi
+          # 2. the explicit hold next, before any stop: without it the watchdog re-enables timers and starts db/api/web
+          if ! sudo test -e "$M/hold.recorded"; then
+            if sudo test -e /etc/c3po/security-maintenance.hold; then sudo cp -p /etc/c3po/security-maintenance.hold "$M/hold.before"; fi
+            sudo touch "$M/hold.recorded"
+          fi
+          if ! sudo test -e /etc/c3po/security-maintenance.hold; then
+            ( umask 077; printf '%s\n' 'migration 2026-11-07: old host quiesced in C1a; removed only by R0' | sudo tee /etc/c3po/security-maintenance.hold >/dev/null )
+          fi
+          sudo test -s /etc/c3po/security-maintenance.hold || fail hold
+          say "hold=present"
+          # then the crontab is emptied, so no new job starts
           crontab -r 2>/dev/null || true
           [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_not_empty
           # 3. every job cron already started must end (cron's cgroup back to its own process, no summary container)
