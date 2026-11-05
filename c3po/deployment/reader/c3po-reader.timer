@@ -1,0 +1,13 @@
+[Unit]
+Description=Start the approved V2 shadow reader on session days
+
+[Timer]
+OnBootSec=90s
+OnCalendar=Mon..Fri *-*-* 04:00:00 America/New_York
+OnCalendar=Mon..Fri *-*-* 09:29:20 America/New_York
+Persistent=false
+AccuracySec=1s
+Unit=c3po-reader.service
+
+[Install]
+WantedBy=timers.target
