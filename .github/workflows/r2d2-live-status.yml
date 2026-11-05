@@ -260,6 +260,7 @@ jobs:
               done
               names=${names#,}; [ -n "$names" ] || names=none
               note "dropin_refs=$(printf '%s\n' $refs | grep -c .) on_day_d=$on_day_d missing_on_new=$missing missing_names=$names"
+              [ "$on_day_d" -ge 1 ] || { note "gate=FAIL reason=no_day_d_guard_found"; rc=1; }
               if old "crontab -l" 2>/dev/null \
                 | new_tmp "sudo install -d -m 0700 /root/c3po-migration && sudo tee /root/c3po-migration/crontab.deploy >/dev/null && sudo chmod 0600 /root/c3po-migration/crontab.deploy" > /dev/null 2>&1; then note "crontab=stored_inert"
               else note "gate=FAIL reason=crontab"; rc=1; fi
