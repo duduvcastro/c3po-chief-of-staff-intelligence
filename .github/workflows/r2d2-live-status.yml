@@ -1,107 +1,579 @@
-name: R2D2 live status (read-only)
+name: Host migration to the 8 GB host (one-off branch, never merged)
 
-# The live R2D2 runs inside the C3PO server (service r2d2-live, owner 27/10/2026). This read-only check prints the
-# container state, the engine's own summary from the database (no symbols), its count-only log lines and the NUMBER of
-# error lines (this repository is public: no symbol and no error text is printed), any API token redacted. It changes
-# nothing on the host.
+# BRANCH fable/host-migration-8gb, never merged. This file REPLACES r2d2-live-status.yml on the branch only, the proven
+# way to dispatch a one-off workflow (gh workflow run r2d2-live-status.yml --ref fable/host-migration-8gb -f phase=X
+# -f confirm=X); main keeps its own r2d2-live-status.yml. Owner 03/11/2026: "8 GB no fim de semana"; plan v2 in #501.
+# A Lightsail snapshot only creates an instance with an equal or larger disk (640 GB there, 160 GB here), so the move
+# is a fresh install plus a copy of the data. One phase per dispatch, each only after the Codex's GO on this commit:
+#   A    new host (temporary address): packages pinned, the old host's image store, swap, sysstat, timezone. No writer.
+#   B    old -> new through this runner: app tree (volatile trees excluded), journald, the Day-D guard drop-ins and the
+#        crontab stored INERT, authorized_keys (the deploy key itself checked), images (IDs compared). No writer.
+#   R    rehearsal of the data path on the LIVE old database (one REPEATABLE READ snapshot: dump, globals with the role
+#        password hashes, exact counts), restored on a throwaway volume of the new host and compared, then removed.
+#   C1a  old: crontab saved and emptied, c3po-* and apt timers masked, logs kept, ingress and writers stopped (db up),
+#        final dump/globals/counts, one offsite backup. Then the restore drill is dispatched by hand.
+#   C1b  old: db stopped clean; volatile trees, one-pagers and the final dump copied and compared; Docker masked; Day-D
+#        unmounted; power-off. Then the console moves the disk and the static IP, and the operator puts the new host's
+#        console-verified key into C3PO_AWS_KNOWN_HOSTS.
+#   C2   new (static address): Day-D mounted by UUID (hash below, never formatted), guards installed, legacy network
+#        and containers created (not started), the database alone restored and compared. Then the production pipeline is
+#        dispatched by hand with the named revision: T_WRITE starts there.
+#   C3L  new: cloudflared and pluggy-webhook started (one tunnel connector). D: the old crontab installed.
+#   R0   back-out BEFORE T_WRITE only, on the old host after the console returns disk and IP and powers it on.
+# Scripts reach the hosts base64-encoded in the ssh argument and run with stdin from /dev/null (nothing can swallow
+# them). On the old host they hold the reboot controller's maintenance lease. Every printed line passes an anchored
+# guard plus IPv4/IPv6/host-name denies; details stay in /var/log/c3po-migration (root, 0600) on each host.
 
 on:
   workflow_dispatch:
     inputs:
-      minutes:
-        description: "log window, in minutes (1-240)"
-        default: "30"
+      phase:
+        description: "A | B | R | C1a | C1b | C2 | C3L | D | R0"
+        required: true
+        type: choice
+        options: [A, B, R, C1a, C1b, C2, C3L, D, R0]
+      confirm:
+        description: "the phase again"
+        required: true
 
 permissions:
   contents: read
+  actions: read  # the pre-flight refuses to run beside a production pipeline
 
 concurrency:
-  group: r2d2-live-status
+  group: c3po-host-migration
   cancel-in-progress: false
 
 jobs:
-  status:
+  phase:
     runs-on: ubuntu-latest
-    environment: production  # the host's address and known hosts are the production environment's (the repository-level ones predate the host migration)
-    timeout-minutes: 10
+    environment: production
+    timeout-minutes: 150
+    env:
+      PHASE: ${{ inputs.phase }}
+      CONFIRM: ${{ inputs.confirm }}
+      # sha256 of the Day-D filesystem UUID read on the old host (05/11/2026): the new host mounts only that filesystem
+      DAY_D_UUID_SHA256: 185a4adbded91480be2236bbc4b0137793184e4311e9f9e5ccb6b725c60232cf
     steps:
-      - name: Configure deployment SSH key
+      - name: Check the phase and that no production pipeline is running
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [ "$PHASE" = "$CONFIRM" ] || { echo "phase and confirmation differ"; exit 1; }
+          [[ "$PHASE" =~ ^(A|B|R|C1a|C1b|C2|C3L|D|R0)$ ]] || { echo "unknown phase"; exit 1; }
+          busy=$(gh run list --repo "$REPO" --workflow c3po-pipeline.yml --limit 20 --json status \
+            --jq '[.[] | select(.status != "completed")] | length')
+          [ "$busy" = "0" ] || { echo "a production pipeline is queued or running: refusing"; exit 1; }
+          echo "phase=$PHASE pipeline_busy=0"
+
+      - name: Configure SSH
         env:
           DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+          NEW_HOSTKEY: ${{ secrets.C3PO_AWS_NEW_HOSTKEY }}
         run: |
-          install -m 700 -d ~/.ssh || exit 1
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy || exit 1
-          chmod 600 ~/.ssh/c3po_deploy || exit 1
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts || exit 1
-          chmod 600 ~/.ssh/known_hosts || exit 1
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          # "c3po-new ssh-ed25519 <key>", read from the Lightsail console's own SSH on the new host (plan v2, F0)
+          [[ "$NEW_HOSTKEY" =~ ^c3po-new\ ssh-ed25519\ [A-Za-z0-9+/]{68}$ ]] || { echo "new host key malformed"; exit 1; }
+          { printf '%s\n' "$KNOWN_HOSTS"; printf '%s\n' "$NEW_HOSTKEY"; } > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf '%s\n' 'Host *' '  BatchMode yes' '  StrictHostKeyChecking yes' '  ConnectTimeout 15' \
+            '  ServerAliveInterval 10' '  ServerAliveCountMax 6' '  IdentityFile ~/.ssh/c3po_deploy' '  IdentitiesOnly yes' \
+            > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          ssh-keygen -y -f ~/.ssh/c3po_deploy | cut -d ' ' -f 1,2 > ~/.ssh/c3po_deploy.pub.bare
+          [[ "$(cat ~/.ssh/c3po_deploy.pub.bare)" =~ ^ssh-ed25519\ [A-Za-z0-9+/]{68}$ ]] || { echo "deploy key unexpected"; exit 1; }
 
-      - name: Read the r2d2-live state, summary and logs
+      - name: Run the phase
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
+          NEW: ${{ secrets.C3PO_AWS_NEW_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
-          MINUTES: ${{ inputs.minutes }}
         shell: bash
         run: |
+          set +e  # every failure below is handled and reported explicitly
           set -uo pipefail
-          [[ "$MINUTES" =~ ^[0-9]{1,3}$ ]] && [ "$MINUTES" -ge 1 ] && [ "$MINUTES" -le 240 ] || { echo "minutes must be 1-240"; exit 1; }
+          out="$RUNNER_TEMP/out.txt"; : > "$out"
+          EMPTY_SHA=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+          LEASE=/usr/local/lib/c3po-security/c3po_maintenance_run.py
+          # before the IP moves (A, B, R, C1a, C1b) the static address is the old host; from C2 on it is the new host
+          old() { ssh "$USER@$HOST" "$@"; }
+          new_tmp() { ssh -o HostKeyAlias=c3po-new "$USER@$NEW" "$@"; }
+          static() { ssh "$USER@$HOST" "$@"; }
+          note() { printf '%s %s\n' "$PHASE" "$*" >> "$out"; }
+          vcpus() { "$1" 'nproc' 2>/dev/null; }
+          # remote TARGET LEASE: the script on stdin, shipped base64 in the argument, run with stdin from /dev/null; only
+          # its "<PHASE> ..." lines are kept
+          remote() {
+            local target=$1 lease=$2 b64 wrap="" status
+            b64=$(base64 -w0)
+            [ "$lease" = yes ] && wrap=$LEASE
+            "$target" "set -o pipefail; f=\$(mktemp /tmp/c3po-migration.XXXXXX) && printf %s '$b64' | base64 -d > \"\$f\" && PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+              > "$RUNNER_TEMP/remote.txt" 2>/dev/null
+            status=$?
+            grep -E "^$PHASE " "$RUNNER_TEMP/remote.txt" >> "$out"
+            return $status
+          }
+          # the same tree hash on both ends, never the hash of nothing
+          same_hash() {  # same_hash LABEL "command" TARGET_A TARGET_B
+            local a b
+            a=$("$3" "set -o pipefail; $2" 2>/dev/null); b=$("$4" "set -o pipefail; $2" 2>/dev/null)
+            if [[ "$a" =~ ^[0-9a-f]{64}$ ]] && [ "$a" != "$EMPTY_SHA" ] && [ "$a" = "$b" ]; then note "$1=match"; return 0; fi
+            note "gate=FAIL reason=$1"; return 1
+          }
+          prelude='set -euo pipefail
+          exec 3>&1
+          sudo install -d -m 0700 -o root -g root /var/log/c3po-migration
+          exec > >(sudo tee -a "/var/log/c3po-migration/$PHASE.log" >/dev/null) 2>&1
+          say() { printf "%s %s\n" "$PHASE" "$*" >&3; }
+          fail() { say "gate=FAIL reason=$1"; exit 20; }
+          cleanup() { :; }
+          trap '"'"'s=$?; cleanup || true; [ "$s" = 0 ] || [ "$s" = 20 ] || say "gate=FAIL reason=exit_$s"'"'"' EXIT
+          APP=/opt/chief-of-staff-digital
+          dc() { docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" "$@"; }
+          legacy() { docker compose --env-file "$APP/.env" -f "$APP/docker-compose.yml" "$@"; }
+          count_sql="SELECT '"'"'count'"'"', format('"'"'%I.%I'"'"', schemaname, relname), (xpath('"'"'/row/c/text()'"'"', query_to_xml(format('"'"'select count(*) as c from %I.%I'"'"', schemaname, relname), false, true, '"'"''"'"')))[1]::text FROM pg_stat_user_tables ORDER BY 2;"
+          '
           rc=0
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "MINUTES=$MINUTES bash -s" <<'REMOTE' > "$RUNNER_TEMP/out.txt" 2>&1 || rc=$?
-          set -uo pipefail
-          cd /opt/chief-of-staff-digital || exit 10
-          compose=(docker compose --env-file .env -f c3po/compose.yml)
-          echo "== container"
-          state=$("${compose[@]}" ps r2d2-live --format '{{.Name}} {{.State}} {{.Status}}') || exit 11
-          [ -n "$state" ] || { echo "r2d2-live is not running"; exit 12; }
-          echo "$state"
-          # whether the entries can read the Massive NBBO: the credential's PRESENCE only, never its value
-          cid=$("${compose[@]}" ps -q r2d2-live) || exit 11
-          massive=unset
-          docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$cid" | grep -qE '^(C3PO_)?MASSIVE_API_TOKEN=.+' && massive=set
-          echo "R2D2 live config: massive_token=$massive"
-          echo "== summary"
-          "${compose[@]}" exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' api python -m app.r2d2_live_engine --status </dev/null || exit 13
-          # This repository is PUBLIC and so are its run logs: only the engine's own count-only lines (no symbol) are
-          # printed, and the error lines are COUNTED, never shown.
-          logs=$("${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 2000 r2d2-live 2>&1) || exit 14
-          echo "== engine lines (last ${MINUTES} min)"
-          # only the engine's own lines of EXACT shapes: numbers, dates and a closed set of stream states (Codex #500 P2-5)
-          printf '%s\n' "$logs" | grep -oE "R2D2 live heartbeat: stream=(connecting|connected|error|stopped|idle|other) error=[01] trades=[0-9]+ quotes=[0-9]+ candidates=[0-9]+ signals=[0-9]+ positions=[0-9]+ fills=[0-9]+ nav=-?[0-9]+[.][0-9]{2}$|R2D2 live: session [0-9]{4}-[0-9]{2}-[0-9]{2}( [(]resumed[)])?, universe [0-9]+, carried [0-9]+, NAV -?[0-9]+[.][0-9]{2}$|R2D2 live: [0-9]+ candidates of [0-9]+ with an opening print$|R2D2 live: the lost opening recovered: [0-9]+ tapes of [0-9]+ names, [0-9]+ candidates$|R2D2 live: session [0-9]{4}-[0-9]{2}-[0-9]{2} closed, NAV -?[0-9]+[.][0-9]{2}, [0-9]+ fills, [0-9]+ carried$|R2D2 live: next session [0-9]{4}-[0-9]{2}-[0-9]{2}, waiting [0-9]+ s$|R2D2 live: the session failed$|R2D2 live: previous session [0-9]{4}-[0-9]{2}-[0-9]{2} not republished [(]refused by the screen[)]$|R2D2 live feed: trade_messages=[0-9]+ quote_messages=[0-9]+ trade_lag_ms=-?[0-9]+ quote_lag_ms=-?[0-9]+ trade_lag_max_ms=-?[0-9]+ quote_lag_max_ms=-?[0-9]+ skips held=[0-9]+ slots=[0-9]+ noquote=[0-9]+ stale=[0-9]+ spread=[0-9]+ late=[0-9]+ implausible=[0-9]+ nbbo massive=[0-9]+ stream=[0-9]+ unanswered=[0-9]+ mismatch=[0-9]+ stream_would_refuse=[0-9]+( exits massive=[0-9]+ stream=[0-9]+ none=[0-9]+ unconfirmed=[0-9]+)?( unreadable trade=[0-9]+ quote=[0-9]+)?$|R2D2 live massive: state=(idle|connecting|connected|error|stopped|other) symbols=[0-9]+ quotes=[0-9]+ lag_ms=-?[0-9]+ lag_max_ms=-?[0-9]+ pushed=[0-9]+( fast=[0-9]+)? reconnects=[0-9]+( trade_symbols=[0-9]+ trades=[0-9]+ trade_lag_ms=-?[0-9]+ trade_lag_max_ms=-?[0-9]+ off_exchange=[0-9]+ extended=[0-9]+ sink_failures=[0-9]+)?$|R2D2 live shadow trades: names=[0-9]+ both=[0-9]+ vwap_bps_p50=[0-9]+[.][0-9] vwap_bps_p90=[0-9]+[.][0-9] last_bps_p50=[0-9]+[.][0-9] last_bps_p90=[0-9]+[.][0-9] open_agree=[0-9]+$|R2D2 live shadow: limit_bps=[0-9]+[.][0-9] 5_8 vetoed=[0-9]+ closed=[0-9]+ open=[0-9]+ wins=[0-9]+ net_usd=-?[0-9]+[.][0-9]{2} 8_10 vetoed=[0-9]+ closed=[0-9]+ open=[0-9]+ wins=[0-9]+ net_usd=-?[0-9]+[.][0-9]{2} gt10 vetoed=[0-9]+ closed=[0-9]+ open=[0-9]+ wins=[0-9]+ net_usd=-?[0-9]+[.][0-9]{2}$" | tail -90
-          echo "== error lines (count only): $(printf '%s\n' "$logs" | grep -cE "ERROR|Traceback|Exception")"
-          # the valuation worker's nightly producer line: counts and a closed vocabulary of failure codes, never a symbol
-          echo "== valuation worker line (last 30 h)"
-          worker=$("${compose[@]}" logs --no-color --since 30h --tail 20000 valuation-worker 2>&1) || worker=""
-          printf '%s\n' "$worker" | grep -oE "Valuation ensemble live: pending=[0-9]+ published=[0-9]+ partial=[0-9]+ names=[0-9]+ with_primary_tp=[0-9]+ names_pending=[0-9]+ failures=\{('[a-z_]+(:([a-z_0-9]+(_T)?|[A-Z]+[a-z][A-Za-z]*))*': [0-9]+(, )?)*\}$" | tail -4
-          # the screens' live US source (03/11/2026: Massive's snapshot, no EODHD WebSocket in the api): the api's own
-          # count-only line (numbers and a closed state set) and the NUMBER of its EODHD stream lines (0 once it is gone)
-          echo "== screen quotes (api, last ${MINUTES} min)"
-          # the api writes ~36k access lines an hour (the live book polls every 0.1 s): the tail covers the 240-min maximum
-          screens=$("${compose[@]}" logs --no-color --since "${MINUTES}m" --tail 400000 api 2>&1 | grep -E "Screen quotes|EODHD realtime") || screens=""
-          printf '%s\n' "$screens" | grep -oE "Screen quotes [(]Massive[)]: state=(stopped|idle|closed|connected|error) symbols=[0-9]+ polls=[0-9]+ failures=[0-9]+ ticks=[0-9]+$" | tail -12
-          echo "== api EODHD stream lines (count only): $(printf '%s\n' "$screens" | grep -cE "EODHD realtime")"
-          # EODHD's own daily counter (weighted calls since 00:00 GMT) against the plan's limit, read once: the decision to
-          # cancel the Extra Daily API Calls add-on (owner 03/11/2026) needs the real daily use. Two numbers and a date only.
-          echo "== EODHD calls today"
-          usage=$(timeout 60 "${compose[@]}" exec -T api python - <<'PY' 2>/dev/null | grep -oE '^(eodhd_calls_today=[0-9]+ limit=[0-9]+ date=[0-9-]{0,10}|eodhd usage read failed=[A-Za-z]+)$'
-          from app.config import get_settings
-          from app.market_data.http import JsonHttpClient
-          s = get_settings()
-          base = s.eodhd_base_url.rstrip("/")
-          try:
-              body = JsonHttpClient(timeout=10.0, max_retries=1).get_json(base + "/user/" if base.endswith("/api") else base + "/api/user/",
-                                                                          params={"api_token": s.eodhd_api_token, "fmt": "json"})
-              # a missing counter fails as KeyError, never a silent zero feeding the add-on's cancellation
-              print("eodhd_calls_today=%d limit=%d date=%s" % (int(body["apiRequests"]), int(body["dailyRateLimit"]),
-                                                               str(body.get("apiRequestsDate") or "")[:10]))
-          except Exception as error:
-              print("eodhd usage read failed=%s" % type(error).__name__)
-          PY
-          )
-          printf '%s\n' "${usage:-eodhd usage read failed}" | head -1
-          exit 0
+          case "$PHASE" in
+          A)
+            [ "$(vcpus new_tmp)" = 2 ] && note "identity_new=ok" || { note "gate=FAIL reason=identity_new"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              DRIVER=$(old "docker info --format '{{.Driver}}'" 2>/dev/null)
+              [[ "$DRIVER" =~ ^(overlay2|overlayfs)$ ]] || { note "gate=FAIL reason=old_driver"; rc=1; }
+            fi
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote new_tmp no || rc=1
+          [ "$(nproc)" = 2 ] || fail not_new_host
+          [ "$(awk '/MemTotal/ {printf "%d", $2 / 1048576}' /proc/meminfo)" -le 8 ] || fail not_new_host_memory
+          [ ! -e "$APP/.env" ] || fail app_already_present
+          sudo timedatectl set-timezone America/Sao_Paulo
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.asc
+          gpg --show-keys --with-colons /tmp/docker.asc | grep -q '^fpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:$' || fail docker_key
+          sudo install -m 0644 /tmp/docker.asc /etc/apt/keyrings/docker.asc
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" \
+            | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold install \
+            docker-ce=5:29.5.3-1~ubuntu.24.04~noble docker-ce-cli=5:29.5.3-1~ubuntu.24.04~noble \
+            docker-ce-rootless-extras=5:29.5.3-1~ubuntu.24.04~noble containerd.io=2.2.4-1~ubuntu.24.04~noble \
+            docker-buildx-plugin=0.34.1-1~ubuntu.24.04~noble docker-compose-plugin=5.1.4-1~ubuntu.24.04~noble \
+            jq rsync sysstat chrony unattended-upgrades python3-apt python3-boto3 python3-botocore \
+            python3-cryptography python3-requests python3-yaml
+          if [ "$DRIVER" = overlay2 ]; then  # the old host's image store, so image IDs compare one to one in B
+            sudo install -d -m 0755 /etc/docker
+            printf '{\n  "features": {"containerd-snapshotter": false}\n}\n' | sudo tee /etc/docker/daemon.json >/dev/null
+            sudo systemctl restart docker
+          fi
+          [ "$(sudo docker info --format '{{.Driver}}')" = "$DRIVER" ] || fail driver_mismatch
+          sudo usermod -aG docker "$(id -un)"
+          if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+            sudo fallocate -l 4G /swapfile
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile >/dev/null
+            sudo swapon /swapfile
+          fi
+          grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+          echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/60-c3po-swap.conf >/dev/null
+          sudo sysctl -q -p /etc/sysctl.d/60-c3po-swap.conf
+          sudo sed -i 's/^ENABLED=.*/ENABLED="true"/' /etc/default/sysstat
+          sudo systemctl enable --now sysstat >/dev/null
+          sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0775 "$APP"
+          containers=$(sudo docker ps -aq | wc -l)
+          units=$(systemctl list-unit-files --no-legend | awk '$1 ~ /^c3po-/' | wc -l)
+          [ "$containers" = 0 ] && [ "$units" = 0 ] || fail not_empty
+          say "docker=$(sudo docker version --format '{{.Server.Version}}') compose=$(sudo docker compose version --short) containerd=$(containerd --version | awk '{print $3}') driver=$(sudo docker info --format '{{.Driver}}')"
+          say "tz=$(timedatectl show -p Timezone --value) swap_mb=$(free -m | awk '/^Swap:/ {print $2}') swappiness=$(cat /proc/sys/vm/swappiness) kernel=$(uname -r | tr '.-' '__')"
+          say "containers=$containers c3po_units=$units"
+          if [ -e /var/run/reboot-required ]; then sudo shutdown -r +1 >/dev/null 2>&1; say "reboot=scheduled_in_1_min"; else say "reboot=not_needed"; fi
+          say "gate=PASS"
           REMOTE
-          # every line printed is sanitized; a failed access or a failed mandatory read fails the run (Codex #500 P2-7)
-          sed -E 's/(api_token=)[^&[:space:]"]+/\1[redacted]/g' "$RUNNER_TEMP/out.txt" | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "remote exit status: $rc"
-          exit "$rc"
+            fi
+            ;;
+          B)
+            { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              # 1. the app tree; outputs/, runtime/ and whatsapp_session/ are being written and move in C1b
+              if old "$LEASE sudo tar -C /opt --numeric-owner --acls --xattrs --exclude=chief-of-staff-digital/outputs --exclude=chief-of-staff-digital/runtime --exclude=chief-of-staff-digital/whatsapp_session -cpf - chief-of-staff-digital" 2>/dev/null \
+                | new_tmp "sudo tar -C /opt --numeric-owner --acls --xattrs -xpf - >/dev/null" > /dev/null 2>&1; then note "app_copy=ok"
+              else note "gate=FAIL reason=app_copy"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              tree='cd /opt && sudo find chief-of-staff-digital \( -path chief-of-staff-digital/outputs -o -path chief-of-staff-digital/runtime -o -path chief-of-staff-digital/whatsapp_session \) -prune -o \( -type f -o -type l \) -print0 | sort -z | sudo xargs -0 sha256sum | sha256sum | cut -c1-64'
+              same_hash app_tree "$tree" old new_tmp || rc=1
+            fi
+            if [ "$rc" = 0 ]; then
+              # 2. journald's limits, as on the old host
+              if old "sudo tar -C /etc/systemd --ignore-failed-read -cpf - journald.conf journald.conf.d" 2>/dev/null \
+                | new_tmp "sudo tar -C /etc/systemd -xpf - && sudo systemctl restart systemd-journald" > /dev/null 2>&1; then note "journald=copied"
+              else note "gate=FAIL reason=journald"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              # 3. the Day-D guard drop-ins and the old crontab, stored INERT under /root (installed only in C2 and D)
+              if old "sudo tar -C / --ignore-failed-read -cpf - etc/systemd/system/docker.service.d etc/systemd/system/c3po-postgres-backup.service.d etc/systemd/system/c3po-host-security-snapshot.service.d" 2>/dev/null \
+                | new_tmp "sudo install -d -m 0700 /root/c3po-migration/dropins && sudo tar -C /root/c3po-migration/dropins -xpf -" > /dev/null 2>&1; then note "dropins=stored_inert"
+              else note "gate=FAIL reason=dropins"; rc=1; fi
+              refs=$(new_tmp "set -o pipefail; sudo sh -c 'cat /root/c3po-migration/dropins/etc/systemd/system/*.d/*.conf' | grep -o -E '/(usr|etc|opt|mnt|var)/[A-Za-z0-9_./=@-]+' | sort -u" 2>/dev/null)
+              missing=0; names=""; on_day_d=0
+              for p in $refs; do
+                case "$p" in /mnt/day-d-data|/mnt/day-d-data/*) on_day_d=$((on_day_d + 1)); continue ;; esac  # mounted in C2
+                if ! new_tmp "sudo test -e '$p'" 2>/dev/null; then
+                  missing=$((missing + 1)); names="$names,$(basename "$p" | tr -dc 'A-Za-z0-9_.-' | cut -c1-40)"
+                fi
+              done
+              names=${names#,}; [ -n "$names" ] || names=none
+              note "dropin_refs=$(printf '%s\n' $refs | grep -c .) on_day_d=$on_day_d missing_on_new=$missing missing_names=$names"
+              if old "crontab -l" 2>/dev/null \
+                | new_tmp "sudo install -d -m 0700 /root/c3po-migration && sudo tee /root/c3po-migration/crontab.deploy >/dev/null && sudo chmod 0600 /root/c3po-migration/crontab.deploy" > /dev/null 2>&1; then note "crontab=stored_inert"
+              else note "gate=FAIL reason=crontab"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              # 4. authorized_keys: the old file verbatim, only when it carries this runner's deploy key itself
+              key=$(cat ~/.ssh/c3po_deploy.pub.bare)
+              if [ "$(old "grep -c -F '$key' ~/.ssh/authorized_keys" 2>/dev/null)" != 1 ]; then
+                note "gate=FAIL reason=old_keys"; rc=1
+              elif old "cat ~/.ssh/authorized_keys" 2>/dev/null \
+                | new_tmp "set -e; [ -e ~/.ssh/authorized_keys.pre-migration ] || cp -p ~/.ssh/authorized_keys ~/.ssh/authorized_keys.pre-migration; umask 077; cat > ~/.ssh/authorized_keys.next; grep -q -F '$key' ~/.ssh/authorized_keys.next; mv ~/.ssh/authorized_keys.next ~/.ssh/authorized_keys" > /dev/null 2>&1 \
+                && [ "$(vcpus new_tmp)" = 2 ]; then note "authorized_keys=copied login=ok"
+              else note "gate=FAIL reason=authorized_keys"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              # 5. images by docker save | docker load; IDs compared one to one
+              images='c3po/database:production c3po/backend:production c3po/web:production c3po/database:rollback c3po/backend:rollback c3po/web:rollback chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-whatsapp-login:latest chief-of-staff-digital-whatsapp-capture:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
+              old "$LEASE docker save $images" 2>/dev/null | new_tmp "sudo docker load" > /dev/null 2>&1 \
+                || { note "gate=FAIL reason=image_copy"; rc=1; }
+              same=0; total=0
+              for image in $images; do
+                total=$((total + 1))
+                a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
+                b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
+                if [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ]; then same=$((same + 1)); fi
+              done
+              note "images_same=$same of $total"
+              [ "$same" = "$total" ] || { note "gate=FAIL reason=image_ids"; rc=1; }
+            fi
+            if [ "$rc" = 0 ]; then
+              c=$(new_tmp "set -o pipefail; sudo docker ps -aq | wc -l" 2>/dev/null)
+              u=$(new_tmp "set -o pipefail; systemctl list-unit-files --no-legend | awk '\$1 ~ /^c3po-/' | wc -l" 2>/dev/null)
+              note "new_containers=${c:-unknown} new_c3po_units=${u:-unknown}"
+              if [ "$c" = 0 ] && [ "$u" = 0 ]; then note "gate=PASS"; else note "gate=FAIL reason=not_inert"; rc=1; fi
+            fi
+            ;;
+          R)
+            { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              # ONE session on the live old database: REPEATABLE READ READ ONLY, the snapshot exported, pg_dump run in it
+              # (\! with the exported snapshot and a lock wait limit), the exact counts in the same snapshot, COMMIT
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+          W=/var/tmp/c3po-migration
+          cleanup() { dc exec -T db rm -f /tmp/c3po-r.dump /tmp/c3po-r.sql /tmp/c3po-r.ok < /dev/null || true; }
+          install -d -m 0700 "$W"
+          rm -f "$W"/r.*
+          cleanup
+          cat > "$W/r.sql" <<SQL
+          BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          SELECT pg_export_snapshot() AS snap \gset
+          \setenv SNAP :snap
+          \! pg_dump -U c3po -d c3po -Fc --lock-wait-timeout=60s --snapshot="\$SNAP" -f /tmp/c3po-r.dump && touch /tmp/c3po-r.ok
+          $count_sql
+          COMMIT;
+          SQL
+          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db sh -c 'cat > /tmp/c3po-r.sql && psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -f /tmp/c3po-r.sql' \
+            < "$W/r.sql" > "$W/r.out"
+          dc exec -T db test -f /tmp/c3po-r.ok < /dev/null || fail pg_dump
+          dc exec -T db pg_restore --list /tmp/c3po-r.dump < /dev/null > /dev/null || fail dump_unreadable
+          grep '^count|' "$W/r.out" | sort > "$W/r.counts"
+          dc exec -T db cat /tmp/c3po-r.dump < /dev/null > "$W/r.dump"
+          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db pg_dumpall -U c3po --globals-only < /dev/null > "$W/r.globals.sql"
+          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db psql -U c3po -d c3po -At -c "select 'roles', string_agg(rolname, ',' order by rolname) from pg_roles where rolname !~ '^pg_' union all select 'extensions', string_agg(extname, ',' order by extname) from pg_extension" \
+            < /dev/null > "$W/r.meta"
+          chmod 0600 "$W"/r.*
+          [ "$(wc -l < "$W/r.counts")" -ge 1 ] || fail no_counts
+          say "old_tables=$(wc -l < "$W/r.counts") dump_mb=$(( $(stat -c %s "$W/r.dump") / 1048576 ))"
+          say "counts_sha=$(sha256sum < "$W/r.counts" | cut -c1-64) dump_sha=$(sha256sum < "$W/r.dump" | cut -c1-64)"
+          say "gate=STEP"
+          REMOTE
+            fi
+            if [ "$rc" = 0 ]; then
+              start=$(date +%s)
+              if old "set -o pipefail; cd /var/tmp/c3po-migration && tar -cf - r.dump r.globals.sql r.counts r.meta" 2>/dev/null \
+                | new_tmp "set -e; install -d -m 0700 /var/tmp/c3po-migration; tar -C /var/tmp/c3po-migration -xf -; chmod 0600 /var/tmp/c3po-migration/r.*" > /dev/null 2>&1; then
+                note "transfer_s=$(( $(date +%s) - start ))"
+              else note "gate=FAIL reason=transfer"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote new_tmp no || rc=1
+          W=/var/tmp/c3po-migration
+          name=c3po-migration-rehearsal-db
+          vol=c3po_migration_rehearsal
+          cleanup() { sudo docker rm -f "$name" >/dev/null 2>&1 || true; sudo docker volume rm "$vol" >/dev/null 2>&1 || true; rm -f "$W"/r.*; }
+          sudo docker rm -f "$name" >/dev/null 2>&1 || true
+          sudo docker volume rm "$vol" >/dev/null 2>&1 || true
+          pw=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)
+          sudo docker run -d --name "$name" --network none -e POSTGRES_USER=c3po -e POSTGRES_DB=c3po -e "POSTGRES_PASSWORD=$pw" \
+            -v "$vol":/var/lib/postgresql/data c3po/database:production >/dev/null
+          ready=no
+          for i in $(seq 1 90); do
+            if sudo docker exec "$name" pg_isready -h 127.0.0.1 -U c3po -d c3po >/dev/null 2>&1; then ready=yes; break; fi
+            sleep 2
+          done
+          [ "$ready" = yes ] || fail rehearsal_db_not_ready
+          start=$(date +%s)
+          # C2's path: the image creates c3po; the globals bring its password hash, the other roles and the grants
+          grep -v -x 'CREATE ROLE c3po;' "$W/r.globals.sql" | sudo docker exec -i "$name" psql -U c3po -d postgres -v ON_ERROR_STOP=1 -q >/dev/null
+          sudo docker cp "$W/r.dump" "$name":/tmp/c3po-r.dump
+          sudo docker exec "$name" pg_restore -U c3po -d c3po --exit-on-error -j 2 /tmp/c3po-r.dump
+          say "restore_s=$(( $(date +%s) - start ))"
+          sudo docker exec "$name" psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" | grep '^count|' | sort > "$W/r.counts.new"
+          sudo docker exec "$name" psql -U c3po -d c3po -At -c "select 'roles', string_agg(rolname, ',' order by rolname) from pg_roles where rolname !~ '^pg_' union all select 'extensions', string_agg(extname, ',' order by extname) from pg_extension" > "$W/r.meta.new"
+          counts=differ; cmp -s "$W/r.counts" "$W/r.counts.new" && counts=match
+          meta=differ; cmp -s "$W/r.meta" "$W/r.meta.new" && meta=match
+          say "new_tables=$(wc -l < "$W/r.counts.new") counts=$counts roles_and_extensions=$meta"
+          [ "$counts" = match ] && [ "$meta" = match ] || fail rehearsal_differs
+          cleanup
+          say "rehearsal_volume=removed"
+          say "gate=PASS"
+          REMOTE
+            fi
+            old "rm -f /var/tmp/c3po-migration/r.dump /var/tmp/c3po-migration/r.globals.sql /var/tmp/c3po-migration/r.sql" > /dev/null 2>&1 || true
+            ;;
+          C1a)
+            [ "$(vcpus old)" = 8 ] && note "identity_old=ok" || { note "gate=FAIL reason=identity_old"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+          M=/root/c3po-migration
+          W=/var/tmp/c3po-migration
+          sudo install -d -m 0700 -o root -g root "$M" "$M/prestop-logs"
+          # 1. the summary must not be running; then the crontab is saved and emptied (the 15:00 run never starts)
+          deadline=$(date -d 'today 14:45' +%s)
+          while docker ps --format '{{.Names}}' | grep -q 'morning-summary'; do
+            [ "$(date +%s)" -lt "$deadline" ] || fail summary_still_running
+            sleep 20
+          done
+          crontab -l | sudo tee "$M/crontab.before" >/dev/null
+          sudo chmod 0600 "$M/crontab.before"
+          crontab -r
+          say "crontab=saved_and_emptied lines=$(sudo grep -c -v -E '^\s*(#|$)' "$M/crontab.before")"
+          # 2. every c3po-* timer and the apt timers: states recorded, then disabled, stopped and masked; running units drain
+          systemctl list-unit-files --no-legend --plain | awk '$1 ~ /^c3po-.*\.timer$/ {print $1, $2}' | sudo tee "$M/timers.before" >/dev/null
+          for t in $(sudo awk '{print $1}' "$M/timers.before") apt-daily.timer apt-daily-upgrade.timer; do
+            sudo systemctl disable --now "$t" >/dev/null 2>&1 || true
+            sudo systemctl mask "$t" >/dev/null
+          done
+          deadline=$(( $(date +%s) + 900 ))
+          while systemctl list-units --no-legend --plain --state=activating,active | awk '$1 ~ /^(c3po-.*|apt-daily|apt-daily-upgrade)\.service$/' | grep -q .; do
+            [ "$(date +%s)" -lt "$deadline" ] || fail units_still_running
+            sleep 10
+          done
+          say "timers=masked count=$(sudo wc -l < "$M/timers.before")"
+          # 3. the services' retained logs, hashed (never printed)
+          since=$(date -d '-36 hours' --iso-8601=seconds); until=$(date --iso-8601=seconds)
+          for svc in web api investor-relations-worker valuation-worker server-usage-worker r2d2-live db; do
+            id=$(dc ps -a -q "$svc")
+            [ -n "$id" ] || fail "no_container_$svc"
+            docker logs --timestamps --since "$since" --until "$until" "$id" 2>&1 | sudo tee "$M/prestop-logs/$svc.log" >/dev/null
+          done
+          for svc in cloudflared pluggy-webhook; do
+            id=$(legacy ps -a -q "$svc")
+            [ -n "$id" ] || fail "no_container_$svc"
+            docker logs --timestamps --since "$since" --until "$until" "$id" 2>&1 | sudo tee "$M/prestop-logs/legacy-$svc.log" >/dev/null
+          done
+          sudo sh -c "cd '$M/prestop-logs' && sha256sum *.log > SHA256SUMS"
+          say "logs=kept files=$(sudo sh -c "ls '$M'/prestop-logs/*.log | wc -l")"
+          # 4. ingress first, then every writer; the database stays up
+          legacy stop -t 120 cloudflared pluggy-webhook >/dev/null
+          dc stop -t 120 web api investor-relations-worker valuation-worker server-usage-worker r2d2-live >/dev/null
+          [ "$(docker ps --format '{{.Names}}' | grep -v -x c3po-db-1 | wc -l)" = 0 ] || fail other_containers_running
+          others=$(dc exec -T db psql -U c3po -d c3po -At -c "select count(*) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null)
+          [ "$others" = 0 ] || fail database_clients_left
+          say "writers=stopped containers_running=1 db_clients=0"
+          # 5. the final dump, the globals (role password hashes, 0600, never printed) and the exact counts, no writer left
+          cleanup() { dc exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || true; }
+          install -d -m 0700 "$W"
+          rm -f "$W"/final.*
+          cleanup
+          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db sh -c 'pg_dump -U c3po -d c3po -Fc --lock-wait-timeout=60s -f /tmp/c3po-final.dump && touch /tmp/c3po-final.ok' < /dev/null
+          dc exec -T db test -f /tmp/c3po-final.ok < /dev/null || fail pg_dump
+          dc exec -T db pg_restore --list /tmp/c3po-final.dump < /dev/null > /dev/null || fail dump_unreadable
+          dc exec -T db cat /tmp/c3po-final.dump < /dev/null > "$W/final.dump"
+          cleanup
+          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db pg_dumpall -U c3po --globals-only < /dev/null > "$W/final.globals.sql"
+          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null | grep '^count|' | sort > "$W/final.counts"
+          chmod 0600 "$W"/final.*
+          [ "$(wc -l < "$W/final.counts")" -ge 1 ] || fail no_counts
+          say "dump_sha=$(sha256sum < "$W/final.dump" | cut -c1-64) counts_sha=$(sha256sum < "$W/final.counts" | cut -c1-64) tables=$(wc -l < "$W/final.counts")"
+          # 6. one offsite backup from this same point (its unit's own guard requires the Day-D mount)
+          sudo systemctl start c3po-postgres-backup.service || fail backup
+          say "backup=$(systemctl show -p Result --value c3po-postgres-backup.service)"
+          say "gate=PASS next=restore_drill_then_C1b"
+          REMOTE
+            fi
+            ;;
+          C1b)
+            { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+          [ -s /var/tmp/c3po-migration/final.dump ] || fail no_final_dump
+          [ "$(docker ps --format '{{.Names}}')" = c3po-db-1 ] || fail unexpected_containers
+          dc stop -t 120 db >/dev/null
+          docker logs --tail 50 c3po-db-1 2>&1 | grep -q 'database system is shut down' || fail db_not_clean
+          [ -z "$(docker ps -q)" ] || fail containers_running
+          say "db=stopped_clean"
+          say "gate=STEP"
+          REMOTE
+            fi
+            if [ "$rc" = 0 ]; then
+              if old "set -o pipefail; cd /var/tmp/c3po-migration && tar -cf - final.dump final.globals.sql final.counts" 2>/dev/null \
+                | new_tmp "set -e; install -d -m 0700 /var/tmp/c3po-migration; tar -C /var/tmp/c3po-migration -xf -; chmod 0600 /var/tmp/c3po-migration/final.*" > /dev/null 2>&1
+              then note "final_dump=copied"; else note "gate=FAIL reason=dump_copy"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              same_hash final_dump "sha256sum < /var/tmp/c3po-migration/final.dump | cut -c1-64" old new_tmp || rc=1
+            fi
+            if [ "$rc" = 0 ]; then
+              if old "$LEASE sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -cpf - outputs runtime whatsapp_session" 2>/dev/null \
+                | new_tmp "set -e; cd /opt/chief-of-staff-digital; sudo rm -rf outputs runtime whatsapp_session; sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -xpf -" > /dev/null 2>&1
+              then note "volatile_trees=copied"; else note "gate=FAIL reason=volatile_copy"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              same_hash app_tree_full 'cd /opt && sudo find chief-of-staff-digital \( -type f -o -type l \) -print0 | sort -z | sudo xargs -0 sha256sum | sha256sum | cut -c1-64' old new_tmp || rc=1
+            fi
+            if [ "$rc" = 0 ]; then
+              if old "$LEASE sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -cpf - ." 2>/dev/null \
+                | new_tmp "set -e; sudo docker volume create --label com.docker.compose.project=c3po --label com.docker.compose.volume=c3po_one_pagers --label com.docker.compose.version=5.1.4 c3po_c3po_one_pagers >/dev/null; sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -xpf -" > /dev/null 2>&1
+              then note "one_pagers=copied"; else note "gate=FAIL reason=one_pagers"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              same_hash one_pagers 'sudo sh -c "cd /var/lib/docker/volumes/c3po_c3po_one_pagers/_data && find . -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum | cut -c1-64"' old new_tmp || rc=1
+            fi
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old no || rc=1
+          sudo systemctl stop docker.socket docker.service containerd.service
+          sudo systemctl mask docker.socket docker.service containerd.service >/dev/null
+          ! pgrep -x dockerd >/dev/null || fail dockerd_alive
+          sync
+          sudo umount /mnt/day-d-data || fail umount
+          ! findmnt -n /mnt/day-d-data >/dev/null || fail still_mounted
+          say "docker=masked day_d=unmounted"
+          sudo systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null
+          say "gate=PASS next=console_disk_snapshot_detach_attach_static_ip_then_known_hosts"
+          REMOTE
+            fi
+            ;;
+          C2)
+            [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+          [ "$(nproc)" = 2 ] || fail not_new_host
+          W=/var/tmp/c3po-migration
+          # 1. the Day-D filesystem: found by label, identified by the hash of its UUID, never formatted
+          dev=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}')
+          [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
+          uuid=$(sudo blkid -s UUID -o value "$dev")
+          [ "$(printf '%s' "$uuid" | sha256sum | cut -c1-64)" = "$DAY_D_UUID_SHA256" ] || fail day_d_uuid
+          sudo install -d -m 0755 /mnt/day-d-data
+          grep -q "^UUID=$uuid " /etc/fstab || echo "UUID=$uuid /mnt/day-d-data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
+          findmnt -n /mnt/day-d-data >/dev/null || sudo mount /mnt/day-d-data
+          [ "$(findmnt -n -o UUID /mnt/day-d-data)" = "$uuid" ] || fail day_d_mount
+          for d in tmp valuation-ensemble r2d2-v2-source; do [ -d "/mnt/day-d-data/$d" ] || fail "day_d_content_$d"; done
+          say "day_d=mounted_by_uuid used_g=$(df -P -BG /mnt/day-d-data | awk 'NR == 2 {sub(/G/, "", $3); print $3}')"
+          # 2. the old host's guard drop-ins, now that the disk is there
+          sudo sh -c 'cd /root/c3po-migration/dropins/etc/systemd/system && for d in *.service.d; do install -d -m 0755 "/etc/systemd/system/$d" && install -m 0644 "$d"/* "/etc/systemd/system/$d/"; done'
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+          systemctl is-active --quiet docker || fail docker_with_guard
+          say "guards=installed docker=active"
+          # 3. the legacy network and containers CREATED, not started (the c3po compose needs that network)
+          legacy up --no-start --no-build cloudflared pluggy-webhook >/dev/null
+          [ -z "$(docker ps -q)" ] || fail started_something
+          # 4. the database alone, in an empty volume, from the image the old host ran
+          cleanup() { docker exec c3po-db-1 rm -f /tmp/c3po-final.dump >/dev/null 2>&1 || true; }
+          docker volume create --label com.docker.compose.project=c3po --label com.docker.compose.volume=c3po_postgres --label com.docker.compose.version=5.1.4 c3po_c3po_postgres >/dev/null
+          [ "$(sudo sh -c 'ls -A /var/lib/docker/volumes/c3po_c3po_postgres/_data | wc -l')" = 0 ] || fail postgres_volume_not_empty
+          dc up -d --no-build db >/dev/null
+          ready=no
+          for i in $(seq 1 90); do
+            if dc exec -T db pg_isready -h 127.0.0.1 -U c3po -d c3po >/dev/null 2>&1; then ready=yes; break; fi
+            sleep 2
+          done
+          [ "$ready" = yes ] || fail db_not_ready
+          # 5. globals (the role c3po already exists), the dump, then the exact counts against the old host's
+          grep -v -x 'CREATE ROLE c3po;' "$W/final.globals.sql" | dc exec -T db psql -U c3po -d postgres -v ON_ERROR_STOP=1 -q >/dev/null
+          docker cp "$W/final.dump" c3po-db-1:/tmp/c3po-final.dump
+          dc exec -T db pg_restore -U c3po -d c3po --exit-on-error -j 2 /tmp/c3po-final.dump < /dev/null
+          cleanup
+          dc exec -T db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null | grep '^count|' | sort > "$W/final.counts.new"
+          cmp -s "$W/final.counts" "$W/final.counts.new" || fail counts_differ
+          say "db=restored tables=$(wc -l < "$W/final.counts.new") counts=match"
+          [ "$(docker ps --format '{{.Names}}')" = c3po-db-1 ] || fail unexpected_containers
+          say "gate=PASS next=pipeline_with_named_revision"
+          REMOTE
+            fi
+            ;;
+          C3L)
+            [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+          [ -s "$APP/.deploy-version" ] || fail no_deploy
+          for svc in web api investor-relations-worker valuation-worker server-usage-worker r2d2-live db; do
+            [ "$(docker inspect -f '{{.State.Status}}' "c3po-$svc-1" 2>/dev/null)" = running ] || fail "not_running_$svc"
+          done
+          legacy start cloudflared pluggy-webhook >/dev/null
+          sleep 20
+          for svc in cloudflared pluggy-webhook; do
+            [ "$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "chief-of-staff-digital-$svc-1")" = "running 0" ] || fail "legacy_$svc"
+          done
+          say "legacy=running cloudflared=1 pluggy_webhook=1"
+          say "gate=PASS next=checks_then_D"
+          REMOTE
+            fi
+            ;;
+          D)
+            [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+          [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_not_empty
+          sudo cat /root/c3po-migration/crontab.deploy | crontab -
+          say "crontab=installed lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
+          say "gate=PASS"
+          REMOTE
+            fi
+            ;;
+          R0)
+            [ "$(vcpus static)" = 8 ] && note "identity_static_is_old=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+          # only before T_WRITE (the new host never ran the pipeline; the operator checks its log first), so nothing is lost
+          M=/root/c3po-migration
+          sudo systemctl unmask docker.socket docker.service containerd.service >/dev/null
+          findmnt -n /mnt/day-d-data >/dev/null || sudo mount /mnt/day-d-data
+          findmnt -n /mnt/day-d-data >/dev/null || fail day_d_mount
+          sudo systemctl start containerd.service docker.socket docker.service
+          dc up -d --no-build >/dev/null
+          legacy up -d --no-build cloudflared pluggy-webhook >/dev/null
+          while read -r t state; do
+            sudo systemctl unmask "$t" >/dev/null
+            if [ "$state" = enabled ]; then sudo systemctl enable --now "$t" >/dev/null; fi
+          done < <(sudo cat "$M/timers.before")
+          sudo systemctl unmask apt-daily.timer apt-daily-upgrade.timer >/dev/null
+          sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null
+          sudo cat "$M/crontab.before" | crontab -
+          say "back_out=done timers_restored=$(sudo wc -l < "$M/timers.before") crontab_lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
+          say "gate=PASS"
+          REMOTE
+            fi
+            ;;
+          esac
+          guard='^(A|B|R|C1a|C1b|C2|C3L|D|R0) [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120}( [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120})*( of [0-9]+)?$'
+          deny='([0-9]{1,3}[.-]){3}[0-9]{1,3}|ip-[0-9]|[0-9a-f]{1,4}:[0-9a-f]{0,4}:[0-9a-f]{0,4}:|@'
+          grep -E "$guard" "$out" | grep -v -E "$deny"
+          echo "lines: raw $(wc -l < "$out") kept $(grep -E "$guard" "$out" | grep -c -v -E "$deny")"
+          if [ "$rc" = 0 ] && grep -q -E "^$PHASE gate=PASS( |$)" "$out" && ! grep -q -E "^$PHASE gate=FAIL" "$out"; then exit 0; fi
+          exit 1
