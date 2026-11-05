@@ -310,6 +310,16 @@ jobs:
               { [ "$free_g" -ge 60 ] && [ "$inodes_pct" -le 50 ]; } 2>/dev/null || { note "gate=FAIL reason=new_space"; rc=1; }
             fi
             if [ "$rc" = 0 ]; then
+              # the drop-ins' references again, now that the helpers are there: every one outside Day-D must exist
+              missing=0
+              for p in $refs; do
+                case "$p" in /mnt/day-d-data|/mnt/day-d-data/*) continue ;; esac
+                new_tmp "sudo test -e '$p'" 2>/dev/null || missing=$((missing + 1))
+              done
+              note "dropin_refs_missing_after_helpers=$missing"
+              [ "$missing" = 0 ] || { note "gate=FAIL reason=dropin_refs_missing"; rc=1; }
+            fi
+            if [ "$rc" = 0 ]; then
               # 8. images by docker save | docker load; IDs compared one to one
               images='c3po/database:production c3po/backend:production c3po/web:production c3po/database:rollback c3po/backend:rollback c3po/web:rollback chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-whatsapp-login:latest chief-of-staff-digital-whatsapp-capture:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
               old "$LEASE docker save $images" 2>/dev/null | new_tmp "sudo docker load" > /dev/null 2>&1 \
@@ -570,7 +580,7 @@ jobs:
               then note "final_dump=copied"; else note "gate=FAIL reason=dump_copy"; rc=1; fi
             fi
             if [ "$rc" = 0 ]; then
-              same_hash final_dump "sha256sum < /var/tmp/c3po-migration/final.dump | cut -c1-64" old new_tmp || rc=1
+              same_hash final_files "cd /var/tmp/c3po-migration && cat final.dump final.globals.sql final.counts final.pgconf | sha256sum | cut -c1-64" old new_tmp || rc=1
             fi
             if [ "$rc" = 0 ]; then
               # the saved crontab and timer states travel too: D installs the crontab the old host ran until C1a
@@ -729,8 +739,11 @@ jobs:
           last=$(systemctl show -p LastTriggerUSec --value c3po-postgres-backup.timer)
           ran=$(systemctl show -p ExecMainStartTimestamp --value c3po-postgres-backup.service)
           { [ -z "$last" ] || [ "$last" = n/a ]; } && { [ -z "$ran" ] || [ "$ran" = n/a ]; } || fail backup_already_triggered
+          systemctl is-active --quiet c3po-postgres-backup.timer || fail backup_timer_not_active
           next=$(systemctl show -p NextElapseUSecRealtime --value c3po-postgres-backup.timer)
-          say "backup_next=$(date -d "$next" '+%Y-%m-%d_%H:%M' 2>/dev/null || echo unknown) backup_ran=no"
+          when=$(TZ=America/Sao_Paulo date -d "$next" '+%Y-%m-%d_%H:%M' 2>/dev/null) || fail backup_next_unreadable
+          [ "$when" = "$(TZ=America/Sao_Paulo date -d 'tomorrow' '+%Y-%m-%d')_04:00" ] || [ "$when" = "$(TZ=America/Sao_Paulo date '+%Y-%m-%d')_04:00" ] || fail backup_next_not_04h
+          say "backup_next=$when backup_ran=no"
           for t in c3po-host-security-snapshot.timer c3po-security-daily.timer c3po-security-watchdog.timer; do
             systemctl is-active --quiet "$t" || fail "not_active_$t"
           done
@@ -796,9 +809,12 @@ jobs:
             [ -z "$(sudo find "$M/units" -mindepth 1 2>/dev/null)" ] || fail units_moved_without_record
             sudo install -m 0600 /dev/null "$M/timers.before"
           fi
-          sudo systemctl unmask docker.socket docker.service containerd.service >/dev/null
           findmnt -n /mnt/day-d-data >/dev/null || sudo mount /mnt/day-d-data
           findmnt -n /mnt/day-d-data >/dev/null || fail day_d_mount
+          uuid=$(findmnt -n -o UUID /mnt/day-d-data)
+          [ "$(printf '%s' "$uuid" | sha256sum | cut -c1-64)" = "$DAY_D_UUID_SHA256" ] || fail day_d_uuid
+          for d in tmp valuation-ensemble r2d2-v2-source; do [ -d "/mnt/day-d-data/$d" ] || fail "day_d_content_$d"; done
+          sudo systemctl unmask docker.socket docker.service containerd.service >/dev/null
           sudo systemctl start containerd.service docker.socket docker.service
           C3PO_BUILD_SHA=$(cat "$APP/.deploy-version") dc up -d --no-build >/dev/null
           legacy up -d --no-build cloudflared pluggy-webhook >/dev/null
