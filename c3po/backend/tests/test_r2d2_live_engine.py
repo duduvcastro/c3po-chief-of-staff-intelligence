@@ -199,6 +199,33 @@ def test_the_stop_before_the_lock_arms_is_minus_an_eighth_from_06_11() -> None:
     assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
 
 
+def test_a_position_carried_into_a_new_session_takes_that_session_s_stop() -> None:
+    """A new session sets the rule in force (``state.config = CONFIG``): a position carried from 05/11 (-1%) sitting at
+    -0.5% net is sold at the first check of 06/11, under -0.125%; one at -0.10% is held."""
+    engine = _engine()
+    engine.state.config = "TIT-2S5-F20-L5-S1"
+    held, bid_held = _held(engine, "S2")
+    sold, bid_sold = _held(engine, "S3")
+    engine.state.session = "2026-11-05"  # the previous session: the engine below opens a new one
+    renewed = Engine(engine.state, DAY, list(engine.members.values()))
+    assert renewed.state.config == engine_module.CONFIG and engine_module.stop_of(renewed.state.config) == 0.125
+    t = _at(10, 0)
+    fills = renewed.step(t, lambda s: (_view(bid_held(-0.10), None, bid_held(-0.10), bid_held(-0.10) + 0.01, t) if s == "S2"
+                                       else _view(bid_sold(-0.50), None, bid_sold(-0.50), bid_sold(-0.50) + 0.01, t) if s == "S3"
+                                       else MarketView()))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S3", "venda: stop")]
+    assert "S2" in renewed.state.positions and "S3" not in renewed.state.positions
+
+
+def test_every_rule_label_s_screen_text_states_its_own_stop() -> None:
+    for label, stop in engine_module.STOPS.items():
+        if label not in r2d2_lab_live.LIVE_RISK:
+            continue
+        risk, hold, exits = r2d2_lab_live.LIVE_RISK[label]
+        text = ("%.2f" % stop) if round(stop, 2) == stop else ("%.3f" % stop)
+        assert "stop −%s%% net" % text in risk and "stop −%s%% net" % text in hold and "stop −%s%%" % text in exits, label
+
+
 def test_the_session_of_05_11_keeps_its_stop_at_minus_one_percent() -> None:
     """Owner 04/11: "coloque o stop do R2D2 em -1%, quero ver se com esse respiro a mais como as ações performam" — the
     session of 05/11 (TIT-2S5-F20-L5-S1) keeps it: the republish of it prices its stops by its own rule."""

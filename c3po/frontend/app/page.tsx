@@ -4290,7 +4290,7 @@ function R2D2RisingView() {
             <div className="r2d2-stop-cell" data-label="Stop">
               {typeof position.stop_lock_percent === "number" ? (
                 <strong className={stopLockClass(position.stop_lock_percent)}>
-                  {`${position.stop_lock_percent >= 0 ? "+" : ""}${position.stop_lock_percent.toFixed(2)}%`}
+                  {`${position.stop_lock_percent >= 0 ? "+" : ""}${position.stop_lock_percent.toFixed(3).replace(/0$/, "")}%`}
                 </strong>
               ) : <strong>—</strong>}
             </div>

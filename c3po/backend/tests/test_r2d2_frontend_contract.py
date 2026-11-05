@@ -94,3 +94,13 @@ def test_r2d2_pollers_use_the_shared_polling_policy() -> None:
     assert "usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen });" in falcon
     assert "usePanelPolling(load, { openMs: 2_000, marketOpen: data?.market_session_open ?? null });" in rising
     assert "market_session_open?: boolean;" in source
+
+
+def test_the_stop_column_keeps_the_third_decimal_of_the_rule() -> None:
+    """Owner 05/11: "Coloque o stop loss amanha em -0,125%" — two decimals would show -0.13%; the column shows -0.125%,
+    and still +0.15% and -1.00% for the lock's steps and the earlier stop."""
+    source = PAGE.read_text(encoding="utf-8")
+    start = source.index('<div className="r2d2-stop-cell" data-label="Stop">')
+    stop_cell = source[start:source.index("</div>", start)]
+    assert 'position.stop_lock_percent.toFixed(3).replace(/0$/, "")' in stop_cell
+    assert "stop_lock_percent.toFixed(2)" not in stop_cell
