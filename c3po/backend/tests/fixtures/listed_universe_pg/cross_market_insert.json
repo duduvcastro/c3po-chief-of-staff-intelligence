@@ -1,0 +1,46 @@
+{
+  "schema": "SYNTHETIC-CROSS-MARKET-INSERT-FIXTURE-v1",
+  "witness_sha256": "ba30e65a3ca476b2844c897059ffa478b7717cced8a728a985080e42690bee27",
+  "not_a_real_run_or_postgresql_attestation": true,
+  "cohort": {
+    "cycles": {
+      "B3": "42d818d1-4bc9-44e6-bc38-e139b668bdcd",
+      "NASDAQ": "e99c461b-ba8b-48ea-bd39-325ba0618388",
+      "NYSE": "553859d2-b89f-442f-9e5f-69b4d3201cf8"
+    },
+    "stages": {
+      "B3": "c029e5e9-5414-4fcd-b8a0-c02d38dff7d6",
+      "NASDAQ": "ae9777b9-a56f-4c4a-bedd-acb75afb8650",
+      "NYSE": "9c6e4c36-f451-40f7-98b2-31b52c8352fc"
+    }
+  },
+  "foreign_record": {
+    "cycle_id": "e99c461b-ba8b-48ea-bd39-325ba0618388",
+    "source": "official_blend_v1",
+    "market": "B3",
+    "symbol": "B3_ONLY",
+    "scope": "universe",
+    "source_version": "33",
+    "session_date": "2026-10-23",
+    "prediction_instant": "2026-10-26T06:20:00+00:00",
+    "tp": 20,
+    "buy_in": 10,
+    "internal_tp": 20,
+    "consensus_tp": null,
+    "consensus_source": null,
+    "analyst_count": null,
+    "consensus_weight_percent": 0,
+    "price": 5,
+    "currency": "BRL",
+    "row_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "decomposition": {
+      "methods": {},
+      "provenance": {
+        "rerun_of": "c029e5e9-5414-4fcd-b8a0-c02d38dff7d6",
+        "source_manifest_sha256": "b3b3",
+        "stage_record_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "published_at": "2026-10-26T06:30:00+00:00"
+  }
+}
