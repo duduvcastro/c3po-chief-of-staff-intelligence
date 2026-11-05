@@ -84,6 +84,7 @@ jobs:
           case "$PHASE" in
             C1a|C1b|C2|R0n|R0) [ "$state" = disabled_manually ] || { echo "the production pipeline must be disabled from C1a to C2 and for a back-out"; exit 1; } ;;
           esac
+          [ -z "$NAMED_SHA" ] || [[ "$NAMED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "the revision must be 40 hex"; exit 1; }
           if [ "$PHASE" = C3L ]; then [[ "$NAMED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "C3L needs the named revision"; exit 1; }; fi
           echo "phase=$PHASE pipeline_busy=0 pipeline_state=$state"
 
@@ -132,7 +133,7 @@ jobs:
             local target=$1 lease=$2 b64 wrap="" status
             b64=$(base64 -w0)
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; f=\$(mktemp /tmp/c3po-migration.XXXXXX) && printf %s '$b64' | base64 -d > \"\$f\" && PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; f=\$(mktemp /tmp/c3po-migration.XXXXXX) && printf %s '$b64' | base64 -d > \"\$f\" && PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/remote.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/remote.txt" >> "$out"
@@ -154,7 +155,7 @@ jobs:
           tree_cmd() {  # tree_cmd BASE TOP [PRUNE...]
             local root="$1/$2" prune="" x; shift 2
             for x in "$@"; do prune="$prune -path $root/$x -prune -o"; done
-            printf '%s' "{ sudo find $root $prune -printf '%y %U:%G %m %p %l\n' | LC_ALL=C sort; sudo find $root $prune -type f -print0 | LC_ALL=C sort -z | sudo xargs -0 -r sha256sum; } | sha256sum | cut -c1-64"
+            printf '%s' "{ sudo find $root $prune ! -type s -printf '%y %U:%G %m %p %l\n' | LC_ALL=C sort || exit 1; sudo find $root $prune -type f -print0 | LC_ALL=C sort -z | sudo xargs -0 -r sha256sum; } | sha256sum | cut -c1-64"
           }
           prelude='set -euo pipefail
           exec 3>&1
@@ -232,7 +233,7 @@ jobs:
             if [ "$rc" = 0 ]; then
               # 1. the app tree; outputs/, runtime/ and whatsapp_session/ are being written and move in C1b
               if old "$LEASE sudo tar -C /opt --numeric-owner --acls --xattrs --exclude=chief-of-staff-digital/outputs --exclude=chief-of-staff-digital/runtime --exclude=chief-of-staff-digital/whatsapp_session -cpf - chief-of-staff-digital" 2>/dev/null \
-                | new_tmp "sudo tar -C /opt --numeric-owner --acls --xattrs -xpf - >/dev/null" > /dev/null 2>&1; then note "app_copy=ok"
+                | new_tmp "set -e; if [ -d /opt/chief-of-staff-digital ]; then sudo find /opt/chief-of-staff-digital -mindepth 1 -maxdepth 1 ! -name outputs ! -name runtime ! -name whatsapp_session -exec rm -rf {} +; fi; sudo tar -C /opt --numeric-owner --acls --xattrs -xpf - >/dev/null" > /dev/null 2>&1; then note "app_copy=ok"
               else note "gate=FAIL reason=app_copy"; rc=1; fi
             fi
             if [ "$rc" = 0 ]; then
@@ -278,7 +279,7 @@ jobs:
               # reports repository every day): its clone, the deploy user's ssh/git configuration (authorized_keys apart),
               # and its log, all with owners and modes kept
               if old "$LEASE sudo tar -C /opt --numeric-owner --acls --xattrs -cpf - r2d2-reports" 2>/dev/null \
-                | new_tmp "sudo tar -C /opt --numeric-owner --acls --xattrs -xpf -" > /dev/null 2>&1; then note "reports_clone=copied"
+                | new_tmp "set -e; sudo rm -rf /opt/r2d2-reports; sudo tar -C /opt --numeric-owner --acls --xattrs -xpf -" > /dev/null 2>&1; then note "reports_clone=copied"
               else note "gate=FAIL reason=reports_clone"; rc=1; fi
               if [ "$rc" = 0 ]; then
                 same_hash reports_tree "$(tree_cmd /opt r2d2-reports)" old new_tmp || rc=1
@@ -359,6 +360,7 @@ jobs:
           dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db pg_dumpall -U c3po --globals-only < /dev/null > "$W/r.globals.sql"
           dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db psql -U c3po -d c3po -At -c "select 'roles', string_agg(rolname, ',' order by rolname) from pg_roles where rolname !~ '^pg_' union all select 'extensions', string_agg(extname, ',' order by extname) from pg_extension" \
             < /dev/null > "$W/r.meta"
+          dc exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/r.pgconf"
           chmod 0600 "$W"/r.*
           [ "$(wc -l < "$W/r.counts")" -ge 1 ] || fail no_counts
           say "old_tables=$(wc -l < "$W/r.counts") dump_mb=$(( $(stat -c %s "$W/r.dump") / 1048576 ))"
@@ -368,7 +370,7 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               start=$(date +%s)
-              if old "set -o pipefail; cd /var/tmp/c3po-migration && $LEASE tar -cf - r.dump r.globals.sql r.counts r.meta" 2>/dev/null \
+              if old "set -o pipefail; cd /var/tmp/c3po-migration && $LEASE tar -cf - r.dump r.globals.sql r.counts r.meta r.pgconf" 2>/dev/null \
                 | new_tmp "set -e; install -d -m 0700 /var/tmp/c3po-migration; tar -C /var/tmp/c3po-migration -xf -; chmod 0600 /var/tmp/c3po-migration/r.*" > /dev/null 2>&1; then
                 note "transfer_s=$(( $(date +%s) - start ))"
               else note "gate=FAIL reason=transfer"; rc=1; fi
@@ -398,16 +400,18 @@ jobs:
           say "restore_s=$(( $(date +%s) - start ))"
           sudo docker exec "$name" psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" | grep '^count|' | sort > "$W/r.counts.new"
           sudo docker exec "$name" psql -U c3po -d c3po -At -c "select 'roles', string_agg(rolname, ',' order by rolname) from pg_roles where rolname !~ '^pg_' union all select 'extensions', string_agg(extname, ',' order by extname) from pg_extension" > "$W/r.meta.new"
+          sudo docker exec "$name" sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" > "$W/r.pgconf.new"
           counts=differ; cmp -s "$W/r.counts" "$W/r.counts.new" && counts=match
           meta=differ; cmp -s "$W/r.meta" "$W/r.meta.new" && meta=match
-          say "new_tables=$(wc -l < "$W/r.counts.new") counts=$counts roles_and_extensions=$meta"
-          [ "$counts" = match ] && [ "$meta" = match ] || fail rehearsal_differs
+          conf=differ; cmp -s "$W/r.pgconf" "$W/r.pgconf.new" && conf=match
+          say "new_tables=$(wc -l < "$W/r.counts.new") counts=$counts roles_and_extensions=$meta server_config=$conf"
+          [ "$counts" = match ] && [ "$meta" = match ] && [ "$conf" = match ] || fail rehearsal_differs
           cleanup
           say "rehearsal_volume=removed"
           say "gate=PASS"
           REMOTE
             fi
-            old "rm -f /var/tmp/c3po-migration/r.dump /var/tmp/c3po-migration/r.globals.sql /var/tmp/c3po-migration/r.sql" > /dev/null 2>&1 || true
+            old "rm -f /var/tmp/c3po-migration/r.*" > /dev/null 2>&1 || true
             ;;
           C1a)
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
@@ -549,8 +553,10 @@ jobs:
             [ "$(docker ps --format '{{.Names}}')" = c3po-db-1 ] || fail unexpected_containers
             writes=$(dc exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null)
             [ "$writes" = "$(cat "$W/final.writes")" ] || fail writes_after_dump
+            touch "$W/final.no-writes-checked"
             dc stop -t 120 db >/dev/null
           fi
+          [ -e "$W/final.no-writes-checked" ] || fail writes_never_checked
           docker logs --tail 50 c3po-db-1 2>&1 | grep -q 'database system is shut down' || fail db_not_clean
           [ -z "$(docker ps -q)" ] || fail containers_running
           say "db=stopped_clean writes_since_dump=0"
@@ -672,7 +678,7 @@ jobs:
           pw=$(grep -E '^C3PO_DB_PASSWORD=' "$APP/.env" | tail -n 1 | cut -d= -f2-)
           pw=${pw%\"}; pw=${pw#\"}; pw=${pw%\'}; pw=${pw#\'}
           [ -n "$pw" ] || fail no_app_password
-          printf '%s' "$pw" | docker exec -i c3po-db-1 sh -c 'PGPASSWORD=$(cat) psql -h 127.0.0.1 -U c3po -d c3po -At -c "select 1"' > /dev/null || fail app_password
+          printf '%s' "$pw" | docker exec -i c3po-db-1 sh -c 'PGPASSWORD=$(cat) psql -h db -U c3po -d c3po -At -c "select 1"' > /dev/null || fail app_password
           unset pw
           say "db=restored tables=$(wc -l < "$W/final.counts.new") counts=match server_config=match app_login=ok"
           [ "$(docker ps --format '{{.Names}}')" = c3po-db-1 ] || fail unexpected_containers
@@ -784,7 +790,11 @@ jobs:
           # the old host as it was before C1a, from the states C1a recorded (each file must be there and non-empty)
           M=/root/c3po-migration
           sudo test -s "$M/crontab.before" || fail no_saved_crontab
-          sudo test -s "$M/timers.before" || fail no_saved_timers
+          if ! sudo test -s "$M/timers.before"; then
+            # C1a stopped before recording them: no timer was touched, none may have been moved
+            [ -z "$(sudo find "$M/units" -mindepth 1 2>/dev/null)" ] || fail units_moved_without_record
+            sudo install -m 0600 /dev/null "$M/timers.before"
+          fi
           sudo systemctl unmask docker.socket docker.service containerd.service >/dev/null
           findmnt -n /mnt/day-d-data >/dev/null || sudo mount /mnt/day-d-data
           findmnt -n /mnt/day-d-data >/dev/null || fail day_d_mount
