@@ -1076,13 +1076,22 @@ jobs:
             left=$(docker ps -q) || fail docker_unreadable
             [ -z "$left" ] || fail containers_running
           else
-            # dockerd is down (the guard refused in C2): the same proof from Docker's own records, so the back-out goes on
-            recs=$(sudo python3 -c 'import glob, json
-          for f in sorted(glob.glob("/var/lib/docker/containers/*/config.v2.json")):
-              d = json.load(open(f)); s = d.get("State") or {}
-              print(d.get("Name", "").lstrip("/") or "unnamed", s["StartedAt"] or "never", "running" if s.get("Running") else "stopped")') || fail container_records_unreadable
+            # dockerd is down (the guard refused in C2): the same proof from Docker's own records, so the back-out goes on.
+            # The whole inventory or nothing: the root listed, every entry a container with a readable, well-formed record;
+            # a missing root, an entry without its record or a field missing fails, and a proven empty root says COUNT 0
+            recs=$(sudo python3 -c 'import json, os
+          root = "/var/lib/docker/containers"
+          ids = sorted(os.listdir(root))
+          for i in ids:
+              d = json.load(open(os.path.join(root, i, "config.v2.json")))
+              s = d["State"]
+              print(d["Name"].lstrip("/") or "unnamed", s["StartedAt"], "running" if s["Running"] else "stopped")
+          print("COUNT", len(ids))') || fail container_records_unreadable
+            n=$(awk '$1 == "COUNT" {print $2}' <<<"$recs")
+            [[ "$n" =~ ^[0-9]+$ ]] || fail container_records_unreadable
+            [ "$(grep -c -v '^COUNT ' <<<"$recs" || true)" = "$n" ] || fail container_records_incomplete
             while read -r c started state; do
-              [ -n "$c" ] || continue
+              [ "$c" != COUNT ] || continue
               case "$c" in c3po-db-1|chief-of-staff-digital-cloudflared-1|chief-of-staff-digital-pluggy-webhook-1) ;; *) fail after_t_write_container ;; esac
               # a "running" record with no runtime process alive is what an unclean stop leaves; with one alive it is real
               if [ "$state" = running ] && { pgrep -x dockerd >/dev/null || pgrep -x containerd >/dev/null || pgrep -f containerd-shim >/dev/null; }; then
@@ -1090,7 +1099,7 @@ jobs:
               fi
               case "$c" in c3po-db-1) ;; *) case "$started" in 0001-01-01T00:00:00Z|never) ;; *) fail legacy_has_run ;; esac ;; esac
             done <<<"$recs"
-            say "docker=down_at_back_out records_checked=yes"
+            say "docker=down_at_back_out container_records=$n"
           fi
           sudo systemctl stop docker.socket docker.service containerd.service
           sudo systemctl mask docker.socket docker.service containerd.service >/dev/null
