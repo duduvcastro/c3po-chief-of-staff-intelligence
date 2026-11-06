@@ -5,7 +5,9 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 # -f confirm=X); main keeps its own r2d2-live-status.yml. Owner 03/11/2026: "8 GB no fim de semana"; plan v2 in #501.
 # A Lightsail snapshot only creates an instance with an equal or larger disk (640 GB there, 160 GB here), so the move
 # is a fresh install plus a copy of the data. One phase per dispatch, each only after the Codex's GO on this commit:
-#   A    new host (temporary address): packages pinned, the old host's image store, swap, sysstat, timezone. No writer.
+#   A    new host (temporary address): packages pinned and the six Docker ones held, the old host's image store, swap,
+#        sysstat, timezone. Re-runnable: drifted Docker packages on the still empty store go back to run 1's state.
+#        The holds stay after the move; a later, deliberate Docker upgrade lifts them (apt-mark unhold). No writer.
 #   B    old -> new through this runner: app tree (volatile trees excluded), journald, the Day-D guard drop-ins and the
 #        crontab stored INERT, authorized_keys (the deploy key itself checked), images (IDs compared). No writer.
 #   R    rehearsal of the data path on the LIVE old database (one REPEATABLE READ snapshot: dump, globals with the role
@@ -183,6 +185,7 @@ jobs:
           [ "$(nproc)" = 2 ] || fail not_new_host
           [ "$(awk '/MemTotal/ {printf "%d", $2 / 1048576}' /proc/meminfo)" -le 8 ] || fail not_new_host_memory
           [ ! -e "$APP/.env" ] || fail app_already_present
+          say "boot_age_s=$(awk '{printf "%d", $1}' /proc/uptime)"
           sudo timedatectl set-timezone America/Sao_Paulo
           sudo install -m 0755 -d /etc/apt/keyrings
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.asc
@@ -190,20 +193,101 @@ jobs:
           sudo install -m 0644 /tmp/docker.asc /etc/apt/keyrings/docker.asc
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" \
             | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold install \
-            docker-ce=5:29.5.3-1~ubuntu.24.04~noble docker-ce-cli=5:29.5.3-1~ubuntu.24.04~noble \
-            docker-ce-rootless-extras=5:29.5.3-1~ubuntu.24.04~noble containerd.io=2.2.4-1~ubuntu.24.04~noble \
-            docker-buildx-plugin=0.34.1-1~ubuntu.24.04~noble docker-compose-plugin=5.1.4-1~ubuntu.24.04~noble \
+          # the old host's Docker versions, held. A re-run must not move them: on 06/11 run 2 hit exit 100 because
+          # dist-upgrade moved them to the repository's newest and the pinned install became a refused downgrade
+          pins="docker-ce=5:29.5.3-1~ubuntu.24.04~noble docker-ce-cli=5:29.5.3-1~ubuntu.24.04~noble
+            docker-ce-rootless-extras=5:29.5.3-1~ubuntu.24.04~noble containerd.io=2.2.4-1~ubuntu.24.04~noble
+            docker-buildx-plugin=0.34.1-1~ubuntu.24.04~noble docker-compose-plugin=5.1.4-1~ubuntu.24.04~noble"
+          names=$(for p in $pins; do printf '%s ' "${p%%=*}"; done)
+          apt_get() { sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+          # the last apt error an earlier A left in this host's root-only log, classified; no error text leaves the host
+          last=$(sudo grep '^E: ' /var/log/c3po-migration/A.log | tail -n 1 || true)
+          case "$last" in
+            '') ;;
+            *'Packages were downgraded and -y was used without --allow-downgrades'*) say "last_logged_apt_error=downgrade_refused" ;;
+            *'Could not get lock'*) say "last_logged_apt_error=apt_lock" ;;
+            *) say "last_logged_apt_error=other" ;;
+          esac
+          # apt-daily and unattended-upgrade take the lists and archive locks, which DPkg::Lock::Timeout does not cover;
+          # both are oneshot units, "activating" while they run, so the state is read, not is-active
+          apt_busy() {
+            for u in apt-daily.service apt-daily-upgrade.service; do
+              case "$(systemctl show -p ActiveState --value "$u" 2>/dev/null || true)" in active|activating|deactivating|reloading) return 0 ;; esac
+            done
+            return 1
+          }
+          for _ in $(seq 120); do apt_busy || break; sleep 5; done
+          if apt_busy; then fail apt_daily_busy; fi
+          before=$(dpkg-query -W -f='${Version}' docker-ce 2>/dev/null || true); before=${before#*:}; before=${before%%-*}
+          say "docker_before=${before:-none}"
+          drift=""
+          for p in $pins; do
+            n=${p%%=*}
+            if [ "$(dpkg-query -W -f='${db:Status-Status}' "$n" 2>/dev/null || true)" = installed ] \
+              && [ "$(dpkg-query -W -f='${Version}' "$n")" != "${p#*=}" ]; then drift="$drift $n"; fi
+          done
+          # never a downgrade in place over files the newer versions wrote: only an empty store (A refuses once B has
+          # copied .env) goes back to run 1's state, the packages purged and both data trees recreated. A root-only
+          # marker, written once the store is proven empty, lets a reset that died halfway resume where it stopped
+          reset_mark=/var/log/c3po-migration/A.docker-reset
+          store_mounts() { findmnt -rn -o TARGET 2>/dev/null | grep -E '^/var/lib/(docker|containerd)(/|$)' || true; }
+          reset_done=0
+          if [ -n "$drift" ] || sudo test -e "$reset_mark"; then
+            if ! sudo test -e "$reset_mark"; then
+              sudo docker network rm c3po-a-smoke >/dev/null 2>&1 || true
+              sudo docker volume rm c3po-a-smoke >/dev/null 2>&1 || true
+              ps_out=$(sudo docker ps -aq) || fail docker_unreachable
+              img_out=$(sudo docker images -aq) || fail docker_unreachable
+              vol_out=$(sudo docker volume ls -q) || fail docker_unreachable
+              [ -z "$ps_out$img_out$vol_out" ] || fail store_not_empty
+              [ -z "$(store_mounts)" ] || fail store_has_mounts
+              printf '%s\n' "${before:-unknown}" | sudo tee "$reset_mark" >/dev/null
+            fi
+            for u in docker.socket docker.service containerd.service; do
+              if systemctl cat "$u" >/dev/null 2>&1; then sudo systemctl stop "$u" || fail docker_stop; fi
+            done
+            [ -z "$(store_mounts)" ] || fail store_has_mounts
+            apt_get -y --allow-change-held-packages purge $names || fail apt_purge
+            sudo rm -rf --one-file-system /var/lib/docker /var/lib/containerd || fail store_reset
+            from=$(sudo cat "$reset_mark")
+            sudo mv "$reset_mark" "$reset_mark.done"
+            reset_done=1
+            say "docker_reset=from_${from:-unknown}"
+          fi
+          installed=""
+          for n in $names; do
+            if [ "$(dpkg-query -W -f='${db:Status-Status}' "$n" 2>/dev/null || true)" = installed ]; then installed="$installed $n"; fi
+          done
+          [ -z "$installed" ] || sudo apt-mark hold $installed >/dev/null || fail apt_hold
+          apt_get update || fail apt_update
+          apt_get -y -o Dpkg::Options::=--force-confold dist-upgrade || fail apt_dist_upgrade
+          apt_get -y -o Dpkg::Options::=--force-confold --allow-downgrades --allow-change-held-packages install \
+            $pins \
             jq rsync sysstat chrony unattended-upgrades python3-apt python3-boto3 python3-botocore \
-            python3-cryptography python3-requests python3-yaml
+            python3-cryptography python3-requests python3-yaml || fail apt_install
+          sudo apt-mark hold $names >/dev/null || fail apt_hold
+          for p in $pins; do
+            [ "$(dpkg-query -W -f='${Version}' "${p%%=*}")" = "${p#*=}" ] || fail "version_$(printf '%s' "${p%%=*}" | tr '.-' '__')"
+          done
+          [ "$(apt-mark showhold | grep -c -x -F -f <(printf '%s\n' $names))" = 6 ] || fail docker_not_held
+          # the old host has exactly these six from download.docker.com; nothing else from that repository
+          repo_installed=0
+          for n in $(awk '$1 == "Package:" {print $2}' /var/lib/apt/lists/download.docker.com_*_Packages | sort -u); do
+            if [ "$(dpkg-query -W -f='${db:Status-Status}' "$n" 2>/dev/null || true)" = installed ]; then repo_installed=$((repo_installed + 1)); fi
+          done
+          [ "$repo_installed" = 6 ] || fail "docker_repo_packages_$repo_installed"
+          say "docker_pins=6 held=6 docker_repo_installed=$repo_installed"
           if [ "$DRIVER" = overlay2 ]; then  # the old host's image store, so image IDs compare one to one in B
             sudo install -d -m 0755 /etc/docker
             printf '{\n  "features": {"containerd-snapshotter": false}\n}\n' | sudo tee /etc/docker/daemon.json >/dev/null
             sudo systemctl restart docker
           fi
           [ "$(sudo docker info --format '{{.Driver}}')" = "$DRIVER" ] || fail driver_mismatch
+          [ "$(sudo docker version --format '{{.Server.Version}}')" = 29.5.3 ] || fail docker_server_version
+          cleanup() { sudo docker network rm c3po-a-smoke >/dev/null 2>&1 || true; sudo docker volume rm c3po-a-smoke >/dev/null 2>&1 || true; }
+          cleanup
+          { sudo docker network create c3po-a-smoke >/dev/null && sudo docker network rm c3po-a-smoke >/dev/null; } || fail docker_network_smoke
+          { sudo docker volume create c3po-a-smoke >/dev/null && sudo docker volume rm c3po-a-smoke >/dev/null; } || fail docker_volume_smoke
           sudo usermod -aG docker "$(id -un)"
           if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
             sudo fallocate -l 4G /swapfile
@@ -223,7 +307,8 @@ jobs:
           say "docker=$(sudo docker version --format '{{.Server.Version}}') compose=$(sudo docker compose version --short) containerd=$(containerd --version | awk '{print $3}') driver=$(sudo docker info --format '{{.Driver}}')"
           say "tz=$(timedatectl show -p Timezone --value) swap_mb=$(free -m | awk '/^Swap:/ {print $2}') swappiness=$(cat /proc/sys/vm/swappiness) kernel=$(uname -r | tr '.-' '__')"
           say "containers=$containers c3po_units=$units"
-          if [ -e /var/run/reboot-required ]; then sudo shutdown -r +1 >/dev/null 2>&1; say "reboot=scheduled_in_1_min"; else say "reboot=not_needed"; fi
+          # a Docker reset also reboots: the newer runtime's bridge, firewall chains and AppArmor profile go with it
+          if [ -e /var/run/reboot-required ] || [ "$reset_done" = 1 ]; then sudo shutdown -r +1 >/dev/null 2>&1; say "reboot=scheduled_in_1_min"; else say "reboot=not_needed"; fi
           say "gate=PASS"
           REMOTE
             fi
