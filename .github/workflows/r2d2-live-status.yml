@@ -8,8 +8,9 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #   A    new host (temporary address): packages pinned and the six Docker ones held, the old host's image store, swap,
 #        sysstat, timezone. Re-runnable: drifted Docker packages on the still empty store go back to run 1's state.
 #        The holds stay after the move; a later, deliberate Docker upgrade lifts them (apt-mark unhold). No writer.
-#   B    old -> new through this runner: app tree (volatile trees excluded), journald, the Day-D guard drop-ins and the
-#        crontab stored INERT, authorized_keys (the deploy key itself checked), images (IDs compared). No writer.
+#   B    old -> new through this runner: app tree (volatile trees excluded), journald, the Day-D guard (its five drop-ins
+#        and the crontab stored INERT, its helper in /usr/local/libexec copied inert), authorized_keys (the deploy key
+#        itself checked), images (IDs compared). No writer.
 #   BV   read-only, after B: the revision copied (.deploy-version and the backend image's label, both the named sha) and
 #        every other copy of B by hash on both hosts (journald, drop-ins, crontab, authorized_keys, the deploy user's
 #        ssh/git, the export log, helpers, policy), the drop-ins' references by type, mode and owner, and the new host's
@@ -21,7 +22,8 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #   C1b  old: db stopped clean; volatile trees, one-pagers and the final dump copied and compared; Docker masked; Day-D
 #        unmounted; power-off. Then the console moves the disk and the static IP, and the operator puts the new host's
 #        console-verified key into C3PO_AWS_KNOWN_HOSTS.
-#   C2   new (static address): Day-D mounted by UUID (hash below, never formatted), guards installed, legacy network
+#   C2   new (static address): Day-D mounted by UUID (hash below, never formatted), guards installed (every stored unit,
+#        sockets too; containerd and Docker restarted through them), legacy network
 #        and containers created (not started), the database alone restored and compared. Then the production pipeline is
 #        dispatched by hand with the named revision: T_WRITE starts there.
 #   C3L  new: cloudflared and pluggy-webhook started (one tunnel connector). D: the old crontab installed (its first
@@ -372,9 +374,13 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               # 3. the Day-D guard drop-ins and the old crontab, stored INERT under /root (installed only in C2 and D)
-              if old "sudo tar -C / --ignore-failed-read -cpf - etc/systemd/system/docker.service.d etc/systemd/system/c3po-postgres-backup.service.d etc/systemd/system/c3po-host-security-snapshot.service.d" 2>/dev/null \
+              # the September guard: containerd, docker.service and docker.socket, and the two writers B's helpers serve
+              if old "sudo tar -C / --ignore-failed-read -cpf - etc/systemd/system/containerd.service.d etc/systemd/system/docker.service.d etc/systemd/system/docker.socket.d etc/systemd/system/c3po-postgres-backup.service.d etc/systemd/system/c3po-host-security-snapshot.service.d" 2>/dev/null \
                 | new_tmp "sudo install -d -m 0700 /root/c3po-migration/dropins && sudo tar -C /root/c3po-migration/dropins -xpf -" > /dev/null 2>&1; then note "dropins=stored_inert"
               else note "gate=FAIL reason=dropins"; rc=1; fi
+              nd=$(new_tmp "set -o pipefail; sudo find /root/c3po-migration/dropins/etc/systemd/system -mindepth 1 -maxdepth 1 -type d -name '*.d' | wc -l" 2>/dev/null) || nd=unknown
+              note "dropin_dirs_stored=${nd:-unknown}"
+              [ "$nd" = 5 ] || { note "gate=FAIL reason=dropin_dirs"; rc=1; }
               refs=$(new_tmp "set -o pipefail; sudo sh -c 'cat /root/c3po-migration/dropins/etc/systemd/system/*.d/*.conf' | grep -o -E '/(usr|etc|opt|mnt|var)/[A-Za-z0-9_./=@-]+' | sort -u" 2>/dev/null)
               missing=0; names=""; on_day_d=0
               for p in $refs; do
@@ -424,6 +430,9 @@ jobs:
               if old "sudo tar -C /usr/local/sbin -cpf - c3po-healthcheck-ping c3po-host-security-snapshot c3po-postgres-backup" 2>/dev/null \
                 | new_tmp "sudo tar -C /usr/local/sbin -xpf -" > /dev/null 2>&1; then note "sbin_helpers=copied_inert"
               else note "gate=FAIL reason=sbin_helpers"; rc=1; fi
+              if [ "$rc" = 0 ] && old "sudo tar -C /usr/local/libexec -cpf - c3po-day-d-guard" 2>/dev/null \
+                | new_tmp "sudo install -d -m 0755 -o root -g root /usr/local/libexec && sudo tar -C /usr/local/libexec -xpf -" > /dev/null 2>&1; then note "guard_helper=copied_inert"
+              elif [ "$rc" = 0 ]; then note "gate=FAIL reason=guard_helper"; rc=1; fi
               if [ "$rc" = 0 ] && old "sudo tar -C /etc -cpf - c3po/security-automation.json" 2>/dev/null \
                 | new_tmp "sudo install -d -m 0700 -o root -g root /etc/c3po && sudo tar -C /etc -xpf -" > /dev/null 2>&1; then note "security_policy=copied"
               elif [ "$rc" = 0 ]; then note "gate=FAIL reason=security_policy"; rc=1; fi
@@ -498,7 +507,7 @@ jobs:
           [ "$v" != "$(printf '' | h)" ] || fail journald_absent
           hsay journald "$v"
           # 3. the Day-D guard drop-ins (installed on the old host, stored inert on the new one)
-          d=$(present "$dropin_base" etc/systemd/system/docker.service.d etc/systemd/system/c3po-postgres-backup.service.d etc/systemd/system/c3po-host-security-snapshot.service.d)
+          d=$(present "$dropin_base" etc/systemd/system/containerd.service.d etc/systemd/system/docker.service.d etc/systemd/system/docker.socket.d etc/systemd/system/c3po-postgres-backup.service.d etc/systemd/system/c3po-host-security-snapshot.service.d)
           [ -n "$d" ] || fail dropins_absent
           v=$(tree_hash "$dropin_base" $d) || fail dropins_read
           hsay dropins "$v"
@@ -519,6 +528,8 @@ jobs:
           hsay sbin_helpers "$v"
           v=$(tree_hash /etc c3po/security-automation.json) || fail security_policy_read
           hsay security_policy "$v"
+          v=$(tree_hash /usr/local/libexec c3po-day-d-guard) || fail guard_helper_read
+          hsay guard_helper "$v"
           # 8b. the 11 images B loaded, each by its full ID
           v=$(for image in c3po/database:production c3po/backend:production c3po/web:production c3po/database:rollback c3po/backend:rollback c3po/web:rollback chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-whatsapp-login:latest chief-of-staff-digital-whatsapp-capture:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest; do
                 id=$(sudo docker image inspect --format '{{.Id}}' "$image") || exit 1
@@ -528,7 +539,7 @@ jobs:
           hsay images "$v"
           hsay images_checked 11
           # 9. every path the drop-ins name, Day-D apart (mounted in C2): type, mode, owner, as on the old host
-          refs=$(sudo bash -c 'shopt -s nullglob; cat "$1"/etc/systemd/system/docker.service.d/*.conf "$1"/etc/systemd/system/c3po-postgres-backup.service.d/*.conf "$1"/etc/systemd/system/c3po-host-security-snapshot.service.d/*.conf < /dev/null' _ "$dropin_base" | grep -o -E '/(usr|etc|opt|mnt|var)/[A-Za-z0-9_./=@-]+' | LC_ALL=C sort -u) || fail dropin_refs_read
+          refs=$(sudo bash -c 'shopt -s nullglob; cat "$1"/etc/systemd/system/containerd.service.d/*.conf "$1"/etc/systemd/system/docker.service.d/*.conf "$1"/etc/systemd/system/docker.socket.d/*.conf "$1"/etc/systemd/system/c3po-postgres-backup.service.d/*.conf "$1"/etc/systemd/system/c3po-host-security-snapshot.service.d/*.conf < /dev/null' _ "$dropin_base" | grep -o -E '/(usr|etc|opt|mnt|var)/[A-Za-z0-9_./=@-]+' | LC_ALL=C sort -u) || fail dropin_refs_read
           n=0; lines=""
           for p in $refs; do
             case "$p" in /mnt/day-d-data|/mnt/day-d-data/*) continue ;; esac
@@ -554,10 +565,15 @@ jobs:
             for x in c3po-healthcheck-ping c3po-host-security-snapshot c3po-postgres-backup; do
               sudo test -x "/usr/local/sbin/$x" || fail new_helper_not_executable
             done
+            [ "$(sudo stat -c '%a %U' /usr/local/libexec/c3po-day-d-guard)" = "755 root" ] || fail new_guard_helper_mode
+            [ "$(sudo stat -c '%a %U' /usr/local/libexec)" = "755 root" ] || fail new_libexec_mode
+            # the guard runs here and refuses while Day-D is still on the old host (its reason stays in the host's log)
+            if g=$(sudo /usr/local/libexec/c3po-day-d-guard 2>&1 >/dev/null); then fail new_guard_accepts_without_day_d; fi
+            case "$g" in *C3PO_DAY_D_GUARD_FAIL:*) ;; *) fail new_guard_did_not_run ;; esac
             c=$(sudo docker ps -aq | wc -l) || fail new_docker_unreadable
             u=$(systemctl list-unit-files --no-legend | awk '$1 ~ /^c3po-/' | wc -l) || fail new_units_unreadable
             [ "$c" = 0 ] && [ "$u" = 0 ] || fail new_not_inert
-            say "new_modes=ok new_containers=$c new_c3po_units=$u"
+            say "new_modes=ok new_guard=refuses_without_day_d new_containers=$c new_c3po_units=$u"
           else
             say "old_read=ok"
           fi
@@ -569,7 +585,7 @@ jobs:
               h_new=$( { printf 'ROLE=new\n%s\n' "$prelude"; cat "$RUNNER_TEMP/bv.sh"; } | capture new_tmp no) || rc=1
             fi
             if [ "$rc" = 0 ]; then
-              for k in app_revision image_revision journald dropins crontab authorized_keys user_ssh_git export_log sbin_helpers security_policy images images_checked dropin_refs_modes dropin_refs_checked; do
+              for k in app_revision image_revision journald dropins crontab authorized_keys user_ssh_git export_log sbin_helpers security_policy guard_helper images images_checked dropin_refs_modes dropin_refs_checked; do
                 a=$(awk -v k="$k" '$2 == k {print $3}' <<<"$h_old"); b=$(awk -v k="$k" '$2 == k {print $3}' <<<"$h_new")
                 if [[ "$a" =~ ^[0-9a-f]+$ ]] && [ "$a" = "$b" ] && [ "$a" != "$EMPTY_SHA" ]; then note "$k=match"; else note "gate=FAIL reason=$k"; rc=1; fi
               done
@@ -887,13 +903,40 @@ jobs:
           [ "$(findmnt -n -o UUID /mnt/day-d-data)" = "$uuid" ] || fail day_d_mount
           for d in tmp valuation-ensemble r2d2-v2-source; do [ -d "/mnt/day-d-data/$d" ] || fail "day_d_content_$d"; done
           say "day_d=mounted_by_uuid used_g=$(df -P -BG /mnt/day-d-data | awk 'NR == 2 {sub(/G/, "", $3); print $3}')"
-          # 2. the old host's guard drop-ins, now that the disk is there; Docker must now require the mount
-          sudo sh -c 'cd /root/c3po-migration/dropins/etc/systemd/system && for d in *.service.d; do install -d -m 0755 "/etc/systemd/system/$d" && install -m 0644 "$d"/* "/etc/systemd/system/$d/"; done'
+          # 2. the old host's guard, now that the disk is there: its helper, every drop-in B stored (sockets too); each runtime
+          # unit with a stored drop-in must now require the mount, and containerd and Docker must start through the guard
+          [ "$(sudo stat -c '%a %U' /usr/local/libexec/c3po-day-d-guard)" = "755 root" ] || fail guard_helper_absent
+          S=/root/c3po-migration/dropins/etc/systemd/system
+          installed=0
+          for d in containerd.service.d docker.service.d docker.socket.d c3po-postgres-backup.service.d c3po-host-security-snapshot.service.d; do
+            sudo test -d "$S/$d" || fail "guard_not_stored_$(printf '%s' "$d" | tr '.-' '__')"
+            sudo install -d -m 0755 -o root -g root "/etc/systemd/system/$d" || fail guard_install
+            sudo sh -ec 'for f in "$1"/*; do install -m 0644 -o root -g root "$f" "$2/"; done' _ "$S/$d" "/etc/systemd/system/$d" || fail guard_install
+            sudo diff -r "$S/$d" "/etc/systemd/system/$d" >/dev/null || fail "guard_differs_$(printf '%s' "$d" | tr '.-' '__')"
+            installed=$((installed + 1))
+          done
+          [ "$installed" = 5 ] || fail guards_incomplete
           sudo systemctl daemon-reload
-          systemctl show -p RequiresMountsFor --value docker.service | grep -q '/mnt/day-d-data' || fail docker_guard_absent
-          sudo systemctl restart docker
+          guarded=0
+          for u in containerd.service docker.service docker.socket; do
+            case " $(systemctl show -p RequiresMountsFor --value "$u") " in
+              *" /mnt/day-d-data "*) guarded=$((guarded + 1)) ;;
+              *) fail "guard_absent_$(printf '%s' "$u" | tr '.-' '__')" ;;
+            esac
+          done
+          [ "$guarded" = 3 ] || fail runtime_guards_incomplete
+          for u in containerd.service docker.service; do
+            case "$(systemctl show -p ExecStartPre --value "$u")" in
+              *c3po-day-d-guard*) ;;
+              *) fail "guard_not_prestart_$(printf '%s' "$u" | tr '.-' '__')" ;;
+            esac
+          done
+          # the writers' units arrive only with the host installers after D; their drop-ins are in place and compared above
+          sudo /usr/local/libexec/c3po-day-d-guard >/dev/null 2>&1 || fail guard_refuses_mounted_day_d
+          sudo systemctl restart containerd docker || fail runtime_restart
+          systemctl is-active --quiet containerd || fail containerd_with_guard
           systemctl is-active --quiet docker || fail docker_with_guard
-          say "guards=installed docker=active requires_day_d=yes"
+          say "guards=installed dropins=$installed runtime_units_guarded=$guarded containerd=active docker=active requires_day_d=yes"
           # 3. the explicit hold before the first deploy: with the old host's policy present, install-security-daily.sh
           # creates no bootstrap hold, and this one keeps the security routine from remediating or rebooting until E
           ( umask 077; printf '%s\n' 'migration 2026-11-07: pending acceptance after the first night (phase E)' | sudo tee /etc/c3po/security-maintenance.hold >/dev/null )
@@ -1016,16 +1059,39 @@ jobs:
           # only before T_WRITE, and proven here: no crontab, no container but the database and the two legacy ones C2
           # created, and the tunnel connector never started
           [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_present
-          for c in $(docker ps -a --format '{{.Names}}'); do
-            case "$c" in c3po-db-1|chief-of-staff-digital-cloudflared-1|chief-of-staff-digital-pluggy-webhook-1) ;; *) fail after_t_write_container ;; esac
-          done
-          for c in chief-of-staff-digital-cloudflared-1 chief-of-staff-digital-pluggy-webhook-1; do
-            started=$(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null || echo never)
-            case "$started" in 0001-01-01T00:00:00Z|never) ;; *) fail legacy_has_run ;; esac
-          done
-          ids=$(docker ps -q)
-          [ -z "$ids" ] || docker stop -t 120 $ids >/dev/null
-          [ -z "$(docker ps -q)" ] || fail containers_running
+          if systemctl is-active --quiet docker; then
+            names=$(docker ps -a --format '{{.Names}}') || fail docker_unreadable
+            for c in $names; do
+              case "$c" in c3po-db-1|chief-of-staff-digital-cloudflared-1|chief-of-staff-digital-pluggy-webhook-1) ;; *) fail after_t_write_container ;; esac
+            done
+            for c in chief-of-staff-digital-cloudflared-1 chief-of-staff-digital-pluggy-webhook-1; do
+              # "never" only for a container that does not exist; one that exists must answer
+              exists=no
+              for n in $names; do if [ "$n" = "$c" ]; then exists=yes; fi; done
+              if [ "$exists" = yes ]; then started=$(docker inspect -f '{{.State.StartedAt}}' "$c") || fail docker_unreadable; else started=never; fi
+              case "$started" in 0001-01-01T00:00:00Z|never) ;; *) fail legacy_has_run ;; esac
+            done
+            ids=$(docker ps -q) || fail docker_unreadable
+            [ -z "$ids" ] || docker stop -t 120 $ids >/dev/null || fail docker_stop
+            left=$(docker ps -q) || fail docker_unreadable
+            [ -z "$left" ] || fail containers_running
+          else
+            # dockerd is down (the guard refused in C2): the same proof from Docker's own records, so the back-out goes on
+            recs=$(sudo python3 -c 'import glob, json
+          for f in sorted(glob.glob("/var/lib/docker/containers/*/config.v2.json")):
+              d = json.load(open(f)); s = d.get("State") or {}
+              print(d.get("Name", "").lstrip("/") or "unnamed", s["StartedAt"] or "never", "running" if s.get("Running") else "stopped")') || fail container_records_unreadable
+            while read -r c started state; do
+              [ -n "$c" ] || continue
+              case "$c" in c3po-db-1|chief-of-staff-digital-cloudflared-1|chief-of-staff-digital-pluggy-webhook-1) ;; *) fail after_t_write_container ;; esac
+              # a "running" record with no runtime process alive is what an unclean stop leaves; with one alive it is real
+              if [ "$state" = running ] && { pgrep -x dockerd >/dev/null || pgrep -x containerd >/dev/null || pgrep -f containerd-shim >/dev/null; }; then
+                fail container_running_without_daemon
+              fi
+              case "$c" in c3po-db-1) ;; *) case "$started" in 0001-01-01T00:00:00Z|never) ;; *) fail legacy_has_run ;; esac ;; esac
+            done <<<"$recs"
+            say "docker=down_at_back_out records_checked=yes"
+          fi
           sudo systemctl stop docker.socket docker.service containerd.service
           sudo systemctl mask docker.socket docker.service containerd.service >/dev/null
           ! pgrep -x dockerd >/dev/null || fail dockerd_alive
