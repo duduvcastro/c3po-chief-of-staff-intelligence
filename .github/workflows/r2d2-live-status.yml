@@ -230,8 +230,27 @@ jobs:
           # copied .env) goes back to run 1's state, the packages purged and both data trees recreated. A root-only
           # marker, written once the store is proven empty, lets a reset that died halfway resume where it stopped
           reset_mark=/var/log/c3po-migration/A.docker-reset
-          store_mounts() { findmnt -rn -o TARGET 2>/dev/null | grep -E '^/var/lib/(docker|containerd)(/|$)' || true; }
-          reset_done=0
+          reboot_owed=/var/log/c3po-migration/A.reboot-owed
+          boot_id=$(cat /proc/sys/kernel/random/boot_id)
+          # settled only by a readable, well-formed boot id that is not this boot's; anything else stays owed
+          owed_id=$(sudo cat "$reboot_owed" 2>/dev/null || true)
+          if [[ "$owed_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] && [ "$owed_id" != "$boot_id" ]; then
+            sudo mv "$reboot_owed" "$reboot_owed.settled"
+            say "owed_reboot=settled"
+          fi
+          # the whole mount table, read with its status: a failed or implausible read (no "/") is never "no mounts";
+          # any mount at either root or below it, binds on the same device included, refuses the reset
+          store_mounts_refuse() {
+            local table line root=0
+            table=$(findmnt -rn -o TARGET) || fail mount_table_unreadable
+            while IFS= read -r line; do
+              case "$line" in
+                /) root=1 ;;
+                /var/lib/docker|/var/lib/docker/*|/var/lib/containerd|/var/lib/containerd/*) fail store_has_mounts ;;
+              esac
+            done <<<"$table"
+            [ "$root" = 1 ] || fail mount_table_unreadable
+          }
           if [ -n "$drift" ] || sudo test -e "$reset_mark"; then
             if ! sudo test -e "$reset_mark"; then
               sudo docker network rm c3po-a-smoke >/dev/null 2>&1 || true
@@ -240,18 +259,21 @@ jobs:
               img_out=$(sudo docker images -aq) || fail docker_unreachable
               vol_out=$(sudo docker volume ls -q) || fail docker_unreachable
               [ -z "$ps_out$img_out$vol_out" ] || fail store_not_empty
-              [ -z "$(store_mounts)" ] || fail store_has_mounts
+              store_mounts_refuse
               printf '%s\n' "${before:-unknown}" | sudo tee "$reset_mark" >/dev/null
             fi
+            store_mounts_refuse
             for u in docker.socket docker.service containerd.service; do
               if systemctl cat "$u" >/dev/null 2>&1; then sudo systemctl stop "$u" || fail docker_stop; fi
             done
-            [ -z "$(store_mounts)" ] || fail store_has_mounts
+            store_mounts_refuse
             apt_get -y --allow-change-held-packages purge $names || fail apt_purge
+            store_mounts_refuse
             sudo rm -rf --one-file-system /var/lib/docker /var/lib/containerd || fail store_reset
+            # the reboot a reset owes survives a later failure: it is settled only by a boot after this one
+            printf '%s\n' "$boot_id" | sudo tee "$reboot_owed" >/dev/null
             from=$(sudo cat "$reset_mark")
             sudo mv "$reset_mark" "$reset_mark.done"
-            reset_done=1
             say "docker_reset=from_${from:-unknown}"
           fi
           installed=""
@@ -308,7 +330,7 @@ jobs:
           say "tz=$(timedatectl show -p Timezone --value) swap_mb=$(free -m | awk '/^Swap:/ {print $2}') swappiness=$(cat /proc/sys/vm/swappiness) kernel=$(uname -r | tr '.-' '__')"
           say "containers=$containers c3po_units=$units"
           # a Docker reset also reboots: the newer runtime's bridge, firewall chains and AppArmor profile go with it
-          if [ -e /var/run/reboot-required ] || [ "$reset_done" = 1 ]; then sudo shutdown -r +1 >/dev/null 2>&1; say "reboot=scheduled_in_1_min"; else say "reboot=not_needed"; fi
+          if [ -e /var/run/reboot-required ] || sudo test -e "$reboot_owed"; then sudo shutdown -r +1 >/dev/null 2>&1 || fail reboot_schedule; say "reboot=scheduled_in_1_min"; else say "reboot=not_needed"; fi
           say "gate=PASS"
           REMOTE
             fi
