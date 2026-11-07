@@ -806,7 +806,19 @@ jobs:
           say "backup=$(systemctl show -p Result --value c3po-postgres-backup.service)"
           newest=$(find "$APP/outputs/evidence/postgres-backup" -name result.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-)
           [ -n "$newest" ] || fail backup_evidence
-          say "backup_dump_sha=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["dump_sha256"])' "$newest" | tr -dc '0-9a-f' | cut -c1-64)"
+          # the drill takes the newest upload.json and its first "/daily/" key: they must be this backup's, by the same rule,
+          # with the uploaded file's SHA the dump's (the backup script refuses otherwise); the key is shown only as its hash
+          up="$(dirname "$newest")/upload.json"
+          newest_up=$(find "$APP/outputs/evidence/postgres-backup" -name upload.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-) || fail backup_upload_find
+          [ -n "$newest_up" ] && [ "$up" = "$newest_up" ] || fail backup_upload_not_newest
+          bind=$(python3 -c 'import hashlib, json, sys
+          result = json.load(open(sys.argv[1])); upload = json.load(open(sys.argv[2]))
+          daily = next(item for item in upload["uploads"] if "/daily/" in item["key"])
+          if upload["file_sha256"] != result["dump_sha256"]: raise SystemExit("uploaded file is not the dump")
+          if result["uploads"] != upload["uploads"]: raise SystemExit("result and upload name different objects")
+          print(result["dump_sha256"], hashlib.sha256(daily["key"].encode()).hexdigest())' "$newest" "$up") || fail backup_binding
+          [[ "$bind" =~ ^[0-9a-f]{64}\ [0-9a-f]{64}$ ]] || fail backup_binding
+          say "backup_dump_sha=${bind%% *} backup_object_key_sha=${bind##* } upload_is_newest=yes"
           say "gate=PASS next=restore_drill_then_C1b"
           REMOTE
             fi
