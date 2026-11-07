@@ -15,14 +15,19 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #        every other copy of B by hash on both hosts (journald, drop-ins, crontab, authorized_keys, the deploy user's
 #        ssh/git, the export log, helpers, policy), the drop-ins' references by type, mode and owner, and the new host's
 #        store modes and inertness. Only "=match", counts and the revision are printed; the hashes stay in the runner.
-#   C0   read-only, right before C1a and within minutes of the last scheduled summary's end: identity, C1a's own three
-#        drift checks against B (app tree, reports clone, images), and that summary bound end to end by identity (its
-#        cron session, its container by full ID in Docker's events and containerd's journal), with C1a's drain counts.
+#   C0   read-only rehearsal of path X (C1a repeats it on its own), between two scheduled jobs: identity, the live
+#        crontab still B's copy, the clock, the drain (no container of the summary's service in any state), the last
+#        summary bound to its own cron session, every crontab job since then closed and one of its three; C1a's three
+#        drift checks against B; then a second read with no crontab job since the first, and nothing written since
+#        then in the compared trees (ctime) nor any image moved. Outside 01:00-05:35, nothing firing within 15/10 minutes.
 #   R    rehearsal of the data path on the LIVE old database (one REPEATABLE READ snapshot: dump, globals with the role
 #        password hashes, exact counts), restored on a throwaway volume of the new host and compared, then removed.
-#   C1a  old: crontab saved and emptied, c3po-* and apt timers masked, logs kept, ingress and writers stopped (db up),
-#        final dump/globals/counts, one offsite backup. Then the restore drill is dispatched by hand.
-#   C1b  old: db stopped clean; volatile trees, one-pagers and the final dump copied and compared; Docker masked; Day-D
+#   C1a  old: path X's first read, the drift checks, its second read and the write check as step 0 inside the lease;
+#        then the crontab saved and emptied (C1a's marker first, removed only by R0), c3po-* and apt timers masked,
+#        logs kept, ingress and writers stopped (db up), final dump/globals/counts, one offsite backup. Then the restore
+#        drill is dispatched by hand.
+#   C1b  old: db stopped clean; volatile trees, one-pagers and the final dump copied and compared, the reports clone and
+#        the images compared again; Docker masked; Day-D
 #        unmounted; power-off. Then the console moves the disk and the static IP, and the operator puts the new host's
 #        console-verified key into C3PO_AWS_KNOWN_HOSTS.
 #   C2   new (static address): Day-D mounted by UUID (hash below, never formatted), guards installed (every stored unit,
@@ -195,6 +200,125 @@ jobs:
           legacy() { docker compose --env-file "$APP/.env" -f "$APP/docker-compose.yml" "$@"; }
           count_sql="SELECT '"'"'count'"'"', format('"'"'%I.%I'"'"', schemaname, relname), (xpath('"'"'/row/c/text()'"'"', query_to_xml(format('"'"'select count(*) as c from %I.%I'"'"', schemaname, relname), false, true, '"'"''"'"')))[1]::text FROM pg_stat_user_tables ORDER BY 2;"
           '
+          # path X, shared by C0 and C1a: the reads that prove the old host sits between two scheduled jobs. STAGE (start |
+          # end), RUNNER_NOW and, at the end, SINCE are set by the runner on the lines above this script
+          cat > "$RUNNER_TEMP/c0.sh" <<'REMOTE'
+          me=$(id -un)
+          hm() { TZ=America/Sao_Paulo date -d "@$1" '+%H:%M:%S'; }
+          mins() { local x; x=$(TZ=America/Sao_Paulo date -d "@$1" +%H%M); echo $(( 10#${x:0:2} * 60 + 10#${x:2:2} )); }
+          # the clock cron reads, first: synchronized, and within seconds of the runner's
+          now=$(date +%s)
+          [ "$(timedatectl show -p NTPSynchronized --value)" = yes ] || fail clock_not_synchronized
+          skew=$(( now - RUNNER_NOW ))
+          [ "$skew" -ge -5 ] && [ "$skew" -le 30 ] || fail clock_skew
+          # the drain, by C1a's own rule, waited for up to 2 minutes (a system job of cron's own may be ending)
+          for i in $(seq 25); do
+            cg=$(systemctl show -p ControlGroup --value cron.service)
+            [ -n "$cg" ] || fail cron_cgroup_unreadable
+            procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
+            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+            running=$(grep -c 'morning-summary' <<<"$names" || true)
+            [ "$procs" -le 1 ] && [ "$running" = 0 ] && break
+            [ "$i" -lt 25 ] || fail cron_job_or_summary_running
+            sleep 5
+          done
+          # whatever container a summary had is gone: none of its service in ANY state, and no one-off container running
+          ids=$(timeout 20 docker ps -a -q --filter label=com.docker.compose.service=morning-summary) || fail docker_unreadable
+          [ -z "$ids" ] || fail summary_container_present
+          ids=$(timeout 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
+          [ -z "$ids" ] || fail oneoff_container_running
+          # the window is judged from the time after the wait
+          now=$(date +%s); m=$(mins "$now")
+          tab=$(crontab -l)
+          [ -n "$tab" ] || fail crontab_empty
+          # every entry plain (minute and hour fields lists of numbers): any other form is refused, never interpreted
+          bad=$(awk '!/^[[:space:]]*(#|$)/ && !/^[A-Z_]+=/ && ($1 !~ /^[0-9]+(,[0-9]+)*$/ || $2 !~ /^[0-9]+(,[0-9]+)*$/) {c++} END {print c + 0}' <<<"$tab")
+          [ "$bad" = 0 ] || fail crontab_entry_not_plain
+          grep -qx 'CRON_TZ=America/Sao_Paulo' <<<"$tab" || fail crontab_tz
+          # within FROM + 0..SPAN minutes of the day (BRT, wrapping at midnight): the entries firing, and those that are
+          # the summary; the day fields are ignored, so an entry counts on every day (never fewer than fire)
+          fires() {
+            awk -v a="$1" -v s="$2" '!/^[[:space:]]*(#|$)/ && !/^[A-Z_]+=/ {
+                nm = split($1, M, ","); nh = split($2, H, ","); hit = 0
+                for (i = 1; i <= nh; i++) for (j = 1; j <= nm; j++) if ((H[i] * 60 + M[j] - a + 1440) % 1440 <= s) hit = 1
+                if (hit) { c++; if ($0 ~ /morning-summary/) k++ } }
+              END { printf "%d %d", c, k }' <<<"$tab"
+          }
+          if [ "$STAGE" = start ]; then span=15; else span=10; fi
+          read -r soon _ <<<"$(fires "$m" "$span")"
+          win=in
+          [ "$soon" = 0 ] || win=out
+          if [ "$m" -ge 60 ] && [ "$m" -lt 336 ]; then win=out; fi
+          if [ "$STAGE" = start ]; then
+            # the last scheduled summary: the latest of its slots (its own entry, 0 7,13,15) already past, today or
+            # yesterday; at that minute the crontab fires the summary and nothing else
+            [ "$(awk '!/^[[:space:]]*#/ && /morning-summary/ {print $1, $2}' <<<"$tab")" = "0 7,13,15" ] || fail crontab_summary_entry
+            slot=""
+            for d in today yesterday; do
+              for h in 15 13 07; do
+                t=$(TZ=America/Sao_Paulo date -d "$d $h:00" +%s)
+                if [ -z "$slot" ] && [ "$t" -le "$now" ]; then slot=$t; fi
+              done
+            done
+            [ -n "$slot" ] || fail no_summary_slot
+            [ "$(fires "$(mins "$slot")" 0)" = "1 1" ] || fail crontab_slot_not_only_the_summary
+            # in that minute cron opened exactly one session for this user's crontab and logged exactly one CMD, the
+            # summary's, from its child; that session closed once, after it
+            j=$(sudo journalctl -t CRON --since "@$((slot - 60))" --no-pager -o short-unix)
+            rows=$(awk -v a="$slot" -v b="$((slot + 60))" -v me="$me" '
+              { t = int($1); if (!match($0, /CRON\[[0-9]+\]/)) next; pid = substr($0, RSTART + 5, RLENGTH - 6) }
+              $0 ~ ("session opened for user " me "[( ]") && t >= a && t < b { print "open", pid, t }
+              index($0, "(" me ") CMD (") && t >= a && t < b { print "cmd", pid, t, ($0 ~ /morning-summary/ ? "summary" : "other") }
+              $0 ~ ("session closed for user " me "$") && t >= a { print "close", pid, t }' <<<"$j")
+            [ "$(grep -c '^open ' <<<"$rows" || true)" = 1 ] || fail cron_slot_session_not_unique
+            [ "$(grep -c '^cmd ' <<<"$rows" || true)" = 1 ] || fail cron_slot_cmd_not_unique
+            read -r _ spid sopen <<<"$(grep '^open ' <<<"$rows")"
+            read -r _ cpid started kind <<<"$(grep '^cmd ' <<<"$rows")"
+            [ "$kind" = summary ] || fail cron_slot_cmd_not_the_summary
+            [ "$cpid" -gt "$spid" ] && [ "$started" -ge "$sopen" ] || fail cron_slot_cmd_not_from_the_session
+            [ "$(awk -v p="$spid" '$1 == "close" && $2 == p {c++} END {print c + 0}' <<<"$rows")" = 1 ] || fail summary_session_end_not_seen
+            ended=$(awk -v p="$spid" '$1 == "close" && $2 == p {print $3}' <<<"$rows")
+            [[ "$ended" =~ ^[0-9]+$ ]] && [ "$ended" -ge "$started" ] || fail summary_times_inconsistent
+            # since that slot: every session the crontab opened closed, each ran one CMD, every CMD one of its three jobs,
+            # the summary only once (its own slot)
+            tally=$(awk -v a="$slot" -v me="$me" '
+              { t = int($1); if (t < a || !match($0, /CRON\[[0-9]+\]/)) next; pid = substr($0, RSTART + 5, RLENGTH - 6) }
+              $0 ~ ("session opened for user " me "[( ]") { if (s[pid] == "open") dup++; s[pid] = "open"; o++ }
+              $0 ~ ("session closed for user " me "$") { if (s[pid] == "open") { s[pid] = "closed"; cl++ } }
+              index($0, "(" me ") CMD (") { c++; if ($0 ~ /morning-summary/) sm++; else if ($0 ~ /r2d2-publish-daily-report[.]sh/) ex++; else if ($0 ~ /docker builder prune/) pr++; else ot++ }
+              END { printf "%d %d %d %d %d %d %d %d", o, cl, dup, c, sm, ex, pr, ot }' <<<"$j")
+            read -r o cl dup c sm ex pr ot <<<"$tally"
+            [ "$dup" = 0 ] && [ "$o" = "$cl" ] || fail crontab_session_still_open
+            [ "$o" = "$c" ] || fail crontab_sessions_and_commands_differ
+            [ "$ot" = 0 ] || fail crontab_unexpected_command
+            [ "$sm" = 1 ] || fail summaries_since_the_slot_not_one
+            say "crontab=plain tz=brt summary_slots=7,13,15 last_summary=$(LC_ALL=C TZ=America/Sao_Paulo date -d "@$slot" '+%a_%Hh')"
+            say "summary_session_open=$(hm "$sopen") summary_cron_start=$(hm "$started") summary_session_close=$(hm "$ended") bound_by=cron_session"
+            say "since_summary_sessions=$o closed=$cl commands=$c summary=$sm export=$ex prune=$pr other=$ot"
+          else
+            # no session of the crontab opened, and none of its commands ran, since the first read
+            j=$(sudo journalctl -t CRON --since "@$SINCE" --no-pager -o short-unix)
+            n=$(awk -v a="$SINCE" -v me="$me" 'int($1) >= a && ($0 ~ ("session opened for user " me "[( ]") || index($0, "(" me ") CMD (")) {c++} END {print c + 0}' <<<"$j")
+            [ "$n" = 0 ] || fail crontab_job_started_since_first_read
+            say "crontab_jobs_since_first_read=0"
+          fi
+          say "stage=$STAGE clock_brt=$(hm "$now") skew_s=$skew ntp=yes fires_within_${span}m=$soon window=$win cron_cgroup_procs=$procs summary_containers=0 oneoff_running=0"
+          REMOTE
+          # what the comparisons cover, unwritten since SINCE by ANY writer (the runner sets SINCE and EXPECTED_IMAGES,
+          # the six "name=id" it compared): no inode of the app tree (volatile trees excluded) or of the reports clone
+          # changed since then (ctime, which no writer can set back), and every image still the id compared
+          cat > "$RUNNER_TEMP/c0w.sh" <<'REMOTE'
+          w=$(sudo find /opt/chief-of-staff-digital \( -path /opt/chief-of-staff-digital/outputs -o -path /opt/chief-of-staff-digital/runtime -o -path /opt/chief-of-staff-digital/whatsapp_session \) -prune -o ! -type s -newerct "@$SINCE" -print -quit) || fail app_tree_unreadable
+          [ -z "$w" ] || fail app_tree_written_since_first_read
+          w=$(sudo find /opt/r2d2-reports ! -type s -newerct "@$SINCE" -print -quit) || fail reports_unreadable
+          [ -z "$w" ] || fail reports_written_since_first_read
+          set -- $EXPECTED_IMAGES
+          [ "$#" = 6 ] || fail images_expected_not_six
+          for p in "$@"; do
+            [ "$(docker image inspect --format '{{.Id}}' "${p%%=*}")" = "${p#*=}" ] || fail image_changed_since_compared
+          done
+          say "trees_written_since_first_read=0 images_since_compared=match"
+          REMOTE
           rc=0
           case "$PHASE" in
           A)
@@ -686,71 +810,20 @@ jobs:
             old "rm -f /var/tmp/c3po-migration/r.*" > /dev/null 2>&1 || true
             ;;
           C0)
-            # read-only, right before C1a: identity, C1a's own drift checks against B, the last summary's record, the drain
+            # read-only rehearsal of path X, right before C1a (which repeats both reads on its own): identity, the live
+            # crontab still the copy B stored, the first read, C1a's own three drift checks against B, the second read;
+            # the window is judged here from both reads
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
-            # the summary's events first: Docker's ring holds only minutes, the tree hashes take longer
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old no || rc=1
-          # the LAST scheduled summary (cron runs it at 7, 13 and 15 h, CRON_TZ=America/Sao_Paulo), bound end to end by
-          # identity: its slot is the latest of 07:00, 13:00, 15:00 already past today, and the crontab has exactly one
-          # entry firing then (the summary); in that minute (BRT) cron opened exactly one PAM session, CRON[pid], and logged
-          # exactly one CMD, the summary's, from its child, and that CRON[pid] closed its session exactly once. Docker's
-          # events (read while still in its ring, so C0 runs within minutes of the summary's end) name exactly one
-          # container of compose service morning-summary started and dead inside that session: its full ID is the same
-          # container containerd connected and disconnected. Its die is the observed end; anything missing or ambiguous fails
-          now=$(date +%s); slot=""
-          for h in 15 13 07; do
-            t=$(TZ=America/Sao_Paulo date -d "today $h:00" +%s)
-            if [ "$t" -le "$now" ]; then slot=$h; m15=$t; break; fi
-          done
-          [ -n "$slot" ] || fail no_summary_slot_today
-          tab=$(crontab -l 2>/dev/null) || fail crontab_unreadable
-          at=$(awk -v H="$((10#$slot))" '!/^[[:space:]]*(#|$)/ && $0 !~ /^[A-Z_]+=/ { n = split($2, h, ","); if ($1 == "0") for (i = 1; i <= n; i++) if (h[i] + 0 == H) { c++; if ($0 ~ /morning-summary/) m++ } } END { printf "%d %d", c, m }' <<<"$tab")
-          [ "$at" = "1 1" ] || fail crontab_slot_not_only_the_summary
-          j=$(journalctl -t CRON --since "@$((m15 - 60))" --no-pager -o short-unix 2>/dev/null) || fail cron_journal_unreadable
-          rows=$(awk -v a="$m15" -v b="$((m15 + 60))" '
-            { t = int($1); if (!match($0, /CRON\[[0-9]+\]/)) next; pid = substr($0, RSTART + 5, RLENGTH - 6) }
-            /session opened/ && t >= a && t < b { print "open", pid, t }
-            /CMD \(/ && t >= a && t < b { print "cmd", pid, t, ($0 ~ /morning-summary/ ? "summary" : "other") }
-            /session closed/ && t >= a { print "close", pid, t }' <<<"$j")
-          [ "$(grep -c '^open ' <<<"$rows" || true)" = 1 ] || fail cron_slot_session_not_unique
-          [ "$(grep -c '^cmd ' <<<"$rows" || true)" = 1 ] || fail cron_slot_cmd_not_unique
-          read -r _ spid sopen <<<"$(grep '^open ' <<<"$rows")"
-          read -r _ cpid started kind <<<"$(grep '^cmd ' <<<"$rows")"
-          [ "$kind" = summary ] || fail cron_slot_cmd_not_the_summary
-          [ "$cpid" -gt "$spid" ] && [ "$started" -ge "$sopen" ] || fail cron_slot_cmd_not_from_the_session
-          [ "$(awk -v p="$spid" '$1 == "close" && $2 == p' <<<"$rows" | grep -c . || true)" = 1 ] || fail summary_session_end_not_seen
-          ended=$(awk -v p="$spid" '$1 == "close" && $2 == p {print $3}' <<<"$rows")
-          [[ "$ended" =~ ^[0-9]+$ ]] && [ "$ended" -ge "$started" ] || fail summary_times_inconsistent
-          # Docker's events: the summary's container by its compose service label, with its full ID
-          ev=$(timeout 30 docker events --since "$started" --until "$now" --filter type=container --filter event=start --filter event=die \
-            --format '{{.Time}}|{{.Action}}|{{.Actor.ID}}|{{index .Actor.Attributes "com.docker.compose.project"}}|{{index .Actor.Attributes "com.docker.compose.service"}}|{{index .Actor.Attributes "com.docker.compose.oneoff"}}|{{index .Actor.Attributes "exitCode"}}' 2>/dev/null) \
-            || fail docker_events_unreadable
-          ev=$(awk -F'|' '$4 == "chief-of-staff-digital" && $5 == "morning-summary" && $6 == "True" {print $1, $2, $3, $7}' <<<"$ev")
-          ids=$(awk '{print $3}' <<<"$ev" | sort -u)
-          [ "$(grep -c . <<<"$ids" || true)" = 1 ] || fail summary_container_not_unique_or_rolled_over
-          cid=$ids
-          [[ "$cid" =~ ^[0-9a-f]{64}$ ]] || fail summary_container_id_malformed
-          c_start=$(awk -v i="$cid" '$3 == i && $2 == "start" {print $1}' <<<"$ev")
-          c_die=$(awk -v i="$cid" '$3 == i && $2 == "die" {print $1}' <<<"$ev")
-          c_exit=$(awk -v i="$cid" '$3 == i && $2 == "die" {print $4}' <<<"$ev")
-          [[ "$c_start" =~ ^[0-9]+$ ]] && [[ "$c_die" =~ ^[0-9]+$ ]] || fail summary_container_start_or_die_not_seen
-          [ "$c_start" -ge "$started" ] && [ "$c_die" -ge "$c_start" ] && [ "$c_die" -le "$((ended + 15))" ] || fail summary_container_not_inside_the_job
-          # the same full ID in containerd's journal: its shim connected and disconnected
-          c=$(journalctl -u containerd --since "@$started" --no-pager -o short-unix 2>/dev/null) || fail containerd_journal_unreadable
-          grep -q "connecting to shim $cid" <<<"$c" || fail summary_shim_connect_not_seen
-          grep -qE "shim disconnected.*id=$cid" <<<"$c" || fail summary_shim_disconnect_not_seen
-          last_write=$(stat -c %Y "$APP/outputs/cron.log") || fail summary_log_unreadable
-          # the drain, by C1a's own rule: cron's cgroup back to its own process, no summary container
-          cg=$(systemctl show -p ControlGroup --value cron.service) || fail cron_cgroup_unreadable
-          procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs") || fail cron_cgroup_unreadable
-          names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
-          running=$(grep -c 'morning-summary' <<<"$names" || true)
-          [ "$procs" -le 1 ] && [ "$running" = 0 ] || fail summary_or_cron_job_running
-          hm() { TZ=America/Sao_Paulo date -d "@$1" '+%H:%M:%S'; }
-          say "summary_slot=${slot}h summary_session_open=$(hm "$sopen") summary_cron_start=$(hm "$started") summary_container_start=$(hm "$c_start") summary_container_die=$(hm "$c_die") summary_exit=${c_exit:-unknown} summary_session_close=$(hm "$ended") summary_log_last_write=$(hm "$last_write") container_id_bound=docker_and_containerd"
-          say "cron_cgroup_procs=$procs summary_containers=$running"
-          REMOTE
+              a=$(old "set -o pipefail; crontab -l | sha256sum | cut -c1-64" 2>/dev/null); sa=$?
+              b=$(new_tmp "set -o pipefail; sudo cat /root/c3po-migration/crontab.deploy | sha256sum | cut -c1-64" 2>/dev/null); sb=$?
+              if [ "$sa" = 0 ] && [ "$sb" = 0 ] && [[ "$a" =~ ^[0-9a-f]{64}$ ]] && [ "$a" != "$EMPTY_SHA" ] && [ "$a" = "$b" ]; then
+                note "crontab_since_b=match"
+              else note "gate=FAIL reason=crontab_since_b"; rc=1; fi
+            fi
+            t0=$(date +%s)
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude" "STAGE=start RUNNER_NOW=$t0"; cat "$RUNNER_TEMP/c0.sh"; } | remote old no || rc=1
             fi
             if [ "$rc" = 0 ]; then
               same_hash app_tree_since_b "$(tree_cmd /opt chief-of-staff-digital outputs runtime whatsapp_session)" old new_tmp || rc=1
@@ -758,16 +831,44 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
+              imgs=""
               for image in $images; do
                 a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
                 [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift"; rc=1; break; }
+                imgs="$imgs $image=$a"
               done
               [ "$rc" = 0 ] && note "images_since_b=match"
             fi
-            if [ "$rc" = 0 ]; then note "gate=PASS next=C1a"; fi
+            if [ "$rc" = 0 ]; then
+              { printf '%s\n' "$prelude" "STAGE=end RUNNER_NOW=$(date +%s) SINCE=$((t0 - 5)) EXPECTED_IMAGES='${imgs# }'"; cat "$RUNNER_TEMP/c0.sh" "$RUNNER_TEMP/c0w.sh"; } | remote old no || rc=1
+            fi
+            if [ "$rc" = 0 ]; then
+              if [ "$(grep -c -E '^C0 stage=start .* window=in( |$)' "$out")" = 1 ] && [ "$(grep -c -E '^C0 stage=end .* window=in( |$)' "$out")" = 1 ]; then
+                note "gate=PASS next=C1a"
+              else note "gate=FAIL reason=window"; rc=1; fi
+            fi
             ;;
           C1a)
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
+            # path X on its own: with the crontab live, the first read here and the second one as step 0 inside the lease,
+            # seconds before the crontab is emptied; with the crontab already emptied by an earlier C1a (its marker
+            # present, removed only by R0), nothing can fire any more and neither read applies. Either way, step 0
+            # proves nothing was written since just before the comparisons in what they cover
+            mode=""
+            if [ "$rc" = 0 ]; then
+              mode=$(old 'if out=$(crontab -l 2>&1); then echo live; elif [ "${out#no crontab for }" != "$out" ] && sudo test -e /root/c3po-migration/crontab.emptied; then echo emptied_by_c1a; else echo unknown; fi' 2>/dev/null)
+              case "$mode" in live|emptied_by_c1a) note "crontab_mode=$mode" ;; *) note "gate=FAIL reason=crontab_mode"; rc=1 ;; esac
+            fi
+            t0=$(date +%s); since=$((t0 - 5))
+            if [ "$rc" = 0 ] && [ "$mode" = emptied_by_c1a ]; then
+              # no reads to bound the skew here: SINCE from the old host's own clock, the one that stamps ctime
+              h0=$(old 'date +%s' 2>/dev/null)
+              if [[ "$h0" =~ ^[0-9]{10}$ ]]; then since=$((h0 - 5)); else note "gate=FAIL reason=host_clock_unreadable"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ] && [ "$mode" = live ]; then
+              { printf '%s\n' "$prelude" "STAGE=start RUNNER_NOW=$t0"; cat "$RUNNER_TEMP/c0.sh"; } | remote old no || rc=1
+              if [ "$rc" = 0 ] && [ "$(grep -c -E '^C1a stage=start .* window=in( |$)' "$out")" != 1 ]; then note "gate=FAIL reason=window"; rc=1; fi
+            fi
             if [ "$rc" = 0 ]; then
               # drift since B, checked BEFORE anything stops: the app tree, the reports clone and the images
               same_hash app_tree_since_b "$(tree_cmd /opt chief-of-staff-digital outputs runtime whatsapp_session)" old new_tmp || rc=1
@@ -775,14 +876,32 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
+              imgs=""
               for image in $images; do
                 a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
                 [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift"; rc=1; break; }
+                imgs="$imgs $image=$a"
               done
               [ "$rc" = 0 ] && note "images_since_b=match"
             fi
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+              step0="SINCE=$since EXPECTED_IMAGES='${imgs# }' C0_READ=no"
+              [ "$mode" = live ] && step0="STAGE=end RUNNER_NOW=$(date +%s) SINCE=$since EXPECTED_IMAGES='${imgs# }' C0_READ=yes"
+              { printf '%s\n' "$prelude" "$step0"; if [ "$mode" = live ]; then cat "$RUNNER_TEMP/c0.sh"; fi; cat "$RUNNER_TEMP/c0w.sh"; cat <<'REMOTE'; } | remote old yes || rc=1
+          # 0. path X: with the crontab live, the second read ran just above, inside the lease (no job of the crontab
+          # since the first read, the drain, nothing firing within 10 minutes, outside 01:00-05:35), then the write check
+          # (nothing written in the compared trees since the first read, the images as compared); step 1 empties the
+          # crontab seconds later. Already emptied by an earlier C1a (its marker), nothing fires any more. "No crontab"
+          # is the only read failure taken as empty
+          if [ "$C0_READ" = yes ]; then
+            [ "$win" = in ] || fail window_at_step_0
+            say "step0=second_read_in_window"
+          else
+            if tab_now=$(crontab -l 2>&1); then fail crontab_live_without_the_reads; fi
+            case "$tab_now" in "no crontab for "*) ;; *) fail crontab_unreadable ;; esac
+            sudo test -e /root/c3po-migration/crontab.emptied || fail crontab_empty_without_the_c1a_marker
+            say "step0=crontab_already_emptied_by_c1a"
+          fi
           M=/root/c3po-migration
           W=/var/tmp/c3po-migration
           sudo install -d -m 0700 -o root -g root "$M" "$M/prestop-logs" "$M/units"
@@ -807,16 +926,22 @@ jobs:
           fi
           sudo test -s /etc/c3po/security-maintenance.hold || fail hold
           say "hold=present"
-          # then the crontab is emptied, so no new job starts
+          # then the crontab is emptied, so no new job starts; C1a's marker first (removed only by R0), so a re-run tells
+          # this emptying from any other; only "no crontab" proves it
+          sudo touch "$M/crontab.emptied"
           crontab -r 2>/dev/null || true
-          [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_not_empty
-          # 3. every job cron already started must end (cron's cgroup back to its own process, no summary container)
-          deadline=$(date -d 'today 14:45' +%s)
+          if out=$(crontab -l 2>&1); then fail crontab_not_empty; fi
+          case "$out" in "no crontab for "*) ;; *) fail crontab_unreadable_after_emptying ;; esac
+          # 3. cron's own system jobs may still be ending (cron's cgroup back to its own process, waited for up to 15
+          # minutes); a summary container here would have started after step 0, and refuses
+          deadline=$(( $(date +%s) + 900 ))
           while :; do
             cg=$(systemctl show -p ControlGroup --value cron.service)
             procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
-            summary=$(docker ps --format '{{.Names}}' | grep -c 'morning-summary' || true)
-            [ "$procs" -le 1 ] && [ "$summary" = 0 ] && break
+            names=$(docker ps --format '{{.Names}}') || fail docker_unreadable
+            summary=$(grep -c 'morning-summary' <<<"$names" || true)
+            [ "$summary" = 0 ] || fail summary_running_after_step_0
+            [ "$procs" -le 1 ] && break
             [ "$(date +%s)" -lt "$deadline" ] || fail cron_jobs_still_running
             sleep 20
           done
@@ -950,6 +1075,16 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               same_hash app_tree_full "$(tree_cmd /opt chief-of-staff-digital)" old new_tmp || rc=1
+              # the reports clone and the images too, now that nothing on the old host can write them
+              [ "$rc" = 0 ] && { same_hash reports_tree_final "$(tree_cmd /opt r2d2-reports)" old new_tmp || rc=1; }
+            fi
+            if [ "$rc" = 0 ]; then
+              images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
+              for image in $images; do
+                a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
+                [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift_final"; rc=1; break; }
+              done
+              [ "$rc" = 0 ] && note "images_final=match"
             fi
             if [ "$rc" = 0 ]; then
               if old "$LEASE sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -cpf - ." 2>/dev/null \
@@ -1243,6 +1378,7 @@ jobs:
           sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null
           sudo cat "$M/crontab.before" | crontab -
           crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_restore
+          sudo rm -f "$M/crontab.emptied"
           # the migration's hold goes; a hold that existed before C1a stays
           if sudo test -e "$M/hold.before"; then sudo cp -p "$M/hold.before" /etc/c3po/security-maintenance.hold; else sudo rm -f /etc/c3po/security-maintenance.hold; fi
           say "back_out=done timers_restored=$(sudo wc -l "$M/timers.before" | awk '{print $1}') crontab_lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
