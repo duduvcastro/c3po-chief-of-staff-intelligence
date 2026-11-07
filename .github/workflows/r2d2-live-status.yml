@@ -15,17 +15,16 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #        every other copy of B by hash on both hosts (journald, drop-ins, crontab, authorized_keys, the deploy user's
 #        ssh/git, the export log, helpers, policy), the drop-ins' references by type, mode and owner, and the new host's
 #        store modes and inertness. Only "=match", counts and the revision are printed; the hashes stay in the runner.
-#   C0   read-only rehearsal of path X (C1a repeats it on its own), between two scheduled jobs: identity, the live
-#        crontab still B's copy, the clock, the drain (no container of the summary's service in any state), the last
-#        summary bound to its own cron session, every crontab job since then closed and one of its three; C1a's three
-#        drift checks against B; then a second read with no crontab job since the first, and nothing written since
-#        then in the compared trees (ctime) nor any image moved. Outside 01:00-05:35, nothing firing within 15/10 minutes.
+#   C0   old: the crontab out of the way, the only change before C1a: saved once, emptied, the emptying proven and
+#        recorded, every job cron had already started waited for. Nothing from the crontab starts there any more, so
+#        B, BV and C1a run against a quiet crontab at any hour (root's jobs and the c3po timers still run until C1a
+#        masks them; what they write in the compared trees, images or database is refused by C1a's comparisons, C1b's
+#        final ones and writes_after_dump). C0u undoes it before C1a; after C1a only R0 does.
 #   R    rehearsal of the data path on the LIVE old database (one REPEATABLE READ snapshot: dump, globals with the role
 #        password hashes, exact counts), restored on a throwaway volume of the new host and compared, then removed.
-#   C1a  old: path X's first read, the drift checks, its second read and the write check as step 0 inside the lease;
-#        then the crontab saved and emptied (C1a's marker first, removed only by R0), c3po-* and apt timers masked,
-#        logs kept, ingress and writers stopped (db up), final dump/globals/counts, one offsite backup. Then the restore
-#        drill is dispatched by hand.
+#   C1a  old: C0's emptying still in place, the drift checks, the admission (drain, then the clock) right before the
+#        hold, c3po-* and apt timers masked, logs kept, ingress and writers stopped (db up), final dump/globals/counts,
+#        one offsite backup. Then the restore drill is dispatched by hand.
 #   C1b  old: db stopped clean; volatile trees, one-pagers and the final dump copied and compared, the reports clone and
 #        the images compared again; Docker masked; Day-D
 #        unmounted; power-off. Then the console moves the disk and the static IP, and the operator puts the new host's
@@ -42,20 +41,21 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #   R0n  back-out BEFORE T_WRITE only, on the new host at the static address: Docker stopped and masked, Day-D unmounted,
 #        power-off; then the console returns disk and IP and the operator restores the old C3PO_AWS_KNOWN_HOSTS.
 #   R0   then, on the old host powered on again: Docker unmasked, disk mounted, stack, timers and crontab back.
-# Scripts reach the hosts base64-encoded in the ssh argument and run with stdin from /dev/null (nothing can swallow
-# them). On the old host they hold the reboot controller's maintenance lease, and before C1a they write only their own
-# log (/var/log/c3po-migration), the shipped script itself (/tmp/c3po-migration.*, removed on exit) and, in R, the
-# rehearsal files under /var/tmp/c3po-migration (removed at the end of R). Every printed line passes an anchored
+# Scripts reach the hosts base64-encoded in the ssh argument with their sha256: the host decodes them and runs only a
+# file with that same hash, with stdin from /dev/null (nothing can swallow it). On the old host they hold the reboot
+# controller's maintenance lease, and before C0 they write only their own log (/var/log/c3po-migration), the shipped
+# script itself (/tmp/c3po-migration.*, removed on exit) and, in R, the rehearsal files under /var/tmp/c3po-migration
+# (removed at the end of R). Every printed line passes an anchored
 # guard plus IPv4/IPv6/host-name denies; details stay in /var/log/c3po-migration (root, 0600) on each host.
 
 on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "A | B | BV | R | C0 | C1a | C1b | C2 | C3L | D | D2 | E | R0n | R0"
+        description: "A | B | BV | R | C0 | C0u | C1a | C1b | C2 | C3L | D | D2 | E | R0n | R0"
         required: true
         type: choice
-        options: [A, B, BV, R, C0, C1a, C1b, C2, C3L, D, D2, E, R0n, R0]
+        options: [A, B, BV, R, C0, C0u, C1a, C1b, C2, C3L, D, D2, E, R0n, R0]
       confirm:
         description: "the phase again"
         required: true
@@ -92,13 +92,13 @@ jobs:
         run: |
           set -euo pipefail
           [ "$PHASE" = "$CONFIRM" ] || { echo "phase and confirmation differ"; exit 1; }
-          [[ "$PHASE" =~ ^(A|B|BV|R|C0|C1a|C1b|C2|C3L|D|D2|E|R0n|R0)$ ]] || { echo "unknown phase"; exit 1; }
+          [[ "$PHASE" =~ ^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|E|R0n|R0)$ ]] || { echo "unknown phase"; exit 1; }
           busy=$(gh run list --repo "$REPO" --workflow c3po-pipeline.yml --limit 20 --json status \
             --jq '[.[] | select(.status != "completed")] | length')
           [ "$busy" = "0" ] || { echo "a production pipeline is queued or running: refusing"; exit 1; }
           state=$(gh api "repos/$REPO/actions/workflows/c3po-pipeline.yml" --jq .state)
           case "$PHASE" in
-            C1a|C1b|C2|R0n|R0) [ "$state" = disabled_manually ] || { echo "the production pipeline must be disabled from C1a to C2 and for a back-out"; exit 1; } ;;
+            C0|C0u|C1a|C1b|C2|R0n|R0) [ "$state" = disabled_manually ] || { echo "the production pipeline must be disabled from C0 to C2 and for a back-out"; exit 1; } ;;
           esac
           [ -z "$NAMED_SHA" ] || [[ "$NAMED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "the revision must be 40 hex"; exit 1; }
           case "$PHASE" in BV|C3L) [[ "$NAMED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "BV and C3L need the named revision"; exit 1; } ;; esac
@@ -143,13 +143,26 @@ jobs:
           static() { ssh "$USER@$HOST" "$@"; }
           note() { printf '%s %s\n' "$PHASE" "$*" >> "$out"; }
           vcpus() { "$1" 'nproc' 2>/dev/null; }
-          # remote TARGET LEASE: the script on stdin, shipped base64 in the argument, run with stdin from /dev/null; only
-          # its "<PHASE> ..." lines are kept
+          # pack: the payload on stdin read WHOLE into a file, then its sha256 and its base64, every status checked; sets
+          # P_SUM and P_B64, or fails. unpack TARGET-SIDE: decode, then run only if the decoded file has that same sha256,
+          # so a cut or failed encoding never runs as a prefix
+          pack() {
+            local in="$RUNNER_TEMP/payload.in"
+            cat > "$in" || return 1
+            [ -s "$in" ] || return 1
+            P_SUM=$(sha256sum < "$in" | cut -c1-64) || return 1
+            [[ "$P_SUM" =~ ^[0-9a-f]{64}$ ]] || return 1
+            P_B64=$(base64 -w0 < "$in") || return 1
+            [ -n "$P_B64" ] || return 1
+          }
+          unpack='f=$(mktemp /tmp/c3po-migration.XXXXXX) || exit 31; printf %s "$B64" | base64 -d > "$f" || { rm -f "$f"; echo "$PHASE gate=FAIL reason=payload_decode"; exit 32; }; [ "$(sha256sum < "$f" | cut -c1-64)" = "$SUM" ] || { rm -f "$f"; echo "$PHASE gate=FAIL reason=payload_incomplete_at_target"; exit 33; }'
+          # remote TARGET LEASE: the script on stdin, packed, shipped in the argument and checked there, run with stdin
+          # from /dev/null; only its "<PHASE> ..." lines are kept
           remote() {
-            local target=$1 lease=$2 b64 wrap="" status
-            b64=$(base64 -w0)
+            local target=$1 lease=$2 wrap="" status
+            pack || { note "gate=FAIL reason=payload_pack"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; f=\$(mktemp /tmp/c3po-migration.XXXXXX) && printf %s '$b64' | base64 -d > \"\$f\" && PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/remote.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/remote.txt" >> "$out"
@@ -159,10 +172,10 @@ jobs:
           # capture TARGET LEASE: as remote, but the script's "H key value" lines (hashes) come back to the caller and never
           # reach the output; its "<PHASE> ..." lines still do
           capture() {
-            local target=$1 lease=$2 b64 wrap="" status
-            b64=$(base64 -w0)
+            local target=$1 lease=$2 wrap="" status
+            pack || { note "gate=FAIL reason=payload_pack"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; f=\$(mktemp /tmp/c3po-migration.XXXXXX) && printf %s '$b64' | base64 -d > \"\$f\" && PHASE=$PHASE $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/capture.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/capture.txt" >> "$out"
@@ -200,180 +213,6 @@ jobs:
           legacy() { docker compose --env-file "$APP/.env" -f "$APP/docker-compose.yml" "$@"; }
           count_sql="SELECT '"'"'count'"'"', format('"'"'%I.%I'"'"', schemaname, relname), (xpath('"'"'/row/c/text()'"'"', query_to_xml(format('"'"'select count(*) as c from %I.%I'"'"', schemaname, relname), false, true, '"'"''"'"')))[1]::text FROM pg_stat_user_tables ORDER BY 2;"
           '
-          # path X, shared by C0 and C1a: the reads that prove the old host sits between two scheduled jobs. STAGE (start |
-          # end), RUNNER_NOW and, at the end, SINCE are set by the runner on the lines above this script
-          cat > "$RUNNER_TEMP/c0.sh" <<'REMOTE'
-          me=$(id -un)
-          hm() { TZ=America/Sao_Paulo date -d "@$1" '+%H:%M:%S'; }
-          mins() { local x; x=$(TZ=America/Sao_Paulo date -d "@$1" +%H%M); echo $(( 10#${x:0:2} * 60 + 10#${x:2:2} )); }
-          # the clock cron reads, first: synchronized, and within seconds of the runner's
-          now=$(date +%s)
-          [ "$(timedatectl show -p NTPSynchronized --value)" = yes ] || fail clock_not_synchronized
-          skew=$(( now - RUNNER_NOW ))
-          [ "$skew" -ge -5 ] && [ "$skew" -le 30 ] || fail clock_skew
-          # the drain, by C1a's own rule, waited for up to 2 minutes (a system job of cron's own may be ending)
-          for i in $(seq 25); do
-            cg=$(systemctl show -p ControlGroup --value cron.service)
-            [ -n "$cg" ] || fail cron_cgroup_unreadable
-            procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
-            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
-            running=$(grep -c 'morning-summary' <<<"$names" || true)
-            [ "$procs" -le 1 ] && [ "$running" = 0 ] && break
-            [ "$i" -lt 25 ] || fail cron_job_or_summary_running
-            sleep 5
-          done
-          # whatever container a summary had is gone: none of its service in ANY state, and no one-off container running
-          ids=$(timeout 20 docker ps -a -q --filter label=com.docker.compose.service=morning-summary) || fail docker_unreadable
-          [ -z "$ids" ] || fail summary_container_present
-          ids=$(timeout 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
-          [ -z "$ids" ] || fail oneoff_container_running
-          # the window is judged from the time after the wait
-          now=$(date +%s); m=$(mins "$now")
-          tab=$(crontab -l)
-          [ -n "$tab" ] || fail crontab_empty
-          # every entry plain (minute and hour fields lists of numbers): any other form is refused, never interpreted
-          bad=$(awk '!/^[[:space:]]*(#|$)/ && !/^[A-Z_]+=/ && ($1 !~ /^[0-9]+(,[0-9]+)*$/ || $2 !~ /^[0-9]+(,[0-9]+)*$/) {c++} END {print c + 0}' <<<"$tab")
-          [ "$bad" = 0 ] || fail crontab_entry_not_plain
-          grep -qx 'CRON_TZ=America/Sao_Paulo' <<<"$tab" || fail crontab_tz
-          # within FROM + 0..SPAN minutes of the day (BRT, wrapping at midnight): the entries firing, and those that are
-          # the summary; the day fields are ignored, so an entry counts on every day (never fewer than fire)
-          fires() {
-            awk -v a="$1" -v s="$2" '!/^[[:space:]]*(#|$)/ && !/^[A-Z_]+=/ {
-                nm = split($1, M, ","); nh = split($2, H, ","); hit = 0
-                for (i = 1; i <= nh; i++) for (j = 1; j <= nm; j++) if ((H[i] * 60 + M[j] - a + 1440) % 1440 <= s) hit = 1
-                if (hit) { c++; if ($0 ~ /morning-summary/) k++ } }
-              END { printf "%d %d", c, k }' <<<"$tab"
-          }
-          if [ "$STAGE" = start ]; then span=15; else span=10; fi
-          read -r soon _ <<<"$(fires "$m" "$span")"
-          win=in
-          [ "$soon" = 0 ] || win=out
-          if [ "$m" -ge 60 ] && [ "$m" -lt 336 ]; then win=out; fi
-          if [ "$STAGE" = start ]; then
-            # the last scheduled summary: the latest of its slots (its own entry, 0 7,13,15) already past, today or
-            # yesterday; at that minute the crontab fires the summary and nothing else
-            [ "$(awk '!/^[[:space:]]*#/ && /morning-summary/ {print $1, $2}' <<<"$tab")" = "0 7,13,15" ] || fail crontab_summary_entry
-            slot=""
-            for d in today yesterday; do
-              for h in 15 13 07; do
-                t=$(TZ=America/Sao_Paulo date -d "$d $h:00" +%s)
-                if [ -z "$slot" ] && [ "$t" -le "$now" ]; then slot=$t; fi
-              done
-            done
-            [ -n "$slot" ] || fail no_summary_slot
-            [ "$(fires "$(mins "$slot")" 0)" = "1 1" ] || fail crontab_slot_not_only_the_summary
-            # in that minute cron opened exactly one session for this user's crontab and logged exactly one CMD, the
-            # summary's, from its child; that session closed once, after it
-            j=$(sudo journalctl -t CRON --since "@$((slot - 60))" --no-pager -o short-unix)
-            rows=$(awk -v a="$slot" -v b="$((slot + 60))" -v me="$me" '
-              { t = int($1); if (!match($0, /CRON\[[0-9]+\]/)) next; pid = substr($0, RSTART + 5, RLENGTH - 6) }
-              $0 ~ ("session opened for user " me "[( ]") && t >= a && t < b { print "open", pid, t }
-              index($0, "(" me ") CMD (") && t >= a && t < b { print "cmd", pid, t, ($0 ~ /morning-summary/ ? "summary" : "other") }
-              $0 ~ ("session closed for user " me "$") && t >= a { print "close", pid, t }' <<<"$j")
-            [ "$(grep -c '^open ' <<<"$rows" || true)" = 1 ] || fail cron_slot_session_not_unique
-            [ "$(grep -c '^cmd ' <<<"$rows" || true)" = 1 ] || fail cron_slot_cmd_not_unique
-            read -r _ spid sopen <<<"$(grep '^open ' <<<"$rows")"
-            read -r _ cpid started kind <<<"$(grep '^cmd ' <<<"$rows")"
-            [ "$kind" = summary ] || fail cron_slot_cmd_not_the_summary
-            [ "$cpid" -gt "$spid" ] && [ "$started" -ge "$sopen" ] || fail cron_slot_cmd_not_from_the_session
-            [ "$(awk -v p="$spid" '$1 == "close" && $2 == p {c++} END {print c + 0}' <<<"$rows")" = 1 ] || fail summary_session_end_not_seen
-            ended=$(awk -v p="$spid" '$1 == "close" && $2 == p {print $3}' <<<"$rows")
-            [[ "$ended" =~ ^[0-9]+$ ]] && [ "$ended" -ge "$started" ] || fail summary_times_inconsistent
-            # since that slot: every session the crontab opened closed, each ran one CMD, every CMD one of its three jobs,
-            # the summary only once (its own slot)
-            tally=$(awk -v a="$slot" -v me="$me" '
-              { t = int($1); if (t < a || !match($0, /CRON\[[0-9]+\]/)) next; pid = substr($0, RSTART + 5, RLENGTH - 6) }
-              $0 ~ ("session opened for user " me "[( ]") { if (s[pid] == "open") dup++; s[pid] = "open"; o++ }
-              $0 ~ ("session closed for user " me "$") { if (s[pid] == "open") { s[pid] = "closed"; cl++ } }
-              index($0, "(" me ") CMD (") { c++; if ($0 ~ /morning-summary/) sm++; else if ($0 ~ /r2d2-publish-daily-report[.]sh/) ex++; else if ($0 ~ /docker builder prune/) pr++; else ot++ }
-              END { printf "%d %d %d %d %d %d %d %d", o, cl, dup, c, sm, ex, pr, ot }' <<<"$j")
-            read -r o cl dup c sm ex pr ot <<<"$tally"
-            [ "$dup" = 0 ] && [ "$o" = "$cl" ] || fail crontab_session_still_open
-            [ "$o" = "$c" ] || fail crontab_sessions_and_commands_differ
-            [ "$ot" = 0 ] || fail crontab_unexpected_command
-            [ "$sm" = 1 ] || fail summaries_since_the_slot_not_one
-            say "crontab=plain tz=brt summary_slots=7,13,15 last_summary=$(LC_ALL=C TZ=America/Sao_Paulo date -d "@$slot" '+%a_%Hh')"
-            say "summary_session_open=$(hm "$sopen") summary_cron_start=$(hm "$started") summary_session_close=$(hm "$ended") bound_by=cron_session"
-            say "since_summary_sessions=$o closed=$cl commands=$c summary=$sm export=$ex prune=$pr other=$ot"
-          else
-            # no session of the crontab opened, and none of its commands ran, since the first read
-            j=$(sudo journalctl -t CRON --since "@$SINCE" --no-pager -o short-unix)
-            n=$(awk -v a="$SINCE" -v me="$me" 'int($1) >= a && ($0 ~ ("session opened for user " me "[( ]") || index($0, "(" me ") CMD (")) {c++} END {print c + 0}' <<<"$j")
-            [ "$n" = 0 ] || fail crontab_job_started_since_first_read
-            say "crontab_jobs_since_first_read=0"
-          fi
-          say "stage=$STAGE clock_brt=$(hm "$now") skew_s=$skew ntp=yes fires_within_${span}m=$soon window=$win cron_cgroup_procs=$procs summary_containers=0 oneoff_running=0"
-          # end of c0.sh
-          REMOTE
-          # what the comparisons cover, unwritten since SINCE by ANY writer (the runner sets SINCE and EXPECTED_IMAGES,
-          # the six "name=id" it compared): no inode of the app tree (volatile trees excluded) or of the reports clone
-          # changed since then (ctime, which no writer can set back), and every image still the id compared
-          cat > "$RUNNER_TEMP/c0w.sh" <<'REMOTE'
-          w=$(sudo find /opt/chief-of-staff-digital \( -path /opt/chief-of-staff-digital/outputs -o -path /opt/chief-of-staff-digital/runtime -o -path /opt/chief-of-staff-digital/whatsapp_session \) -prune -o ! -type s -newerct "@$SINCE" -print -quit) || fail app_tree_unreadable
-          [ -z "$w" ] || fail app_tree_written_since_first_read
-          w=$(sudo find /opt/r2d2-reports ! -type s -newerct "@$SINCE" -print -quit) || fail reports_unreadable
-          [ -z "$w" ] || fail reports_written_since_first_read
-          set -- $EXPECTED_IMAGES
-          [ "$#" = 6 ] || fail images_expected_not_six
-          for p in "$@"; do
-            [ "$(docker image inspect --format '{{.Id}}' "${p%%=*}")" = "${p#*=}" ] || fail image_changed_since_compared
-          done
-          say "trees_written_since_first_read=0 images_since_compared=match"
-          # end of c0w.sh
-          REMOTE
-          # the admission at THIS instant, after every read and scan and right before whatever follows (in C1a, its first
-          # effect): with the reads (C0, or C1a with the crontab live), their window; with the crontab already emptied by
-          # C1a, its marker. Then, read now and without waiting: the clock synchronized, outside 01:00-05:35, nothing the
-          # crontab holds firing within 10 minutes (any non-plain entry counts), cron's cgroup back to its own process, no
-          # summary or one-off container running
-          cat > "$RUNNER_TEMP/c0t.sh" <<'REMOTE'
-          case "${C0_READ:-reads}" in
-            yes|reads) [ "$win" = in ] || fail window_at_the_reads ;;
-            no)
-              if tab_now=$(crontab -l 2>&1); then fail crontab_live_without_the_reads; fi
-              case "$tab_now" in "no crontab for "*) ;; *) fail crontab_unreadable ;; esac
-              sudo test -e /root/c3po-migration/crontab.emptied || fail crontab_empty_without_the_c1a_marker ;;
-            *) fail admission_mode_unknown ;;
-          esac
-          [ "$(timedatectl show -p NTPSynchronized --value)" = yes ] || fail clock_not_synchronized_at_admission
-          x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
-          # from 00:59, so that an admission plus the 30 s cap below never lands in 01:00-05:35
-          if [ "$mn" -ge 59 ] && [ "$mn" -lt 336 ]; then fail quiet_hours_at_admission; fi
-          if tab_now=$(crontab -l 2>&1); then
-            soon_now=$(awk -v a="$mn" '!/^[[:space:]]*(#|$)/ && !/^[A-Z_]+=/ {
-                if ($1 !~ /^[0-9]+(,[0-9]+)*$/ || $2 !~ /^[0-9]+(,[0-9]+)*$/) { c++; next }
-                nm = split($1, M, ","); nh = split($2, H, ",")
-                for (i = 1; i <= nh; i++) for (j = 1; j <= nm; j++) if ((H[i] * 60 + M[j] - a + 1440) % 1440 <= 10) { c++; next } }
-              END { print c + 0 }' <<<"$tab_now")
-            [ "$soon_now" = 0 ] || fail crontab_fires_within_10_min_at_admission
-          else
-            case "$tab_now" in "no crontab for "*) ;; *) fail crontab_unreadable_at_admission ;; esac
-          fi
-          cg_now=$(systemctl show -p ControlGroup --value cron.service)
-          [ -n "$cg_now" ] || fail cron_cgroup_unreadable
-          [ "$(wc -l < "/sys/fs/cgroup$cg_now/cgroup.procs")" -le 1 ] || fail cron_job_running_at_admission
-          names_now=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
-          [ "$(grep -c 'morning-summary' <<<"$names_now" || true)" = 0 ] || fail summary_running_at_admission
-          ids_now=$(timeout 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
-          [ -z "$ids_now" ] || fail oneoff_running_at_admission
-          adm_at=$(date +%s)
-          say "admission=in clock_brt=$(TZ=America/Sao_Paulo date '+%H:%M:%S')"
-          # end of c0t.sh
-          REMOTE
-          # assemble OUT HEADER PART...: the prelude, the header line and every part into OUT, before any SSH. Each part
-          # must end in its own "# end of NAME" line: a part missing, empty or cut short, or a write that failed, refuses
-          assemble() {
-            local out=$1 header=$2 part n=0
-            shift 2
-            printf '%s\n' "$prelude" "$header" > "$out" || return 1
-            for part in "$@"; do
-              [ -s "$part" ] || return 1
-              [ "$(tail -n 1 "$part")" = "# end of ${part##*/}" ] || return 1
-              cat "$part" >> "$out" || return 1
-              n=$((n + 1))
-            done
-            [ "$n" -ge 1 ] && [ "$(grep -c '^# end of ' "$out")" = "$n" ] || return 1
-          }
           rc=0
           case "$PHASE" in
           A)
@@ -574,8 +413,9 @@ jobs:
               names=${names#,}; [ -n "$names" ] || names=none
               note "dropin_refs=$(printf '%s\n' $refs | grep -c .) on_day_d=$on_day_d missing_on_new=$missing missing_names=$names"
               [ "$on_day_d" -ge 1 ] || { note "gate=FAIL reason=no_day_d_guard_found"; rc=1; }
-              if old "crontab -l" 2>/dev/null \
-                | new_tmp "sudo install -d -m 0700 /root/c3po-migration && sudo tee /root/c3po-migration/crontab.deploy >/dev/null && sudo chmod 0600 /root/c3po-migration/crontab.deploy" > /dev/null 2>&1; then note "crontab=stored_inert"
+              # the crontab the old host runs or, once C0 has emptied it, the copy C0 saved (never an empty one)
+              if old 'if sudo test -e /root/c3po-migration/crontab.emptied; then sudo cat /root/c3po-migration/crontab.before; else crontab -l; fi' 2>/dev/null \
+                | new_tmp "sudo install -d -m 0700 /root/c3po-migration && sudo tee /root/c3po-migration/crontab.deploy >/dev/null && sudo chmod 0600 /root/c3po-migration/crontab.deploy && sudo test -s /root/c3po-migration/crontab.deploy" > /dev/null 2>&1; then note "crontab=stored_inert"
               else note "gate=FAIL reason=crontab"; rc=1; fi
             fi
             if [ "$rc" = 0 ]; then
@@ -694,7 +534,9 @@ jobs:
           v=$(tree_hash "$dropin_base" $d) || fail dropins_read
           hsay dropins "$v"
           # 4. the crontab (live on the old host, stored inert on the new one)
-          if [ "$ROLE" = old ]; then v=$(crontab -l | h) || fail crontab_read; else v=$(sudo cat /root/c3po-migration/crontab.deploy | h) || fail crontab_read; fi
+          if [ "$ROLE" = new ]; then v=$(sudo cat /root/c3po-migration/crontab.deploy | h) || fail crontab_read
+          elif sudo test -e /root/c3po-migration/crontab.emptied; then v=$(sudo cat /root/c3po-migration/crontab.before | h) || fail crontab_read
+          else v=$(crontab -l | h) || fail crontab_read; fi
           hsay crontab "$v"
           # 5. authorized_keys, mode and content
           v=$( { stat -c '%a %u:%g' "$HOME/.ssh/authorized_keys" && cat "$HOME/.ssh/authorized_keys"; } | h) || fail authorized_keys_read
@@ -865,72 +707,89 @@ jobs:
             old "rm -f /var/tmp/c3po-migration/r.*" > /dev/null 2>&1 || true
             ;;
           C0)
-            # read-only rehearsal of path X, right before C1a (which repeats both reads on its own): identity, the live
-            # crontab still the copy B stored, the first read, C1a's own three drift checks against B, the second read;
-            # the window is judged here from both reads
+            # the crontab out of the way, the ONLY change before C1a: saved once, emptied, the emptying proven ("no crontab
+            # for", nothing else) and recorded, then every job cron had already started waited for (cron's cgroup back to
+            # its own process, no summary or one-off container running, up to 20 minutes). From then on nothing from the
+            # crontab starts on the old host, so B, BV and C1a run against a quiet crontab at any hour. Re-runnable (an
+            # interrupted emptying is completed); undone by C0u before C1a, by R0 after
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
             if [ "$rc" = 0 ]; then
-              a=$(old "set -o pipefail; crontab -l | sha256sum | cut -c1-64" 2>/dev/null); sa=$?
-              b=$(new_tmp "set -o pipefail; sudo cat /root/c3po-migration/crontab.deploy | sha256sum | cut -c1-64" 2>/dev/null); sb=$?
-              if [ "$sa" = 0 ] && [ "$sb" = 0 ] && [[ "$a" =~ ^[0-9a-f]{64}$ ]] && [ "$a" != "$EMPTY_SHA" ] && [ "$a" = "$b" ]; then
-                note "crontab_since_b=match"
-              else note "gate=FAIL reason=crontab_since_b"; rc=1; fi
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+          M=/root/c3po-migration
+          W=/var/tmp/c3po-migration
+          # the clock, right before the change: synchronized, outside 00:59-05:35
+          [ "$(timedatectl show -p NTPSynchronized --value)" = yes ] || fail clock_not_synchronized
+          x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
+          if [ "$mn" -ge 59 ] && [ "$mn" -lt 336 ]; then fail quiet_hours; fi
+          sudo install -d -m 0700 -o root -g root "$M"
+          # the crontab saved ONCE (a re-run keeps the first copy; the live one is then that copy or none)
+          if sudo test -s "$M/crontab.before"; then
+            if live=$(crontab -l 2>&1); then
+              [ "$live" = "$(sudo cat "$M/crontab.before")" ] || fail crontab_changed_since_saved
+            else
+              case "$live" in "no crontab for "*) ;; *) fail crontab_unreadable ;; esac
             fi
-            t0=$(date +%s)
-            if [ "$rc" = 0 ]; then
-              if assemble "$RUNNER_TEMP/first_read.sh" "STAGE=start RUNNER_NOW=$t0" "$RUNNER_TEMP/c0.sh"; then
-                remote old no < "$RUNNER_TEMP/first_read.sh" || rc=1
-              else note "gate=FAIL reason=payload_incomplete"; rc=1; fi
+          else
+            crontab -l > "$W.crontab" 2>/dev/null || fail crontab_read
+            [ -s "$W.crontab" ] || fail crontab_empty_at_start
+            sudo install -m 0600 -o root -g root "$W.crontab" "$M/crontab.before"
+            rm -f "$W.crontab"
+            crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_save
+          fi
+          # emptied: only "no crontab for" proves it, then the proof is recorded (a re-run after an interruption finds the
+          # saved copy and no crontab, and completes it)
+          crontab -r 2>/dev/null || true
+          if out=$(crontab -l 2>&1); then fail crontab_not_empty; fi
+          case "$out" in "no crontab for "*) ;; *) fail crontab_unreadable_after_emptying ;; esac
+          sudo touch "$M/crontab.emptied"
+          say "crontab=saved_and_emptied lines=$(sudo grep -c -v -E '^\s*(#|$)' "$M/crontab.before") emptied_at=$(TZ=America/Sao_Paulo date '+%H:%M:%S')"
+          # every job cron had already started ends; nothing new can start
+          deadline=$(( $(date +%s) + 1200 ))
+          while :; do
+            cg=$(systemctl show -p ControlGroup --value cron.service)
+            [ -n "$cg" ] || fail cron_cgroup_unreadable
+            procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
+            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+            summary=$(grep -c 'morning-summary' <<<"$names" || true)
+            ids=$(timeout 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
+            [ "$procs" -le 1 ] && [ "$summary" = 0 ] && [ -z "$ids" ] && break
+            [ "$(date +%s)" -lt "$deadline" ] || fail jobs_still_running_after_20_min
+            sleep 10
+          done
+          say "drain=done cron_cgroup_procs=$procs summary_running=0 oneoff_running=0 quiet_at=$(TZ=America/Sao_Paulo date '+%H:%M:%S')"
+          say "gate=PASS next=B"
+          REMOTE
             fi
+            ;;
+          C0u)
+            # C0 undone, only before C1a: the crontab back exactly as saved, both records gone, the saved copy set aside
+            # (a later C0 saves afresh). Refuses once C1a has begun (its hold record): after that only R0 undoes
+            { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
             if [ "$rc" = 0 ]; then
-              same_hash app_tree_since_b "$(tree_cmd /opt chief-of-staff-digital outputs runtime whatsapp_session)" old new_tmp || rc=1
-              [ "$rc" = 0 ] && { same_hash reports_tree_since_b "$(tree_cmd /opt r2d2-reports)" old new_tmp || rc=1; }
-            fi
-            if [ "$rc" = 0 ]; then
-              images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
-              imgs=""
-              for image in $images; do
-                a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
-                [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift"; rc=1; break; }
-                imgs="$imgs $image=$a"
-              done
-              [ "$rc" = 0 ] && note "images_since_b=match"
-            fi
-            if [ "$rc" = 0 ]; then
-              if assemble "$RUNNER_TEMP/second_read.sh" "STAGE=end RUNNER_NOW=$(date +%s) SINCE=$((t0 - 5)) EXPECTED_IMAGES='${imgs# }'" \
-                "$RUNNER_TEMP/c0.sh" "$RUNNER_TEMP/c0w.sh" "$RUNNER_TEMP/c0t.sh"; then
-                remote old no < "$RUNNER_TEMP/second_read.sh" || rc=1
-              else note "gate=FAIL reason=payload_incomplete"; rc=1; fi
-            fi
-            if [ "$rc" = 0 ]; then
-              if [ "$(grep -c -E '^C0 stage=start .* window=in( |$)' "$out")" = 1 ] && [ "$(grep -c -E '^C0 stage=end .* window=in( |$)' "$out")" = 1 ] \
-                && [ "$(grep -c -E '^C0 admission=in( |$)' "$out")" = 1 ]; then
-                note "gate=PASS next=C1a"
-              else note "gate=FAIL reason=window"; rc=1; fi
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+          M=/root/c3po-migration
+          sudo test -s "$M/crontab.before" || fail no_saved_crontab
+          if sudo test -e "$M/hold.recorded"; then fail c1a_already_begun_use_r0; fi
+          if live=$(crontab -l 2>&1); then
+            [ "$live" = "$(sudo cat "$M/crontab.before")" ] || fail crontab_differs_from_saved
+          else
+            case "$live" in "no crontab for "*) ;; *) fail crontab_unreadable ;; esac
+            sudo cat "$M/crontab.before" | crontab -
+          fi
+          crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_restore
+          sudo rm -f "$M/crontab.emptied"
+          sudo mv "$M/crontab.before" "$M/crontab.undone.$(date +%s)"
+          say "crontab=restored lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
+          say "gate=PASS"
+          REMOTE
             fi
             ;;
           C1a)
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
-            # path X on its own: with the crontab live, the first read here and the second one as step 0 inside the lease,
-            # seconds before the crontab is emptied; with the crontab already emptied by an earlier C1a (its marker
-            # present, removed only by R0), nothing can fire any more and neither read applies. Either way, step 0
-            # proves nothing was written since just before the comparisons in what they cover
-            mode=""
+            # C0 emptied the crontab and proved it: nothing scheduled starts on the old host any more
             if [ "$rc" = 0 ]; then
-              mode=$(old 'if out=$(crontab -l 2>&1); then echo live; elif [ "${out#no crontab for }" != "$out" ] && sudo test -e /root/c3po-migration/crontab.emptied; then echo emptied_by_c1a; else echo unknown; fi' 2>/dev/null)
-              case "$mode" in live|emptied_by_c1a) note "crontab_mode=$mode" ;; *) note "gate=FAIL reason=crontab_mode"; rc=1 ;; esac
-            fi
-            t0=$(date +%s); since=$((t0 - 5))
-            if [ "$rc" = 0 ] && [ "$mode" = emptied_by_c1a ]; then
-              # no reads to bound the skew here: SINCE from the old host's own clock, the one that stamps ctime
-              h0=$(old 'date +%s' 2>/dev/null)
-              if [[ "$h0" =~ ^[0-9]{10}$ ]]; then since=$((h0 - 5)); else note "gate=FAIL reason=host_clock_unreadable"; rc=1; fi
-            fi
-            if [ "$rc" = 0 ] && [ "$mode" = live ]; then
-              if assemble "$RUNNER_TEMP/first_read.sh" "STAGE=start RUNNER_NOW=$t0" "$RUNNER_TEMP/c0.sh"; then
-                remote old no < "$RUNNER_TEMP/first_read.sh" || rc=1
-              else note "gate=FAIL reason=payload_incomplete"; rc=1; fi
-              if [ "$rc" = 0 ] && [ "$(grep -c -E '^C1a stage=start .* window=in( |$)' "$out")" != 1 ]; then note "gate=FAIL reason=window"; rc=1; fi
+              mode=$(old 'if out=$(crontab -l 2>&1); then echo live; elif [ "${out#no crontab for }" != "$out" ] && sudo test -e /root/c3po-migration/crontab.emptied && sudo test -s /root/c3po-migration/crontab.before; then echo emptied_by_c0; else echo unknown; fi' 2>/dev/null)
+              if [ "$mode" = emptied_by_c0 ]; then note "crontab=emptied_by_c0"; else note "gate=FAIL reason=crontab_not_emptied_by_c0"; rc=1; fi
             fi
             if [ "$rc" = 0 ]; then
               # drift since B, checked BEFORE anything stops: the app tree, the reports clone and the images
@@ -939,55 +798,45 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
-              imgs=""
               for image in $images; do
                 a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
                 [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift"; rc=1; break; }
-                imgs="$imgs $image=$a"
               done
               [ "$rc" = 0 ] && note "images_since_b=match"
             fi
             if [ "$rc" = 0 ]; then
-              step0="SINCE=$since EXPECTED_IMAGES='${imgs# }' C0_READ=no"
-              [ "$mode" = live ] && step0="STAGE=end RUNNER_NOW=$(date +%s) SINCE=$since EXPECTED_IMAGES='${imgs# }' C0_READ=yes"
-              cat > "$RUNNER_TEMP/c1a_body.sh" <<'REMOTE'
+              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
           M=/root/c3po-migration
           W=/var/tmp/c3po-migration
-          sudo install -d -m 0700 -o root -g root "$M" "$M/prestop-logs" "$M/units"
-          # 1. the crontab, read and saved ONCE before anything changes (a re-run keeps the first copy)
-          if sudo test -s "$M/crontab.before"; then
-            live=$(crontab -l 2>/dev/null || true)
-            [ -z "$live" ] || [ "$live" = "$(sudo cat "$M/crontab.before")" ] || fail crontab_changed_since_saved
-          else
-            crontab -l > "$W.crontab" 2>/dev/null || fail crontab_read
-            [ -s "$W.crontab" ] || fail crontab_empty_at_start
-            sudo install -m 0600 -o root -g root "$W.crontab" "$M/crontab.before"
-            rm -f "$W.crontab"
-            crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_save
-          fi
-          # then emptied at once, at most 30 s after the admission (refused otherwise, nothing changed but the saved copy):
-          # C1a's marker first (removed only by R0), so a re-run tells this emptying from any other; only "no crontab"
-          # proves it
+          # 1. C0's emptying, still in place: its record, the saved copy, and no crontab now ("no crontab for" only)
+          sudo test -e "$M/crontab.emptied" && sudo test -s "$M/crontab.before" || fail crontab_not_emptied_by_c0
+          if out=$(crontab -l 2>&1); then fail crontab_live_again; fi
+          case "$out" in "no crontab for "*) ;; *) fail crontab_unreadable ;; esac
+          # the admission at the instant of the first effect (the hold just below): the drain first (cron's cgroup back to
+          # its own process, no summary or one-off container running, waited for up to 2 minutes), the clock last
+          for i in $(seq 25); do
+            cg=$(systemctl show -p ControlGroup --value cron.service)
+            [ -n "$cg" ] || fail cron_cgroup_unreadable
+            procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
+            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+            summary=$(grep -c 'morning-summary' <<<"$names" || true)
+            ids=$(timeout 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
+            [ "$procs" -le 1 ] && [ "$summary" = 0 ] && [ -z "$ids" ] && break
+            [ "$i" -lt 25 ] || fail cron_job_or_container_running
+            sleep 5
+          done
+          [ "$(timedatectl show -p NTPSynchronized --value)" = yes ] || fail clock_not_synchronized
+          x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
+          if [ "$mn" -ge 59 ] && [ "$mn" -lt 336 ]; then fail quiet_hours; fi
+          adm_at=$(date +%s)
+          say "admission=in clock_brt=$(TZ=America/Sao_Paulo date '+%H:%M:%S')"
+          # 2. the explicit hold next, within 30 s of the admission and before any stop: without it the watchdog
+          # re-enables timers and starts db/api/web
           [ "$(( $(date +%s) - adm_at ))" -le 30 ] || fail admission_stale
-          sudo touch "$M/crontab.emptied"
-          crontab -r 2>/dev/null || true
-          if out=$(crontab -l 2>&1); then fail crontab_not_empty; fi
-          case "$out" in "no crontab for "*) ;; *) fail crontab_unreadable_after_emptying ;; esac
-          # the interval from the reads to the emptying, covered: no session of the crontab opened since the first read.
-          # One that did began before the emptying: the crontab goes back exactly as saved, the marker goes, C1a stops
-          if [ "$C0_READ" = yes ]; then
-            me=$(id -un)
-            j=$(sudo journalctl -t CRON --since "@$SINCE" --no-pager -o short-unix)
-            n=$(awk -v a="$SINCE" -v me="$me" 'int($1) >= a && ($0 ~ ("session opened for user " me "[( ]") || index($0, "(" me ") CMD (")) {c++} END {print c + 0}' <<<"$j")
-            if [ "$n" != 0 ]; then
-              sudo cat "$M/crontab.before" | crontab - || fail crontab_restore_failed
-              crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_restore_failed
-              sudo rm -f "$M/crontab.emptied"
-              fail crontab_job_began_before_the_emptying_crontab_restored
-            fi
-          fi
-          # 2. the explicit hold next, before any stop: without it the watchdog re-enables timers and starts db/api/web
+          sudo install -d -m 0700 -o root -g root "$M" "$M/prestop-logs" "$M/units"
           if ! sudo test -e "$M/hold.recorded"; then
+            # an older record (from a back-out) set aside first, so hold.before is always this C1a's
+            if sudo test -e "$M/hold.before"; then sudo mv "$M/hold.before" "$M/hold.before.old.$(date +%s)"; fi
             if sudo test -e /etc/c3po/security-maintenance.hold; then sudo cp -p /etc/c3po/security-maintenance.hold "$M/hold.before"; fi
             sudo touch "$M/hold.recorded"
           fi
@@ -997,19 +846,20 @@ jobs:
           sudo test -s /etc/c3po/security-maintenance.hold || fail hold
           say "hold=present"
           # 3. cron's own system jobs may still be ending (cron's cgroup back to its own process, waited for up to 15
-          # minutes); a summary container here would have started after the admission, and refuses
+          # minutes); nothing of the emptied crontab can be among them, and a summary container here refuses
           deadline=$(( $(date +%s) + 900 ))
           while :; do
             cg=$(systemctl show -p ControlGroup --value cron.service)
+            [ -n "$cg" ] || fail cron_cgroup_unreadable
             procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
-            names=$(docker ps --format '{{.Names}}') || fail docker_unreadable
+            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
             summary=$(grep -c 'morning-summary' <<<"$names" || true)
             [ "$summary" = 0 ] || fail summary_running_after_the_admission
             [ "$procs" -le 1 ] && break
             [ "$(date +%s)" -lt "$deadline" ] || fail cron_jobs_still_running
             sleep 20
           done
-          say "crontab=saved_and_emptied lines=$(sudo grep -c -v -E '^\s*(#|$)' "$M/crontab.before") cron_jobs_running=0"
+          say "crontab=emptied_by_c0 lines=$(sudo grep -c -v -E '^\s*(#|$)' "$M/crontab.before") cron_jobs_running=0"
           # 4. the c3po-* timers: states recorded ONCE, disabled, their unit files moved out (a file in
           # /etc/systemd/system cannot be masked), daemon reloaded; the apt timers masked; running units drain
           if ! sudo test -s "$M/timers.before"; then
@@ -1093,13 +943,7 @@ jobs:
           [[ "$bind" =~ ^[0-9a-f]{64}\ [0-9a-f]{64}$ ]] || fail backup_binding
           say "backup_dump_sha=${bind%% *} backup_object_key_sha=${bind##* } upload_is_newest=yes"
           say "gate=PASS next=restore_drill_then_C1b"
-          # end of c1a_body.sh
           REMOTE
-              parts="$RUNNER_TEMP/c0w.sh $RUNNER_TEMP/c0t.sh $RUNNER_TEMP/c1a_body.sh"
-              [ "$mode" = live ] && parts="$RUNNER_TEMP/c0.sh $parts"
-              if assemble "$RUNNER_TEMP/c1a_payload.sh" "$step0" $parts; then
-                remote old yes < "$RUNNER_TEMP/c1a_payload.sh" || rc=1
-              else note "gate=FAIL reason=payload_incomplete"; rc=1; fi
             fi
             ;;
           C1b)
@@ -1423,6 +1267,8 @@ jobs:
           # the old host as it was before C1a, from the states C1a recorded (each file must be there and non-empty)
           M=/root/c3po-migration
           sudo test -s "$M/crontab.before" || fail no_saved_crontab
+          # only after C1a began (its hold record): before that, C0u undoes C0, and a hold that was there stays
+          sudo test -e "$M/hold.recorded" || fail no_c1a_hold_record_c0u_before_c1a
           if ! sudo test -s "$M/timers.before"; then
             # C1a stopped before recording them: no timer was touched, none may have been moved
             [ -z "$(sudo find "$M/units" -mindepth 1 2>/dev/null)" ] || fail units_moved_without_record
@@ -1451,13 +1297,16 @@ jobs:
           sudo rm -f "$M/crontab.emptied"
           # the migration's hold goes; a hold that existed before C1a stays
           if sudo test -e "$M/hold.before"; then sudo cp -p "$M/hold.before" /etc/c3po/security-maintenance.hold; else sudo rm -f /etc/c3po/security-maintenance.hold; fi
+          # C1a's hold record set aside, last (a re-run before it restores the same hold again), so a later C0u or C1a
+          # starts from the host as it now is; hold.before stays until a later C1a sets it aside itself
+          sudo mv "$M/hold.recorded" "$M/hold.recorded.r0.$(date +%s)"
           say "back_out=done timers_restored=$(sudo wc -l "$M/timers.before" | awk '{print $1}') crontab_lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
           say "gate=PASS"
           REMOTE
             fi
             ;;
           esac
-          guard='^(A|B|BV|R|C0|C1a|C1b|C2|C3L|D|D2|E|R0n|R0) [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120}( [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120})*( of [0-9]+)?$'
+          guard='^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|E|R0n|R0) [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120}( [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120})*( of [0-9]+)?$'
           deny='([0-9]{1,3}[.-]){3}[0-9]{1,3}|ip-[0-9]|[0-9a-f]{1,4}:[0-9a-f]{0,4}:[0-9a-f]{0,4}:|@'
           grep -E "$guard" "$out" | grep -v -E "$deny"
           echo "lines: raw $(wc -l < "$out") kept $(grep -E "$guard" "$out" | grep -c -v -E "$deny")"
