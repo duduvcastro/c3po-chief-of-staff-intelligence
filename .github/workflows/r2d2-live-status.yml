@@ -702,27 +702,42 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old no || rc=1
-          # the 15:00 summary (cron runs it at 7, 13 and 15 h, CRON_TZ=America/Sao_Paulo), by durable records only:
-          # its CMD line in cron's journal, pinned to the 15:00 minute (BRT); its container's start and end from
-          # containerd's journal (the shim it connects and the shim's disconnect), exactly one short-lived container
-          # started within 90 s of the CMD and already ended; the log write and Docker's die event only as cross-checks
+          # the 15:00 summary, bound to its own execution by identity in cron's journal: the crontab has exactly one entry
+          # firing at 15:00 (the summary); in the 15:00 minute (BRT) cron opened exactly one PAM session, CRON[pid], and
+          # logged exactly one CMD, the summary's, from its child; that same CRON[pid] closed its session exactly once
+          # afterwards: that close is the job's observed end. containerd's shim of the summary container must fit inside it
+          tab=$(crontab -l 2>/dev/null) || fail crontab_unreadable
+          at15=$(awk '!/^[[:space:]]*(#|$)/ && $0 !~ /^[A-Z_]+=/ { n = split($2, h, ","); if ($1 == "0") for (i = 1; i <= n; i++) if (h[i] == "15") { c++; if ($0 ~ /morning-summary/) m++ } } END { printf "%d %d", c, m }' <<<"$tab")
+          [ "$at15" = "1 1" ] || fail crontab_15h_not_only_the_summary
           since=$(TZ=America/Sao_Paulo date -d 'today 14:59' +%s)
-          j=$(journalctl -u cron --since "@$since" --no-pager -o short-unix 2>/dev/null) || fail cron_journal_unreadable
-          started=$(awk '/CMD \(/ && /morning-summary/ {t = $1} END {print t}' <<<"$j"); started=${started%.*}
-          [[ "$started" =~ ^[0-9]+$ ]] || fail summary_start_not_seen
-          [ "$(TZ=America/Sao_Paulo date -d "@$started" '+%Y-%m-%d %H:%M')" = "$(TZ=America/Sao_Paulo date '+%Y-%m-%d') 15:00" ] || fail summary_start_not_the_15h_run
+          j=$(journalctl -t CRON --since "@$since" --no-pager -o short-unix 2>/dev/null) || fail cron_journal_unreadable
+          m15=$(TZ=America/Sao_Paulo date -d 'today 15:00' +%s)
+          rows=$(awk -v a="$m15" -v b="$((m15 + 60))" '
+            { t = int($1); if (!match($0, /CRON\[[0-9]+\]/)) next; pid = substr($0, RSTART + 5, RLENGTH - 6) }
+            /session opened/ && t >= a && t < b { print "open", pid, t }
+            /CMD \(/ && t >= a && t < b { print "cmd", pid, t, ($0 ~ /morning-summary/ ? "summary" : "other") }
+            /session closed/ && t >= a { print "close", pid, t }' <<<"$j")
+          [ "$(grep -c '^open ' <<<"$rows" || true)" = 1 ] || fail cron_15h_session_not_unique
+          [ "$(grep -c '^cmd ' <<<"$rows" || true)" = 1 ] || fail cron_15h_cmd_not_unique
+          read -r _ spid sopen <<<"$(grep '^open ' <<<"$rows")"
+          read -r _ cpid started kind <<<"$(grep '^cmd ' <<<"$rows")"
+          [ "$kind" = summary ] || fail cron_15h_cmd_not_the_summary
+          [ "$cpid" -gt "$spid" ] && [ "$started" -ge "$sopen" ] || fail cron_15h_cmd_not_from_the_session
+          [ "$(awk -v p="$spid" '$1 == "close" && $2 == p' <<<"$rows" | grep -c . || true)" = 1 ] || fail summary_end_not_seen
+          ended=$(awk -v p="$spid" '$1 == "close" && $2 == p {print $3}' <<<"$rows")
+          [[ "$ended" =~ ^[0-9]+$ ]] && [ "$ended" -ge "$started" ] || fail summary_times_inconsistent
+          # containerd's shims: exactly one container, the summary's, connected within 60 s of the CMD and disconnected
+          # within 15 s of the session's close
           c=$(journalctl -u containerd --since "@$started" --no-pager -o short-unix 2>/dev/null) || fail containerd_journal_unreadable
           shims=$(awk '
             match($0, /connecting to shim [0-9a-f]+/) { id = substr($0, RSTART + 19, RLENGTH - 19); if (!(id in up)) up[id] = int($1) }
             /shim disconnected/ && match($0, /id=[0-9a-f]+/) { id = substr($0, RSTART + 3, RLENGTH - 3); down[id] = int($1) }
             END { for (id in up) printf "%s %d %s\n", id, up[id], ((id in down) ? down[id] : "-") }' <<<"$c")
-          ended=$(awk -v s="$started" '$2 >= s && $2 <= s + 90 && $3 != "-"' <<<"$shims")
-          [ "$(grep -c . <<<"$ended" || true)" = 1 ] || fail summary_end_not_seen
-          up_t=$(awk '{print $2}' <<<"$ended"); down_t=$(awk '{print $3}' <<<"$ended")
-          [[ "$up_t" =~ ^[0-9]+$ ]] && [[ "$down_t" =~ ^[0-9]+$ ]] && [ "$up_t" -ge "$started" ] && [ "$down_t" -ge "$up_t" ] || fail summary_times_inconsistent
+          inside=$(awk -v s="$started" -v e="$ended" '$3 != "-" && $2 >= s && $2 <= s + 60 && $3 <= e + 15 && $3 >= e - 15' <<<"$shims")
+          [ "$(grep -c . <<<"$inside" || true)" = 1 ] || fail summary_container_not_the_job_s
+          up_t=$(awk '{print $2}' <<<"$inside"); down_t=$(awk '{print $3}' <<<"$inside")
+          [[ "$up_t" =~ ^[0-9]+$ ]] && [[ "$down_t" =~ ^[0-9]+$ ]] && [ "$down_t" -ge "$up_t" ] || fail summary_times_inconsistent
           last_write=$(stat -c %Y "$APP/outputs/cron.log") || fail summary_log_unreadable
-          ev=$(timeout 20 docker events --since "$started" --until "$(date +%s)" --filter type=container --filter event=die --format '{{.Time}} {{index .Actor.Attributes "name"}} {{index .Actor.Attributes "exitCode"}}' 2>/dev/null) || ev=""
-          die=$(awk '$2 ~ /morning-summary/ {t = $1; x = $3} END {print t, x}' <<<"$ev")
           # the drain, by C1a's own rule: cron's cgroup back to its own process, no summary container
           cg=$(systemctl show -p ControlGroup --value cron.service) || fail cron_cgroup_unreadable
           procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs") || fail cron_cgroup_unreadable
@@ -730,9 +745,7 @@ jobs:
           running=$(grep -c 'morning-summary' <<<"$names" || true)
           [ "$procs" -le 1 ] && [ "$running" = 0 ] || fail summary_or_cron_job_running
           hm() { TZ=America/Sao_Paulo date -d "@$1" '+%H:%M:%S'; }
-          die_t=${die%% *}; die_x=${die##* }
-          if [[ "$die_t" =~ ^[0-9]+$ ]]; then die_s="$(hm "$die_t") die_exit=${die_x:-unknown}"; else die_s="rolled_over die_exit=unknown"; fi
-          say "summary_cron_start=$(hm "$started") summary_container_up=$(hm "$up_t") summary_container_end=$(hm "$down_t") summary_log_last_write=$(hm "$last_write") docker_die=$die_s"
+          say "summary_session_open=$(hm "$sopen") summary_cron_start=$(hm "$started") summary_session_close=$(hm "$ended") summary_container_up=$(hm "$up_t") summary_container_end=$(hm "$down_t") summary_log_last_write=$(hm "$last_write")"
           say "cron_cgroup_procs=$procs summary_containers=$running"
           say "gate=PASS next=C1a"
           REMOTE
