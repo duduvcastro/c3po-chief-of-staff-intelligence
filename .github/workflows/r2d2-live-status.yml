@@ -16,14 +16,14 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #        ssh/git, the export log, helpers, policy), the drop-ins' references by type, mode and owner, and the new host's
 #        store modes and inertness. Only "=match", counts and the revision are printed; the hashes stay in the runner.
 #   C0   old: the crontab out of the way, the only change before C1a: saved once, emptied, the emptying proven and
-#        recorded, every job cron had already started waited for. Nothing from the crontab starts there any more, so
+#        recorded, every job cron had already started waited for, then C0's drained record. Nothing from the crontab starts there any more, so
 #        B, BV and C1a run against a quiet crontab at any hour (root's jobs and the c3po timers still run until C1a
 #        masks them; what they write in the compared trees, images or database is refused by C1a's comparisons, C1b's
 #        final ones and writes_after_dump). C0u undoes it before C1a; after C1a only R0 does.
 #   R    rehearsal of the data path on the LIVE old database (one REPEATABLE READ snapshot: dump, globals with the role
 #        password hashes, exact counts), restored on a throwaway volume of the new host and compared, then removed.
-#   C1a  old: C0's emptying still in place, the drift checks, the admission (drain, then the clock) right before the
-#        hold, c3po-* and apt timers masked, logs kept, ingress and writers stopped (db up), final dump/globals/counts,
+#   C1a  old: C0 complete and its saved crontab B's, the drift checks, the admission (the drain), the hold and its
+#        record, c3po-* and apt timers masked, logs kept, ingress and writers stopped (db up), final dump/globals/counts,
 #        one offsite backup. Then the restore drill is dispatched by hand.
 #   C1b  old: db stopped clean; volatile trees, one-pagers and the final dump copied and compared, the reports clone and
 #        the images compared again; Docker masked; Day-D
@@ -41,8 +41,11 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #   R0n  back-out BEFORE T_WRITE only, on the new host at the static address: Docker stopped and masked, Day-D unmounted,
 #        power-off; then the console returns disk and IP and the operator restores the old C3PO_AWS_KNOWN_HOSTS.
 #   R0   then, on the old host powered on again: Docker unmasked, disk mounted, stack, timers and crontab back.
-# Scripts reach the hosts base64-encoded in the ssh argument with their sha256: the host decodes them and runs only a
-# file with that same hash, with stdin from /dev/null (nothing can swallow it). On the old host they hold the reboot
+# Every phase that changes or loads a host starts only from 05:36 to 22:25 BRT (back-outs and read-only phases at any
+# hour), and each of its host scripts is killed at one absolute deadline (00:55 BRT at the latest, never past the job's
+# own limit); C1a starts its stops only with their worst case left, so none acts in 00:59-05:35. Payloads are staged
+# whole before any SSH and reach the hosts base64-encoded in the ssh argument with their sha256: the host decodes them
+# and runs only a file with that same hash, with stdin from /dev/null (nothing can swallow it). On the old host they hold the reboot
 # controller's maintenance lease, and before C0 they write only their own log (/var/log/c3po-migration), the shipped
 # script itself (/tmp/c3po-migration.*, removed on exit) and, in R, the rehearsal files under /var/tmp/c3po-migration
 # (removed at the end of R). Every printed line passes an anchored
@@ -96,6 +99,20 @@ jobs:
           busy=$(gh run list --repo "$REPO" --workflow c3po-pipeline.yml --limit 20 --json status \
             --jq '[.[] | select(.status != "completed")] | length')
           [ "$busy" = "0" ] || { echo "a production pipeline is queued or running: refusing"; exit 1; }
+          # the start window (BRT) and one absolute deadline for every host script of this run: a phase that changes or
+          # loads a host starts only from 05:36 to 22:25 and its scripts are killed on the host at 00:55 at the latest,
+          # so nothing it does falls in 00:59-05:35, the night the valuation worker owns from 01:00. Back-outs (C0u, R0n,
+          # R0) and the read-only BV and D2 run at any hour. Either way the deadline is never past this job's own limit
+          [ "$(TZ=America/Sao_Paulo date +%z)" = -0300 ] || { echo "the BRT time zone is not available"; exit 1; }
+          now=$(date +%s); dl=$(( now + 8400 ))
+          case "$PHASE" in
+            BV|D2|C0u|R0n|R0) ;;
+            *) x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
+               [ "$mn" -ge 336 ] && [ "$mn" -lt 1345 ] || { echo "outside the start window 05:36-22:25 BRT"; exit 1; }
+               night=$(TZ=America/Sao_Paulo date -d 'tomorrow 00:55' +%s)
+               [ "$night" -lt "$dl" ] && dl=$night ;;
+          esac
+          echo "DEADLINE=$dl" >> "$GITHUB_ENV"
           state=$(gh api "repos/$REPO/actions/workflows/c3po-pipeline.yml" --jq .state)
           case "$PHASE" in
             C0|C0u|C1a|C1b|C2|R0n|R0) [ "$state" = disabled_manually ] || { echo "the production pipeline must be disabled from C0 to C2 and for a back-out"; exit 1; } ;;
@@ -143,26 +160,40 @@ jobs:
           static() { ssh "$USER@$HOST" "$@"; }
           note() { printf '%s %s\n' "$PHASE" "$*" >> "$out"; }
           vcpus() { "$1" 'nproc' 2>/dev/null; }
-          # pack: the payload on stdin read WHOLE into a file, then its sha256 and its base64, every status checked; sets
-          # P_SUM and P_B64, or fails. unpack TARGET-SIDE: decode, then run only if the decoded file has that same sha256,
-          # so a cut or failed encoding never runs as a prefix
+          # stage [HEADER...]: the payload written WHOLE to a file before any SSH: the prelude, the header lines, then the
+          # script on stdin (a heredoc or a file), which must end in the line "# end of payload"; every step's status is
+          # checked, so a producer that fails or stops early never ships a prefix. remote and capture consume the staged
+          # file once (a call without a fresh stage finds none and refuses)
+          stage() {
+            local f="$RUNNER_TEMP/payload.sh" t="$RUNNER_TEMP/payload.body" n="$RUNNER_TEMP/payload.new"
+            rm -f "$f" "$t" "$n"
+            cat > "$t" || { note "gate=FAIL reason=payload_stage"; return 1; }
+            [ -s "$t" ] && [ "$(tail -n 1 "$t")" = "# end of payload" ] || { note "gate=FAIL reason=payload_stage"; return 1; }
+            { printf '%s\n' "$prelude" "$@" && cat "$t"; } > "$n" || { note "gate=FAIL reason=payload_stage"; return 1; }
+            [ "$(tail -n 1 "$n")" = "# end of payload" ] || { note "gate=FAIL reason=payload_stage"; return 1; }
+            mv "$n" "$f" || { note "gate=FAIL reason=payload_stage"; return 1; }
+          }
+          # pack FILE: its sha256 and its base64, every status checked; sets P_SUM and P_B64, or fails. unpack TARGET-SIDE:
+          # decode, then run only if the decoded file has that same sha256, so a cut or failed encoding never runs
           pack() {
-            local in="$RUNNER_TEMP/payload.in"
-            cat > "$in" || return 1
-            [ -s "$in" ] || return 1
-            P_SUM=$(sha256sum < "$in" | cut -c1-64) || return 1
+            [ -s "$1" ] || return 1
+            P_SUM=$(sha256sum < "$1" | cut -c1-64) || return 1
             [[ "$P_SUM" =~ ^[0-9a-f]{64}$ ]] || return 1
-            P_B64=$(base64 -w0 < "$in") || return 1
+            P_B64=$(base64 -w0 < "$1") || return 1
             [ -n "$P_B64" ] || return 1
           }
           unpack='f=$(mktemp /tmp/c3po-migration.XXXXXX) || exit 31; printf %s "$B64" | base64 -d > "$f" || { rm -f "$f"; echo "$PHASE gate=FAIL reason=payload_decode"; exit 32; }; [ "$(sha256sum < "$f" | cut -c1-64)" = "$SUM" ] || { rm -f "$f"; echo "$PHASE gate=FAIL reason=payload_incomplete_at_target"; exit 33; }'
-          # remote TARGET LEASE: the script on stdin, packed, shipped in the argument and checked there, run with stdin
-          # from /dev/null; only its "<PHASE> ..." lines are kept
+          # remote TARGET LEASE: the staged payload, consumed, packed, shipped in the argument and checked there, run with
+          # stdin from /dev/null; only its "<PHASE> ..." lines are kept
+          # left: the seconds to this run's deadline, never fewer than 60 (or the call refuses)
+          left() { local l=$(( DEADLINE - $(date +%s) )); [ "$l" -ge 60 ] || return 1; printf '%s' "$l"; }
           remote() {
-            local target=$1 lease=$2 wrap="" status
-            pack || { note "gate=FAIL reason=payload_pack"; return 1; }
+            local target=$1 lease=$2 wrap="" status p="$RUNNER_TEMP/payload.inflight" t
+            mv "$RUNNER_TEMP/payload.sh" "$p" 2>/dev/null || { note "gate=FAIL reason=payload_not_staged"; return 1; }
+            pack "$p" || { note "gate=FAIL reason=payload_pack"; return 1; }
+            t=$(left) || { note "gate=FAIL reason=deadline_too_close"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} DEADLINE=$DEADLINE $wrap timeout --kill-after=30s ${t}s bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/remote.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/remote.txt" >> "$out"
@@ -172,10 +203,12 @@ jobs:
           # capture TARGET LEASE: as remote, but the script's "H key value" lines (hashes) come back to the caller and never
           # reach the output; its "<PHASE> ..." lines still do
           capture() {
-            local target=$1 lease=$2 wrap="" status
-            pack || { note "gate=FAIL reason=payload_pack"; return 1; }
+            local target=$1 lease=$2 wrap="" status p="$RUNNER_TEMP/payload.inflight" t
+            mv "$RUNNER_TEMP/payload.sh" "$p" 2>/dev/null || { note "gate=FAIL reason=payload_not_staged"; return 1; }
+            pack "$p" || { note "gate=FAIL reason=payload_pack"; return 1; }
+            t=$(left) || { note "gate=FAIL reason=deadline_too_close"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DEADLINE=$DEADLINE $wrap timeout --kill-after=30s ${t}s bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/capture.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/capture.txt" >> "$out"
@@ -222,7 +255,7 @@ jobs:
               [[ "$DRIVER" =~ ^(overlay2|overlayfs)$ ]] || { note "gate=FAIL reason=old_driver"; rc=1; }
             fi
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote new_tmp no || rc=1
+              stage <<'REMOTE' && remote new_tmp no || rc=1
           [ "$(nproc)" = 2 ] || fail not_new_host
           [ "$(awk '/MemTotal/ {printf "%d", $2 / 1048576}' /proc/meminfo)" -le 8 ] || fail not_new_host_memory
           [ ! -e "$APP/.env" ] || fail app_already_present
@@ -373,6 +406,7 @@ jobs:
           # a Docker reset also reboots: the newer runtime's bridge, firewall chains and AppArmor profile go with it
           if [ -e /var/run/reboot-required ] || sudo test -e "$reboot_owed"; then sudo shutdown -r +1 >/dev/null 2>&1 || fail reboot_schedule; say "reboot=scheduled_in_1_min"; else say "reboot=not_needed"; fi
           say "gate=PASS"
+          # end of payload
           REMOTE
             fi
             ;;
@@ -601,12 +635,13 @@ jobs:
           else
             say "old_read=ok"
           fi
+          # end of payload
           REMOTE
             if [ "$rc" = 0 ]; then
-              h_old=$( { printf 'ROLE=old\n%s\n' "$prelude"; cat "$RUNNER_TEMP/bv.sh"; } | capture old yes) || rc=1
+              h_old=$(stage "ROLE=old" < "$RUNNER_TEMP/bv.sh" && capture old yes) || rc=1
             fi
             if [ "$rc" = 0 ]; then
-              h_new=$( { printf 'ROLE=new\n%s\n' "$prelude"; cat "$RUNNER_TEMP/bv.sh"; } | capture new_tmp no) || rc=1
+              h_new=$(stage "ROLE=new" < "$RUNNER_TEMP/bv.sh" && capture new_tmp no) || rc=1
             fi
             if [ "$rc" = 0 ]; then
               for k in app_revision image_revision journald dropins crontab authorized_keys user_ssh_git export_log sbin_helpers security_policy guard_helper images images_checked dropin_refs_modes dropin_refs_checked; do
@@ -629,7 +664,7 @@ jobs:
             if [ "$rc" = 0 ]; then
               # ONE session on the live old database: REPEATABLE READ READ ONLY, the snapshot exported, pg_dump run in it
               # (\! with the exported snapshot and a lock wait limit), the exact counts in the same snapshot, COMMIT
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+              stage <<'REMOTE' && remote old yes || rc=1
           W=/var/tmp/c3po-migration
           cleanup() { dc exec -T db rm -f /tmp/c3po-r.dump /tmp/c3po-r.sql /tmp/c3po-r.ok < /dev/null || true; }
           install -d -m 0700 "$W"
@@ -659,6 +694,7 @@ jobs:
           say "old_tables=$(wc -l < "$W/r.counts") dump_mb=$(( $(stat -c %s "$W/r.dump") / 1048576 ))"
           say "counts_sha=$(sha256sum < "$W/r.counts" | cut -c1-64) dump_sha=$(sha256sum < "$W/r.dump" | cut -c1-64)"
           say "gate=STEP"
+          # end of payload
           REMOTE
             fi
             if [ "$rc" = 0 ]; then
@@ -669,7 +705,7 @@ jobs:
               else note "gate=FAIL reason=transfer"; rc=1; fi
             fi
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote new_tmp no || rc=1
+              stage <<'REMOTE' && remote new_tmp no || rc=1
           W=/var/tmp/c3po-migration
           name=c3po-migration-rehearsal-db
           vol=c3po_migration_rehearsal
@@ -702,6 +738,7 @@ jobs:
           cleanup
           say "rehearsal_volume=removed"
           say "gate=PASS"
+          # end of payload
           REMOTE
             fi
             old "rm -f /var/tmp/c3po-migration/r.*" > /dev/null 2>&1 || true
@@ -714,15 +751,11 @@ jobs:
             # interrupted emptying is completed); undone by C0u before C1a, by R0 after
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+              stage <<'REMOTE' && remote old yes || rc=1
           M=/root/c3po-migration
           W=/var/tmp/c3po-migration
-          # the clock, right before the change: synchronized, outside 00:59-05:35
-          [ "$(timedatectl show -p NTPSynchronized --value)" = yes ] || fail clock_not_synchronized
-          x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
-          if [ "$mn" -ge 59 ] && [ "$mn" -lt 336 ]; then fail quiet_hours; fi
+          # the directory and the crontab saved ONCE (a re-run keeps the first copy; the live one is then that copy or none)
           sudo install -d -m 0700 -o root -g root "$M"
-          # the crontab saved ONCE (a re-run keeps the first copy; the live one is then that copy or none)
           if sudo test -s "$M/crontab.before"; then
             if live=$(crontab -l 2>&1); then
               [ "$live" = "$(sudo cat "$M/crontab.before")" ] || fail crontab_changed_since_saved
@@ -736,8 +769,8 @@ jobs:
             rm -f "$W.crontab"
             crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_save
           fi
-          # emptied: only "no crontab for" proves it, then the proof is recorded (a re-run after an interruption finds the
-          # saved copy and no crontab, and completes it)
+          # emptied (only "no crontab for" proves it) and recorded (a re-run after an interruption finds the saved copy and
+          # no crontab, and completes it)
           crontab -r 2>/dev/null || true
           if out=$(crontab -l 2>&1); then fail crontab_not_empty; fi
           case "$out" in "no crontab for "*) ;; *) fail crontab_unreadable_after_emptying ;; esac
@@ -757,16 +790,19 @@ jobs:
             sleep 10
           done
           say "drain=done cron_cgroup_procs=$procs summary_running=0 oneoff_running=0 quiet_at=$(TZ=America/Sao_Paulo date '+%H:%M:%S')"
+          # C0 complete: the drain's own record, the one C1a requires
+          sudo touch "$M/crontab.drained"
           say "gate=PASS next=B"
+          # end of payload
           REMOTE
             fi
             ;;
           C0u)
-            # C0 undone, only before C1a: the crontab back exactly as saved, both records gone, the saved copy set aside
+            # C0 undone, only before C1a: the crontab back exactly as saved, its records gone, the saved copy set aside
             # (a later C0 saves afresh). Refuses once C1a has begun (its hold record): after that only R0 undoes
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+              stage <<'REMOTE' && remote old yes || rc=1
           M=/root/c3po-migration
           sudo test -s "$M/crontab.before" || fail no_saved_crontab
           if sudo test -e "$M/hold.recorded"; then fail c1a_already_begun_use_r0; fi
@@ -777,19 +813,20 @@ jobs:
             sudo cat "$M/crontab.before" | crontab -
           fi
           crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_restore
-          sudo rm -f "$M/crontab.emptied"
+          sudo rm -f "$M/crontab.emptied" "$M/crontab.drained"
           sudo mv "$M/crontab.before" "$M/crontab.undone.$(date +%s)"
           say "crontab=restored lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
           say "gate=PASS"
+          # end of payload
           REMOTE
             fi
             ;;
           C1a)
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
-            # C0 emptied the crontab and proved it: nothing scheduled starts on the old host any more
+            # C0 complete (emptied, proven, drained): nothing from the crontab starts on the old host any more
             if [ "$rc" = 0 ]; then
-              mode=$(old 'if out=$(crontab -l 2>&1); then echo live; elif [ "${out#no crontab for }" != "$out" ] && sudo test -e /root/c3po-migration/crontab.emptied && sudo test -s /root/c3po-migration/crontab.before; then echo emptied_by_c0; else echo unknown; fi' 2>/dev/null)
-              if [ "$mode" = emptied_by_c0 ]; then note "crontab=emptied_by_c0"; else note "gate=FAIL reason=crontab_not_emptied_by_c0"; rc=1; fi
+              mode=$(old 'if out=$(crontab -l 2>&1); then echo live; elif [ "${out#no crontab for }" != "$out" ] && sudo test -e /root/c3po-migration/crontab.emptied && sudo test -e /root/c3po-migration/crontab.drained && sudo test -s /root/c3po-migration/crontab.before; then echo c0_complete; else echo unknown; fi' 2>/dev/null)
+              if [ "$mode" = c0_complete ]; then note "crontab=emptied_and_drained_by_c0"; else note "gate=FAIL reason=c0_not_complete"; rc=1; fi
             fi
             if [ "$rc" = 0 ]; then
               # drift since B, checked BEFORE anything stops: the app tree, the reports clone and the images
@@ -805,15 +842,26 @@ jobs:
               [ "$rc" = 0 ] && note "images_since_b=match"
             fi
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+              # the crontab C0 saved is the one B stored inert on the new host and BV compared (C1b carries the saved one,
+              # D installs it)
+              a=$(old "set -o pipefail; sudo cat /root/c3po-migration/crontab.before | sha256sum | cut -c1-64" 2>/dev/null); sa=$?
+              b=$(new_tmp "set -o pipefail; sudo cat /root/c3po-migration/crontab.deploy | sha256sum | cut -c1-64" 2>/dev/null); sb=$?
+              if [ "$sa" = 0 ] && [ "$sb" = 0 ] && [[ "$a" =~ ^[0-9a-f]{64}$ ]] && [ "$a" != "$EMPTY_SHA" ] && [ "$a" = "$b" ]; then
+                note "crontab_saved_vs_b=match"
+              else note "gate=FAIL reason=crontab_saved_vs_b"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              stage <<'REMOTE' && remote old yes || rc=1
           M=/root/c3po-migration
           W=/var/tmp/c3po-migration
-          # 1. C0's emptying, still in place: its record, the saved copy, and no crontab now ("no crontab for" only)
-          sudo test -e "$M/crontab.emptied" && sudo test -s "$M/crontab.before" || fail crontab_not_emptied_by_c0
+          # 1. C0 complete and still in place: its emptied and drained records, the saved copy, no crontab now
+          sudo test -e "$M/crontab.emptied" && sudo test -e "$M/crontab.drained" && sudo test -s "$M/crontab.before" || fail c0_not_complete
           if out=$(crontab -l 2>&1); then fail crontab_live_again; fi
           case "$out" in "no crontab for "*) ;; *) fail crontab_unreadable ;; esac
-          # the admission at the instant of the first effect (the hold just below): the drain first (cron's cgroup back to
-          # its own process, no summary or one-off container running, waited for up to 2 minutes), the clock last
+          # the preparations, nothing changed yet
+          sudo install -d -m 0700 -o root -g root "$M" "$M/prestop-logs" "$M/units"
+          # the admission: the drain (cron's cgroup back to its own process, no summary or one-off container running,
+          # waited for up to 2 minutes)
           for i in $(seq 25); do
             cg=$(systemctl show -p ControlGroup --value cron.service)
             [ -n "$cg" ] || fail cron_cgroup_unreadable
@@ -825,17 +873,10 @@ jobs:
             [ "$i" -lt 25 ] || fail cron_job_or_container_running
             sleep 5
           done
-          [ "$(timedatectl show -p NTPSynchronized --value)" = yes ] || fail clock_not_synchronized
-          x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
-          if [ "$mn" -ge 59 ] && [ "$mn" -lt 336 ]; then fail quiet_hours; fi
-          adm_at=$(date +%s)
           say "admission=in clock_brt=$(TZ=America/Sao_Paulo date '+%H:%M:%S')"
-          # 2. the explicit hold next, within 30 s of the admission and before any stop: without it the watchdog
-          # re-enables timers and starts db/api/web
-          [ "$(( $(date +%s) - adm_at ))" -le 30 ] || fail admission_stale
-          sudo install -d -m 0700 -o root -g root "$M" "$M/prestop-logs" "$M/units"
+          # 2. the explicit hold next, before any stop (without it the watchdog re-enables timers and starts db/api/web):
+          # its record first (an older hold.before set aside, so it is always this C1a's)
           if ! sudo test -e "$M/hold.recorded"; then
-            # an older record (from a back-out) set aside first, so hold.before is always this C1a's
             if sudo test -e "$M/hold.before"; then sudo mv "$M/hold.before" "$M/hold.before.old.$(date +%s)"; fi
             if sudo test -e /etc/c3po/security-maintenance.hold; then sudo cp -p /etc/c3po/security-maintenance.hold "$M/hold.before"; fi
             sudo touch "$M/hold.recorded"
@@ -898,6 +939,9 @@ jobs:
           done
           sudo sh -c "cd '$M/prestop-logs' && sha256sum *.log > SHA256SUMS"
           say "logs=kept files=$(sudo find "$M/prestop-logs" -name '*.log' | wc -l)"
+          # steps 6 to 8 (stops, final dump, offsite backup) start only with 40 minutes left before the run's deadline, their
+          # worst case; otherwise C1a stops here and a re-run continues
+          [ "$(( DEADLINE - $(date +%s) ))" -ge 2400 ] || fail too_close_to_the_deadline_for_the_stops
           # 6. ingress first, then every writer; the database stays up
           legacy stop -t 120 cloudflared pluggy-webhook >/dev/null
           dc stop -t 120 web api investor-relations-worker valuation-worker server-usage-worker r2d2-live >/dev/null
@@ -943,6 +987,7 @@ jobs:
           [[ "$bind" =~ ^[0-9a-f]{64}\ [0-9a-f]{64}$ ]] || fail backup_binding
           say "backup_dump_sha=${bind%% *} backup_object_key_sha=${bind##* } upload_is_newest=yes"
           say "gate=PASS next=restore_drill_then_C1b"
+          # end of payload
           REMOTE
             fi
             ;;
@@ -951,7 +996,7 @@ jobs:
             if [ "$rc" = 0 ]; then
               # the database stops clean, after proving that nothing was written since the final dump (a re-run accepts a
               # database already stopped cleanly)
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old yes || rc=1
+              stage <<'REMOTE' && remote old yes || rc=1
           W=/var/tmp/c3po-migration
           [ -s "$W/final.dump" ] || fail no_final_dump
           if [ "$(docker inspect -f '{{.State.Running}}' c3po-db-1)" = true ]; then
@@ -966,6 +1011,7 @@ jobs:
           [ -z "$(docker ps -q)" ] || fail containers_running
           say "db=stopped_clean writes_since_dump=0"
           say "gate=STEP"
+          # end of payload
           REMOTE
             fi
             if [ "$rc" = 0 ]; then
@@ -1011,7 +1057,7 @@ jobs:
             if [ "$rc" = 0 ]; then
               # C2's inputs proven before the old host powers off: the Day-D filesystem C2 will look for; then Docker off,
               # the disk unmounted cleanly and nowhere mounted, the host powered off
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote old no || rc=1
+              stage <<'REMOTE' && remote old no || rc=1
           dev=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}')
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
           uuid=$(sudo blkid -s UUID -o value "$dev")
@@ -1028,13 +1074,14 @@ jobs:
           say "docker=masked day_d=unmounted"
           sudo systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null
           say "gate=PASS next=console_disk_snapshot_detach_attach_static_ip_then_known_hosts"
+          # end of payload
           REMOTE
             fi
             ;;
           C2)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+              stage <<'REMOTE' && remote static no || rc=1
           [ "$(nproc)" = 2 ] || fail not_new_host
           W=/var/tmp/c3po-migration
           # 1. the Day-D filesystem: found by label, identified by the hash of its UUID, never formatted
@@ -1125,13 +1172,14 @@ jobs:
           say "db=restored tables=$(wc -l < "$W/final.counts.new") counts=match server_config=match app_login=ok"
           [ "$(docker ps --format '{{.Names}}')" = c3po-db-1 ] || fail unexpected_containers
           say "gate=PASS next=enable_pipeline_and_dispatch_it_with_the_named_revision"
+          # end of payload
           REMOTE
             fi
             ;;
           C3L)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+              stage <<'REMOTE' && remote static no || rc=1
           [ "$(cat "$APP/.deploy-version")" = "$NAMED_SHA" ] || fail deploy_version_not_named_sha
           [ "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production)" = "$NAMED_SHA" ] || fail image_not_named_sha
           for svc in web api investor-relations-worker valuation-worker server-usage-worker r2d2-live db; do
@@ -1144,13 +1192,14 @@ jobs:
           done
           say "legacy=running cloudflared=1 pluggy_webhook=1 revision=named"
           say "gate=PASS next=checks_then_D"
+          # end of payload
           REMOTE
             fi
             ;;
           D)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+              stage <<'REMOTE' && remote static no || rc=1
           # the crontab the old host ran until C1a (saved there, carried in C1b)
           [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_not_empty
           sudo test -s /root/c3po-migration/crontab.before || fail no_saved_crontab
@@ -1158,13 +1207,14 @@ jobs:
           crontab -l | sudo cmp -s /root/c3po-migration/crontab.before - || fail crontab_install
           say "crontab=installed lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
           say "gate=PASS"
+          # end of payload
           REMOTE
             fi
             ;;
           D2)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+              stage <<'REMOTE' && remote static no || rc=1
           # what the installers left: the backup waits for its first 04:00 and has not run; the security timers wait; the hold
           systemctl is-enabled --quiet c3po-postgres-backup.timer || fail backup_timer_not_enabled
           last=$(systemctl show -p LastTriggerUSec --value c3po-postgres-backup.timer)
@@ -1181,26 +1231,28 @@ jobs:
           sudo test -s /etc/c3po/security-maintenance.hold || fail hold_missing
           say "security_timers=active hold=present crontab_lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
           say "gate=PASS"
+          # end of payload
           REMOTE
             fi
             ;;
           E)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+              stage <<'REMOTE' && remote static no || rc=1
           sudo test -s /etc/c3po/security-maintenance.hold || fail no_hold
           sudo grep -q '^migration 2026-11-07: pending acceptance' /etc/c3po/security-maintenance.hold || fail not_the_migration_hold
           sudo rm /etc/c3po/security-maintenance.hold
           sudo test ! -e /etc/c3po/security-maintenance.hold || fail hold_still_there
           say "hold=removed"
           say "gate=PASS"
+          # end of payload
           REMOTE
             fi
             ;;
           R0n)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+              stage <<'REMOTE' && remote static no || rc=1
           # only before T_WRITE, and proven here: no crontab, no container but the database and the two legacy ones C2
           # created, and the tunnel connector never started
           [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_present
@@ -1257,13 +1309,14 @@ jobs:
           say "before_t_write=proven docker=masked day_d=unmounted"
           sudo systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null
           say "gate=PASS next=console_return_disk_and_ip_then_old_known_hosts_then_R0"
+          # end of payload
           REMOTE
             fi
             ;;
           R0)
             [ "$(vcpus static)" = 8 ] && note "identity_static_is_old=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              { printf '%s\n' "$prelude"; cat <<'REMOTE'; } | remote static no || rc=1
+              stage <<'REMOTE' && remote static no || rc=1
           # the old host as it was before C1a, from the states C1a recorded (each file must be there and non-empty)
           M=/root/c3po-migration
           sudo test -s "$M/crontab.before" || fail no_saved_crontab
@@ -1294,7 +1347,7 @@ jobs:
           sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null
           sudo cat "$M/crontab.before" | crontab -
           crontab -l | sudo cmp -s "$M/crontab.before" - || fail crontab_restore
-          sudo rm -f "$M/crontab.emptied"
+          sudo rm -f "$M/crontab.emptied" "$M/crontab.drained"
           # the migration's hold goes; a hold that existed before C1a stays
           if sudo test -e "$M/hold.before"; then sudo cp -p "$M/hold.before" /etc/c3po/security-maintenance.hold; else sudo rm -f /etc/c3po/security-maintenance.hold; fi
           # C1a's hold record set aside, last (a re-run before it restores the same hold again), so a later C0u or C1a
@@ -1302,6 +1355,7 @@ jobs:
           sudo mv "$M/hold.recorded" "$M/hold.recorded.r0.$(date +%s)"
           say "back_out=done timers_restored=$(sudo wc -l "$M/timers.before" | awk '{print $1}') crontab_lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
           say "gate=PASS"
+          # end of payload
           REMOTE
             fi
             ;;
