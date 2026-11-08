@@ -41,11 +41,11 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #   R0n  back-out BEFORE T_WRITE only, on the new host at the static address: Docker stopped and masked, Day-D unmounted,
 #        power-off; then the console returns disk and IP and the operator restores the old C3PO_AWS_KNOWN_HOSTS.
 #   R0   then, on the old host powered on again: Docker unmasked, disk mounted, stack, timers and crontab back.
-# Every phase that changes or loads a host starts only from 05:36 to 22:25 BRT (back-outs and read-only phases at any
-# hour), and each of its host scripts is killed at one absolute deadline (00:55 BRT at the latest, never past the job's
-# own limit); C1a starts its stops only with their worst case left, so none acts in 00:59-05:35. Payloads are staged
-# whole before any SSH and reach the hosts base64-encoded in the ssh argument with their sha256: the host decodes them
-# and runs only a file with that same hash, with stdin from /dev/null (nothing can swallow it). On the old host they hold the reboot
+# Every phase that changes or loads a host starts only from 05:36 to 18:29 BRT (back-outs and read-only phases at any
+# hour): with this job's 150-minute limit, the backup unit's 3-hour one and no unbounded step, all it does ends before
+# 00:00, ahead of the valuation night from 01:00 to 05:35. Payloads are staged whole before any SSH and reach the hosts base64-encoded in
+# the ssh argument with their sha256: the host decodes them and runs only a file with that same hash, with stdin from
+# /dev/null (nothing can swallow it). On the old host they hold the reboot
 # controller's maintenance lease, and before C0 they write only their own log (/var/log/c3po-migration), the shipped
 # script itself (/tmp/c3po-migration.*, removed on exit) and, in R, the rehearsal files under /var/tmp/c3po-migration
 # (removed at the end of R). Every printed line passes an anchored
@@ -99,20 +99,20 @@ jobs:
           busy=$(gh run list --repo "$REPO" --workflow c3po-pipeline.yml --limit 20 --json status \
             --jq '[.[] | select(.status != "completed")] | length')
           [ "$busy" = "0" ] || { echo "a production pipeline is queued or running: refusing"; exit 1; }
-          # the start window (BRT) and one absolute deadline for every host script of this run: a phase that changes or
-          # loads a host starts only from 05:36 to 22:25 and its scripts are killed on the host at 00:55 at the latest,
-          # so nothing it does falls in 00:59-05:35, the night the valuation worker owns from 01:00. Back-outs (C0u, R0n,
-          # R0) and the read-only BV and D2 run at any hour. Either way the deadline is never past this job's own limit
+          # the start window (BRT): a phase that changes or loads a host starts only from 05:36 to 18:29. Its end then
+          # follows from configured limits, not from a computed deadline: this job runs at most 150 minutes, so it ends
+          # by 20:59. What can outlive it ends by 23:59 at the latest: a host script only until its next line to the
+          # runner (no stretch between two takes an hour), a direct transfer until its stream ends, a dump or a
+          # container stop already begun (minutes), and C1a's offsite backup under systemd, bounded by its unit's
+          # TimeoutStartSec=3h; every phase is re-runnable from where it stopped (the drill proves the backup). So nothing
+          # acts in the valuation worker's night, 01:00 to 05:35. Back-outs (C0u, R0n, R0) and the read-only BV and D2
+          # start at any hour
           [ "$(TZ=America/Sao_Paulo date +%z)" = -0300 ] || { echo "the BRT time zone is not available"; exit 1; }
-          now=$(date +%s); dl=$(( now + 8400 ))
           case "$PHASE" in
             BV|D2|C0u|R0n|R0) ;;
             *) x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
-               [ "$mn" -ge 336 ] && [ "$mn" -lt 1345 ] || { echo "outside the start window 05:36-22:25 BRT"; exit 1; }
-               night=$(TZ=America/Sao_Paulo date -d 'tomorrow 00:55' +%s)
-               [ "$night" -lt "$dl" ] && dl=$night ;;
+               [ "$mn" -ge 336 ] && [ "$mn" -lt 1110 ] || { echo "outside the start window 05:36-18:29 BRT"; exit 1; } ;;
           esac
-          echo "DEADLINE=$dl" >> "$GITHUB_ENV"
           state=$(gh api "repos/$REPO/actions/workflows/c3po-pipeline.yml" --jq .state)
           case "$PHASE" in
             C0|C0u|C1a|C1b|C2|R0n|R0) [ "$state" = disabled_manually ] || { echo "the production pipeline must be disabled from C0 to C2 and for a back-out"; exit 1; } ;;
@@ -185,15 +185,12 @@ jobs:
           unpack='f=$(mktemp /tmp/c3po-migration.XXXXXX) || exit 31; printf %s "$B64" | base64 -d > "$f" || { rm -f "$f"; echo "$PHASE gate=FAIL reason=payload_decode"; exit 32; }; [ "$(sha256sum < "$f" | cut -c1-64)" = "$SUM" ] || { rm -f "$f"; echo "$PHASE gate=FAIL reason=payload_incomplete_at_target"; exit 33; }'
           # remote TARGET LEASE: the staged payload, consumed, packed, shipped in the argument and checked there, run with
           # stdin from /dev/null; only its "<PHASE> ..." lines are kept
-          # left: the seconds to this run's deadline, never fewer than 60 (or the call refuses)
-          left() { local l=$(( DEADLINE - $(date +%s) )); [ "$l" -ge 60 ] || return 1; printf '%s' "$l"; }
           remote() {
-            local target=$1 lease=$2 wrap="" status p="$RUNNER_TEMP/payload.inflight" t
+            local target=$1 lease=$2 wrap="" status p="$RUNNER_TEMP/payload.inflight"
             mv "$RUNNER_TEMP/payload.sh" "$p" 2>/dev/null || { note "gate=FAIL reason=payload_not_staged"; return 1; }
             pack "$p" || { note "gate=FAIL reason=payload_pack"; return 1; }
-            t=$(left) || { note "gate=FAIL reason=deadline_too_close"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} DEADLINE=$DEADLINE $wrap timeout --kill-after=30s ${t}s bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/remote.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/remote.txt" >> "$out"
@@ -203,12 +200,11 @@ jobs:
           # capture TARGET LEASE: as remote, but the script's "H key value" lines (hashes) come back to the caller and never
           # reach the output; its "<PHASE> ..." lines still do
           capture() {
-            local target=$1 lease=$2 wrap="" status p="$RUNNER_TEMP/payload.inflight" t
+            local target=$1 lease=$2 wrap="" status p="$RUNNER_TEMP/payload.inflight"
             mv "$RUNNER_TEMP/payload.sh" "$p" 2>/dev/null || { note "gate=FAIL reason=payload_not_staged"; return 1; }
             pack "$p" || { note "gate=FAIL reason=payload_pack"; return 1; }
-            t=$(left) || { note "gate=FAIL reason=deadline_too_close"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DEADLINE=$DEADLINE $wrap timeout --kill-after=30s ${t}s bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/capture.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/capture.txt" >> "$out"
@@ -536,7 +532,7 @@ jobs:
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
             # one script, run on each host with its ROLE; every measure fails closed (v=$(...) || fail), and each value
             # goes back as an "H key value" line that only this runner sees
-            cat > "$RUNNER_TEMP/bv.sh" <<'REMOTE'
+            cat > "$RUNNER_TEMP/bv.sh" <<'REMOTE' || { note "gate=FAIL reason=bv_script_write"; rc=1; }
           hsay() { printf 'H %s %s\n' "$1" "$2" >&3; }
           h() { sha256sum | cut -c1-64; }
           # tree_hash BASE REL...: each entry's type, numeric owner, mode, path relative to BASE and link target, then each
@@ -939,18 +935,27 @@ jobs:
           done
           sudo sh -c "cd '$M/prestop-logs' && sha256sum *.log > SHA256SUMS"
           say "logs=kept files=$(sudo find "$M/prestop-logs" -name '*.log' | wc -l)"
-          # steps 6 to 8 (stops, final dump, offsite backup) start only with 40 minutes left before the run's deadline, their
-          # worst case; otherwise C1a stops here and a re-run continues
-          [ "$(( DEADLINE - $(date +%s) ))" -ge 2400 ] || fail too_close_to_the_deadline_for_the_stops
-          # 6. ingress first, then every writer; the database stays up
-          legacy stop -t 120 cloudflared pluggy-webhook >/dev/null
-          dc stop -t 120 web api investor-relations-worker valuation-worker server-usage-worker r2d2-live >/dev/null
-          [ "$(docker ps --format '{{.Names}}' | grep -v -x c3po-db-1 | wc -l)" = 0 ] || fail other_containers_running
+          # 6. ingress first, then every writer; the database stays up. Each stop is bounded on the client side (a hang
+          # ends in a refusal, never in a late stop) and preceded by the host's own clock (no stop from 23:00 on, the
+          # case of a runner gone without closing its connection) and by a line to the runner (it fails at once if the
+          # runner is gone)
+          late() { local x mn; x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} )); [ "$mn" -ge "$1" ] || [ "$mn" -lt 336 ]; }
+          if late 1380; then fail too_late_for_the_stops; fi
+          say "stopping=ingress"
+          timeout 300 docker compose --env-file "$APP/.env" -f "$APP/docker-compose.yml" stop -t 120 cloudflared pluggy-webhook >/dev/null || fail ingress_stop
+          if late 1380; then fail too_late_for_the_stops; fi
+          say "stopping=writers"
+          timeout 300 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" stop -t 120 web api investor-relations-worker valuation-worker server-usage-worker r2d2-live >/dev/null || fail writers_stop
+          names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+          [ "$(grep -v -x c3po-db-1 <<<"$names" | grep -c . || true)" = 0 ] || fail other_containers_running
           others=$(dc exec -T db psql -U c3po -d c3po -At -c "select count(*) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null)
           [ "$others" = 0 ] || fail database_clients_left
           say "writers=stopped containers_running=1 db_clients=0"
           # 7. the final dump, the globals (role password hashes, 0600, never printed), the exact counts, the write
-          # counters (C1b proves nothing changed after the dump) and the server configuration a dump does not carry
+          # counters (C1b proves nothing changed after the dump) and the server configuration a dump does not carry; not
+          # from 23:00 on
+          if late 1380; then fail too_late_for_the_dump; fi
+          say "starting=final_dump"
           cleanup() { dc exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || true; }
           install -d -m 0700 "$W"
           rm -f "$W"/final.*
@@ -968,7 +973,10 @@ jobs:
           [ "$(wc -l < "$W/final.counts")" -ge 1 ] || fail no_counts
           say "dump_sha=$(sha256sum < "$W/final.dump" | cut -c1-64) counts_sha=$(sha256sum < "$W/final.counts" | cut -c1-64) tables=$(wc -l < "$W/final.counts")"
           # 8. one offsite backup from this same point (its unit's own guard requires the Day-D mount); its dump hash
-          # binds the restore drill dispatched next
+          # binds the restore drill dispatched next. It starts only before 21:00 by the host's own clock, so its unit's
+          # 3-hour limit ends it by 00:00
+          if late 1260; then fail too_late_for_the_backup; fi
+          say "starting=offsite_backup"
           sudo systemctl start c3po-postgres-backup.service || fail backup
           say "backup=$(systemctl show -p Result --value c3po-postgres-backup.service)"
           newest=$(find "$APP/outputs/evidence/postgres-backup" -name result.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-)
