@@ -1847,9 +1847,17 @@ jobs:
             if [ "$rc" = 0 ]; then
               stage <<'REMOTE' && remote static no || rc=1
           [ "$(nproc)" = 2 ] || fail not_new_host
+          # any unexpected stop says where (a line of this script), before the EXIT path
+          trap 'say "c2_failed_at_line=$LINENO"' ERR
           W=/var/tmp/c3po-migration
           # a C2 that passed never runs again (after T_WRITE its restarts alone would interrupt production)
           [ ! -e "$W/c2.passed" ] || fail c2_already_passed
+          # the credential the services themselves get, resolved before any change: compose's own reading of the api's
+          # database URL (the .env value, or compose's default when the .env has none), parsed in place, never printed
+          pw=$(timeout --foreground -k 5 55 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" config --format json 2>/dev/null | python3 -c 'import json, sys, urllib.parse as u
+          url = json.load(sys.stdin)["services"]["api"]["environment"]["C3PO_DATABASE_URL"]
+          print(u.unquote(u.urlsplit(url).password or ""))') || fail app_credential_unresolved
+          [ -n "$pw" ] || fail no_app_password
           # at NEED WHAT CMD...: a change a daemon may carry on with, started only if it can still end NEED seconds before
           # DEADLINE; the check runs in the very process that then execs the command, itself bounded inside NEED
           at() {
@@ -2117,7 +2125,7 @@ jobs:
           # volume a C2 restore began (its record) is reset first, only before T_WRITE: no container but the database and
           # the two legacy ones C2 creates
           export C3PO_BUILD_SHA
-          C3PO_BUILD_SHA=$(cat "$APP/.deploy-version")
+          C3PO_BUILD_SHA=$(cat "$APP/.deploy-version") || fail deploy_version
           # vol_state: the database volume, read at the very mount Docker gives the container's data destination: a volume
           # mount named c3po_c3po_postgres, a plain local volume (no options), whose source is that volume's own mountpoint,
           # the local driver's path for it, a real directory (no symlink); then its entries listed by a bounded root find
@@ -2160,7 +2168,7 @@ jobs:
           # the record now, before the database starts (it initialises the volume there): a later C2 resets what this one
           # leaves half done, never one that passed
           [ ! -e "$W/c2.passed" ] || fail c2_already_passed
-          touch "$W/c2.restore-begun"
+          touch "$W/c2.restore-begun" || fail marker
           at 300 db_start timeout --foreground 240 $DC start db >/dev/null || fail db_start
           ready=no
           for i in $(seq 1 90); do
@@ -2172,13 +2180,15 @@ jobs:
           # c2_end, the cancel each dat arms once its command started: further signals ignored first, then the temporary
           # dump removed (a say that fails, the runner gone, ends the cleanup), then the sessions
           c2_end() { trap ':' TERM HUP INT; timeout --foreground -k 5 60 docker exec c3po-db-1 rm -f /tmp/c3po-final.dump >/dev/null 2>&1 || true; db_end; }
-          ( umask 077; grep -v -x 'CREATE ROLE c3po;' "$W/final.globals.sql" > "$W/final.globals.apply" )
+          ( umask 077; grep -v -x 'CREATE ROLE c3po;' "$W/final.globals.sql" > "$W/final.globals.apply" ) || fail globals_filter
+          [ -s "$W/final.globals.apply" ] || fail globals_filter
           dat 360 globals timeout --foreground -k 10 300 $DC exec -T db psql -U c3po -d postgres -v ON_ERROR_STOP=1 -q < "$W/final.globals.apply" >/dev/null || fail globals
           rm -f "$W/final.globals.apply"
           dat 960 dump_copy_in timeout --foreground -k 10 900 docker cp "$W/final.dump" c3po-db-1:/tmp/c3po-final.dump || fail dump_copy_in
           dat 3000 restore timeout --foreground -k 10 2700 $DC exec -T db pg_restore -U c3po -d c3po --exit-on-error -j 2 /tmp/c3po-final.dump < /dev/null || fail restore
           dat 120 dump_cleanup timeout --foreground -k 10 60 $DC exec -T db rm -f /tmp/c3po-final.dump < /dev/null || fail dump_cleanup
           dat 960 counts timeout --foreground -k 10 900 $DC exec -T db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null > "$W/final.counts.raw" || fail counts
+          grep -q '^count|' "$W/final.counts.raw" || fail counts_missing
           grep '^count|' "$W/final.counts.raw" | sort > "$W/final.counts.new"
           cmp -s "$W/final.counts" "$W/final.counts.new" || fail counts_differ
           dat 380 pgconf timeout --foreground -k 10 300 $DC exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/final.pgconf.new" || fail pgconf
@@ -2186,9 +2196,6 @@ jobs:
           # 7. the application's own credential works over TCP, as the services will connect (never printed)
           # the login bounded at 60 s on its client (TERM at 55, KILL 5 s later), with the cleanup's time kept
           [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( 60 + KC + 70 ))" ] || fail too_late_for_app_login
-          pw=$(grep -E '^C3PO_DB_PASSWORD=' "$APP/.env" | tail -n 1 | cut -d= -f2-)
-          pw=${pw%\"}; pw=${pw#\"}; pw=${pw%\'}; pw=${pw#\'}
-          [ -n "$pw" ] || fail no_app_password
           printf '%s' "$pw" | timeout --foreground -k 5 55 docker exec -i c3po-db-1 sh -c 'PGPASSWORD=$(cat) psql -h db -U c3po -d c3po -At -c "select 1"' > /dev/null || fail app_password
           unset pw
           # every command in the container returned (the temporary dump already removed): none of them runs any more
