@@ -38,6 +38,10 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #        (install-host-security-v1.yml, install-resilience-ops-v1.yml) are dispatched by hand; D2 checks what they left:
 #        the backup timer waiting for Sunday 04:00 without a catch-up run, the security timers, the hold.
 #   E    Sunday, after the first night is read: the hold removed (the security routine acts again).
+#   AP   new, read only, right before install-host-security-v1.yml: the policy its first apt-daily-upgrade will run
+#        under, read by python3-apt as unattended-upgrade reads it (apt's own precedence) from a private copy of
+#        apt.conf.d with the installer's file added, the copy first proven faithful; it refuses unless the reboot is
+#        explicitly off, no Origins-Pattern is set and Allowed-Origins is exactly the installer's three security pockets.
 #   R0n  back-out BEFORE T_WRITE only, on the new host at the static address: Docker stopped and masked, Day-D unmounted,
 #        power-off; then the console returns disk and IP and the operator restores the old C3PO_AWS_KNOWN_HOSTS.
 #   R0   then, on the old host powered on again: Docker unmasked, disk mounted, stack, timers and crontab back.
@@ -129,7 +133,7 @@ jobs:
         run: |
           set -euo pipefail
           [ "$PHASE" = "$CONFIRM" ] || { echo "phase and confirmation differ"; exit 1; }
-          [[ "$PHASE" =~ ^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|E|R0n|R0)$ ]] || { echo "unknown phase"; exit 1; }
+          [[ "$PHASE" =~ ^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|AP|E|R0n|R0)$ ]] || { echo "unknown phase"; exit 1; }
           # A (the new host's packages) and R (the rehearsal on the live database) are done (06/11) and retired: their
           # receipts stand, and neither runs again
           case "$PHASE" in A|R) echo "phase $PHASE is retired"; exit 1 ;; esac
@@ -137,12 +141,12 @@ jobs:
             --jq '[.[] | select(.status != "completed")] | length')
           [ "$busy" = "0" ] || { echo "a production pipeline is queued or running: refusing"; exit 1; }
           # the start window (BRT): a phase that changes or loads a host starts only from 05:36 to 18:29 (back-outs C0u,
-          # R0n, R0 and the read-only BV and D2 at any hour). Every host command of the run then stops at its absolute
+          # R0n, R0 and the read-only BV, D2 and AP at any hour). Every host command of the run then stops at its absolute
           # DEADLINE, set here (see old/new_tmp/static), so nothing of a phase started in the window acts after 20:49,
           # far from the valuation worker's night (01:00 to 05:35)
           [ "$(TZ=America/Sao_Paulo date +%z)" = -0300 ] || { echo "the BRT time zone is not available"; exit 1; }
           case "$PHASE" in
-            BV|D2|C0u|R0n|R0) ;;
+            BV|D2|AP|C0u|R0n|R0) ;;
             *) x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
                [ "$mn" -ge 336 ] && [ "$mn" -lt 1110 ] || { echo "outside the start window 05:36-18:29 BRT"; exit 1; } ;;
           esac
@@ -2303,6 +2307,138 @@ jobs:
           REMOTE
             fi
             ;;
+          AP)
+            [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              stage <<'REMOTE' && remote static no || rc=1
+          # read only: the policy the host-security installer's first apt-daily-upgrade will run under, proven BEFORE it
+          # runs. unattended-upgrade reads it through python3-apt (find_b, value_list); the same calls read it here, under
+          # apt's own precedence (APT_CONFIG, then each file of Dir::Etc::Parts in apt's order and filter, then
+          # Dir::Etc::Main), from a private copy of the parts directory with the installer's file added. The copy is first
+          # proven faithful (apt-config dump equal to the host's own, the redirect line apart). On the host, only the
+          # migration log and this payload's own temporary files are written
+          [ -z "${APT_CONFIG:-}" ] || fail ap_apt_config_env_set
+          # the run the installer starts: the manager's environment only the locale and PATH (APT_CONFIG, PYTHONPATH or
+          # LD_PRELOAD there would change what unattended-upgrade reads or runs, which python3 -I here cannot see); the
+          # stock unit file, loaded as it is on disk, with no environment, no environment file, no drop-in and the stock
+          # ExecStart; the first unattended-upgrade on the manager's PATH the packaged one; every read's own status kept
+          me=$(systemctl show-environment) || fail ap_manager_unreadable
+          case "$me" in *APT_CONFIG*) fail ap_manager_sets_apt_config ;; esac
+          [ "$(printf '%s\n' "$me" | LC_ALL=C awk -F= 'NF && $1 !~ /^(LANG|LANGUAGE|LC_[A-Z_]+|PATH)$/ { n++ } END { print n + 0 }')" = 0 ] || fail ap_manager_environment_not_minimal
+          mpath=$(printf '%s\n' "$me" | LC_ALL=C awk 'index($0, "PATH=") == 1 { print substr($0, 6) }')
+          [ -n "$mpath" ] || fail ap_manager_path_missing
+          # every PATH entry absolute (an empty or relative one would be looked up from the service's directory, not here)
+          case ":$mpath:" in *::*|*:[!/]*) fail ap_manager_path_not_absolute ;; esac
+          # first_on_path NAME: the first NAME the service would run along the manager's PATH, seen as root sees it
+          first_on_path() {
+            local d
+            for d in "${pdirs[@]}"; do
+              if sudo test -f "$d/$1" && sudo test -x "$d/$1"; then printf '%s\n' "$d/$1"; return 0; fi
+            done
+            return 0
+          }
+          IFS=: read -r -a pdirs <<< "$mpath"
+          uu_bin=$(first_on_path unattended-upgrade)
+          [ "$uu_bin" = /usr/bin/unattended-upgrade ] || fail ap_unattended_upgrade_not_packaged
+          # unattended-upgrade runs lsb_release through PATH to fill ${distro_id} and ${distro_codename}
+          lsb_bin=$(first_on_path lsb_release)
+          [ -z "$lsb_bin" ] || [ "$lsb_bin" = /usr/bin/lsb_release ] || fail ap_lsb_release_not_packaged
+          un=$(systemctl show -p LoadState --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          [ "$un" = loaded ] || fail ap_unit_not_loaded
+          fp=$(systemctl show -p FragmentPath --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          case "$fp" in /usr/lib/systemd/system/apt-daily-upgrade.service|/lib/systemd/system/apt-daily-upgrade.service) ;; *) fail ap_unit_not_stock_file ;; esac
+          nd=$(systemctl show -p NeedDaemonReload --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          [ "$nd" = no ] || fail ap_unit_needs_daemon_reload
+          ue=$(systemctl show -p Environment --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          [ -z "$ue" ] || fail ap_unit_has_environment
+          uf=$(systemctl show -p EnvironmentFiles --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          [ -z "$uf" ] || fail ap_unit_has_environment_files
+          ud=$(systemctl show -p DropInPaths --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          [ -z "$ud" ] || fail ap_unit_has_drop_ins
+          ux=$(systemctl show -p ExecStart --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          case "$ux" in *"argv[]=/usr/lib/apt/apt.systemd.daily install ;"*) ;; *) fail ap_unit_execstart_not_stock ;; esac
+          # the installer installs unattended-upgrades and python3-apt only when dpkg does not know them; that install would
+          # add files to apt.conf.d after this proof, so both must already be installed
+          st=$(dpkg-query -W -f='${Package} ${Status}\n' unattended-upgrades python3-apt) || fail ap_packages_missing
+          [ "$(printf '%s\n' "$st" | LC_ALL=C awk '$2 == "install" && $3 == "ok" && $4 == "installed" { n++ } END { print n + 0 }')" = 2 ] || fail ap_packages_not_installed
+          ap=$(mktemp -d) || fail ap_workdir
+          cleanup() { rm -rf "$ap"; }
+          # the installer's file as main d05225611a48 ships it (ops/apt/52c3po-security-upgrades), byte for byte
+          cat > "$ap/52c3po-security-upgrades" <<'APT'
+          # C3PO host patch contract: security channels only, never reboot automatically.
+          #clear Unattended-Upgrade::Allowed-Origins;
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+              "${distro_id}ESMApps:${distro_codename}-apps-security";
+              "${distro_id}ESM:${distro_codename}-infra-security";
+          };
+          Unattended-Upgrade::Automatic-Reboot "false";
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT
+          [ "$(sha256sum < "$ap/52c3po-security-upgrades" | cut -c1-64)" = f3f87e75135ccc44e6dfa4cb1c4e0290d14ad53dd605b931cef009354fe3adfa ] || fail ap_contract_differs
+          # where this host's apt reads its parts and its main file
+          dirs=$(apt-config shell P Dir::Etc::Parts/d M Dir::Etc::Main/f) || fail ap_dirs_unreadable
+          eval "$dirs"
+          [ "${P:-}" = /etc/apt/apt.conf.d/ ] || fail ap_parts_not_default
+          [ -d /etc/apt/apt.conf.d ] && [ ! -L /etc/apt/apt.conf.d ] || fail ap_parts_dir
+          mc=absent; [ ! -e "${M:-/etc/apt/apt.conf}" ] || mc=present
+          pre=absent; [ ! -e /etc/apt/apt.conf.d/52c3po-security-upgrades ] || pre=present
+          # the private copy: every regular file and link of the parts directory, each copy's status checked
+          mkdir "$ap/parts" || fail ap_workdir
+          find /etc/apt/apt.conf.d -mindepth 1 -maxdepth 1 \( -type f -o -type l \) -print0 > "$ap/list" || fail ap_parts_unreadable
+          while IFS= read -r -d '' x; do cp -L -- "$x" "$ap/parts/" || fail ap_part_unreadable; done < "$ap/list"
+          printf 'Dir::Etc::Parts "%s/parts/";\n' "$ap" > "$ap/redirect.conf" || fail ap_workdir
+          apt-config dump > "$ap/host.dump" || fail ap_dump_host
+          APT_CONFIG="$ap/redirect.conf" apt-config dump > "$ap/copy.dump" || fail ap_dump_copy
+          LC_ALL=C awk 'tolower($1) != "dir::etc::parts"' "$ap/host.dump" > "$ap/host.cmp" || fail ap_dump_host
+          LC_ALL=C awk 'tolower($1) != "dir::etc::parts"' "$ap/copy.dump" > "$ap/copy.cmp" || fail ap_dump_copy
+          [ -s "$ap/host.cmp" ] && cmp -s "$ap/host.cmp" "$ap/copy.cmp" || fail ap_copy_not_faithful
+          # the installer's file added as it installs it (replacing any copy already there)
+          cp -- "$ap/52c3po-security-upgrades" "$ap/parts/52c3po-security-upgrades" || fail ap_workdir
+          # policy PARTS: one line of what unattended-upgrade reads, by its own calls; PARTS is the parts directory apt must
+          # have read. reboot_uu is unattended-upgrade's own reading (default false); reboot_strict counts a missing or
+          # unreadable value as a reboot (default true)
+          policy() {
+            /usr/bin/python3 -I - "$1" <<'PY'
+          import sys
+          import apt_pkg
+          apt_pkg.init_config()
+          c = apt_pkg.config
+          contract = ["${distro_id}:${distro_codename}-security",
+                      "${distro_id}ESMApps:${distro_codename}-apps-security",
+                      "${distro_id}ESM:${distro_codename}-infra-security"]
+          origins = c.value_list("Unattended-Upgrade::Allowed-Origins")
+          patterns = c.value_list("Unattended-Upgrade::Origins-Pattern")
+          periodic = c.find("APT::Periodic::Unattended-Upgrade", "")
+          print("parts_ok=%s reboot_uu=%s reboot_strict=%s reboot_set=%s origins=%d origins_contract=%s patterns=%d periodic=%s" % (
+              "yes" if c.find_dir("Dir::Etc::parts") == sys.argv[1] else "no",
+              "true" if c.find_b("Unattended-Upgrade::Automatic-Reboot", False) else "false",
+              "true" if c.find_b("Unattended-Upgrade::Automatic-Reboot", True) else "false",
+              "yes" if c.exists("Unattended-Upgrade::Automatic-Reboot") else "no",
+              len(origins), "yes" if origins == contract else "no", len(patterns),
+              periodic if periodic.isdigit() and len(periodic) <= 3 else "other"))
+          PY
+          }
+          shape='^parts_ok=(yes|no) reboot_uu=(true|false) reboot_strict=(true|false) reboot_set=(yes|no) origins=[0-9]{1,3} origins_contract=(yes|no) patterns=[0-9]{1,3} periodic=([0-9]{1,3}|other)$'
+          now=$(policy /etc/apt/apt.conf.d/) || fail ap_policy_unreadable
+          sim=$(APT_CONFIG="$ap/redirect.conf" policy "$ap/parts/") || fail ap_sim_unreadable
+          [[ "$now" =~ $shape ]] || fail ap_policy_unparsed
+          [[ "$sim" =~ $shape ]] || fail ap_sim_unparsed
+          case "$now" in "parts_ok=yes "*) ;; *) fail ap_policy_parts_not_host ;; esac
+          case "$sim" in "parts_ok=yes "*) ;; *) fail ap_sim_not_redirected ;; esac
+          # the verdict on what the first apt-daily-upgrade will read: explicitly no reboot, no Origins-Pattern entry, and
+          # Allowed-Origins exactly the installer's three security pockets
+          case "$sim" in *" reboot_strict=false "*) ;; *) fail ap_sim_reboot_not_false ;; esac
+          case "$sim" in *" origins_contract=yes "*) ;; *) fail ap_sim_origins_not_contract ;; esac
+          case "$sim" in *" patterns=0 "*) ;; *) fail ap_sim_origins_pattern_present ;; esac
+          say "$(printf '%s' "$now" | sed -E 's/(^| )([a-z_]+)=/\1now_\2=/g') main_conf=$mc contract_file=$pre"
+          say "$(printf '%s' "$sim" | sed -E 's/(^| )([a-z_]+)=/\1sim_\2=/g') copy_faithful=yes unit=stock packages=installed"
+          say "gate=PASS"
+          # end of payload
+          REMOTE
+            fi
+            ;;
           E)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
@@ -2629,7 +2765,7 @@ jobs:
             fi
             ;;
           esac
-          guard='^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|E|R0n|R0) [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120}( [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120})*( of [0-9]+)?$'
+          guard='^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|AP|E|R0n|R0) [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120}( [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120})*( of [0-9]+)?$'
           deny='([0-9]{1,3}[.-]){3}[0-9]{1,3}|ip-[0-9]|[0-9a-f]{1,4}:[0-9a-f]{0,4}:[0-9a-f]{0,4}:|@'
           grep -E "$guard" "$out" | grep -v -E "$deny"
           echo "lines: raw $(wc -l < "$out") kept $(grep -E "$guard" "$out" | grep -c -v -E "$deny")"
