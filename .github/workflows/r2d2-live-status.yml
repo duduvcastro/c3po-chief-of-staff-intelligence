@@ -25,10 +25,10 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #   C1a  old: C0 complete and its saved crontab B's, the drift checks, the admission (the drain), the hold and its
 #        record, c3po-* and apt timers masked, logs kept, ingress and writers stopped (db up), final dump/globals/counts,
 #        one offsite backup. Then the restore drill is dispatched by hand.
-#   C1b  old: db stopped clean; volatile trees, one-pagers and the final dump copied and compared, the reports clone and
-#        the images compared again; Docker masked; Day-D
-#        unmounted; power-off. Then the console moves the disk and the static IP, and the operator puts the new host's
-#        console-verified key into C3PO_AWS_KNOWN_HOSTS.
+#   C1b  old: first the final dump, the volatile trees and the one-pagers copied and compared and the reports clone and
+#        the images compared again, the old host still unchanged; then the db stopped clean (no write since the dump);
+#        then Docker masked, Day-D unmounted, power-off. Then the console moves the disk and the static IP, and the
+#        operator puts the new host's console-verified key into C3PO_AWS_KNOWN_HOSTS.
 #   C2   new (static address): Day-D mounted by UUID (hash below, never formatted), guards installed (every stored unit,
 #        sockets too; containerd and Docker restarted through them), legacy network
 #        and containers created (not started), the database alone restored and compared. Then the production pipeline is
@@ -53,26 +53,29 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 # is DEADLINE plus about 50 s and the ssh set-up, except for a cancel the TERM itself sets off, ending in its bounds.
 # In C0, C1a, C1b, C2, C3L and R0n the changes a daemon may carry on with after its client is gone (container stops
 # and starts, commands in the database container, the restore, the backup unit) start only with their bound and their
-# cancel's time left. From the first cancel armed on, a TERM, HUP or INT is held until the command in flight has
-# returned, then runs the cancel armed at that moment once (none after a disarm) and ends the script; every cancel
-# ignores any further signal, so none cuts it short. On any exit while
-# they may run, the database's client sessions are ended and that proven (a fresh count of 0 from a superuser and no
-# client program left in its container; pg_terminate_backend only sends the signal), and the backup unit is
-# stopped within its own stop timeout, read at admission, its end confirmed by its state and by no compose one-off
-# left. A hand-off whose effect is waited for (the backup, Docker's start) has its cancel armed before it: only the
-# admission's own refusal, before anything is handed off, disarms it, so a start queued whose client errs or is cut,
-# or a TERM in the hand-off, is cancelled too, after its client has returned; every state read is bounded, and the
-# cancel's time is kept before the reads and checked again after them. Every other stop or start handed to systemd
+# cancel's time left. Such a command goes through admit: its admission, in the very process that then execs it,
+# leaves its own record, and its cancel is armed only with that record. A refusal arms nothing new and changes nothing
+# (a cancel an earlier command armed stays), a signal recorded before the check makes it refuse, and a command
+# started, erred, cut or met by a signal is cancelled. While it runs, a TERM, HUP or INT is only recorded; once a
+# cancel is armed, a signal waits for the command in flight to return, then
+# runs the cancel armed at that moment once (none after a disarm) and ends the script; every cancel ignores any
+# further signal, so none cuts it short. On any exit once they may run, the database's client sessions are ended and
+# that proven (a fresh count of 0 from a superuser and no client program or shell left in its container;
+# pg_terminate_backend only sends the signal), and the backup unit is stopped within its own stop timeout, read at
+# admission, its end confirmed by its state and by no compose one-off left. Of a start whose effect is waited for (the
+# backup, Docker's start), every state read is bounded, and the cancel's time is kept before the reads and checked
+# again after them. Every other stop or start handed to systemd
 # there is blocking and admitted in the very root process that hands it off with the units' own timeouts left (plus
 # what must follow it, where a sequence goes on), read from the manager (not finite: refused; a stop counted at four
 # kill stages per unit), so the effect itself ends within them. B restarts nothing (journald's copied limits apply at
 # its next start). D only installs a crontab. The power-offs are scheduled 20 s ahead only while their own worst case
 # (poweroff.target's 30 minutes, then the forced action's final stage at the manager's default stop timeout) fits
-# before DEADLINE; C1b (before its database stop, and again in its last payload) and R0n begin only with the whole
-# sequence's worst case left, computed from the same timeouts before its first change, and admit each later change
-# with the rest of it left. C1b runs only inside a live C1a attempt (its hold record) and C1b and C2 take up a partial
-# run again (C1b goes straight to its last payload once that reached the runtime stop; C2 resets, before T_WRITE, a
-# restore of its own left half done, its own database still running included).
+# before DEADLINE; C1b (before its database stop, after the copies, and again in its last payload) and R0n begin only
+# with the whole sequence's worst case left, computed from the same timeouts before its first change, and admit each
+# later change (the database stop, the container stop, the runtime stop, the mask) with the rest of it left. C1b runs
+# only inside a live C1a attempt (its hold record), and C1b and C2 take up a partial run again (a C1b re-run copies and
+# compares everything again, keeping the images' comparison once its last payload reached the runtime stop; C2
+# resets, before T_WRITE, a restore of its own left half done, its own database still running included).
 # Payloads are staged whole before any SSH and reach the hosts
 # base64-encoded in the ssh argument with their sha256: the host decodes them and runs only a file with that same hash,
 # with stdin from /dev/null (nothing can swallow it). On the old host they hold the reboot controller's maintenance
@@ -897,23 +900,48 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
-          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
-          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
-          # as in the EXIT trap) and ends the script.
-          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
-          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
-          disarm() { ARMED=:; cleanup() { :; }; }
-          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
-          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
-          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
-          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
-          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
-          handoff() {
-            local need=$1 what=$2 s=0
-            shift 2
-            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
-            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+          # on_signal: the action of TERM, HUP and INT once arm, disarm or admit installed it; bash runs it only when the
+          # command in flight has returned. While admit holds the signals it only records one (also in a file its admission
+          # checks). Otherwise it ignores any further signal, runs the cancel armed at that moment once (none after a disarm;
+          # errexit off for it, as in the EXIT trap) and ends the script. Every cancel also starts by ignoring further
+          # signals, so none cuts it short
+          on_signal() {
+            if [ "$SIG_MODE" = hold ]; then SIG_HELD=yes; if [ -n "${SIG_FILE:-}" ]; then : > "$SIG_FILE" 2>/dev/null || :; fi; return 0; fi
+            trap ':' TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143
+          }
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs and what a signal runs; disarm: none again
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          # admit AS NEED WHAT CANCEL CMD...: CMD started only with NEED seconds left before DEADLINE, NEED covering CANCEL's
+          # whole time; the check runs in the very process that then execs CMD (as root under sudo with AS=root, as the user
+          # otherwise), and that process records the admission just before the exec, in a private directory the caller made (not
+          # a sticky one, which the kernel's protected_regular would close to root). While CMD runs, TERM, HUP and INT are only
+          # recorded, and a signal recorded before the check makes it refuse. Afterwards CANCEL is armed only with the record
+          # (CMD started or may have: it returned, erred or was cut, or a signal came); without it (refused before the exec, or
+          # the wrapper failed before the check) nothing new is armed and nothing changes, and a cancel an earlier command armed
+          # stays armed. Then a recorded signal acts (the armed cancel runs once, or nothing does) and ends the script. sudo,
+          # env, timeout, systemctl and docker never exit 95, 96 or 97
+          admit() {
+            local as=$1 need=$2 what=$3 cancel=$4 s=0 recd started=no
+            shift 4
+            : "${ARMED:=:}"
+            recd=$(mktemp -d) || fail "${what}_record"
+            SIG_FILE=$recd/signal
+            SIG_HELD=no; SIG_MODE=hold; trap on_signal TERM HUP INT
+            if [ "$SIG_HELD" = no ]; then
+              if [ "$as" = root ]; then
+                sudo env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              else
+                env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              fi
+            fi
+            if [ -s "$recd/admitted" ]; then started=yes; fi
+            SIG_FILE=; rm -rf "$recd"
+            if [ "$started" = yes ]; then arm "$cancel"; else SIG_MODE=run; trap on_signal TERM HUP INT; fi
+            if [ "$SIG_HELD" = yes ]; then on_signal; fi
+            if [ "$started" = no ]; then
+              case "$s" in 97) fail "too_late_for_$what" ;; 96) fail "${what}_record_unwritable" ;; *) fail "${what}_not_started" ;; esac
+            fi
             return "$s"
           }
           # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
@@ -945,9 +973,9 @@ jobs:
             sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
           # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
-          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
-          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
-          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # without blocking through admit, so its cancel (sb_cancel) is armed once the admission has passed: a start queued
+          # and then cut on its client, refused only in part (a masked unit) or met by a signal is cancelled as well, only
+          # after its client has returned; a refused admission arms nothing. Every state read is bounded at 10 s,
           # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
           # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
           # pause and one more round of reads, then the cancel
@@ -959,8 +987,7 @@ jobs:
             SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
             reads=$(( 10 * $# ))
             need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
-            arm sb_cancel
-            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            admit root "$need" "$what" sb_cancel timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
               [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
@@ -1007,13 +1034,14 @@ jobs:
             PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
           # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
-          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
-          # unmount (120 s), then the power-off's own (PO_NEED)
+          # seconds for the work before the runtime stop, the stop of these units (stop_need, also into SN), the mask (120 s),
+          # sync and the unmount (120 s), then the power-off's own (PO_NEED)
           seq_need() {
             local pre=$1 sn
             shift
             sn=$(stop_need "$@") || fail runtime_stop_unbounded
             poweroff_need
+            SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
@@ -1137,8 +1165,9 @@ jobs:
           # 7. the final dump, the globals (role password hashes, 0600, never printed), the exact counts, the write
           # counters (C1b proves nothing changed after the dump) and the server configuration a dump does not carry. Each
           # command in the container bounded on its client (TERM at its limit, KILL 10 s later) and admitted with its bound
-          # and KC left (dat); on any exit here (a failure, an error, a TERM, held until the command in flight has returned)
-          # every client session the database still serves is ended and that proven (the writers are stopped: only these
+          # and KC left (dat); on any exit once one of them started (a failure, an error, a signal, held until the command
+          # in flight has returned) every client session the database still serves is ended and that proven (the writers are
+          # stopped: only these
           # commands are its clients), so nothing of a cut dump goes on after C1a.
           # kill_clients: proven only on a round where a fresh count of the client backends is 0 (answered only for a
           # superuser, who sees every session; anything else is no proof) and no client program (psql, pg_dump, pg_dumpall,
@@ -1161,8 +1190,9 @@ jobs:
             return 1
           }
           db_end() { trap ':' TERM HUP INT; if kill_clients; then say "db_sessions=ended"; else say "db_sessions=not_confirmed"; fi; }
-          dat() { local need=$1; shift; at "$(( need + KC ))" "$@"; }
-          arm db_end
+          # dat NEED WHAT CMD...: a command in the database container admitted (admit) with its bound and KC left; once it
+          # started, db_end is the cancel of every exit
+          dat() { local need=$1 what=$2; shift 2; admit user "$(( need + KC ))" "$what" db_end "$@"; }
           say "starting=final_dump"
           install -d -m 0700 "$W"
           rm -f "$W"/final.*
@@ -1220,13 +1250,12 @@ jobs:
             [ -z "$ids" ] || ok=no
             if [ "$ok" = yes ]; then say "backup_cancel=confirmed_ended"; else say "backup_cancel=not_confirmed"; fi
           }
-          # the hand-off with its cancel armed first (arm, then handoff): a start queued whose client errs or is cut,
-          # or a TERM in the hand-off (acted on once the client has returned), is cancelled and confirmed too; only the
-          # admission's own refusal (nothing handed off) disarms it. From then on every exit of this script cancels and
+          # the hand-off through admit: its cancel (bk_cancel) armed once the admission has passed, so a start queued whose
+          # client errs or is cut, or a signal in the hand-off (acted on once the client has returned), is cancelled and
+          # confirmed too, and a refused admission arms nothing. From then on every exit of this script cancels and
           # confirms (the EXIT path runs cleanup); the evidence accepted later must be newer than the hand-off
-          arm bk_cancel
           t_ho=$(date +%s)
-          handoff "$(( 2700 + BK_CANCEL ))" offsite_backup timeout --foreground 60 systemctl start --no-block c3po-postgres-backup.service || fail backup_start
+          admit root "$(( 2700 + BK_CANCEL ))" offsite_backup bk_cancel timeout --foreground 60 systemctl start --no-block c3po-postgres-backup.service || fail backup_start
           begun=no; waited=0
           while :; do
             # the cancel's time kept before each read (one snapshot of the unit, bounded at 10 s) and checked again after it:
@@ -1273,6 +1302,66 @@ jobs:
             ;;
           C1b)
             { [ "$(vcpus old)" = 8 ] && [ "$(vcpus new_tmp)" = 2 ]; } && note "identity=ok" || { note "gate=FAIL reason=identity"; rc=1; }
+            # only within a live C1a attempt (its hold record, which R0 sets aside last), read before anything is copied
+            if [ "$rc" = 0 ]; then
+              hs=0; old "sudo test -e /root/c3po-migration/hold.recorded" 2>/dev/null || hs=$?
+              case "$hs" in
+                0) note "c1a_attempt=live" ;;
+                1) note "gate=FAIL reason=no_c1a_hold_record"; rc=1 ;;
+                *) note "gate=FAIL reason=c1a_hold_record_unreadable"; rc=1 ;;
+              esac
+            fi
+            # the copies and comparisons first, while C1b has changed nothing on the old host: C1a stopped every writer,
+            # only the database runs there, with no client, and nothing can write what is copied. Then one payload stops
+            # the database clean and the last one powers the host off, each admitted with the whole rest of C1b left
+            if [ "$rc" = 0 ]; then
+              if old "set -o pipefail; cd /var/tmp/c3po-migration && tar -cf - final.dump final.globals.sql final.counts final.pgconf" 2>/dev/null \
+                | new_tmp "set -e; install -d -m 0700 /var/tmp/c3po-migration; tar -C /var/tmp/c3po-migration -xf -; chmod 0600 /var/tmp/c3po-migration/final.*" > /dev/null 2>&1
+              then note "final_dump=copied"; else note "gate=FAIL reason=dump_copy"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              same_hash final_files "cd /var/tmp/c3po-migration && cat final.dump final.globals.sql final.counts final.pgconf | sha256sum | cut -c1-64" old new_tmp || rc=1
+            fi
+            if [ "$rc" = 0 ]; then
+              # the saved crontab and timer states travel too: D installs the crontab the old host ran until C1a
+              if old "sudo tar -C /root -cpf - c3po-migration/crontab.before c3po-migration/timers.before" 2>/dev/null \
+                | new_tmp "sudo tar -C /root -xpf -" > /dev/null 2>&1; then note "cron_and_timer_states=copied"
+              else note "gate=FAIL reason=cron_states"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              if old "$LEASE sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -cpf - outputs runtime whatsapp_session" 2>/dev/null \
+                | new_tmp "set -e; cd /opt/chief-of-staff-digital; sudo rm -rf outputs runtime whatsapp_session; sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -xpf -" > /dev/null 2>&1
+              then note "volatile_trees=copied"; else note "gate=FAIL reason=volatile_copy"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              same_hash app_tree_full "$(tree_cmd /opt chief-of-staff-digital)" old new_tmp || rc=1
+              # the reports clone and the images too: nothing on the old host can write them since C1a
+              [ "$rc" = 0 ] && { same_hash reports_tree_final "$(tree_cmd /opt r2d2-reports)" old new_tmp || rc=1; }
+            fi
+            if [ "$rc" = 0 ]; then
+              images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
+              # a re-run after the last payload reached the runtime stop (its record, which a C1a's fresh dump clears) finds
+              # Docker down there (both units inactive or failed, read as such): that payload ran only after this same
+              # comparison passed, and no image changes with Docker down, so the comparison stands; every other copy and
+              # comparison is made again
+              if old "test -e /var/tmp/c3po-migration/final.last-begun && [ \"\$(systemctl is-active docker.service docker.socket | grep -c -x -E 'inactive|failed')\" = 2 ]" 2>/dev/null; then
+                note "images_final=match_recorded"
+              else
+                for image in $images; do
+                  a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
+                  [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift_final"; rc=1; break; }
+                done
+                [ "$rc" = 0 ] && note "images_final=match"
+              fi
+            fi
+            if [ "$rc" = 0 ]; then
+              if old "$LEASE sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -cpf - ." 2>/dev/null \
+                | new_tmp "set -e; sudo docker volume create --label com.docker.compose.project=c3po --label com.docker.compose.volume=c3po_one_pagers --label com.docker.compose.version=5.1.4 c3po_c3po_one_pagers >/dev/null; sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -xpf -" > /dev/null 2>&1
+              then note "one_pagers=copied"; else note "gate=FAIL reason=one_pagers"; rc=1; fi
+            fi
+            if [ "$rc" = 0 ]; then
+              same_hash one_pagers "$(tree_cmd /var/lib/docker/volumes/c3po_c3po_one_pagers _data)" old new_tmp || rc=1
+            fi
             if [ "$rc" = 0 ]; then
               # the database stops clean, after proving that nothing was written since the final dump (a re-run accepts a
               # database already stopped cleanly)
@@ -1287,23 +1376,48 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
-          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
-          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
-          # as in the EXIT trap) and ends the script.
-          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
-          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
-          disarm() { ARMED=:; cleanup() { :; }; }
-          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
-          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
-          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
-          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
-          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
-          handoff() {
-            local need=$1 what=$2 s=0
-            shift 2
-            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
-            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+          # on_signal: the action of TERM, HUP and INT once arm, disarm or admit installed it; bash runs it only when the
+          # command in flight has returned. While admit holds the signals it only records one (also in a file its admission
+          # checks). Otherwise it ignores any further signal, runs the cancel armed at that moment once (none after a disarm;
+          # errexit off for it, as in the EXIT trap) and ends the script. Every cancel also starts by ignoring further
+          # signals, so none cuts it short
+          on_signal() {
+            if [ "$SIG_MODE" = hold ]; then SIG_HELD=yes; if [ -n "${SIG_FILE:-}" ]; then : > "$SIG_FILE" 2>/dev/null || :; fi; return 0; fi
+            trap ':' TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143
+          }
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs and what a signal runs; disarm: none again
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          # admit AS NEED WHAT CANCEL CMD...: CMD started only with NEED seconds left before DEADLINE, NEED covering CANCEL's
+          # whole time; the check runs in the very process that then execs CMD (as root under sudo with AS=root, as the user
+          # otherwise), and that process records the admission just before the exec, in a private directory the caller made (not
+          # a sticky one, which the kernel's protected_regular would close to root). While CMD runs, TERM, HUP and INT are only
+          # recorded, and a signal recorded before the check makes it refuse. Afterwards CANCEL is armed only with the record
+          # (CMD started or may have: it returned, erred or was cut, or a signal came); without it (refused before the exec, or
+          # the wrapper failed before the check) nothing new is armed and nothing changes, and a cancel an earlier command armed
+          # stays armed. Then a recorded signal acts (the armed cancel runs once, or nothing does) and ends the script. sudo,
+          # env, timeout, systemctl and docker never exit 95, 96 or 97
+          admit() {
+            local as=$1 need=$2 what=$3 cancel=$4 s=0 recd started=no
+            shift 4
+            : "${ARMED:=:}"
+            recd=$(mktemp -d) || fail "${what}_record"
+            SIG_FILE=$recd/signal
+            SIG_HELD=no; SIG_MODE=hold; trap on_signal TERM HUP INT
+            if [ "$SIG_HELD" = no ]; then
+              if [ "$as" = root ]; then
+                sudo env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              else
+                env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              fi
+            fi
+            if [ -s "$recd/admitted" ]; then started=yes; fi
+            SIG_FILE=; rm -rf "$recd"
+            if [ "$started" = yes ]; then arm "$cancel"; else SIG_MODE=run; trap on_signal TERM HUP INT; fi
+            if [ "$SIG_HELD" = yes ]; then on_signal; fi
+            if [ "$started" = no ]; then
+              case "$s" in 97) fail "too_late_for_$what" ;; 96) fail "${what}_record_unwritable" ;; *) fail "${what}_not_started" ;; esac
+            fi
             return "$s"
           }
           # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
@@ -1335,9 +1449,9 @@ jobs:
             sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
           # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
-          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
-          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
-          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # without blocking through admit, so its cancel (sb_cancel) is armed once the admission has passed: a start queued
+          # and then cut on its client, refused only in part (a masked unit) or met by a signal is cancelled as well, only
+          # after its client has returned; a refused admission arms nothing. Every state read is bounded at 10 s,
           # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
           # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
           # pause and one more round of reads, then the cancel
@@ -1349,8 +1463,7 @@ jobs:
             SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
             reads=$(( 10 * $# ))
             need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
-            arm sb_cancel
-            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            admit root "$need" "$what" sb_cancel timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
               [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
@@ -1397,13 +1510,14 @@ jobs:
             PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
           # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
-          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
-          # unmount (120 s), then the power-off's own (PO_NEED)
+          # seconds for the work before the runtime stop, the stop of these units (stop_need, also into SN), the mask (120 s),
+          # sync and the unmount (120 s), then the power-off's own (PO_NEED)
           seq_need() {
             local pre=$1 sn
             shift
             sn=$(stop_need "$@") || fail runtime_stop_unbounded
             poweroff_need
+            SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
@@ -1412,26 +1526,39 @@ jobs:
             poweroff_need
             sat "$PO_NEED" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
           }
+          # at NEED WHAT CMD...: a change a daemon may carry on with (a container stop, a command in a container, a systemd
+          # unit), started only if it can still end NEED seconds before DEADLINE; the check runs in the very process that
+          # then execs the command (no gap), and the command itself is bounded inside NEED
+          at() {
+            local need=$1 what=$2 s=0
+            shift 2
+            env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' at "$@" || s=$?
+            if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
+            return "$s"
+          }
           # only within a live C1a attempt: its hold record (R0 sets it aside last), then its final dump
           sudo test -e /root/c3po-migration/hold.recorded || fail no_c1a_hold_record
           [ -s "$W/final.dump" ] || fail no_final_dump
           # a clean stop already proven and recorded (a re-run, Docker possibly down already) is accepted as it is
           if [ -e "$W/final.db-stopped-clean" ]; then say "db=stopped_clean writes_since_dump=0 recorded=yes"; say "gate=STEP"; exit 0; fi
-          if [ "$(timeout --foreground -k 5 15 docker inspect -f '{{.State.Running}}' c3po-db-1)" = true ]; then
-            # the whole of C1b's worst case before its first change: the database stop (450 s), the copies between the
-            # payloads (an allowance of 30 minutes; the last payload checks its own sequence again before it changes anything)
-            # and the power-off sequence, computed as there
-            seq_need $(( 450 + 1800 + 120 )) docker.socket docker.service containerd.service
-            [ "$(( DEADLINE - $(date +%s) ))" -ge "$SEQ_NEED" ] || fail too_late_for_c1b
-            say "c1b_need_s=$SEQ_NEED"
+          # the whole rest of C1b's worst case before its first change, from the units' and the manager's own timeouts: the
+          # last payload's sequence (as there: 120 s of checks, the runtime stop, the mask, sync and the unmount, the
+          # power-off), the hop to it (120 s), and here the reads and the writes check (180 s), the database stop (450 s) and
+          # the checks after it (60 s)
+          seq_need 120 docker.socket docker.service containerd.service
+          LAST=$SEQ_NEED
+          [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( 180 + 450 + 60 + 120 + LAST ))" ] || fail too_late_for_c1b
+          say "c1b_need_s=$(( 180 + 450 + 60 + 120 + LAST ))"
+          running=$(timeout --foreground -k 5 15 docker inspect -f '{{.State.Running}}' c3po-db-1) || fail docker_unreadable
+          if [ "$running" = true ]; then
             names=$(timeout --foreground -k 5 15 docker ps --format '{{.Names}}') || fail docker_unreadable
             [ "$names" = c3po-db-1 ] || fail unexpected_containers
             writes=$(timeout --foreground -k 5 55 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null) || fail writes_unreadable
             [ "$writes" = "$(cat "$W/final.writes")" ] || fail writes_after_dump
             touch "$W/final.no-writes-checked"
-            # the stop bounded at 300 s on its client, admitted again with the whole of C1b left (SEQ_NEED)
-            [ "$(( DEADLINE - $(date +%s) ))" -ge "$SEQ_NEED" ] || fail too_late_for_db_stop
-            timeout --foreground 300 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" stop -t 120 db >/dev/null || fail db_stop
+            # the stop bounded at 300 s on its client (KILL 10 s later), admitted in its own process with the rest of C1b
+            # left after it: the checks here, the hop, the last payload's sequence
+            at "$(( 450 + 60 + 120 + LAST ))" db_stop timeout --foreground -k 10 300 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" stop -t 120 db >/dev/null || fail db_stop
           fi
           [ -e "$W/final.no-writes-checked" ] || fail writes_never_checked
           timeout --foreground -k 5 15 docker logs --tail 50 c3po-db-1 2>&1 | grep -q 'database system is shut down' || fail db_not_clean
@@ -1442,50 +1569,6 @@ jobs:
           say "gate=STEP"
           # end of payload
           REMOTE
-            fi
-            # a re-run after the last payload reached the runtime stop (its record, which a C1a's fresh dump clears) goes
-            # straight to it: every copy and comparison below had passed, the database was stopped, Docker may be too
-            resume=no
-            if [ "$rc" = 0 ] && old "test -e /var/tmp/c3po-migration/final.last-begun" 2>/dev/null; then resume=yes; note "c1b_resume=last_payload"; fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              if old "set -o pipefail; cd /var/tmp/c3po-migration && tar -cf - final.dump final.globals.sql final.counts final.pgconf" 2>/dev/null \
-                | new_tmp "set -e; install -d -m 0700 /var/tmp/c3po-migration; tar -C /var/tmp/c3po-migration -xf -; chmod 0600 /var/tmp/c3po-migration/final.*" > /dev/null 2>&1
-              then note "final_dump=copied"; else note "gate=FAIL reason=dump_copy"; rc=1; fi
-            fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              same_hash final_files "cd /var/tmp/c3po-migration && cat final.dump final.globals.sql final.counts final.pgconf | sha256sum | cut -c1-64" old new_tmp || rc=1
-            fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              # the saved crontab and timer states travel too: D installs the crontab the old host ran until C1a
-              if old "sudo tar -C /root -cpf - c3po-migration/crontab.before c3po-migration/timers.before" 2>/dev/null \
-                | new_tmp "sudo tar -C /root -xpf -" > /dev/null 2>&1; then note "cron_and_timer_states=copied"
-              else note "gate=FAIL reason=cron_states"; rc=1; fi
-            fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              if old "$LEASE sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -cpf - outputs runtime whatsapp_session" 2>/dev/null \
-                | new_tmp "set -e; cd /opt/chief-of-staff-digital; sudo rm -rf outputs runtime whatsapp_session; sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -xpf -" > /dev/null 2>&1
-              then note "volatile_trees=copied"; else note "gate=FAIL reason=volatile_copy"; rc=1; fi
-            fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              same_hash app_tree_full "$(tree_cmd /opt chief-of-staff-digital)" old new_tmp || rc=1
-              # the reports clone and the images too, now that nothing on the old host can write them
-              [ "$rc" = 0 ] && { same_hash reports_tree_final "$(tree_cmd /opt r2d2-reports)" old new_tmp || rc=1; }
-            fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
-              for image in $images; do
-                a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
-                [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift_final"; rc=1; break; }
-              done
-              [ "$rc" = 0 ] && note "images_final=match"
-            fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              if old "$LEASE sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -cpf - ." 2>/dev/null \
-                | new_tmp "set -e; sudo docker volume create --label com.docker.compose.project=c3po --label com.docker.compose.volume=c3po_one_pagers --label com.docker.compose.version=5.1.4 c3po_c3po_one_pagers >/dev/null; sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -xpf -" > /dev/null 2>&1
-              then note "one_pagers=copied"; else note "gate=FAIL reason=one_pagers"; rc=1; fi
-            fi
-            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
-              same_hash one_pagers "$(tree_cmd /var/lib/docker/volumes/c3po_c3po_one_pagers _data)" old new_tmp || rc=1
             fi
             if [ "$rc" = 0 ]; then
               # C2's inputs proven before the old host powers off: the Day-D filesystem C2 will look for; then Docker off,
@@ -1501,23 +1584,48 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
-          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
-          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
-          # as in the EXIT trap) and ends the script.
-          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
-          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
-          disarm() { ARMED=:; cleanup() { :; }; }
-          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
-          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
-          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
-          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
-          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
-          handoff() {
-            local need=$1 what=$2 s=0
-            shift 2
-            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
-            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+          # on_signal: the action of TERM, HUP and INT once arm, disarm or admit installed it; bash runs it only when the
+          # command in flight has returned. While admit holds the signals it only records one (also in a file its admission
+          # checks). Otherwise it ignores any further signal, runs the cancel armed at that moment once (none after a disarm;
+          # errexit off for it, as in the EXIT trap) and ends the script. Every cancel also starts by ignoring further
+          # signals, so none cuts it short
+          on_signal() {
+            if [ "$SIG_MODE" = hold ]; then SIG_HELD=yes; if [ -n "${SIG_FILE:-}" ]; then : > "$SIG_FILE" 2>/dev/null || :; fi; return 0; fi
+            trap ':' TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143
+          }
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs and what a signal runs; disarm: none again
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          # admit AS NEED WHAT CANCEL CMD...: CMD started only with NEED seconds left before DEADLINE, NEED covering CANCEL's
+          # whole time; the check runs in the very process that then execs CMD (as root under sudo with AS=root, as the user
+          # otherwise), and that process records the admission just before the exec, in a private directory the caller made (not
+          # a sticky one, which the kernel's protected_regular would close to root). While CMD runs, TERM, HUP and INT are only
+          # recorded, and a signal recorded before the check makes it refuse. Afterwards CANCEL is armed only with the record
+          # (CMD started or may have: it returned, erred or was cut, or a signal came); without it (refused before the exec, or
+          # the wrapper failed before the check) nothing new is armed and nothing changes, and a cancel an earlier command armed
+          # stays armed. Then a recorded signal acts (the armed cancel runs once, or nothing does) and ends the script. sudo,
+          # env, timeout, systemctl and docker never exit 95, 96 or 97
+          admit() {
+            local as=$1 need=$2 what=$3 cancel=$4 s=0 recd started=no
+            shift 4
+            : "${ARMED:=:}"
+            recd=$(mktemp -d) || fail "${what}_record"
+            SIG_FILE=$recd/signal
+            SIG_HELD=no; SIG_MODE=hold; trap on_signal TERM HUP INT
+            if [ "$SIG_HELD" = no ]; then
+              if [ "$as" = root ]; then
+                sudo env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              else
+                env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              fi
+            fi
+            if [ -s "$recd/admitted" ]; then started=yes; fi
+            SIG_FILE=; rm -rf "$recd"
+            if [ "$started" = yes ]; then arm "$cancel"; else SIG_MODE=run; trap on_signal TERM HUP INT; fi
+            if [ "$SIG_HELD" = yes ]; then on_signal; fi
+            if [ "$started" = no ]; then
+              case "$s" in 97) fail "too_late_for_$what" ;; 96) fail "${what}_record_unwritable" ;; *) fail "${what}_not_started" ;; esac
+            fi
             return "$s"
           }
           # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
@@ -1549,9 +1657,9 @@ jobs:
             sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
           # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
-          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
-          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
-          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # without blocking through admit, so its cancel (sb_cancel) is armed once the admission has passed: a start queued
+          # and then cut on its client, refused only in part (a masked unit) or met by a signal is cancelled as well, only
+          # after its client has returned; a refused admission arms nothing. Every state read is bounded at 10 s,
           # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
           # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
           # pause and one more round of reads, then the cancel
@@ -1563,8 +1671,7 @@ jobs:
             SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
             reads=$(( 10 * $# ))
             need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
-            arm sb_cancel
-            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            admit root "$need" "$what" sb_cancel timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
               [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
@@ -1611,13 +1718,14 @@ jobs:
             PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
           # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
-          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
-          # unmount (120 s), then the power-off's own (PO_NEED)
+          # seconds for the work before the runtime stop, the stop of these units (stop_need, also into SN), the mask (120 s),
+          # sync and the unmount (120 s), then the power-off's own (PO_NEED)
           seq_need() {
             local pre=$1 sn
             shift
             sn=$(stop_need "$@") || fail runtime_stop_unbounded
             poweroff_need
+            SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
@@ -1697,23 +1805,48 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
-          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
-          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
-          # as in the EXIT trap) and ends the script.
-          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
-          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
-          disarm() { ARMED=:; cleanup() { :; }; }
-          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
-          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
-          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
-          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
-          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
-          handoff() {
-            local need=$1 what=$2 s=0
-            shift 2
-            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
-            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+          # on_signal: the action of TERM, HUP and INT once arm, disarm or admit installed it; bash runs it only when the
+          # command in flight has returned. While admit holds the signals it only records one (also in a file its admission
+          # checks). Otherwise it ignores any further signal, runs the cancel armed at that moment once (none after a disarm;
+          # errexit off for it, as in the EXIT trap) and ends the script. Every cancel also starts by ignoring further
+          # signals, so none cuts it short
+          on_signal() {
+            if [ "$SIG_MODE" = hold ]; then SIG_HELD=yes; if [ -n "${SIG_FILE:-}" ]; then : > "$SIG_FILE" 2>/dev/null || :; fi; return 0; fi
+            trap ':' TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143
+          }
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs and what a signal runs; disarm: none again
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          # admit AS NEED WHAT CANCEL CMD...: CMD started only with NEED seconds left before DEADLINE, NEED covering CANCEL's
+          # whole time; the check runs in the very process that then execs CMD (as root under sudo with AS=root, as the user
+          # otherwise), and that process records the admission just before the exec, in a private directory the caller made (not
+          # a sticky one, which the kernel's protected_regular would close to root). While CMD runs, TERM, HUP and INT are only
+          # recorded, and a signal recorded before the check makes it refuse. Afterwards CANCEL is armed only with the record
+          # (CMD started or may have: it returned, erred or was cut, or a signal came); without it (refused before the exec, or
+          # the wrapper failed before the check) nothing new is armed and nothing changes, and a cancel an earlier command armed
+          # stays armed. Then a recorded signal acts (the armed cancel runs once, or nothing does) and ends the script. sudo,
+          # env, timeout, systemctl and docker never exit 95, 96 or 97
+          admit() {
+            local as=$1 need=$2 what=$3 cancel=$4 s=0 recd started=no
+            shift 4
+            : "${ARMED:=:}"
+            recd=$(mktemp -d) || fail "${what}_record"
+            SIG_FILE=$recd/signal
+            SIG_HELD=no; SIG_MODE=hold; trap on_signal TERM HUP INT
+            if [ "$SIG_HELD" = no ]; then
+              if [ "$as" = root ]; then
+                sudo env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              else
+                env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              fi
+            fi
+            if [ -s "$recd/admitted" ]; then started=yes; fi
+            SIG_FILE=; rm -rf "$recd"
+            if [ "$started" = yes ]; then arm "$cancel"; else SIG_MODE=run; trap on_signal TERM HUP INT; fi
+            if [ "$SIG_HELD" = yes ]; then on_signal; fi
+            if [ "$started" = no ]; then
+              case "$s" in 97) fail "too_late_for_$what" ;; 96) fail "${what}_record_unwritable" ;; *) fail "${what}_not_started" ;; esac
+            fi
             return "$s"
           }
           # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
@@ -1745,9 +1878,9 @@ jobs:
             sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
           # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
-          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
-          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
-          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # without blocking through admit, so its cancel (sb_cancel) is armed once the admission has passed: a start queued
+          # and then cut on its client, refused only in part (a masked unit) or met by a signal is cancelled as well, only
+          # after its client has returned; a refused admission arms nothing. Every state read is bounded at 10 s,
           # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
           # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
           # pause and one more round of reads, then the cancel
@@ -1759,8 +1892,7 @@ jobs:
             SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
             reads=$(( 10 * $# ))
             need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
-            arm sb_cancel
-            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            admit root "$need" "$what" sb_cancel timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
               [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
@@ -1807,13 +1939,14 @@ jobs:
             PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
           # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
-          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
-          # unmount (120 s), then the power-off's own (PO_NEED)
+          # seconds for the work before the runtime stop, the stop of these units (stop_need, also into SN), the mask (120 s),
+          # sync and the unmount (120 s), then the power-off's own (PO_NEED)
           seq_need() {
             local pre=$1 sn
             shift
             sn=$(stop_need "$@") || fail runtime_stop_unbounded
             poweroff_need
+            SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
@@ -1840,7 +1973,7 @@ jobs:
             return 1
           }
           db_end() { trap ':' TERM HUP INT; if kill_clients; then say "db_sessions=ended"; else say "db_sessions=not_confirmed"; fi; }
-          dat() { local need=$1; shift; at "$(( need + KC + 70 ))" "$@"; }
+          dat() { local need=$1 what=$2; shift 2; admit user "$(( need + KC + 70 ))" "$what" c2_end "$@"; }
           # 1. the Day-D filesystem: found by label, identified by the hash of its UUID, never formatted
           dev=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}')
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
@@ -1908,8 +2041,6 @@ jobs:
           # 5. the database alone: compose creates its volume and container, the volume is proven empty, then it starts. A
           # volume a C2 restore began (its record) is reset first, only before T_WRITE: no container but the database and
           # the two legacy ones C2 creates
-          c2_rm() { trap ':' TERM HUP INT; timeout --foreground -k 5 60 docker exec c3po-db-1 rm -f /tmp/c3po-final.dump >/dev/null 2>&1 || true; }
-          arm c2_rm
           export C3PO_BUILD_SHA
           C3PO_BUILD_SHA=$(cat "$APP/.deploy-version")
           at 300 db_create timeout --foreground 240 $DC up --no-start --no-build db >/dev/null || fail db_create
@@ -1942,10 +2073,9 @@ jobs:
           done
           [ "$ready" = yes ] || fail db_not_ready
           # 6. globals (the role c3po already exists), the dump, the exact counts, the server configuration
-          # further signals ignored first, then the temporary dump removed (a say that fails, the runner gone, ends the
-          # cleanup), then the sessions
+          # c2_end, the cancel each dat arms once its command started: further signals ignored first, then the temporary
+          # dump removed (a say that fails, the runner gone, ends the cleanup), then the sessions
           c2_end() { trap ':' TERM HUP INT; timeout --foreground -k 5 60 docker exec c3po-db-1 rm -f /tmp/c3po-final.dump >/dev/null 2>&1 || true; db_end; }
-          arm c2_end
           ( umask 077; grep -v -x 'CREATE ROLE c3po;' "$W/final.globals.sql" > "$W/final.globals.apply" )
           dat 360 globals timeout --foreground -k 10 300 $DC exec -T db psql -U c3po -d postgres -v ON_ERROR_STOP=1 -q < "$W/final.globals.apply" >/dev/null || fail globals
           rm -f "$W/final.globals.apply"
@@ -2084,23 +2214,48 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
-          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
-          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
-          # as in the EXIT trap) and ends the script.
-          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
-          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
-          disarm() { ARMED=:; cleanup() { :; }; }
-          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
-          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
-          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
-          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
-          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
-          handoff() {
-            local need=$1 what=$2 s=0
-            shift 2
-            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
-            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+          # on_signal: the action of TERM, HUP and INT once arm, disarm or admit installed it; bash runs it only when the
+          # command in flight has returned. While admit holds the signals it only records one (also in a file its admission
+          # checks). Otherwise it ignores any further signal, runs the cancel armed at that moment once (none after a disarm;
+          # errexit off for it, as in the EXIT trap) and ends the script. Every cancel also starts by ignoring further
+          # signals, so none cuts it short
+          on_signal() {
+            if [ "$SIG_MODE" = hold ]; then SIG_HELD=yes; if [ -n "${SIG_FILE:-}" ]; then : > "$SIG_FILE" 2>/dev/null || :; fi; return 0; fi
+            trap ':' TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143
+          }
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs and what a signal runs; disarm: none again
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; SIG_MODE=run; trap on_signal TERM HUP INT; }
+          # admit AS NEED WHAT CANCEL CMD...: CMD started only with NEED seconds left before DEADLINE, NEED covering CANCEL's
+          # whole time; the check runs in the very process that then execs CMD (as root under sudo with AS=root, as the user
+          # otherwise), and that process records the admission just before the exec, in a private directory the caller made (not
+          # a sticky one, which the kernel's protected_regular would close to root). While CMD runs, TERM, HUP and INT are only
+          # recorded, and a signal recorded before the check makes it refuse. Afterwards CANCEL is armed only with the record
+          # (CMD started or may have: it returned, erred or was cut, or a signal came); without it (refused before the exec, or
+          # the wrapper failed before the check) nothing new is armed and nothing changes, and a cancel an earlier command armed
+          # stays armed. Then a recorded signal acts (the armed cancel runs once, or nothing does) and ends the script. sudo,
+          # env, timeout, systemctl and docker never exit 95, 96 or 97
+          admit() {
+            local as=$1 need=$2 what=$3 cancel=$4 s=0 recd started=no
+            shift 4
+            : "${ARMED:=:}"
+            recd=$(mktemp -d) || fail "${what}_record"
+            SIG_FILE=$recd/signal
+            SIG_HELD=no; SIG_MODE=hold; trap on_signal TERM HUP INT
+            if [ "$SIG_HELD" = no ]; then
+              if [ "$as" = root ]; then
+                sudo env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              else
+                env D="$DEADLINE" N="$need" R="$recd/admitted" S="$SIG_FILE" bash -c '[ ! -e "$S" ] || exit 95; [ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; printf x > "$R" || exit 96; unset D N R S; exec "$@"' admit "$@" || s=$?
+              fi
+            fi
+            if [ -s "$recd/admitted" ]; then started=yes; fi
+            SIG_FILE=; rm -rf "$recd"
+            if [ "$started" = yes ]; then arm "$cancel"; else SIG_MODE=run; trap on_signal TERM HUP INT; fi
+            if [ "$SIG_HELD" = yes ]; then on_signal; fi
+            if [ "$started" = no ]; then
+              case "$s" in 97) fail "too_late_for_$what" ;; 96) fail "${what}_record_unwritable" ;; *) fail "${what}_not_started" ;; esac
+            fi
             return "$s"
           }
           # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
@@ -2132,9 +2287,9 @@ jobs:
             sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
           # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
-          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
-          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
-          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # without blocking through admit, so its cancel (sb_cancel) is armed once the admission has passed: a start queued
+          # and then cut on its client, refused only in part (a masked unit) or met by a signal is cancelled as well, only
+          # after its client has returned; a refused admission arms nothing. Every state read is bounded at 10 s,
           # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
           # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
           # pause and one more round of reads, then the cancel
@@ -2146,8 +2301,7 @@ jobs:
             SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
             reads=$(( 10 * $# ))
             need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
-            arm sb_cancel
-            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            admit root "$need" "$what" sb_cancel timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
               [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
@@ -2194,13 +2348,14 @@ jobs:
             PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
           # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
-          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
-          # unmount (120 s), then the power-off's own (PO_NEED)
+          # seconds for the work before the runtime stop, the stop of these units (stop_need, also into SN), the mask (120 s),
+          # sync and the unmount (120 s), then the power-off's own (PO_NEED)
           seq_need() {
             local pre=$1 sn
             shift
             sn=$(stop_need "$@") || fail runtime_stop_unbounded
             poweroff_need
+            SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
@@ -2231,7 +2386,9 @@ jobs:
               case "$started" in 0001-01-01T00:00:00Z|never) ;; *) fail legacy_has_run ;; esac
             done
             ids=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
-            if [ -n "$ids" ]; then at 450 container_stop timeout --foreground 300 docker stop -t 120 $ids >/dev/null || fail docker_stop; fi
+            # the stop bounded at 300 s on its client (KILL 10 s later), admitted in its own process with the rest of the
+            # sequence left after it: the check below (20 s), the runtime stop (SN), the mask, sync and the unmount, the power-off
+            if [ -n "$ids" ]; then at "$(( 450 + 20 + SN + 120 + 120 + PO_NEED ))" container_stop timeout --foreground -k 10 300 docker stop -t 120 $ids >/dev/null || fail docker_stop; fi
             left=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
             [ -z "$left" ] || fail containers_running
           else
