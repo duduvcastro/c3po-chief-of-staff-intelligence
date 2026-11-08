@@ -72,7 +72,9 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 # (poweroff.target's 30 minutes, then the forced action's final stage at the manager's default stop timeout) fits
 # before DEADLINE; C1b (before its database stop, after the copies, and again in its last payload) and R0n begin only
 # with the whole sequence's worst case left, computed from the same timeouts before its first change, and admit each
-# later change (the database stop, the container stop, the runtime stop, the mask) with the rest of it left. C1b runs
+# later change (the database stop, the container stop, the runtime stop, the mask, the unmount) with the rest of it
+# left; the tail after the mask is bounded (no separate sync: the unmount flushes its filesystem, bounded at 60 s on its
+# client, though the kernel's flush itself cannot be interrupted, and the power-off the rest). C1b runs
 # only inside a live C1a attempt (its hold record), and C1b and C2 take up a partial run again (a C1b re-run copies and
 # compares everything again, keeping the images' comparison once its last payload reached the runtime stop; C2
 # resets, before T_WRITE, a restore of its own left half done, its own database still running included).
@@ -1044,6 +1046,8 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
+          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
+          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -1340,18 +1344,32 @@ jobs:
             fi
             if [ "$rc" = 0 ]; then
               images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
-              # a re-run after the last payload reached the runtime stop (its record, which a C1a's fresh dump clears) finds
-              # Docker down there (both units inactive or failed, read as such): that payload ran only after this same
-              # comparison passed, and no image changes with Docker down, so the comparison stands; every other copy and
-              # comparison is made again
+              # the IDs, once they match, recorded on the old host. A re-run after the last payload reached the runtime stop
+              # (its record, which a C1a's fresh dump clears) finds Docker down there (both units inactive or failed, read
+              # as such): no image changes there with Docker down, so the destination is read again against the recorded
+              # IDs; every other copy and comparison is made again
               if old "test -e /var/tmp/c3po-migration/final.last-begun && [ \"\$(systemctl is-active docker.service docker.socket | grep -c -x -E 'inactive|failed')\" = 2 ]" 2>/dev/null; then
-                note "images_final=match_recorded"
+                # the destination read again against the IDs recorded on the old host when they matched (C1a clears them)
+                recorded=$(old "cat /var/tmp/c3po-migration/final.images" 2>/dev/null) || recorded=""
+                # the record whole first (one ID per image), then each ID against the destination
+                if [ "$(grep -c -x -E 'sha256:[0-9a-f]{64}' <<<"$recorded")" != "$(wc -w <<<"$images" | tr -d ' ')" ]; then note "gate=FAIL reason=image_record"; rc=1; fi
+                i=0
+                for image in $images; do
+                  [ "$rc" = 0 ] || break
+                  i=$((i + 1)); want=$(sed -n "${i}p" <<<"$recorded"); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
+                  [[ "$b" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$want" = "$b" ] || { note "gate=FAIL reason=image_drift_final"; rc=1; break; }
+                done
+                [ "$rc" = 0 ] && note "images_final=match_recorded"
               else
+                ids=""
                 for image in $images; do
                   a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
                   [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift_final"; rc=1; break; }
+                  ids="$ids$a"$'\n'
                 done
-                [ "$rc" = 0 ] && note "images_final=match"
+                if [ "$rc" = 0 ]; then
+                  if printf '%s' "$ids" | old "umask 077; cat > /var/tmp/c3po-migration/final.images" 2>/dev/null; then note "images_final=match"; else note "gate=FAIL reason=image_record"; rc=1; fi
+                fi
               fi
             fi
             if [ "$rc" = 0 ]; then
@@ -1520,6 +1538,8 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
+          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
+          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -1728,6 +1748,8 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
+          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
+          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -1744,7 +1766,7 @@ jobs:
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
           uuid=$(sudo blkid -s UUID -o value "$dev")
           [ "$(printf '%s' "$uuid" | sha256sum | cut -c1-64)" = "$DAY_D_UUID_SHA256" ] || fail day_d_uuid
-          if findmnt -n -S "UUID=$uuid" >/dev/null; then
+          if mounted -S "UUID=$uuid"; then
             for d in tmp valuation-ensemble r2d2-v2-source; do [ -d "/mnt/day-d-data/$d" ] || fail "day_d_content_$d"; done
             touch "$W/final.day-d-identified"
           else
@@ -1764,12 +1786,17 @@ jobs:
           sysop runtime_stop stop docker.socket docker.service containerd.service
           SYS_KEEP=0
           sat "$(( 120 + 120 + PO_NEED ))" runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
-          ! pgrep -x dockerd >/dev/null || fail dockerd_alive
-          sync
-          if findmnt -n -S "UUID=$uuid" >/dev/null; then
-            if ! sudo umount /mnt/day-d-data; then sudo fuser -vm /mnt/day-d-data || true; fail umount; fi
+          # the tail bounded: dockerd gone (pgrep's own answer: only 1 is none), then the unmount, which flushes the
+          # filesystem itself (no separate sync; the power-off syncs the rest), bounded at 60 s on its client (KILL 10 s
+          # later; the kernel's flush itself cannot be interrupted, and with the database and Docker long stopped there is
+          # almost nothing left to flush) and admitted in its root process with what follows it left: the re-check (10 s),
+          # the power-off's three reads (30 s) and 10 s, then the power-off's own worst case
+          ps_rc=0; timeout --foreground 10 pgrep -x dockerd >/dev/null || ps_rc=$?
+          [ "$ps_rc" = 1 ] || fail dockerd_alive
+          if mounted -S "UUID=$uuid"; then
+            if ! sat "$(( 70 + 50 + PO_NEED ))" umount timeout --foreground -k 10 60 umount /mnt/day-d-data; then sudo timeout --foreground -k 5 20 fuser -vm /mnt/day-d-data || true; fail umount; fi
           fi
-          [ -z "$(findmnt -n -S "UUID=$uuid")" ] || fail still_mounted
+          ! mounted -S "UUID=$uuid" || fail still_mounted
           say "docker=masked day_d=unmounted"
           poweroff_later
           say "gate=PASS next=console_disk_snapshot_detach_attach_static_ip_then_known_hosts"
@@ -1949,6 +1976,8 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
+          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
+          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -2358,6 +2387,8 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
+          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
+          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -2423,12 +2454,17 @@ jobs:
           sysop runtime_stop stop docker.socket docker.service containerd.service
           SYS_KEEP=0
           sat "$(( 120 + 120 + PO_NEED ))" runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
-          ! pgrep -x dockerd >/dev/null || fail dockerd_alive
-          sync
-          if findmnt -n /mnt/day-d-data >/dev/null; then
-            if ! sudo umount /mnt/day-d-data; then sudo fuser -vm /mnt/day-d-data || true; fail umount; fi
+          # the tail bounded: dockerd gone (pgrep's own answer: only 1 is none), then the unmount, which flushes the
+          # filesystem itself (no separate sync; the power-off syncs the rest), bounded at 60 s on its client (KILL 10 s
+          # later; the kernel's flush itself cannot be interrupted, and with the database and Docker long stopped there is
+          # almost nothing left to flush) and admitted in its root process with what follows it left: the re-check (10 s),
+          # the power-off's three reads (30 s) and 10 s, then the power-off's own worst case
+          ps_rc=0; timeout --foreground 10 pgrep -x dockerd >/dev/null || ps_rc=$?
+          [ "$ps_rc" = 1 ] || fail dockerd_alive
+          if mounted /mnt/day-d-data; then
+            if ! sat "$(( 70 + 50 + PO_NEED ))" umount timeout --foreground -k 10 60 umount /mnt/day-d-data; then sudo timeout --foreground -k 5 20 fuser -vm /mnt/day-d-data || true; fail umount; fi
           fi
-          ! findmnt -n /mnt/day-d-data >/dev/null || fail still_mounted
+          ! mounted /mnt/day-d-data || fail still_mounted
           rm -f /var/tmp/c3po-migration/c2.restore-begun /var/tmp/c3po-migration/c2.passed
           say "before_t_write=proven docker=masked day_d=unmounted"
           poweroff_later
