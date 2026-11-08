@@ -93,10 +93,10 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "A | B | BV | R | C0 | C0u | C1a | C1b | C2 | C3L | D | D2 | E | R0n | R0"
+        description: "A | B | BV | R | C0 | C0u | C1a | C1b | C2 | C3L | D | D2 | AP | E | R0n | R0"
         required: true
         type: choice
-        options: [A, B, BV, R, C0, C0u, C1a, C1b, C2, C3L, D, D2, E, R0n, R0]
+        options: [A, B, BV, R, C0, C0u, C1a, C1b, C2, C3L, D, D2, AP, E, R0n, R0]
       confirm:
         description: "the phase again"
         required: true
@@ -159,6 +159,34 @@ jobs:
           [ -z "$NAMED_SHA" ] || [[ "$NAMED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "the revision must be 40 hex"; exit 1; }
           case "$PHASE" in BV|C3L) [[ "$NAMED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "BV and C3L need the named revision"; exit 1; } ;; esac
           echo "phase=$PHASE pipeline_busy=0 pipeline_state=$state"
+
+      - name: AP only, the installer's unit environment file proven from its source
+        if: inputs.phase == 'AP'
+        env:
+          HC_URL: ${{ secrets.C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL }}
+        run: |
+          # install-host-security-v1.yml (main d05225611a48) writes /etc/c3po/host-security.env, which its apt-daily-upgrade
+          # drop-in hands to the unit (EnvironmentFile=), as the single line
+          # "C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL=<this secret>\n". Its urlsplit check drops CR, LF and tab before
+          # parsing, so a control character in the secret could add lines (APT_CONFIG among them) that the check never
+          # saw. The value is proven here, on the runner, before any host is touched, and never printed: a plain https URL
+          # of a closed character set (one trailing LF at most, which leaves only an empty line systemd skips), so the
+          # file holds that one key and nothing else; any other shape fails the run here
+          python3 -I - <<'PY'
+          import os
+          import re
+          import sys
+          value = os.environ.get("HC_URL", "")
+          body = value[:-1] if value.endswith("\n") else value
+          clean = re.fullmatch(r"https://[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?/[A-Za-z0-9._~/%-]{1,512}", body) is not None
+          line = "C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL=%s\n" % value
+          keys = [x.split("=", 1)[0] for x in line.split("\n") if x.strip() and "=" in x]
+          clean = clean and keys == ["C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL"]
+          print("AP env_file_keys=%d env_file_key=%s env_value_clean=%s" % (
+              len(keys), "healthcheck_only" if keys == ["C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL"] else "other",
+              "yes" if clean else "no"))
+          sys.exit(0 if clean else 1)
+          PY
 
       - name: Configure SSH
         env:
@@ -2357,6 +2385,21 @@ jobs:
           [ -z "$ud" ] || fail ap_unit_has_drop_ins
           ux=$(systemctl show -p ExecStart --value apt-daily-upgrade.service) || fail ap_unit_unreadable
           case "$ux" in *"argv[]=/usr/lib/apt/apt.systemd.daily install ;"*) ;; *) fail ap_unit_execstart_not_stock ;; esac
+          # no run of the unit in flight, nor one due within the hour: the installer's start would otherwise join a run that
+          # reads the policy from before the installer, not the one proven below
+          ua=$(systemctl show -p ActiveState --value apt-daily-upgrade.service) || fail ap_unit_unreadable
+          case "$ua" in inactive|failed) ;; *) fail ap_unit_run_in_flight ;; esac
+          # the timer as packaged (only its calendar trigger, no drop-in adding a boot or interval one)
+          tf=$(systemctl show -p FragmentPath --value apt-daily-upgrade.timer) || fail ap_timer_unreadable
+          case "$tf" in /usr/lib/systemd/system/apt-daily-upgrade.timer|/lib/systemd/system/apt-daily-upgrade.timer) ;; *) fail ap_timer_not_stock_file ;; esac
+          td=$(systemctl show -p DropInPaths --value apt-daily-upgrade.timer) || fail ap_timer_unreadable
+          [ -z "$td" ] || fail ap_timer_has_drop_ins
+          tn=$(systemctl show -p NextElapseUSecRealtime --value apt-daily-upgrade.timer) || fail ap_timer_unreadable
+          if [ -n "$tn" ] && [ "$tn" != n/a ]; then
+            te=$(date -d "$tn" +%s) || fail ap_timer_unreadable
+            [[ "$te" =~ ^[0-9]{9,11}$ ]] || fail ap_timer_unreadable
+            [ "$te" -gt $(( $(date +%s) + 3600 )) ] || fail ap_timer_due_within_the_hour
+          fi
           # the installer installs unattended-upgrades and python3-apt only when dpkg does not know them; that install would
           # add files to apt.conf.d after this proof, so both must already be installed
           st=$(dpkg-query -W -f='${Package} ${Status}\n' unattended-upgrades python3-apt) || fail ap_packages_missing
@@ -2430,6 +2473,8 @@ jobs:
           # the verdict on what the first apt-daily-upgrade will read: explicitly no reboot, no Origins-Pattern entry, and
           # Allowed-Origins exactly the installer's three security pockets
           case "$sim" in *" reboot_strict=false "*) ;; *) fail ap_sim_reboot_not_false ;; esac
+          # and the policy from before the installer does not reboot either (a run it cannot see would read that one)
+          case "$now" in *" reboot_uu=false "*) ;; *) fail ap_now_reboot_on ;; esac
           case "$sim" in *" origins_contract=yes "*) ;; *) fail ap_sim_origins_not_contract ;; esac
           case "$sim" in *" patterns=0 "*) ;; *) fail ap_sim_origins_pattern_present ;; esac
           say "$(printf '%s' "$now" | sed -E 's/(^| )([a-z_]+)=/\1now_\2=/g') main_conf=$mc contract_file=$pre"
