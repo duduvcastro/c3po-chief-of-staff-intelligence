@@ -42,8 +42,16 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #        power-off; then the console returns disk and IP and the operator restores the old C3PO_AWS_KNOWN_HOSTS.
 #   R0   then, on the old host powered on again: Docker unmasked, disk mounted, stack, timers and crontab back.
 # Every phase that changes or loads a host starts only from 05:36 to 18:29 BRT (back-outs and read-only phases at any
-# hour): with this job's 150-minute limit, the backup unit's 3-hour one and no unbounded step, all it does ends before
-# 00:00, ahead of the valuation night from 01:00 to 05:35. Payloads are staged whole before any SSH and reach the hosts base64-encoded in
+# hour; A and R are done and retired). Every host command of a run (direct, a transfer or a shipped script) runs on the
+# host under a timeout to the run's absolute DEADLINE (ten minutes before the job's own limit), computed there when it
+# starts: at DEADLINE the host sends TERM to the command's process group (the inner bounds stay in it; sudo relays TERM
+# to what it runs) and KILL 20 s later to its main process; a host clock up to 30 s behind is admitted, so the edge is
+# DEADLINE plus about 50 s and the ssh set-up. In C0, C1a and C1b the changes a daemon may carry on with after its
+# client is gone (container stops, commands in the database container, the backup unit) start only with their bound
+# left and are stopped at it (client sessions terminated, the unit stopped, also on an early exit); C1b's power-off is
+# scheduled 20 s ahead, and its last payload starts only with 5 minutes left (each of its steps re-runnable). The later
+# phases with daemon-held changes (C2's restore, C3L and D's starts, R0n's stops) are refused by the pre-flight until
+# their own delta gives them the same. Payloads are staged whole before any SSH and reach the hosts base64-encoded in
 # the ssh argument with their sha256: the host decodes them and runs only a file with that same hash, with stdin from
 # /dev/null (nothing can swallow it). On the old host they hold the reboot
 # controller's maintenance lease, and before C0 they write only their own log (/var/log/c3po-migration), the shipped
@@ -96,23 +104,27 @@ jobs:
           set -euo pipefail
           [ "$PHASE" = "$CONFIRM" ] || { echo "phase and confirmation differ"; exit 1; }
           [[ "$PHASE" =~ ^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|E|R0n|R0)$ ]] || { echo "unknown phase"; exit 1; }
+          # A (the new host's packages) and R (the rehearsal on the live database) are done (06/11) and retired: their
+          # receipts stand, and neither runs again
+          case "$PHASE" in A|R) echo "phase $PHASE is retired"; exit 1 ;; esac
+          # C2, C3L, D and R0n carry daemon-held changes (the restore in the database container, the starts, the stops)
+          # not yet admitted and bounded: refused until their own delta
+          case "$PHASE" in C2|C3L|D|R0n) echo "phase $PHASE is not yet bounded: its own delta comes first"; exit 1 ;; esac
           busy=$(gh run list --repo "$REPO" --workflow c3po-pipeline.yml --limit 20 --json status \
             --jq '[.[] | select(.status != "completed")] | length')
           [ "$busy" = "0" ] || { echo "a production pipeline is queued or running: refusing"; exit 1; }
-          # the start window (BRT): a phase that changes or loads a host starts only from 05:36 to 18:29. Its end then
-          # follows from configured limits, not from a computed deadline: this job runs at most 150 minutes, so it ends
-          # by 20:59. What can outlive it ends by 23:59 at the latest: a host script only until its next line to the
-          # runner (no stretch between two takes an hour), a direct transfer until its stream ends, a dump or a
-          # container stop already begun (minutes), and C1a's offsite backup under systemd, bounded by its unit's
-          # TimeoutStartSec=3h; every phase is re-runnable from where it stopped (the drill proves the backup). So nothing
-          # acts in the valuation worker's night, 01:00 to 05:35. Back-outs (C0u, R0n, R0) and the read-only BV and D2
-          # start at any hour
+          # the start window (BRT): a phase that changes or loads a host starts only from 05:36 to 18:29 (back-outs C0u,
+          # R0n, R0 and the read-only BV and D2 at any hour). Every host command of the run then stops at its absolute
+          # DEADLINE, set here (see old/new_tmp/static), so nothing of a phase started in the window acts after 20:49,
+          # far from the valuation worker's night (01:00 to 05:35)
           [ "$(TZ=America/Sao_Paulo date +%z)" = -0300 ] || { echo "the BRT time zone is not available"; exit 1; }
           case "$PHASE" in
             BV|D2|C0u|R0n|R0) ;;
             *) x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
                [ "$mn" -ge 336 ] && [ "$mn" -lt 1110 ] || { echo "outside the start window 05:36-18:29 BRT"; exit 1; } ;;
           esac
+          # this run's absolute deadline on every host, ten minutes before this job's own 150-minute limit
+          echo "DEADLINE=$(( $(date +%s) + 8400 ))" >> "$GITHUB_ENV"
           state=$(gh api "repos/$REPO/actions/workflows/c3po-pipeline.yml" --jq .state)
           case "$PHASE" in
             C0|C0u|C1a|C1b|C2|R0n|R0) [ "$state" = disabled_manually ] || { echo "the production pipeline must be disabled from C0 to C2 and for a back-out"; exit 1; } ;;
@@ -155,9 +167,16 @@ jobs:
           EMPTY_SHA=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
           LEASE=/usr/local/lib/c3po-security/c3po_maintenance_run.py
           # before the IP moves (A, B, R, C1a, C1b) the static address is the old host; from C2 on it is the new host
-          old() { ssh "$USER@$HOST" "$@"; }
-          new_tmp() { ssh -o HostKeyAlias=c3po-new "$USER@$NEW" "$@"; }
-          static() { ssh "$USER@$HOST" "$@"; }
+          # every host command of the run, a direct one, a transfer or a shipped script, runs under a timeout to this run's
+          # DEADLINE computed ON THE HOST when the command starts (the lease and every wait come after, inside it): the
+          # host refuses if its clock is behind the runner's by more than 30 s, so nothing of this run acts on a host
+          # after DEADLINE plus the 20 s kill margin, whether or not the runner is still there
+          bounded() {
+            printf 'RN=%s; D=%s; n=$(date +%%s); [ "$n" -ge "$((RN - 30))" ] || { echo "host clock behind" >&2; exit 96; }; t=$((D - n)); [ "$t" -ge 30 ] || { echo "deadline passed" >&2; exit 98; }; exec timeout --kill-after=20s "${t}s" bash -c %q' "$(date +%s)" "$DEADLINE" "$*"
+          }
+          old() { ssh "$USER@$HOST" "$(bounded "$@")"; }
+          new_tmp() { ssh -o HostKeyAlias=c3po-new "$USER@$NEW" "$(bounded "$@")"; }
+          static() { ssh "$USER@$HOST" "$(bounded "$@")"; }
           note() { printf '%s %s\n' "$PHASE" "$*" >> "$out"; }
           vcpus() { "$1" 'nproc' 2>/dev/null; }
           # stage [HEADER...]: the payload written WHOLE to a file before any SSH: the prelude, the header lines, then the
@@ -190,7 +209,7 @@ jobs:
             mv "$RUNNER_TEMP/payload.sh" "$p" 2>/dev/null || { note "gate=FAIL reason=payload_not_staged"; return 1; }
             pack "$p" || { note "gate=FAIL reason=payload_pack"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DAY_D_UUID_SHA256=$DAY_D_UUID_SHA256 DRIVER=${DRIVER:-none} NAMED_SHA=${NAMED_SHA:-none} DEADLINE=$DEADLINE $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/remote.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/remote.txt" >> "$out"
@@ -204,7 +223,7 @@ jobs:
             mv "$RUNNER_TEMP/payload.sh" "$p" 2>/dev/null || { note "gate=FAIL reason=payload_not_staged"; return 1; }
             pack "$p" || { note "gate=FAIL reason=payload_pack"; return 1; }
             [ "$lease" = yes ] && wrap=$LEASE
-            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
+            "$target" "set -o pipefail; PHASE=$PHASE; B64='$P_B64'; SUM=$P_SUM; $unpack; PHASE=$PHASE DEADLINE=$DEADLINE $wrap bash \"\$f\" < /dev/null; s=\$?; rm -f \"\$f\"; exit \$s" \
               > "$RUNNER_TEMP/capture.txt" 2>/dev/null
             status=$?
             grep -E "^$PHASE " "$RUNNER_TEMP/capture.txt" >> "$out"
@@ -778,9 +797,9 @@ jobs:
             cg=$(systemctl show -p ControlGroup --value cron.service)
             [ -n "$cg" ] || fail cron_cgroup_unreadable
             procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
-            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+            names=$(timeout --foreground 20 docker ps --format '{{.Names}}') || fail docker_unreadable
             summary=$(grep -c 'morning-summary' <<<"$names" || true)
-            ids=$(timeout 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
+            ids=$(timeout --foreground 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
             [ "$procs" -le 1 ] && [ "$summary" = 0 ] && [ -z "$ids" ] && break
             [ "$(date +%s)" -lt "$deadline" ] || fail jobs_still_running_after_20_min
             sleep 10
@@ -862,9 +881,9 @@ jobs:
             cg=$(systemctl show -p ControlGroup --value cron.service)
             [ -n "$cg" ] || fail cron_cgroup_unreadable
             procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
-            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+            names=$(timeout --foreground 20 docker ps --format '{{.Names}}') || fail docker_unreadable
             summary=$(grep -c 'morning-summary' <<<"$names" || true)
-            ids=$(timeout 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
+            ids=$(timeout --foreground 20 docker ps -q --filter label=com.docker.compose.oneoff=True) || fail docker_unreadable
             [ "$procs" -le 1 ] && [ "$summary" = 0 ] && [ -z "$ids" ] && break
             [ "$i" -lt 25 ] || fail cron_job_or_container_running
             sleep 5
@@ -889,7 +908,7 @@ jobs:
             cg=$(systemctl show -p ControlGroup --value cron.service)
             [ -n "$cg" ] || fail cron_cgroup_unreadable
             procs=$(wc -l < "/sys/fs/cgroup$cg/cgroup.procs")
-            names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+            names=$(timeout --foreground 20 docker ps --format '{{.Names}}') || fail docker_unreadable
             summary=$(grep -c 'morning-summary' <<<"$names" || true)
             [ "$summary" = 0 ] || fail summary_running_after_the_admission
             [ "$procs" -le 1 ] && break
@@ -935,50 +954,79 @@ jobs:
           done
           sudo sh -c "cd '$M/prestop-logs' && sha256sum *.log > SHA256SUMS"
           say "logs=kept files=$(sudo find "$M/prestop-logs" -name '*.log' | wc -l)"
-          # 6. ingress first, then every writer; the database stays up. Each stop is bounded on the client side (a hang
-          # ends in a refusal, never in a late stop) and preceded by the host's own clock (no stop from 23:00 on, the
-          # case of a runner gone without closing its connection) and by a line to the runner (it fails at once if the
-          # runner is gone)
-          late() { local x mn; x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} )); [ "$mn" -ge "$1" ] || [ "$mn" -lt 336 ]; }
-          if late 1380; then fail too_late_for_the_stops; fi
+          # at NEED WHAT CMD...: a change a daemon may carry on with (a container stop, a command in a container, a systemd
+          # unit), started only if it can still end NEED seconds before DEADLINE; the check runs in the very process that
+          # then execs the command (no gap), and the command itself is bounded inside NEED
+          at() {
+            local need=$1 what=$2 s=0
+            shift 2
+            env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' at "$@" || s=$?
+            if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          DC="docker compose --env-file $APP/.env -f $APP/c3po/compose.yml"
+          LEG="docker compose --env-file $APP/.env -f $APP/docker-compose.yml"
+          # 6. ingress first, then every writer; the database stays up. Each stop bounded at 300 s on the client (a stop
+          # takes at most its 120 s grace and the kill), admitted with 450 s left
           say "stopping=ingress"
-          timeout 300 docker compose --env-file "$APP/.env" -f "$APP/docker-compose.yml" stop -t 120 cloudflared pluggy-webhook >/dev/null || fail ingress_stop
-          if late 1380; then fail too_late_for_the_stops; fi
+          at 450 ingress_stop timeout --foreground 300 $LEG stop -t 120 cloudflared pluggy-webhook >/dev/null || fail ingress_stop
           say "stopping=writers"
-          timeout 300 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" stop -t 120 web api investor-relations-worker valuation-worker server-usage-worker r2d2-live >/dev/null || fail writers_stop
-          names=$(timeout 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+          at 450 writers_stop timeout --foreground 300 $DC stop -t 120 web api investor-relations-worker valuation-worker server-usage-worker r2d2-live >/dev/null || fail writers_stop
+          names=$(timeout --foreground 20 docker ps --format '{{.Names}}') || fail docker_unreadable
           [ "$(grep -v -x c3po-db-1 <<<"$names" | grep -c . || true)" = 0 ] || fail other_containers_running
-          others=$(dc exec -T db psql -U c3po -d c3po -At -c "select count(*) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null)
+          others=$(timeout --foreground 60 $DC exec -T db psql -U c3po -d c3po -At -c "select count(*) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null) || fail db_clients_unreadable
           [ "$others" = 0 ] || fail database_clients_left
           say "writers=stopped containers_running=1 db_clients=0"
           # 7. the final dump, the globals (role password hashes, 0600, never printed), the exact counts, the write
-          # counters (C1b proves nothing changed after the dump) and the server configuration a dump does not carry; not
-          # from 23:00 on
-          if late 1380; then fail too_late_for_the_dump; fi
+          # counters (C1b proves nothing changed after the dump) and the server configuration a dump does not carry. Each
+          # command in the container bounded on its client and admitted with its bound left; on any failure here every
+          # client session the database still serves is terminated (the writers are stopped: only these commands are its
+          # clients), so nothing of a cut dump goes on after C1a
+          kill_clients() { timeout --foreground 60 $DC exec -T db psql -U c3po -d postgres -At -c "select count(pg_terminate_backend(pid)) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null > /dev/null 2>&1 || true; }
+          dfail() { kill_clients; fail "$1"; }
           say "starting=final_dump"
-          cleanup() { dc exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || true; }
           install -d -m 0700 "$W"
           rm -f "$W"/final.*
-          cleanup
-          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db sh -c 'pg_dump -U c3po -d c3po -Fc --lock-wait-timeout=60s -f /tmp/c3po-final.dump && touch /tmp/c3po-final.ok' < /dev/null
-          dc exec -T db test -f /tmp/c3po-final.ok < /dev/null || fail pg_dump
-          dc exec -T db pg_restore --list /tmp/c3po-final.dump < /dev/null > /dev/null || fail dump_unreadable
-          dc exec -T db cat /tmp/c3po-final.dump < /dev/null > "$W/final.dump"
-          cleanup
-          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db pg_dumpall -U c3po --globals-only < /dev/null > "$W/final.globals.sql"
-          dc exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null | grep '^count|' | sort > "$W/final.counts"
-          dc exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null > "$W/final.writes"
-          dc exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/final.pgconf"
+          at 120 dump_cleanup timeout --foreground 60 $DC exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || dfail dump_cleanup
+          at 2100 final_dump timeout --foreground 1800 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db sh -c 'pg_dump -U c3po -d c3po -Fc --lock-wait-timeout=60s -f /tmp/c3po-final.dump && touch /tmp/c3po-final.ok' < /dev/null || dfail pg_dump
+          at 120 dump_check timeout --foreground 60 $DC exec -T db test -f /tmp/c3po-final.ok < /dev/null || dfail pg_dump
+          at 660 dump_list timeout --foreground 600 $DC exec -T db pg_restore --list /tmp/c3po-final.dump < /dev/null > /dev/null || dfail dump_unreadable
+          at 960 dump_copy timeout --foreground 900 $DC exec -T db cat /tmp/c3po-final.dump < /dev/null > "$W/final.dump" || dfail dump_copy
+          at 120 dump_cleanup timeout --foreground 60 $DC exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || dfail dump_cleanup
+          at 360 globals timeout --foreground 300 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db pg_dumpall -U c3po --globals-only < /dev/null > "$W/final.globals.sql" || dfail globals
+          at 960 counts timeout --foreground 900 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null > "$W/final.counts.raw" || dfail counts
+          grep '^count|' "$W/final.counts.raw" | sort > "$W/final.counts"
+          rm -f "$W/final.counts.raw"
+          at 360 writes timeout --foreground 300 $DC exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null > "$W/final.writes" || dfail writes
+          at 360 pgconf timeout --foreground 300 $DC exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/final.pgconf" || dfail pgconf
           chmod 0600 "$W"/final.*
           [ "$(wc -l < "$W/final.counts")" -ge 1 ] || fail no_counts
           say "dump_sha=$(sha256sum < "$W/final.dump" | cut -c1-64) counts_sha=$(sha256sum < "$W/final.counts" | cut -c1-64) tables=$(wc -l < "$W/final.counts")"
           # 8. one offsite backup from this same point (its unit's own guard requires the Day-D mount); its dump hash
-          # binds the restore drill dispatched next. It starts only before 21:00 by the host's own clock, so its unit's
-          # 3-hour limit ends it by 00:00
-          if late 1260; then fail too_late_for_the_backup; fi
+          # binds the restore drill dispatched next. Started without blocking, admitted with 45 minutes left, waited
+          # for, and cancelled (systemctl stop, within the unit's stop timeout) once only 3 minutes would be left: a
+          # cancelled or failed run leaves no result this C1a accepts, and a re-run starts it again
           say "starting=offsite_backup"
-          sudo systemctl start c3po-postgres-backup.service || fail backup
-          say "backup=$(systemctl show -p Result --value c3po-postgres-backup.service)"
+          inv0=$(systemctl show -p InvocationID --value c3po-postgres-backup.service)
+          # from here until it ends, any exit of this script stops the unit (the EXIT path runs cleanup)
+          cleanup() { sudo systemctl stop c3po-postgres-backup.service >/dev/null 2>&1 || true; kill_clients; }
+          at 2700 offsite_backup sudo systemctl start --no-block c3po-postgres-backup.service || fail backup_start
+          begun=no; waited=0
+          while :; do
+            inv=$(systemctl show -p InvocationID --value c3po-postgres-backup.service) || fail backup_unreadable
+            st=$(systemctl show -p ActiveState --value c3po-postgres-backup.service) || fail backup_unreadable
+            job=$(systemctl show -p Job --value c3po-postgres-backup.service) || fail backup_unreadable
+            if [ -n "$inv" ] && [ "$inv" != "$inv0" ]; then begun=yes; fi
+            if [ "$begun" = yes ]; then case "$st" in activating|active|deactivating|reloading) ;; *) break ;; esac
+            # a start refused (a failed requirement) leaves no job and no new invocation: seen within a minute
+            elif [ -z "$job" ] && [ "$waited" -ge 60 ]; then fail backup_not_started; fi
+            if [ "$(( DEADLINE - $(date +%s) ))" -lt 180 ]; then fail backup_cancelled_at_the_deadline; fi
+            sleep 10; waited=$((waited + 10))
+          done
+          cleanup() { :; }
+          res=$(systemctl show -p Result --value c3po-postgres-backup.service)
+          [ "$res" = success ] || fail "backup_result_$res"
+          say "backup=$res"
           newest=$(find "$APP/outputs/evidence/postgres-backup" -name result.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-)
           [ -n "$newest" ] || fail backup_evidence
           # the drill takes the newest upload.json and its first "/daily/" key: they must be this backup's, by the same rule,
@@ -1007,16 +1055,22 @@ jobs:
               stage <<'REMOTE' && remote old yes || rc=1
           W=/var/tmp/c3po-migration
           [ -s "$W/final.dump" ] || fail no_final_dump
+          # a clean stop already proven and recorded (a re-run, Docker possibly down already) is accepted as it is
+          if [ -e "$W/final.db-stopped-clean" ]; then say "db=stopped_clean writes_since_dump=0 recorded=yes"; say "gate=STEP"; exit 0; fi
           if [ "$(docker inspect -f '{{.State.Running}}' c3po-db-1)" = true ]; then
             [ "$(docker ps --format '{{.Names}}')" = c3po-db-1 ] || fail unexpected_containers
             writes=$(dc exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null)
             [ "$writes" = "$(cat "$W/final.writes")" ] || fail writes_after_dump
             touch "$W/final.no-writes-checked"
-            dc stop -t 120 db >/dev/null
+            # the stop bounded at 300 s on its client, admitted with 450 s left before the run's DEADLINE
+            [ "$(( DEADLINE - $(date +%s) ))" -ge 450 ] || fail too_late_for_db_stop
+            timeout --foreground 300 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" stop -t 120 db >/dev/null || fail db_stop
           fi
           [ -e "$W/final.no-writes-checked" ] || fail writes_never_checked
           docker logs --tail 50 c3po-db-1 2>&1 | grep -q 'database system is shut down' || fail db_not_clean
-          [ -z "$(docker ps -q)" ] || fail containers_running
+          ids=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
+          [ -z "$ids" ] || fail containers_running
+          touch "$W/final.db-stopped-clean"
           say "db=stopped_clean writes_since_dump=0"
           say "gate=STEP"
           # end of payload
@@ -1066,18 +1120,32 @@ jobs:
               # C2's inputs proven before the old host powers off: the Day-D filesystem C2 will look for; then Docker off,
               # the disk unmounted cleanly and nowhere mounted, the host powered off
               stage <<'REMOTE' && remote old no || rc=1
+          W=/var/tmp/c3po-migration
+          # admitted only with 5 minutes left before the run's DEADLINE (Docker's stop, the unmount, the scheduling); a
+          # partial run is taken up again where it stopped
+          [ "$(( DEADLINE - $(date +%s) ))" -ge 300 ] || fail too_late_for_the_power_off_sequence
           dev=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}')
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
           uuid=$(sudo blkid -s UUID -o value "$dev")
           [ "$(printf '%s' "$uuid" | sha256sum | cut -c1-64)" = "$DAY_D_UUID_SHA256" ] || fail day_d_uuid
-          for d in tmp valuation-ensemble r2d2-v2-source; do [ -d "/mnt/day-d-data/$d" ] || fail "day_d_content_$d"; done
+          if findmnt -n -S "UUID=$uuid" >/dev/null; then
+            for d in tmp valuation-ensemble r2d2-v2-source; do [ -d "/mnt/day-d-data/$d" ] || fail "day_d_content_$d"; done
+            touch "$W/final.day-d-identified"
+          else
+            [ -e "$W/final.day-d-identified" ] || fail day_d_unmounted_never_identified
+          fi
           say "day_d=identified_for_c2"
-          [ -z "$(docker ps -q)" ] || fail containers_running
+          if [ "$(systemctl is-active docker.service || true)" = active ]; then
+            ids=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
+            [ -z "$ids" ] || fail containers_running
+          fi
           sudo systemctl stop docker.socket docker.service containerd.service
           sudo systemctl mask docker.socket docker.service containerd.service >/dev/null
           ! pgrep -x dockerd >/dev/null || fail dockerd_alive
           sync
-          if ! sudo umount /mnt/day-d-data; then sudo fuser -vm /mnt/day-d-data || true; fail umount; fi
+          if findmnt -n -S "UUID=$uuid" >/dev/null; then
+            if ! sudo umount /mnt/day-d-data; then sudo fuser -vm /mnt/day-d-data || true; fail umount; fi
+          fi
           [ -z "$(findmnt -n -S "UUID=$uuid")" ] || fail still_mounted
           say "docker=masked day_d=unmounted"
           sudo systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null
