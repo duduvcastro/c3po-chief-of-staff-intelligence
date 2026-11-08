@@ -46,19 +46,23 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 # host under a timeout to the run's absolute DEADLINE (ten minutes before the job's own limit), computed there when it
 # starts: at DEADLINE the host sends TERM to the command's process group (the inner bounds stay in it; sudo relays TERM
 # to what it runs) and KILL 20 s later to its main process; a host clock up to 30 s behind is admitted, so the edge is
-# DEADLINE plus about 50 s and the ssh set-up. In C0, C1a and C1b the changes a daemon may carry on with after its
-# client is gone (container stops and starts, commands in the database container, the restore, the backup unit) start
-# only with their bound left and are stopped at it (client sessions terminated, the unit stopped, also on an early
-# exit), in C0, C1a, C1b, C2, C3L and R0n; C2's runtime restart ends within the units' own start timeouts; D only
-# installs a crontab. The power-offs are
-# scheduled 20 s ahead, C1b's last payload and R0n start only with 5 minutes left, and C1b and C2 take up a partial run
-# again (C2 resets, before T_WRITE, a restore of its own left half done). Payloads are staged whole before any SSH and reach the hosts base64-encoded in
-# the ssh argument with their sha256: the host decodes them and runs only a file with that same hash, with stdin from
-# /dev/null (nothing can swallow it). On the old host they hold the reboot
-# controller's maintenance lease, and before C0 they write only their own log (/var/log/c3po-migration), the shipped
-# script itself (/tmp/c3po-migration.*, removed on exit) and, in R, the rehearsal files under /var/tmp/c3po-migration
-# (removed at the end of R). Every printed line passes an anchored
-# guard plus IPv4/IPv6/host-name denies; details stay in /var/log/c3po-migration (root, 0600) on each host.
+# DEADLINE plus about 50 s and the ssh set-up. In C0, C1a, C1b, C2, C3L and R0n the changes a daemon may carry on with
+# after its client is gone (container stops and starts, commands in the database container, the restore, the backup
+# unit) start only with their bound left and are stopped at it (client sessions terminated, the unit stopped, also on an
+# early exit, within its own stop timeout, read at admission). Every stop or start handed to systemd there is blocking
+# and admitted in the very root process that hands it off with the units' own timeouts left, read from the manager (not
+# finite: refused; a stop counted at four kill stages per unit), so the effect itself ends within them; Docker's start,
+# which has no timeout of its own, is waited for within a limit and, on any exit, stopped without refusal, its end
+# proven by the units' state and by no containerd shim left. B restarts nothing (journald's copied
+# limits apply at its next start). D only installs a crontab. The power-offs are scheduled 20 s ahead only while their
+# own job limit (poweroff.target's 30 minutes, then forced) fits before DEADLINE; C1b's last payload and R0n start only
+# with 55 minutes left; C1b and C2 take up a partial run again (C2 resets, before T_WRITE, a restore of its own left half
+# done, its own database still running included). Payloads are staged whole before any SSH and reach the hosts
+# base64-encoded in the ssh argument with their sha256: the host decodes them and runs only a file with that same hash,
+# with stdin from /dev/null (nothing can swallow it). On the old host they hold the reboot controller's maintenance
+# lease, and before C0 they write only their own log (/var/log/c3po-migration) and the shipped script itself
+# (/tmp/c3po-migration.*, removed on exit). Every printed line passes an anchored guard plus IPv4/IPv6/host-name denies;
+# details stay in /var/log/c3po-migration (root, 0600) on each host.
 
 on:
   workflow_dispatch:
@@ -435,9 +439,10 @@ jobs:
               same_hash app_tree "$(tree_cmd /opt chief-of-staff-digital outputs runtime whatsapp_session)" old new_tmp || rc=1
             fi
             if [ "$rc" = 0 ]; then
-              # 2. journald's limits, as on the old host
+              # 2. journald's limits, as on the old host: the files copied, nothing restarted (they apply at journald's next
+              # start, the new host's next boot)
               if old "sudo tar -C /etc/systemd --ignore-failed-read -cpf - journald.conf journald.conf.d" 2>/dev/null \
-                | new_tmp "sudo tar -C /etc/systemd -xpf - && sudo systemctl restart systemd-journald" > /dev/null 2>&1; then note "journald=copied"
+                | new_tmp "sudo tar -C /etc/systemd -xpf -" > /dev/null 2>&1; then note "journald=copied"
               else note "gate=FAIL reason=journald"; rc=1; fi
             fi
             if [ "$rc" = 0 ]; then
@@ -867,6 +872,81 @@ jobs:
               stage <<'REMOTE' && remote old yes || rc=1
           M=/root/c3po-migration
           W=/var/tmp/c3po-migration
+          # sat NEED WHAT CMD...: a root command admitted in the very root process that then execs it (sudo starts first, then
+          # the check), only with NEED seconds left before DEADLINE
+          sat() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' sat "$@" || s=$?
+            if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
+          # none: its stop ends at once); not finite fails
+          unit_s() {
+            local p v us
+            case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
+            v=$(systemctl show -p "$p" --value "$2") || return 1
+            [ -n "$v" ] && [ "$v" != infinity ] || return 1
+            us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
+            [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
+            echo $(( (us + 999999) / 1000000 ))
+          }
+          # stop_need UNIT...: the worst case of a stop of these units, from their own timeouts: four kill stages each
+          # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
+          stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
+          # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
+          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          sysop() {
+            local what=$1 action=$2 need=60 u t
+            shift 2
+            case "$action" in
+              stop) need=$(stop_need "$@") || fail "${what}_unbounded" ;;
+              start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
+              *) fail "${what}_action" ;;
+            esac
+            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+          }
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
+          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
+          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
+          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
+          # end is proven by their state and by no containerd shim left
+          start_bounded() {
+            local what=$1 limit=$2 need sneed u st ok t0
+            shift 2
+            sneed=$(stop_need "$@") || fail "${what}_unbounded"
+            need=$(( 60 + limit + 10 + sneed ))
+            SB_UNITS="$*"; SB_NEED=$sneed
+            cleanup() { sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || true; }
+            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            t0=$(date +%s)
+            while :; do
+              ok=yes
+              for u in "$@"; do
+                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
+              done
+              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              if [ "$(( $(date +%s) - t0 ))" -ge "$limit" ]; then
+                cleanup; cleanup() { :; }
+                for u in "$@"; do
+                  st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                  case "$st" in inactive|failed) ;; *) fail "${what}_not_ended" ;; esac
+                done
+                if pgrep -f containerd-shim >/dev/null; then fail "${what}_shims_left"; fi
+                fail "${what}_timed_out_and_stopped"
+              fi
+              sleep 2
+            done
+          }
+          # the power-off: scheduled 20 s ahead only while its job's own limit (poweroff.target, 30 minutes, then forced)
+          # still fits before DEADLINE
+          poweroff_later() {
+            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            sat 1900 power_off timeout --foreground 60 systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
           # 1. C0 complete and still in place: its emptied and drained records, the saved copy, no crontab now
           sudo test -e "$M/crontab.emptied" && sudo test -e "$M/crontab.drained" && sudo test -s "$M/crontab.before" || fail c0_not_complete
           if out=$(crontab -l 2>&1); then fail crontab_live_again; fi
@@ -922,14 +1002,18 @@ jobs:
             sudo install -m 0600 -o root -g root "$W.timers" "$M/timers.before"
             rm -f "$W.timers"
           fi
+          # each stop a bounded job, each unit-file change admitted (a re-run skips a timer already moved out)
           while read -r t state; do
-            sudo systemctl disable --now "$t" >/dev/null 2>&1 || true
+            if systemctl cat "$t" >/dev/null 2>&1; then
+              sysop timer_stop stop "$t"
+              sat 120 timer_disable timeout --foreground 60 systemctl disable "$t" >/dev/null 2>&1 || fail timer_disable
+            fi
             if sudo test -f "/etc/systemd/system/$t"; then sudo mv "/etc/systemd/system/$t" "$M/units/$t"; fi
           done < <(sudo cat "$M/timers.before")
-          sudo systemctl daemon-reload
+          sat 180 daemon_reload timeout --foreground 120 systemctl daemon-reload || fail daemon_reload
           for t in apt-daily.timer apt-daily-upgrade.timer; do
-            sudo systemctl stop "$t"
-            sudo systemctl mask "$t" >/dev/null
+            sysop apt_timer_stop stop "$t"
+            sat 120 apt_timer_mask timeout --foreground 60 systemctl mask "$t" >/dev/null || fail apt_timer_mask
           done
           [ "$(systemctl list-timers --all --no-legend --plain | awk '$NF ~ /^c3po-/' | wc -l)" = 0 ] || fail c3po_timers_left
           deadline=$(( $(date +%s) + 900 ))
@@ -1008,6 +1092,8 @@ jobs:
           inv0=$(systemctl show -p InvocationID --value c3po-postgres-backup.service)
           # from here until it ends, any exit of this script stops the unit (the EXIT path runs cleanup)
           cleanup() { sudo systemctl stop c3po-postgres-backup.service >/dev/null 2>&1 || true; kill_clients; }
+          bk_stop=$(unit_s Stop c3po-postgres-backup.service) || fail backup_stop_unbounded
+          [ "$bk_stop" -le 300 ] || fail backup_stop_timeout_unexpected
           at 2700 offsite_backup sudo systemctl start --no-block c3po-postgres-backup.service || fail backup_start
           begun=no; waited=0
           while :; do
@@ -1119,9 +1205,85 @@ jobs:
               # the disk unmounted cleanly and nowhere mounted, the host powered off
               stage <<'REMOTE' && remote old no || rc=1
           W=/var/tmp/c3po-migration
-          # admitted only with 5 minutes left before the run's DEADLINE (Docker's stop, the unmount, the scheduling); a
-          # partial run is taken up again where it stopped
-          [ "$(( DEADLINE - $(date +%s) ))" -ge 300 ] || fail too_late_for_the_power_off_sequence
+          # sat NEED WHAT CMD...: a root command admitted in the very root process that then execs it (sudo starts first, then
+          # the check), only with NEED seconds left before DEADLINE
+          sat() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' sat "$@" || s=$?
+            if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
+          # none: its stop ends at once); not finite fails
+          unit_s() {
+            local p v us
+            case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
+            v=$(systemctl show -p "$p" --value "$2") || return 1
+            [ -n "$v" ] && [ "$v" != infinity ] || return 1
+            us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
+            [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
+            echo $(( (us + 999999) / 1000000 ))
+          }
+          # stop_need UNIT...: the worst case of a stop of these units, from their own timeouts: four kill stages each
+          # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
+          stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
+          # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
+          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          sysop() {
+            local what=$1 action=$2 need=60 u t
+            shift 2
+            case "$action" in
+              stop) need=$(stop_need "$@") || fail "${what}_unbounded" ;;
+              start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
+              *) fail "${what}_action" ;;
+            esac
+            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+          }
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
+          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
+          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
+          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
+          # end is proven by their state and by no containerd shim left
+          start_bounded() {
+            local what=$1 limit=$2 need sneed u st ok t0
+            shift 2
+            sneed=$(stop_need "$@") || fail "${what}_unbounded"
+            need=$(( 60 + limit + 10 + sneed ))
+            SB_UNITS="$*"; SB_NEED=$sneed
+            cleanup() { sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || true; }
+            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            t0=$(date +%s)
+            while :; do
+              ok=yes
+              for u in "$@"; do
+                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
+              done
+              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              if [ "$(( $(date +%s) - t0 ))" -ge "$limit" ]; then
+                cleanup; cleanup() { :; }
+                for u in "$@"; do
+                  st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                  case "$st" in inactive|failed) ;; *) fail "${what}_not_ended" ;; esac
+                done
+                if pgrep -f containerd-shim >/dev/null; then fail "${what}_shims_left"; fi
+                fail "${what}_timed_out_and_stopped"
+              fi
+              sleep 2
+            done
+          }
+          # the power-off: scheduled 20 s ahead only while its job's own limit (poweroff.target, 30 minutes, then forced)
+          # still fits before DEADLINE
+          poweroff_later() {
+            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            sat 1900 power_off timeout --foreground 60 systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
+          # admitted only with 55 minutes left before the run's DEADLINE (the runtime stop's worst case, four kill stages
+          # per unit, the mask, the power-off's own limit), each hand-off to systemd admitted again on its own; a partial
+          # run is taken up again
+          [ "$(( DEADLINE - $(date +%s) ))" -ge 3300 ] || fail too_late_for_the_power_off_sequence
           dev=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}')
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
           uuid=$(sudo blkid -s UUID -o value "$dev")
@@ -1137,8 +1299,8 @@ jobs:
             ids=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
             [ -z "$ids" ] || fail containers_running
           fi
-          sudo systemctl stop docker.socket docker.service containerd.service
-          sudo systemctl mask docker.socket docker.service containerd.service >/dev/null
+          sysop runtime_stop stop docker.socket docker.service containerd.service
+          sat 120 runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
           ! pgrep -x dockerd >/dev/null || fail dockerd_alive
           sync
           if findmnt -n -S "UUID=$uuid" >/dev/null; then
@@ -1146,7 +1308,7 @@ jobs:
           fi
           [ -z "$(findmnt -n -S "UUID=$uuid")" ] || fail still_mounted
           say "docker=masked day_d=unmounted"
-          sudo systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null
+          poweroff_later
           say "gate=PASS next=console_disk_snapshot_detach_attach_static_ip_then_known_hosts"
           # end of payload
           REMOTE
@@ -1171,6 +1333,81 @@ jobs:
           }
           DC="docker compose --env-file $APP/.env -f $APP/c3po/compose.yml"
           LEG="docker compose --env-file $APP/.env -f $APP/docker-compose.yml"
+          # sat NEED WHAT CMD...: a root command admitted in the very root process that then execs it (sudo starts first, then
+          # the check), only with NEED seconds left before DEADLINE
+          sat() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' sat "$@" || s=$?
+            if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
+          # none: its stop ends at once); not finite fails
+          unit_s() {
+            local p v us
+            case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
+            v=$(systemctl show -p "$p" --value "$2") || return 1
+            [ -n "$v" ] && [ "$v" != infinity ] || return 1
+            us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
+            [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
+            echo $(( (us + 999999) / 1000000 ))
+          }
+          # stop_need UNIT...: the worst case of a stop of these units, from their own timeouts: four kill stages each
+          # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
+          stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
+          # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
+          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          sysop() {
+            local what=$1 action=$2 need=60 u t
+            shift 2
+            case "$action" in
+              stop) need=$(stop_need "$@") || fail "${what}_unbounded" ;;
+              start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
+              *) fail "${what}_action" ;;
+            esac
+            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+          }
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
+          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
+          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
+          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
+          # end is proven by their state and by no containerd shim left
+          start_bounded() {
+            local what=$1 limit=$2 need sneed u st ok t0
+            shift 2
+            sneed=$(stop_need "$@") || fail "${what}_unbounded"
+            need=$(( 60 + limit + 10 + sneed ))
+            SB_UNITS="$*"; SB_NEED=$sneed
+            cleanup() { sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || true; }
+            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            t0=$(date +%s)
+            while :; do
+              ok=yes
+              for u in "$@"; do
+                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
+              done
+              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              if [ "$(( $(date +%s) - t0 ))" -ge "$limit" ]; then
+                cleanup; cleanup() { :; }
+                for u in "$@"; do
+                  st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                  case "$st" in inactive|failed) ;; *) fail "${what}_not_ended" ;; esac
+                done
+                if pgrep -f containerd-shim >/dev/null; then fail "${what}_shims_left"; fi
+                fail "${what}_timed_out_and_stopped"
+              fi
+              sleep 2
+            done
+          }
+          # the power-off: scheduled 20 s ahead only while its job's own limit (poweroff.target, 30 minutes, then forced)
+          # still fits before DEADLINE
+          poweroff_later() {
+            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            sat 1900 power_off timeout --foreground 60 systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
           # on any failure from the restore on, the database's client sessions (only C2's own: nothing else runs yet) end
           kill_clients() { timeout --foreground 60 $DC exec -T db psql -U c3po -d postgres -At -c "select count(pg_terminate_backend(pid)) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null > /dev/null 2>&1 || true; }
           dfail() { kill_clients; fail "$1"; }
@@ -1198,7 +1435,7 @@ jobs:
             installed=$((installed + 1))
           done
           [ "$installed" = 5 ] || fail guards_incomplete
-          sudo systemctl daemon-reload
+          sat 180 daemon_reload timeout --foreground 120 systemctl daemon-reload || fail daemon_reload
           guarded=0
           for u in containerd.service docker.service docker.socket; do
             case " $(systemctl show -p RequiresMountsFor --value "$u") " in
@@ -1215,7 +1452,8 @@ jobs:
           done
           # the writers' units arrive only with the host installers after D; their drop-ins are in place and compared above
           sudo /usr/local/libexec/c3po-day-d-guard >/dev/null 2>&1 || fail guard_refuses_mounted_day_d
-          at 300 runtime_restart sudo timeout --foreground 240 systemctl restart containerd docker || fail runtime_restart
+          sysop runtime_stop stop docker.socket docker.service containerd.service
+          start_bounded runtime_start 300 containerd.service docker.socket docker.service
           systemctl is-active --quiet containerd || fail containerd_with_guard
           systemctl is-active --quiet docker || fail docker_with_guard
           say "guards=installed dropins=$installed runtime_units_guarded=$guarded containerd=active docker=active requires_day_d=yes"
@@ -1230,8 +1468,13 @@ jobs:
           say "free_g=$free_g"
           # 4. the legacy network and containers CREATED, not started (the c3po compose needs that network)
           at 300 legacy_create timeout --foreground 240 $LEG up --no-start --no-build cloudflared pluggy-webhook >/dev/null || fail legacy_create
-          ids=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
-          [ -z "$ids" ] || fail started_something
+          # running now: nothing, or only this C2's own database from an attempt that began and did not pass
+          ids=$(timeout --foreground 20 docker ps --format '{{.Names}}') || fail docker_unreadable
+          case "$ids" in
+            "") ;;
+            c3po-db-1) { [ -e "$W/c2.restore-begun" ] && [ ! -e "$W/c2.passed" ]; } || fail started_something ;;
+            *) fail started_something ;;
+          esac
           # 5. the database alone: compose creates its volume and container, the volume is proven empty, then it starts. A
           # volume a C2 restore began (its record) is reset first, only before T_WRITE: no container but the database and
           # the two legacy ones C2 creates
@@ -1393,8 +1636,84 @@ jobs:
           }
           DC="docker compose --env-file $APP/.env -f $APP/c3po/compose.yml"
           LEG="docker compose --env-file $APP/.env -f $APP/docker-compose.yml"
-          # admitted only with 5 minutes left before the run's DEADLINE (the stops, the unmount, the scheduling)
-          [ "$(( DEADLINE - $(date +%s) ))" -ge 300 ] || fail too_late_for_the_back_out
+          # sat NEED WHAT CMD...: a root command admitted in the very root process that then execs it (sudo starts first, then
+          # the check), only with NEED seconds left before DEADLINE
+          sat() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' sat "$@" || s=$?
+            if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
+          # none: its stop ends at once); not finite fails
+          unit_s() {
+            local p v us
+            case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
+            v=$(systemctl show -p "$p" --value "$2") || return 1
+            [ -n "$v" ] && [ "$v" != infinity ] || return 1
+            us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
+            [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
+            echo $(( (us + 999999) / 1000000 ))
+          }
+          # stop_need UNIT...: the worst case of a stop of these units, from their own timeouts: four kill stages each
+          # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
+          stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
+          # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
+          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          sysop() {
+            local what=$1 action=$2 need=60 u t
+            shift 2
+            case "$action" in
+              stop) need=$(stop_need "$@") || fail "${what}_unbounded" ;;
+              start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
+              *) fail "${what}_action" ;;
+            esac
+            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+          }
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
+          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
+          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
+          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
+          # end is proven by their state and by no containerd shim left
+          start_bounded() {
+            local what=$1 limit=$2 need sneed u st ok t0
+            shift 2
+            sneed=$(stop_need "$@") || fail "${what}_unbounded"
+            need=$(( 60 + limit + 10 + sneed ))
+            SB_UNITS="$*"; SB_NEED=$sneed
+            cleanup() { sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || true; }
+            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            t0=$(date +%s)
+            while :; do
+              ok=yes
+              for u in "$@"; do
+                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
+              done
+              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              if [ "$(( $(date +%s) - t0 ))" -ge "$limit" ]; then
+                cleanup; cleanup() { :; }
+                for u in "$@"; do
+                  st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                  case "$st" in inactive|failed) ;; *) fail "${what}_not_ended" ;; esac
+                done
+                if pgrep -f containerd-shim >/dev/null; then fail "${what}_shims_left"; fi
+                fail "${what}_timed_out_and_stopped"
+              fi
+              sleep 2
+            done
+          }
+          # the power-off: scheduled 20 s ahead only while its job's own limit (poweroff.target, 30 minutes, then forced)
+          # still fits before DEADLINE
+          poweroff_later() {
+            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            sat 1900 power_off timeout --foreground 60 systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
+          # admitted only with 62 minutes left before the run's DEADLINE (the container stop, the runtime stop's worst
+          # case, four kill stages per unit, the mask, the power-off's own limit), each hand-off to systemd admitted again
+          [ "$(( DEADLINE - $(date +%s) ))" -ge 3700 ] || fail too_late_for_the_back_out
           # only before T_WRITE, and proven here: no crontab, no container but the database and the two legacy ones C2
           # created, and the tunnel connector never started
           [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_present
@@ -1440,8 +1759,8 @@ jobs:
             done <<<"$recs"
             say "docker=down_at_back_out container_records=$n"
           fi
-          sudo systemctl stop docker.socket docker.service containerd.service
-          sudo systemctl mask docker.socket docker.service containerd.service >/dev/null
+          sysop runtime_stop stop docker.socket docker.service containerd.service
+          sat 120 runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
           ! pgrep -x dockerd >/dev/null || fail dockerd_alive
           sync
           if findmnt -n /mnt/day-d-data >/dev/null; then
@@ -1450,7 +1769,7 @@ jobs:
           ! findmnt -n /mnt/day-d-data >/dev/null || fail still_mounted
           rm -f /var/tmp/c3po-migration/c2.restore-begun /var/tmp/c3po-migration/c2.passed
           say "before_t_write=proven docker=masked day_d=unmounted"
-          sudo systemd-run --on-active=20 --unit=c3po-migration-poweroff systemctl poweroff >/dev/null
+          poweroff_later
           say "gate=PASS next=console_return_disk_and_ip_then_old_known_hosts_then_R0"
           # end of payload
           REMOTE
