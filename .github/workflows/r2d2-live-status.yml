@@ -2250,12 +2250,30 @@ jobs:
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
               stage <<'REMOTE' && remote static no || rc=1
-          # the crontab the old host ran until C1a (saved there, carried in C1b)
-          [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_not_empty
-          sudo test -s /root/c3po-migration/crontab.before || fail no_saved_crontab
-          sudo cat /root/c3po-migration/crontab.before | crontab -
-          crontab -l | sudo cmp -s /root/c3po-migration/crontab.before - || fail crontab_install
-          say "crontab=installed lines=$(crontab -l | grep -c -v -E '^\s*(#|$)')"
+          # the crontab the old host ran until C1a (saved there, carried in C1b): both saved copies read whole into private files,
+          # each read's own status kept, and they must be the same bytes (C1b's copy of the saved file and B's stored copy, which
+          # C1a compared with the old host's); only then is anything installed
+          M=/root/c3po-migration
+          cd_dir=$(mktemp -d) || fail crontab_workdir
+          sudo cat "$M/crontab.before" > "$cd_dir/saved" || fail crontab_saved_unreadable
+          sudo cat "$M/crontab.deploy" > "$cd_dir/stored" || fail crontab_stored_unreadable
+          [ -s "$cd_dir/saved" ] || fail no_saved_crontab
+          cmp -s "$cd_dir/saved" "$cd_dir/stored" || fail crontab_copies_differ
+          # the user's current crontab, read with its own status: "no crontab for" is the only absence; one already equal to the
+          # saved file is a re-run; any other content or error refuses
+          cs=0; crontab -l > "$cd_dir/current" 2> "$cd_dir/current.err" || cs=$?
+          if [ "$cs" = 0 ]; then
+            cmp -s "$cd_dir/saved" "$cd_dir/current" || fail crontab_not_empty
+            say "crontab=already_installed"
+          else
+            case "$(cat "$cd_dir/current.err")" in "no crontab for "*) ;; *) fail crontab_unreadable ;; esac
+            # installed from the file read whole (no pipe), then read back and compared byte for byte
+            crontab "$cd_dir/saved" || fail crontab_install
+          fi
+          crontab -l > "$cd_dir/after" || fail crontab_unreadable
+          cmp -s "$cd_dir/saved" "$cd_dir/after" || fail crontab_install
+          say "crontab=installed lines=$(grep -c -v -E '^\s*(#|$)' "$cd_dir/after")"
+          rm -rf "$cd_dir"
           say "gate=PASS"
           # end of payload
           REMOTE
