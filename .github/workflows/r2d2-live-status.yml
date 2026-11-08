@@ -1046,8 +1046,16 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
-          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
-          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
+          # mounts: the kernel's own mount table of this namespace (the host's), read whole and bounded at 10 s, and proven read:
+          # it must hold the root mount; unreadable, empty or rootless fails the run (findmnt is not used: its exit 1 means both
+          # nothing found and a failed read). at_mount PATH (a mount point) and dev_mounted MAJ:MIN (the volume, anywhere) answer
+          # from a fresh read: 0 mounted, 1 not; anything else fails the run
+          mounts() {
+            MOUNTS=$(timeout --foreground 10 cat /proc/self/mountinfo) || fail mounts_unreadable
+            [ "$(awk '$5 == "/" { n++ } END { print n + 0 }' <<<"$MOUNTS")" -ge 1 ] || fail mounts_unreadable
+          }
+          at_mount() { local m; mounts; m=$(awk -v p="$1" '$5 == p { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
+          dev_mounted() { local m; mounts; m=$(awk -v d="$1" '$3 == d { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -1352,18 +1360,19 @@ jobs:
                 # the destination read again against the IDs recorded on the old host when they matched (C1a clears them)
                 recorded=$(old "cat /var/tmp/c3po-migration/final.images" 2>/dev/null) || recorded=""
                 # the record whole first (one ID per image), then each ID against the destination
-                if [ "$(grep -c -x -E 'sha256:[0-9a-f]{64}' <<<"$recorded")" != "$(wc -w <<<"$images" | tr -d ' ')" ]; then note "gate=FAIL reason=image_record"; rc=1; fi
+                n_img=$(wc -w <<<"$images" | tr -d ' ')
+                if [ "$(grep -c -x -E 'sha256:[0-9a-f]{64}' <<<"$recorded")" != "$n_img" ] || [ "$(grep -c '' <<<"$recorded")" != "$n_img" ]; then note "gate=FAIL reason=image_record"; rc=1; fi
                 i=0
                 for image in $images; do
                   [ "$rc" = 0 ] || break
-                  i=$((i + 1)); want=$(sed -n "${i}p" <<<"$recorded"); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
+                  i=$((i + 1)); want=$(sed -n "${i}p" <<<"$recorded"); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null) || b=""
                   [[ "$b" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$want" = "$b" ] || { note "gate=FAIL reason=image_drift_final"; rc=1; break; }
                 done
                 [ "$rc" = 0 ] && note "images_final=match_recorded"
               else
                 ids=""
                 for image in $images; do
-                  a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
+                  a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null) || a=""; b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null) || b=""
                   [[ "$a" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$a" = "$b" ] || { note "gate=FAIL reason=image_drift_final"; rc=1; break; }
                   ids="$ids$a"$'\n'
                 done
@@ -1538,8 +1547,16 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
-          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
-          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
+          # mounts: the kernel's own mount table of this namespace (the host's), read whole and bounded at 10 s, and proven read:
+          # it must hold the root mount; unreadable, empty or rootless fails the run (findmnt is not used: its exit 1 means both
+          # nothing found and a failed read). at_mount PATH (a mount point) and dev_mounted MAJ:MIN (the volume, anywhere) answer
+          # from a fresh read: 0 mounted, 1 not; anything else fails the run
+          mounts() {
+            MOUNTS=$(timeout --foreground 10 cat /proc/self/mountinfo) || fail mounts_unreadable
+            [ "$(awk '$5 == "/" { n++ } END { print n + 0 }' <<<"$MOUNTS")" -ge 1 ] || fail mounts_unreadable
+          }
+          at_mount() { local m; mounts; m=$(awk -v p="$1" '$5 == p { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
+          dev_mounted() { local m; mounts; m=$(awk -v d="$1" '$3 == d { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -1748,8 +1765,16 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
-          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
-          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
+          # mounts: the kernel's own mount table of this namespace (the host's), read whole and bounded at 10 s, and proven read:
+          # it must hold the root mount; unreadable, empty or rootless fails the run (findmnt is not used: its exit 1 means both
+          # nothing found and a failed read). at_mount PATH (a mount point) and dev_mounted MAJ:MIN (the volume, anywhere) answer
+          # from a fresh read: 0 mounted, 1 not; anything else fails the run
+          mounts() {
+            MOUNTS=$(timeout --foreground 10 cat /proc/self/mountinfo) || fail mounts_unreadable
+            [ "$(awk '$5 == "/" { n++ } END { print n + 0 }' <<<"$MOUNTS")" -ge 1 ] || fail mounts_unreadable
+          }
+          at_mount() { local m; mounts; m=$(awk -v p="$1" '$5 == p { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
+          dev_mounted() { local m; mounts; m=$(awk -v d="$1" '$3 == d { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -1766,7 +1791,20 @@ jobs:
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
           uuid=$(sudo blkid -s UUID -o value "$dev")
           [ "$(printf '%s' "$uuid" | sha256sum | cut -c1-64)" = "$DAY_D_UUID_SHA256" ] || fail day_d_uuid
-          if mounted -S "UUID=$uuid"; then
+          # the volume's own major:minor, the device number the kernel's mount table carries for it wherever it is mounted
+          majmin=$(timeout --foreground 10 lsblk -dnro MAJ:MIN "$dev") || fail day_d_device
+          [[ "$majmin" =~ ^[0-9]+:[0-9]+$ ]] || fail day_d_device
+          # and the kernel's own record of that ext4 filesystem (/sys/fs/ext4/KNAME), present exactly while it is mounted in
+          # any namespace: an independent signal that must agree with the table at every check
+          kname=$(timeout --foreground 10 lsblk -dnro KNAME "$dev") || fail day_d_device
+          [[ "$kname" =~ ^[A-Za-z0-9_-]+$ ]] || fail day_d_device
+          dayd_mounted() {
+            if dev_mounted "$majmin"; then [ -d "/sys/fs/ext4/$kname" ] || fail day_d_state_disagrees; return 0; fi
+            [ -d /sys/fs/ext4 ] || fail day_d_state_unreadable
+            [ ! -e "/sys/fs/ext4/$kname" ] || fail day_d_mounted_elsewhere
+            return 1
+          }
+          if dayd_mounted; then
             for d in tmp valuation-ensemble r2d2-v2-source; do [ -d "/mnt/day-d-data/$d" ] || fail "day_d_content_$d"; done
             touch "$W/final.day-d-identified"
           else
@@ -1793,10 +1831,10 @@ jobs:
           # the power-off's three reads (30 s) and 10 s, then the power-off's own worst case
           ps_rc=0; timeout --foreground 10 pgrep -x dockerd >/dev/null || ps_rc=$?
           [ "$ps_rc" = 1 ] || fail dockerd_alive
-          if mounted -S "UUID=$uuid"; then
+          if dayd_mounted; then
             if ! sat "$(( 70 + 50 + PO_NEED ))" umount timeout --foreground -k 10 60 umount /mnt/day-d-data; then sudo timeout --foreground -k 5 20 fuser -vm /mnt/day-d-data || true; fail umount; fi
           fi
-          ! mounted -S "UUID=$uuid" || fail still_mounted
+          ! dayd_mounted || fail still_mounted
           say "docker=masked day_d=unmounted"
           poweroff_later
           say "gate=PASS next=console_disk_snapshot_detach_attach_static_ip_then_known_hosts"
@@ -1976,8 +2014,16 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
-          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
-          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
+          # mounts: the kernel's own mount table of this namespace (the host's), read whole and bounded at 10 s, and proven read:
+          # it must hold the root mount; unreadable, empty or rootless fails the run (findmnt is not used: its exit 1 means both
+          # nothing found and a failed read). at_mount PATH (a mount point) and dev_mounted MAJ:MIN (the volume, anywhere) answer
+          # from a fresh read: 0 mounted, 1 not; anything else fails the run
+          mounts() {
+            MOUNTS=$(timeout --foreground 10 cat /proc/self/mountinfo) || fail mounts_unreadable
+            [ "$(awk '$5 == "/" { n++ } END { print n + 0 }' <<<"$MOUNTS")" -ge 1 ] || fail mounts_unreadable
+          }
+          at_mount() { local m; mounts; m=$(awk -v p="$1" '$5 == p { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
+          dev_mounted() { local m; mounts; m=$(awk -v d="$1" '$3 == d { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -2387,8 +2433,16 @@ jobs:
             SN=$sn
             SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
           }
-          # mounted FINDMNT_ARGS...: findmnt's own answer, bounded at 10 s: 0 mounted, 1 not; anything else fails the run
-          mounted() { local m=0; timeout --foreground 10 findmnt -n "$@" >/dev/null || m=$?; case "$m" in 0) return 0 ;; 1) return 1 ;; *) fail findmnt_unreadable ;; esac; }
+          # mounts: the kernel's own mount table of this namespace (the host's), read whole and bounded at 10 s, and proven read:
+          # it must hold the root mount; unreadable, empty or rootless fails the run (findmnt is not used: its exit 1 means both
+          # nothing found and a failed read). at_mount PATH (a mount point) and dev_mounted MAJ:MIN (the volume, anywhere) answer
+          # from a fresh read: 0 mounted, 1 not; anything else fails the run
+          mounts() {
+            MOUNTS=$(timeout --foreground 10 cat /proc/self/mountinfo) || fail mounts_unreadable
+            [ "$(awk '$5 == "/" { n++ } END { print n + 0 }' <<<"$MOUNTS")" -ge 1 ] || fail mounts_unreadable
+          }
+          at_mount() { local m; mounts; m=$(awk -v p="$1" '$5 == p { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
+          dev_mounted() { local m; mounts; m=$(awk -v d="$1" '$3 == d { f = 1 } END { print (f ? "yes" : "no") }' <<<"$MOUNTS") || fail mounts_unreadable; case "$m" in yes) return 0 ;; no) return 1 ;; *) fail mounts_unreadable ;; esac; }
           # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
           # still fits before DEADLINE
           poweroff_later() {
@@ -2458,13 +2512,16 @@ jobs:
           # filesystem itself (no separate sync; the power-off syncs the rest), bounded at 60 s on its client (KILL 10 s
           # later; the kernel's flush itself cannot be interrupted, and with the database and Docker long stopped there is
           # almost nothing left to flush) and admitted in its root process with what follows it left: the re-check (10 s),
-          # the power-off's three reads (30 s) and 10 s, then the power-off's own worst case
+          # the two device reads of the point (20 s), the power-off's three reads (30 s) and 10 s, then the power-off's own
+          # worst case
           ps_rc=0; timeout --foreground 10 pgrep -x dockerd >/dev/null || ps_rc=$?
           [ "$ps_rc" = 1 ] || fail dockerd_alive
-          if mounted /mnt/day-d-data; then
-            if ! sat "$(( 70 + 50 + PO_NEED ))" umount timeout --foreground -k 10 60 umount /mnt/day-d-data; then sudo timeout --foreground -k 5 20 fuser -vm /mnt/day-d-data || true; fail umount; fi
+          if at_mount /mnt/day-d-data; then
+            if ! sat "$(( 70 + 70 + PO_NEED ))" umount timeout --foreground -k 10 60 umount /mnt/day-d-data; then sudo timeout --foreground -k 5 20 fuser -vm /mnt/day-d-data || true; fail umount; fi
           fi
-          ! mounted /mnt/day-d-data || fail still_mounted
+          ! at_mount /mnt/day-d-data || fail still_mounted
+          # and independently: nothing is mounted at the point when it lies on its parent's filesystem
+          pd=$(timeout --foreground 10 stat -c %d /mnt/day-d-data) && md=$(timeout --foreground 10 stat -c %d /mnt) && [ -n "$pd" ] && [ "$pd" = "$md" ] || fail still_mounted
           rm -f /var/tmp/c3po-migration/c2.restore-begun /var/tmp/c3po-migration/c2.passed
           say "before_t_write=proven docker=masked day_d=unmounted"
           poweroff_later
