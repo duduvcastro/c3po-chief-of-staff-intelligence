@@ -44,20 +44,36 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 # Every phase that changes or loads a host starts only from 05:36 to 18:29 BRT (back-outs and read-only phases at any
 # hour; A and R are done and retired). Every host command of a run (direct, a transfer or a shipped script) runs on the
 # host under a timeout to the run's absolute DEADLINE (ten minutes before the job's own limit), computed there when it
-# starts: at DEADLINE the host sends TERM to the command's process group (the inner bounds stay in it; sudo relays TERM
-# to what it runs) and KILL 20 s later to its main process; a host clock up to 30 s behind is admitted, so the edge is
-# DEADLINE plus about 50 s and the ssh set-up. In C0, C1a, C1b, C2, C3L and R0n the changes a daemon may carry on with
-# after its client is gone (container stops and starts, commands in the database container, the restore, the backup
-# unit) start only with their bound left and are stopped at it (client sessions terminated, the unit stopped, also on an
-# early exit, within its own stop timeout, read at admission). Every stop or start handed to systemd there is blocking
-# and admitted in the very root process that hands it off with the units' own timeouts left, read from the manager (not
-# finite: refused; a stop counted at four kill stages per unit), so the effect itself ends within them; Docker's start,
-# which has no timeout of its own, is waited for within a limit and, on any exit, stopped without refusal, its end
-# proven by the units' state and by no containerd shim left. B restarts nothing (journald's copied
-# limits apply at its next start). D only installs a crontab. The power-offs are scheduled 20 s ahead only while their
-# own job limit (poweroff.target's 30 minutes, then forced) fits before DEADLINE; C1b's last payload and R0n start only
-# with 55 minutes left; C1b and C2 take up a partial run again (C2 resets, before T_WRITE, a restore of its own left half
-# done, its own database still running included). Payloads are staged whole before any SSH and reach the hosts
+# starts: at DEADLINE the host sends TERM to the command's process group and KILL 20 s later to its main process if
+# still alive; a host clock up to 30 s behind is admitted. That TERM reaches only the user's processes: a root process
+# under sudo is out of its reach, and sudo relays no signal sent from its own process group. So in the payloads of C0,
+# C1a, C1b, C2, C3L and R0n each root command that hands work to a daemon carries its own bound, admitted with it left
+# before DEADLINE (R0, the old host's back-out, and the runner's volume creation in C1b do not); the other root
+# commands are local reads and writes, the ends of transfers (they stop with their stream) and the unmount. The edge
+# is DEADLINE plus about 50 s and the ssh set-up, except for a cancel the TERM itself sets off, ending in its bounds.
+# In C0, C1a, C1b, C2, C3L and R0n the changes a daemon may carry on with after its client is gone (container stops
+# and starts, commands in the database container, the restore, the backup unit) start only with their bound and their
+# cancel's time left. From the first cancel armed on, a TERM, HUP or INT is held until the command in flight has
+# returned, then runs the cancel armed at that moment once (none after a disarm) and ends the script; every cancel
+# ignores any further signal, so none cuts it short. On any exit while
+# they may run, the database's client sessions are ended and that proven (a fresh count of 0 from a superuser and no
+# client program left in its container; pg_terminate_backend only sends the signal), and the backup unit is
+# stopped within its own stop timeout, read at admission, its end confirmed by its state and by no compose one-off
+# left. A hand-off whose effect is waited for (the backup, Docker's start) has its cancel armed before it: only the
+# admission's own refusal, before anything is handed off, disarms it, so a start queued whose client errs or is cut,
+# or a TERM in the hand-off, is cancelled too, after its client has returned; every state read is bounded, and the
+# cancel's time is kept before the reads and checked again after them. Every other stop or start handed to systemd
+# there is blocking and admitted in the very root process that hands it off with the units' own timeouts left (plus
+# what must follow it, where a sequence goes on), read from the manager (not finite: refused; a stop counted at four
+# kill stages per unit), so the effect itself ends within them. B restarts nothing (journald's copied limits apply at
+# its next start). D only installs a crontab. The power-offs are scheduled 20 s ahead only while their own worst case
+# (poweroff.target's 30 minutes, then the forced action's final stage at the manager's default stop timeout) fits
+# before DEADLINE; C1b (before its database stop, and again in its last payload) and R0n begin only with the whole
+# sequence's worst case left, computed from the same timeouts before its first change, and admit each later change
+# with the rest of it left. C1b runs only inside a live C1a attempt (its hold record) and C1b and C2 take up a partial
+# run again (C1b goes straight to its last payload once that reached the runtime stop; C2 resets, before T_WRITE, a
+# restore of its own left half done, its own database still running included).
+# Payloads are staged whole before any SSH and reach the hosts
 # base64-encoded in the ssh argument with their sha256: the host decodes them and runs only a file with that same hash,
 # with stdin from /dev/null (nothing can swallow it). On the old host they hold the reboot controller's maintenance
 # lease, and before C0 they write only their own log (/var/log/c3po-migration) and the shipped script itself
@@ -881,12 +897,31 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
-          # none: its stop ends at once); not finite fails
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
+          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
+          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
+          # as in the EXIT trap) and ends the script.
+          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; }
+          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
+          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
+          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
+          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
+          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
+          handoff() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
+            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
+          # a timer has none: its stop ends at once); not finite fails
           unit_s() {
             local p v us
             case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
-            v=$(systemctl show -p "$p" --value "$2") || return 1
+            v=$(timeout --foreground 10 systemctl show -p "$p" --value "$2") || return 1
             [ -n "$v" ] && [ "$v" != infinity ] || return 1
             us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
@@ -896,8 +931,9 @@ jobs:
           # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
           stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
           # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
-          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
-          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s), plus SYS_KEEP seconds (0 unless
+          # set) for what must follow it; it returns only when the jobs of the named units have ended, and systemd ends them
+          # within those timeouts, so the effect itself is bounded
           sysop() {
             local what=$1 action=$2 need=60 u t
             shift 2
@@ -906,64 +942,85 @@ jobs:
               start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
               *) fail "${what}_action" ;;
             esac
-            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+            sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
-          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
-          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
-          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
-          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
-          # end is proven by their state and by no containerd shim left
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
+          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
+          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
+          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
+          # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
+          # pause and one more round of reads, then the cancel
           start_bounded() {
-            local what=$1 limit=$2 need sneed u st ok t0
+            local what=$1 limit=$2 sneed reads need u st ok t0
             shift 2
             sneed=$(stop_need "$@") || fail "${what}_unbounded"
-            need=$(( 60 + limit + 10 + sneed ))
-            SB_UNITS="$*"; SB_NEED=$sneed; SB_WHAT=$what
-            # a hand-off refused only in part (a masked unit) or cut on its client may still have queued jobs: cancelled too
-            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || { sb_cancel; fail "${what}_handoff"; }
-            # from the hand-off on, every exit of the script (failed, unreadable, the limit, the deadline, any error) runs
-            # the one cancel-and-confirm below
-            cleanup() { sb_cancel; }
+            # the cancel: the stop's worst case, one bounded state read per unit and the bounded shim check, plus 10 s
+            SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
+            reads=$(( 10 * $# ))
+            need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
+            arm sb_cancel
+            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
-              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( sneed + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
               ok=yes
               for u in "$@"; do
-                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
                 case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
               done
-              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              if [ "$ok" = yes ]; then disarm; return 0; fi
               [ "$(( $(date +%s) - t0 ))" -lt "$limit" ] || fail "${what}_timed_out"
               sleep 2
             done
           }
           # sb_cancel: the units stopped (never refused, the client bounded by their own stop worst case), then their end
-          # confirmed by state (inactive or failed) and by no containerd shim left; the outcome is said either way
+          # confirmed by state (inactive or failed) and by no containerd shim left, each read bounded at 10 s and an unreadable
+          # or timed-out one never taken for an end; a further signal is held and ignored, so it never cuts the cancel short;
+          # no variable named s (the EXIT trap keeps its status there); SB_CANCEL at most; the outcome said either way
           sb_cancel() {
-            local u st ok=yes
+            local u st ps_rc ok=yes
+            trap ':' TERM HUP INT
             sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || ok=no
             for u in $SB_UNITS; do
-              st=$(systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
+              st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
               case "$st" in inactive|failed) ;; *) ok=no ;; esac
             done
-            if pgrep -f containerd-shim >/dev/null 2>&1; then ok=no; fi
+            # pgrep: only 1 means none (found, an error or the timeout prove nothing); the bracket keeps it off its own wrapper
+            ps_rc=0; timeout --foreground 10 pgrep -f '[c]ontainerd-shim' >/dev/null 2>&1 || ps_rc=$?
+            [ "$ps_rc" = 1 ] || ok=no
             if [ "$ok" = yes ]; then say "${SB_WHAT}_cancel=confirmed_ended"; else say "${SB_WHAT}_cancel=not_confirmed"; fi
           }
-          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its job's own limit and action
-          # (poweroff.target: 30 minutes, then forced) still fit before DEADLINE
-          poweroff_later() {
-            local d us need
-            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
-            [ "$(systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
-            # the forced action's final stage: SIGTERM to what is left, up to the manager's default stop timeout, SIGKILL,
-            # the same again, then sync and unmount
-            d=$(systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
+          # poweroff_need: the power-off's own worst case into PO_NEED, read from the manager (each read bounded): 60 s for the
+          # hand-off, 20 s ahead with 1 s of accuracy, poweroff.target's job limit (30 minutes, checked), then its forced action
+          # (checked), whose final stage sends SIGTERM to what is left for up to the manager's default stop timeout (finite,
+          # checked), SIGKILL as long again, then syncs and unmounts; plus 60 s
+          poweroff_need() {
+            local d us
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
+            d=$(timeout --foreground 10 systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
             [ -n "$d" ] && [ "$d" != infinity ] || fail poweroff_default_stop_unbounded
             us=$(systemd-analyze timespan "$d" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || fail poweroff_default_stop_unbounded
-            # 60 s for the hand-off, 20 s ahead with 1 s of accuracy, the job's 30 minutes, then the final stage, plus 60 s
-            need=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
-            sat "$need" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+            PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
+          }
+          # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
+          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
+          # unmount (120 s), then the power-off's own (PO_NEED)
+          seq_need() {
+            local pre=$1 sn
+            shift
+            sn=$(stop_need "$@") || fail runtime_stop_unbounded
+            poweroff_need
+            SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
+          }
+          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
+          # still fits before DEADLINE
+          poweroff_later() {
+            poweroff_need
+            sat "$PO_NEED" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
           }
           # 1. C0 complete and still in place: its emptied and drained records, the saved copy, no crontab now
           sudo test -e "$M/crontab.emptied" && sudo test -e "$M/crontab.drained" && sudo test -s "$M/crontab.before" || fail c0_not_complete
@@ -1079,26 +1136,50 @@ jobs:
           say "writers=stopped containers_running=1 db_clients=0"
           # 7. the final dump, the globals (role password hashes, 0600, never printed), the exact counts, the write
           # counters (C1b proves nothing changed after the dump) and the server configuration a dump does not carry. Each
-          # command in the container bounded on its client and admitted with its bound left; on any failure here every
-          # client session the database still serves is terminated (the writers are stopped: only these commands are its
-          # clients), so nothing of a cut dump goes on after C1a
-          kill_clients() { timeout --foreground 60 $DC exec -T db psql -U c3po -d postgres -At -c "select count(pg_terminate_backend(pid)) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null > /dev/null 2>&1 || true; }
-          dfail() { kill_clients; fail "$1"; }
+          # command in the container bounded on its client (TERM at its limit, KILL 10 s later) and admitted with its bound
+          # and KC left (dat); on any exit here (a failure, an error, a TERM, held until the command in flight has returned)
+          # every client session the database still serves is ended and that proven (the writers are stopped: only these
+          # commands are its clients), so nothing of a cut dump goes on after C1a.
+          # kill_clients: proven only on a round where a fresh count of the client backends is 0 (answered only for a
+          # superuser, who sees every session; anything else is no proof) and no client program (psql, pg_dump, pg_dumpall,
+          # pg_restore) nor shell that could start one is left in its container, as an orphan could connect again (the
+          # healthcheck's pg_isready, and a cut file step's cat, test or rm, cannot; its sh lives milliseconds every 10 s);
+          # the sessions signalled between rounds (pg_terminate_backend
+          # without a timeout reports only the sending, so the rounds decide); each command bounded on its client (15 s, KILL
+          # 5 s later): 4 rounds and 3 signals, KC seconds at most in all
+          KC=240
+          kill_clients() {
+            local i n p
+            for i in 1 2 3 4; do
+              n=$(timeout --foreground -k 5 15 $DC exec -T db psql -U c3po -d postgres -At -c "select case when (select rolsuper from pg_roles where rolname = current_user) then count(*)::text else 'not_superuser' end from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null 2>/dev/null) || n=unreadable
+              p=$(timeout --foreground -k 5 15 docker top c3po-db-1 -eo pid,comm 2>/dev/null | awk 'NR > 1 && ($2 == "psql" || $2 == "pg_dump" || $2 == "pg_dumpall" || $2 == "pg_restore" || $2 == "sh") {n++} END {print n + 0}') || p=unreadable
+              if [ "$n" = 0 ] && [ "$p" = 0 ]; then return 0; fi
+              [ "$i" -lt 4 ] || break
+              timeout --foreground -k 5 15 $DC exec -T db psql -U c3po -d postgres -At -c "select count(pg_terminate_backend(pid)) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null > /dev/null 2>&1 || :
+              sleep 3
+            done
+            return 1
+          }
+          db_end() { trap ':' TERM HUP INT; if kill_clients; then say "db_sessions=ended"; else say "db_sessions=not_confirmed"; fi; }
+          dat() { local need=$1; shift; at "$(( need + KC ))" "$@"; }
+          arm db_end
           say "starting=final_dump"
           install -d -m 0700 "$W"
           rm -f "$W"/final.*
-          at 120 dump_cleanup timeout --foreground 60 $DC exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || dfail dump_cleanup
-          at 2100 final_dump timeout --foreground 1800 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db sh -c 'pg_dump -U c3po -d c3po -Fc --lock-wait-timeout=60s -f /tmp/c3po-final.dump && touch /tmp/c3po-final.ok' < /dev/null || dfail pg_dump
-          at 120 dump_check timeout --foreground 60 $DC exec -T db test -f /tmp/c3po-final.ok < /dev/null || dfail pg_dump
-          at 660 dump_list timeout --foreground 600 $DC exec -T db pg_restore --list /tmp/c3po-final.dump < /dev/null > /dev/null || dfail dump_unreadable
-          at 960 dump_copy timeout --foreground 900 $DC exec -T db cat /tmp/c3po-final.dump < /dev/null > "$W/final.dump" || dfail dump_copy
-          at 120 dump_cleanup timeout --foreground 60 $DC exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || dfail dump_cleanup
-          at 360 globals timeout --foreground 300 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db pg_dumpall -U c3po --globals-only < /dev/null > "$W/final.globals.sql" || dfail globals
-          at 960 counts timeout --foreground 900 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null > "$W/final.counts.raw" || dfail counts
+          dat 120 dump_cleanup timeout --foreground -k 10 60 $DC exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || fail dump_cleanup
+          dat 2100 final_dump timeout --foreground -k 10 1800 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db sh -c 'pg_dump -U c3po -d c3po -Fc --lock-wait-timeout=60s -f /tmp/c3po-final.dump && touch /tmp/c3po-final.ok' < /dev/null || fail pg_dump
+          dat 120 dump_check timeout --foreground -k 10 60 $DC exec -T db test -f /tmp/c3po-final.ok < /dev/null || fail pg_dump
+          dat 660 dump_list timeout --foreground -k 10 600 $DC exec -T db pg_restore --list /tmp/c3po-final.dump < /dev/null > /dev/null || fail dump_unreadable
+          dat 960 dump_copy timeout --foreground -k 10 900 $DC exec -T db cat /tmp/c3po-final.dump < /dev/null > "$W/final.dump" || fail dump_copy
+          dat 120 dump_cleanup timeout --foreground -k 10 60 $DC exec -T db rm -f /tmp/c3po-final.dump /tmp/c3po-final.ok < /dev/null || fail dump_cleanup
+          dat 360 globals timeout --foreground -k 10 300 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db pg_dumpall -U c3po --globals-only < /dev/null > "$W/final.globals.sql" || fail globals
+          dat 960 counts timeout --foreground -k 10 900 $DC exec -T -e 'PGOPTIONS=-c default_transaction_read_only=on' db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null > "$W/final.counts.raw" || fail counts
           grep '^count|' "$W/final.counts.raw" | sort > "$W/final.counts"
           rm -f "$W/final.counts.raw"
-          at 360 writes timeout --foreground 300 $DC exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null > "$W/final.writes" || dfail writes
-          at 360 pgconf timeout --foreground 300 $DC exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/final.pgconf" || dfail pgconf
+          dat 360 writes timeout --foreground -k 10 300 $DC exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null > "$W/final.writes" || fail writes
+          dat 360 pgconf timeout --foreground -k 10 300 $DC exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/final.pgconf" || fail pgconf
+          # every command in the container returned: none of them runs any more
+          disarm
           chmod 0600 "$W"/final.*
           [ "$(wc -l < "$W/final.counts")" -ge 1 ] || fail no_counts
           say "dump_sha=$(sha256sum < "$W/final.dump" | cut -c1-64) counts_sha=$(sha256sum < "$W/final.counts" | cut -c1-64) tables=$(wc -l < "$W/final.counts")"
@@ -1107,48 +1188,76 @@ jobs:
           # for, and cancelled (systemctl stop, within the unit's stop timeout) once only 3 minutes would be left: a
           # cancelled or failed run leaves no result this C1a accepts, and a re-run starts it again
           say "starting=offsite_backup"
-          # the cancellation's own bound first: the unit's stop worst case (four kill stages of its own TimeoutStopSec,
-          # read and finite, at most 300 s each) plus kill_clients; the start is admitted with 45 minutes and that left
-          BK_CANCEL=$(stop_need c3po-postgres-backup.service) || fail backup_stop_unbounded
+          # the cancellation's own bound first: the unit's stop worst case (BK_STOP: four kill stages of its own
+          # TimeoutStopSec, read and finite, at most 300 s each), one bounded read of its state, the containers its script
+          # runs outside its cgroup found, stopped and checked twice (125 s), the database's client sessions ended and proven
+          # ended (KC), plus 10 s; its KillMode must be control-group, so a unit seen inactive or failed has no process of its
+          # own left. The start is admitted with 45 minutes and that left
+          BK_STOP=$(stop_need c3po-postgres-backup.service) || fail backup_stop_unbounded
           [ "$(unit_s Stop c3po-postgres-backup.service)" -le 300 ] || fail backup_stop_timeout_unexpected
-          BK_CANCEL=$(( BK_CANCEL + 60 ))
-          inv0=$(systemctl show -p InvocationID --value c3po-postgres-backup.service)
-          # bk_cancel: the unit stopped (never refused, bounded on its client), its end confirmed by state, the database's
-          # client sessions ended; the outcome is said either way
+          [ "$(timeout --foreground 10 systemctl show -p KillMode --value c3po-postgres-backup.service)" = control-group ] || fail backup_kill_mode_unexpected
+          BK_CANCEL=$(( BK_STOP + 10 + 125 + KC + 10 ))
+          inv0=$(timeout --foreground 10 systemctl show -p InvocationID --value c3po-postgres-backup.service) || fail backup_unreadable
+          # bk_cancel: the unit stopped (never refused, bounded on its client by BK_STOP), its end confirmed by a bounded
+          # read of its state (inactive or failed); then the containers its script runs through compose outside its cgroup
+          # (one-offs: the upload and, on a failure, the notice; the admission drained every other one) stopped and none left;
+          # then the database's client sessions ended and proven ended (kill_clients), and still no one-off. A further signal
+          # is held and ignored, so it never cuts the cancel short; confirmed only when all of it is, within BK_CANCEL; the
+          # outcome is said either way
           bk_cancel() {
-            local st ok=yes
-            sudo timeout --foreground "$(( BK_CANCEL - 60 ))" systemctl stop c3po-postgres-backup.service >/dev/null 2>&1 || ok=no
-            st=$(systemctl show -p ActiveState --value c3po-postgres-backup.service 2>/dev/null) || st=unreadable
+            local st ids ok=yes
+            trap ':' TERM HUP INT
+            sudo timeout --foreground "$BK_STOP" systemctl stop c3po-postgres-backup.service >/dev/null 2>&1 || ok=no
+            st=$(timeout --foreground 10 systemctl show -p ActiveState --value c3po-postgres-backup.service 2>/dev/null) || st=unreadable
             case "$st" in inactive|failed) ;; *) ok=no ;; esac
-            kill_clients
+            if ids=$(timeout --foreground -k 5 15 docker ps -q --filter label=com.docker.compose.oneoff=True 2>/dev/null); then
+              [ -z "$ids" ] || timeout --foreground -k 5 60 docker stop -t 10 $ids >/dev/null 2>&1 || ok=no
+              ids=$(timeout --foreground -k 5 15 docker ps -q --filter label=com.docker.compose.oneoff=True 2>/dev/null) || ids=unreadable
+              [ -z "$ids" ] || ok=no
+            else ok=no; fi
+            kill_clients || ok=no
+            ids=$(timeout --foreground -k 5 15 docker ps -q --filter label=com.docker.compose.oneoff=True 2>/dev/null) || ids=unreadable
+            [ -z "$ids" ] || ok=no
             if [ "$ok" = yes ]; then say "backup_cancel=confirmed_ended"; else say "backup_cancel=not_confirmed"; fi
           }
-          at "$(( 2700 + BK_CANCEL ))" offsite_backup sudo systemctl start --no-block c3po-postgres-backup.service || fail backup_start
-          # from the hand-off on, every exit of this script cancels and confirms (the EXIT path runs cleanup)
-          cleanup() { bk_cancel; }
+          # the hand-off with its cancel armed first (arm, then handoff): a start queued whose client errs or is cut,
+          # or a TERM in the hand-off (acted on once the client has returned), is cancelled and confirmed too; only the
+          # admission's own refusal (nothing handed off) disarms it. From then on every exit of this script cancels and
+          # confirms (the EXIT path runs cleanup); the evidence accepted later must be newer than the hand-off
+          arm bk_cancel
+          t_ho=$(date +%s)
+          handoff "$(( 2700 + BK_CANCEL ))" offsite_backup timeout --foreground 60 systemctl start --no-block c3po-postgres-backup.service || fail backup_start
           begun=no; waited=0
           while :; do
-            inv=$(systemctl show -p InvocationID --value c3po-postgres-backup.service) || fail backup_unreadable
-            st=$(systemctl show -p ActiveState --value c3po-postgres-backup.service) || fail backup_unreadable
-            job=$(systemctl show -p Job --value c3po-postgres-backup.service) || fail backup_unreadable
+            # the cancel's time kept before each read (one snapshot of the unit, bounded at 10 s) and checked again after it:
+            # a late read can neither eat that time nor turn into a result
+            [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( 10 + BK_CANCEL + 10 ))" ] || fail backup_cancelled_at_the_deadline
+            props=$(timeout --foreground 10 systemctl show -p InvocationID -p ActiveState -p Job -p Result c3po-postgres-backup.service) || fail backup_unreadable
+            [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( BK_CANCEL + 10 ))" ] || fail backup_cancelled_at_the_deadline
+            inv=$(sed -n 's/^InvocationID=//p' <<<"$props"); st=$(sed -n 's/^ActiveState=//p' <<<"$props")
+            job=$(sed -n 's/^Job=//p' <<<"$props"); res=$(sed -n 's/^Result=//p' <<<"$props")
+            [ -n "$st" ] || fail backup_unreadable
             if [ -n "$inv" ] && [ "$inv" != "$inv0" ]; then begun=yes; fi
-            if [ "$begun" = yes ]; then case "$st" in activating|active|deactivating|reloading) ;; *) break ;; esac
+            # the end is inactive or failed only; any other state (activating, active, deactivating, reloading, refreshing,
+            # maintenance) is waited for, within the reserve
+            if [ "$begun" = yes ]; then case "$st" in inactive|failed) break ;; esac
             # a start refused (a failed requirement) leaves no job and no new invocation: seen within a minute
             elif [ -z "$job" ] && [ "$waited" -ge 60 ]; then fail backup_not_started; fi
-            if [ "$(( DEADLINE - $(date +%s) ))" -lt "$(( BK_CANCEL + 30 ))" ]; then fail backup_cancelled_at_the_deadline; fi
             sleep 10; waited=$((waited + 10))
           done
-          res=$(systemctl show -p Result --value c3po-postgres-backup.service)
+          # the result from the same snapshot that saw the end, read inside the reserve
           [ "$res" = success ] || fail "backup_result_$res"
-          cleanup() { :; }
+          disarm
           say "backup=$res"
           newest=$(find "$APP/outputs/evidence/postgres-backup" -name result.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-)
           [ -n "$newest" ] || fail backup_evidence
+          [ "$(stat -c %Y "$newest")" -ge "$t_ho" ] || fail backup_evidence_older_than_the_hand_off
           # the drill takes the newest upload.json and its first "/daily/" key: they must be this backup's, by the same rule,
           # with the uploaded file's SHA the dump's (the backup script refuses otherwise); the key is shown only as its hash
           up="$(dirname "$newest")/upload.json"
           newest_up=$(find "$APP/outputs/evidence/postgres-backup" -name upload.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-) || fail backup_upload_find
           [ -n "$newest_up" ] && [ "$up" = "$newest_up" ] || fail backup_upload_not_newest
+          [ "$(stat -c %Y "$up")" -ge "$t_ho" ] || fail backup_evidence_older_than_the_hand_off
           bind=$(python3 -c 'import hashlib, json, sys
           result = json.load(open(sys.argv[1])); upload = json.load(open(sys.argv[2]))
           daily = next(item for item in upload["uploads"] if "/daily/" in item["key"])
@@ -1169,20 +1278,163 @@ jobs:
               # database already stopped cleanly)
               stage <<'REMOTE' && remote old yes || rc=1
           W=/var/tmp/c3po-migration
+          # sat NEED WHAT CMD...: a root command admitted in the very root process that then execs it (sudo starts first, then
+          # the check), only with NEED seconds left before DEADLINE
+          sat() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' sat "$@" || s=$?
+            if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
+          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
+          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
+          # as in the EXIT trap) and ends the script.
+          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; }
+          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
+          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
+          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
+          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
+          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
+          handoff() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
+            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
+          # a timer has none: its stop ends at once); not finite fails
+          unit_s() {
+            local p v us
+            case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
+            v=$(timeout --foreground 10 systemctl show -p "$p" --value "$2") || return 1
+            [ -n "$v" ] && [ "$v" != infinity ] || return 1
+            us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
+            [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
+            echo $(( (us + 999999) / 1000000 ))
+          }
+          # stop_need UNIT...: the worst case of a stop of these units, from their own timeouts: four kill stages each
+          # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
+          stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
+          # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s), plus SYS_KEEP seconds (0 unless
+          # set) for what must follow it; it returns only when the jobs of the named units have ended, and systemd ends them
+          # within those timeouts, so the effect itself is bounded
+          sysop() {
+            local what=$1 action=$2 need=60 u t
+            shift 2
+            case "$action" in
+              stop) need=$(stop_need "$@") || fail "${what}_unbounded" ;;
+              start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
+              *) fail "${what}_action" ;;
+            esac
+            sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+          }
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
+          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
+          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
+          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
+          # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
+          # pause and one more round of reads, then the cancel
+          start_bounded() {
+            local what=$1 limit=$2 sneed reads need u st ok t0
+            shift 2
+            sneed=$(stop_need "$@") || fail "${what}_unbounded"
+            # the cancel: the stop's worst case, one bounded state read per unit and the bounded shim check, plus 10 s
+            SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
+            reads=$(( 10 * $# ))
+            need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
+            arm sb_cancel
+            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
+            t0=$(date +%s)
+            while :; do
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              ok=yes
+              for u in "$@"; do
+                st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
+              done
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              if [ "$ok" = yes ]; then disarm; return 0; fi
+              [ "$(( $(date +%s) - t0 ))" -lt "$limit" ] || fail "${what}_timed_out"
+              sleep 2
+            done
+          }
+          # sb_cancel: the units stopped (never refused, the client bounded by their own stop worst case), then their end
+          # confirmed by state (inactive or failed) and by no containerd shim left, each read bounded at 10 s and an unreadable
+          # or timed-out one never taken for an end; a further signal is held and ignored, so it never cuts the cancel short;
+          # no variable named s (the EXIT trap keeps its status there); SB_CANCEL at most; the outcome said either way
+          sb_cancel() {
+            local u st ps_rc ok=yes
+            trap ':' TERM HUP INT
+            sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || ok=no
+            for u in $SB_UNITS; do
+              st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
+              case "$st" in inactive|failed) ;; *) ok=no ;; esac
+            done
+            # pgrep: only 1 means none (found, an error or the timeout prove nothing); the bracket keeps it off its own wrapper
+            ps_rc=0; timeout --foreground 10 pgrep -f '[c]ontainerd-shim' >/dev/null 2>&1 || ps_rc=$?
+            [ "$ps_rc" = 1 ] || ok=no
+            if [ "$ok" = yes ]; then say "${SB_WHAT}_cancel=confirmed_ended"; else say "${SB_WHAT}_cancel=not_confirmed"; fi
+          }
+          # poweroff_need: the power-off's own worst case into PO_NEED, read from the manager (each read bounded): 60 s for the
+          # hand-off, 20 s ahead with 1 s of accuracy, poweroff.target's job limit (30 minutes, checked), then its forced action
+          # (checked), whose final stage sends SIGTERM to what is left for up to the manager's default stop timeout (finite,
+          # checked), SIGKILL as long again, then syncs and unmounts; plus 60 s
+          poweroff_need() {
+            local d us
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
+            d=$(timeout --foreground 10 systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
+            [ -n "$d" ] && [ "$d" != infinity ] || fail poweroff_default_stop_unbounded
+            us=$(systemd-analyze timespan "$d" 2>/dev/null | sed -n 2p | awk '{print $2}')
+            [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || fail poweroff_default_stop_unbounded
+            PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
+          }
+          # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
+          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
+          # unmount (120 s), then the power-off's own (PO_NEED)
+          seq_need() {
+            local pre=$1 sn
+            shift
+            sn=$(stop_need "$@") || fail runtime_stop_unbounded
+            poweroff_need
+            SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
+          }
+          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
+          # still fits before DEADLINE
+          poweroff_later() {
+            poweroff_need
+            sat "$PO_NEED" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
+          # only within a live C1a attempt: its hold record (R0 sets it aside last), then its final dump
+          sudo test -e /root/c3po-migration/hold.recorded || fail no_c1a_hold_record
           [ -s "$W/final.dump" ] || fail no_final_dump
           # a clean stop already proven and recorded (a re-run, Docker possibly down already) is accepted as it is
           if [ -e "$W/final.db-stopped-clean" ]; then say "db=stopped_clean writes_since_dump=0 recorded=yes"; say "gate=STEP"; exit 0; fi
-          if [ "$(docker inspect -f '{{.State.Running}}' c3po-db-1)" = true ]; then
-            [ "$(docker ps --format '{{.Names}}')" = c3po-db-1 ] || fail unexpected_containers
-            writes=$(dc exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null)
+          if [ "$(timeout --foreground -k 5 15 docker inspect -f '{{.State.Running}}' c3po-db-1)" = true ]; then
+            # the whole of C1b's worst case before its first change: the database stop (450 s), the copies between the
+            # payloads (an allowance of 30 minutes; the last payload checks its own sequence again before it changes anything)
+            # and the power-off sequence, computed as there
+            seq_need $(( 450 + 1800 + 120 )) docker.socket docker.service containerd.service
+            [ "$(( DEADLINE - $(date +%s) ))" -ge "$SEQ_NEED" ] || fail too_late_for_c1b
+            say "c1b_need_s=$SEQ_NEED"
+            names=$(timeout --foreground -k 5 15 docker ps --format '{{.Names}}') || fail docker_unreadable
+            [ "$names" = c3po-db-1 ] || fail unexpected_containers
+            writes=$(timeout --foreground -k 5 55 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" exec -T db psql -U c3po -d c3po -At -c "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) from pg_stat_user_tables" < /dev/null) || fail writes_unreadable
             [ "$writes" = "$(cat "$W/final.writes")" ] || fail writes_after_dump
             touch "$W/final.no-writes-checked"
-            # the stop bounded at 300 s on its client, admitted with 450 s left before the run's DEADLINE
-            [ "$(( DEADLINE - $(date +%s) ))" -ge 450 ] || fail too_late_for_db_stop
+            # the stop bounded at 300 s on its client, admitted again with the whole of C1b left (SEQ_NEED)
+            [ "$(( DEADLINE - $(date +%s) ))" -ge "$SEQ_NEED" ] || fail too_late_for_db_stop
             timeout --foreground 300 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" stop -t 120 db >/dev/null || fail db_stop
           fi
           [ -e "$W/final.no-writes-checked" ] || fail writes_never_checked
-          docker logs --tail 50 c3po-db-1 2>&1 | grep -q 'database system is shut down' || fail db_not_clean
+          timeout --foreground -k 5 15 docker logs --tail 50 c3po-db-1 2>&1 | grep -q 'database system is shut down' || fail db_not_clean
           ids=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
           [ -z "$ids" ] || fail containers_running
           touch "$W/final.db-stopped-clean"
@@ -1191,31 +1443,35 @@ jobs:
           # end of payload
           REMOTE
             fi
-            if [ "$rc" = 0 ]; then
+            # a re-run after the last payload reached the runtime stop (its record, which a C1a's fresh dump clears) goes
+            # straight to it: every copy and comparison below had passed, the database was stopped, Docker may be too
+            resume=no
+            if [ "$rc" = 0 ] && old "test -e /var/tmp/c3po-migration/final.last-begun" 2>/dev/null; then resume=yes; note "c1b_resume=last_payload"; fi
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               if old "set -o pipefail; cd /var/tmp/c3po-migration && tar -cf - final.dump final.globals.sql final.counts final.pgconf" 2>/dev/null \
                 | new_tmp "set -e; install -d -m 0700 /var/tmp/c3po-migration; tar -C /var/tmp/c3po-migration -xf -; chmod 0600 /var/tmp/c3po-migration/final.*" > /dev/null 2>&1
               then note "final_dump=copied"; else note "gate=FAIL reason=dump_copy"; rc=1; fi
             fi
-            if [ "$rc" = 0 ]; then
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               same_hash final_files "cd /var/tmp/c3po-migration && cat final.dump final.globals.sql final.counts final.pgconf | sha256sum | cut -c1-64" old new_tmp || rc=1
             fi
-            if [ "$rc" = 0 ]; then
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               # the saved crontab and timer states travel too: D installs the crontab the old host ran until C1a
               if old "sudo tar -C /root -cpf - c3po-migration/crontab.before c3po-migration/timers.before" 2>/dev/null \
                 | new_tmp "sudo tar -C /root -xpf -" > /dev/null 2>&1; then note "cron_and_timer_states=copied"
               else note "gate=FAIL reason=cron_states"; rc=1; fi
             fi
-            if [ "$rc" = 0 ]; then
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               if old "$LEASE sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -cpf - outputs runtime whatsapp_session" 2>/dev/null \
                 | new_tmp "set -e; cd /opt/chief-of-staff-digital; sudo rm -rf outputs runtime whatsapp_session; sudo tar -C /opt/chief-of-staff-digital --numeric-owner --acls --xattrs -xpf -" > /dev/null 2>&1
               then note "volatile_trees=copied"; else note "gate=FAIL reason=volatile_copy"; rc=1; fi
             fi
-            if [ "$rc" = 0 ]; then
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               same_hash app_tree_full "$(tree_cmd /opt chief-of-staff-digital)" old new_tmp || rc=1
               # the reports clone and the images too, now that nothing on the old host can write them
               [ "$rc" = 0 ] && { same_hash reports_tree_final "$(tree_cmd /opt r2d2-reports)" old new_tmp || rc=1; }
             fi
-            if [ "$rc" = 0 ]; then
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               images='c3po/database:production c3po/backend:production c3po/web:production chief-of-staff-digital-morning-summary:latest chief-of-staff-digital-pluggy-webhook:latest cloudflare/cloudflared:latest'
               for image in $images; do
                 a=$(old "docker image inspect --format '{{.Id}}' $image" 2>/dev/null); b=$(new_tmp "sudo docker image inspect --format '{{.Id}}' $image" 2>/dev/null)
@@ -1223,12 +1479,12 @@ jobs:
               done
               [ "$rc" = 0 ] && note "images_final=match"
             fi
-            if [ "$rc" = 0 ]; then
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               if old "$LEASE sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -cpf - ." 2>/dev/null \
                 | new_tmp "set -e; sudo docker volume create --label com.docker.compose.project=c3po --label com.docker.compose.volume=c3po_one_pagers --label com.docker.compose.version=5.1.4 c3po_c3po_one_pagers >/dev/null; sudo tar -C /var/lib/docker/volumes/c3po_c3po_one_pagers/_data --numeric-owner -xpf -" > /dev/null 2>&1
               then note "one_pagers=copied"; else note "gate=FAIL reason=one_pagers"; rc=1; fi
             fi
-            if [ "$rc" = 0 ]; then
+            if [ "$rc" = 0 ] && [ "$resume" = no ]; then
               same_hash one_pagers "$(tree_cmd /var/lib/docker/volumes/c3po_c3po_one_pagers _data)" old new_tmp || rc=1
             fi
             if [ "$rc" = 0 ]; then
@@ -1245,12 +1501,31 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
-          # none: its stop ends at once); not finite fails
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
+          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
+          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
+          # as in the EXIT trap) and ends the script.
+          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; }
+          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
+          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
+          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
+          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
+          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
+          handoff() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
+            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
+          # a timer has none: its stop ends at once); not finite fails
           unit_s() {
             local p v us
             case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
-            v=$(systemctl show -p "$p" --value "$2") || return 1
+            v=$(timeout --foreground 10 systemctl show -p "$p" --value "$2") || return 1
             [ -n "$v" ] && [ "$v" != infinity ] || return 1
             us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
@@ -1260,8 +1535,9 @@ jobs:
           # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
           stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
           # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
-          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
-          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s), plus SYS_KEEP seconds (0 unless
+          # set) for what must follow it; it returns only when the jobs of the named units have ended, and systemd ends them
+          # within those timeouts, so the effect itself is bounded
           sysop() {
             local what=$1 action=$2 need=60 u t
             shift 2
@@ -1270,69 +1546,92 @@ jobs:
               start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
               *) fail "${what}_action" ;;
             esac
-            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+            sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
-          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
-          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
-          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
-          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
-          # end is proven by their state and by no containerd shim left
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
+          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
+          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
+          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
+          # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
+          # pause and one more round of reads, then the cancel
           start_bounded() {
-            local what=$1 limit=$2 need sneed u st ok t0
+            local what=$1 limit=$2 sneed reads need u st ok t0
             shift 2
             sneed=$(stop_need "$@") || fail "${what}_unbounded"
-            need=$(( 60 + limit + 10 + sneed ))
-            SB_UNITS="$*"; SB_NEED=$sneed; SB_WHAT=$what
-            # a hand-off refused only in part (a masked unit) or cut on its client may still have queued jobs: cancelled too
-            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || { sb_cancel; fail "${what}_handoff"; }
-            # from the hand-off on, every exit of the script (failed, unreadable, the limit, the deadline, any error) runs
-            # the one cancel-and-confirm below
-            cleanup() { sb_cancel; }
+            # the cancel: the stop's worst case, one bounded state read per unit and the bounded shim check, plus 10 s
+            SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
+            reads=$(( 10 * $# ))
+            need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
+            arm sb_cancel
+            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
-              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( sneed + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
               ok=yes
               for u in "$@"; do
-                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
                 case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
               done
-              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              if [ "$ok" = yes ]; then disarm; return 0; fi
               [ "$(( $(date +%s) - t0 ))" -lt "$limit" ] || fail "${what}_timed_out"
               sleep 2
             done
           }
           # sb_cancel: the units stopped (never refused, the client bounded by their own stop worst case), then their end
-          # confirmed by state (inactive or failed) and by no containerd shim left; the outcome is said either way
+          # confirmed by state (inactive or failed) and by no containerd shim left, each read bounded at 10 s and an unreadable
+          # or timed-out one never taken for an end; a further signal is held and ignored, so it never cuts the cancel short;
+          # no variable named s (the EXIT trap keeps its status there); SB_CANCEL at most; the outcome said either way
           sb_cancel() {
-            local u st ok=yes
+            local u st ps_rc ok=yes
+            trap ':' TERM HUP INT
             sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || ok=no
             for u in $SB_UNITS; do
-              st=$(systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
+              st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
               case "$st" in inactive|failed) ;; *) ok=no ;; esac
             done
-            if pgrep -f containerd-shim >/dev/null 2>&1; then ok=no; fi
+            # pgrep: only 1 means none (found, an error or the timeout prove nothing); the bracket keeps it off its own wrapper
+            ps_rc=0; timeout --foreground 10 pgrep -f '[c]ontainerd-shim' >/dev/null 2>&1 || ps_rc=$?
+            [ "$ps_rc" = 1 ] || ok=no
             if [ "$ok" = yes ]; then say "${SB_WHAT}_cancel=confirmed_ended"; else say "${SB_WHAT}_cancel=not_confirmed"; fi
           }
-          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its job's own limit and action
-          # (poweroff.target: 30 minutes, then forced) still fit before DEADLINE
-          poweroff_later() {
-            local d us need
-            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
-            [ "$(systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
-            # the forced action's final stage: SIGTERM to what is left, up to the manager's default stop timeout, SIGKILL,
-            # the same again, then sync and unmount
-            d=$(systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
+          # poweroff_need: the power-off's own worst case into PO_NEED, read from the manager (each read bounded): 60 s for the
+          # hand-off, 20 s ahead with 1 s of accuracy, poweroff.target's job limit (30 minutes, checked), then its forced action
+          # (checked), whose final stage sends SIGTERM to what is left for up to the manager's default stop timeout (finite,
+          # checked), SIGKILL as long again, then syncs and unmounts; plus 60 s
+          poweroff_need() {
+            local d us
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
+            d=$(timeout --foreground 10 systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
             [ -n "$d" ] && [ "$d" != infinity ] || fail poweroff_default_stop_unbounded
             us=$(systemd-analyze timespan "$d" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || fail poweroff_default_stop_unbounded
-            # 60 s for the hand-off, 20 s ahead with 1 s of accuracy, the job's 30 minutes, then the final stage, plus 60 s
-            need=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
-            sat "$need" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+            PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
-          # admitted only with 60 minutes left before the run's DEADLINE (the runtime stop's worst case, four kill stages
-          # per unit, the mask, the power-off's own limit), each hand-off to systemd admitted again on its own; a partial
-          # run is taken up again
-          [ "$(( DEADLINE - $(date +%s) ))" -ge 3600 ] || fail too_late_for_the_power_off_sequence
+          # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
+          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
+          # unmount (120 s), then the power-off's own (PO_NEED)
+          seq_need() {
+            local pre=$1 sn
+            shift
+            sn=$(stop_need "$@") || fail runtime_stop_unbounded
+            poweroff_need
+            SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
+          }
+          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
+          # still fits before DEADLINE
+          poweroff_later() {
+            poweroff_need
+            sat "$PO_NEED" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
+          # admitted only with the whole sequence's worst case left, computed before anything changes (seq_need: 120 s for
+          # the checks before the runtime stop, then the runtime stop, the mask, sync and the unmount, the power-off), each
+          # hand-off to systemd admitted again on its own; a partial run is taken up again
+          seq_need 120 docker.socket docker.service containerd.service
+          [ "$(( DEADLINE - $(date +%s) ))" -ge "$SEQ_NEED" ] || fail too_late_for_the_power_off_sequence
+          say "power_off_sequence_need_s=$SEQ_NEED"
           dev=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}')
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
           uuid=$(sudo blkid -s UUID -o value "$dev")
@@ -1348,8 +1647,15 @@ jobs:
             ids=$(timeout --foreground 20 docker ps -q) || fail docker_unreadable
             [ -z "$ids" ] || fail containers_running
           fi
+          # the record that this payload reached the runtime stop, every check above and every comparison of C1b passed: a
+          # re-run goes straight to this payload
+          touch "$W/final.last-begun"
+          # each change admitted with the rest of the sequence left: the stop with the mask, sync and the unmount (240 s) and
+          # the power-off's own (PO_NEED) after it, the mask with the same
+          SYS_KEEP=$(( 120 + 120 + PO_NEED ))
           sysop runtime_stop stop docker.socket docker.service containerd.service
-          sat 120 runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
+          SYS_KEEP=0
+          sat "$(( 120 + 120 + PO_NEED ))" runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
           ! pgrep -x dockerd >/dev/null || fail dockerd_alive
           sync
           if findmnt -n -S "UUID=$uuid" >/dev/null; then
@@ -1391,12 +1697,31 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
-          # none: its stop ends at once); not finite fails
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
+          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
+          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
+          # as in the EXIT trap) and ends the script.
+          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; }
+          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
+          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
+          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
+          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
+          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
+          handoff() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
+            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
+          # a timer has none: its stop ends at once); not finite fails
           unit_s() {
             local p v us
             case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
-            v=$(systemctl show -p "$p" --value "$2") || return 1
+            v=$(timeout --foreground 10 systemctl show -p "$p" --value "$2") || return 1
             [ -n "$v" ] && [ "$v" != infinity ] || return 1
             us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
@@ -1406,8 +1731,9 @@ jobs:
           # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
           stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
           # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
-          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
-          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s), plus SYS_KEEP seconds (0 unless
+          # set) for what must follow it; it returns only when the jobs of the named units have ended, and systemd ends them
+          # within those timeouts, so the effect itself is bounded
           sysop() {
             local what=$1 action=$2 need=60 u t
             shift 2
@@ -1416,68 +1742,105 @@ jobs:
               start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
               *) fail "${what}_action" ;;
             esac
-            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+            sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
-          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
-          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
-          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
-          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
-          # end is proven by their state and by no containerd shim left
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
+          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
+          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
+          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
+          # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
+          # pause and one more round of reads, then the cancel
           start_bounded() {
-            local what=$1 limit=$2 need sneed u st ok t0
+            local what=$1 limit=$2 sneed reads need u st ok t0
             shift 2
             sneed=$(stop_need "$@") || fail "${what}_unbounded"
-            need=$(( 60 + limit + 10 + sneed ))
-            SB_UNITS="$*"; SB_NEED=$sneed; SB_WHAT=$what
-            # a hand-off refused only in part (a masked unit) or cut on its client may still have queued jobs: cancelled too
-            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || { sb_cancel; fail "${what}_handoff"; }
-            # from the hand-off on, every exit of the script (failed, unreadable, the limit, the deadline, any error) runs
-            # the one cancel-and-confirm below
-            cleanup() { sb_cancel; }
+            # the cancel: the stop's worst case, one bounded state read per unit and the bounded shim check, plus 10 s
+            SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
+            reads=$(( 10 * $# ))
+            need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
+            arm sb_cancel
+            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
-              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( sneed + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
               ok=yes
               for u in "$@"; do
-                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
                 case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
               done
-              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              if [ "$ok" = yes ]; then disarm; return 0; fi
               [ "$(( $(date +%s) - t0 ))" -lt "$limit" ] || fail "${what}_timed_out"
               sleep 2
             done
           }
           # sb_cancel: the units stopped (never refused, the client bounded by their own stop worst case), then their end
-          # confirmed by state (inactive or failed) and by no containerd shim left; the outcome is said either way
+          # confirmed by state (inactive or failed) and by no containerd shim left, each read bounded at 10 s and an unreadable
+          # or timed-out one never taken for an end; a further signal is held and ignored, so it never cuts the cancel short;
+          # no variable named s (the EXIT trap keeps its status there); SB_CANCEL at most; the outcome said either way
           sb_cancel() {
-            local u st ok=yes
+            local u st ps_rc ok=yes
+            trap ':' TERM HUP INT
             sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || ok=no
             for u in $SB_UNITS; do
-              st=$(systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
+              st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
               case "$st" in inactive|failed) ;; *) ok=no ;; esac
             done
-            if pgrep -f containerd-shim >/dev/null 2>&1; then ok=no; fi
+            # pgrep: only 1 means none (found, an error or the timeout prove nothing); the bracket keeps it off its own wrapper
+            ps_rc=0; timeout --foreground 10 pgrep -f '[c]ontainerd-shim' >/dev/null 2>&1 || ps_rc=$?
+            [ "$ps_rc" = 1 ] || ok=no
             if [ "$ok" = yes ]; then say "${SB_WHAT}_cancel=confirmed_ended"; else say "${SB_WHAT}_cancel=not_confirmed"; fi
           }
-          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its job's own limit and action
-          # (poweroff.target: 30 minutes, then forced) still fit before DEADLINE
-          poweroff_later() {
-            local d us need
-            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
-            [ "$(systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
-            # the forced action's final stage: SIGTERM to what is left, up to the manager's default stop timeout, SIGKILL,
-            # the same again, then sync and unmount
-            d=$(systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
+          # poweroff_need: the power-off's own worst case into PO_NEED, read from the manager (each read bounded): 60 s for the
+          # hand-off, 20 s ahead with 1 s of accuracy, poweroff.target's job limit (30 minutes, checked), then its forced action
+          # (checked), whose final stage sends SIGTERM to what is left for up to the manager's default stop timeout (finite,
+          # checked), SIGKILL as long again, then syncs and unmounts; plus 60 s
+          poweroff_need() {
+            local d us
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
+            d=$(timeout --foreground 10 systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
             [ -n "$d" ] && [ "$d" != infinity ] || fail poweroff_default_stop_unbounded
             us=$(systemd-analyze timespan "$d" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || fail poweroff_default_stop_unbounded
-            # 60 s for the hand-off, 20 s ahead with 1 s of accuracy, the job's 30 minutes, then the final stage, plus 60 s
-            need=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
-            sat "$need" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+            PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
-          # on any failure from the restore on, the database's client sessions (only C2's own: nothing else runs yet) end
-          kill_clients() { timeout --foreground 60 $DC exec -T db psql -U c3po -d postgres -At -c "select count(pg_terminate_backend(pid)) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null > /dev/null 2>&1 || true; }
-          dfail() { kill_clients; fail "$1"; }
+          # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
+          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
+          # unmount (120 s), then the power-off's own (PO_NEED)
+          seq_need() {
+            local pre=$1 sn
+            shift
+            sn=$(stop_need "$@") || fail runtime_stop_unbounded
+            poweroff_need
+            SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
+          }
+          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
+          # still fits before DEADLINE
+          poweroff_later() {
+            poweroff_need
+            sat "$PO_NEED" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
+          # from the globals on, on any exit (a failure, an error, a TERM, held until the command in flight has returned) the
+          # database's client sessions (only C2's own: nothing else runs yet) are ended and that proven (kill_clients, as in
+          # C1a: a round with a counted 0 and no client program or shell left in its container, KC seconds at most); dat
+          # admits each command there with its bound, KC and the cleanup's temporary-dump removal (65 s) left
+          KC=240
+          kill_clients() {
+            local i n p
+            for i in 1 2 3 4; do
+              n=$(timeout --foreground -k 5 15 $DC exec -T db psql -U c3po -d postgres -At -c "select case when (select rolsuper from pg_roles where rolname = current_user) then count(*)::text else 'not_superuser' end from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null 2>/dev/null) || n=unreadable
+              p=$(timeout --foreground -k 5 15 docker top c3po-db-1 -eo pid,comm 2>/dev/null | awk 'NR > 1 && ($2 == "psql" || $2 == "pg_dump" || $2 == "pg_dumpall" || $2 == "pg_restore" || $2 == "sh") {n++} END {print n + 0}') || p=unreadable
+              if [ "$n" = 0 ] && [ "$p" = 0 ]; then return 0; fi
+              [ "$i" -lt 4 ] || break
+              timeout --foreground -k 5 15 $DC exec -T db psql -U c3po -d postgres -At -c "select count(pg_terminate_backend(pid)) from pg_stat_activity where pid <> pg_backend_pid() and backend_type = 'client backend'" < /dev/null > /dev/null 2>&1 || :
+              sleep 3
+            done
+            return 1
+          }
+          db_end() { trap ':' TERM HUP INT; if kill_clients; then say "db_sessions=ended"; else say "db_sessions=not_confirmed"; fi; }
+          dat() { local need=$1; shift; at "$(( need + KC + 70 ))" "$@"; }
           # 1. the Day-D filesystem: found by label, identified by the hash of its UUID, never formatted
           dev=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}')
           [ "$(printf '%s\n' "$dev" | grep -c .)" = 1 ] || fail day_d_device
@@ -1545,7 +1908,8 @@ jobs:
           # 5. the database alone: compose creates its volume and container, the volume is proven empty, then it starts. A
           # volume a C2 restore began (its record) is reset first, only before T_WRITE: no container but the database and
           # the two legacy ones C2 creates
-          cleanup() { timeout --foreground 60 docker exec c3po-db-1 rm -f /tmp/c3po-final.dump >/dev/null 2>&1 || true; }
+          c2_rm() { trap ':' TERM HUP INT; timeout --foreground -k 5 60 docker exec c3po-db-1 rm -f /tmp/c3po-final.dump >/dev/null 2>&1 || true; }
+          arm c2_rm
           export C3PO_BUILD_SHA
           C3PO_BUILD_SHA=$(cat "$APP/.deploy-version")
           at 300 db_create timeout --foreground 240 $DC up --no-start --no-build db >/dev/null || fail db_create
@@ -1578,23 +1942,31 @@ jobs:
           done
           [ "$ready" = yes ] || fail db_not_ready
           # 6. globals (the role c3po already exists), the dump, the exact counts, the server configuration
+          # further signals ignored first, then the temporary dump removed (a say that fails, the runner gone, ends the
+          # cleanup), then the sessions
+          c2_end() { trap ':' TERM HUP INT; timeout --foreground -k 5 60 docker exec c3po-db-1 rm -f /tmp/c3po-final.dump >/dev/null 2>&1 || true; db_end; }
+          arm c2_end
           ( umask 077; grep -v -x 'CREATE ROLE c3po;' "$W/final.globals.sql" > "$W/final.globals.apply" )
-          at 360 globals timeout --foreground 300 $DC exec -T db psql -U c3po -d postgres -v ON_ERROR_STOP=1 -q < "$W/final.globals.apply" >/dev/null || dfail globals
+          dat 360 globals timeout --foreground -k 10 300 $DC exec -T db psql -U c3po -d postgres -v ON_ERROR_STOP=1 -q < "$W/final.globals.apply" >/dev/null || fail globals
           rm -f "$W/final.globals.apply"
-          at 960 dump_copy_in timeout --foreground 900 docker cp "$W/final.dump" c3po-db-1:/tmp/c3po-final.dump || dfail dump_copy_in
-          at 3000 restore timeout --foreground 2700 $DC exec -T db pg_restore -U c3po -d c3po --exit-on-error -j 2 /tmp/c3po-final.dump < /dev/null || dfail restore
-          at 120 dump_cleanup timeout --foreground 60 $DC exec -T db rm -f /tmp/c3po-final.dump < /dev/null || dfail dump_cleanup
-          at 960 counts timeout --foreground 900 $DC exec -T db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null > "$W/final.counts.raw" || dfail counts
+          dat 960 dump_copy_in timeout --foreground -k 10 900 docker cp "$W/final.dump" c3po-db-1:/tmp/c3po-final.dump || fail dump_copy_in
+          dat 3000 restore timeout --foreground -k 10 2700 $DC exec -T db pg_restore -U c3po -d c3po --exit-on-error -j 2 /tmp/c3po-final.dump < /dev/null || fail restore
+          dat 120 dump_cleanup timeout --foreground -k 10 60 $DC exec -T db rm -f /tmp/c3po-final.dump < /dev/null || fail dump_cleanup
+          dat 960 counts timeout --foreground -k 10 900 $DC exec -T db psql -U c3po -d c3po -At -v ON_ERROR_STOP=1 -c "$count_sql" < /dev/null > "$W/final.counts.raw" || fail counts
           grep '^count|' "$W/final.counts.raw" | sort > "$W/final.counts.new"
           cmp -s "$W/final.counts" "$W/final.counts.new" || fail counts_differ
-          at 360 pgconf timeout --foreground 300 $DC exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/final.pgconf.new" || dfail pgconf
+          dat 380 pgconf timeout --foreground -k 10 300 $DC exec -T db sh -c "psql -U c3po -d c3po -At -c \"select name || '=' || setting from pg_settings where source not in ('default', 'override', 'client', 'session') and name not in ('data_directory', 'hba_file', 'ident_file', 'config_file') order by name\"; echo '-- auto.conf'; grep -v '^#' /var/lib/postgresql/data/postgresql.auto.conf; echo '-- hba'; grep -v -E '^\s*(#|$)' /var/lib/postgresql/data/pg_hba.conf" < /dev/null > "$W/final.pgconf.new" || fail pgconf
           cmp -s "$W/final.pgconf" "$W/final.pgconf.new" || fail pg_config_differs
           # 7. the application's own credential works over TCP, as the services will connect (never printed)
+          # the login bounded at 60 s on its client (TERM at 55, KILL 5 s later), with the cleanup's time kept
+          [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( 60 + KC + 70 ))" ] || fail too_late_for_app_login
           pw=$(grep -E '^C3PO_DB_PASSWORD=' "$APP/.env" | tail -n 1 | cut -d= -f2-)
           pw=${pw%\"}; pw=${pw#\"}; pw=${pw%\'}; pw=${pw#\'}
           [ -n "$pw" ] || fail no_app_password
-          printf '%s' "$pw" | timeout --foreground 60 docker exec -i c3po-db-1 sh -c 'PGPASSWORD=$(cat) psql -h db -U c3po -d c3po -At -c "select 1"' > /dev/null || fail app_password
+          printf '%s' "$pw" | timeout --foreground -k 5 55 docker exec -i c3po-db-1 sh -c 'PGPASSWORD=$(cat) psql -h db -U c3po -d c3po -At -c "select 1"' > /dev/null || fail app_password
           unset pw
+          # every command in the container returned (the temporary dump already removed): none of them runs any more
+          disarm
           say "db=restored tables=$(wc -l < "$W/final.counts.new") counts=match server_config=match app_login=ok"
           names=$(timeout --foreground 20 docker ps --format '{{.Names}}') || fail docker_unreadable
           [ "$names" = c3po-db-1 ] || fail unexpected_containers
@@ -1712,12 +2084,31 @@ jobs:
             if [ "$s" = 97 ]; then fail "too_late_for_$what"; fi
             return "$s"
           }
-          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a timer has
-          # none: its stop ends at once); not finite fails
+          # arm CANCEL: CANCEL (a function) becomes the cleanup that every exit runs, and from then on TERM, HUP and INT are
+          # held until the command in flight has returned (a root one is out of the group TERM's reach anyway): the signal
+          # then ignores any further one, runs the cancel armed at that moment once (none after a disarm; errexit off for it,
+          # as in the EXIT trap) and ends the script.
+          # Every cancel also starts by ignoring further signals, so none cuts it short. disarm: no cancel any more
+          arm() { ARMED=$1; cleanup() { "$ARMED"; }; trap 'trap ":" TERM HUP INT; cleanup() { :; }; "$ARMED" || :; exit 143' TERM HUP INT; }
+          disarm() { ARMED=:; cleanup() { :; }; }
+          # handoff NEED WHAT CMD...: sat for a hand-off to systemd whose cancel the caller has ALREADY armed (arm), so a signal
+          # is held until the client (a root process, bounded by its own timeout) has returned, and the cancel never runs
+          # before the start it must cancel is queued or refused. A start queued whose client then errs or is cut is cancelled
+          # the same way. Only the admission's own refusal (97, before the exec: nothing was handed off; sudo, env, timeout
+          # and systemctl never exit 97) disarms it; every other outcome leaves it armed
+          handoff() {
+            local need=$1 what=$2 s=0
+            shift 2
+            sudo env D="$DEADLINE" N="$need" bash -c '[ "$(( D - $(date +%s) ))" -ge "$N" ] || exit 97; exec "$@"' handoff "$@" || s=$?
+            if [ "$s" = 97 ]; then disarm; fail "too_late_for_$what"; fi
+            return "$s"
+          }
+          # unit_s Start|Stop UNIT: the unit's own start or stop timeout in whole seconds, read from the manager (a bounded read;
+          # a timer has none: its stop ends at once); not finite fails
           unit_s() {
             local p v us
             case "$2" in *.timer) echo 0; return 0 ;; *.socket) p=TimeoutUSec ;; *) p="Timeout${1}USec" ;; esac
-            v=$(systemctl show -p "$p" --value "$2") || return 1
+            v=$(timeout --foreground 10 systemctl show -p "$p" --value "$2") || return 1
             [ -n "$v" ] && [ "$v" != infinity ] || return 1
             us=$(systemd-analyze timespan "$v" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || return 1
@@ -1727,8 +2118,9 @@ jobs:
           # (SIGTERM, SIGKILL, the final SIGTERM and SIGKILL, every one bounded by TimeoutStopSec), plus 60 s
           stop_need() { local n=60 u t; for u in "$@"; do t=$(unit_s Stop "$u") || return 1; n=$(( n + 4 * t )); done; echo "$n"; }
           # sysop WHAT stop|start UNIT...: one BLOCKING systemctl stop or start, admitted in its root process with its worst
-          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s); it returns only when the jobs
-          # of the named units have ended, and systemd ends them within those timeouts, so the effect itself is bounded
+          # case left (a stop: stop_need; a start: the units' own start timeouts plus 60 s), plus SYS_KEEP seconds (0 unless
+          # set) for what must follow it; it returns only when the jobs of the named units have ended, and systemd ends them
+          # within those timeouts, so the effect itself is bounded
           sysop() {
             local what=$1 action=$2 need=60 u t
             shift 2
@@ -1737,68 +2129,92 @@ jobs:
               start) for u in "$@"; do t=$(unit_s Start "$u") || fail "${what}_unbounded"; need=$(( need + t )); done ;;
               *) fail "${what}_action" ;;
             esac
-            sat "$need" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
+            sat "$(( need + ${SYS_KEEP:-0} ))" "$what" timeout --foreground "$need" systemctl "$action" "$@" || fail "$what"
           }
-          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed
-          # off without blocking, admitted with its whole worst case left (60 s for the hand-off, LIMIT, a poll, then the
-          # cancelling stop). From the hand-off on, EVERY exit of the script (a failed unit, an unreadable state, the limit
-          # passed, any error) runs the cancelling stop, never refused, bounded by the units' own stop timeouts; then the
-          # end is proven by their state and by no containerd shim left
+          # start_bounded WHAT LIMIT UNIT...: a start whose units may have no start timeout of their own (Docker's), handed off
+          # without blocking. Its cancel (sb_cancel) is armed BEFORE the hand-off (arm, then handoff), so a start
+          # queued and then cut on its client, refused only in part (a masked unit) or met by a TERM is cancelled as well, only
+          # after its client has returned; only the admission's own refusal disarms it. Every state read is bounded at 10 s,
+          # and the cancel's whole time (SB_CANCEL) is kept before the reads and checked again after them, so a late read can
+          # neither eat it nor turn into a success. Admitted with the whole worst case left: the hand-off (60 s), LIMIT, the
+          # pause and one more round of reads, then the cancel
           start_bounded() {
-            local what=$1 limit=$2 need sneed u st ok t0
+            local what=$1 limit=$2 sneed reads need u st ok t0
             shift 2
             sneed=$(stop_need "$@") || fail "${what}_unbounded"
-            need=$(( 60 + limit + 10 + sneed ))
-            SB_UNITS="$*"; SB_NEED=$sneed; SB_WHAT=$what
-            # a hand-off refused only in part (a masked unit) or cut on its client may still have queued jobs: cancelled too
-            sat "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || { sb_cancel; fail "${what}_handoff"; }
-            # from the hand-off on, every exit of the script (failed, unreadable, the limit, the deadline, any error) runs
-            # the one cancel-and-confirm below
-            cleanup() { sb_cancel; }
+            # the cancel: the stop's worst case, one bounded state read per unit and the bounded shim check, plus 10 s
+            SB_UNITS="$*"; SB_WHAT=$what; SB_NEED=$sneed; SB_CANCEL=$(( sneed + 10 * ($# + 1) + 10 ))
+            reads=$(( 10 * $# ))
+            need=$(( 60 + limit + 2 + reads + SB_CANCEL + 10 ))
+            arm sb_cancel
+            handoff "$need" "$what" timeout --foreground 60 systemctl --no-block start "$@" || fail "${what}_handoff"
             t0=$(date +%s)
             while :; do
-              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( sneed + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( reads + SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
               ok=yes
               for u in "$@"; do
-                st=$(systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
+                st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u") || fail "${what}_unreadable"
                 case "$st" in active) ;; failed) fail "${what}_failed" ;; *) ok=no ;; esac
               done
-              if [ "$ok" = yes ]; then cleanup() { :; }; return 0; fi
+              [ "$(( DEADLINE - $(date +%s) ))" -ge "$(( SB_CANCEL + 10 ))" ] || fail "${what}_deadline_kept_for_the_cancel"
+              if [ "$ok" = yes ]; then disarm; return 0; fi
               [ "$(( $(date +%s) - t0 ))" -lt "$limit" ] || fail "${what}_timed_out"
               sleep 2
             done
           }
           # sb_cancel: the units stopped (never refused, the client bounded by their own stop worst case), then their end
-          # confirmed by state (inactive or failed) and by no containerd shim left; the outcome is said either way
+          # confirmed by state (inactive or failed) and by no containerd shim left, each read bounded at 10 s and an unreadable
+          # or timed-out one never taken for an end; a further signal is held and ignored, so it never cuts the cancel short;
+          # no variable named s (the EXIT trap keeps its status there); SB_CANCEL at most; the outcome said either way
           sb_cancel() {
-            local u st ok=yes
+            local u st ps_rc ok=yes
+            trap ':' TERM HUP INT
             sudo timeout --foreground "$SB_NEED" systemctl stop $SB_UNITS >/dev/null 2>&1 || ok=no
             for u in $SB_UNITS; do
-              st=$(systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
+              st=$(timeout --foreground 10 systemctl show -p ActiveState --value "$u" 2>/dev/null) || st=unreadable
               case "$st" in inactive|failed) ;; *) ok=no ;; esac
             done
-            if pgrep -f containerd-shim >/dev/null 2>&1; then ok=no; fi
+            # pgrep: only 1 means none (found, an error or the timeout prove nothing); the bracket keeps it off its own wrapper
+            ps_rc=0; timeout --foreground 10 pgrep -f '[c]ontainerd-shim' >/dev/null 2>&1 || ps_rc=$?
+            [ "$ps_rc" = 1 ] || ok=no
             if [ "$ok" = yes ]; then say "${SB_WHAT}_cancel=confirmed_ended"; else say "${SB_WHAT}_cancel=not_confirmed"; fi
           }
-          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its job's own limit and action
-          # (poweroff.target: 30 minutes, then forced) still fit before DEADLINE
-          poweroff_later() {
-            local d us need
-            [ "$(systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
-            [ "$(systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
-            # the forced action's final stage: SIGTERM to what is left, up to the manager's default stop timeout, SIGKILL,
-            # the same again, then sync and unmount
-            d=$(systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
+          # poweroff_need: the power-off's own worst case into PO_NEED, read from the manager (each read bounded): 60 s for the
+          # hand-off, 20 s ahead with 1 s of accuracy, poweroff.target's job limit (30 minutes, checked), then its forced action
+          # (checked), whose final stage sends SIGTERM to what is left for up to the manager's default stop timeout (finite,
+          # checked), SIGKILL as long again, then syncs and unmounts; plus 60 s
+          poweroff_need() {
+            local d us
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutUSec --value poweroff.target)" = 30min ] || fail poweroff_job_timeout_unexpected
+            [ "$(timeout --foreground 10 systemctl show -p JobTimeoutAction --value poweroff.target)" = poweroff-force ] || fail poweroff_job_action_unexpected
+            d=$(timeout --foreground 10 systemctl show -p DefaultTimeoutStopUSec --value) || fail poweroff_default_stop_unreadable
             [ -n "$d" ] && [ "$d" != infinity ] || fail poweroff_default_stop_unbounded
             us=$(systemd-analyze timespan "$d" 2>/dev/null | sed -n 2p | awk '{print $2}')
             [[ "$us" =~ ^[0-9]+$ ]] && [ "$us" -gt 0 ] || fail poweroff_default_stop_unbounded
-            # 60 s for the hand-off, 20 s ahead with 1 s of accuracy, the job's 30 minutes, then the final stage, plus 60 s
-            need=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
-            sat "$need" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+            PO_NEED=$(( 60 + 20 + 1 + 1800 + 2 * ((us + 999999) / 1000000) + 60 ))
           }
-          # admitted only with 67 minutes left before the run's DEADLINE (the container stop, the runtime stop's worst
-          # case, four kill stages per unit, the mask, the power-off's own limit), each hand-off to systemd admitted again
-          [ "$(( DEADLINE - $(date +%s) ))" -ge 4000 ] || fail too_late_for_the_back_out
+          # seq_need PRE UNIT...: the whole power-off sequence's worst case into SEQ_NEED, computed before its first change: PRE
+          # seconds for the work before the runtime stop, the stop of these units (stop_need), the mask (120 s), sync and the
+          # unmount (120 s), then the power-off's own (PO_NEED)
+          seq_need() {
+            local pre=$1 sn
+            shift
+            sn=$(stop_need "$@") || fail runtime_stop_unbounded
+            poweroff_need
+            SEQ_NEED=$(( pre + sn + 120 + 120 + PO_NEED ))
+          }
+          # the power-off: scheduled 20 s ahead (timer accuracy fixed at 1 s) only while its own worst case, read again now,
+          # still fits before DEADLINE
+          poweroff_later() {
+            poweroff_need
+            sat "$PO_NEED" power_off timeout --foreground 60 systemd-run --on-active=20 --timer-property=AccuracySec=1s --unit=c3po-migration-poweroff systemctl poweroff >/dev/null || fail power_off
+          }
+          # admitted only with the whole sequence's worst case left, computed before anything changes (seq_need: 600 s for
+          # the checks and the container stop before the runtime stop, then the runtime stop, the mask, sync and the
+          # unmount, the power-off), each hand-off to systemd admitted again on its own
+          seq_need 600 docker.socket docker.service containerd.service
+          [ "$(( DEADLINE - $(date +%s) ))" -ge "$SEQ_NEED" ] || fail too_late_for_the_back_out
+          say "back_out_need_s=$SEQ_NEED"
           # only before T_WRITE, and proven here: no crontab, no container but the database and the two legacy ones C2
           # created, and the tunnel connector never started
           [ -z "$(crontab -l 2>/dev/null)" ] || fail crontab_present
@@ -1844,8 +2260,12 @@ jobs:
             done <<<"$recs"
             say "docker=down_at_back_out container_records=$n"
           fi
+          # each change admitted with the rest of the sequence left: the stop with the mask, sync and the unmount (240 s) and
+          # the power-off's own (PO_NEED) after it, the mask with the same
+          SYS_KEEP=$(( 120 + 120 + PO_NEED ))
           sysop runtime_stop stop docker.socket docker.service containerd.service
-          sat 120 runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
+          SYS_KEEP=0
+          sat "$(( 120 + 120 + PO_NEED ))" runtime_mask timeout --foreground 60 systemctl mask docker.socket docker.service containerd.service >/dev/null || fail runtime_mask
           ! pgrep -x dockerd >/dev/null || fail dockerd_alive
           sync
           if findmnt -n /mnt/day-d-data >/dev/null; then
