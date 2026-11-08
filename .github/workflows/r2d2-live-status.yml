@@ -2124,7 +2124,7 @@ jobs:
           # whose own status is kept (an error is no answer).
           # VOL_STATE is empty or nonempty; a mismatched or missing path, or any error, fails the run
           vol_state() {
-            local info typ name src vinfo drv mp nopt cnt
+            local info typ name src vinfo drv mp nopt ft cnt
             info=$(timeout --foreground 20 docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Type}} {{.Name}} {{.Source}}{{end}}{{end}}' c3po-db-1) || fail docker_unreadable
             read -r typ name src <<<"$info"
             [ "$typ" = volume ] && [ "$name" = c3po_c3po_postgres ] || fail postgres_volume_name
@@ -2133,7 +2133,9 @@ jobs:
             # a plain local volume (no options: a bind-backed one would show its data only once mounted)
             [ "$drv" = local ] && [ "$nopt" = 0 ] || fail postgres_volume_driver
             [ -n "$src" ] && [ "$src" = "$mp" ] && [ "$mp" = "/var/lib/docker/volumes/$name/_data" ] || fail postgres_volume_path
-            sudo test -d "$mp" && ! sudo test -L "$mp" || fail postgres_volume_path
+            # a positive proof of the type, the final link not followed (stat without -L): exactly a directory, or refuse
+            ft=$(sudo timeout --foreground 10 env LC_ALL=C stat -c %F "$mp") || fail postgres_volume_path
+            [ "$ft" = directory ] || fail postgres_volume_path
             cnt=$(sudo timeout --foreground 20 find "$mp" -mindepth 1 -maxdepth 1 -printf x) || fail postgres_volume_unreadable
             VOL_NAME=$name
             if [ -z "$cnt" ]; then VOL_STATE=empty; else VOL_STATE=nonempty; fi
