@@ -1854,9 +1854,15 @@ jobs:
           [ ! -e "$W/c2.passed" ] || fail c2_already_passed
           # the credential the services themselves get, resolved before any change: compose's own reading of the api's
           # database URL (the .env value, or compose's default when the .env has none), parsed in place, never printed
+          # the parser prints only the password, or nothing: any failure (JSON, keys, URL) exits 3 with no message, and its
+          # stderr goes nowhere, so no part of the input can reach the host log
           pw=$(timeout --foreground -k 5 55 docker compose --env-file "$APP/.env" -f "$APP/c3po/compose.yml" config --format json 2>/dev/null | python3 -c 'import json, sys, urllib.parse as u
-          url = json.load(sys.stdin)["services"]["api"]["environment"]["C3PO_DATABASE_URL"]
-          print(u.unquote(u.urlsplit(url).password or ""))') || fail app_credential_unresolved
+          try:
+              url = json.load(sys.stdin)["services"]["api"]["environment"]["C3PO_DATABASE_URL"]
+              pw = u.unquote(u.urlsplit(url).password or "")
+          except Exception:
+              sys.exit(3)
+          sys.stdout.write(pw + "\n")' 2>/dev/null) || fail app_credential_unresolved
           [ -n "$pw" ] || fail no_app_password
           # at NEED WHAT CMD...: a change a daemon may carry on with, started only if it can still end NEED seconds before
           # DEADLINE; the check runs in the very process that then execs the command, itself bounded inside NEED
