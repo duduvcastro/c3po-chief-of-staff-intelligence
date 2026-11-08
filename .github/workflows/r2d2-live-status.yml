@@ -2118,10 +2118,29 @@ jobs:
           # the two legacy ones C2 creates
           export C3PO_BUILD_SHA
           C3PO_BUILD_SHA=$(cat "$APP/.deploy-version")
+          # vol_state: the database volume, read at the very mount Docker gives the container's data destination: a volume
+          # mount named c3po_c3po_postgres, a plain local volume (no options), whose source is that volume's own mountpoint,
+          # the local driver's path for it, a real directory (no symlink); then its entries listed by a bounded root find
+          # whose own status is kept (an error is no answer).
+          # VOL_STATE is empty or nonempty; a mismatched or missing path, or any error, fails the run
+          vol_state() {
+            local info typ name src vinfo drv mp nopt cnt
+            info=$(timeout --foreground 20 docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Type}} {{.Name}} {{.Source}}{{end}}{{end}}' c3po-db-1) || fail docker_unreadable
+            read -r typ name src <<<"$info"
+            [ "$typ" = volume ] && [ "$name" = c3po_c3po_postgres ] || fail postgres_volume_name
+            vinfo=$(timeout --foreground 20 docker volume inspect -f '{{.Driver}} {{len .Options}} {{.Mountpoint}}' "$name") || fail docker_unreadable
+            read -r drv nopt mp <<<"$vinfo"
+            # a plain local volume (no options: a bind-backed one would show its data only once mounted)
+            [ "$drv" = local ] && [ "$nopt" = 0 ] || fail postgres_volume_driver
+            [ -n "$src" ] && [ "$src" = "$mp" ] && [ "$mp" = "/var/lib/docker/volumes/$name/_data" ] || fail postgres_volume_path
+            sudo test -d "$mp" && ! sudo test -L "$mp" || fail postgres_volume_path
+            cnt=$(sudo timeout --foreground 20 find "$mp" -mindepth 1 -maxdepth 1 -printf x) || fail postgres_volume_unreadable
+            VOL_NAME=$name
+            if [ -z "$cnt" ]; then VOL_STATE=empty; else VOL_STATE=nonempty; fi
+          }
           at 300 db_create timeout --foreground 240 $DC up --no-start --no-build db >/dev/null || fail db_create
-          vol=$(timeout --foreground 20 docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' c3po-db-1) || fail docker_unreadable
-          [ "$vol" = c3po_c3po_postgres ] || fail postgres_volume_name
-          if [ "$(sudo find "/var/lib/docker/volumes/$vol/_data" -mindepth 1 -maxdepth 1 | wc -l)" != 0 ]; then
+          vol_state
+          if [ "$VOL_STATE" = nonempty ]; then
             sudo test -e "$W/c2.restore-begun" || fail postgres_volume_not_empty
             [ ! -e "$W/c2.passed" ] || fail c2_already_passed
             names=$(timeout --foreground 20 docker ps -a --format '{{.Names}}') || fail docker_unreadable
@@ -2129,13 +2148,13 @@ jobs:
               case "$c" in c3po-db-1|chief-of-staff-digital-cloudflared-1|chief-of-staff-digital-pluggy-webhook-1) ;; *) fail after_t_write_container ;; esac
             done
             at 300 db_reset timeout --foreground 240 docker rm -f c3po-db-1 >/dev/null || fail db_reset
-            at 300 db_reset timeout --foreground 240 docker volume rm "$vol" >/dev/null || fail db_reset
+            at 300 db_reset timeout --foreground 240 docker volume rm "$VOL_NAME" >/dev/null || fail db_reset
             at 300 db_create timeout --foreground 240 $DC up --no-start --no-build db >/dev/null || fail db_create
-            vol=$(timeout --foreground 20 docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' c3po-db-1) || fail docker_unreadable
-            [ "$vol" = c3po_c3po_postgres ] || fail postgres_volume_name
-            [ "$(sudo find "/var/lib/docker/volumes/$vol/_data" -mindepth 1 -maxdepth 1 | wc -l)" = 0 ] || fail postgres_volume_not_empty
+            vol_state
+            [ "$VOL_STATE" = empty ] || fail postgres_volume_not_empty
             say "db=reset_after_a_partial_restore"
           fi
+          [ "$VOL_STATE" = empty ] || fail postgres_volume_not_empty
           # the record now, before the database starts (it initialises the volume there): a later C2 resets what this one
           # leaves half done, never one that passed
           [ ! -e "$W/c2.passed" ] || fail c2_already_passed
