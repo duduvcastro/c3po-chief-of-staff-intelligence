@@ -1215,7 +1215,11 @@ class Engine:
         self.state.last_session = self.day.isoformat()
         self.state.session = ""
 
-    def book(self, now: datetime) -> dict[str, Any]:
+    def book(self, now: datetime, *, config: str | None = None) -> dict[str, Any]:
+        """``config``: the rule label that prices the positions' stops; default: the session's own (``state.config``),
+        else the one in force. The republish of an earlier day passes that day's label: a state recovered from the lab
+        book alone has none of its own (Codex 6740045254)."""
+        label = config or self.state.config
         positions, unrealized = [], 0.0
         for position in self.state.positions.values():
             mark = position.last_mark or position.entry_price
@@ -1225,7 +1229,7 @@ class Engine:
             positions.append({"symbol": position.symbol, "market": position.market, "quantity": position.shares,
                               "average_cost": position.entry_price, "last_price": mark, "cost_usd": position.cost_usd,
                               "unrealized_pnl_usd": result, "unrealized_return_percent": net,
-                              "stop_price": position.exit_price(self.state.config),  # the lock's floor once armed, else the stop
+                              "stop_price": position.exit_price(label),  # the lock's floor once armed, else the stop
                               "opened_at": position.opened_at})
         cash = self.state.nav_realized - sum(position.cost_usd for position in self.state.positions.values())
         return {"nav_start_usd": self.nav_start, "nav_usd": self.state.nav_realized + unrealized,
@@ -1241,7 +1245,7 @@ class Engine:
                            **{key: _rounded(key, value) for key, value in fill.items()}})
         sells = sum(1 for fill in self.fills if fill["side"] == "SELL")
         return {"schema": r2d2_lab_live.SCHEMA, "day": self.day.isoformat(), "config": config, "trades": trades,
-                "book": {key: _rounded(key, value) for key, value in self.book(now).items()},
+                "book": {key: _rounded(key, value) for key, value in self.book(now, config=config).items()},
                 "cycle": {"candidates": len(self.candidates), "signals": self.signals,
                           "entries": sum(1 for fill in self.fills if fill["side"] == "BUY"), "closed": sells}}
 

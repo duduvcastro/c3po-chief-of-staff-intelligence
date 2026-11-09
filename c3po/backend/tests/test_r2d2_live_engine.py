@@ -2679,6 +2679,72 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
     assert stored["config"] == "TIT-2S3-RT" and all(trade["id"].startswith("TIT-2S3-RT:") for trade in stored["trades"])
 
 
+FRIDAY_06_11, MONDAY_09_11 = date(2026, 11, 6), date(2026, 11, 9)
+
+
+def _on(day: date, hour: int, minute: int) -> datetime:
+    return datetime.combine(day, time(hour, minute), tzinfo=NEW_YORK).astimezone(timezone.utc)
+
+
+def _the_06_11_book_published_before_its_close(database: Database) -> Engine:
+    """06/11 ran under TIT-2S5-F20-L5-S0125 with a carried position and no fills; its book was last published at 15:59."""
+    engine = Engine(EngineState(nav_realized=1_000_000.0), FRIDAY_06_11, [])
+    engine.state.config = "TIT-2S5-F20-L5-S0125"
+    _held(engine, "S2")
+    engine_module.publish(database, engine, _on(FRIDAY_06_11, 15, 59), as_of=_on(FRIDAY_06_11, 15, 59))
+    return engine
+
+
+def _stored_stop(database: Database, day: date) -> tuple[str, str, float, float]:
+    """The stored document's rule, its book's instant, its STOP price as a net percent and the level the screen shows."""
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, day.isoformat())["outputs"]
+    item = stored["book"]["positions"][0]
+    net = (item["quantity"] * item["stop_price"] * (1 - FEE_SIDE) / item["cost_usd"] - 1) * 100
+    screen = r2d2_lab_live._positions(stored["book"], _on(MONDAY_09_11, 9, 0))[0].stop_lock_percent
+    return stored["config"], stored["book"]["as_of"], net, screen
+
+
+def _the_09_11_session_runs_under_the_rule_in_force(state: EngineState) -> None:
+    renewed = Engine(state, MONDAY_09_11, [])
+    assert renewed.state.config == engine_module.CONFIG == "TIT-2S5-F20-L5-S020"
+    carried = renewed.book(_on(MONDAY_09_11, 9, 30))["positions"][0]  # the carried position: the new session's stop
+    assert abs(renewed.state.positions["S2"].net_percent(carried["stop_price"]) - -0.20) < 1e-9
+
+
+def test_a_day_recovered_from_its_lab_book_alone_is_republished_with_the_stop_of_its_own_rule() -> None:
+    """Codex 6740045254: no usable checkpoint, and the latest lab book is 06/11's (TIT-2S5-F20-L5-S0125), published before
+    the close with a carried position and no fills. The state seeded from it has no rule of its own; the republish of 06/11
+    prices its STOP by 06/11's rule (-0.125%), never by the rule in force (-0.20%); the session of 09/11 then runs under the
+    rule in force, the carried position included."""
+    database = Database(Settings(database_url=""))
+    _the_06_11_book_published_before_its_close(database)
+    now = _on(MONDAY_09_11, 9, 0)
+    state = engine_module.load_state(database, lambda: engine_module.seed_from_lab_book(database, now))
+    assert state.config == "" and state.last_session == FRIDAY_06_11.isoformat() and list(state.positions) == ["S2"]
+    assert engine_module.reconcile_previous(database, state, MONDAY_09_11, now) is True
+    config, as_of, net, screen = _stored_stop(database, FRIDAY_06_11)
+    assert config == "TIT-2S5-F20-L5-S0125" and datetime.fromisoformat(as_of) == _on(FRIDAY_06_11, 16, 0)
+    assert abs(net - -0.125) < 1e-5 and abs(screen - -0.125) < 1e-3
+    _the_09_11_session_runs_under_the_rule_in_force(state)
+
+
+def test_a_day_restored_from_its_checkpoint_is_republished_with_the_stop_of_its_own_rule() -> None:
+    """The control of the test above: 06/11's checkpoint (TIT-2S5-F20-L5-S0125) closed the day, its final publish failed;
+    the republish of 06/11 keeps -0.125% and the session of 09/11 runs under the rule in force."""
+    database = Database(Settings(database_url=""))
+    engine = _the_06_11_book_published_before_its_close(database)
+    engine.close_session()
+    engine_module.save_state(database, engine.state, _on(FRIDAY_06_11, 16, 0))
+    now = _on(MONDAY_09_11, 9, 0)
+    state = engine_module.load_state(database, lambda: None)
+    assert state.config == "TIT-2S5-F20-L5-S0125" and state.session == "" and list(state.positions) == ["S2"]
+    assert engine_module.reconcile_previous(database, state, MONDAY_09_11, now) is True
+    config, as_of, net, screen = _stored_stop(database, FRIDAY_06_11)
+    assert config == "TIT-2S5-F20-L5-S0125" and datetime.fromisoformat(as_of) == _on(FRIDAY_06_11, 16, 0)
+    assert abs(net - -0.125) < 1e-5 and abs(screen - -0.125) < 1e-3
+    _the_09_11_session_runs_under_the_rule_in_force(state)
+
+
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 4.999 bps buy, 5.5 bps is refused (it was 3 bps)."""
