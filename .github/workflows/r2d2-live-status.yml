@@ -2360,9 +2360,41 @@ jobs:
           [ "$(printf '%s' "$uuid" | sha256sum | cut -c1-64)" = "$DAY_D_UUID_SHA256" ] || fail ap_day_d_uuid
           majmin=$(lsblk -dnro MAJ:MIN "$dd") || fail ap_day_d_device
           [[ "$majmin" =~ ^[0-9]+:[0-9]+$ ]] || fail ap_day_d_device
-          mi=$(cat /proc/self/mountinfo) || fail ap_mounts_unreadable
-          # the topmost mount on /mnt/day-d-data is the Day-D volume's own root (nothing mounted over it, no bind of a subtree)
-          [ "$(printf '%s\n' "$mi" | awk '$5 == "/mnt/day-d-data" { last = $3 " " $4 } END { print last }')" = "$majmin /" ] || fail ap_day_d_not_mounted
+          # the mount that resolving /mnt/day-d-data actually reaches, in this namespace: the opened directory's mount ID
+          # (its fdinfo) must name exactly one mountinfo record, at exactly that point, of the volume's own root, ext4, on
+          # the volume whose UUID was proven above, and the directory's own device must be that volume; a missing path,
+          # another mount (one over it or over an ancestor), a bind of a subtree or any divergence refuses
+          dm=$(/usr/bin/python3 -I - "$majmin" <<'PY'
+          import os
+          import sys
+          want = sys.argv[1]
+          fd = os.open("/mnt/day-d-data", os.O_PATH | os.O_DIRECTORY)
+          mnt_id = None
+          with open("/proc/self/fdinfo/%d" % fd, encoding="ascii") as f:
+              for line in f:
+                  if line.startswith("mnt_id:"):
+                      mnt_id = line.split()[1]
+          st = os.fstat(fd)
+          if mnt_id is None:
+              sys.exit(3)
+          records = []
+          with open("/proc/self/mountinfo", encoding="utf-8", errors="replace") as f:
+              for line in f:
+                  left, sep, right = line.rstrip("\n").partition(" - ")
+                  fields = left.split(" ")
+                  if fields and fields[0] == mnt_id:
+                      records.append((fields, right.split(" "), sep))
+          os.close(fd)
+          if len(records) != 1:
+              sys.exit(4)
+          fields, tail, sep = records[0]
+          device = "%d:%d" % (os.major(st.st_dev), os.minor(st.st_dev))
+          ok = (sep == " - " and len(fields) >= 5 and fields[2] == want and fields[3] == "/"
+                and fields[4] == "/mnt/day-d-data" and tail[:1] == ["ext4"] and device == want)
+          print("yes" if ok else "no")
+          PY
+          ) || fail ap_day_d_unresolved
+          [ "$dm" = yes ] || fail ap_day_d_not_mounted
           sudo test -s /etc/c3po/security-maintenance.hold || fail ap_hold_missing
           sudo grep -q '^migration 2026-11-07: pending acceptance' /etc/c3po/security-maintenance.hold || fail ap_hold_not_the_migration
           held=$(apt-mark showhold) || fail ap_holds_unreadable
