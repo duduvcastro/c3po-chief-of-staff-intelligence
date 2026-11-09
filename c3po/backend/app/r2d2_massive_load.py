@@ -130,7 +130,7 @@ def _schedule(phases: list[tuple[float, float, list[str]]], quote_share: float, 
                     if name in crossings or (name in cross_at and clock >= cross_at[name]):
                         if name not in crossings:
                             crossings[name] = clock
-                            # 0.4 point under the stop of the rule in force (-0.20% from 09/11, -0.125% on 06/11, -1% on 05/11, -0.20% until then): a crossing
+                            # 0.4 point under the stop of the rule in force (-0.125% from 06/11, -1% on 05/11, -0.20% until then): a crossing
                             bid = round(ENTRY_BID * (1 - (engine_module.stop_of() + 0.4) / 100), 4)
                         else:
                             continue  # sold: no more quotes of it
