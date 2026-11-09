@@ -73,9 +73,13 @@ LIVE_RULES = {
     # owner 05/11/2026: the same entries; the stop at -0.125% in LIVE_RISK
     "TIT-2S5-F20-L5-S0125": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until the close "
                             "(16:00 ET) · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
+    # owner 08/11/2026: the same entries; the stop at -0.20% in LIVE_RISK
+    "TIT-2S5-F20-L5-S020": "Gap ≤ −1% at the open · last trade back above the VWAP, checked every second, until the close "
+                           "(16:00 ET) · ADV ≥ US$15M · price ≥ US$5 · spread ≤ 5 bps",
 }
 LIVE_SLOTS = {"TIT-2S3": 20, "TIT-2S5": 20, "TIT-2": 20, "TIT-1": 1, "TIT-2S3-RT": 20, "TIT-2S5-RT": 20, "TIT-2S5-RTC": 20,
-              "TIT-2S5-F20": 20, "TIT-2S5-F20-L5": 20, "TIT-2S5-F20-L5-S1": 20, "TIT-2S5-F20-L5-S0125": 20}
+              "TIT-2S5-F20": 20, "TIT-2S5-F20-L5": 20, "TIT-2S5-F20-L5-S1": 20, "TIT-2S5-F20-L5-S0125": 20,
+              "TIT-2S5-F20-L5-S020": 20}
 # the exits and the sizes of the server's engine as the screen states them, per rule (the Launch Gates panel's risk
 # mandate, a held position's rationale and its lock/stop label); a rule without an entry keeps the screen's own text
 _RISK_30_10 = ("No leverage · up to 20 positions of 5% · stop −0.4% net · step profit lock from +0.10% net (0.05 steps to "
@@ -111,6 +115,13 @@ LIVE_RISK = {  # TIT-2S3-RT (27-29/10: a -0.5% stop, a trailing +0.15% lock) kee
                              "last step reached (+0.10%, then every 0.05: +0.15%, +0.20%, +0.25% …); sold in the last 30 seconds "
                              "if positive.",
                              "step lock +0.10% · stop −0.125%"),
+    # owner 08/11/2026: "mude o stop loss do R2D2 amanha para -0,20%"
+    "TIT-2S5-F20-L5-S020": ("No leverage · up to 20 positions · 5% of NAV at ≤ 2 bps, 4% at ≤ 3 bps, 2.5% at ≤ 5 bps · stop "
+                            "−0.20% net · step profit lock from +0.10% net, then every 0.05 (+0.15%, +0.20%, +0.25% …)",
+                            "Held by the live rule: stop −0.20% net until the lock arms at +0.10% net; then the floor is the "
+                            "last step reached (+0.10%, then every 0.05: +0.15%, +0.20%, +0.25% …); sold in the last 30 seconds "
+                            "if positive.",
+                            "step lock +0.10% · stop −0.20%"),
 }
 SESSION_CLOSE_ET = (16, 5)  # a session counts in the day scoreboard once the US close has passed
 CASH_TOLERANCE_USD = 0.05  # a published book is rounded: its cash against the checkpoint's

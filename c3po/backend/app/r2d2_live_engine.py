@@ -12,7 +12,7 @@ the close, 16:00 ET (owner 30/10; 15:29:59 until then) — the ask and the sprea
 (``lab/massive.py`` quote_at, ``lab/cost_real.py`` touch: at most 60 s old), the stream's quote only when Massive does
 not answer, up to 20 positions sized by the spread paid (owner 31/10: 5% of NAV at <= 2 bps, 4% at <= 3 bps, 2.5% at
 <= 5 bps; NAV/20 each until then), re-entry allowed after an exit. Every second each open position is checked at the real
-bid: stop at -0.125% net (owner 05/11, from 06/11; -1% on 05/11, -0.20% from 02/11 to 04/11, -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
+bid: stop at -0.20% net (owner 08/11, from 09/11; -0.125% on 06/11, -1% on 05/11, -0.20% from 02/11 to 04/11, -0.4% until then) until a step profit lock arms at +0.10% net, whose floor is the
 last step the peak reached (owner 03/11: every 0.05 — +0.10, +0.15, +0.20, +0.25 ...; 02-03/11: +0.10, +0.20, then every
 0.15; until then every 0.05 up to +0.30%, every 0.10 above), every positive position sold from 15:59:30 ET; the negatives carry to the next session. Paper only: no broker, no order. Fills, book and scan counts are the same
 documents the screen already reads (``r2d2_lab_live``), written straight to the database.
@@ -51,8 +51,9 @@ NEW_YORK = ZoneInfo("America/New_York")
 # (TIT-2S5-RT until then: until 15:29:59 ET); owner 31/10: the sizes by the spread, the -0.20% stop and the new lock steps
 # from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session); owner 03/11: the
 # lock's steps every 0.05 from 04/11 (TIT-2S5-F20 until then: +0.10, +0.20, then every 0.15); owner 04/11: the stop at -1%
-# on 05/11 (TIT-2S5-F20-L5 until then: -0.20%); owner 05/11: the stop at -0.125% from 06/11 (TIT-2S5-F20-L5-S1 on 05/11)
-CONFIG = "TIT-2S5-F20-L5-S0125"
+# on 05/11 (TIT-2S5-F20-L5 until then: -0.20%); owner 05/11: the stop at -0.125% on 06/11 (TIT-2S5-F20-L5-S1 on 05/11); owner
+# 08/11: the stop at -0.20% from 09/11 (TIT-2S5-F20-L5-S0125 on 06/11)
+CONFIG = "TIT-2S5-F20-L5-S020"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -75,9 +76,10 @@ RULE = {
     # acima de 0,10% para a cada 5pp. Ou seja, 0,15%, 0,20%, 0,25% e por ai vai" — every 0.05 from +0.10, both bands
     # (TIT-2S5-F20-L5 from 04/11). Owner 04/11/2026 ~18:3x BRT: "Amanha coloque o stop do R2D2 em -1%, quero ver se com
     # esse respiro a mais como as ações performam" — the stop at -1% net on 05/11 (TIT-2S5-F20-L5-S1), the lock unchanged.
-    # Owner 05/11/2026 ~19:1x BRT: "Coloque o stop loss amanha em -0,125%" — the stop at -0.125% net from 06/11
-    # (TIT-2S5-F20-L5-S0125), the lock unchanged
-    "stop_percent": 0.125, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.20,
+    # Owner 05/11/2026 ~19:1x BRT: "Coloque o stop loss amanha em -0,125%" — the stop at -0.125% net on 06/11
+    # (TIT-2S5-F20-L5-S0125), the lock unchanged. Owner 08/11/2026 ~19:5x BRT: "mude o stop loss do R2D2 amanha para -0,20%"
+    # — the stop at -0.20% net from 09/11 (TIT-2S5-F20-L5-S020), the lock unchanged
+    "stop_percent": 0.20, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.20,
     "lock_wide_step_percent": 0.05,
     # owner 30/10/2026 ~20:3x BRT: "para segunda-feira, faremos umas alterações de BPS e tamanho da compra" — the lab's
     # studies of 30/10 (results/stopstudy_run41123209315, results/exitstudy2_run41145478129): no stop, spread limit or size
@@ -698,13 +700,15 @@ LOCK_LADDERS: dict[str, tuple[float, float, float, float]] = {
     "TIT-2S5-F20": (0.10, 0.10, 0.20, 0.15),  # 02-03/11: +0.10, +0.20, then every 0.15
     "TIT-2S5-F20-L5": (0.10, 0.05, 0.20, 0.05),  # 04/11: every 0.05 from +0.10 (the ladder in force since)
     "TIT-2S5-F20-L5-S1": (0.10, 0.05, 0.20, 0.05),  # 05/11: the same ladder, the -1% stop
+    "TIT-2S5-F20-L5-S0125": (0.10, 0.05, 0.20, 0.05),  # 06/11: the same ladder, the -0.125% stop
     CONFIG: (RULE["lock_min_percent"], RULE["lock_step_percent"], RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]),
 }
 _LADDER_IN_FORCE = LOCK_LADDERS[CONFIG]  # bound once: a label without its own ladder takes the rule in force
 # the stop (% net) of each rule label, as the lock's ladder: a session keeps the stop it ran under, so the republish of an
-# earlier session prices its stops by ITS rule (owner 05/11: -0.125% from 06/11; owner 04/11: -1% on 05/11; -0.20% on
-# 02-04/11); a label without an entry takes the rule in force
-STOPS: dict[str, float] = {"TIT-2S5-F20": 0.20, "TIT-2S5-F20-L5": 0.20, "TIT-2S5-F20-L5-S1": 1.00, CONFIG: RULE["stop_percent"]}
+# earlier session prices its stops by ITS rule (owner 08/11: -0.20% from 09/11; owner 05/11: -0.125% on 06/11; owner
+# 04/11: -1% on 05/11; -0.20% on 02-04/11); a label without an entry takes the rule in force
+STOPS: dict[str, float] = {"TIT-2S5-F20": 0.20, "TIT-2S5-F20-L5": 0.20, "TIT-2S5-F20-L5-S1": 1.00,
+                           "TIT-2S5-F20-L5-S0125": 0.125, CONFIG: RULE["stop_percent"]}
 _STOP_IN_FORCE = STOPS[CONFIG]
 
 
@@ -1271,7 +1275,8 @@ def load_state(database: Any, opening_nav: Callable[[], EngineState | None]) -> 
 
 
 def save_state(database: Any, state: EngineState, now: datetime) -> None:
-    # version 10 from 06/11/2026 (owner 05/11): the stop at -0.125% (TIT-2S5-F20-L5-S0125); version 9 on 05/11/2026 (owner
+    # version 11 from 09/11/2026 (owner 08/11): the stop at -0.20% (TIT-2S5-F20-L5-S020); version 10 on 06/11/2026 (owner
+    # 05/11): the stop at -0.125% (TIT-2S5-F20-L5-S0125); version 9 on 05/11/2026 (owner
     # 04/11): the stop at -1% (TIT-2S5-F20-L5-S1); version 8 from 04/11/2026 (owner
     # 03/11): the lock's steps every 0.05 from +0.10 (TIT-2S5-F20-L5); version 7 from
     # 02/11/2026: the buy signal's trades on Massive's stream, the rule unchanged; version 6 from 02/11/2026
@@ -1280,13 +1285,14 @@ def save_state(database: Any, state: EngineState, now: datetime) -> None:
     # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
     # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 10, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 11, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat(), "trade_source": TRADE_SOURCE},
         "The live R2D2 inside the C3PO server on a real-time stream (owner 27/10/2026), Massive's for the buy signal's "
         "trades since 02/11/2026; entries every second and "
         "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
         "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps) (owner 31/10/2026); the step profit lock from +0.10, every 0.05 "
-        "(owner 03/11/2026); the stop at -0.125% (owner 05/11/2026; -1% on 05/11, -0.20% from 02/11 to 04/11)")
+        "(owner 03/11/2026); the stop at -0.20% (owner 08/11/2026; -0.125% on 06/11, -1% on 05/11, -0.20% from 02/11 to "
+        "04/11)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
 
 
