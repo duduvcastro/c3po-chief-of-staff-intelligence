@@ -2346,6 +2346,29 @@ jobs:
           # proven faithful (apt-config dump equal to the host's own, the redirect line apart). On the host, only the
           # migration log and this payload's own temporary files are written
           [ -z "${APT_CONFIG:-}" ] || fail ap_apt_config_env_set
+          # the installer's own host gates (6727180498), read here right before it: the deployed revision exactly the
+          # reviewed one, Day-D mounted by its UUID, the migration hold present, the six Docker packages held, the app's
+          # environment file present
+          rev=d05225611a48726d72e2ce71b175b9c52770efe5
+          dv=$(cat "$APP/.deploy-version") || fail ap_deploy_version_unreadable
+          [ "$dv" = "$rev" ] || fail ap_deploy_version_not_reviewed
+          il=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production) || fail ap_image_unreadable
+          [ "$il" = "$rev" ] || fail ap_image_not_reviewed
+          dd=$(lsblk -nrpo NAME,LABEL,FSTYPE | awk '$2 == "day_d_data" && $3 == "ext4" {print $1}') || fail ap_day_d_device
+          [ "$(printf '%s\n' "$dd" | awk 'NF { n++ } END { print n + 0 }')" = 1 ] || fail ap_day_d_device
+          uuid=$(sudo blkid -p -s UUID -o value "$dd") || fail ap_day_d_uuid
+          [ "$(printf '%s' "$uuid" | sha256sum | cut -c1-64)" = "$DAY_D_UUID_SHA256" ] || fail ap_day_d_uuid
+          majmin=$(lsblk -dnro MAJ:MIN "$dd") || fail ap_day_d_device
+          [[ "$majmin" =~ ^[0-9]+:[0-9]+$ ]] || fail ap_day_d_device
+          mi=$(cat /proc/self/mountinfo) || fail ap_mounts_unreadable
+          # the topmost mount on /mnt/day-d-data is the Day-D volume's own root (nothing mounted over it, no bind of a subtree)
+          [ "$(printf '%s\n' "$mi" | awk '$5 == "/mnt/day-d-data" { last = $3 " " $4 } END { print last }')" = "$majmin /" ] || fail ap_day_d_not_mounted
+          sudo test -s /etc/c3po/security-maintenance.hold || fail ap_hold_missing
+          sudo grep -q '^migration 2026-11-07: pending acceptance' /etc/c3po/security-maintenance.hold || fail ap_hold_not_the_migration
+          held=$(apt-mark showhold) || fail ap_holds_unreadable
+          [ "$(printf '%s\n' "$held" | awk '$0 == "docker-ce" || $0 == "docker-ce-cli" || $0 == "docker-ce-rootless-extras" || $0 == "containerd.io" || $0 == "docker-buildx-plugin" || $0 == "docker-compose-plugin" { n++ } END { print n + 0 }')" = 6 ] || fail ap_docker_not_held
+          sudo test -s "$APP/.env" || fail ap_app_env_missing
+          say "installer_gates=ok deploy_version=reviewed image=reviewed day_d=mounted hold=migration docker_held=6 app_env=present"
           # the run the installer starts: the manager's environment only the locale and PATH (APT_CONFIG, PYTHONPATH or
           # LD_PRELOAD there would change what unattended-upgrade reads or runs, which python3 -I here cannot see); the
           # stock unit file, loaded as it is on disk, with no environment, no environment file, no drop-in and the stock
