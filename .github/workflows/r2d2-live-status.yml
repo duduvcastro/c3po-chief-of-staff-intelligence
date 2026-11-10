@@ -92,6 +92,8 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 # lease, and before C0 they write only their own log (/var/log/c3po-migration) and the shipped script itself
 # (/tmp/c3po-migration.*, removed on exit). Every printed line passes an anchored guard plus IPv4/IPv6/host-name denies;
 # details stay in /var/log/c3po-migration (root, 0600) on each host.
+# BU is the one exception: read only, its script is the stdin of a bounded "bash -s" over the same strict SSH, with
+# no file, no log and no sudo on the host.
 
 on:
   workflow_dispatch:
@@ -2342,10 +2344,19 @@ jobs:
           BU)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
-              stage <<'REMOTE' && remote static no || rc=1
-          # read only: the upload the restore drill would select now, by the drill's own rule (the newest upload.json under
-          # the evidence root, then its first "/daily/" key), with C1a's binding (the newest sealed result's run, the upload
-          # of that same run, the uploaded file the dump); the key as its hash, as in C1a. No write, no unit, no container
+              # read only, so not through stage and remote (Codex 6777551654): no payload file on the host, no log prelude,
+              # no sudo. The script is the STDIN of a bounded "bash -s" over the strict SSH of every phase, inside this run's
+              # DEADLINE (nothing with a newline goes through the remote login shell); only its "BU ..." lines are kept, here
+              # on the runner. A cut stream cannot pass: the gate line is the script's last command
+              static 'bash -s' > "$RUNNER_TEMP/remote.txt" 2>/dev/null <<'READONLY'
+          set -o pipefail
+          say() { printf 'BU %s\n' "$*"; }
+          fail() { say "gate=FAIL reason=$1"; exit 20; }
+          APP=/opt/chief-of-staff-digital
+          # the upload the restore drill would select now, by the drill's own rule (the newest upload.json under the evidence
+          # root, then its first "/daily/" key), with C1a's binding (the newest sealed result's run, the upload of that same
+          # run, the uploaded file the dump); the key as its hash, as in C1a (the key itself follows from session_date and the
+          # dump's hash, and the drill prints it)
           ev="$APP/outputs/evidence/postgres-backup"
           newest=$(find "$ev" -name result.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-) || fail backup_result_find
           [ -n "$newest" ] || fail backup_evidence
@@ -2355,26 +2366,44 @@ jobs:
           # a tie at the top would let the drill's sort pick either: refused
           top=$(find "$ev" -name upload.json -type f -printf '%T@\n' | sort -n | tail -n 2) || fail backup_upload_find
           [ "$(printf '%s\n' "$top" | sort -u | wc -l)" = "$(printf '%s\n' "$top" | wc -l)" ] || fail backup_upload_tie
-          # the run sealed as the backup script seals it
-          ( cd "$run" && sha256sum --quiet -c SHA256SUMS ) >/dev/null 2>&1 || fail backup_run_not_sealed
-          bind=$(python3 -I -c 'import hashlib, json, os, sys
+          # the seal: exactly one valid line for each of the four documents the backup script seals and nothing else, each
+          # document read ONCE, its bytes checked against the seal, and those same bytes parsed for the binding (Codex
+          # 6777551654: a manifest listing only some of them must not pass); a seal failure exits 3, any other failure 1
+          bind=$(python3 -I -c 'import hashlib, json, os, re, sys
           from datetime import datetime, timezone
           run = sys.argv[1]
-          load = lambda name: json.load(open(os.path.join(run, name), encoding="utf-8"))
-          result, upload, pre = load("result.json"), load("upload.json"), load("preflight.json")
+          names = ("preflight.json", "dump.json", "upload.json", "result.json")
+          raw = {}
+          for name in names:
+              with open(os.path.join(run, name), "rb") as handle:
+                  raw[name] = handle.read()
+          with open(os.path.join(run, "SHA256SUMS"), "rb") as handle:
+              lines = handle.read().decode("ascii").split("\n")
+          if lines[-1] != "": raise SystemExit(3)
+          seal = {}
+          for line in lines[:-1]:
+              match = re.fullmatch(r"([0-9a-f]{64})  ([a-z]+[.]json)", line)
+              if not match or match.group(2) in seal: raise SystemExit(3)
+              seal[match.group(2)] = match.group(1)
+          if set(seal) != set(names): raise SystemExit(3)
+          for name in names:
+              if hashlib.sha256(raw[name]).hexdigest() != seal[name]: raise SystemExit(3)
+          pre, dump, upload, result = (json.loads(raw[name]) for name in names)
           session, run_id = os.path.basename(os.path.dirname(run)), os.path.basename(run)
           if result.get("schema") != "C3PO_POSTGRES_BACKUP_RESULT-v1" or result.get("status") != "succeeded": raise SystemExit("result")
-          if upload.get("schema") != "C3PO_POSTGRES_BACKUP_UPLOAD-v1": raise SystemExit("upload schema")
+          if upload.get("schema") != "C3PO_POSTGRES_BACKUP_UPLOAD-v1" or dump.get("schema") != "C3PO_POSTGRES_BACKUP_DUMP-v1": raise SystemExit("schema")
           if pre.get("run_id") != run_id or pre.get("session_date") != session or upload.get("session_date") != session: raise SystemExit("run")
           daily = next(item for item in upload["uploads"] if "/daily/" in item["key"])
-          if upload["file_sha256"] != result["dump_sha256"]: raise SystemExit("uploaded file is not the dump")
+          if not (upload["file_sha256"] == result["dump_sha256"] == dump["file_sha256"]): raise SystemExit("uploaded file is not the dump")
           if result["uploads"] != upload["uploads"]: raise SystemExit("result and upload name different objects")
           done = datetime.fromisoformat(result["completed_at"]).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-          print(session, run_id, done, len(upload["uploads"]), result["dump_sha256"], hashlib.sha256(daily["key"].encode()).hexdigest())' "$run") || fail backup_binding
+          print(session, run_id, done, len(upload["uploads"]), result["dump_sha256"], hashlib.sha256(daily["key"].encode()).hexdigest())' "$run"); ps=$?
+          [ "$ps" = 3 ] && fail backup_seal
+          [ "$ps" = 0 ] || fail backup_binding
           [[ "$bind" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{8}T[0-9]{6}Z\ [0-9TZ:-]{20}\ [0-9]{1,3}\ [0-9a-f]{64}\ [0-9a-f]{64}$ ]] || fail backup_binding
           read -r b_session b_run b_done b_n b_dump b_key <<<"$bind"
           say "upload_is_newest=yes session_date=$b_session run_id=$b_run status=succeeded completed_utc=$b_done uploads=$b_n"
-          say "backup_dump_sha=$b_dump backup_object_key_sha=$b_key"
+          say "seal=4_of_4 backup_dump_sha=$b_dump backup_object_key_sha=$b_key"
           # the window to the drill: no backup running now, and the next one when its timer, loaded and active, says, in the
           # future (systemctl show answers "inactive" and an empty time even for a unit that does not exist, and an empty
           # time would read as today's midnight: pre-review of d39ead80)
@@ -2389,9 +2418,19 @@ jobs:
           [[ "$next_s" =~ ^[0-9]+$ ]] && [ "$next_s" -gt "$(date +%s)" ] || fail backup_next_not_future
           when=$(TZ=America/Sao_Paulo date -d "@$next_s" '+%Y-%m-%d_%H:%M') || fail backup_next_unreadable
           say "backup_unit=$st backup_next=$when"
+          # the script's first line made every pipeline above fail on any failing part: never PASS without it
+          [ -o pipefail ] || fail no_pipefail
           say "gate=PASS"
           # end of payload
-          REMOTE
+          READONLY
+              status=$?
+              grep -E "^BU " "$RUNNER_TEMP/remote.txt" >> "$out"
+              # a stream cut before the gate line ends without one: said, not silent
+              grep -q -E "^BU gate=(PASS|FAIL)( |$)" "$RUNNER_TEMP/remote.txt" || { note "gate=FAIL reason=no_gate_line"; rc=1; }
+              if [ "$status" != 0 ]; then
+                grep -q -E "^BU gate=FAIL" "$RUNNER_TEMP/remote.txt" || note "gate=FAIL reason=remote_exit_$status"
+                rc=1
+              fi
             fi
             ;;
           AP)
