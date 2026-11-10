@@ -38,6 +38,10 @@ name: Host migration to the 8 GB host (one-off branch, never merged)
 #        (install-host-security-v1.yml, install-resilience-ops-v1.yml) are dispatched by hand; D2 checks what they left:
 #        the backup timer waiting for Sunday 04:00 without a catch-up run, the security timers, the hold.
 #   E    Sunday, after the first night is read: the hold removed (the security routine acts again).
+#   BU   new, read only, before a manual restore drill: the backup upload the drill would select now, by the drill's own
+#        rule (the newest upload.json and its first "/daily/" key), bound to its sealed run as C1a binds it; the key
+#        is shown as its hash, as C1a did (the key itself follows from session_date and the dump's hash, and the drill
+#        prints it). Nothing on the host changes.
 #   AP   new, read only, right before install-host-security-v1.yml: the policy its first apt-daily-upgrade will run
 #        under, read by python3-apt as unattended-upgrade reads it (apt's own precedence) from a private copy of
 #        apt.conf.d with the installer's file added, the copy first proven faithful; it refuses unless the reboot is
@@ -93,10 +97,10 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "A | B | BV | R | C0 | C0u | C1a | C1b | C2 | C3L | D | D2 | AP | E | R0n | R0"
+        description: "A | B | BV | R | C0 | C0u | C1a | C1b | C2 | C3L | D | D2 | AP | E | BU | R0n | R0"
         required: true
         type: choice
-        options: [A, B, BV, R, C0, C0u, C1a, C1b, C2, C3L, D, D2, AP, E, R0n, R0]
+        options: [A, B, BV, R, C0, C0u, C1a, C1b, C2, C3L, D, D2, AP, E, BU, R0n, R0]
       confirm:
         description: "the phase again"
         required: true
@@ -133,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           [ "$PHASE" = "$CONFIRM" ] || { echo "phase and confirmation differ"; exit 1; }
-          [[ "$PHASE" =~ ^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|AP|E|R0n|R0)$ ]] || { echo "unknown phase"; exit 1; }
+          [[ "$PHASE" =~ ^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|AP|E|BU|R0n|R0)$ ]] || { echo "unknown phase"; exit 1; }
           # A (the new host's packages) and R (the rehearsal on the live database) are done (06/11) and retired: their
           # receipts stand, and neither runs again
           case "$PHASE" in A|R) echo "phase $PHASE is retired"; exit 1 ;; esac
@@ -141,12 +145,12 @@ jobs:
             --jq '[.[] | select(.status != "completed")] | length')
           [ "$busy" = "0" ] || { echo "a production pipeline is queued or running: refusing"; exit 1; }
           # the start window (BRT): a phase that changes or loads a host starts only from 05:36 to 18:29 (back-outs C0u,
-          # R0n, R0 and the read-only BV, D2 and AP at any hour). Every host command of the run then stops at its absolute
+          # R0n, R0 and the read-only BV, D2, AP and BU at any hour). Every host command of the run then stops at its absolute
           # DEADLINE, set here (see old/new_tmp/static), so nothing of a phase started in the window acts after 20:49,
           # far from the valuation worker's night (01:00 to 05:35)
           [ "$(TZ=America/Sao_Paulo date +%z)" = -0300 ] || { echo "the BRT time zone is not available"; exit 1; }
           case "$PHASE" in
-            BV|D2|AP|C0u|R0n|R0) ;;
+            BV|D2|AP|BU|C0u|R0n|R0) ;;
             *) x=$(TZ=America/Sao_Paulo date +%H%M); mn=$(( 10#${x:0:2} * 60 + 10#${x:2:2} ))
                [ "$mn" -ge 336 ] && [ "$mn" -lt 1110 ] || { echo "outside the start window 05:36-18:29 BRT"; exit 1; } ;;
           esac
@@ -2335,6 +2339,61 @@ jobs:
           REMOTE
             fi
             ;;
+          BU)
+            [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
+            if [ "$rc" = 0 ]; then
+              stage <<'REMOTE' && remote static no || rc=1
+          # read only: the upload the restore drill would select now, by the drill's own rule (the newest upload.json under
+          # the evidence root, then its first "/daily/" key), with C1a's binding (the newest sealed result's run, the upload
+          # of that same run, the uploaded file the dump); the key as its hash, as in C1a. No write, no unit, no container
+          ev="$APP/outputs/evidence/postgres-backup"
+          newest=$(find "$ev" -name result.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-) || fail backup_result_find
+          [ -n "$newest" ] || fail backup_evidence
+          run=$(dirname "$newest"); up="$run/upload.json"
+          newest_up=$(find "$ev" -name upload.json -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2-) || fail backup_upload_find
+          [ -n "$newest_up" ] && [ "$up" = "$newest_up" ] || fail backup_upload_not_newest
+          # a tie at the top would let the drill's sort pick either: refused
+          top=$(find "$ev" -name upload.json -type f -printf '%T@\n' | sort -n | tail -n 2) || fail backup_upload_find
+          [ "$(printf '%s\n' "$top" | sort -u | wc -l)" = "$(printf '%s\n' "$top" | wc -l)" ] || fail backup_upload_tie
+          # the run sealed as the backup script seals it
+          ( cd "$run" && sha256sum --quiet -c SHA256SUMS ) >/dev/null 2>&1 || fail backup_run_not_sealed
+          bind=$(python3 -I -c 'import hashlib, json, os, sys
+          from datetime import datetime, timezone
+          run = sys.argv[1]
+          load = lambda name: json.load(open(os.path.join(run, name), encoding="utf-8"))
+          result, upload, pre = load("result.json"), load("upload.json"), load("preflight.json")
+          session, run_id = os.path.basename(os.path.dirname(run)), os.path.basename(run)
+          if result.get("schema") != "C3PO_POSTGRES_BACKUP_RESULT-v1" or result.get("status") != "succeeded": raise SystemExit("result")
+          if upload.get("schema") != "C3PO_POSTGRES_BACKUP_UPLOAD-v1": raise SystemExit("upload schema")
+          if pre.get("run_id") != run_id or pre.get("session_date") != session or upload.get("session_date") != session: raise SystemExit("run")
+          daily = next(item for item in upload["uploads"] if "/daily/" in item["key"])
+          if upload["file_sha256"] != result["dump_sha256"]: raise SystemExit("uploaded file is not the dump")
+          if result["uploads"] != upload["uploads"]: raise SystemExit("result and upload name different objects")
+          done = datetime.fromisoformat(result["completed_at"]).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          print(session, run_id, done, len(upload["uploads"]), result["dump_sha256"], hashlib.sha256(daily["key"].encode()).hexdigest())' "$run") || fail backup_binding
+          [[ "$bind" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{8}T[0-9]{6}Z\ [0-9TZ:-]{20}\ [0-9]{1,3}\ [0-9a-f]{64}\ [0-9a-f]{64}$ ]] || fail backup_binding
+          read -r b_session b_run b_done b_n b_dump b_key <<<"$bind"
+          say "upload_is_newest=yes session_date=$b_session run_id=$b_run status=succeeded completed_utc=$b_done uploads=$b_n"
+          say "backup_dump_sha=$b_dump backup_object_key_sha=$b_key"
+          # the window to the drill: no backup running now, and the next one when its timer, loaded and active, says, in the
+          # future (systemctl show answers "inactive" and an empty time even for a unit that does not exist, and an empty
+          # time would read as today's midnight: pre-review of d39ead80)
+          [ "$(systemctl show -p LoadState --value c3po-postgres-backup.service)" = loaded ] || fail backup_unit_not_loaded
+          st=$(systemctl show -p ActiveState --value c3po-postgres-backup.service) || fail backup_unit_unreadable
+          case "$st" in inactive|failed) ;; *) fail "backup_unit_${st:-unknown}" ;; esac
+          [ "$(systemctl show -p LoadState --value c3po-postgres-backup.timer)" = loaded ] || fail backup_timer_not_loaded
+          systemctl is-active --quiet c3po-postgres-backup.timer || fail backup_timer_not_active
+          next=$(systemctl show -p NextElapseUSecRealtime --value c3po-postgres-backup.timer) || fail backup_next_unreadable
+          [ -n "$next" ] && [ "$next" != n/a ] || fail backup_next_unreadable
+          next_s=$(date -d "$next" +%s 2>/dev/null) || fail backup_next_unreadable
+          [[ "$next_s" =~ ^[0-9]+$ ]] && [ "$next_s" -gt "$(date +%s)" ] || fail backup_next_not_future
+          when=$(TZ=America/Sao_Paulo date -d "@$next_s" '+%Y-%m-%d_%H:%M') || fail backup_next_unreadable
+          say "backup_unit=$st backup_next=$when"
+          say "gate=PASS"
+          # end of payload
+          REMOTE
+            fi
+            ;;
           AP)
             [ "$(vcpus static)" = 2 ] && note "identity_static_is_new=ok" || { note "gate=FAIL reason=identity_static"; rc=1; }
             if [ "$rc" = 0 ]; then
@@ -2865,7 +2924,7 @@ jobs:
             fi
             ;;
           esac
-          guard='^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|AP|E|R0n|R0) [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120}( [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120})*( of [0-9]+)?$'
+          guard='^(A|B|BV|R|C0|C0u|C1a|C1b|C2|C3L|D|D2|AP|E|BU|R0n|R0) [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120}( [a-z0-9_]+=[A-Za-z0-9_.,:/+-]{1,120})*( of [0-9]+)?$'
           deny='([0-9]{1,3}[.-]){3}[0-9]{1,3}|ip-[0-9]|[0-9a-f]{1,4}:[0-9a-f]{0,4}:[0-9a-f]{0,4}:|@'
           grep -E "$guard" "$out" | grep -v -E "$deny"
           echo "lines: raw $(wc -l < "$out") kept $(grep -E "$guard" "$out" | grep -c -v -E "$deny")"
