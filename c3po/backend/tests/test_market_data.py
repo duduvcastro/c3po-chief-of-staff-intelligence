@@ -14,6 +14,7 @@ from app.market_data.b3_screener import (
     MIN_MARKET_CAP,
     SELIC_GOVERNOR_STALE_WARNING_DAYS,
     B3ScreenerService,
+    _VALUATION_CUT,
 )
 from app.market_data.sector_taxonomy import SECTOR_TAXONOMY_VERSION
 from app.market_data.eodhd import EodhdClient
@@ -335,7 +336,8 @@ def test_cyclical_target_multiples_ignore_incompatible_spot_ttm_multiples() -> N
     assert target_ev < 5.0
 
 
-def test_official_issuer_consensus_overrides_narrower_provider_coverage() -> None:
+def _official_consensus_at(moment: datetime) -> dict:
+    """A PETR4 row with the narrower provider consensus, after the issuer override at the valuation instant ``moment``."""
     rows = [{
         "symbol": "PETR4",
         "price": 42.09,
@@ -343,14 +345,36 @@ def test_official_issuer_consensus_overrides_narrower_provider_coverage() -> Non
         "analyst_count": 6,
         "consensus_source_count": 2,
     }]
+    token = _VALUATION_CUT.set(moment)
+    try:
+        B3ScreenerService._apply_official_consensus(rows)
+    finally:
+        _VALUATION_CUT.reset(token)
+    return rows[0]
 
-    B3ScreenerService._apply_official_consensus(rows)
+
+def test_official_issuer_consensus_overrides_narrower_provider_coverage() -> None:
+    """The issuer's consensus (as of 2026-05-13, kept up to its 180 days) overrides the narrower provider feed. The
+    valuation instant is pinned inside that window: the override's own age rule is the subject, not the run date (on the
+    wall clock this test began failing on 10/11/2026, the override's day 181)."""
+    rows = [_official_consensus_at(datetime(2026, 6, 1, 15, 0, tzinfo=timezone.utc))]
 
     assert rows[0]["public_consensus_tp"] == 52.93
     assert rows[0]["analyst_count"] == 12
     assert rows[0]["consensus_origin_source"] == "Petrobras RI"
     assert rows[0]["consensus_as_of"] == "2026-05-13"
     assert rows[0]["consensus_published_at"] == "2026-05-13"  # the override's own date is the instant the emitter persists
+
+
+def test_official_issuer_consensus_expires_after_its_max_age() -> None:
+    """Day 180 after 2026-05-13 (09/11/2026, BRT) still takes the issuer's consensus; day 181 keeps the provider's (the
+    nightly audit must age or replace an override explicitly)."""
+    assert _official_consensus_at(datetime(2026, 11, 9, 15, 0, tzinfo=timezone.utc))["public_consensus_tp"] == 52.93
+    # the age is counted in BRT dates: 02:59Z on 10/11 is still 09/11 in Sao Paulo (day 180), 03:00Z is 10/11 (day 181)
+    assert _official_consensus_at(datetime(2026, 11, 10, 2, 59, tzinfo=timezone.utc))["public_consensus_tp"] == 52.93
+    assert _official_consensus_at(datetime(2026, 11, 10, 3, 0, tzinfo=timezone.utc))["public_consensus_tp"] == 56.2923
+    kept = _official_consensus_at(datetime(2026, 11, 10, 15, 0, tzinfo=timezone.utc))
+    assert kept["public_consensus_tp"] == 56.2923 and kept["analyst_count"] == 6 and "consensus_origin_source" not in kept
 
 
 def test_petrobras_like_valuation_converges_after_cyclical_reconciliation() -> None:
