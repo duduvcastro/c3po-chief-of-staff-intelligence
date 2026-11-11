@@ -1,36 +1,471 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-33587089986",
+  "artifact_name": "c3po-production-container-vulnerabilities-43001346658",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 2,
+  "finding_total": 50,
   "findings": [
     {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
       "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-66046"
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107364"
     },
     {
-      "fixed_version": "2.8.4-r0",
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107364"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112315"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112315"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112316"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112316"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112317"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112317"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112318"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112318"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112319"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112319"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112320"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112320"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112321"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112321"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112322"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112322"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112323"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112323"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-118380"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-118380"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-119079"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-119079"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-40355"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-40355"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-40356"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-40356"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-71199"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-71199"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-71200"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-71200"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
+      "image": "database",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-87636"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
       "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
       "severity": "high",
       "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-76641"
+      "vulnerability_id": "CVE-2026-87636"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
+      "image": "database",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-9947"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
+      "image": "web",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-9947"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
+      "image": "database",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
+      "severity": "medium",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2025-10911"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
+      "image": "web",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2025-10911"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107708"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107708"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107778"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107778"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107884"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-107884"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-111423"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-111423"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "backend",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112314"
+    },
+    {
+      "fixed_version": "1.22.3-r0",
+      "image": "database",
+      "installed_version": "1.22.2-r1",
+      "package": "krb5-libs",
+      "severity": "medium",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-112314"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
+      "image": "database",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
+      "severity": "unknown",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-125350"
+    },
+    {
+      "fixed_version": "1.1.43-r4",
+      "image": "web",
+      "installed_version": "1.1.43-r3",
+      "package": "libxslt",
+      "severity": "unknown",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-125350"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 2
+    "high": 36,
+    "low": 0,
+    "medium": 12,
+    "unknown": 2
   },
-  "generated_at": "2026-09-02T03:28:47.063426+00:00",
-  "remediation_key": "614ce1e7b4892afaa29a0e98735dc8f7772936198517505365c7abd17a34312a",
-  "report_sha256": "1d07350e1caeaede55611698158eabffefe731f8753ea95c2f1b06251c40c58c",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/33587089986",
+  "generated_at": "2026-11-11T10:12:00.566771+00:00",
+  "remediation_key": "cf616bb05205cd5cdde1eb79f2d8997fee5d218a366e63b4c88b54fc78cd8bff",
+  "report_sha256": "5bfcacbb9e498376785b60b7428b249ef8799499ecf4ca4d3dbfbd3f6a3c51b1",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/43001346658",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
-  "source_revision": "7bc70899db6088afcd303b4c490f08d88a2758ce"
+  "source_revision": "d5eef84c0888de999b84b9c661bda8342e7b82cb"
 }
