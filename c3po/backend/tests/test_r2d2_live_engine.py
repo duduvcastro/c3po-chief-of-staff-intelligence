@@ -110,7 +110,7 @@ def _held(engine: Engine, symbol: str) -> tuple[Position, Callable[[float], floa
 @pytest.fixture
 def stop_at_two_tenths(monkeypatch):
     """The exit mechanics these tests drive were written on the -0.20% stop of 02-04/11 (TIT-2S5-F20-L5); the rule in force
-    stops at -0.125% from 06/11 (owner 05/11; -1% on 05/11). The level is these tests' scenario, not their subject: pinned to
+    stops at -0.175% from 12/11 (owner 12/11; -0.125% from 06/11, -1% on 05/11). The level is these tests' scenario, not their subject: pinned to
     -0.20% here."""
     monkeypatch.setitem(engine_module.STOPS, engine_module.CONFIG, 0.20)
     monkeypatch.setattr(engine_module, "_STOP_IN_FORCE", 0.20)
@@ -128,10 +128,12 @@ def test_the_step_lock_floor_is_the_last_step_the_peak_reached() -> None:
            [0.10, 0.10, 0.15, 0.15, 0.20, 0.20, 0.25, 0.30, 0.35, 0.65, 0.95]
     for step in (0.15, 0.20, 0.25, 0.35, 0.80):  # a hair under a step still counts it
         assert floor(step - 1e-12) == floor(step)
-    assert engine_module.RULE["stop_percent"] == 0.125 and engine_module.RULE["lock_min_percent"] == 0.10  # owner 05/11
-    assert engine_module.stop_of() == 0.125 and engine_module.stop_of("TIT-2S5-F20-L5-S1") == 1.00
+    assert engine_module.RULE["stop_percent"] == 0.175 and engine_module.RULE["lock_min_percent"] == 0.10  # owner 12/11
+    assert engine_module.stop_of() == 0.175 and engine_module.stop_of("TIT-2S5-F20-L5-S1") == 1.00
+    assert engine_module.stop_of("TIT-2S5-F20-L5-S0125") == 0.125
     assert engine_module.stop_of("TIT-2S5-F20-L5") == engine_module.stop_of("TIT-2S5-F20") == 0.20
-    assert engine_module.stop_of("TIT-2S3-RT") == 0.125  # a label without its own stop takes the rule in force
+    assert engine_module.stop_of("TIT-2S3-RT") == 0.175  # a label without its own stop takes the rule in force
+    assert engine_module.LOCK_LADDERS["TIT-2S5-F20-L5-S0125"] == engine_module.LOCK_LADDERS[engine_module.CONFIG]
     assert engine_module.LOCK_LADDERS["TIT-2S5-F20-L5-S1"] == engine_module.LOCK_LADDERS[engine_module.CONFIG]  # the same lock
 
 
@@ -188,11 +190,24 @@ def test_the_floor_has_no_gap_under_the_wide_band() -> None:
     assert round(floor(0.20 - 2e-9), 10) == 0.15  # the step under +0.20 is +0.15 (owner 03/11)
 
 
-def test_the_stop_before_the_lock_arms_is_minus_an_eighth_from_06_11() -> None:
-    """Owner 05/11: "Coloque o stop loss amanha em -0,125%"."""
+def test_the_stop_before_the_lock_arms_is_minus_0175_from_12_11() -> None:
+    """Owner 12/11: "Mude o stop loss agora para -0,175%"."""
     engine = _engine()
+    assert engine.state.config == engine_module.CONFIG == "TIT-2S5-F20-L5-S0175"
     position, bid = _held(engine, "S2")
     assert _mark(engine, "S2", _at(10, 0), bid(0.09)) == [] and not position.armed  # positive, under +0.10%: not armed
+    assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.175) < 1e-9
+    assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.13)) == [] and _mark(engine, "S2", _at(10, 0, 2), bid(-0.17)) == []
+    fills = _mark(engine, "S2", _at(10, 0, 3), bid(-0.18))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
+
+
+def test_a_session_of_06_11_to_12_11_keeps_its_stop_at_minus_an_eighth() -> None:
+    """Owner 05/11: "Coloque o stop loss amanha em -0,125%" — a session under TIT-2S5-F20-L5-S0125 keeps it (its republish
+    prices its stops by its own rule)."""
+    engine = _engine()
+    engine.state.config = "TIT-2S5-F20-L5-S0125"
+    position, bid = _held(engine, "S2")
     assert abs(position.net_percent(engine.book(_at(10, 0))["positions"][0]["stop_price"]) - -0.125) < 1e-9
     assert _mark(engine, "S2", _at(10, 0, 1), bid(-0.12)) == []
     fills = _mark(engine, "S2", _at(10, 0, 2), bid(-0.13))
@@ -201,14 +216,14 @@ def test_the_stop_before_the_lock_arms_is_minus_an_eighth_from_06_11() -> None:
 
 def test_a_position_carried_into_a_new_session_takes_that_session_s_stop() -> None:
     """A new session sets the rule in force (``state.config = CONFIG``): a position carried from 05/11 (-1%) sitting at
-    -0.5% net is sold at the first check of 06/11, under -0.125%; one at -0.10% is held."""
+    -0.5% net is sold at the first check of the new session, under -0.175%; one at -0.10% is held."""
     engine = _engine()
     engine.state.config = "TIT-2S5-F20-L5-S1"
     held, bid_held = _held(engine, "S2")
     sold, bid_sold = _held(engine, "S3")
     engine.state.session = "2026-11-05"  # the previous session: the engine below opens a new one
     renewed = Engine(engine.state, DAY, list(engine.members.values()))
-    assert renewed.state.config == engine_module.CONFIG and engine_module.stop_of(renewed.state.config) == 0.125
+    assert renewed.state.config == engine_module.CONFIG and engine_module.stop_of(renewed.state.config) == 0.175
     t = _at(10, 0)
     fills = renewed.step(t, lambda s: (_view(bid_held(-0.10), None, bid_held(-0.10), bid_held(-0.10) + 0.01, t) if s == "S2"
                                        else _view(bid_sold(-0.50), None, bid_sold(-0.50), bid_sold(-0.50) + 0.01, t) if s == "S3"
@@ -355,7 +370,7 @@ def test_the_document_is_what_the_c3po_validator_accepts(monkeypatch) -> None:
     engine.step(t, lambda s: _view(98.1, 98.0, 98.095, 98.105, t) if s == "AAA" else MarketView())
     document = engine.document(t)
     validated = r2d2_lab_live.validate(json.loads(json.dumps(document)), now=t)
-    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20-L5-S0125" and len(validated["trades"]) == 1
+    assert validated["config"] == engine_module.CONFIG == "TIT-2S5-F20-L5-S0175" and len(validated["trades"]) == 1
     assert validated["book"]["positions"][0]["symbol"] == "AAA" and validated["cycle"]["entries"] == 1
 
 
@@ -2661,7 +2676,7 @@ def test_a_rule_change_never_rewrites_a_day_already_published(monkeypatch) -> No
 @pytest.mark.parametrize(("ask", "bought"), [(29.01, True), (29.0145, True), (29.016, False)])
 def test_the_spread_limit_is_five_basis_points(ask: float, bought: bool) -> None:
     """Owner 29/10: "vamos mudar para até 5 bps" — 3.4 and 4.999 bps buy, 5.5 bps is refused (it was 3 bps)."""
-    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20-L5-S0125"
+    assert engine_module.RULE["spread_max_bps"] == 5.0 and engine_module.CONFIG == "TIT-2S5-F20-L5-S0175"
     engine = _crossing_engine()
     t = _at(9, 41)
     views = {"CCC": _view(29.1, 29.0, 29.0, ask, t)}
@@ -3620,3 +3635,74 @@ def test_the_status_workflow_prints_the_workers_count_only_line_and_no_other() -
         assert re.search(pattern, line.replace("deadline_reached", key))
     assert re.search(pattern, line + " AAPL") is None
 
+
+
+def test_the_mid_session_adoption_is_for_12_11_from_the_eighth_stop_only() -> None:
+    """Owner 12/11: "quero q troque agora mesmo, no meio da sessão" — only the session of 12/11, only from -0.125%."""
+    assert engine_module.MIDSESSION_ADOPTION == {"2026-11-12": "TIT-2S5-F20-L5-S0125"}
+
+
+def _restarted_under_the_eighth(monkeypatch) -> tuple[Engine, Callable[[float], float], Callable[[float], float]]:
+    """A session that opened under -0.125% with two held names, one of them stopped out before the restart."""
+    monkeypatch.setattr(engine_module, "MIDSESSION_ADOPTION", {DAY.isoformat(): "TIT-2S5-F20-L5-S0125"})
+    engine = _engine()
+    engine.state.config = "TIT-2S5-F20-L5-S0125"
+    _, bid_early = _held(engine, "S2")
+    _, bid_late = _held(engine, "S3")
+    fills = _mark(engine, "S2", _at(10, 0, 2), bid_early(-0.13))  # sold at the -0.125% stop before the switch
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S2", "venda: stop")]
+    restarted = Engine(engine.state, DAY, list(engine.members.values()))  # the deploy's restart resumes the session
+    assert restarted.resumed
+    return restarted, bid_early, bid_late
+
+
+def test_the_session_adopts_the_new_stop_at_the_restart_and_keeps_its_earlier_fills_apart(monkeypatch) -> None:
+    restarted, _, bid_late = _restarted_under_the_eighth(monkeypatch)
+    switch = _at(10, 30)
+    assert engine_module.adopt_midsession(restarted, switch) is True
+    assert restarted.state.config == engine_module.CONFIG == "TIT-2S5-F20-L5-S0175"
+    assert restarted.state.config_since == {"from": "TIT-2S5-F20-L5-S0125", "at": switch.isoformat()}
+    held = restarted.state.positions["S3"]  # the held position takes the new stop at once
+    assert abs(held.net_percent(restarted.book(_at(10, 31))["positions"][0]["stop_price"]) - -0.175) < 1e-9
+    assert _mark(restarted, "S3", _at(10, 40), bid_late(-0.15)) == []  # -0.125% would have sold it; -0.175% holds it
+    fills = _mark(restarted, "S3", _at(10, 41), bid_late(-0.18))
+    assert [(f["symbol"], f["reason"].split(",")[0]) for f in fills] == [("S3", "venda: stop")]
+    document = restarted.document(_at(10, 42))
+    assert document["config"] == "TIT-2S5-F20-L5-S0175"
+    assert [trade["id"].split(":")[0] for trade in document["trades"]] == ["TIT-2S5-F20-L5-S0125", "TIT-2S5-F20-L5-S0175"]
+    validated = r2d2_lab_live.validate(document, now=_at(10, 42))
+    assert len(validated["trades"]) == 2
+    again = EngineState.from_json(json.loads(json.dumps(restarted.state.to_json())))  # the checkpoint keeps the switch
+    assert again.config == "TIT-2S5-F20-L5-S0175" and again.config_since == restarted.state.config_since
+    assert engine_module.adopt_midsession(Engine(again, DAY, []), _at(11, 0)) is False  # adopted once
+
+
+def test_the_mid_session_adoption_never_happens_elsewhere(monkeypatch) -> None:
+    restarted, _, _ = _restarted_under_the_eighth(monkeypatch)
+    close = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    assert engine_module.adopt_midsession(restarted, close) is False  # at or after the close: the day keeps its rule
+    assert restarted.state.config == "TIT-2S5-F20-L5-S0125" and restarted.state.config_since == {}
+    monkeypatch.setattr(engine_module, "MIDSESSION_ADOPTION", {"2026-11-12": "TIT-2S5-F20-L5-S0125"})
+    assert engine_module.adopt_midsession(restarted, _at(10, 30)) is False  # another day
+    monkeypatch.setattr(engine_module, "MIDSESSION_ADOPTION", {DAY.isoformat(): "TIT-2S5-F20-L5-S1"})
+    assert engine_module.adopt_midsession(restarted, _at(10, 30)) is False  # another label
+    monkeypatch.setattr(engine_module, "MIDSESSION_ADOPTION", {DAY.isoformat(): "TIT-2S5-F20-L5-S0125"})
+    fresh = _engine()  # a new session takes the rule in force at its opening, never through an adoption
+    assert not fresh.resumed and engine_module.adopt_midsession(fresh, _at(10, 30)) is False
+
+
+def test_the_next_session_clears_the_switch_and_the_republish_keeps_the_split_ids(monkeypatch) -> None:
+    database = Database(Settings(database_url=""))
+    restarted, _, bid_late = _restarted_under_the_eighth(monkeypatch)
+    assert engine_module.adopt_midsession(restarted, _at(10, 30)) is True
+    _mark(restarted, "S3", _at(10, 41), bid_late(-0.18))
+    close_at = datetime.combine(DAY, engine_module.SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc)
+    engine_module.publish(database, restarted, close_at, as_of=close_at)
+    restarted.close_session()
+    stored = database.latest_analysis_snapshot(r2d2_lab_live.ANALYSIS_TYPE, DAY.isoformat())["outputs"]
+    assert [trade["id"].split(":")[0] for trade in stored["trades"]] == ["TIT-2S5-F20-L5-S0125", "TIT-2S5-F20-L5-S0175"]
+    next_day = DAY + timedelta(days=1)
+    # the next session's reconcile finds the same ids: nothing is republished under one label
+    assert engine_module.reconcile_previous(database, restarted.state, next_day, close_at + timedelta(hours=17)) is False
+    renewed = Engine(restarted.state, next_day, [])
+    assert renewed.state.config == engine_module.CONFIG and renewed.state.config_since == {}

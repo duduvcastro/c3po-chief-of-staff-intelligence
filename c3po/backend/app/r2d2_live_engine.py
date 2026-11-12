@@ -51,8 +51,9 @@ NEW_YORK = ZoneInfo("America/New_York")
 # (TIT-2S5-RT until then: until 15:29:59 ET); owner 31/10: the sizes by the spread, the -0.20% stop and the new lock steps
 # from 02/11 (TIT-2S5-RTC, entries until the close with the old exits and sizes, never ran a session); owner 03/11: the
 # lock's steps every 0.05 from 04/11 (TIT-2S5-F20 until then: +0.10, +0.20, then every 0.15); owner 04/11: the stop at -1%
-# on 05/11 (TIT-2S5-F20-L5 until then: -0.20%); owner 05/11: the stop at -0.125% from 06/11 (TIT-2S5-F20-L5-S1 on 05/11)
-CONFIG = "TIT-2S5-F20-L5-S0125"
+# on 05/11 (TIT-2S5-F20-L5 until then: -0.20%); owner 05/11: the stop at -0.125% from 06/11 (TIT-2S5-F20-L5-S1 on 05/11);
+# owner 12/11: the stop at -0.175%, adopted in the middle of the session of 12/11 (TIT-2S5-F20-L5-S0125 until the switch)
+CONFIG = "TIT-2S5-F20-L5-S0175"
 STATE_TYPE = "r2d2_live_engine_state"
 STATE_KEY = "TIT-2S3"  # the ONE book since 27/10: the key stays whatever rule is in force (a new key = a new book)
 STREAM_GROUP = "r2d2-live"
@@ -76,8 +77,10 @@ RULE = {
     # (TIT-2S5-F20-L5 from 04/11). Owner 04/11/2026 ~18:3x BRT: "Amanha coloque o stop do R2D2 em -1%, quero ver se com
     # esse respiro a mais como as ações performam" — the stop at -1% net on 05/11 (TIT-2S5-F20-L5-S1), the lock unchanged.
     # Owner 05/11/2026 ~19:1x BRT: "Coloque o stop loss amanha em -0,125%" — the stop at -0.125% net from 06/11
-    # (TIT-2S5-F20-L5-S0125), the lock unchanged
-    "stop_percent": 0.125, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.20,
+    # (TIT-2S5-F20-L5-S0125), the lock unchanged. Owner 12/11/2026 ~14:4x BRT: "Mude o stop loss agora para -0,175%" and
+    # "quero q troque agora mesmo, no meio da sessão" — the stop at -0.175% net (TIT-2S5-F20-L5-S0175), adopted by the
+    # session of 12/11 in progress (``adopt_midsession``), the lock unchanged
+    "stop_percent": 0.175, "lock_min_percent": 0.10, "lock_step_percent": 0.05, "lock_wide_from_percent": 0.20,
     "lock_wide_step_percent": 0.05,
     # owner 30/10/2026 ~20:3x BRT: "para segunda-feira, faremos umas alterações de BPS e tamanho da compra" — the lab's
     # studies of 30/10 (results/stopstudy_run41123209315, results/exitstudy2_run41145478129): no stop, spread limit or size
@@ -698,13 +701,15 @@ LOCK_LADDERS: dict[str, tuple[float, float, float, float]] = {
     "TIT-2S5-F20": (0.10, 0.10, 0.20, 0.15),  # 02-03/11: +0.10, +0.20, then every 0.15
     "TIT-2S5-F20-L5": (0.10, 0.05, 0.20, 0.05),  # 04/11: every 0.05 from +0.10 (the ladder in force since)
     "TIT-2S5-F20-L5-S1": (0.10, 0.05, 0.20, 0.05),  # 05/11: the same ladder, the -1% stop
+    "TIT-2S5-F20-L5-S0125": (0.10, 0.05, 0.20, 0.05),  # 06/11 to 12/11 (until the switch): the same ladder, the -0.125% stop
     CONFIG: (RULE["lock_min_percent"], RULE["lock_step_percent"], RULE["lock_wide_from_percent"], RULE["lock_wide_step_percent"]),
 }
 _LADDER_IN_FORCE = LOCK_LADDERS[CONFIG]  # bound once: a label without its own ladder takes the rule in force
 # the stop (% net) of each rule label, as the lock's ladder: a session keeps the stop it ran under, so the republish of an
-# earlier session prices its stops by ITS rule (owner 05/11: -0.125% from 06/11; owner 04/11: -1% on 05/11; -0.20% on
-# 02-04/11); a label without an entry takes the rule in force
-STOPS: dict[str, float] = {"TIT-2S5-F20": 0.20, "TIT-2S5-F20-L5": 0.20, "TIT-2S5-F20-L5-S1": 1.00, CONFIG: RULE["stop_percent"]}
+# earlier session prices its stops by ITS rule (owner 12/11: -0.175% from the switch of 12/11; owner 05/11: -0.125% from
+# 06/11; owner 04/11: -1% on 05/11; -0.20% on 02-04/11); a label without an entry takes the rule in force
+STOPS: dict[str, float] = {"TIT-2S5-F20": 0.20, "TIT-2S5-F20-L5": 0.20, "TIT-2S5-F20-L5-S1": 1.00,
+                           "TIT-2S5-F20-L5-S0125": 0.125, CONFIG: RULE["stop_percent"]}
 _STOP_IN_FORCE = STOPS[CONFIG]
 
 
@@ -769,6 +774,9 @@ class EngineState:
     shadow: dict[str, dict[str, Any]] = field(default_factory=dict)  # the open shadow trades (never published by name)
     bands: dict[str, dict[str, float]] = field(default_factory=dict)  # per spread band: refused, closed, wins, net USD
     bands_closed: dict[str, Any] = field(default_factory=dict)  # the last CLOSED session's bands: {"session", "bands"}
+    # a rule adopted in the middle of the session in progress (``adopt_midsession``): {"from": the earlier label, "at": the
+    # instant, ISO UTC}; the fills before it keep the earlier rule in their trade ids. Cleared by a new session
+    config_since: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
         return {"nav_realized": self.nav_realized, "last_session": self.last_session,
@@ -777,7 +785,8 @@ class EngineState:
                 "fills": self.fills, "last_signal_minute": self.last_signal_minute,
                 "candidates_fixed": self.candidates_fixed, "stream_context": self.stream_context,
                 "tape_floor": self.tape_floor, "config": self.config,
-                "shadow": self.shadow, "bands": self.bands, "bands_closed": self.bands_closed}
+                "shadow": self.shadow, "bands": self.bands, "bands_closed": self.bands_closed,
+                "config_since": self.config_since}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "EngineState":
@@ -790,7 +799,8 @@ class EngineState:
                    candidates_fixed=bool(data.get("candidates_fixed")), stream_context=dict(data.get("stream_context") or {}), tape_floor=data.get("tape_floor"),
                    config=str(data.get("config") or ""),
                    shadow=dict(data.get("shadow") or {}), bands=dict(data.get("bands") or {}),
-                   bands_closed=dict(data.get("bands_closed") or {}))
+                   bands_closed=dict(data.get("bands_closed") or {}),
+                   config_since=dict(data.get("config_since") or {}))
 
 
 class Engine:
@@ -817,6 +827,7 @@ class Engine:
             state.last_signal_minute, state.candidates_fixed, state.stream_context = -1, False, {}
             state.tape_floor = None
             state.config = CONFIG
+            state.config_since = {}
             state.shadow, state.bands = {}, {}
             state.nav_start = state.nav_realized + sum(
                 p.cost_usd * (p.net_percent(p.last_mark) / 100 if p.last_mark else 0.0) for p in state.positions.values())
@@ -1227,13 +1238,23 @@ class Engine:
         return {"nav_start_usd": self.nav_start, "nav_usd": self.state.nav_realized + unrealized,
                 "realized_nav_usd": self.state.nav_realized, "cash_usd": cash, "as_of": now.isoformat(), "positions": positions}
 
+    def fill_config(self, fill: dict[str, Any], config: str) -> str:
+        """The rule a fill of this session ran under: the earlier label for a fill executed before a mid-session adoption
+        (``state.config_since``), else ``config`` (the day's rule)."""
+        since = self.state.config_since
+        if since and config == self.state.config and \
+                datetime.fromisoformat(fill["executed_at"]) < datetime.fromisoformat(since["at"]):
+            return since["from"]
+        return config
+
     def document(self, now: datetime, *, config: str | None = None) -> dict[str, Any]:
         """``config``: the rule the day ran under; default: the session's own (``state.config``), else the one in force."""
         config = config or self.state.config or CONFIG
         trades = []
         for index, fill in enumerate(self.fills):
             stamp = int(datetime.fromisoformat(fill["executed_at"]).timestamp())
-            trades.append({"id": "%s:%s:%s:%s:%d:%d" % (config, self.day.isoformat(), fill["symbol"], fill["side"].lower(), stamp, index),
+            label = self.fill_config(fill, config)
+            trades.append({"id": "%s:%s:%s:%s:%d:%d" % (label, self.day.isoformat(), fill["symbol"], fill["side"].lower(), stamp, index),
                            **{key: _rounded(key, value) for key, value in fill.items()}})
         sells = sum(1 for fill in self.fills if fill["side"] == "SELL")
         return {"schema": r2d2_lab_live.SCHEMA, "day": self.day.isoformat(), "config": config, "trades": trades,
@@ -1280,14 +1301,38 @@ def save_state(database: Any, state: EngineState, now: datetime) -> None:
     # close; version 3 (30/10) the stop at -0.4% and the step lock from +0.10%; version 2 (29/10 afternoon) the lock
     # trailing the peak by 0.05, version 1 before it
     methodology = database.ensure_methodology_version(
-        "r2d2_live_engine", 10, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
+        "r2d2_live_engine", 12, {"rule": RULE, "config": CONFIG, "fee_side": FEE_SIDE, "universe_size": UNIVERSE_SIZE,
                                 "last_entry": LAST_ENTRY.isoformat(), "trade_source": TRADE_SOURCE},
         "The live R2D2 inside the C3PO server on a real-time stream (owner 27/10/2026), Massive's for the buy signal's "
         "trades since 02/11/2026; entries every second and "
         "the spread at most 5 bps (owner 29/10/2026); entries until the close (owner 30/10/2026); sizes by the spread paid "
         "(5% / 4% / 2.5% of NAV at 2 / 3 / 5 bps) (owner 31/10/2026); the step profit lock from +0.10, every 0.05 "
-        "(owner 03/11/2026); the stop at -0.125% (owner 05/11/2026; -1% on 05/11, -0.20% from 02/11 to 04/11)")
+        "(owner 03/11/2026); the stop at -0.175% (owner 12/11/2026, adopted in the middle of the session of 12/11; -0.125% from "
+        "06/11 to the switch, -1% on 05/11, -0.20% from 02/11 to 04/11)")
     database.save_analysis_snapshot(STATE_TYPE, STATE_KEY, methodology, {"config": state.config or CONFIG}, state.to_json(), now)
+
+
+# owner 12/11/2026 ~14:4x BRT: "Mude o stop loss agora para -0,175%" and "quero q troque agora mesmo, no meio da sessão":
+# the session of 12/11, opened under TIT-2S5-F20-L5-S0125 (-0.125%), adopts the rule in force when the restart that brings
+# it resumes the session before the close. The instant is recorded (``config_since``); the fills before it keep the earlier
+# rule in their trade ids (``Engine.fill_config``); every stop from then on, the held positions' included, is the new
+# rule's. Only this day and only from that label: any other rule change waits for a new session
+MIDSESSION_ADOPTION = {"2026-11-12": "TIT-2S5-F20-L5-S0125"}
+
+
+def adopt_midsession(engine: "Engine", moment: datetime) -> bool:
+    """The rule in force adopted by the resumed session of a MIDSESSION_ADOPTION day still running under the listed label,
+    before its close. True when it switched."""
+    state = engine.state
+    if not engine.resumed or MIDSESSION_ADOPTION.get(engine.day.isoformat()) != state.config or state.config == CONFIG:
+        return False
+    if moment >= datetime.combine(engine.day, SESSION_CLOSE, tzinfo=NEW_YORK).astimezone(timezone.utc):
+        return False
+    state.config_since = {"from": state.config, "at": moment.astimezone(timezone.utc).isoformat()}
+    state.config = CONFIG
+    engine.last_entry = LAST_ENTRY_BY_CONFIG.get(state.config, LAST_ENTRY)
+    logger.info("R2D2 live: session %s adopts %s mid-session", engine.day, CONFIG)
+    return True
 
 
 def seed_from_lab_book(database: Any, now: datetime) -> EngineState | None:
@@ -2048,6 +2093,7 @@ def run_session(*, stream: LiveEngineStream, database: Any, get_json: Callable[.
         if not reconciled:
             sleep(5.0)
     engine = Engine(state, day, universe)
+    adopt_midsession(engine, now())  # owner 12/11: the stop at -0.175% in the session in progress (checkpointed below)
     quotes_for = getattr(stream, "set_quote_symbols", None)
     if quotes_for is not None:  # BEFORE the group: the quote feed never sees the whole universe, even for an instant
         quotes_for(set(state.positions))  # the quote feed: the held names only (their exits); the entries read Massive
