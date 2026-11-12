@@ -45,6 +45,7 @@ from .market_data.eodhd_stream import usable_display_tick
 from .market_data.http import MarketDataRequestError
 from .market_data.massive_quotes import screen_stream
 from .market_data.us_screener import USScreeningService
+from .listed_universe_api import listed_universe_router
 from .one_pager import OnePagerGenerationError, OnePagerService
 from .push_notifications import PushNotificationService
 from .operational_incidents import OperationalIncidentService
@@ -264,6 +265,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Server-Timing", "X-Response-Time-Ms"],
 )
+app.include_router(listed_universe_router(database))
 
 PUBLIC_AUTH_PATHS = {
     "/api/v1/auth/request-code",
