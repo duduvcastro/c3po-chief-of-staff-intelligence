@@ -1,25 +1,34 @@
 {
   "applied": [
     {
-      "advisory": "GHSA-2464-fhr4-w9xw",
+      "advisory": "GHSA-7qx7-33qx-rqx2",
       "ecosystem": "npm",
-      "fixed": "15.5.28",
+      "fixed": "15.5.29",
       "manifest": "c3po/frontend/pnpm-lock.yaml",
-      "number": "npm:GHSA-2464-fhr4-w9xw",
+      "number": "npm:GHSA-7qx7-33qx-rqx2",
       "package": "next",
-      "severity": "critical"
+      "severity": "moderate"
     },
     {
-      "advisory": "GHSA-p3m5-59mp-jv5r",
+      "advisory": "GHSA-f3mh-rxg3-f5g2",
       "ecosystem": "npm",
-      "fixed": "15.5.28",
+      "fixed": "15.5.29",
       "manifest": "c3po/frontend/pnpm-lock.yaml",
-      "number": "npm:GHSA-p3m5-59mp-jv5r",
+      "number": "npm:GHSA-f3mh-rxg3-f5g2",
       "package": "next",
-      "severity": "high"
+      "severity": "moderate"
+    },
+    {
+      "advisory": "GHSA-pc58-hwjq-p385",
+      "ecosystem": "npm",
+      "fixed": "15.5.29",
+      "manifest": "c3po/frontend/pnpm-lock.yaml",
+      "number": "npm:GHSA-pc58-hwjq-p385",
+      "package": "next",
+      "severity": "moderate"
     }
   ],
-  "base_sha": "3df5a6e4c36dd50b42edd4272b4a92f53d5eb397",
+  "base_sha": "1c51896511873b0b5eb5ade18f8f5b613daa6dc9",
   "blocked": [],
   "schema": "C3PO_DEPENDENCY_REMEDIATION-v1"
 }
