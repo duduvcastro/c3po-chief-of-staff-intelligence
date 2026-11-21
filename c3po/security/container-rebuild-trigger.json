@@ -1,10 +1,28 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-44503145647",
+  "artifact_name": "c3po-production-container-vulnerabilities-44893045239",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 30,
+  "finding_total": 32,
   "findings": [
     {
+      "fixed_version": "2.13.9-r3",
+      "image": "database",
+      "installed_version": "2.13.9-r2",
+      "package": "libxml2",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-86144"
+    },
+    {
+      "fixed_version": "2.13.9-r3",
+      "image": "web",
+      "installed_version": "2.13.9-r2",
+      "package": "libxml2",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-86144"
+    },
+    {
       "fixed_version": "3.5.9-r1",
       "image": "backend",
       "installed_version": "3.5.9-r0",
@@ -57,114 +75,6 @@
       "severity": "medium",
       "target": "c3po/web:production (alpine 3.24.1)",
       "vulnerability_id": "CVE-2026-107496"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "backend",
-      "installed_version": "3.5.9-r0",
-      "package": "libcrypto3",
-      "severity": "medium",
-      "target": "c3po/backend:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88822"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "backend",
-      "installed_version": "3.5.9-r0",
-      "package": "libssl3",
-      "severity": "medium",
-      "target": "c3po/backend:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88822"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "database",
-      "installed_version": "3.5.9-r0",
-      "package": "libcrypto3",
-      "severity": "medium",
-      "target": "c3po/database:production-scan (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88822"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "database",
-      "installed_version": "3.5.9-r0",
-      "package": "libssl3",
-      "severity": "medium",
-      "target": "c3po/database:production-scan (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88822"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "web",
-      "installed_version": "3.5.9-r0",
-      "package": "libcrypto3",
-      "severity": "medium",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88822"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "web",
-      "installed_version": "3.5.9-r0",
-      "package": "libssl3",
-      "severity": "medium",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88822"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "backend",
-      "installed_version": "3.5.9-r0",
-      "package": "libcrypto3",
-      "severity": "medium",
-      "target": "c3po/backend:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88823"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "backend",
-      "installed_version": "3.5.9-r0",
-      "package": "libssl3",
-      "severity": "medium",
-      "target": "c3po/backend:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88823"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "database",
-      "installed_version": "3.5.9-r0",
-      "package": "libcrypto3",
-      "severity": "medium",
-      "target": "c3po/database:production-scan (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88823"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "database",
-      "installed_version": "3.5.9-r0",
-      "package": "libssl3",
-      "severity": "medium",
-      "target": "c3po/database:production-scan (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88823"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "web",
-      "installed_version": "3.5.9-r0",
-      "package": "libcrypto3",
-      "severity": "medium",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88823"
-    },
-    {
-      "fixed_version": "3.5.9-r1",
-      "image": "web",
-      "installed_version": "3.5.9-r0",
-      "package": "libssl3",
-      "severity": "medium",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-88823"
     },
     {
       "fixed_version": "3.5.9-r1",
@@ -273,19 +183,127 @@
       "severity": "medium",
       "target": "c3po/web:production (alpine 3.24.1)",
       "vulnerability_id": "CVE-2026-95692"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "backend",
+      "installed_version": "3.5.9-r0",
+      "package": "libcrypto3",
+      "severity": "low",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88822"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "backend",
+      "installed_version": "3.5.9-r0",
+      "package": "libssl3",
+      "severity": "low",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88822"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "database",
+      "installed_version": "3.5.9-r0",
+      "package": "libcrypto3",
+      "severity": "low",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88822"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "database",
+      "installed_version": "3.5.9-r0",
+      "package": "libssl3",
+      "severity": "low",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88822"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "web",
+      "installed_version": "3.5.9-r0",
+      "package": "libcrypto3",
+      "severity": "low",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88822"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "web",
+      "installed_version": "3.5.9-r0",
+      "package": "libssl3",
+      "severity": "low",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88822"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "backend",
+      "installed_version": "3.5.9-r0",
+      "package": "libcrypto3",
+      "severity": "low",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88823"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "backend",
+      "installed_version": "3.5.9-r0",
+      "package": "libssl3",
+      "severity": "low",
+      "target": "c3po/backend:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88823"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "database",
+      "installed_version": "3.5.9-r0",
+      "package": "libcrypto3",
+      "severity": "low",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88823"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "database",
+      "installed_version": "3.5.9-r0",
+      "package": "libssl3",
+      "severity": "low",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88823"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "web",
+      "installed_version": "3.5.9-r0",
+      "package": "libcrypto3",
+      "severity": "low",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88823"
+    },
+    {
+      "fixed_version": "3.5.9-r1",
+      "image": "web",
+      "installed_version": "3.5.9-r0",
+      "package": "libssl3",
+      "severity": "low",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-88823"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 0,
-    "low": 0,
-    "medium": 30,
+    "high": 2,
+    "low": 12,
+    "medium": 18,
     "unknown": 0
   },
-  "generated_at": "2026-11-19T10:12:00.750399+00:00",
-  "remediation_key": "277c2cfa28c0de85fcbc430773224758e5ae6dd92b998ac00e4eaee092167a6b",
-  "report_sha256": "5390b12dcacd513b4209314839e777d50749f72ff616cc1d4a7f703762f4216a",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/44503145647",
+  "generated_at": "2026-11-21T10:12:00.317462+00:00",
+  "remediation_key": "6a88ec20f6ee4a500916fef4596436f5212ee82b60eab27e6d7d9aa2ee80662f",
+  "report_sha256": "3d2cdba48e3d76cadf611f9ad7b19e7b045deaa121d57667eaa4f3672f274511",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/44893045239",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
   "source_revision": "1c51896511873b0b5eb5ade18f8f5b613daa6dc9"
 }
