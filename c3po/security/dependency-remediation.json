@@ -1,25 +1,65 @@
 {
   "applied": [
     {
-      "advisory": "GHSA-2464-fhr4-w9xw",
+      "advisory": "GHSA-7qx7-33qx-rqx2",
       "ecosystem": "npm",
-      "fixed": "15.5.28",
+      "fixed": "15.5.29",
       "manifest": "c3po/frontend/pnpm-lock.yaml",
-      "number": "npm:GHSA-2464-fhr4-w9xw",
+      "number": 49,
       "package": "next",
-      "severity": "critical"
+      "severity": "medium"
     },
     {
-      "advisory": "GHSA-p3m5-59mp-jv5r",
+      "advisory": "GHSA-f3mh-rxg3-f5g2",
       "ecosystem": "npm",
-      "fixed": "15.5.28",
+      "fixed": "15.5.29",
       "manifest": "c3po/frontend/pnpm-lock.yaml",
-      "number": "npm:GHSA-p3m5-59mp-jv5r",
+      "number": 47,
       "package": "next",
-      "severity": "high"
+      "severity": "medium"
+    },
+    {
+      "advisory": "GHSA-pc58-hwjq-p385",
+      "ecosystem": "npm",
+      "fixed": "15.5.29",
+      "manifest": "c3po/frontend/pnpm-lock.yaml",
+      "number": 51,
+      "package": "next",
+      "severity": "medium"
     }
   ],
-  "base_sha": "3df5a6e4c36dd50b42edd4272b4a92f53d5eb397",
-  "blocked": [],
+  "base_sha": "1c51896511873b0b5eb5ade18f8f5b613daa6dc9",
+  "blocked": [
+    {
+      "advisory": "GHSA-7qx7-33qx-rqx2",
+      "ecosystem": "npm",
+      "fixed": "15.5.29",
+      "manifest": "c3po/frontend/package.json",
+      "number": 48,
+      "package": "next",
+      "reason": "unsupported_manifest",
+      "severity": "medium"
+    },
+    {
+      "advisory": "GHSA-f3mh-rxg3-f5g2",
+      "ecosystem": "npm",
+      "fixed": "15.5.29",
+      "manifest": "c3po/frontend/package.json",
+      "number": 46,
+      "package": "next",
+      "reason": "unsupported_manifest",
+      "severity": "medium"
+    },
+    {
+      "advisory": "GHSA-pc58-hwjq-p385",
+      "ecosystem": "npm",
+      "fixed": "15.5.29",
+      "manifest": "c3po/frontend/package.json",
+      "number": 50,
+      "package": "next",
+      "reason": "unsupported_manifest",
+      "severity": "medium"
+    }
+  ],
   "schema": "C3PO_DEPENDENCY_REMEDIATION-v1"
 }
