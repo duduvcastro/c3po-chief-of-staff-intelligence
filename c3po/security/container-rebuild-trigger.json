@@ -1,8 +1,8 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-44893045239",
+  "artifact_name": "c3po-production-container-vulnerabilities-45822513248",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 32,
+  "finding_total": 35,
   "findings": [
     {
       "fixed_version": "2.13.9-r3",
@@ -75,6 +75,33 @@
       "severity": "medium",
       "target": "c3po/web:production (alpine 3.24.1)",
       "vulnerability_id": "CVE-2026-107496"
+    },
+    {
+      "fixed_version": "2.11.0-r0",
+      "image": "web",
+      "installed_version": "2.10.0-r0",
+      "package": "libexpat",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-124317"
+    },
+    {
+      "fixed_version": "2.11.0-r0",
+      "image": "web",
+      "installed_version": "2.10.0-r0",
+      "package": "libexpat",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-128241"
+    },
+    {
+      "fixed_version": "2.11.0-r0",
+      "image": "web",
+      "installed_version": "2.10.0-r0",
+      "package": "libexpat",
+      "severity": "medium",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-134703"
     },
     {
       "fixed_version": "3.5.9-r1",
@@ -297,13 +324,13 @@
     "critical": 0,
     "high": 2,
     "low": 12,
-    "medium": 18,
+    "medium": 21,
     "unknown": 0
   },
-  "generated_at": "2026-11-21T10:12:00.317462+00:00",
-  "remediation_key": "6a88ec20f6ee4a500916fef4596436f5212ee82b60eab27e6d7d9aa2ee80662f",
-  "report_sha256": "3d2cdba48e3d76cadf611f9ad7b19e7b045deaa121d57667eaa4f3672f274511",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/44893045239",
+  "generated_at": "2026-11-26T12:46:20.987410+00:00",
+  "remediation_key": "72bad1eb6673c44623c0f8c1192270b21138e4b16b3d6e63d7edd8936167584e",
+  "report_sha256": "661a38943fac47f1ef99ea6bbccc804af118fdc7f1af47715d227ff6283efd13",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/45822513248",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
   "source_revision": "1c51896511873b0b5eb5ade18f8f5b613daa6dc9"
 }
